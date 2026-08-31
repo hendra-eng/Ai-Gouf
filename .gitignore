@@ -47,3 +47,5 @@ backend/*.log
 backend/pola_data/**/*.bak
 backend/tests/__pycache__/
 backend/debug_routes*_output.txt
+
+.env
