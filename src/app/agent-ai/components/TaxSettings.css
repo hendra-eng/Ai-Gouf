@@ -1,0 +1,32 @@
+.tax-settings {
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius);
+  margin-bottom: 0.9rem;
+  overflow: hidden;
+}
+.tax-settings-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text);
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tax-settings-toggle:hover { background-color: rgba(15, 23, 42, 0.04); }
+
+.tax-settings-body { padding: 0 0.8rem 0.8rem; }
+.tax-settings-help {
+  font-size: 0.78rem;
+  color: var(--chatgpt-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 0.5rem;
+}
+.tax-settings-warning {
+  font-size: 0.75rem;
+  color: var(--chatgpt-warning);
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}

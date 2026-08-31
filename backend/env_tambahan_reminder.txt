@@ -1,0 +1,17 @@
+# ============================================================
+# Tambahkan baris-baris ini ke file .env yang SUDAH ADA
+# (jangan timpa .env asli -- cukup tempel di bawahnya).
+# ============================================================
+
+# Token API Fonnte (dashboard.fonnte.com -> Device -> Token) -- WAJIB diisi
+# supaya reminder WA benar-benar terkirim. Tanpa ini, sistem tetap jalan
+# tapi cuma kirim notifikasi in-app (WA di-skip dengan pesan warning di log).
+FONNTE_TOKEN=
+
+# H-berapa hari sebelum jatuh tempo reminder dikirim, pisahkan koma.
+# Default kalau tidak diisi: "3,1" (H-3 dan H-1).
+REMINDER_HARI_SEBELUM=3,1
+
+# Jam berapa (WIB, format HH:MM) scheduler cek reminder tiap hari.
+# Default kalau tidak diisi: 07:00.
+REMINDER_JAM_CEK=07:00

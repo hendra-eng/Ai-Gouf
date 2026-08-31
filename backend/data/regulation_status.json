@@ -1,0 +1,30 @@
+{
+  "830655ed-e457-49c9-b6ba-30e327d1f68d": {
+    "document_id": "830655ed-e457-49c9-b6ba-30e327d1f68d",
+    "status": "berlaku",
+    "note": "Diingest via batch_ingest_pajak.py",
+    "changed_by": null,
+    "updated_at": "2026-08-03T07:50:52.885078"
+  },
+  "75a4d47c-a513-4639-acfc-7984e2d052f0": {
+    "document_id": "75a4d47c-a513-4639-acfc-7984e2d052f0",
+    "status": "berlaku",
+    "note": "Diingest via batch_ingest_pajak.py",
+    "changed_by": null,
+    "updated_at": "2026-08-03T07:51:55.984978"
+  },
+  "ac168ec7-72d5-42e2-be26-c481ae721dda": {
+    "document_id": "ac168ec7-72d5-42e2-be26-c481ae721dda",
+    "status": "berlaku",
+    "note": "Diingest via batch_ingest_pajak.py",
+    "changed_by": null,
+    "updated_at": "2026-08-03T07:53:37.094401"
+  },
+  "ca10a18b-64e4-446a-83d2-5b596e6c69e5": {
+    "document_id": "ca10a18b-64e4-446a-83d2-5b596e6c69e5",
+    "status": "berlaku",
+    "note": "Diingest via batch_ingest_pajak.py",
+    "changed_by": null,
+    "updated_at": "2026-08-03T07:59:56.879288"
+  }
+}

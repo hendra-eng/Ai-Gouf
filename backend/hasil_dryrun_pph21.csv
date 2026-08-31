@@ -1,0 +1,5 @@
+nomor,judul,pdf_filename,status_proses,document_id,used_ocr,is_encrypted,mojibake_suspect,perlu_review_manual,penggantian_status_lama,catatan
+UU 7/2021,Harmonisasi Peraturan Perpajakan,uu_7_2021_hpp.pdf,dilewati_dry_run,,False,False,False,False,,
+PP 58/2023,Tarif Pemotongan Pajak Penghasilan Pasal 21 atas Penghasilan Sehubungan dengan Pekerjaan Jasa atau Kegiatan Wajib Pajak Orang Pribadi,pp_58_2023.pdf,dilewati_dry_run,,False,False,False,False,,
+PMK 168/2023,Petunjuk Pelaksanaan Pemotongan Pajak Atas Penghasilan Sehubungan Dengan Pekerjaan Jasa Atau Kegiatan Orang Pribadi,pmk_168_2023.pdf,dilewati_dry_run,,False,False,False,False,,
+PER-2/PJ/2024,Bentuk dan Tata Cara Pembuatan Bukti Pemotongan PPh Pasal 21 dan/atau PPh Pasal 26 serta Tata Cara Penyampaian SPT Masa PPh Pasal 21/26,per_2_pj_2024.pdf,dilewati_dry_run,,False,False,False,False,,

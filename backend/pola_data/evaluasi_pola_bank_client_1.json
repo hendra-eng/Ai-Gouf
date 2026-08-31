@@ -1,0 +1,53 @@
+{
+  "11200003||11300003": {
+    "no_akun_debet": 11200003,
+    "nama_akun_debet": "BANK BRI",
+    "no_akun_kredit": 11300003,
+    "nama_akun_kredit": "PIUTANG USAHA",
+    "jumlah_signature_berbeda": 7,
+    "contoh_signature": [
+      "ONUS (MASUK)",
+      "NBMB (MASUK)",
+      "6013012665420318#000305032710#ATM (MASUK)",
+      "WBNKTRF358501048409536TO (MASUK)",
+      "TUNAI (MASUK)"
+    ],
+    "pertama_terdeteksi": "2026-07-31T14:45:14.224506",
+    "terakhir_terdeteksi": "2026-08-25T02:43:11.211361",
+    "jumlah_kemunculan_sesi": 9
+  },
+  "21200001||11200003": {
+    "no_akun_debet": 21200001,
+    "nama_akun_debet": "HUTANG USAHA",
+    "no_akun_kredit": 11200003,
+    "nama_akun_kredit": "BANK BRI",
+    "jumlah_signature_berbeda": 6,
+    "contoh_signature": [
+      "BFST (KELUAR)",
+      "BRIVA8077708129988003IBIZTKP (KELUAR)",
+      "BRIVA5271825051501IBIZMAB (KELUAR)",
+      "PRCH532659501833191301066242# (KELUAR)",
+      "PRCH532659501833191301079200# (KELUAR)"
+    ],
+    "pertama_terdeteksi": "2026-07-31T14:45:14.224546",
+    "terakhir_terdeteksi": "2026-08-25T02:43:11.211380",
+    "jumlah_kemunculan_sesi": 9
+  },
+  "11200002||11300003": {
+    "no_akun_debet": 11200002,
+    "nama_akun_debet": "BANK MANDIRI",
+    "no_akun_kredit": 11300003,
+    "nama_akun_kredit": "PIUTANG USAHA",
+    "jumlah_signature_berbeda": 33,
+    "contoh_signature": [
+      "TIDAK_ADA_KETERANGAN (MASUK)",
+      "MCM (MASUK)",
+      "LABU (MASUK)",
+      "BELANJA (MASUK)",
+      "ND (MASUK)"
+    ],
+    "pertama_terdeteksi": "2026-07-31T14:45:14.224566",
+    "terakhir_terdeteksi": "2026-08-25T02:43:11.211391",
+    "jumlah_kemunculan_sesi": 9
+  }
+}

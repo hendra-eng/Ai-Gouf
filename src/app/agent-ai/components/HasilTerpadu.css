@@ -1,0 +1,432 @@
+/* ============================================================
+   HasilTerpadu.css
+   ============================================================
+   [FIX] Nama file disamakan casing-nya dengan `import "./HasilTerpadu.css"`
+   di HasilTerpadu.jsx. Sebelumnya file ini bernama "Hasilterpadu.css"
+   (huruf t kecil) -- kebetulan tetap jalan di Windows/Mac karena
+   filesystem-nya case-insensitive, tapi GAGAL di-resolve saat build di
+   Linux/Docker/Vercel/dsb (case-sensitive), jadi Vite akan error saat
+   deploy walau di komputer lokal kelihatan baik-baik saja.
+
+   Class seperti .doc-result, .results-tabs, .metric-grid, .masalah-list,
+   .table-wrap, .data-table dipakai juga oleh HasilTerpadu.jsx, tapi
+   didefinisikan di DocumentResultView.css -- bukan diulang di sini.
+   @import di bawah memastikan class-class itu tetap ke-load walau
+   DocumentResultView.jsx sendiri sudah tidak dipakai/di-import di
+   mana pun (kalau tidak di-import sama sekali, CSS-nya tidak pernah
+   ikut ke-bundle Vite).
+   ============================================================ */
+
+
+/* ============================================================
+   [FIX] KARTU METRIK DENGAN ANGKA PANJANG (mis. "Total Debet"/
+   "Total Kredit" berisi "Rp14.855.794.948,87") -- sebelumnya angka
+   yang lebih lebar dari kartunya keluar ke luar batas kotak & saling
+   tumpang-tindih dengan kartu di sebelahnya. Sekarang angka dipaksa
+   tetap SATU BARIS (tidak dipotong ke bawah, biar tetap gampang
+   dibaca) tapi dikunci di dalam lebar kartu -- kalau lebih panjang
+   dari kartunya, muncul scroll horizontal di dalam kartu itu sendiri
+   sehingga bisa digeser ke kanan untuk lihat angka penuhnya, tanpa
+   mendorong/menabrak kartu lain.
+   ============================================================ */
+.hasil-terpadu .metric-card {
+  overflow: hidden;
+  min-width: 0; /* wajib supaya grid item boleh menyusut di bawah lebar kontennya */
+}
+.hasil-terpadu .metric-card .value {
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* [BARU] Auto-scroll (marquee) pengganti scrollbar manual -- angka yang
+   lebih lebar dari kartunya sekarang bergerak sendiri dari kiri ke kanan
+   terus-menerus (lihat komponen <Marquee> di HasilTerpadu.jsx). Kalau
+   isinya sudah muat pas di kartu, class "is-scrolling" tidak ditambahkan
+   oleh JS sehingga otomatis diam, tidak dipaksa bergerak. */
+.hasil-terpadu .value-track-wrap {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+}
+.hasil-terpadu .value-track {
+  display: inline-flex;
+  white-space: nowrap;
+}
+.hasil-terpadu .value-track.is-scrolling {
+  animation: ht-value-marquee 22s linear infinite reverse;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.hasil-terpadu .value-track.is-scrolling:active {
+  cursor: grabbing;
+}
+.hasil-terpadu .value-item {
+  padding-right: 2.5rem;
+  white-space: nowrap;
+}
+@keyframes ht-value-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hasil-terpadu .value-track.is-scrolling { animation: none; }
+}
+
+/* ============================================================
+   WRAPPER
+   ============================================================ */
+.hasil-terpadu {
+  margin-bottom: 1.5rem;
+}
+
+/* ============================================================
+   [FIX] KOLOM/KOTAK BERISI TEKS ATAU ANGKA PANJANG (mis. keterangan
+   mutasi bank "BFST50104005945 IBIZ:BDKIIDJ1...") -- sebelumnya teks
+   ini tidak punya spasi sama sekali sehingga browser tidak bisa
+   memutus barisnya, jadi kolom "meluber" keluar dari lebar tabel/kartu
+   dan mendorong tampilan jadi berantakan ke samping.
+   overflow-wrap:anywhere memaksa teks panjang tanpa spasi tetap
+   dipotong ke baris baru di dalam kolomnya sendiri.
+   Selector diberi prefix .hasil-terpadu supaya lebih spesifik dan
+   PASTI menang dibanding aturan .data-table/.table-wrap generik yang
+   didefinisikan di DocumentResultView.css (lewat @import di atas),
+   terlepas dari urutan file di-load.
+   ============================================================ */
+.hasil-terpadu .data-table th,
+.hasil-terpadu .data-table td {
+  vertical-align: top;
+}
+/* Isi sel (body) boleh turun baris kalau teksnya panjang tanpa spasi */
+.hasil-terpadu .data-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  min-width: 160px; /* [FIX] cegah kolom dipaksa terlalu sempit sampai
+                        teks normal (ada spasi) ikut terpotong 1-2 kata
+                        per baris -- tabel yang lebih lebar dari
+                        kontainer sudah ditangani scrollbar horizontal
+                        di .table-wrap, jadi aman diberi lebar minimum */
+  max-width: 260px;
+}
+/* [FIX] Header KHUSUS tetap satu baris (tidak wrap) -- sebelumnya header
+   ikut dipaksa wrap juga, dan dikombinasikan dengan "position: sticky"
+   di bawah, itu bikin header jadi bertumpuk/berantakan (teks kolom yang
+   satu numpuk di atas kolom sebelahnya). Header field cukup pendek jadi
+   tidak butuh wrap, cukup discroll ke samping lewat .table-wrap kalau
+   kolomnya banyak. */
+.hasil-terpadu .data-table th {
+  white-space: nowrap;
+}
+
+/* ============================================================
+   [FIX] AREA HASIL YANG BISA JADI SANGAT PANJANG (tabel Draf Jurnal,
+   daftar "Perlu Direview", & narasi AI Saran Cerdas yang merinci
+   per-bank/per-akun mis. BCA/BRI/Mandiri) -- sebelumnya tingginya
+   mengikuti isi (bisa ribuan baris) sehingga mendorong seluruh
+   halaman memanjang terus ke bawah. Sekarang tingginya dibatasi &
+   discroll di DALAM kotaknya sendiri saja.
+   ============================================================ */
+.hasil-terpadu .table-wrap {
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+.hasil-terpadu .table-wrap .data-table {
+  width: max-content; /* [FIX] tabel mengambil lebar alami sesuai jumlah
+                          kolom & min-width tiap sel, bukan dipaksa muat
+                          ke lebar kontainer -- kalau lebih lebar dari
+                          kontainer, discroll horizontal (overflow-x di
+                          atas), bukan bikin tiap kolom menyempit ekstrem */
+  min-width: 100%;
+}
+
+.hasil-terpadu .masalah-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.hasil-terpadu .ht-narasi-ai {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .hasil-terpadu .table-wrap { max-height: 360px; }
+  .hasil-terpadu .masalah-list { max-height: 320px; }
+  .hasil-terpadu .ht-narasi-ai { max-height: 300px; }
+}
+
+/* ============================================================
+   [BARU] KOTAK UNDUH SEDERHANA -- ikon + nama file + subjudul di kiri,
+   tombol Unduh di kanan, satu baris. Penjelasan teks (apa yang dibuat)
+   ada TERPISAH di atas kotak ini, bukan digabung jadi satu kotak dengan
+   tombolnya (permintaan user).
+   ============================================================ */
+.ht-file-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius);
+  padding: 0.7rem 0.9rem;
+}
+
+/* [BARU] Seluruh kotak sekarang bisa diklik (buka ArtifactPanel di
+   kanan) -- lihat role="button" + onClick di HasilTerpadu.jsx.
+   Sebelumnya kursor jadi I-beam (kursor "ngetik") saat diarahkan ke
+   judul/ikon karena teks itu tetap dianggap teks biasa yang bisa
+   di-select oleh browser. Sekarang: cursor dipaksa pointer di SELURUH
+   kotak, dan teks di dalamnya tidak lagi bisa di-select (user-select:
+   none) supaya kursor konsisten "bisa diklik" ke mana pun disorot,
+   bukan cuma pas di atas tombol Unduh. */
+.ht-file-card--clickable {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color var(--chatgpt-transition),
+              border-color var(--chatgpt-transition),
+              box-shadow var(--chatgpt-transition);
+}
+.ht-file-card--clickable:hover {
+  background-color: var(--chatgpt-surface);
+  border-color: var(--chatgpt-cyan);
+  box-shadow: 0 0 14px rgba(79, 195, 255, 0.12);
+}
+.ht-file-card--clickable:focus-visible {
+  outline: 2px solid var(--chatgpt-cyan-bright);
+  outline-offset: 2px;
+}
+.ht-file-card--clickable:active {
+  transform: scale(0.995);
+}
+
+.ht-file-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  border-radius: var(--chatgpt-radius-sm);
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border-light);
+  font-size: 1.2rem;
+  cursor: pointer; /* ikut kotak, bukan "text" */
+}
+
+.ht-file-card-info {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer; /* ikut kotak, bukan "text" */
+}
+
+.ht-file-card-title {
+  font-weight: 600;
+  color: var(--chatgpt-text);
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ht-file-card-subtitle {
+  color: var(--chatgpt-text-secondary);
+  font-size: 0.8rem;
+  margin-top: 0.1rem;
+}
+
+.ht-file-card-action {
+  flex-shrink: 0;
+  /* [BARU] Area tombol Unduh punya cursor & aksinya sendiri (lihat
+     stopPropagation di handleExportLaporan) -- cursor:default di sini
+     supaya tidak "menyatu" secara visual dengan area klik-buka-panel
+     di sekelilingnya; tombolnya sendiri (.btn) sudah punya
+     cursor:pointer dari theme.css. */
+  cursor: default;
+}
+
+.ht-file-card input[type="number"] {
+  width: 4.5rem;
+}
+
+@media (max-width: 640px) {
+  .ht-file-card { flex-wrap: wrap; }
+  .ht-file-card-action { width: 100%; }
+  .ht-file-card-action .btn { width: 100%; }
+}
+.ht-debug {
+  margin: 0.5rem 0 1.25rem;
+}
+
+.ht-debug-toggle {
+  width: 100%;
+  text-align: left;
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-sm);
+  color: var(--chatgpt-text-secondary);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color var(--chatgpt-transition), border-color var(--chatgpt-transition);
+}
+.ht-debug-toggle:hover {
+  background-color: var(--chatgpt-surface-light);
+  border-color: var(--chatgpt-border-light);
+  color: var(--chatgpt-text);
+}
+
+.ht-debug-body {
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border);
+  border-top: none;
+  border-radius: 0 0 var(--chatgpt-radius-sm) var(--chatgpt-radius-sm);
+  padding: 0.9rem;
+}
+.ht-debug-body p {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: var(--chatgpt-text-secondary);
+}
+
+.ht-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+/* ============================================================
+   TAB KATEGORI (jenis dokumen) -- di atas sub-tab ringkasan/masalah/jurnal
+   ============================================================ */
+.ht-category-tabs {
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+  .ht-debug-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+}
+
+/* ============================================================
+   [BARU] LIVE DASHBOARD (📊) & SARAN CERDAS (💡)
+   ============================================================ */
+.ht-dashboard,
+.ht-saran-cerdas {
+  margin-top: 1.5rem;
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-sm);
+  padding: 1rem 1.1rem;
+}
+
+.ht-dashboard h3,
+.ht-saran-cerdas h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.ht-saran-cerdas .doc-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.ht-saran-cerdas .doc-result-header h3 {
+  margin: 0;
+}
+
+.ht-catatan-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--chatgpt-text-secondary);
+}
+.ht-catatan-list li {
+  margin-bottom: 0.3rem;
+}
+
+.ht-narasi-ai {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--chatgpt-border);
+}
+.ht-narasi-ai p {
+  margin: 0 0 0.6rem;
+  line-height: 1.5;
+}
+.ht-narasi-ai ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.ht-narasi-ai li {
+  margin-bottom: 0.4rem;
+  line-height: 1.4;
+}
+
+/* Badge status kesehatan (dipakai di kartu "Skor Kesehatan") */
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.badge-good {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.badge-warning {
+  background-color: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+.badge-critical {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* Alert varian error -- pasangan .alert-success yang sudah ada di
+   DocumentResultView.css, dipakai untuk pesan gagal fetch dashboard/saran */
+.alert-error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+  border-radius: var(--chatgpt-radius-sm);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+/* Tombol sekunder (dipakai tombol "Buat Saran Baru") -- pasangan .btn/.btn-danger
+   yang sudah dipakai di komponen lain (mis. Sidebar footer) */
+.btn-secondary {
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border-light);
+  color: var(--chatgpt-text);
+  border-radius: var(--chatgpt-radius-sm);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color var(--chatgpt-transition), border-color var(--chatgpt-transition);
+  white-space: nowrap;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--chatgpt-border-light);
+}
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .ht-saran-cerdas .doc-result-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

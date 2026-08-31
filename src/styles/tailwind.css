@@ -1,0 +1,383 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+  --primary: #1B4FD8;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #334155;
+  --accent: #7C3AED;
+  --accent-foreground: #FFFFFF;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #1B4FD8;
+  --radius: 0.5rem;
+  --font-sans: var(--font-plus-jakarta-sans), sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), monospace;
+
+  --positive: #059669;
+  --positive-bg: #ECFDF5;
+  --negative: #DC2626;
+  --negative-bg: #FEF2F2;
+  --warning: #D97706;
+  --warning-bg: #FFFBEB;
+  --info: #0284C7;
+  --info-bg: #F0F9FF;
+  --ai: #7C3AED;
+  --ai-bg: #F5F3FF;
+
+  --chart-1: #1B4FD8;
+  --chart-2: #7C3AED;
+  --chart-3: #059669;
+  --chart-4: #D97706;
+  --chart-5: #0284C7;
+  --chart-6: #DC2626;
+
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 64px;
+  --header-height: 64px;
+
+  /* ===== Ditambahkan dari kodingan 2 (nama baru, tidak ada di kodingan 1) ===== */
+  --success: #16A34A;
+  --success-bg: #F0FDF4;
+  --success-foreground: #15803D;
+  --danger: #DC2626;
+  --danger-bg: #FEF2F2;
+  --danger-foreground: #B91C1C;
+  --warning-foreground: #B45309;
+  --info-foreground: #0369A1;
+  --ai-purple: #7C3AED;
+  --ai-purple-bg: #F5F3FF;
+  --ai-purple-foreground: #6D28D9;
+
+  /* alias supaya halaman dari kodingan 2 yang memakai nama var ini tetap jalan,
+     nilainya mengikuti kodingan 1 (sumber acuan) */
+  --sidebar-collapsed: var(--sidebar-collapsed-width);
+  --topbar-height: var(--header-height);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, h5, h6, p {
+    margin: 0;
+  }
+
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .font-mono {
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .font-mono-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-positive { color: var(--positive); }
+  .text-negative { color: var(--negative); }
+  .text-warning { color: var(--warning); }
+  .text-info { color: var(--info); }
+  .text-ai { color: var(--ai); }
+
+  .bg-positive-subtle { background-color: var(--positive-bg); }
+  .bg-negative-subtle { background-color: var(--negative-bg); }
+  .bg-warning-subtle { background-color: var(--warning-bg); }
+  .bg-info-subtle { background-color: var(--info-bg); }
+  .bg-ai-subtle { background-color: var(--ai-bg); }
+
+  .border-positive { border-color: var(--positive); }
+  .border-negative { border-color: var(--negative); }
+  .border-warning { border-color: var(--warning); }
+  .border-ai { border-color: var(--ai); }
+
+  .sidebar-expanded { width: var(--sidebar-width); }
+  .sidebar-collapsed { width: var(--sidebar-collapsed-width); }
+
+  .card-base {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .card-elevated {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04);
+  }
+
+  .card-elevated-md {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+  }
+
+  .transition-sidebar {
+    transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .fade-in {
+    animation: fadeIn 200ms ease-out forwards;
+  }
+
+  .slide-in-right {
+    animation: slideInRight 250ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .pulse-update {
+    animation: pulseUpdate 600ms ease-out;
+  }
+
+  .number-display {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 2px;
+  }
+
+  /* ===== Ditambahkan dari kodingan 2 (nama class baru, bukan duplikat) ===== */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .sidebar-transition {
+    transition: width 300ms ease, transform 300ms ease;
+  }
+
+  .slide-up {
+    animation: slideUp 200ms ease forwards;
+  }
+
+  .pulse-highlight {
+    animation: pulseHighlight 600ms ease;
+  }
+
+  .ai-gradient {
+    background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 50%, #F0F9FF 100%);
+  }
+
+  .card-hover {
+    transition: box-shadow 150ms ease, transform 150ms ease;
+  }
+  .card-hover:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
+  }
+}
+
+@layer components {
+  .fin-card {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04);
+  }
+  .fin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+  .fin-btn-primary {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    border-radius: 0.375rem;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 150ms ease;
+    border: none;
+    cursor: pointer;
+  }
+  .fin-btn-primary:hover {
+    opacity: 0.9;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+  }
+  .fin-btn-secondary {
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
+    border-radius: 0.375rem;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 150ms ease;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .fin-btn-secondary:hover {
+    background-color: var(--border);
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-decoration: none;
+  }
+  .nav-item:hover {
+    background-color: var(--secondary);
+    color: var(--foreground);
+  }
+  .nav-item.active {
+    background-color: #eff6ff;
+    color: var(--primary);
+  }
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    padding: 0 10px;
+    margin-bottom: 2px;
+    margin-top: 12px;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulseUpdate {
+  0% { background-color: transparent; }
+  30% { background-color: rgba(251, 191, 36, 0.15); }
+  100% { background-color: transparent; }
+}
+
+/* ===== Keyframes baru dari kodingan 2 ===== */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseHighlight {
+  0% { background-color: transparent; }
+  30% { background-color: #FEF9C3; }
+  100% { background-color: transparent; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-semibold border border-border transition-all duration-150 hover:bg-border active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg text-muted-foreground text-sm font-medium transition-all duration-150 hover:bg-muted hover:text-foreground active:scale-95;
+  }
+
+  .input-base {
+    @apply w-full px-3 py-2 rounded-lg border border-input bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-150;
+  }
+
+  .badge-positive {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-positive-subtle text-positive;
+  }
+
+  .badge-negative {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-negative-subtle text-negative;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-warning-subtle text-warning;
+  }
+
+  .badge-info {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-info-subtle text-info;
+  }
+
+  .badge-ai {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-ai-subtle text-ai;
+  }
+
+  .badge-neutral {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground;
+  }
+  .table-row-hover  {
+    @apply transition-colors duration-100 cursor-pointer;
+  }
+  .nav-item-active  {
+    @apply text-primary font-semibold;
+  }
+
+  .nav-item-inactive {
+    @apply text-muted-foreground hover:bg-muted hover:text-foreground;
+  }
+}

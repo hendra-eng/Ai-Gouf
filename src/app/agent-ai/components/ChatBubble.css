@@ -1,0 +1,185 @@
+/* ============================================================
+   ChatBubble -- port of .st-key-msgu_ (user) / .st-key-msga_ (assistant)
+   ============================================================ */
+
+/* User message - right aligned */
+.msg-user {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.1rem;
+}
+.msg-user-bubble {
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: 1.4rem;
+  padding: 0.65rem 1.1rem;
+  max-width: 75vw;
+  width: fit-content;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Assistant message - left aligned */
+.msg-assistant {
+  margin-bottom: 1.6rem;
+}
+.msg-assistant-content {
+  max-width: 100%;
+  line-height: 1.6;
+}
+.msg-assistant-content p { margin-bottom: 0.5rem; }
+.msg-assistant-content ul,
+.msg-assistant-content ol { padding-left: 1.5rem; }
+.msg-assistant-content blockquote {
+  border-left: 3px solid var(--chatgpt-cyan);
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: var(--chatgpt-text-secondary);
+}
+
+/* [BARU] Chip nama file yang diupload user -- ditampilkan di dalam bubble
+   user, di atas teks pesan (kalau ada). Beda dari .chip-file di
+   ChatComposer.css: ini statis (tidak bisa diklik/dihapus), cuma
+   menunjukkan file apa yang barusan dikirim. */
+.msg-file-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.msg-file-chip {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border-light);
+  border-radius: var(--chatgpt-radius-sm);
+  color: var(--chatgpt-text);
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* [BARU] Varian chip yang bisa diklik (buka <ArtifactPanel/>) --
+   <button> butuh reset beberapa default browser (font, cursor) supaya
+   tetap identik tampilannya dengan chip statis <span> di atas. */
+.msg-file-chip--clickable {
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--chatgpt-transition), border-color var(--chatgpt-transition);
+}
+.msg-file-chip--clickable:hover {
+  background-color: var(--chatgpt-surface);
+  border-color: var(--chatgpt-cyan);
+  box-shadow: 0 0 10px rgba(79, 195, 255, 0.15);
+}
+.msg-file-chip--clickable:focus-visible {
+  outline: 2px solid var(--chatgpt-cyan-bright);
+  outline-offset: 2px;
+}
+
+/* [BARU] Kartu file besar -- dipakai untuk file BUATAN AI (kertas kerja,
+   laporan 18-sheet) yang punya info tambahan (tipe, jumlah sheet) &
+   tombol "Unduh" terpisah. Beda dari .msg-file-chip (pil kecil polos,
+   masih dipakai untuk chip file upload user) -- ini kartu penuh: ikon
+   kotak di kiri, nama+subtitle di tengah, tombol hijau di kanan. */
+.msg-file-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border-light);
+  border-radius: var(--chatgpt-radius, 0.75rem);
+  padding: 0.6rem 0.7rem;
+  max-width: 420px;
+  width: 100%;
+  transition: border-color var(--chatgpt-transition), box-shadow var(--chatgpt-transition);
+}
+.msg-file-card:hover {
+  border-color: var(--chatgpt-cyan);
+  box-shadow: 0 0 10px rgba(79, 195, 255, 0.12);
+}
+
+.msg-file-card__main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.msg-file-card__main:disabled {
+  cursor: default;
+}
+
+.msg-file-card__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.5rem;
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border-light);
+  font-size: 1.05rem;
+}
+
+.msg-file-card__info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.msg-file-card__name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--chatgpt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-file-card__meta {
+  font-size: 0.75rem;
+  color: var(--chatgpt-text-secondary);
+}
+
+.msg-file-card__download-btn {
+  flex-shrink: 0;
+  background-color: #22c55e;
+  color: #06240f;
+  border: none;
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--chatgpt-transition), transform var(--chatgpt-transition);
+}
+.msg-file-card__download-btn:hover {
+  background-color: #16a34a;
+}
+.msg-file-card__download-btn:active {
+  transform: scale(0.97);
+}
+.msg-file-card__download-btn:focus-visible {
+  outline: 2px solid var(--chatgpt-cyan-bright);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .msg-user-bubble { max-width: 85vw; padding: 0.5rem 0.8rem; font-size: 0.9rem; }
+  .msg-file-chip { font-size: 0.75rem; max-width: 60vw; }
+  .msg-file-card { max-width: 100%; }
+}

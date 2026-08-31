@@ -1,0 +1,159 @@
+/* ============================================================
+   ArtifactPanel -- panel geser di kanan .app-shell, sebelahan dengan
+   .main-container. Ikut palet & bahasa desain yang sama seperti
+   .app-layout__header / .app-sidebar (kaca gelap transparan + border
+   cyan tipis), lihat theme.css & AppLayout.css.
+   ============================================================ */
+
+/* [FIX -- animasi geser halus, bukan "blink"]
+   Sebelumnya panel di-mount/unmount total dari DOM (lihat catatan di
+   ArtifactPanel.jsx) & animasinya cuma @keyframes translateX+opacity
+   PADA PANEL ITU SENDIRI -- .main-container di sebelahnya (flex
+   sibling) TIDAK ikut dianimasikan sama sekali, jadi lebarnya melompat
+   instan ke ukuran baru begitu panel muncul/hilang dari DOM. Terasa
+   seperti "blink"/berpindah tempat, bukan tergeser halus bersamaan.
+
+   Sekarang: panel SELALU ada di DOM (width: 0 saat tertutup), dan
+   dibuka/ditutup murni dgn transisi `width` lewat class
+   `.artifact-panel--open` (ditambah/dihapus oleh prop `open`, lihat
+   ArtifactPanel.jsx). Karena width diubah lewat CSS transition (bukan
+   mount/unmount), browser me-render ulang layout flex SETIAP FRAME
+   selama transisi -- .main-container (flex sibling, mengisi sisa
+   ruang) otomatis ikut menyempit/melebar mengikuti animasi ini, jadi
+   teks chat & panel SAMA-SAMA tergeser bareng, kecepatan sama persis,
+   murni lewat CSS engine (bukan dihitung manual lewat JS).
+
+   Durasi 480ms + cubic-bezier(0.4, 0, 0.2, 1) (ease "material standard",
+   lambat masuk & keluar, tidak terlalu instan) dipilih supaya terasa
+   agak pelan & halus ("kesan eksklusif") -- naikkan angka 0.48s di
+   bawah kalau masih ingin lebih pelan lagi, atau turunkan kalau ingin
+   lebih cepat/snappy.
+   ============================================================ */
+.artifact-panel {
+  width: 0;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0; /* biar body-nya (bukan panel-nya) yang scroll, sama pola dgn .app-sidebar/.main-container */
+  overflow: hidden; /* wajib -- ini yang bikin isi panel "tersembunyi" rapi selagi width: 0, bukan cuma keluar batas & keliatan meluber */
+
+  background-color: var(--chatgpt-sidebar);
+  backdrop-filter: blur(var(--chatgpt-glass-blur));
+  -webkit-backdrop-filter: blur(var(--chatgpt-glass-blur));
+  border-left: 1px solid transparent;
+  box-shadow: none;
+
+  transition: width 0.48s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.48s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.artifact-panel--open {
+  /* Lebar panel saat terbuka -- lihat riwayat perubahan lebar
+     sebelumnya, silakan sesuaikan clamp() ini lagi kalau perlu. */
+  width: clamp(420px, 42vw, 620px);
+  border-left: 1px solid var(--chatgpt-border);
+  box-shadow: var(--chatgpt-shadow);
+}
+
+/* ---------- Header ---------- */
+.artifact-panel__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--chatgpt-border);
+}
+
+.artifact-panel__titles {
+  flex: 1;
+  min-width: 0; /* wajib supaya ellipsis di bawah bekerja di flex child */
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.artifact-panel__title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--chatgpt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-panel__meta {
+  font-size: 0.75rem;
+  color: var(--chatgpt-text-secondary);
+}
+
+.artifact-panel__icon-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--chatgpt-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 9px;
+  border-radius: var(--chatgpt-radius-sm);
+  transition: background-color var(--chatgpt-transition),
+              color var(--chatgpt-transition),
+              border-color var(--chatgpt-transition);
+}
+.artifact-panel__icon-btn:hover {
+  background-color: var(--chatgpt-surface-light);
+  border-color: var(--chatgpt-border-light);
+  color: var(--chatgpt-text);
+}
+.artifact-panel__icon-btn:focus-visible {
+  outline: 2px solid var(--chatgpt-cyan-bright);
+  outline-offset: 2px;
+}
+
+/* ---------- Body ---------- */
+.artifact-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 16px;
+}
+
+.artifact-panel__placeholder {
+  margin-top: 2.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--chatgpt-text-dim);
+}
+
+/* ---------- Responsive ---------- */
+/* Di layar sempit, panel jadi overlay penuh (di atas chat) alih-alih
+   kolom ketiga -- supaya chat tidak keremuk jadi terlalu sempit.
+   [FIX] Mode overlay ini TIDAK memakai animasi `width` (posisinya fixed,
+   tidak mendorong sibling manapun) -- dipakai `transform: translateX`
+   supaya tetap ada animasi geser masuk/keluar yang sama halusnya, cuma
+   mekanismenya beda dari mode kolom (desktop) di atas. Aturan width di
+   luar media query ini (width: 0 / clamp(...)) SENGAJA di-override
+   total di sini karena konteksnya beda (fixed overlay, bukan flex
+   column). */
+@media (max-width: 900px) {
+  .artifact-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 520px;
+    border-left: 1px solid var(--chatgpt-border);
+    box-shadow: var(--chatgpt-shadow);
+    transform: translateX(100%);
+    transition: transform 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 50;
+  }
+  .artifact-panel--open {
+    width: 100%;
+    transform: translateX(0);
+  }
+}

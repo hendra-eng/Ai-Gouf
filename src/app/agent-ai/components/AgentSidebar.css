@@ -1,0 +1,250 @@
+/* ============================================================
+   Sidebar -- port of [data-testid="stSidebar"] + app.py sidebar block
+   ============================================================ */
+
+.app-sidebar {
+  background-color: var(--chatgpt-sidebar);
+  backdrop-filter: blur(var(--chatgpt-glass-blur));
+  -webkit-backdrop-filter: blur(var(--chatgpt-glass-blur));
+  border-right: 1px solid var(--chatgpt-border);
+  box-shadow: 2px 0 16px rgba(15, 23, 42, 0.06);
+  color: var(--chatgpt-text);
+  width: 280px;
+  flex-shrink: 0;
+  min-height: 0; /* [FIX] wajib ada di flex item yang mau overflow-y:auto -- tanpa ini,
+                    browser maksa tinggi sidebar = tinggi SEMUA isinya, hasilnya malah
+                    kepampat/ngepress ke ruang yang tersedia alih-alih muncul scrollbar */
+  padding: 1rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+
+  /* [BARU -- toggle sidebar]
+     - position:relative -> jadi containing block untuk .sidebar-toggle-btn
+       (position:absolute) yang nongol -14px ke kanan.
+     - overflow:visible -> GANTI dari overflow-y:auto yang lama. Kalau
+       overflow-y diset ke selain "visible", overflow-x otomatis ikut
+       ke-clip juga (aturan CSSOM), jadi tombol yang nongol keluar batas
+       kanan sidebar bakal terpotong. Scroll konten sekarang ditangani
+       oleh .sidebar-content di bawah, bukan di sini.
+     - transition width -> animasi halus saat collapse/expand. */
+  position: relative;
+  overflow: visible;
+  transition: width 0.25s ease, padding 0.25s ease;
+}
+
+.app-sidebar > * {
+  flex-shrink: 0;
+}
+
+/* [BARU] Saat collapsed, sidebar dipepetkan ke lebar 0. Tombol toggle
+   tetap terlihat karena dia position:absolute (tidak ikut mengecil
+   bersama box induknya) dan .app-sidebar tetap overflow:visible. */
+.app-sidebar.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.app-sidebar.collapsed .sidebar-content {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* [BARU] Tombol bulat kecil di tepi kanan sidebar untuk toggle
+   collapse/expand. */
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 0.75rem;
+  right: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border);
+  color: var(--chatgpt-text);
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 999;
+  transition: background-color var(--chatgpt-transition), color var(--chatgpt-transition);
+}
+.sidebar-toggle-btn:hover {
+  background-color: var(--chatgpt-surface-light);
+  color: var(--chatgpt-cyan-bright);
+}
+
+/* [BARU] Wrapper baru yang membungkus SELURUH isi sidebar lama (judul,
+   status badge, riwayat chat, panduan, dst). Ini yang sekarang jadi
+   pemilik overflow-y:auto + ref scroll (dulu ada langsung di
+   .app-sidebar) -- dipisah supaya tombol toggle di induknya tidak ikut
+   ke-clip. Juga jadi target opacity:0 saat collapsed. */
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  transition: opacity 0.15s ease;
+
+  /* [BARU] Sembunyikan scrollbar secara visual -- scroll (wheel/drag/
+     keyboard) tetap berfungsi normal, cuma bar-nya yang tidak
+     digambar. */
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* IE/Edge lama */
+}
+.sidebar-content::-webkit-scrollbar {
+  display: none;                /* Chrome, Edge, Safari (WebKit) */
+}
+.sidebar-content > * {
+  flex-shrink: 0;
+}
+
+.app-sidebar h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.15rem;
+  color: var(--chatgpt-text);
+  text-shadow: none;
+}
+.sidebar-logo {
+  height: 1.6em;
+  width: auto;
+  flex-shrink: 0;
+  border-radius: 0;
+  filter: drop-shadow(0 0 2px rgba(111, 224, 255, 0.6));
+}
+.sidebar-caption {
+  color: var(--chatgpt-text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0;
+  letter-spacing: 0.03em;
+}
+
+.status-badge {
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  border-radius: var(--chatgpt-radius-sm);
+  padding: 0.4rem 0.7rem;
+  margin-top: 0.5rem;
+  border: 1px solid transparent;
+}
+.status-badge.on {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--chatgpt-success);
+}
+.status-badge.off {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--chatgpt-danger);
+}
+
+.app-sidebar hr { border-color: var(--chatgpt-border); margin: 0.9rem 0; }
+
+.sidebar-label { font-size: 0.8rem; color: var(--chatgpt-text-secondary); display: block; margin-bottom: 0.3rem; }
+.sidebar-select {
+  width: 100%;
+  background-color: var(--chatgpt-surface);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-sm);
+  color: var(--chatgpt-text);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  transition: border-color var(--chatgpt-transition), box-shadow var(--chatgpt-transition);
+}
+.sidebar-select:focus {
+  outline: none;
+  border-color: var(--chatgpt-cyan);
+  box-shadow: 0 0 0 3px var(--chatgpt-cyan-dim);
+}
+
+.sidebar-new-chat { width: 100%; text-align: center; margin-bottom: 0.75rem; }
+
+.caption-text { font-size: 0.8rem; color: var(--chatgpt-text-secondary); line-height: 1.4; }
+
+.sidebar-panduan-toggle { width: 100%; text-align: center; font-size: 0.85rem; margin-bottom: 0.5rem; }
+
+.sidebar-panduan-body {
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-sm);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.sidebar-panduan-body h4 { margin-top: 0; font-size: 0.95rem; color: var(--chatgpt-cyan-bright); }
+.sidebar-panduan-body ul { padding-left: 1.1rem; margin: 0.3rem 0 0.7rem; }
+.sidebar-panduan-body p { margin: 0.4rem 0; }
+
+.chat-history { display: flex; flex-direction: column; gap: 0.2rem; overflow-y: auto; }
+
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--chatgpt-radius-sm);
+  transition: background-color var(--chatgpt-transition);
+}
+.chat-history-item:hover { background-color: var(--chatgpt-surface); }
+.chat-history-item.active {
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border);
+  box-shadow: inset 0 0 0 1px rgba(79, 195, 255, 0.08);
+}
+
+.chat-history-title {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-history-title:disabled { color: var(--chatgpt-text); opacity: 1; cursor: default; }
+
+/* [BARU] Bullet bulat kecil pengganti nomor urut (1., 2., dst) yang
+   dihapus dari teks judul. */
+.chat-history-title::before {
+  content: "○";
+  display: inline-block;
+  margin-right: 0.45rem;
+  color: var(--chatgpt-text-secondary);
+  font-size: 0.75rem;
+}
+
+.chat-history-delete {
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text-dim);
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--chatgpt-transition), color var(--chatgpt-transition);
+}
+.chat-history-item:hover .chat-history-delete { opacity: 1; }
+.chat-history-delete:hover { color: var(--chatgpt-danger); }
+
+.sidebar-extra-bottom {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--chatgpt-border);
+}
+.sidebar-footer { display: flex; flex-direction: column; gap: 0.4rem; }
+.sidebar-footer .btn { width: 100%; text-align: center; font-size: 0.85rem; }
+
+@media (max-width: 640px) {
+  .app-sidebar { width: 100%; position: fixed; inset: 0; z-index: 998; }
+}

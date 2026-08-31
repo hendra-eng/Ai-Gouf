@@ -1,0 +1,138 @@
+{
+  "_catatan": "Scope prioritas Tahap 1. Nomor regulasi di sini adalah TITIK AWAL pencarian di JDIH Kemenkeu/peraturan.go.id/situs DJP -- WAJIB dikonfirmasi ulang saat script scraping berjalan di Tahap 3, karena SE/PER teknis baru bisa terbit kapan saja. Field 'level_dokumen_prioritas' menentukan jenis dokumen yang paling dicari duluan untuk tiap jenis pajak (SE/PER dulu, baru PMK, baru UU sebagai konteks).",
+  "profil_klien": "campuran (UMKM, PT, perorangan)",
+  "urutan_pengerjaan": "Isi satu jenis pajak sampai teruji (Tahap 4) baru lanjut ke jenis berikutnya -- jangan borong sekaligus (lihat Tahap 6 poin 17).",
+  "tier": [
+    {
+      "tier": 1,
+      "alasan": "Dipakai hampir semua klien setiap bulan, dampak salah jawab paling besar",
+      "jenis_pajak": [
+        {
+          "id": "pph21",
+          "nama": "PPh Pasal 21",
+          "segmen_klien": ["UMKM", "PT", "perorangan"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK", "UU"],
+          "regulasi_acuan_awal": ["UU HPP No. 7/2021", "PMK terkait TER PPh 21"]
+        },
+        {
+          "id": "pph_final_umkm", 
+          "nama": "PPh Final UMKM 0,5%",
+          "segmen_klien": ["UMKM"],
+          "level_dokumen_prioritas": ["SE", "PER", "PP"],
+          "regulasi_acuan_awal": ["PP No. 55/2022"]
+        },
+        {
+          "id": "ppn_ppnbm",
+          "nama": "PPN & PPnBM",
+          "segmen_klien": ["PT (PKP)", "UMKM (PKP)"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK", "UU"],
+          "regulasi_acuan_awal": ["UU HPP No. 7/2021", "PMK 131/2024", "PMK 11/2025"],
+          "catatan": "Dua tarif berjalan: 11% umum, 12% barang mewah -- rawan salah kutip, prioritaskan chunking yang jelas pisahkan dua tarif ini"
+        },
+        {
+          "id": "pph23",
+          "nama": "PPh Pasal 23",
+          "segmen_klien": ["PT", "UMKM"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": ["UU HPP No. 7/2021"]
+        },
+        {
+          "id": "pph29",
+          "nama": "PPh Pasal 29",
+          "segmen_klien": ["PT", "perorangan"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": ["UU HPP No. 7/2021"]
+        },
+        {
+          "id": "pph25",
+          "nama": "PPh Pasal 25 (angsuran bulanan)",
+          "segmen_klien": ["PT", "perorangan usaha"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": ["UU HPP No. 7/2021"],
+          "catatan": "Dihitung rutin tiap bulan -- volume pertanyaan tinggi, sempat kelewat di draft awal"
+        },
+        {
+          "id": "administrasi_coretax",
+          "nama": "Administrasi Coretax DJP (e-Faktur, e-Bupot, SPT Tahunan terintegrasi)",
+          "segmen_klien": ["PT", "UMKM", "perorangan"],
+          "level_dokumen_prioritas": ["SE", "PER", "KEP Dirjen Pajak", "PMK"],
+          "regulasi_acuan_awal": ["PMK No. 81/2024 (e-Bupot)", "KEP-54/PJ/2025"],
+          "catatan": "PENTING & BARU: sejak Juli 2026 Coretax wajib untuk hampir semua layanan pajak, DJP Online & e-Faktur lama sudah dimatikan. Ini bukan 'jenis pajak' tapi kategori PROSEDURAL -- sumbernya Pengumuman/KEP Dirjen Pajak (bukan cuma PMK/UU). Volume pertanyaan akuntan soal 'cara input di Coretax' / error teknis kemungkinan besar tinggi sekarang. Pertimbangkan pipeline sumber terpisah dari pajak.go.id/pengumuman."
+        }
+      ]
+    },
+    {
+      "tier": 2,
+      "alasan": "Sering dipakai tapi lebih spesifik ke jenis transaksi/segmen tertentu",
+      "jenis_pajak": [
+        {
+          "id": "pph_4_2_final",
+          "nama": "PPh Pasal 4 ayat (2) Final",
+          "segmen_klien": ["PT", "UMKM", "perorangan"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": []
+        },
+        {
+          "id": "pph26",
+          "nama": "PPh Pasal 26",
+          "segmen_klien": ["PT"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": []
+        },
+        {
+          "id": "bea_meterai",
+          "nama": "Bea Meterai",
+          "segmen_klien": ["PT", "UMKM", "perorangan"],
+          "level_dokumen_prioritas": ["PER", "PMK", "UU"],
+          "regulasi_acuan_awal": ["UU No. 10/2020"]
+        },
+        {
+          "id": "pph24",
+          "nama": "PPh Pasal 24 (kredit pajak luar negeri)",
+          "segmen_klien": ["PT dengan penghasilan luar negeri"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": []
+        },
+        {
+          "id": "ppn_pmse",
+          "nama": "PPN PMSE (Perdagangan Melalui Sistem Elektronik)",
+          "segmen_klien": ["PT/UMKM pelaku e-commerce & marketplace"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"],
+          "regulasi_acuan_awal": [],
+          "catatan": "Relevan buat klien yang jualan online/marketplace -- makin umum untuk segmen UMKM digital"
+        }
+      ]
+    },
+    {
+      "tier": 3,
+      "alasan": "Situasional, isi belakangan setelah pipeline teruji stabil",
+      "jenis_pajak": [
+        {
+          "id": "pbb_p3",
+          "nama": "PBB-P3 (perkebunan/kehutanan/pertambangan)",
+          "segmen_klien": ["PT sektor spesifik"],
+          "level_dokumen_prioritas": ["PER", "PMK", "UU"],
+          "catatan": "HANYA PBB-P3 yang masih kewenangan DJP. PBB-P2 (perdesaan/perkotaan) sudah jadi kewenangan Pemda sejak UU HKPD -- sumbernya Perda, BUKAN PMK/PER DJP. Jangan dicampur dalam satu pipeline sumber."
+        },
+        {
+          "id": "pph22",
+          "nama": "PPh Pasal 22",
+          "segmen_klien": ["PT (impor/bendahara)"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"]
+        },
+        {
+          "id": "pph15",
+          "nama": "PPh Pasal 15 (pelayaran/penerbangan/perwakilan dagang asing)",
+          "segmen_klien": ["PT sektor spesifik"],
+          "level_dokumen_prioritas": ["SE", "PER", "PMK"]
+        },
+        {
+          "id": "prosedur_keberatan_banding",
+          "nama": "Prosedur Keberatan & Banding Pajak",
+          "segmen_klien": ["PT", "UMKM", "perorangan"],
+          "level_dokumen_prioritas": ["SE", "PER", "UU KUP"]
+        }
+      ]
+    }
+  ]
+}

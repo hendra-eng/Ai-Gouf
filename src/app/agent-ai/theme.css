@@ -1,0 +1,277 @@
+/* ============================================================
+   theme.css -- Ported from project "AI Gouf Consulting" (Vite)
+   Dark Theme ala ChatGPT/Claude
+
+   [MIGRASI Next.js] File ini di-import langsung di AgentAIChat.jsx.
+   Import CSS biasa (bukan CSS Module) di Next.js itu GLOBAL secara
+   bundling -- kalau selector aslinya `html, body, h1, a, .btn`, dst
+   dibiarkan apa adanya, itu akan MENIMPA styling di seluruh halaman
+   dashboard lain (Overview, Transactions, dst), bukan cuma halaman
+   Agent AI ini.
+
+   Makanya SEMUA selector di bawah ini sengaja di-scope, diberi awalan
+   `.agent-ai-root` (class yang dipasang di elemen root <div
+   className="app-shell agent-ai-root"> di AgentAIChat.jsx) -- supaya
+   dark theme ini HANYA berlaku di dalam halaman Agent AI, tidak bocor
+   ke sidebar/topbar/halaman lain punya Finova AI.
+   Variabel CSS di :root SENGAJA dibiarkan global (tidak discope) --
+   namanya sudah diberi prefix --chatgpt-* jadi aman, tidak bentrok
+   dengan variabel dashboard (--background, --primary, dst di
+   tailwind.css).
+   ============================================================ */
+
+:root {
+  /* [UBAH -- tema terang] Sebelumnya dark theme ala ChatGPT/Claude
+     (lihat git history / komentar lama di atas). Semua variabel di
+     bawah ini diganti ke versi terang -- karena SEMUA komponen lain
+     (AgentSidebar.css, ChatBubble.css, dst) memakai variabel ini,
+     bukan warna hardcode, mengganti nilainya di sini otomatis
+     mengubah seluruh halaman Agent AI tanpa perlu edit tiap file. */
+  --chatgpt-bg: #f8fafc;
+  --chatgpt-bg-deep: #eef1f5;
+  --chatgpt-bg-mid: #ffffff;
+
+  --chatgpt-sidebar: rgba(248, 250, 252, 0.92);
+  --chatgpt-surface: rgba(15, 23, 42, 0.035);
+  --chatgpt-surface-light: rgba(15, 23, 42, 0.06);
+  --chatgpt-border: rgba(15, 23, 42, 0.12);
+  --chatgpt-border-light: rgba(15, 23, 42, 0.22);
+
+  --chatgpt-accent: #16a34a;
+  --chatgpt-accent-hover: #15803d;
+  --chatgpt-accent-dim: rgba(34, 197, 94, 0.12);
+
+  --chatgpt-cyan: #0284c7;
+  --chatgpt-cyan-bright: #0ea5e9;
+  --chatgpt-cyan-dim: rgba(2, 132, 199, 0.10);
+
+  --chatgpt-text: #0f172a;
+  --chatgpt-text-secondary: #475569;
+  --chatgpt-text-dim: #94a3b8;
+
+  --chatgpt-danger: #dc2626;
+  --chatgpt-warning: #d97706;
+  --chatgpt-info: #0284c7;
+  --chatgpt-success: #16a34a;
+
+  --chatgpt-radius: 14px;
+  --chatgpt-radius-sm: 10px;
+  --chatgpt-radius-lg: 22px;
+
+  --chatgpt-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.08);
+  --chatgpt-glass-blur: 14px;
+  --chatgpt-transition: 0.15s ease;
+}
+
+/* ============================================================
+   BASE (di-scope ke .agent-ai-root, dulunya html/body/#root global)
+   ============================================================ */
+.agent-ai-root {
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 20%, var(--chatgpt-bg-mid) 0%, var(--chatgpt-bg) 55%, var(--chatgpt-bg-deep) 100%);
+  background-attachment: fixed;
+  color: var(--chatgpt-text);
+  font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.agent-ai-root * {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--chatgpt-border) var(--chatgpt-bg);
+}
+
+.agent-ai-root ::-webkit-scrollbar { width: 6px; height: 6px; }
+.agent-ai-root ::-webkit-scrollbar-track { background: var(--chatgpt-bg); }
+.agent-ai-root ::-webkit-scrollbar-thumb { background: var(--chatgpt-border); border-radius: 10px; }
+.agent-ai-root ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ============================================================
+   TYPOGRAPHY
+   ============================================================ */
+.agent-ai-root h1,
+.agent-ai-root h2,
+.agent-ai-root h3,
+.agent-ai-root h4,
+.agent-ai-root h5,
+.agent-ai-root h6 {
+  color: var(--chatgpt-text);
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+}
+.agent-ai-root h1 { font-size: 2.25rem; }
+.agent-ai-root h2 { font-size: 1.6rem; margin-top: 1.5rem; }
+.agent-ai-root h3 { font-size: 1.25rem; margin-top: 1.2rem; }
+.agent-ai-root h4 { font-size: 1.1rem; margin-top: 1rem; }
+
+.agent-ai-root .landing-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+.agent-ai-root .landing-logo {
+  height: 1em;
+  width: auto;
+  border-radius: 0;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.15));
+}
+
+.agent-ai-root p { line-height: 1.6; margin-bottom: 0.75rem; }
+.agent-ai-root a { color: var(--chatgpt-accent); text-decoration: none; }
+.agent-ai-root a:hover { text-decoration: underline; }
+
+.agent-ai-root code {
+  background-color: var(--chatgpt-surface);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.85em;
+  color: #1e293b;
+}
+.agent-ai-root pre {
+  background-color: var(--chatgpt-surface);
+  border-radius: var(--chatgpt-radius);
+  padding: 1rem;
+  border: 1px solid var(--chatgpt-border);
+  overflow-x: auto;
+}
+.agent-ai-root pre code { background: transparent; padding: 0; }
+
+.agent-ai-root hr {
+  border: none;
+  border-top: 1px solid var(--chatgpt-border);
+  opacity: 0.5;
+  margin: 1.5rem 0;
+}
+
+.agent-ai-root img { border-radius: var(--chatgpt-radius); max-width: 100%; }
+
+/* ============================================================
+   GENERIC BUTTON
+   ============================================================ */
+.agent-ai-root .btn {
+  border-radius: 999px;
+  border: 1px solid var(--chatgpt-border);
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--chatgpt-text);
+  padding: 0.5rem 1.25rem;
+  transition: background-color var(--chatgpt-transition),
+              transform 0.1s ease,
+              border-color var(--chatgpt-transition),
+              box-shadow var(--chatgpt-transition);
+  font-weight: 500;
+  cursor: pointer;
+}
+.agent-ai-root .btn:hover {
+  background-color: var(--chatgpt-surface-light);
+  border-color: var(--chatgpt-border-light);
+  box-shadow: 0 0 14px rgba(79, 195, 255, 0.15);
+}
+.agent-ai-root .btn:active { transform: scale(0.97); }
+.agent-ai-root .btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+.agent-ai-root .btn:focus-visible { outline: 2px solid var(--chatgpt-cyan-bright); outline-offset: 2px; }
+
+.agent-ai-root .btn-primary {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 0 22px rgba(34, 197, 94, 0.28);
+}
+.agent-ai-root .btn-primary:hover {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border-color: transparent;
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.42);
+  transform: translateY(-1px);
+}
+
+.agent-ai-root .btn-danger { border-color: rgba(239, 68, 68, 0.4); color: var(--chatgpt-danger); }
+.agent-ai-root .btn-danger:hover { background-color: rgba(239, 68, 68, 0.12); box-shadow: 0 0 14px rgba(239, 68, 68, 0.2); }
+
+/* ============================================================
+   MAIN LAYOUT
+   ============================================================ */
+.agent-ai-root.app-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+.agent-ai-root .main-container {
+  flex: 1;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 1.5rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.agent-ai-root .main-container::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 768px) { .agent-ai-root .main-container { max-width: 48rem; } }
+@media (min-width: 1200px) { .agent-ai-root .main-container { max-width: 56rem; } }
+
+.agent-ai-root .caption-text,
+.agent-ai-root .landing-subtitle {
+  font-size: 0.85rem;
+  color: var(--chatgpt-text-secondary);
+  margin-top: -0.4rem;
+}
+
+.agent-ai-root .main-container.landing {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  min-height: 85vh;
+}
+
+/* ============================================================
+   ALERTS
+   ============================================================ */
+.agent-ai-root .alert { border-radius: var(--chatgpt-radius); padding: 0.75rem 1rem; font-size: 0.95rem; }
+.agent-ai-root .alert-info { background-color: rgba(59, 130, 246, 0.12); border-left: 4px solid var(--chatgpt-info); }
+.agent-ai-root .alert-success { background-color: rgba(16, 163, 127, 0.12); border-left: 4px solid var(--chatgpt-success); }
+.agent-ai-root .alert-warning { background-color: rgba(245, 158, 11, 0.12); border-left: 4px solid var(--chatgpt-warning); }
+.agent-ai-root .alert-error { background-color: rgba(239, 68, 68, 0.12); border-left: 4px solid var(--chatgpt-danger); }
+
+/* ============================================================
+   METRIC / CARD
+   ============================================================ */
+.agent-ai-root .metric-card {
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--chatgpt-radius);
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--chatgpt-border);
+  transition: border-color var(--chatgpt-transition), box-shadow var(--chatgpt-transition);
+}
+.agent-ai-root .metric-card:hover {
+  border-color: var(--chatgpt-cyan);
+  box-shadow: 0 0 16px rgba(79, 195, 255, 0.12);
+}
+.agent-ai-root .metric-card .label { font-size: 0.85rem; color: var(--chatgpt-text-secondary); }
+.agent-ai-root .metric-card .value { font-size: 1.6rem; font-weight: 600; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 640px) {
+  .agent-ai-root .main-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+
+/* ============================================================
+   ANIMATIONS (keyframes tetap global -- namanya khas, aman)
+   ============================================================ */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.agent-ai-root .animate-fade { animation: fadeIn 0.3s ease forwards; }
+.agent-ai-root .animate-pulse { animation: pulse 2s ease-in-out infinite; }

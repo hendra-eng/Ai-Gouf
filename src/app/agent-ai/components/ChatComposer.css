@@ -1,0 +1,219 @@
+/* ============================================================
+   ChatComposer -- port of .st-key-composer_bar
+   ============================================================ */
+
+/* [FIX -- posisi composer] Sebelumnya position:fixed + left:50% +
+   translateX(-50%) menghitung tengah dari LEBAR SELURUH LAYAR BROWSER
+   (viewport), padahal .app-shell punya sidebar di kiri -- akibatnya
+   composer kelihatan "geser" ke kanan, tidak sejajar dengan bubble chat
+   yang tengahnya dihitung dari lebar .main-container (sudah dikurangi
+   sidebar). Sekarang pakai position:sticky -- composer tetap child normal
+   di dalam .main-container (ikut lebar & margin:auto yang SAMA persis
+   dengan bubble pesan di atasnya), cuma "ditempel" ke bawah viewport yang
+   terlihat selama container itu di-scroll. Sidebar sama sekali tidak ikut
+   dihitung lagi karena composer tidak lagi keluar dari .main-container. */
+.composer-wrap.fixed {
+  position: sticky;
+  bottom: 1.25rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  z-index: 999;
+}
+@media (min-width: 768px) { .composer-wrap.fixed { max-width: 48rem; } }
+@media (min-width: 1200px) { .composer-wrap.fixed { max-width: 56rem; } }
+
+.composer-wrap.landing {
+  position: relative;
+  margin-top: 2rem;
+  box-shadow: var(--chatgpt-shadow);
+  border-radius: var(--chatgpt-radius-lg);
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(var(--chatgpt-glass-blur));
+  -webkit-backdrop-filter: blur(var(--chatgpt-glass-blur));
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-lg);
+  padding: 0.5rem 0.6rem;
+  box-shadow: var(--chatgpt-shadow);
+  transition: border-color var(--chatgpt-transition), box-shadow var(--chatgpt-transition), background-color var(--chatgpt-transition);
+}
+.composer-bar:focus-within {
+  border-color: var(--chatgpt-cyan);
+  background-color: rgba(2, 132, 199, 0.03);
+  box-shadow: 0 0 0 3px var(--chatgpt-cyan-dim), var(--chatgpt-shadow);
+}
+
+/* [BARU] Seluruh bar meredup & kursor jadi "dilarang" selama AI masih
+   memproses pesan sebelumnya -- tombol upload/kirim & input teks sendiri
+   masing-masing sudah dinonaktifkan lewat atribut `disabled` (lihat
+   ChatComposer.jsx), style ini cuma penanda visual tambahan supaya jelas
+   seluruh composer sedang tidak bisa dipakai, bukan cuma elemen per elemen. */
+.composer-bar.is-disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.composer-bar.is-disabled:focus-within {
+  border-color: var(--chatgpt-border);
+  box-shadow: var(--chatgpt-shadow);
+}
+
+/* Upload (+) button */
+.upload-btn {
+  position: relative;
+  width: 2.2rem;
+  height: 2.2rem;
+  min-width: 2.2rem;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text);
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--chatgpt-transition), background-color var(--chatgpt-transition);
+}
+.upload-btn:hover { color: var(--chatgpt-cyan); background-color: rgba(79, 195, 255, 0.08); }
+.upload-btn:disabled { cursor: not-allowed; }
+.upload-btn:disabled:hover { color: var(--chatgpt-text); background-color: transparent; }
+
+/* Text input */
+.composer-input {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  padding: 0.4rem 0.3rem;
+  color: var(--chatgpt-text);
+  font-size: 0.95rem;
+}
+.composer-input::placeholder { color: var(--chatgpt-text-dim); }
+.composer-input:disabled { cursor: not-allowed; }
+
+/* [BARU] Stop button -- muncul di sebelah kiri "Kirim" hanya selama AI
+   sedang memproses pesan/file sebelumnya (lihat ChatComposer.jsx). Bentuk
+   kotak kecil di dalam lingkaran, meniru tombol stop ChatGPT/Claude. */
+.stop-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  min-width: 2.2rem;
+  border-radius: 999px;
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid var(--chatgpt-border-light);
+  color: var(--chatgpt-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.3rem;
+  transition: all var(--chatgpt-transition);
+}
+.stop-btn:hover {
+  background: linear-gradient(135deg, #ff6b6b 0%, #e04a4a 100%);
+  border-color: transparent;
+  box-shadow: 0 0 16px rgba(255, 107, 107, 0.35);
+}
+.stop-btn-icon {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  background-color: currentColor;
+}
+
+/* [BARU] Voice/mic button -- selalu di sebelah kiri "Kirim". Berdenyut
+   merah (.is-listening) selama benar-benar merekam, lewat Web Speech API
+   (lihat ChatComposer.jsx) -- tidak ada request ke backend untuk ini. */
+.voice-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  min-width: 2.2rem;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--chatgpt-transition), background-color var(--chatgpt-transition);
+}
+.voice-btn:hover:not(:disabled) { color: var(--chatgpt-cyan); background-color: rgba(79, 195, 255, 0.08); }
+.voice-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.voice-btn.is-listening {
+  color: #ff6b6b;
+  background-color: rgba(255, 107, 107, 0.12);
+  animation: voice-pulse 1.1s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0); }
+}
+
+/* Send button */
+.send-btn {
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--chatgpt-text);
+  padding: 0.35rem 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--chatgpt-transition);
+}
+.send-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4fc3ff 0%, #2a9fe0 100%);
+  color: #04121f;
+  box-shadow: 0 0 16px rgba(79, 195, 255, 0.4);
+}
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+/* Chip file row */
+.chip-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chip-file {
+  background-color: var(--chatgpt-surface-light);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--chatgpt-border-light);
+  border-radius: var(--chatgpt-radius-sm);
+  color: var(--chatgpt-text);
+  padding: 0.3rem 0.7rem;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--chatgpt-transition);
+}
+.chip-file:hover {
+  background-color: var(--chatgpt-surface);
+  border-color: var(--chatgpt-danger);
+  color: var(--chatgpt-danger);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 640px) {
+  .composer-bar { padding: 0.4rem 0.4rem; }
+  .upload-btn { width: 1.8rem; height: 1.8rem; min-width: 1.8rem; font-size: 1.1rem; }
+  .stop-btn { width: 1.8rem; height: 1.8rem; min-width: 1.8rem; }
+  .voice-btn { width: 1.8rem; height: 1.8rem; min-width: 1.8rem; }
+  .voice-btn svg { width: 15px; height: 15px; }
+  .composer-input { font-size: 0.85rem; padding: 0.3rem 0.2rem; }
+  .send-btn { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+}

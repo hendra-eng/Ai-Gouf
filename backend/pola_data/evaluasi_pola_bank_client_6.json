@@ -1,0 +1,19 @@
+{
+  "11200002||11300003": {
+    "no_akun_debet": 11200002,
+    "nama_akun_debet": "BANK MANDIRI",
+    "no_akun_kredit": 11300003,
+    "nama_akun_kredit": "PIUTANG USAHA",
+    "jumlah_signature_berbeda": 15,
+    "contoh_signature": [
+      "TIDAK_ADA_KETERANGAN (MASUK)",
+      "MCM (MASUK)",
+      "LABU (MASUK)",
+      "BELANJA (MASUK)",
+      "ND (MASUK)"
+    ],
+    "pertama_terdeteksi": "2026-08-05T19:08:48.181356",
+    "terakhir_terdeteksi": "2026-08-18T16:07:06.610541",
+    "jumlah_kemunculan_sesi": 10
+  }
+}

@@ -1,0 +1,150 @@
+/* ============================================================
+   ChecklistPembelian -- modal checklist "Mau mulai dari yang mana?"
+   ============================================================ */
+
+.checklist-pembelian {
+  background-color: var(--chatgpt-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--chatgpt-border);
+  border-radius: var(--chatgpt-radius-lg, 1.1rem);
+  box-shadow: var(--chatgpt-shadow);
+  max-width: 34rem;
+  width: 100%;
+  margin: 0.6rem 0 1.2rem;
+  overflow: hidden;
+}
+
+.checklist-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem 0.85rem;
+  font-weight: 600;
+  color: var(--chatgpt-text);
+  line-height: 1.4;
+  border-bottom: 1px solid var(--chatgpt-border-light, var(--chatgpt-border));
+}
+
+.checklist-close {
+  background: transparent;
+  border: none;
+  color: var(--chatgpt-text-secondary, var(--chatgpt-text));
+  font-size: 0.95rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.15rem;
+  border-radius: 999px;
+  transition: color var(--chatgpt-transition), background-color var(--chatgpt-transition);
+  flex-shrink: 0;
+}
+.checklist-close:hover {
+  color: var(--chatgpt-danger, #dc2626);
+  background-color: rgba(15, 23, 42, 0.05);
+}
+
+.checklist-items {
+  display: flex;
+  flex-direction: column;
+  padding: 0.35rem 0.4rem;
+}
+
+.checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  transition: background-color var(--chatgpt-transition);
+}
+.checklist-row:hover { background-color: rgba(15, 23, 42, 0.04); }
+.checklist-row.checked { background-color: rgba(2, 132, 199, 0.08); }
+.checklist-row:not(:last-child) { border-bottom: 1px solid rgba(15, 23, 42, 0.08); }
+
+.checklist-row input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  min-width: 1.05rem;
+  accent-color: var(--chatgpt-cyan);
+  cursor: pointer;
+}
+
+.checklist-checkbox-placeholder {
+  width: 1.05rem;
+  height: 1.05rem;
+  min-width: 1.05rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--chatgpt-border-light, var(--chatgpt-border));
+}
+
+.checklist-label {
+  color: var(--chatgpt-text);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+.checklist-label strong { font-weight: 600; margin-right: 0.15rem; }
+.checklist-label-dim { color: var(--chatgpt-text-dim, var(--chatgpt-text-secondary)); font-style: italic; }
+
+.checklist-something-else-form {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+}
+.checklist-something-else-form input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--chatgpt-border-light, var(--chatgpt-border));
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--chatgpt-text);
+  font-size: 0.88rem;
+  outline: none;
+}
+.checklist-something-else-form input:focus { border-color: var(--chatgpt-cyan); }
+.checklist-something-else-form button {
+  background-color: var(--chatgpt-surface-light);
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  color: var(--chatgpt-text);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.checklist-something-else-form button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.checklist-footer {
+  padding: 0.7rem 0.9rem 0.9rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.checklist-submit {
+  background: linear-gradient(135deg, #4fc3ff 0%, #2a9fe0 100%);
+  color: #04121f;
+  border: none;
+  border-radius: 999px;
+  padding: 0.5rem 1.2rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(79, 195, 255, 0.3);
+  transition: opacity var(--chatgpt-transition), box-shadow var(--chatgpt-transition);
+}
+.checklist-submit:disabled {
+  background: var(--chatgpt-surface-light);
+  color: var(--chatgpt-text-dim, var(--chatgpt-text-secondary));
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 640px) {
+  .checklist-header { font-size: 0.88rem; padding: 0.85rem 0.9rem 0.7rem; }
+  .checklist-label { font-size: 0.86rem; }
+}

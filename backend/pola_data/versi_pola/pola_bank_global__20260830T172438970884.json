@@ -1,0 +1,777 @@
+{
+  "_meta_versi": {
+    "disimpan_pada": "2026-08-30T17:24:38.970982",
+    "sumber_perubahan": "proses_file_rekening_koran (auto dari data asli)",
+    "jumlah_aturan": 96
+  },
+  "aturan": {
+    "ONUS||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "NBMB||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BRIVA8077708129988003IBIZTKP||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BRIVA5271825051501IBIZMAB||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PRCH532659501833191301066242#||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PRCH532659501833191301079200#||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "6013012665420318#000305032710#ATM||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "IBIZ||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "WBNKTRF358501048409536TO||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TIDAK_ADA_KETERANGAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "MCM||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "LABU||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BELANJA||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "ND||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BL-000001567-||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BL-000001560-||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "MONTHLY||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PELET||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PAKAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "KATUL||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PEMBY||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260703BNINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260703BDINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "DEDAK||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "FELIBITE||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260705BNINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "UMPAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "KR||MASUK": {
+      "no_akun_debet": 11200001,
+      "nama_akun_debet": "BANK BCA",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TRSF||MASUK": {
+      "no_akun_debet": 11200001,
+      "nama_akun_debet": "BANK BCA",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "SETORAN||MASUK": {
+      "no_akun_debet": 11200001,
+      "nama_akun_debet": "BANK BCA",
+      "no_akun_kredit": 21200002,
+      "nama_akun_kredit": "HUTANG KEPADA PEMEGANG SAHAM",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TRSF||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200001,
+      "nama_akun_kredit": "BANK BCA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BI-FAST||MASUK": {
+      "no_akun_debet": 11200001,
+      "nama_akun_debet": "BANK BCA",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "SWITCHING||MASUK": {
+      "no_akun_debet": 11200001,
+      "nama_akun_debet": "BANK BCA",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TUNAI||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "HALO||KELUAR": {
+      "no_akun_debet": 21300999,
+      "nama_akun_debet": "BIAYA YMH DIBAYAR LAINNYA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "XL||KELUAR": {
+      "no_akun_debet": 21300999,
+      "nama_akun_debet": "BIAYA YMH DIBAYAR LAINNYA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "MPN||KELUAR": {
+      "no_akun_debet": 21400004,
+      "nama_akun_debet": "HUTANG PAJAK 25/29",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "QRISOFFUS_3_260711_001999145903_SUMBER||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "WBNKSTOR094601045809536TO||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "ORDERAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "4KARUNG||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260708PDJBIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260708BSMDIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PESANAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BAYAR||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "SAM||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260711DANAIDJ1010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BL-000001650-||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TOKOLELE||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "SHOPEE_||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260713BSMDIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260713BBLUIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "ATAS||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260713BNINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260714BNINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260714SSPIIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260715SSPIIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "CAT||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST140301000103562SURADI||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST140301000103562YUSNIARTI||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "08129988003|29SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "628129988003|25SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "628129988003|74SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "08129988003|12SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "INTEREST||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 70000007,
+      "nama_akun_kredit": "PENDAPATAN BUNGA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TAX||KELUAR": {
+      "no_akun_debet": 70000006,
+      "nama_akun_debet": "BIAYA PAJAK ATAS BUNGA",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST140301000103562PUTERI||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST140301000103562ILHAM||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "628129988003|42SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BFST140301000103562AGUS||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "DANA20260725033923722673SURADIWIYONO||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "EDCSETOR#||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "628129988003|47SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "DANA20260729034028376073SURADIWIYONO||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "GOPAY||MASUK": {
+      "no_akun_debet": 11200003,
+      "nama_akun_debet": "BANK BRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "628129988003|58SMS|||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200003,
+      "nama_akun_kredit": "BANK BRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260716BNINIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BR||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "GT||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PEMBELIAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260717SSPIIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "ZEOLITE||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260723BSMDIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PEMBAYARAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "TIDAK_ADA_KETERANGAN||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260725BSMDIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260725SSPIIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "MAKANAN||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260727JAGBIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260728BTANIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "PUR||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260729BMRIIDJA010O||KELUAR": {
+      "no_akun_debet": 11100998,
+      "nama_akun_debet": "AYAT SILANG",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "20260730SSPIIDJA010O||MASUK": {
+      "no_akun_debet": 11200002,
+      "nama_akun_debet": "BANK MANDIRI",
+      "no_akun_kredit": 11300003,
+      "nama_akun_kredit": "PIUTANG USAHA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BL-000001779-||KELUAR": {
+      "no_akun_debet": 21200001,
+      "nama_akun_debet": "HUTANG USAHA",
+      "no_akun_kredit": 11200002,
+      "nama_akun_kredit": "BANK MANDIRI",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    },
+    "BIAYA||KELUAR": {
+      "no_akun_debet": 52110001,
+      "nama_akun_debet": "BIAYA ADM BANK",
+      "no_akun_kredit": 11200001,
+      "nama_akun_kredit": "BANK BCA",
+      "konsisten": true,
+      "jumlah_contoh": 1
+    }
+  }
+}
