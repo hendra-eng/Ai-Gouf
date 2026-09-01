@@ -49,7 +49,7 @@ export default function PlanningStatusHero() {
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{fx('Rp 0')}</span>
-              <span>{fx('Budget: Rp 10.20B')}</span>
+              <span>{fx('Budget: Rp 10.20M')}</span>
             </div>
           </div>
         </div>

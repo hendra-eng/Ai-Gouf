@@ -27,7 +27,7 @@ const nearlyDepreciated = [
 const summaryStats = [
   { label: 'Depreciation This Period', value: 'Rp 56.1M', sub: 'Aug 2026' },
   { label: 'Accumulated Depreciation', value: 'Rp 410M', sub: 'All fixed assets' },
-  { label: 'Remaining Book Value', value: 'Rp 1.85B', sub: 'Net book value' },
+  { label: 'Remaining Book Value', value: 'Rp 1.85M', sub: 'Net book value' },
   { label: 'Assets Near Full Depr.', value: '7 assets', sub: 'Within 24 months' },
 ];
 

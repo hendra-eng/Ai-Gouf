@@ -142,7 +142,7 @@ export const documents: FinancialDocument[] = [
     tags: ['Receipt', 'Marketing', 'Expense'],
     aiAnalysis: {
       amount: 24500000,
-      flags: ['Amount differs from expense claim by Rp 500K'],
+      flags: ['Amount differs from expense claim by Rp 500Rb'],
       confidence: 78,
     },
   },

@@ -323,7 +323,7 @@ export const clients: Client[] = [
     contactPhone: '+62 21 5555 0010',
     npwp: '10.123.456.7-100.000',
     address: 'Jl. Kuningan Mulia No. 8, Jakarta Selatan',
-    aiInsight: 'Strong growth trajectory. New renewable energy contracts contributing Rp 1.2B incremental revenue.',
+    aiInsight: 'Strong growth trajectory. New renewable energy contracts contributing Rp 1.2M incremental revenue.',
   },
   {
     id: 'client-011',

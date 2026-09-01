@@ -7,7 +7,7 @@ import { useCurrency } from '@/lib/currency';
 const kpiCards = [
   {
     label: 'TOTAL EQUITY',
-    value: 'Rp 4,70B',
+    value: 'Rp 4,70M',
     subValue: 'Jan–Aug 2026 YTD',
     change: 9.6,
     changeLabel: 'vs prev period',
@@ -16,7 +16,7 @@ const kpiCards = [
   },
   {
     label: 'PAID-IN CAPITAL',
-    value: 'Rp 3,00B',
+    value: 'Rp 3,00M',
     subValue: 'Authorized share capital',
     change: 0.0,
     changeLabel: 'vs prev period',
@@ -25,7 +25,7 @@ const kpiCards = [
   },
   {
     label: 'RETAINED EARNINGS',
-    value: 'Rp 1,24B',
+    value: 'Rp 1,24M',
     subValue: 'Accumulated prior years',
     change: 14.8,
     changeLabel: 'vs prev period',
@@ -34,7 +34,7 @@ const kpiCards = [
   },
   {
     label: 'CURRENT YEAR PROFIT',
-    value: 'Rp 1,84B',
+    value: 'Rp 1,84M',
     subValue: 'Net profit YTD 2026',
     change: 8.4,
     changeLabel: 'vs prev period',

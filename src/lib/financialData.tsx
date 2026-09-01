@@ -209,14 +209,14 @@ export const PL_AI_INSIGHTS = [
 ];
 
 export const BS_AI_INSIGHTS = [
-  { id: 1, title: 'Asset Growth', description: 'Total assets increased 17.5% YTD from Rp 5.82B to Rp 6.84B, primarily driven by cash accumulation and accounts receivable growth.', metric: '+17.5% YTD', severity: 'positive' as const },
+  { id: 1, title: 'Asset Growth', description: 'Total assets increased 17.5% YTD from Rp 5.82M to Rp 6.84M, primarily driven by cash accumulation and accounts receivable growth.', metric: '+17.5% YTD', severity: 'positive' as const },
   { id: 2, title: 'Liquidity', description: 'Current ratio of 2.84x remains well above the minimum threshold of 1.5x, indicating strong short-term liquidity position.', metric: 'CR: 2.84x', severity: 'positive' as const },
   { id: 3, title: 'Debt Exposure', description: 'Long-term debt represents 8.4% of total liabilities. Debt-to-equity ratio of 0.46x is within acceptable range for the industry.', metric: 'D/E: 0.46x', severity: 'neutral' as const },
-  { id: 4, title: 'Equity Growth', description: 'Equity increased 36.6% YTD from Rp 3.44B to Rp 4.70B, primarily due to retained profitability and strong net income generation.', metric: '+36.6% YTD', severity: 'positive' as const },
+  { id: 4, title: 'Equity Growth', description: 'Equity increased 36.6% YTD from Rp 3.44M to Rp 4.70M, primarily due to retained profitability and strong net income generation.', metric: '+36.6% YTD', severity: 'positive' as const },
 ];
 
 export const CF_AI_INSIGHTS = [
-  { id: 1, title: 'Healthy Operating Cash Flow', description: 'Operating activities generated Rp 2.84B in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.', metric: 'OCF: Rp 2.84B', severity: 'positive' as const },
+  { id: 1, title: 'Healthy Operating Cash Flow', description: 'Operating activities generated Rp 2.84M in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.', metric: 'OCF: Rp 2.84M', severity: 'positive' as const },
   { id: 2, title: 'Cash Concentration', description: 'Customer collections represent 95.4% of total operating cash inflows, indicating healthy revenue collection efficiency.', metric: '95.4% from customers', severity: 'positive' as const },
   { id: 3, title: 'Upcoming Cash Pressure', description: 'Projected cash balance may decline in December 2026 due to scheduled dividend payments of Rp 640M. Monitor cash position closely.', metric: 'Dec: -Rp 480M', severity: 'warning' as const },
   { id: 4, title: 'Investment Activity', description: 'Capital expenditure of Rp 700M in the current period reflects ongoing investment in equipment and technology infrastructure.', metric: 'CapEx: Rp 700M', severity: 'neutral' as const },
@@ -230,13 +230,15 @@ export const FINANCIALS = {
 };
 
 // Utility: Format currency (values expected in millions IDR)
+// Canonical IDR structure: T (Triliun) > M (Milyar) > Jt (Juta) > Rb (Ribu).
 export function formatIDR(value: number, compact = true): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? '-' : '';
   if (compact) {
-    if (abs >= 1000) return `${sign}Rp ${(abs / 1000).toFixed(2)}B`;
-    if (abs >= 1) return `${sign}Rp ${abs.toFixed(0)}M`;
-    return `${sign}Rp ${(abs * 1000).toFixed(0)}K`;
+    if (abs >= 1000000) return `${sign}Rp ${(abs / 1000000).toFixed(2).replace('.', ',')}T`;
+    if (abs >= 1000) return `${sign}Rp ${(abs / 1000).toFixed(2).replace('.', ',')}M`;
+    if (abs >= 1) return `${sign}Rp ${abs.toFixed(0)}Jt`;
+    return `${sign}Rp ${(abs * 1000).toFixed(0)}Rb`;
   }
   return `${sign}Rp ${abs.toLocaleString('id-ID')}`;
 }

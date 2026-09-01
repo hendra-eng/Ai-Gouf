@@ -7,7 +7,7 @@ import { useCurrency } from '@/lib/currency';
 const kpiCards = [
   {
     label: 'TOTAL ASSETS',
-    value: 'Rp 6,84B',
+    value: 'Rp 6,84M',
     subValue: 'Jan–Aug 2026 YTD',
     change: 14.2,
     changeLabel: 'vs prev period',
@@ -16,7 +16,7 @@ const kpiCards = [
   },
   {
     label: 'CURRENT ASSETS',
-    value: 'Rp 4,12B',
+    value: 'Rp 4,12M',
     subValue: '60.2% of total assets',
     change: 8.6,
     changeLabel: 'vs prev period',
@@ -25,7 +25,7 @@ const kpiCards = [
   },
   {
     label: 'NON-CURRENT ASSETS',
-    value: 'Rp 2,72B',
+    value: 'Rp 2,72M',
     subValue: '39.8% of total assets',
     change: 22.5,
     changeLabel: 'vs prev period',
@@ -34,7 +34,7 @@ const kpiCards = [
   },
   {
     label: 'CASH & BANK',
-    value: 'Rp 2,96B',
+    value: 'Rp 2,96M',
     subValue: '4.8 mo runway',
     change: 5.7,
     changeLabel: 'vs prev period',
@@ -43,7 +43,7 @@ const kpiCards = [
   },
   {
     label: 'ACCOUNTS RECEIVABLE',
-    value: 'Rp 1,24B',
+    value: 'Rp 1,24M',
     subValue: 'Rp 320M overdue',
     change: -4.3,
     changeLabel: 'vs prev period',
@@ -62,7 +62,7 @@ const kpiCards = [
   },
   {
     label: 'FIXED ASSETS (NET)',
-    value: 'Rp 1,85B',
+    value: 'Rp 1,85M',
     subValue: 'After accumulated depreciation',
     change: 18.4,
     changeLabel: 'vs prev period',

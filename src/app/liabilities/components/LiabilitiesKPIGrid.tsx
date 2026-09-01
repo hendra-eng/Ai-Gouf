@@ -7,7 +7,7 @@ import { useCurrency } from '@/lib/currency';
 const kpiCards = [
   {
     label: 'TOTAL LIABILITIES',
-    value: 'Rp 2,14B',
+    value: 'Rp 2,14M',
     subValue: 'Jan–Aug 2026 YTD',
     change: 4.8,
     changeLabel: 'vs prev period',
@@ -16,7 +16,7 @@ const kpiCards = [
   },
   {
     label: 'CURRENT LIABILITIES',
-    value: 'Rp 1,28B',
+    value: 'Rp 1,28M',
     subValue: '59.8% of total liabilities',
     change: 6.2,
     changeLabel: 'vs prev period',

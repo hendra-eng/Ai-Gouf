@@ -32,9 +32,9 @@ export default function LiabilitiesContent() {
 
       <div className="mb-5">
         <BalanceValidationCard
-          assets={fx('Rp 6,84B')}
-          liabilities={fx('Rp 2,14B')}
-          equity={fx('Rp 4,70B')}
+          assets={fx('Rp 6,84M')}
+          liabilities={fx('Rp 2,14M')}
+          equity={fx('Rp 4,70M')}
           difference={fx('Rp 0')}
           balanced={true}
         />

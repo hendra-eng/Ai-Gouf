@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
-import KpiCard from '@/components/ui/KpiCard';
+import KpiCard from '@/components/shared/KpiCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
 import { customers, invoices, collectionForecast, formatRupiah, riskColors, arStatusColors, type Customer, type Invoice, type ARStatus } from '@/lib/mockData';
@@ -76,7 +76,7 @@ export default function ARContent() {
   };
 
   const kpis = [
-    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: 'Rp 1.24B', subLabel: 'Jan–Aug 2026', change: '-4.3% vs prev period', changePositive: false, sparkline: [980, 1020, 995, 1065, 1038, 1162, 1085, 1240], color: 'var(--primary)' },
+    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: 'Rp 1.24M', subLabel: 'Jan–Aug 2026', change: '-4.3% vs prev period', changePositive: false, sparkline: [980, 1020, 995, 1065, 1038, 1162, 1085, 1240], color: 'var(--primary)' },
     { id: 'kpi-ar-current', label: 'CURRENT RECEIVABLES', value: 'Rp 620M', subLabel: '50% of total AR', change: '+2.1% vs prev period', changePositive: true, sparkline: [580, 595, 610, 600, 615, 608, 612, 620], color: 'var(--success)' },
     { id: 'kpi-ar-overdue', label: 'OVERDUE RECEIVABLES', value: 'Rp 320M', subLabel: '25.8% of total AR', change: '+18.4% vs prev period', changePositive: false, alert: true, sparkline: [180, 195, 210, 205, 240, 268, 295, 320], color: 'var(--danger)' },
     { id: 'kpi-ar-week', label: 'DUE THIS WEEK', value: 'Rp 142M', subLabel: '3 invoices pending', change: '', changeNeutral: true, sparkline: [85, 92, 110, 98, 125, 132, 138, 142], color: 'var(--warning)' },

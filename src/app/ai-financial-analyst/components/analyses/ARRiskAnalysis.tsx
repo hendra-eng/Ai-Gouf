@@ -44,7 +44,7 @@ export default function ARRiskAnalysis() {
           <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
-          Total AR stands at <strong>{fx('Rp 1.24B')}</strong> with <strong>{fx('Rp 320M')} (25.8%) overdue</strong> — a concerning trend that has grown +18.4% vs the prior period.
+          Total AR stands at <strong>{fx('Rp 1.24M')}</strong> with <strong>{fx('Rp 320M')} (25.8%) overdue</strong> — a concerning trend that has grown +18.4% vs the prior period.
           DSO has deteriorated to 42 days against a target of 35 days. The risk is concentrated in 2 customers:
           PT Mitra Solusi Digital ({fx('Rp 185M')}, 90+ days) and PT Sinar Harapan Nusantara ({fx('Rp 105M')}, 31–60 days).
           Immediate collection action is required on the critical accounts. Bad debt exposure of {fx('Rp 72M')} warrants provisioning review.
@@ -54,7 +54,7 @@ export default function ARRiskAnalysis() {
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total AR', value: 'Rp 1.24B', color: 'text-foreground', bg: 'bg-card' },
+          { label: 'Total AR', value: 'Rp 1.24M', color: 'text-foreground', bg: 'bg-card' },
           { label: 'Overdue AR', value: 'Rp 320M', color: 'text-danger', bg: 'bg-danger-bg' },
           { label: '90+ Days', value: 'Rp 85M', color: 'text-danger', bg: 'bg-danger-bg' },
           { label: 'DSO', value: '42 days', color: 'text-warning', bg: 'bg-warning-bg' },

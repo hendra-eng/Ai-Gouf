@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
-import KpiCard from '@/components/ui/KpiCard';
+import KpiCard from '@/components/shared/KpiCard';
 import dynamic from 'next/dynamic';
 
 const OverviewCharts = dynamic(() => import('./OverviewCharts'), { ssr: false });
@@ -107,7 +107,7 @@ export default function OverviewContent() {
             <span className="text-sm font-600 text-foreground">Accounts Receivable</span>
             <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
           </div>
-          <p className="text-2xl font-700 text-foreground tabular-nums">Rp 1.24B</p>
+          <p className="text-2xl font-700 text-foreground tabular-nums">Rp 1.24M</p>
           <p className="text-xs text-danger mt-0.5">Rp 320M overdue — action required</p>
         </Link>
         <Link href="/accounts-payable" className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all group">

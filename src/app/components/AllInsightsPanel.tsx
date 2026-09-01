@@ -34,7 +34,7 @@ const insights = [
     severity: 'positive' as const,
     icon: CheckCircle,
     title: 'Cash Position Healthy',
-    body: 'Current cash reserves of Rp 2.96B cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.',
+    body: 'Current cash reserves of Rp 2,96M cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.',
     metric: '4.8 months runway',
     metricVariant: 'positive' as const,
     action: 'View Cash Flow',

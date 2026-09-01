@@ -17,13 +17,13 @@ export default function EquityAIInsights() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         <FinancialInsightCard
           title="Strong Equity Growth"
-          description={fx("Total equity grew 9.6% YTD, driven by current-year net profit of Rp 1.84B. This reflects healthy retained earnings accumulation and no dilutive capital events.")}
+          description={fx("Total equity grew 9.6% YTD, driven by current-year net profit of Rp 1.84M. This reflects healthy retained earnings accumulation and no dilutive capital events.")}
           metric={fx("+Rp 410M · 9.6% YTD growth")}
           severity="positive"
         />
         <FinancialInsightCard
           title="Retained Earnings Expansion"
-          description={fx("Retained earnings increased Rp 1.16B net of dividends paid, representing 24.7% growth. Profit retention rate is 52.2% after the Rp 880M dividend payment.")}
+          description={fx("Retained earnings increased Rp 1.16M net of dividends paid, representing 24.7% growth. Profit retention rate is 52.2% after the Rp 880M dividend payment.")}
           metric={fx("Rp 2,040M · +53.6% vs Jan 2026")}
           severity="positive"
         />
@@ -35,8 +35,8 @@ export default function EquityAIInsights() {
         />
         <FinancialInsightCard
           title="Stable Capital Base"
-          description={fx("Paid-in capital of Rp 3.00B has remained unchanged in 2026. No share issuances or buybacks have occurred, maintaining a stable ownership structure.")}
-          metric={fx("Rp 3.00B · No capital movement")}
+          description={fx("Paid-in capital of Rp 3.00M has remained unchanged in 2026. No share issuances or buybacks have occurred, maintaining a stable ownership structure.")}
+          metric={fx("Rp 3.00M · No capital movement")}
           severity="info"
         />
         <FinancialInsightCard

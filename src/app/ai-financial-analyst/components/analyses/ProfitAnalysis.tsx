@@ -37,8 +37,9 @@ const drivers = [
   { category: 'Tax Adjustment', impact: -28000000, type: 'negative', description: 'Prior year tax provision adjustment' },
 ];
 
-const fmt = (v: number) => `${(v / 1000000000).toFixed(2)}B`;
-const fmtM = (v: number) => `${v}M`;
+// v is expressed in raw IDR; fmtM receives values already in millions (Jt).
+const fmt = (v: number) => `${(v / 1000000000).toFixed(2).replace('.', ',')}M`;
+const fmtM = (v: number) => `${v}Jt`;
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   const { fx } = useCurrency();
@@ -77,7 +78,7 @@ export default function ProfitAnalysis() {
           <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
-          Net profit for Jan–Aug 2026 is <strong>{fx('Rp 1.84B')}</strong>, representing a margin of <strong>21.8%</strong> on revenue of {fx('Rp 8.42B')}.
+          Net profit for Jan–Aug 2026 is <strong>{fx('Rp 1.84M')}</strong>, representing a margin of <strong>21.8%</strong> on revenue of {fx('Rp 8.42M')}.
           While revenue grew +12.8% vs the same period last year, net profit growth was constrained to +8.4% due to two primary pressures:
           operating expenses increased +7.1% driven by IT infrastructure investment, and COGS rose +8.4% due to raw material cost inflation.
           The margin compression is <strong>partially structural</strong> and partially cyclical — Q3 should see normalization as the IT project completes.
@@ -167,7 +168,7 @@ export default function ProfitAnalysis() {
 
         {drillLevel === 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground mb-3">{fx('Total Opex: Rp 1.39B — click to investigate each category')}</p>
+            <p className="text-xs text-muted-foreground mb-3">{fx('Total Opex: Rp 1.39M — click to investigate each category')}</p>
             {[
               { name: 'IT Infrastructure', amount: 385000000, change: '+28.4%', pct: 27.7, color: 'bg-danger' },
               { name: 'Salaries & Benefits', amount: 420000000, change: '+5.2%', pct: 30.2, color: 'bg-primary' },

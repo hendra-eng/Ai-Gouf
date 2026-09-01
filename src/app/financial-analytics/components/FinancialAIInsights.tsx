@@ -20,8 +20,8 @@ const INSIGHTS = [
   {
     id: 'fa-ai-2',
     title: 'Liquidity: Cash Position Remains Strong',
-    summary: 'Cash reserves of Rp 2.96B remain well above the internal minimum threshold of Rp 1.50B. Current ratio of 2.41x provides comfortable short-term liquidity buffer.',
-    numbers: ['Cash: Rp 2.96B', 'Current Ratio: 2.41x', 'Quick Ratio: 2.12x', 'Cash Runway: 30 months'],
+    summary: 'Cash reserves of Rp 2.96M remain well above the internal minimum threshold of Rp 1.50M. Current ratio of 2.41x provides comfortable short-term liquidity buffer.',
+    numbers: ['Cash: Rp 2.96M', 'Current Ratio: 2.41x', 'Quick Ratio: 2.12x', 'Cash Runway: 30 months'],
     factors: ['Strong cash conversion from operations', 'Controlled CapEx spending', 'Improving collection rates'],
     recommendation: 'Consider deploying excess cash strategically — short-term instruments or accelerated debt reduction.',
     severity: 'positive',
@@ -31,8 +31,8 @@ const INSIGHTS = [
   {
     id: 'fa-ai-3',
     title: 'Receivables: Concentration Risk Requires Attention',
-    summary: 'A concentration of overdue receivables in CV Mitra Digital Prima (Rp 380M, DSO 239 days) represents meaningful collection risk. Overall AR balance is Rp 1.24B.',
-    numbers: ['Total AR: Rp 1.24B', 'CV Mitra Digital: Rp 380M overdue', 'DSO: 239 days', 'Overall Collection Rate: 93.8%'],
+    summary: 'A concentration of overdue receivables in CV Mitra Digital Prima (Rp 380M, DSO 239 days) represents meaningful collection risk. Overall AR balance is Rp 1.24M.',
+    numbers: ['Total AR: Rp 1.24M', 'CV Mitra Digital: Rp 380M overdue', 'DSO: 239 days', 'Overall Collection Rate: 93.8%'],
     factors: ['Single customer concentration in overdue AR', 'Overall collection rate healthy at 93.8%', 'Top 3 customers show strong payment patterns'],
     recommendation: 'Escalate collection efforts on CV Mitra Digital. Review credit terms and consider requiring advance payments.',
     severity: 'warning',

@@ -300,6 +300,44 @@
     margin-bottom: 2px;
     margin-top: 12px;
   }
+
+  /* ===== Ditambahkan dari kodingan 2, disesuaikan ke tema Kodingan 1 (pakai CSS var, bukan token custom) ===== */
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead th {
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider border-b;
+    color: var(--muted-foreground);
+    background-color: var(--secondary);
+    border-color: var(--border);
+  }
+  .data-table tbody tr {
+    @apply transition-colors duration-100 cursor-pointer border-b;
+    border-color: var(--border);
+  }
+  .data-table tbody tr:hover {
+    background-color: var(--secondary);
+  }
+  .data-table tbody td {
+    @apply px-4 py-3 text-sm;
+    color: var(--foreground);
+  }
+
+  .filter-btn {
+    @apply flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors duration-150;
+    background-color: var(--card);
+    color: var(--muted-foreground);
+    border-color: var(--border);
+  }
+  .filter-btn:hover {
+    background-color: var(--secondary);
+    color: var(--foreground);
+  }
+  .filter-btn.active {
+    border-color: var(--primary);
+    background-color: #eff6ff;
+    color: var(--primary);
+  }
 }
 
 @keyframes fadeIn {

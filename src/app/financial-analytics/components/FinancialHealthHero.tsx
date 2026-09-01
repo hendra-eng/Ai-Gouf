@@ -10,7 +10,7 @@ const HealthRadarInner = dynamic(() => import('./HealthRadarInner'), { ssr: fals
 
 const DIMENSIONS = [
   { label: 'Profitability', score: 88, icon: 'ChartBarIcon', color: 'text-positive', detail: 'Net Margin 21.9%, EBITDA 27.4%' },
-  { label: 'Liquidity', score: 92, icon: 'BanknotesIcon', color: 'text-chart-2', detail: 'Current Ratio 2.41, Cash Rp 2.96B' },
+  { label: 'Liquidity', score: 92, icon: 'BanknotesIcon', color: 'text-chart-2', detail: 'Current Ratio 2.41, Cash Rp 2.96M' },
   { label: 'Solvency', score: 79, icon: 'ScaleIcon', color: 'text-chart-3', detail: 'D/E 0.21, Interest Coverage 27.5x' },
   { label: 'Efficiency', score: 74, icon: 'ArrowPathIcon', color: 'text-chart-4', detail: 'DSO 53.8d, DPO 66.8d' },
   { label: 'Growth', score: 83, icon: 'ArrowTrendingUpIcon', color: 'text-chart-5', detail: 'Revenue +12.8%, NP +16.2%' },

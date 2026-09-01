@@ -30,13 +30,13 @@ export default function AssetsAIInsights() {
         <FinancialInsightCard
           title="Asset Concentration Risk"
           description={fx("62% of total fixed assets are concentrated in technology equipment and software. Consider diversifying or insuring these assets.")}
-          metric={fx("62% · Rp 1.15B in tech assets")}
+          metric={fx("62% · Rp 1.15M in tech assets")}
           severity="warning"
         />
         <FinancialInsightCard
           title="Cash Liquidity Strong"
           description={fx("Cash & Bank represents 43.3% of total assets, providing strong liquidity with 4.8 months of operational runway.")}
-          metric={fx("Rp 2.96B · 4.8 mo runway")}
+          metric={fx("Rp 2.96M · 4.8 mo runway")}
           severity="positive"
         />
         <FinancialInsightCard

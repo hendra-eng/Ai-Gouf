@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
-import KpiCard from '@/components/ui/KpiCard';
+import KpiCard from '@/components/shared/KpiCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
 import { vendors, bills, paymentForecastData, formatRupiah, riskColors, apStatusColors, type Vendor, type Bill, type APStatus } from '@/lib/mockData';

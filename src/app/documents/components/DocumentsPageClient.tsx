@@ -8,9 +8,13 @@ import { useCurrency } from '@/lib/currency';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Canonical IDR structure: T (Triliun) > M (Milyar) > Jt (Juta) > Rb (Ribu).
 function formatIDR(n: number): string {
-  if (Math.abs(n) >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)}B`;
-  if (Math.abs(n) >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(0)}M`;
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000_000) return `Rp ${(n / 1_000_000_000_000).toFixed(2).replace('.', ',')}T`;
+  if (abs >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2).replace('.', ',')}M`;
+  if (abs >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(0)}Jt`;
+  if (abs >= 1_000) return `Rp ${(n / 1_000).toFixed(0)}Rb`;
   return `Rp ${n.toLocaleString('id-ID')}`;
 }
 

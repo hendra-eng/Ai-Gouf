@@ -47,21 +47,21 @@ export default function CashFlowAnalysis() {
           <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
-          Operating cash flow YTD is <strong>{fx('Rp 2.26B')}</strong>, healthy and sufficient to cover operations.
+          Operating cash flow YTD is <strong>{fx('Rp 2.26M')}</strong>, healthy and sufficient to cover operations.
           However, investing activities consumed <strong>{fx('Rp 933M')}</strong> — primarily the IT infrastructure investment in Q2.
-          Net cash position stands at <strong>{fx('Rp 2.96B')}</strong> with an estimated <strong>4.8 month runway</strong> at current burn rate.
+          Net cash position stands at <strong>{fx('Rp 2.96M')}</strong> with an estimated <strong>4.8 month runway</strong> at current burn rate.
           May was the only negative net cash flow month (-{fx('Rp 17M')}) due to peak infrastructure spend. Cash runway is adequate but AR collection improvement would significantly strengthen the position.
         </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Opening Cash (Jan)', value: 'Rp 2.07B', color: 'text-foreground', bg: 'bg-card' },
-          { label: 'Operating CF', value: 'Rp 2.26B', color: 'text-success', bg: 'bg-success-bg' },
+          { label: 'Opening Cash (Jan)', value: 'Rp 2.07M', color: 'text-foreground', bg: 'bg-card' },
+          { label: 'Operating CF', value: 'Rp 2.26M', color: 'text-success', bg: 'bg-success-bg' },
           { label: 'Investing CF', value: '-Rp 933M', color: 'text-danger', bg: 'bg-danger-bg' },
           { label: 'Financing CF', value: '-Rp 392M', color: 'text-warning', bg: 'bg-warning-bg' },
           { label: 'Net Cash Flow', value: 'Rp 933M', color: 'text-success', bg: 'bg-success-bg' },
-          { label: 'Closing Cash (Aug)', value: 'Rp 2.96B', color: 'text-primary', bg: 'bg-info-bg' },
+          { label: 'Closing Cash (Aug)', value: 'Rp 2.96M', color: 'text-primary', bg: 'bg-info-bg' },
           { label: 'Cash Runway', value: '4.8 months', color: 'text-success', bg: 'bg-success-bg' },
           { label: 'AR Impact', value: 'Rp 320M', color: 'text-warning', bg: 'bg-warning-bg' },
         ].map((m) => (

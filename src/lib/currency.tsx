@@ -20,21 +20,22 @@ const SYMBOLS: Record<CurrencyCode, string> = {
 };
 
 // Multipliers used by the Indonesian shorthand suffixes found across the app.
+// Canonical IDR structure: T (Triliun) > M (Milyar) > Jt (Juta) > Rb (Ribu).
 const SUFFIX_MULTIPLIERS: Record<string, number> = {
   t: 1e12, // triliun
-  b: 1e9, // billion (miliar, alt spelling)
-  m: 1e9, // miliar
+  b: 1e9, // milyar (alt spelling "B", still accepted when parsing legacy text)
+  m: 1e9, // milyar
   jt: 1e6, // juta
   rb: 1e3, // ribu
-  k: 1e3, // thousand (dipakai formatRupiah/mockData)
+  k: 1e3, // ribu (alt spelling "K", still accepted when parsing legacy text)
 };
 
-// Matches things like "Rp 8,42M", "Rp 1.24B", "Rp 860Jt", "Rp 320M", "Rp 15.000.000", "Rp 58K"
+// Matches things like "Rp 8,42M", "Rp 1,24T", "Rp 860Jt", "Rp 320Rb", "Rp 15.000.000", "Rp 58Rb"
 const RP_PATTERN = /Rp\s?(\d[\d.,]*)\s?(Jt|Rb|K|M|B|T)?\b/gi;
 
 /** Parses a single "Rp ..." shorthand string into a raw IDR number. */
 export function parseRupiah(match: string): number {
-  const m = match.match(/Rp\s?(\d[\d.,]*)\s?(Jt|Rb|M|B|T)?\b/i);
+  const m = match.match(/Rp\s?(\d[\d.,]*)\s?(Jt|Rb|K|M|B|T)?\b/i);
   if (!m) return NaN;
   const [, numStr, suffixRaw] = m;
   const normalized = parseFloat(numStr.replace(/\./g, '').replace(',', '.'));
@@ -52,6 +53,8 @@ export function formatMoney(rawIDR: number, currency: CurrencyCode): string {
   const abs = Math.abs(value);
 
   if (currency === 'IDR') {
+    // T = Triliun, M = Milyar, Jt = Juta, Rb = Ribu
+    if (abs >= 1e12) return `${sign}${symbol} ${(abs / 1e12).toFixed(2).replace('.', ',')}T`;
     if (abs >= 1e9) return `${sign}${symbol} ${(abs / 1e9).toFixed(2).replace('.', ',')}M`;
     if (abs >= 1e6) return `${sign}${symbol} ${Math.round(abs / 1e6)}Jt`;
     if (abs >= 1e3) return `${sign}${symbol} ${Math.round(abs / 1e3)}Rb`;

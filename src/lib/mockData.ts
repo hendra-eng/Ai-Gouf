@@ -226,20 +226,23 @@ export const aiAnalyses: AIAnalysis[] = [
 ];
 
 // ─── FORMATTERS ──────────────────────────────────────────────────────────────
+// Canonical IDR shorthand structure: T (Triliun) > M (Milyar) > Jt (Juta) > Rb (Ribu).
 export function formatRupiah(value: number, compact = false): string {
   if (compact) {
-    if (value >= 1000000000) return `Rp ${(value / 1000000000).toFixed(2)}B`;
-    if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(0)}M`;
-    if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)}K`;
+    if (value >= 1000000000000) return `Rp ${(value / 1000000000000).toFixed(2).replace('.', ',')}T`;
+    if (value >= 1000000000) return `Rp ${(value / 1000000000).toFixed(2).replace('.', ',')}M`;
+    if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(0)}Jt`;
+    if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)}Rb`;
     return `Rp ${value.toLocaleString('id-ID')}`;
   }
   return `Rp ${value.toLocaleString('id-ID')}`;
 }
 
 export function formatCompact(value: number): string {
-  if (value >= 1000000000) return `${(value / 1000000000).toFixed(2)}B`;
-  if (value >= 1000000) return `${(value / 1000000).toFixed(0)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(0)}Jt`;
+  if (value >= 1000000000000) return `${(value / 1000000000000).toFixed(2).replace('.', ',')}T`;
+  if (value >= 1000000000) return `${(value / 1000000000).toFixed(2).replace('.', ',')}M`;
+  if (value >= 1000000) return `${(value / 1000000).toFixed(0)}Jt`;
+  if (value >= 1000) return `${(value / 1000).toFixed(0)}Rb`;
   return value.toString();
 }
 

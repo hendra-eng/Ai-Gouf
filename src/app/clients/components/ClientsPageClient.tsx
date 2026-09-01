@@ -101,10 +101,14 @@ function parseClientsCsv(text: string): Client[] {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Canonical IDR structure: T (Triliun) > M (Milyar) > Jt (Juta) > Rb (Ribu).
 function formatIDR(n: number, compact = true): string {
   if (compact) {
-    if (Math.abs(n) >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)}B`;
-    if (Math.abs(n) >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(0)}M`;
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000_000_000) return `Rp ${(n / 1_000_000_000_000).toFixed(2).replace('.', ',')}T`;
+    if (abs >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2).replace('.', ',')}M`;
+    if (abs >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(0)}Jt`;
+    if (abs >= 1_000) return `Rp ${(n / 1_000).toFixed(0)}Rb`;
   }
   return `Rp ${n.toLocaleString('id-ID')}`;
 }
@@ -385,7 +389,7 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
                         dot={false}
                       />
                       <Tooltip
-                        formatter={(v: number) => [fx(`Rp ${v.toFixed(2)}B`), 'Revenue']}
+                        formatter={(v: number) => [fx(`Rp ${v.toFixed(2).replace('.', ',')}M`), 'Revenue']}
                         contentStyle={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 8 }}
                       />
                     </LineChart>

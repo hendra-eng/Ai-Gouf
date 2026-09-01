@@ -112,9 +112,9 @@ module.exports = {
         '6xl': ['36px', { lineHeight: '44px' }],
       },
       boxShadow: {
-        card: '0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.04)',
-        'card-md': '0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05)',
-        'card-lg': '0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.05)',
+        card: '0 2px 8px -1px rgba(15,23,42,0.10), 0 4px 12px -2px rgba(15,23,42,0.06)',
+        'card-md': '0 8px 16px -3px rgba(15,23,42,0.13), 0 4px 8px -3px rgba(15,23,42,0.08)',
+        'card-lg': '0 16px 28px -6px rgba(15,23,42,0.16), 0 8px 12px -6px rgba(15,23,42,0.08)',
         drawer: '-4px 0 24px rgba(0,0,0,0.12)',
         'card-hover': '0 4px 12px rgba(0,0,0,0.5)',
         glow: '0 0 20px rgba(59,130,246,0.15)',

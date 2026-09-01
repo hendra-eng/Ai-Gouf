@@ -25,7 +25,7 @@ export default function SolvencyEfficiencyAnalytics() {
     { label: 'Debt-to-Equity', value: '0.21', sub: 'Low leverage' },
     { label: 'Debt Ratio', value: debtRatio, sub: 'Assets financed by debt' },
     { label: 'Interest Coverage', value: `${interestCoverage}x`, sub: 'EBITDA / Interest' },
-    { label: 'Total Debt', value: formatIDR(FINANCIALS.totalDebt, true), sub: 'Rp 1.80B' },
+    { label: 'Total Debt', value: formatIDR(FINANCIALS.totalDebt, true), sub: 'Rp 1.80M' },
   ];
 
   const EFFICIENCY = [

@@ -49,7 +49,7 @@ export default function ARCharts() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-md font-600 text-foreground">AR Aging Analysis</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Total AR: {fx('Rp 1.24B')} outstanding</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Total AR: {fx('Rp 1.24M')} outstanding</p>
           </div>
           <span className="text-xs text-danger font-500 bg-danger-bg px-2 py-1 rounded-full">{fx('Rp 320M')} overdue</span>
         </div>

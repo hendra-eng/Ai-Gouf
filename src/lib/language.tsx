@@ -105,10 +105,10 @@ const translations: Dict = {
   'Rp 320M at risk': { en: 'Rp 320M at risk', id: 'Rp 320Jt berisiko', zh: 'Rp 320M 面临风险' },
   'Review AR': { en: 'Review AR', id: 'Tinjau Piutang', zh: '查看应收账款' },
   'Cash Position Healthy': { en: 'Cash Position Healthy', id: 'Posisi Kas Sehat', zh: '现金状况良好' },
-  'Current cash reserves of Rp 2.96B cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.': {
-    en: 'Current cash reserves of Rp 2.96B cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.',
+  'Current cash reserves of Rp 2.96M cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.': {
+    en: 'Current cash reserves of Rp 2.96M cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.',
     id: 'Cadangan kas saat ini sebesar Rp 2,96M mencakup sekitar 4,8 bulan proyeksi beban operasional. Tren pembentukan kas bergerak positif.',
-    zh: '当前现金储备为Rp 2.96B，可覆盖约4.8个月的预计运营支出。现金增长趋势良好。',
+    zh: '当前现金储备为Rp 2.96M，可覆盖约4.8个月的预计运营支出。现金增长趋势良好。',
   },
   '4.8 months runway': { en: '4.8 months runway', id: 'Runway 4,8 bulan', zh: '现金可维持4.8个月' },
   'View Cash Flow': { en: 'View Cash Flow', id: 'Lihat Arus Kas', zh: '查看现金流' },
@@ -305,9 +305,9 @@ const translations: Dict = {
   'Cash Runway': { en: 'Cash Runway', id: 'Cash Runway', zh: '现金可维持期' },
   'Cash Runway: 4.8 Months': { en: 'Cash Runway: 4.8 Months', id: 'Cash Runway: 4,8 Bulan', zh: '现金可维持期：4.8个月' },
   'Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).': {
-    en: 'Current cash of Rp 2.96B covers approximately 4.8 months of projected operating expenses (Rp 618M/month avg).',
+    en: 'Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618M/month avg).',
     id: 'Kas saat ini Rp 2,96M mencakup sekitar 4,8 bulan proyeksi beban operasional (rata-rata Rp 618Jt/bulan).',
-    zh: '当前现金Rp 2.96B可覆盖约4.8个月的预计运营支出（平均Rp 618M/月）。',
+    zh: '当前现金Rp 2.96M可覆盖约4.8个月的预计运营支出（平均Rp 618M/月）。',
   },
   'Operating cash flow is positive and improving. No immediate liquidity risk.': {
     en: 'Operating cash flow is positive and improving. No immediate liquidity risk.',
@@ -590,10 +590,10 @@ const translations: Dict = {
   },
   '21.9% vs 18.5%': { en: '21.9% vs 18.5%', id: '21,9% vs 18,5%', zh: '21.9% vs 18.5%' },
   'Asset Growth': { en: 'Asset Growth', id: 'Pertumbuhan Aset', zh: '资产增长' },
-  'Total assets increased 17.5% YTD from Rp 5.82B to Rp 6.84B, primarily driven by cash accumulation and accounts receivable growth.': {
-    en: 'Total assets increased 17.5% YTD from Rp 5.82B to Rp 6.84B, primarily driven by cash accumulation and accounts receivable growth.',
+  'Total assets increased 17.5% YTD from Rp 5.82M to Rp 6.84M, primarily driven by cash accumulation and accounts receivable growth.': {
+    en: 'Total assets increased 17.5% YTD from Rp 5.82M to Rp 6.84M, primarily driven by cash accumulation and accounts receivable growth.',
     id: 'Total aset naik 17,5% YTD dari Rp 5,82M menjadi Rp 6,84M, terutama didorong oleh akumulasi kas dan pertumbuhan piutang usaha.',
-    zh: '总资产年初至今增长17.5%，从Rp 5.82B增至Rp 6.84B，主要受现金累积和应收账款增长推动。',
+    zh: '总资产年初至今增长17.5%，从Rp 5.82M增至Rp 6.84M，主要受现金累积和应收账款增长推动。',
   },
   '+17.5% YTD': { en: '+17.5% YTD', id: '+17,5% YTD', zh: '年初至今+17.5%' },
   'Liquidity': { en: 'Liquidity', id: 'Likuiditas', zh: '流动性' },
@@ -611,19 +611,19 @@ const translations: Dict = {
   },
   'D/E: 0.46x': { en: 'D/E: 0.46x', id: 'D/E: 0,46x', zh: '负债权益比：0.46x' },
   'Equity Growth': { en: 'Equity Growth', id: 'Pertumbuhan Ekuitas', zh: '权益增长' },
-  'Equity increased 36.6% YTD from Rp 3.44B to Rp 4.70B, primarily due to retained profitability and strong net income generation.': {
-    en: 'Equity increased 36.6% YTD from Rp 3.44B to Rp 4.70B, primarily due to retained profitability and strong net income generation.',
+  'Equity increased 36.6% YTD from Rp 3.44M to Rp 4.70M, primarily due to retained profitability and strong net income generation.': {
+    en: 'Equity increased 36.6% YTD from Rp 3.44M to Rp 4.70M, primarily due to retained profitability and strong net income generation.',
     id: 'Ekuitas naik 36,6% YTD dari Rp 3,44M menjadi Rp 4,70M, terutama karena laba yang ditahan dan perolehan laba bersih yang kuat.',
-    zh: '权益年初至今增长36.6%，从Rp 3.44B增至Rp 4.70B，主要得益于留存盈利与强劲的净利润。',
+    zh: '权益年初至今增长36.6%，从Rp 3.44M增至Rp 4.70M，主要得益于留存盈利与强劲的净利润。',
   },
   '+36.6% YTD': { en: '+36.6% YTD', id: '+36,6% YTD', zh: '年初至今+36.6%' },
   'Healthy Operating Cash Flow': { en: 'Healthy Operating Cash Flow', id: 'Arus Kas Operasional Sehat', zh: '经营现金流健康' },
-  'Operating activities generated Rp 2.84B in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.': {
-    en: 'Operating activities generated Rp 2.84B in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.',
+  'Operating activities generated Rp 2.84M in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.': {
+    en: 'Operating activities generated Rp 2.84M in positive cash flow, representing a cash conversion rate of 154.6% relative to net profit.',
     id: 'Aktivitas operasional menghasilkan arus kas positif Rp 2,84M, dengan tingkat konversi kas 154,6% terhadap laba bersih.',
-    zh: '经营活动产生正现金流Rp 2.84B，相对净利润的现金转化率为154.6%。',
+    zh: '经营活动产生正现金流Rp 2.84M，相对净利润的现金转化率为154.6%。',
   },
-  'OCF: Rp 2.84B': { en: 'OCF: Rp 2.84B', id: 'OCF: Rp 2,84M', zh: 'OCF：Rp 2.84B' },
+  'OCF: Rp 2.84M': { en: 'OCF: Rp 2.84M', id: 'OCF: Rp 2,84M', zh: 'OCF：Rp 2.84M' },
   'Cash Concentration': { en: 'Cash Concentration', id: 'Konsentrasi Kas', zh: '现金集中度' },
   'Customer collections represent 95.4% of total operating cash inflows, indicating healthy revenue collection efficiency.': {
     en: 'Customer collections represent 95.4% of total operating cash inflows, indicating healthy revenue collection efficiency.',
