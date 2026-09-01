@@ -225,6 +225,22 @@
 }
 
 @layer components {
+  /* [FIX] Dipakai oleh KpiCard.tsx tapi sebelumnya tidak pernah didefinisikan,
+     sehingga kartu KPI di semua halaman transaksi tampil tanpa kotak/border/
+     shadow (cuma ikon & teks mengambang). */
+  .kpi-card {
+    background-color: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 8px 16px -3px rgba(15,23,42,0.13), 0 4px 8px -3px rgba(15,23,42,0.08);
+    padding: 1.25rem;
+    transition: box-shadow 150ms ease, transform 150ms ease;
+  }
+  .kpi-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    transform: translateY(-1px);
+  }
+
   .fin-card {
     background-color: var(--card);
     border: 1px solid var(--border);
