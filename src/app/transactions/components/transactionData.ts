@@ -30,6 +30,64 @@ export interface Transaction {
   cek: boolean;
 }
 
+// ─── PENGELOMPOKAN KE 5 SUB HALAMAN TRANSAKSI ──────────────────────────────
+// [BARU] Setiap baris transaksi di halaman Transaksi utama dikelompokkan ke
+// salah satu dari 5 sub halaman (Sales, Expense, Cash Payment, Cash Reserve,
+// Other) berdasarkan field `category`, bukan accountCode/accountName.
+// Alasannya: `category` sudah berupa daftar nilai yang tetap/terbatas
+// (Revenue, Payroll, Software, dst — lihat categoryColors di
+// TransactionsTable.tsx), jadi jauh lebih konsisten & minim salah deteksi
+// dibanding mem-parsing teks nama akun yang bervariasi. accountCode juga
+// tidak cukup andal sendirian di sini karena satu digit awal (mis. "1xxx")
+// bisa berarti Kas & Bank, Piutang, ATAU Aset Tetap sekaligus — tiga makna
+// bisnis yang berbeda kelompok.
+export type TransactionGroup = 'sales' | 'expense' | 'cash_payment' | 'cash_reserve' | 'other';
+
+export const CATEGORY_TO_GROUP: Record<string, TransactionGroup> = {
+  Revenue: 'sales',
+  Payroll: 'expense',
+  Software: 'expense',
+  Rent: 'expense',
+  Marketing: 'expense',
+  Travel: 'expense',
+  Utilities: 'expense',
+  Tax: 'cash_payment',
+  'AP Payment': 'cash_payment',
+  Financing: 'cash_reserve',
+  CapEx: 'other',
+};
+
+// [BARU] Fallback KHUSUS untuk baris hasil "Import Rekening Koran" — baris
+// itu semuanya diberi category: 'Import Rekening Koran' yang sama (lihat
+// ImportRekeningKoranModal.tsx), jadi field `category` saja tidak cukup
+// untuk membedakan sales/expense/dst pada data import. Sebagai gantinya kita
+// baca `accountName` (nama akun hasil kategorisasi otomatis dari backend,
+// mis. "Pendapatan Jasa Konsultasi" atau "Beban Sewa Kantor") dengan
+// pencocokan kata kunci akuntansi standar.
+function classifyByAccountName(accountName: string | undefined): TransactionGroup {
+  const n = (accountName || '').toLowerCase();
+  if (n.includes('pendapatan') || n.includes('piutang')) return 'sales';
+  if (n.includes('beban')) return 'expense';
+  if (n.includes('pajak') || n.includes('ppn') || n.includes('pph') || n.includes('hutang usaha') || n.includes('hutang dagang')) return 'cash_payment';
+  if (n.includes('kas & bank') || n.includes('kas dan bank') || n.includes('deposito') || n.includes('giro') || n.includes('tabungan')) return 'cash_reserve';
+  return 'other';
+}
+
+// Kategori baru/tidak dikenal (termasuk 'Import Rekening Koran') jatuh ke
+// fallback nama akun, supaya tidak ada transaksi yang "hilang" / tidak
+// tampil di sub halaman manapun, baik data statis maupun hasil import.
+export function getTransactionGroup(tx: Transaction): TransactionGroup {
+  return CATEGORY_TO_GROUP[tx.category] || classifyByAccountName(tx.accountName);
+}
+
+export const GROUP_LABELS: Record<TransactionGroup, string> = {
+  sales: 'Sales',
+  expense: 'Expense',
+  cash_payment: 'Cash Payment',
+  cash_reserve: 'Cash Reserve',
+  other: 'Other',
+};
+
 // Backend integration point: replace with /api/transactions?page=&filters=&sort=
 export const ALL_TRANSACTIONS: Transaction[] = [
   { id: 'tx-001', date: '2026-08-25', txId: 'TXN-2026-08502', accountCode: '1101', accountName: 'Kas & Bank — BCA', description: 'Penerimaan Pembayaran Invoice #INV-2026-0342', debit: 320000000, credit: 0, reference: 'INV-2026-0342', party: 'PT Teknindo Maju', category: 'Revenue', type: 'credit', status: 'Posted', jeId: 'JE-2026-00842', voucherNo: 'BCA-0825-1', saldoAkhir: 1900000000, cek: false },

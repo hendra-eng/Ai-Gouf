@@ -1,14 +1,14 @@
 'use client';
 import React, { useState, useMemo } from 'react';
-import { toast } from 'sonner';
 import TransactionsHeader from './TransactionsHeader';
 import TransactionsFilterBar from './TransactionsFilterBar';
 import TransactionsTable from './TransactionsTable';
 import TransactionDrawer from './TransactionDrawer';
 import TransactionEditModal from './TransactionEditModal';
 import ImportRekeningKoranModal from './ImportRekeningKoranModal';
-import { ALL_TRANSACTIONS, Transaction } from './transactionData';
+import { Transaction } from './transactionData';
 import { exportJournalToPdf } from './exportJournalPdf';
+import { useTransactions } from '../context/TransactionsContext';
 
 // [BARU] Rentang tahun yang bisa dipilih pada periode Transaksi: opsi "all"
 // paling atas (menampilkan seluruh periode yang pernah diimpor pengguna),
@@ -21,15 +21,17 @@ const YEAR_OPTIONS: (number | 'all')[] = [
 ];
 
 export default function TransactionsContent() {
-  // [BARU] Diangkat dari konstanta statis ALL_TRANSACTIONS ke state, supaya
-  // hasil import rekening koran bisa ditambahkan ke tabel tanpa reload.
-  const [transactions, setTransactions] = useState<Transaction[]>(ALL_TRANSACTIONS);
+  // [DIUBAH] Data transaksi sekarang datang dari TransactionsContext (lihat
+  // layout.tsx), bukan state lokal lagi — supaya 5 sub halaman (Sales,
+  // Expense, Cash Payment, Cash Reserve, Other) melihat data yang sama
+  // persis, termasuk hasil import rekening koran & edit dari halaman ini.
+  const { transactions, unpostedCount, saveEdit, postAllUnposted, importTransactions } = useTransactions();
   const [showImportModal, setShowImportModal] = useState(false);
   const [search, setSearch] = useState('');
   // [BARU] Tahun periode Transaksi (Jan–Des). Default ke tahun dengan data
   // terbaru yang tersedia, supaya tabel tidak kosong saat halaman dibuka.
   const [selectedYear, setSelectedYear] = useState<number | 'all'>(() => {
-    const latest = ALL_TRANSACTIONS.reduce((max, tx) => {
+    const latest = transactions.reduce((max, tx) => {
       const y = new Date(tx.date).getFullYear();
       return y > max ? y : max;
     }, MIN_YEAR);
@@ -62,14 +64,6 @@ export default function TransactionsContent() {
     if (selectedYear === 'all') return transactions;
     return transactions.filter((tx) => new Date(tx.date).getFullYear() === selectedYear);
   }, [transactions, selectedYear]);
-
-  // [BARU] Jumlah transaksi berstatus Unposted di SELURUH tabel (bukan cuma
-  // yang sedang tampil setelah filter/pencarian) — dipakai badge & tombol
-  // "Posting Semua" di TransactionsFilterBar.
-  const unpostedCount = useMemo(
-    () => transactions.filter((tx) => tx.status === 'Unposted').length,
-    [transactions]
-  );
 
   const filtered = useMemo(() => {
     return transactionsInSelectedYear.filter((tx) => {
@@ -132,34 +126,22 @@ export default function TransactionsContent() {
     exportJournalToPdf(transactions);
   };
 
-  // [BARU] Ubah status seluruh transaksi Unposted (di seluruh tabel) menjadi
-  // Posted sekaligus. Dipicu dari tombol "Posting Semua" di TransactionsFilterBar.
+  // [DIUBAH] Logika posting-semua, simpan-edit, dan import sekarang hidup di
+  // TransactionsContext (dipakai bersama halaman utama & 5 sub halaman) —
+  // di sini tinggal panggil, plus urus state UI lokal (page/selection/modal).
   const handlePostAllUnposted = () => {
-    if (unpostedCount === 0) return;
-    setTransactions((prev) =>
-      prev.map((tx) => (tx.status === 'Unposted' ? { ...tx, status: 'Posted' } : tx))
-    );
-    toast.success('Transaksi berhasil diposting', {
-      description: `${unpostedCount} transaksi Unposted kini berstatus Posted`,
-    });
+    postAllUnposted();
   };
 
-  // [BARU] Timpa satu transaksi (dicocokkan lewat id) dengan hasil edit dari
-  // TransactionEditModal. Status transaksi TIDAK otomatis berubah jadi
-  // Posted di sini — itu murni lewat tombol "Posting Semua" terpisah, supaya
-  // alur "edit dulu sampai benar, baru posting semua" tetap dua langkah.
   const handleSaveEdit = (updated: Transaction) => {
-    setTransactions((prev) => prev.map((tx) => (tx.id === updated.id ? updated : tx)));
-    toast.success('Perubahan disimpan', {
-      description: `${updated.txId} berhasil diperbarui`,
-    });
+    saveEdit(updated);
     setEditTx(null);
   };
 
   const handleImported = (newTx: Transaction[]) => {
     // [DIUBAH] Reset total: tabel transaksi tidak lagi digabung dengan data lama,
     // melainkan diganti sepenuhnya oleh hasil import rekening koran yang baru.
-    setTransactions(newTx);
+    importTransactions(newTx);
     setSelectedIds(new Set());
     setPage(1);
   };

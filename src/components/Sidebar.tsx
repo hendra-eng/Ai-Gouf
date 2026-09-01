@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot } from 'lucide-react';
+import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, ArrowUpCircle, MoreHorizontal, Shield } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 
 
@@ -44,7 +44,16 @@ const navGroups: { label: string; items: NavItem[] }[] = [
           { id: 'nav-cf', label: 'Cash Flow', icon: Activity, href: '/financial-statements/cash-flow' },
         ],
       },
-      { id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight, href: '/transactions', badge: '248' },
+      {
+        id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight, href: '/transactions', badge: '248',
+        children: [
+          { id: 'nav-tx-sales', label: 'Sales', icon: ShoppingCart, href: '/transactions/sales' },
+          { id: 'nav-tx-expense', label: 'Expense', icon: CreditCard, href: '/transactions/expense' },
+          { id: 'nav-tx-cash-payment', label: 'Cash Payment', icon: ArrowUpCircle, href: '/transactions/cash-payment' },
+          { id: 'nav-tx-cash-reserve', label: 'Cash Reserve', icon: Shield, href: '/transactions/cash-reserve' },
+          { id: 'nav-tx-other', label: 'Other', icon: MoreHorizontal, href: '/transactions/other' },
+        ],
+      },
       { id: 'nav-ar', label: 'Accounts Receivable', icon: DollarSign, href: '/accounts-receivable', badge: '3', badgeVariant: 'warning' },
       { id: 'nav-ap', label: 'Accounts Payable', icon: CreditCard, href: '/accounts-payable' },
     ],

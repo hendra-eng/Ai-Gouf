@@ -79,7 +79,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { label: 'Financial Analytics', href: '/financial-analytics', icon: BeakerIcon },
     ],
   },
-  // === Grup baru dari kodingan 2 (halaman yang belum ada di kodingan 1) ===
   {
     group: 'MANAGEMENT',
     items: [
