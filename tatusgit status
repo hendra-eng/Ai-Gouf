@@ -1,0 +1,22 @@
+[33mcommit 61953427dd7a51d4f856e5141015c1a8cbd98036[m
+Author: hendra-eng <agungmahendra309@gmail.com>
+Date:   Tue Sep 1 07:23:40 2026 +0700
+
+    feat: restrukturisasi layout dashboard dan halaman transactions
+
+ src/app/transactions/cash-payment/page.tsx         | 229 [32m++++++++++++++++++++[m
+ src/app/transactions/cash-reserve/page.tsx         | 204 [32m++++++++++++++++++[m
+ .../components/TransactionsContent.tsx             |  48 [32m++[m[31m---[m
+ src/app/transactions/components/transactionData.ts |  58 [32m+++++[m
+ .../context/TransactionsContext (1).tsx            |  77 [32m+++++++[m
+ src/app/transactions/expense/page.tsx              | 226 [32m++++++++++++++++++++[m
+ src/app/transactions/layout.tsx                    |  11 [32m+[m
+ src/app/transactions/lib/groupAnalytics.ts         |  70 [32m++++++[m
+ src/app/transactions/other/page.tsx                | 226 [32m++++++++++++++++++++[m
+ src/app/transactions/page.tsx                      |   2 [32m+[m[31m-[m
+ src/app/transactions/sales/page.tsx                | 236 [32m+++++++++++++++++++++[m
+ src/components/Sidebar.tsx                         |  13 [32m+[m[31m-[m
+ src/components/layout/DashboardLayout.tsx          |  25 [32m+++[m
+ src/components/layout/Sidebar.tsx                  |   1 [31m-[m
+ src/components/layout/TopBar.tsx                   |  45 [32m++++[m
+ 15 files changed, 1434 insertions(+), 37 deletions(-)
