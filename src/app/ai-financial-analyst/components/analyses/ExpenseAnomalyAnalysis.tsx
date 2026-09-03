@@ -18,11 +18,11 @@ export default function ExpenseAnomalyAnalysis() {
   const { fx } = useCurrency();
 
   return (
-    <div className="space-y-5">
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+    <div className="space-y-6">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <Icon name="DocumentTextIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
+          <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
           AI analysis detected <strong>5 expense anomalies</strong> with a total variance of <strong>{fx('Rp 141M')} above expected range</strong>.
@@ -39,14 +39,14 @@ export default function ExpenseAnomalyAnalysis() {
           { label: 'High Risk Items', value: '1', color: 'text-danger', bg: 'bg-danger-bg' },
         ]?.map((m) => (
           <div key={`anom-m-${m?.label}`} className={`${m?.bg} border border-border rounded-lg p-4`}>
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{m?.label}</p>
-            <p className={`text-3xl font-700 tabular-nums ${m?.color}`}>{fx(m?.value ?? '')}</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m?.label}</p>
+            <p className={`text-3xl font-bold tabular-nums ${m?.color}`}>{fx(m?.value ?? '')}</p>
           </div>
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-4">Detected Anomalies</h3>
+      <div className="card-elevated-md rounded-xl p-5">
+        <h3 className="text-md font-semibold text-foreground mb-4">Detected Anomalies</h3>
         <div className="space-y-3">
           {anomalies?.map((anom) => (
             <div
@@ -59,8 +59,8 @@ export default function ExpenseAnomalyAnalysis() {
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="text-sm font-600 text-foreground">{anom?.account}</p>
-                    <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 ${
+                    <p className="text-sm font-semibold text-foreground">{anom?.account}</p>
+                    <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold ${
                       anom?.risk === 'High' ? 'bg-danger-bg text-danger-foreground' :
                       anom?.risk === 'Medium' ? 'bg-warning-bg text-warning-foreground' :
                       'bg-secondary text-muted-foreground'
@@ -69,8 +69,8 @@ export default function ExpenseAnomalyAnalysis() {
                   <p className="text-xs text-muted-foreground">{anom?.vendor} · {anom?.date}</p>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-sm font-700 tabular-nums text-foreground">{fx(`Rp ${(anom?.amount / 1000000)?.toFixed(0)}M`)}</p>
-                  <p className={`text-xs font-600 ${anom?.risk === 'High' ? 'text-danger' : 'text-warning'}`}>
+                  <p className="text-sm font-bold tabular-nums text-foreground">{fx(`Rp ${(anom?.amount / 1000000)?.toFixed(0)}M`)}</p>
+                  <p className={`text-xs font-semibold ${anom?.risk === 'High' ? 'text-danger' : 'text-warning'}`}>
                     +{fx(`Rp ${(anom?.variance / 1000000)?.toFixed(0)}M`)} (+{anom?.variancePct?.toFixed(1)}%)
                   </p>
                 </div>
@@ -93,21 +93,21 @@ export default function ExpenseAnomalyAnalysis() {
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={() => router?.push('/transactions')}
-                  className="text-xs text-primary hover:underline font-500"
+                  className="text-xs text-primary hover:underline font-medium"
                 >
                   View Transactions
                 </button>
                 <span className="text-muted-foreground">·</span>
                 <button
                   onClick={() => router?.push('/accounts-payable')}
-                  className="text-xs text-primary hover:underline font-500"
+                  className="text-xs text-primary hover:underline font-medium"
                 >
                   View Vendor
                 </button>
                 <span className="text-muted-foreground">·</span>
                 <button
                   onClick={() => toast?.success('Investigation initiated')}
-                  className="text-xs text-primary hover:underline font-500"
+                  className="text-xs text-primary hover:underline font-medium"
                 >
                   Investigate
                 </button>
@@ -117,10 +117,10 @@ export default function ExpenseAnomalyAnalysis() {
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="LightBulbIcon" size={16} className="text-warning" />
-          <h3 className="text-md font-600 text-foreground">AI Recommendations</h3>
+          <h3 className="text-md font-semibold text-foreground">AI Recommendations</h3>
         </div>
         <div className="space-y-3">
           {[
@@ -129,14 +129,14 @@ export default function ExpenseAnomalyAnalysis() {
             { priority: 'Medium', title: 'T&E Policy Review', desc: 'August T&E spike (+133%) requires policy reinforcement and post-event expense reporting.', action: 'View Transactions', route: '/transactions' },
           ]?.map((rec) => (
             <div key={`ea-rec-${rec?.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
-              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 flex-shrink-0 mt-0.5 ${
+              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${
                 rec?.priority === 'High' ? 'bg-danger-bg text-danger-foreground' : 'bg-warning-bg text-warning-foreground'
               }`}>{rec?.priority}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-600 text-foreground">{rec?.title}</p>
+                <p className="text-sm font-semibold text-foreground">{rec?.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{fx(rec?.desc ?? '')}</p>
               </div>
-              <button onClick={() => router?.push(rec?.route)} className="text-xs text-primary hover:underline font-500 flex-shrink-0 whitespace-nowrap">
+              <button onClick={() => router?.push(rec?.route)} className="text-xs text-primary hover:underline font-medium flex-shrink-0 whitespace-nowrap">
                 {rec?.action} →
               </button>
             </div>

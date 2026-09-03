@@ -35,8 +35,8 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!item) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
-      <p className="text-xs font-600 text-foreground mb-1">{label?.replace('\n', ' ')}</p>
-      <p className={`text-sm font-700 font-tabular ${item.value >= 0 ? 'text-positive' : 'text-negative'}`}>
+      <p className="text-xs font-semibold text-foreground mb-1">{label?.replace('\n', ' ')}</p>
+      <p className={`text-sm font-bold tabular-nums ${item.value >= 0 ? 'text-positive' : 'text-negative'}`}>
         {item.value >= 0 ? '+' : ''}Rp {item.value}M
       </p>
       <p className="text-xs text-muted-foreground">Running: Rp {item.cumulative}M</p>

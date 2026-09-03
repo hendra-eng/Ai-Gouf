@@ -26,10 +26,10 @@ export default function PlanningStatusHero() {
               <Icon name="FlagIcon" size={20} className="text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-700 text-foreground">FY2026 Financial Plan</h2>
+              <h2 className="text-xl font-bold text-foreground">FY2026 Financial Plan</h2>
               <p className="text-xs text-muted-foreground">PT Nusantara Teknologi Indonesia · Updated Aug 26, 2026</p>
             </div>
-            <span className="ml-auto px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-600 border border-positive/20 flex items-center gap-1">
+            <span className="ml-auto px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20 flex items-center gap-1">
               <Icon name="CheckCircleIcon" size={12} />
               On Track
             </span>
@@ -39,7 +39,7 @@ export default function PlanningStatusHero() {
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground font-medium">Budget Achievement</span>
-              <span className="font-700 text-foreground font-tabular">{achievement}%</span>
+              <span className="font-bold text-foreground tabular-nums">{achievement}%</span>
             </div>
             <div className="h-3 bg-muted rounded-full overflow-hidden">
               <div
@@ -69,7 +69,7 @@ export default function PlanningStatusHero() {
                 />
                 <span className="text-2xs text-muted-foreground font-medium">{item.label}</span>
               </div>
-              <p className={`text-lg font-700 font-tabular ${item.status === 'positive' ? 'text-positive' : 'text-foreground'}`}>
+              <p className={`text-lg font-bold tabular-nums ${item.status === 'positive' ? 'text-positive' : 'text-foreground'}`}>
                 {fx(item.value)}
               </p>
               <p className="text-2xs text-muted-foreground mt-0.5">{item.trend}</p>

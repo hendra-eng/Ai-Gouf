@@ -27,24 +27,24 @@ export default function ExpenseDrivers() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Expense Drivers</h3>
+          <h3 className="text-lg font-semibold text-foreground">Expense Drivers</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Ranked by materiality · FY 2026</p>
         </div>
         <div className="text-right">
           <p className="text-2xs text-muted-foreground">Total Expenses</p>
-          <p className="text-base font-700 font-tabular text-foreground">{fx(formatIDR(totalExpense, true))}</p>
+          <p className="text-base font-bold tabular-nums text-foreground">{fx(formatIDR(totalExpense, true))}</p>
         </div>
       </div>
 
       {/* Fastest growing alert */}
       <div className="mb-4 p-3 rounded-xl bg-warning-subtle border border-warning/20">
-        <p className="text-xs font-600 text-warning mb-1.5 flex items-center gap-1.5">
+        <p className="text-xs font-semibold text-warning mb-1.5 flex items-center gap-1.5">
           <Icon name="ArrowTrendingUpIcon" size={13} />
           Fastest Growing Categories
         </p>
         <div className="flex flex-wrap gap-2">
           {fastest?.map((f) => (
-            <span key={`fast-${f?.id}`} className="text-2xs font-500 px-2 py-1 rounded-full bg-warning/10 text-warning">
+            <span key={`fast-${f?.id}`} className="text-2xs font-medium px-2 py-1 rounded-full bg-warning/10 text-warning">
               {f?.category}: +{f?.growth?.toFixed(1)}%
             </span>
           ))}
@@ -63,12 +63,12 @@ export default function ExpenseDrivers() {
             >
               <div className="flex items-center gap-3 mb-1.5">
                 <div className={`w-2 h-2 rounded-sm flex-shrink-0 ${item?.color}`} />
-                <span className="text-sm font-500 text-foreground flex-1 truncate">{item?.category}</span>
-                <span className={`text-xs font-600 font-tabular flex-shrink-0 ${isGrowing ? 'text-negative' : 'text-positive'}`}>
+                <span className="text-sm font-medium text-foreground flex-1 truncate">{item?.category}</span>
+                <span className={`text-xs font-semibold tabular-nums flex-shrink-0 ${isGrowing ? 'text-negative' : 'text-positive'}`}>
                   {isGrowing ? '+' : ''}{item?.growth?.toFixed(1)}%
                 </span>
-                <span className="text-xs text-muted-foreground font-tabular flex-shrink-0 w-10 text-right">{item?.contribution?.toFixed(1)}%</span>
-                <span className="text-sm font-600 font-tabular text-foreground flex-shrink-0 w-20 text-right">{fx(formatIDR(item?.current, true))}</span>
+                <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0 w-10 text-right">{item?.contribution?.toFixed(1)}%</span>
+                <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0 w-20 text-right">{fx(formatIDR(item?.current, true))}</span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div

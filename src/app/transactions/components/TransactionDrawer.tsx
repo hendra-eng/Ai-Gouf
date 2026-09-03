@@ -1,7 +1,9 @@
 'use client';
 import React, { useEffect } from 'react';
-import { X, ExternalLink, Copy, CheckCircle, AlertTriangle, FileText, Clock } from 'lucide-react';
-import { Transaction } from './transactionData';
+import Link from 'next/link';
+import { X, ExternalLink, Copy, CheckCircle, AlertTriangle, FileText, Clock, ArrowUpRight } from 'lucide-react';
+import { Transaction, getTransactionGroup, PAYMENT_STATUS_VARIANT } from './transactionData';
+import { expenseOutstanding, expenseBillStatus, expenseDaysOverdue } from '../lib/apBridge';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { toast } from 'sonner';
 
@@ -123,6 +125,40 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                 </div>
               ))}
             </div>
+
+            {/* [BARU] Status pembayaran ke vendor — hanya untuk transaksi
+                kelompok Expense, sekaligus jadi pratinjau bagaimana baris ini
+                muncul di halaman Account Payable. */}
+            {getTransactionGroup(tx) === 'expense' && (
+              <div className="card-elevated rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status Pembayaran ke Vendor (AP)</p>
+                  <StatusBadge variant={PAYMENT_STATUS_VARIANT[tx.paymentStatus || 'Belum Dibayar']} label={tx.paymentStatus || 'Belum Dibayar'} dot />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Jatuh Tempo</p>
+                    <p className="text-xs font-medium text-foreground">{tx.dueDate ? formatDate(tx.dueDate) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">Sisa Belum Dibayar</p>
+                    <p className={`text-xs font-semibold ${expenseOutstanding(tx) > 0 ? 'text-negative' : 'text-positive'}`}>
+                      {formatAmount(expenseOutstanding(tx))}
+                    </p>
+                  </div>
+                </div>
+                {expenseOutstanding(tx) > 0 && expenseBillStatus(tx) === 'Overdue' && (
+                  <p className="text-2xs text-negative">Sudah terlambat {expenseDaysOverdue(tx)} hari dari jatuh tempo.</p>
+                )}
+                <Link
+                  href="/accounts-payable"
+                  className="inline-flex items-center gap-1 text-2xs font-semibold text-primary hover:underline"
+                >
+                  Lihat status ini di Account Payable
+                  <ArrowUpRight size={11} />
+                </Link>
+              </div>
+            )}
 
             {/* Journal entry (double-entry) */}
             <div className="card-elevated rounded-xl overflow-hidden">

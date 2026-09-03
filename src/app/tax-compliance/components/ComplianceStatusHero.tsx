@@ -21,8 +21,8 @@ export default function ComplianceStatusHero() {
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-2xl font-700 text-foreground">Compliance Overview</h2>
-              <span className="px-3 py-1 rounded-full bg-positive-subtle text-positive text-sm font-700 border border-positive/20">
+              <h2 className="text-2xl font-bold text-foreground">Compliance Overview</h2>
+              <span className="px-3 py-1 rounded-full bg-positive-subtle text-positive text-sm font-bold border border-positive/20">
                 ✓ Compliant
               </span>
             </div>
@@ -42,8 +42,8 @@ export default function ComplianceStatusHero() {
             >
               <Icon name={s.icon as Parameters<typeof Icon>[0]['name']} size={18} className={s.color} />
               <div>
-                <p className={`text-xl font-700 font-tabular ${s.color}`}>{s.count}</p>
-                <p className="text-2xs text-muted-foreground font-500">{s.label}</p>
+                <p className={`text-xl font-bold tabular-nums ${s.color}`}>{s.count}</p>
+                <p className="text-2xs text-muted-foreground font-medium">{s.label}</p>
               </div>
             </div>
           ))}

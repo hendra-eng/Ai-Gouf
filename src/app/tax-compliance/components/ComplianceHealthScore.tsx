@@ -24,7 +24,7 @@ export default function ComplianceHealthScore() {
     <div className="card-base p-5 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Compliance Health</h3>
+          <h3 className="text-lg font-semibold text-foreground">Compliance Health</h3>
           <p className="text-2xs text-muted-foreground mt-0.5">Internal dashboard indicator only</p>
         </div>
         <span className="text-2xs text-muted-foreground px-2 py-1 rounded-full bg-muted border border-border">
@@ -38,8 +38,8 @@ export default function ComplianceHealthScore() {
         {COMPONENTS?.map((c) => (
           <div key={`health-${c?.label}`}>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-muted-foreground font-500">{c?.label}</span>
-              <span className={`text-xs font-600 font-tabular ${c?.score >= 90 ? 'text-positive' : c?.score >= 75 ? 'text-warning' : 'text-negative'}`}>
+              <span className="text-xs text-muted-foreground font-medium">{c?.label}</span>
+              <span className={`text-xs font-semibold tabular-nums ${c?.score >= 90 ? 'text-positive' : c?.score >= 75 ? 'text-warning' : 'text-negative'}`}>
                 {c?.score}%
               </span>
             </div>

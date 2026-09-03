@@ -25,7 +25,7 @@ export default function AnalyticsHeader() {
           <div className="w-8 h-8 rounded-lg bg-chart-4/10 flex items-center justify-center">
             <Icon name="BeakerIcon" size={18} className="text-chart-4" />
           </div>
-          <h1 className="text-3xl font-700 text-foreground">Financial Analytics</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Financial Analytics</h1>
         </div>
         <p className="text-sm text-muted-foreground ml-11">
           Explore financial performance, ratios, trends, efficiency, liquidity, and business drivers

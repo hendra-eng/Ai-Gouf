@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict, OrderedDict
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from .logging_config import get_module_logger
@@ -1919,4 +1920,249 @@ def susun_jadwal_penyusutan_bulanan(
         "metode": metode,
         "jumlah_aset": len(hasil_aset),
         "catatan": f"Jadwal penyusutan {metode} untuk {len(hasil_aset)} aset pada tahun {tahun}.",
+    }
+
+# ============================================================
+# 11. KPI BENTO DASHBOARD (8 kartu ringkas utk halaman Dashboard utama
+#     -- dipakai komponen frontend KPIBentoGrid.tsx lewat endpoint
+#     GET /api/client/{client_id}/kpi-bento di main.py)
+# ============================================================
+#
+# [BARU] Sebelumnya KPIBentoGrid.tsx 100% pakai angka & sparkline
+# hardcoded (mock) di frontend, TIDAK terhubung ke backend sama sekali.
+# Fungsi ini menghitung 8 KPI yang dibutuhkan grid tsb (Total Revenue,
+# Net Profit, Gross Profit, Cash & Bank, Accounts Receivable, Accounts
+# Payable, EBITDA, Tax Payable) LANGSUNG dari jurnal+COA client yang
+# sama seperti generate_5_laporan_keuangan()/susun_laporan_bulanan_setahun()
+# -- tidak menduplikasi logika hitung saldo, hanya memakai ulang
+# susun_laporan_bulanan_setahun(sertakan_saldo_per_bulan=True) lalu
+# menyaring/menjumlahkan per kategori & sub_kategori COA per bulan.
+#
+# CATATAN PENTING soal keterbatasan (WAJIB dibaca sebelum dipakai):
+# 1. Accounts Payable & Tax Payable: COA di modul ini TIDAK punya
+#    sub_kategori baku utk LIABILITAS (beda dgn ASET yang sudah punya
+#    label baku 'Kas'/'Piutang'/dst -- lihat susun_lampiran_spt_bs()).
+#    Jadi kedua kartu ini disaring pakai HEURISTIK nama akun (lihat
+#    _KATA_KUNCI_UTANG_USAHA / _KATA_KUNCI_PAJAK di bawah). Kalau nama
+#    akun COA client tidak memuat kata kunci itu, akun tsb TIDAK akan
+#    terhitung -- meta["akun_tidak_terklasifikasi"] mencatat semua akun
+#    LIABILITAS yang tidak cocok ke salah satu heuristik, supaya
+#    akuntan bisa cek/rapikan nama akun COA kalau kartu tampak 0 padahal
+#    seharusnya ada saldo.
+# 2. EBITDA didekati sbg (Laba Bersih + Beban Penyusutan) -- TIDAK
+#    menambahkan kembali bunga & pajak penghasilan secara terpisah
+#    karena modul ini belum punya sub_kategori baku utk akun Beban
+#    Bunga/Beban Pajak. Kalau butuh EBITDA presisi, tambahkan
+#    sub_kategori 'Beban Bunga' & 'Beban Pajak' di COA lalu perluas
+#    fungsi ini.
+# 3. "Perubahan %" dihitung SEBULAN vs SEBULAN SEBELUMNYA (bulan
+#    terakhir yang ada datanya vs bulan sebelumnya), BUKAN vs periode
+#    yang sama tahun lalu -- karena fungsi ini hanya mengambil 1 tahun
+#    jurnal sekaligus (pola yang sama dgn susun_laporan_bulanan_setahun).
+# 4. Kartu "Accounts Receivable"/"Accounts Payable" TIDAK menyertakan
+#    rincian umur piutang/utang (aging/overdue) -- itu sumber data
+#    terpisah (modul accounts_receivable/accounts_payable, belum
+#    disatukan di sini).
+
+_KATA_KUNCI_UTANG_USAHA = ("utang usaha", "hutang usaha", "utang dagang", "hutang dagang")
+_KATA_KUNCI_PAJAK = ("pajak", "pph", "ppn")
+
+
+def _cocok_kata_kunci(nama_akun: Optional[str], kata_kunci: tuple) -> bool:
+    n = (nama_akun or "").lower()
+    return any(k in n for k in kata_kunci)
+
+
+def _jumlah_saldo_per_bulan(
+    per_bulan_saldo: List[Dict[str, Dict[str, Any]]],
+    kategori: str,
+    sub_kategori: Optional[str] = None,
+    kata_kunci_nama: Optional[tuple] = None,
+    kecuali_kata_kunci_nama: Optional[tuple] = None,
+) -> List[float]:
+    """
+    Jumlahkan saldo_akhir semua akun yang cocok kategori (+ opsional
+    sub_kategori dan/atau kata kunci nama akun), untuk TIAP bulan di
+    `per_bulan_saldo` (list hasil hitung_saldo_per_akun(), 1 elemen per
+    bulan -- lihat susun_laporan_bulanan_setahun(sertakan_saldo_per_bulan=True)).
+    """
+    hasil = []
+    for saldo_bulan_ini in per_bulan_saldo:
+        total = 0.0
+        for akun in saldo_bulan_ini.values():
+            if akun.get("kategori") != kategori:
+                continue
+            if sub_kategori is not None and (akun.get("sub_kategori") or "") != sub_kategori:
+                continue
+            if kata_kunci_nama and not _cocok_kata_kunci(akun.get("nama_akun"), kata_kunci_nama):
+                continue
+            if kecuali_kata_kunci_nama and _cocok_kata_kunci(akun.get("nama_akun"), kecuali_kata_kunci_nama):
+                continue
+            total += akun.get("saldo_akhir", 0.0)
+        hasil.append(round(total, 2))
+    return hasil
+
+
+def _akun_liabilitas_tidak_terklasifikasi(per_bulan_saldo: List[Dict[str, Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Daftar akun LIABILITAS (unik, dari bulan manapun) yang namanya
+    tidak cocok ke heuristik Accounts Payable maupun Tax Payable --
+    dipakai meta utk memberi tahu akuntan kalau ada saldo yang
+    "tidak masuk kartu manapun"."""
+    ditemukan: Dict[str, Dict[str, Any]] = {}
+    for saldo_bulan_ini in per_bulan_saldo:
+        for no_akun, akun in saldo_bulan_ini.items():
+            if akun.get("kategori") != "LIABILITAS":
+                continue
+            nama = akun.get("nama_akun")
+            if _cocok_kata_kunci(nama, _KATA_KUNCI_UTANG_USAHA) or _cocok_kata_kunci(nama, _KATA_KUNCI_PAJAK):
+                continue
+            if abs(akun.get("saldo_akhir", 0.0)) < 0.01:
+                continue
+            ditemukan[no_akun] = {"no_akun": no_akun, "nama_akun": nama}
+    return sorted(ditemukan.values(), key=lambda a: a["no_akun"])
+
+
+def _kartu_kpi_bento(label: str, per_bulan: List[float], satuan: str = "rupiah",
+                      per_bulan_margin_basis: Optional[List[float]] = None) -> Dict[str, Any]:
+    """
+    Bentuk satu kartu KPI siap-JSON dari deret nilai bulanan (Jan..bulan
+    terakhir yang dihitung).
+
+    - nilai: nilai bulan TERAKHIR (paling baru).
+    - perubahan_persen: nilai bulan terakhir vs bulan sebelumnya (0 kalau
+      cuma ada 1 bulan data, atau bulan sebelumnya kebetulan 0).
+    - sparkline: sampai 8 titik terakhir (grid frontend pakai 8 titik).
+    - margin_persen: opsional, nilai / per_bulan_margin_basis bulan yang
+      sama x100 (dipakai utk subtitle margin Net/Gross Profit & EBITDA
+      thd Total Revenue bulan yang sama).
+    """
+    per_bulan = per_bulan or [0.0]
+    nilai_sekarang = per_bulan[-1]
+    nilai_sebelumnya = per_bulan[-2] if len(per_bulan) >= 2 else None
+    if nilai_sebelumnya:
+        perubahan_persen = round((nilai_sekarang - nilai_sebelumnya) / abs(nilai_sebelumnya) * 100, 1)
+    else:
+        perubahan_persen = 0.0
+
+    margin_persen = None
+    if per_bulan_margin_basis:
+        basis = per_bulan_margin_basis[-1]
+        if basis:
+            margin_persen = round(nilai_sekarang / basis * 100, 1)
+
+    return {
+        "label": label,
+        "nilai": round(nilai_sekarang, 2),
+        "satuan": satuan,
+        "perubahan_persen": perubahan_persen,
+        "margin_persen": margin_persen,
+        "sparkline": per_bulan[-8:],
+    }
+
+
+def susun_kpi_bento_dashboard(
+    jurnal: List[Dict[str, Any]],
+    coa: List[Dict[str, Any]],
+    tahun: Optional[int] = None,
+    bulan_sampai: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Hitung 8 KPI utk KPIBentoGrid.tsx: Total Revenue, Net Profit, Gross
+    Profit, Cash & Bank, Accounts Receivable, Accounts Payable, EBITDA,
+    Tax Payable -- masing2 dgn nilai bulan terakhir, perubahan % vs
+    bulan sebelumnya, dan sparkline (s/d 8 titik bulanan).
+
+    Args:
+        jurnal: jurnal terposting client (SATU tahun -- lihat `tahun`),
+            bentuk sama seperti db_client.ambil_jurnal_terposting().
+        coa: COA client, bentuk sama seperti db_client.ambil_coa_client().
+        tahun: tahun yang dihitung, default tahun berjalan (now).
+        bulan_sampai: hitung s/d bulan ke berapa (1-12), default bulan
+            berjalan (now) kalau `tahun` == tahun berjalan, atau 12
+            kalau `tahun` tahun lampau/depan.
+
+    Returns dict siap-JSON:
+        {
+            "tahun": int, "bulan_sampai": int,
+            "kartu": [ {label, nilai, satuan, perubahan_persen,
+                        margin_persen, sparkline}, ... 8 item ],
+            "meta": {"jumlah_baris_jurnal": int, "akun_liabilitas_tidak_terklasifikasi": [...], "peringatan": [...]}
+        }
+    """
+    hari_ini = date.today()
+    tahun = tahun or hari_ini.year
+    if bulan_sampai is None:
+        bulan_sampai = hari_ini.month if tahun == hari_ini.year else 12
+    bulan_sampai = max(1, min(bulan_sampai, 12))
+
+    hasil_tahunan = susun_laporan_bulanan_setahun(jurnal, coa, tahun, sertakan_saldo_per_bulan=True)
+    per_bulan_saldo_penuh = hasil_tahunan.pop("_saldo_per_akun_per_bulan", [])
+    laba_rugi_bulanan = hasil_tahunan["laba_rugi_bulanan"]
+
+    per_bulan_saldo = per_bulan_saldo_penuh[:bulan_sampai]
+    pendapatan_bulanan = list(laba_rugi_bulanan["total_pendapatan_bulanan"][:bulan_sampai])
+    laba_bersih_bulanan = list(laba_rugi_bulanan["laba_bersih_bulanan"][:bulan_sampai])
+
+    hpp_bulanan = _jumlah_saldo_per_bulan(per_bulan_saldo, "BEBAN", sub_kategori="HPP")
+    penyusutan_bulanan = _jumlah_saldo_per_bulan(per_bulan_saldo, "BEBAN", sub_kategori="Penyusutan")
+    gross_profit_bulanan = [round(p - h, 2) for p, h in zip(pendapatan_bulanan, hpp_bulanan)]
+    # [Lihat catatan #2 di atas soal EBITDA] pendekatan: Laba Bersih + Penyusutan.
+    ebitda_bulanan = [round(lb + d, 2) for lb, d in zip(laba_bersih_bulanan, penyusutan_bulanan)]
+
+    kas_bulanan = _jumlah_saldo_per_bulan(per_bulan_saldo, "ASET", sub_kategori="Kas")
+    piutang_bulanan = _jumlah_saldo_per_bulan(per_bulan_saldo, "ASET", sub_kategori="Piutang")
+    ap_bulanan = _jumlah_saldo_per_bulan(
+        per_bulan_saldo, "LIABILITAS", kata_kunci_nama=_KATA_KUNCI_UTANG_USAHA,
+    )
+    pajak_bulanan = _jumlah_saldo_per_bulan(
+        per_bulan_saldo, "LIABILITAS", kata_kunci_nama=_KATA_KUNCI_PAJAK,
+    )
+
+    kartu = [
+        _kartu_kpi_bento("Total Revenue", pendapatan_bulanan),
+        _kartu_kpi_bento("Net Profit", laba_bersih_bulanan, per_bulan_margin_basis=pendapatan_bulanan),
+        _kartu_kpi_bento("Gross Profit", gross_profit_bulanan, per_bulan_margin_basis=pendapatan_bulanan),
+        _kartu_kpi_bento("Cash & Bank", kas_bulanan),
+        _kartu_kpi_bento("Accounts Receivable", piutang_bulanan),
+        _kartu_kpi_bento("Accounts Payable", ap_bulanan),
+        _kartu_kpi_bento("EBITDA", ebitda_bulanan, per_bulan_margin_basis=pendapatan_bulanan),
+        _kartu_kpi_bento("Tax Payable", pajak_bulanan),
+    ]
+
+    akun_tidak_terklasifikasi = _akun_liabilitas_tidak_terklasifikasi(per_bulan_saldo)
+
+    peringatan = []
+    if not jurnal:
+        peringatan.append(f"Belum ada jurnal untuk tahun {tahun}.")
+    if not any(kas_bulanan):
+        peringatan.append(
+            "Tidak ada akun ASET dengan sub_kategori='Kas' yang punya saldo -- "
+            "kartu 'Cash & Bank' akan tampil 0."
+        )
+    if not any(piutang_bulanan):
+        peringatan.append(
+            "Tidak ada akun ASET dengan sub_kategori='Piutang' yang punya saldo -- "
+            "kartu 'Accounts Receivable' akan tampil 0."
+        )
+    if akun_tidak_terklasifikasi:
+        peringatan.append(
+            f"{len(akun_tidak_terklasifikasi)} akun LIABILITAS tidak cocok heuristik nama "
+            "'Accounts Payable' maupun 'Tax Payable' (lihat meta.akun_liabilitas_tidak_terklasifikasi) "
+            "-- saldo akun ini tidak ikut kartu manapun."
+        )
+
+    logger.info(
+        f"📊 KPI Bento dashboard dihitung: tahun={tahun}, bulan_sampai={bulan_sampai}, "
+        f"revenue={pendapatan_bulanan[-1] if pendapatan_bulanan else 0}"
+    )
+
+    return {
+        "tahun": tahun,
+        "bulan_sampai": bulan_sampai,
+        "kartu": kartu,
+        "meta": {
+            "jumlah_baris_jurnal": len(jurnal or []),
+            "akun_liabilitas_tidak_terklasifikasi": akun_tidak_terklasifikasi,
+            "peringatan": peringatan,
+        },
     }

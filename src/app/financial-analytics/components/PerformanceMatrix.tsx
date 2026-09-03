@@ -28,7 +28,7 @@ function CellValue({ value, isCurrency, className = '' }: { value: number | stri
   const { fx } = useCurrency();
   const display = typeof value === 'number' && isCurrency ? fx(formatIDR(value as number, true)) : String(value);
   return (
-    <td className={`px-4 py-3 text-right text-sm font-600 font-tabular ${className}`}>
+    <td className={`px-4 py-3 text-right text-sm font-semibold tabular-nums ${className}`}>
       {display}
     </td>
   );
@@ -40,7 +40,7 @@ export default function PerformanceMatrix() {
     <div className="card-base">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Financial Performance Matrix</h3>
+          <h3 className="text-lg font-semibold text-foreground">Financial Performance Matrix</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Key metrics with conditional formatting · FY 2026 YTD</p>
         </div>
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -54,12 +54,12 @@ export default function PerformanceMatrix() {
         <table className="w-full min-w-[700px]">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground">Metric</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Current (YTD)</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Previous Year</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">FY Budget</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Budget Variance</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">YoY Growth</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Metric</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Current (YTD)</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Previous Year</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">FY Budget</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Budget Variance</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">YoY Growth</th>
             </tr>
           </thead>
           <tbody>
@@ -73,16 +73,16 @@ export default function PerformanceMatrix() {
 
               return (
                 <tr key={row.id} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer">
-                  <td className="px-4 py-3 text-sm font-600 text-foreground">{row.metric}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-foreground">{row.metric}</td>
                   <CellValue value={row.current} isCurrency={row.isCurrency} className="text-foreground" />
                   <CellValue value={row.previous} isCurrency={row.isCurrency} className="text-muted-foreground" />
                   <CellValue value={row.budget} isCurrency={row.isCurrency} className="text-muted-foreground" />
-                  <td className={`px-4 py-3 text-right text-sm font-600 font-tabular ${varColor}`}>
+                  <td className={`px-4 py-3 text-right text-sm font-semibold tabular-nums ${varColor}`}>
                     <span className={`px-2 py-0.5 rounded-md ${varBg}`}>
                       {varNum >= 0 ? '+' : ''}{fx(formatIDR(varNum, true))}
                     </span>
                   </td>
-                  <td className={`px-4 py-3 text-right text-sm font-700 font-tabular ${row.growth >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  <td className={`px-4 py-3 text-right text-sm font-bold tabular-nums ${row.growth >= 0 ? 'text-positive' : 'text-negative'}`}>
                     {row.growth >= 0 ? '+' : ''}{row.growth.toFixed(1)}%
                   </td>
                 </tr>

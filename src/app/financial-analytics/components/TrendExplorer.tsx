@@ -33,7 +33,7 @@ export default function TrendExplorer() {
     <div className="card-base p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
-          <h3 className="text-xl font-600 text-foreground">Financial Trend Explorer</h3>
+          <h3 className="text-xl font-semibold text-foreground">Financial Trend Explorer</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Select up to 5 metrics to compare · Click metric to toggle</p>
         </div>
         <div className="flex items-center gap-2">
@@ -42,7 +42,7 @@ export default function TrendExplorer() {
               <button
                 key={`trend-period-${p}`}
                 onClick={() => setPeriod(p)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-500 transition-all ${
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                   p === period ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -55,7 +55,7 @@ export default function TrendExplorer() {
               <button
                 key={`trend-horizon-${h}`}
                 onClick={() => setHorizon(h)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-500 transition-all ${
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                   h === horizon ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -75,7 +75,7 @@ export default function TrendExplorer() {
             <button
               key={`trend-metric-${m}`}
               onClick={() => toggleMetric(m)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-500 transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
                 isSelected
                   ? 'bg-card text-foreground border-border shadow-card'
                   : 'bg-muted/50 text-muted-foreground border-transparent hover:border-border hover:text-foreground'

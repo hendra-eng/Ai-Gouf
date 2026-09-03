@@ -27,12 +27,12 @@ export default function TaxExposure() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Tax Exposure</h3>
+          <h3 className="text-lg font-semibold text-foreground">Tax Exposure</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Based on recorded accounting data — not a legal assessment</p>
         </div>
         <div className="text-right">
           <p className="text-2xs text-muted-foreground">Total Exposure</p>
-          <p className="text-lg font-700 font-tabular text-warning">{fx(formatIDR(totalExposure, true))}</p>
+          <p className="text-lg font-bold tabular-nums text-warning">{fx(formatIDR(totalExposure, true))}</p>
         </div>
       </div>
 
@@ -49,11 +49,11 @@ export default function TaxExposure() {
                     size={16}
                     className={item.severity === 'None' ? 'text-positive' : item.severity === 'Medium' ? 'text-warning' : 'text-muted-foreground'}
                   />
-                  <span className="text-sm font-600 text-foreground">{item.category}</span>
+                  <span className="text-sm font-semibold text-foreground">{item.category}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full ${cfg.badge}`}>{item.severity}</span>
-                  <span className={`text-sm font-700 font-tabular ${item.amount > 0 ? 'text-foreground' : 'text-positive'}`}>
+                  <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>{item.severity}</span>
+                  <span className={`text-sm font-bold tabular-nums ${item.amount > 0 ? 'text-foreground' : 'text-positive'}`}>
                     {item.amount > 0 ? fx(formatIDR(item.amount, true)) : 'Rp 0'}
                   </span>
                 </div>

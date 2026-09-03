@@ -71,12 +71,12 @@ export default function ComplianceTasks() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Compliance Tasks</h3>
+          <h3 className="text-lg font-semibold text-foreground">Compliance Tasks</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} tasks · Aug 2026</p>
         </div>
         <button
           onClick={() => setShowAddForm((p) => !p)}
-          className="flex items-center gap-1.5 text-xs font-500 text-primary hover:text-primary/80 transition-colors px-3 py-2 rounded-lg bg-primary/10 border border-primary/20"
+          className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors px-3 py-2 rounded-lg bg-primary/10 border border-primary/20"
         >
           <Icon name="PlusIcon" size={12} />
           Add Task
@@ -93,7 +93,7 @@ export default function ComplianceTasks() {
             placeholder="Task name..."
             className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none"
           />
-          <button onClick={handleAddTask} className="px-3 py-2 text-xs font-600 text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 transition-colors">
+          <button onClick={handleAddTask} className="px-3 py-2 text-xs font-semibold text-primary-foreground bg-primary rounded-lg hover:bg-primary/90 transition-colors">
             Add
           </button>
           <button onClick={() => { setShowAddForm(false); setNewTaskName(''); }} className="px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
@@ -135,7 +135,7 @@ export default function ComplianceTasks() {
               task.priority === 'High' ? 'bg-negative' : task.priority === 'Medium' ? 'bg-warning' : 'bg-muted-foreground'
             }`} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-500 text-foreground truncate">{task.task}</p>
+              <p className="text-sm font-medium text-foreground truncate">{task.task}</p>
               <div className="flex items-center gap-3 mt-0.5">
                 <span className="text-2xs text-muted-foreground">{task.taxType} · {task.period}</span>
                 <span className="text-2xs text-muted-foreground">{task.owner}</span>
@@ -143,7 +143,7 @@ export default function ComplianceTasks() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-xs text-muted-foreground">{task.dueDate}</span>
-              <span className={`text-2xs font-600 px-2 py-0.5 rounded-full ${STATUS_STYLES[task.status]}`}>
+              <span className={`text-2xs font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[task.status]}`}>
                 {task.status}
               </span>
             </div>

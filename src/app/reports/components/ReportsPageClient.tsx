@@ -797,7 +797,7 @@ export default function ReportsPageClient() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <BarChart3 size={20} className="text-primary" />
-                <h1 className="text-xl font-bold text-foreground">Reports</h1>
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">Reports</h1>
               </div>
               <p className="text-sm text-muted-foreground">Create, analyze, export, and manage financial reports.</p>
             </div>

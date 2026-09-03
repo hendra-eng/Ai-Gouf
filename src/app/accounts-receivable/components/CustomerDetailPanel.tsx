@@ -41,7 +41,7 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
-                <h2 className="text-lg font-700 text-foreground truncate">{customer.name}</h2>
+                <h2 className="text-lg font-bold text-foreground truncate">{customer.name}</h2>
                 <StatusBadge label={customer.riskLevel} className={riskColors[customer.riskLevel]} size="md" />
               </div>
               <p className="text-sm text-muted-foreground">{customer.code} · {customer.industry} · Mgr: {customer.accountManager}</p>
@@ -55,21 +55,21 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
           <div className="flex items-center gap-2 mt-3">
             <button
               onClick={() => router.push('/ai-financial-analyst?analysis=ar-risk&customer=' + customer.id)}
-              className="flex items-center gap-1.5 text-xs font-500 text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="SparklesIcon" size={12} />
               AI Risk Assessment
             </button>
             <button
               onClick={() => toast.success('Payment recorded')}
-              className="flex items-center gap-1.5 text-xs font-500 text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="BanknotesIcon" size={12} />
               Record Payment
             </button>
             <button
               onClick={() => toast.info('Note added')}
-              className="flex items-center gap-1.5 text-xs font-500 text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
             >
               <Icon name="ChatBubbleLeftIcon" size={12} />
               Add Note
@@ -82,7 +82,7 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
               <button
                 key={`cust-detail-tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-500 border-b-2 -mb-px transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                   activeTab === tab.id
                     ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
@@ -110,32 +110,32 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
                   { label: 'Collection Rate', value: `${customer.collectionRate}%`, color: customer.collectionRate > 90 ? 'text-success' : customer.collectionRate > 75 ? 'text-warning' : 'text-danger' },
                 ].map((m) => (
                   <div key={`cust-metric-${m.label}`} className="bg-secondary/50 rounded-lg p-3">
-                    <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
-                    <p className={`text-xl font-700 tabular-nums ${m.color}`}>{m.value}</p>
+                    <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
+                    <p className={`text-xl font-bold tabular-nums ${m.color}`}>{m.value}</p>
                   </div>
                 ))}
               </div>
 
               {/* Credit Info */}
               <div className="bg-card border border-border rounded-lg p-4">
-                <h4 className="text-sm font-600 text-foreground mb-3">Credit Exposure</h4>
+                <h4 className="text-sm font-semibold text-foreground mb-3">Credit Exposure</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Credit Limit</span>
-                    <span className="font-600 tabular-nums">{fx(formatRupiah(customer.creditLimit, true))}</span>
+                    <span className="font-semibold tabular-nums">{fx(formatRupiah(customer.creditLimit, true))}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Used</span>
-                    <span className="font-600 tabular-nums">{fx(formatRupiah(customer.totalAR, true))}</span>
+                    <span className="font-semibold tabular-nums">{fx(formatRupiah(customer.totalAR, true))}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Available</span>
-                    <span className="font-600 tabular-nums text-success">{fx(formatRupiah(customer.creditLimit - customer.totalAR, true))}</span>
+                    <span className="font-semibold tabular-nums text-success">{fx(formatRupiah(customer.creditLimit - customer.totalAR, true))}</span>
                   </div>
                   <div className="pt-2">
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">Utilization</span>
-                      <span className="font-600">{customer.creditUtilization}%</span>
+                      <span className="font-semibold">{customer.creditUtilization}%</span>
                     </div>
                     <div className="h-2 bg-secondary rounded-full overflow-hidden">
                       <div
@@ -149,15 +149,15 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
 
               {/* Payment Schedule */}
               <div className="bg-card border border-border rounded-lg p-4">
-                <h4 className="text-sm font-600 text-foreground mb-3">Payment Schedule</h4>
+                <h4 className="text-sm font-semibold text-foreground mb-3">Payment Schedule</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Last Payment</span>
-                    <span className="font-500">{customer.lastPayment}</span>
+                    <span className="font-medium">{customer.lastPayment}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Next Expected</span>
-                    <span className="font-500 text-primary">{customer.nextExpectedPayment}</span>
+                    <span className="font-medium text-primary">{customer.nextExpectedPayment}</span>
                   </div>
                 </div>
               </div>
@@ -166,7 +166,7 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
               <div className="bg-ai-purple-bg border border-purple-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Icon name="SparklesIcon" size={14} className="text-ai-purple" />
-                  <span className="text-sm font-600 text-ai-purple">AI Risk Assessment</span>
+                  <span className="text-sm font-semibold text-ai-purple">AI Risk Assessment</span>
                 </div>
                 <p className="text-xs text-ai-purple-foreground leading-relaxed">
                   {customer.riskLevel === 'Critical'
@@ -178,7 +178,7 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
                 </p>
                 <button
                   onClick={() => router.push('/ai-financial-analyst?analysis=ar-risk')}
-                  className="text-xs text-ai-purple font-600 mt-2 hover:underline"
+                  className="text-xs text-ai-purple font-semibold mt-2 hover:underline"
                 >
                   View full AI analysis →
                 </button>
@@ -198,15 +198,15 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
                   <div key={inv.id} className="bg-card border border-border rounded-lg p-3 hover:shadow-card transition-all">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-600 text-foreground">{inv.number}</p>
+                        <p className="text-sm font-semibold text-foreground">{inv.number}</p>
                         <p className="text-xs text-muted-foreground">Due: {inv.dueDate}</p>
                       </div>
                       <StatusBadge label={inv.status} className={arStatusColors[inv.status]} />
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-lg font-700 tabular-nums text-foreground">{fx(formatRupiah(inv.amount, true))}</span>
+                      <span className="text-lg font-bold tabular-nums text-foreground">{fx(formatRupiah(inv.amount, true))}</span>
                       {inv.daysOverdue > 0 && (
-                        <span className="text-xs font-600 text-danger">{inv.daysOverdue}d overdue</span>
+                        <span className="text-xs font-semibold text-danger">{inv.daysOverdue}d overdue</span>
                       )}
                     </div>
                   </div>
@@ -221,12 +221,12 @@ export default function CustomerDetailPanel({ customer, onClose }: Props) {
                 <div key={p.id} className="bg-card border border-border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-600 text-foreground">{fx(formatRupiah(p.amount, true))}</p>
+                      <p className="text-sm font-semibold text-foreground">{fx(formatRupiah(p.amount, true))}</p>
                       <p className="text-xs text-muted-foreground">{p.ref} · {p.method}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">{p.date}</p>
-                      <span className="text-2xs bg-success-bg text-success-foreground px-1.5 py-0.5 rounded-full font-600">Received</span>
+                      <span className="text-2xs bg-success-bg text-success-foreground px-1.5 py-0.5 rounded-full font-semibold">Received</span>
                     </div>
                   </div>
                 </div>

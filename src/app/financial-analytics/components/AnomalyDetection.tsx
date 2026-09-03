@@ -90,19 +90,19 @@ export default function AnomalyDetection() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-xl font-600 text-foreground">Financial Anomalies</h3>
+          <h3 className="text-xl font-semibold text-foreground">Financial Anomalies</h3>
           <p className="text-sm text-muted-foreground mt-0.5">
             Unusual movements in financial data — not indicative of fraud or misconduct
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-600 text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">
+          <span className="text-xs font-semibold text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">
             2 High
           </span>
-          <span className="text-xs font-600 text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">
+          <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">
             2 Medium
           </span>
-          <span className="text-xs font-600 text-info bg-info-subtle px-2.5 py-1 rounded-full border border-info/20">
+          <span className="text-xs font-semibold text-info bg-info-subtle px-2.5 py-1 rounded-full border border-info/20">
             1 Low
           </span>
         </div>
@@ -127,8 +127,8 @@ export default function AnomalyDetection() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-3 mb-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-600 text-foreground">{anomaly.metric}</span>
-                      <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full border ${cfg.badge}`}>
+                      <span className="text-sm font-semibold text-foreground">{anomaly.metric}</span>
+                      <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full border ${cfg.badge}`}>
                         {anomaly.severity}
                       </span>
                       <span className="text-2xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
@@ -142,21 +142,21 @@ export default function AnomalyDetection() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <p className="text-2xs text-muted-foreground">Current</p>
-                      <p className="text-sm font-600 font-tabular text-foreground">{fx(formatIDR(anomaly.currentValue, true))}</p>
+                      <p className="text-sm font-semibold tabular-nums text-foreground">{fx(formatIDR(anomaly.currentValue, true))}</p>
                     </div>
                     <div>
                       <p className="text-2xs text-muted-foreground">Expected</p>
-                      <p className="text-sm font-600 font-tabular text-muted-foreground">{fx(formatIDR(anomaly.expectedValue, true))}</p>
+                      <p className="text-sm font-semibold tabular-nums text-muted-foreground">{fx(formatIDR(anomaly.expectedValue, true))}</p>
                     </div>
                     <div>
                       <p className="text-2xs text-muted-foreground">Difference</p>
-                      <p className={`text-sm font-600 font-tabular ${isPositiveDiff ? 'text-negative' : 'text-warning'}`}>
+                      <p className={`text-sm font-semibold tabular-nums ${isPositiveDiff ? 'text-negative' : 'text-warning'}`}>
                         {isPositiveDiff ? '+' : ''}{fx(formatIDR(anomaly.difference, true))}
                       </p>
                     </div>
                     <div>
                       <p className="text-2xs text-muted-foreground">Deviation</p>
-                      <p className={`text-sm font-600 font-tabular ${Math.abs(anomaly.diffPct) > 20 ? 'text-negative' : 'text-warning'}`}>
+                      <p className={`text-sm font-semibold tabular-nums ${Math.abs(anomaly.diffPct) > 20 ? 'text-negative' : 'text-warning'}`}>
                         {isPositiveDiff ? '+' : ''}{anomaly.diffPct.toFixed(1)}%
                       </p>
                     </div>
@@ -169,7 +169,7 @@ export default function AnomalyDetection() {
                           e.stopPropagation();
                           router?.push(`/ai-financial-analyst?analysis=${CATEGORY_ANALYSIS[anomaly.category] || 'profit-decrease'}`);
                         }}
-                        className="flex items-center gap-1.5 text-xs font-500 text-primary hover:text-primary/80 transition-colors px-3 py-1.5 rounded-lg bg-primary/10"
+                        className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors px-3 py-1.5 rounded-lg bg-primary/10"
                       >
                         <Icon name="MagnifyingGlassIcon" size={12} />
                         Analyze

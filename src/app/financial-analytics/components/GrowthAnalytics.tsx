@@ -21,10 +21,10 @@ export default function GrowthAnalytics() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Growth Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">Growth Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">YoY comparison · FY 2026 vs FY 2025</p>
         </div>
-        <span className="text-xs font-600 text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20">
+        <span className="text-xs font-semibold text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20">
           All Metrics Positive
         </span>
       </div>
@@ -33,10 +33,10 @@ export default function GrowthAnalytics() {
         {GROWTH_METRICS?.map((m) => (
           <div key={m?.id}>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-sm text-foreground font-500">{m?.label}</span>
+              <span className="text-sm text-foreground font-medium">{m?.label}</span>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground font-tabular">Prev: {m?.prev}</span>
-                <span className={`text-sm font-700 font-tabular w-16 text-right ${m?.color}`}>{m?.value}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">Prev: {m?.prev}</span>
+                <span className={`text-sm font-bold tabular-nums w-16 text-right ${m?.color}`}>{m?.value}</span>
               </div>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">

@@ -32,7 +32,7 @@ export default function VarianceAnalysis() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Budget Variance Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">Budget Variance Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Favorable and unfavorable variances by category</p>
         </div>
         <div className="flex items-center gap-1 bg-muted border border-border rounded-lg p-0.5">
@@ -40,7 +40,7 @@ export default function VarianceAnalysis() {
             <button
               key={`sort-${s}`}
               onClick={() => setSortBy(s)}
-              className={`px-2.5 py-1 rounded-md text-xs font-500 transition-all ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 s === sortBy ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -71,13 +71,13 @@ export default function VarianceAnalysis() {
                   />
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className={`text-sm font-600 font-tabular w-20 text-right ${isFavorable ? 'text-positive' : 'text-negative'}`}>
+                  <span className={`text-sm font-semibold tabular-nums w-20 text-right ${isFavorable ? 'text-positive' : 'text-negative'}`}>
                     {isFavorable ? '+' : ''}{fx(formatIDR(diff, true))}
                   </span>
-                  <span className={`text-xs font-500 w-14 text-right font-tabular ${isFavorable ? 'text-positive' : 'text-negative'}`}>
+                  <span className={`text-xs font-medium w-14 text-right tabular-nums ${isFavorable ? 'text-positive' : 'text-negative'}`}>
                     {isFavorable ? '+' : ''}{pct.toFixed(1)}%
                   </span>
-                  <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full w-14 text-center ${
+                  <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full w-14 text-center ${
                     item.impact === 'High' ? 'bg-negative-subtle text-negative' :
                     item.impact === 'Medium'? 'bg-warning-subtle text-warning' : 'bg-muted text-muted-foreground'
                   }`}>

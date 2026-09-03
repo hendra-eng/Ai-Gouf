@@ -18,6 +18,29 @@ const nextConfig = {
       },
     ];
   },
+  // [BARU] Next.js membuffer body request di memori saat di-proxy lewat
+  // rewrites() di atas (fitur "proxy" internal Next 15+), dengan batas
+  // default HANYA 10MB -- kalau dilewati, body dipotong lalu koneksi ke
+  // backend putus ("socket hang up"), yang tampil ke user cuma
+  // "Server membalas status 500" generik (bukan pesan error asli, karena
+  // request-nya sendiri tidak pernah utuh sampai ke FastAPI). Ini yang
+  // kejadian waktu upload PDF "Data Penjualan Detail" > 10MB dari modal
+  // import di halaman Expense.
+  // [DIUBAH] Dinaikkan ke 2GB (dari 50MB sebelumnya) atas permintaan user
+  // supaya upload besar apa pun (Excel/PDF berhalaman ribuan) tidak lagi
+  // kena limit ini. CATATAN: angka ini dibatasi RAM server, BUKAN backend
+  // -- Next.js buffer SELURUH body ini ke memori sebelum diteruskan ke
+  // FastAPI (lihat docs resminya), jadi makin besar limitnya, makin besar
+  // pula RAM yang terpakai KALAU ada file sebesar itu benar-benar
+  // diupload. Backend FastAPI/Starlette sendiri (lihat /api/proses-file di
+  // backend/main.py) tidak punya batas ukuran file bawaan -- dia streaming
+  // ke disk, bukan Next.js layer ini yang jadi bottleneck-nya. Turunkan
+  // lagi angka ini kalau server sering kehabisan RAM saat upload besar.
+  // Nama opsi ini `middlewareClientMaxBodySize` di Next.js 15.x -- versi
+  // Next yang lebih baru menamainya `proxyClientMaxBodySize`.
+  experimental: {
+    middlewareClientMaxBodySize: '2gb',
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

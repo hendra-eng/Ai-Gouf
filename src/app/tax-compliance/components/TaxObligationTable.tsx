@@ -81,7 +81,7 @@ export default function TaxObligationTable() {
     <div id="tax-obligations" className="card-base">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Tax Obligations</h3>
+          <h3 className="text-lg font-semibold text-foreground">Tax Obligations</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} obligations · Aug 2026</p>
         </div>
         <div className="flex items-center gap-2">
@@ -122,7 +122,7 @@ export default function TaxObligationTable() {
                 <th
                   key={`th-${col.key}`}
                   onClick={() => handleSort(col.key)}
-                  className="px-4 py-3 text-left text-xs font-600 text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none"
+                  className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground transition-colors select-none"
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -130,23 +130,23 @@ export default function TaxObligationTable() {
                   </div>
                 </th>
               ))}
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginated.map((ob) => (
               <tr key={ob.id} className="border-b border-border hover:bg-muted/40 transition-colors group">
                 <td className="px-4 py-3">
-                  <span className="text-sm font-600 text-foreground">{ob.taxType}</span>
+                  <span className="text-sm font-semibold text-foreground">{ob.taxType}</span>
                 </td>
-                <td className="px-4 py-3 text-sm text-foreground font-tabular">{ob.period}</td>
-                <td className="px-4 py-3 text-sm text-right font-tabular text-muted-foreground">{fx(formatIDR(ob.taxBase, true))}</td>
-                <td className="px-4 py-3 text-sm text-right font-tabular font-600 text-foreground">{fx(formatIDR(ob.taxAmount, true))}</td>
+                <td className="px-4 py-3 text-sm text-foreground tabular-nums">{ob.period}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums text-muted-foreground">{fx(formatIDR(ob.taxBase, true))}</td>
+                <td className="px-4 py-3 text-sm text-right tabular-nums font-semibold text-foreground">{fx(formatIDR(ob.taxAmount, true))}</td>
                 <td className="px-4 py-3 text-sm text-foreground">{ob.dueDate}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{ob.paymentDate || '—'}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{ob.filingDate || '—'}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-2xs font-600 px-2 py-1 rounded-full ${STATUS_STYLES[ob.status] || 'bg-muted text-muted-foreground'}`}>
+                  <span className={`text-2xs font-semibold px-2 py-1 rounded-full ${STATUS_STYLES[ob.status] || 'bg-muted text-muted-foreground'}`}>
                     {ob.status}
                   </span>
                 </td>
@@ -184,7 +184,7 @@ export default function TaxObligationTable() {
             <button
               key={`page-${p}`}
               onClick={() => setPage(p)}
-              className={`w-7 h-7 rounded-lg text-xs font-500 transition-colors ${p === page ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+              className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${p === page ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
             >
               {p}
             </button>
@@ -209,14 +209,14 @@ export default function TaxObligationTable() {
             className="bg-card border border-border rounded-xl shadow-card-lg w-full max-w-md p-5 fade-in"
           >
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-base font-600 text-foreground">{detailObligation.taxType} · {detailObligation.period}</h4>
+              <h4 className="text-base font-semibold text-foreground">{detailObligation.taxType} · {detailObligation.period}</h4>
               <button onClick={() => setDetailObligation(null)} className="p-1 rounded-lg hover:bg-muted text-muted-foreground">
                 <Icon name="XMarkIcon" size={16} />
               </button>
             </div>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Tax Base</span><span className="font-tabular text-foreground">{fx(formatIDR(detailObligation.taxBase, true))}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Tax Amount</span><span className="font-tabular font-600 text-foreground">{fx(formatIDR(detailObligation.taxAmount, true))}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Tax Base</span><span className="tabular-nums text-foreground">{fx(formatIDR(detailObligation.taxBase, true))}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Tax Amount</span><span className="tabular-nums font-semibold text-foreground">{fx(formatIDR(detailObligation.taxAmount, true))}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span className="text-foreground">{detailObligation.dueDate}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Payment Date</span><span className="text-foreground">{detailObligation.paymentDate || '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Filing Date</span><span className="text-foreground">{detailObligation.filingDate || '—'}</span></div>
@@ -225,7 +225,7 @@ export default function TaxObligationTable() {
             </div>
             <button
               onClick={() => downloadCsv([detailObligation], `${detailObligation.reference}.csv`)}
-              className="w-full mt-4 flex items-center justify-center gap-1.5 text-xs font-600 text-primary-foreground bg-primary rounded-lg py-2 hover:bg-primary/90 transition-colors"
+              className="w-full mt-4 flex items-center justify-center gap-1.5 text-xs font-semibold text-primary-foreground bg-primary rounded-lg py-2 hover:bg-primary/90 transition-colors"
             >
               <Icon name="ArrowDownTrayIcon" size={14} />
               Download

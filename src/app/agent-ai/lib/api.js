@@ -685,6 +685,15 @@ export async function ambilLaporanKeuangan(clientId, periode /* optional */) {
   return request(`/api/client/${clientId}/laporan-keuangan${query}`);
 }
 
+// [BARU] 8 kartu KPI halaman Dashboard utama (KPIBentoGrid.tsx) --
+// GET /api/client/{client_id}/kpi-bento, lihat
+// backend/modules/laporan_keuangan.py::susun_kpi_bento_dashboard()
+// utk detail hasil & keterbatasannya (heuristik AP/Tax Payable, dst).
+export async function ambilKpiBento(clientId, tahun /* optional */) {
+  const query = tahun ? `?tahun=${encodeURIComponent(tahun)}` : "";
+  return request(`/api/client/${clientId}/kpi-bento${query}`);
+}
+
 /** URL unduh template Excel kosong 31 sheet -- dipakai lewat <a href>, bukan fetch. */
 export function urlTemplateLaporanKeuangan() {
   return `${API_BASE_URL}/api/template-laporan-keuangan`;

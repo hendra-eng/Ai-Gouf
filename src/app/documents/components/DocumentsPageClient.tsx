@@ -425,7 +425,7 @@ export default function DocumentsPageClient() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <FolderOpen size={20} className="text-primary" />
-                <h1 className="text-xl font-bold text-foreground">Documents</h1>
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">Documents</h1>
               </div>
               <p className="text-sm text-muted-foreground">Financial document workspace — manage, process, and link documents.</p>
             </div>

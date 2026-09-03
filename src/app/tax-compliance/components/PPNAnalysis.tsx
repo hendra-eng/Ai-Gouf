@@ -19,10 +19,10 @@ export default function PPNAnalysis() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">PPN Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">PPN Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Pajak Pertambahan Nilai · Aug 2026</p>
         </div>
-        <span className="text-xs font-600 text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">
+        <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">
           Payable: {fx(formatIDR(vatPayable, true))}
         </span>
       </div>
@@ -36,7 +36,7 @@ export default function PPNAnalysis() {
         ]?.map((item) => (
           <div key={`ppn-${item?.label}`} className="bg-muted rounded-xl p-3 text-center">
             <p className="text-2xs text-muted-foreground mb-1">{item?.label}</p>
-            <p className={`text-base font-700 font-tabular ${item?.color}`}>{fx(formatIDR(item?.value, true))}</p>
+            <p className={`text-base font-bold tabular-nums ${item?.color}`}>{fx(formatIDR(item?.value, true))}</p>
             <p className="text-2xs text-muted-foreground mt-0.5">{item?.sub}</p>
           </div>
         ))}
@@ -46,9 +46,9 @@ export default function PPNAnalysis() {
 
       <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
         <div className="text-xs text-muted-foreground">
-          <span className="font-500 text-foreground">Reconciliation Status:</span> Tax records match accounting records
+          <span className="font-medium text-foreground">Reconciliation Status:</span> Tax records match accounting records
         </div>
-        <span className="text-xs font-600 text-positive bg-positive-subtle px-2 py-0.5 rounded-full">Reconciled</span>
+        <span className="text-xs font-semibold text-positive bg-positive-subtle px-2 py-0.5 rounded-full">Reconciled</span>
       </div>
     </div>
   );

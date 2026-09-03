@@ -5,6 +5,14 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { CurrencyProvider } from '@/lib/currency';
 import { LanguageProvider } from '@/lib/language';
+import { ActiveClientProvider } from '@/lib/activeClient';
+// [BARU] Provider transaksi dinaikkan ke sini (dari sebelumnya hanya di
+// src/app/transactions/layout.tsx) supaya halaman DI LUAR /transactions —
+// terutama Account Payable — bisa ikut baca data transaksi yang sama lewat
+// useTransactions(). Ini prasyarat wajib untuk menghubungkan halaman Expense
+// ke halaman Account Payable, karena keduanya harus berbagi satu instance
+// state yang sama, bukan dua context terpisah.
+import { TransactionsProvider } from '@/app/transactions/context/TransactionsContext';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -20,6 +28,8 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
   return (
     <LanguageProvider>
     <CurrencyProvider>
+    <ActiveClientProvider>
+    <TransactionsProvider>
       <div className="flex h-screen bg-background overflow-hidden">
         {/* Mobile overlay */}
         {mobileSidebarOpen && (
@@ -52,6 +62,8 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
           </main>
         </div>
       </div>
+    </TransactionsProvider>
+    </ActiveClientProvider>
     </CurrencyProvider>
     </LanguageProvider>
   );

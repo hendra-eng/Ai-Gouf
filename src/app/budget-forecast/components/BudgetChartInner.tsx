@@ -40,14 +40,14 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated min-w-[180px]">
-      <p className="text-sm font-600 text-foreground mb-2">{label} 2026</p>
+      <p className="text-sm font-semibold text-foreground mb-2">{label} 2026</p>
       {payload.map((p, i) => (
         <div key={`tt-${i}`} className="flex items-center justify-between gap-4 mb-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
             <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
           </div>
-          <span className="text-xs font-600 text-foreground font-tabular">
+          <span className="text-xs font-semibold text-foreground tabular-nums">
             Rp {p.value?.toFixed(0)}M
           </span>
         </div>

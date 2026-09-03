@@ -40,28 +40,28 @@ export default function BudgetKPICards() {
           <div
             key={card.id}
             onClick={() => toast.info(card.label, { description: `Aktual: ${fx(formatIDR(card.actual, true))} · Budget: ${fx(formatIDR(card.budget, true))} · Forecast: ${fx(formatIDR(card.forecast, true))}` })}
-            className="card-base p-4 hover:border-primary/30 transition-colors cursor-pointer group"
+            className="rounded-xl border p-4 bg-card border-border hover:shadow-card-md transition-all duration-200 cursor-pointer group"
           >
             <div className="flex items-center justify-between mb-3">
               <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
                 <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full ${isPositive ? 'bg-positive-subtle text-positive' : 'bg-negative-subtle text-negative'}`}>
+              <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${isPositive ? 'bg-positive-subtle text-positive' : 'bg-negative-subtle text-negative'}`}>
                 {isPositive ? '▲' : '▼'} {Math.abs(pct).toFixed(1)}%
               </span>
             </div>
-            <p className="text-2xs text-muted-foreground font-500 mb-1 leading-tight">{card.label}</p>
-            <p className="text-lg font-700 text-foreground font-tabular leading-tight">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>
+            <p className="number-display font-bold text-xl text-foreground leading-tight">
               {fx(formatIDR(card.actual, true))}
             </p>
             <div className="mt-2 pt-2 border-t border-border space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-2xs text-muted-foreground">Budget</span>
-                <span className="text-2xs font-500 text-foreground font-tabular">{fx(formatIDR(card.budget, true))}</span>
+                <span className="text-2xs font-medium text-foreground number-display">{fx(formatIDR(card.budget, true))}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-2xs text-muted-foreground">Forecast</span>
-                <span className={`text-2xs font-500 font-tabular ${forecastPositive ? 'text-positive' : 'text-negative'}`}>
+                <span className={`text-2xs font-medium number-display ${forecastPositive ? 'text-positive' : 'text-negative'}`}>
                   {fx(formatIDR(card.forecast, true))}
                 </span>
               </div>

@@ -2,6 +2,7 @@
 
 import React, { useId } from 'react';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/transactionData';
 
@@ -45,8 +46,8 @@ export default function KpiCard({
   changeNeutral,
   alert,
   icon,
-  iconColor = 'text-teal-600',
-  iconBg = 'bg-teal-50',
+  iconColor = 'text-primary',
+  iconBg = 'bg-muted',
   sparklineData,
   sparklineColor,
   compact = false,
@@ -78,7 +79,9 @@ export default function KpiCard({
     ? `${isPositive ? '+' : ''}${(change as number).toFixed(1)}%`
     : (change as string | undefined);
 
-  const sparklineStroke = sparklineColor || (isPositive ? '#059669' : '#DC2626');
+  // Use the same design tokens as the Financial Overview's MetricCard (var(--positive)/var(--negative))
+  // instead of hardcoded hex, so sparklines stay in sync if the theme colors ever change.
+  const sparklineStroke = sparklineColor || (isPositive ? 'var(--positive)' : 'var(--negative)');
   const gradientId = `kpiSpark-${useId().replace(/:/g, '')}`;
 
   // Pad the Y domain so the curve's peak/trough never touches the tiny chart's
@@ -95,23 +98,37 @@ export default function KpiCard({
     sparklineDomain = [min - pad, max + pad];
   }
 
+  // Card shell matches MetricCard exactly: rounded-xl, 1px border, shadow only on hover
+  // (instead of the old kpi-card class which had a permanent 2px border + heavy shadow).
+  const cardBg = alert ? 'bg-negative-subtle border-negative/20' : 'bg-card border-border';
+
   return (
-    <div className={`kpi-card flex flex-col gap-3 ${alert ? 'ring-1 ring-red-200 bg-danger-bg/40' : ''} ${className || ''}`}>
-      <div className="flex items-start justify-between">
-        {icon && (
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-            <Icon name={icon} size={18} className={iconColor} />
-          </div>
-        )}
+    <div
+      className={`relative rounded-xl border p-4 ${cardBg} hover:shadow-card-md transition-all duration-200 ${className || ''}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          {icon && (
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mb-2 ${iconBg}`}>
+              <Icon name={icon} size={18} className={iconColor} />
+            </div>
+          )}
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 truncate">
+            {displayTitle}
+          </p>
+          <p className={`number-display font-bold leading-none text-xl ${valueColor || 'text-foreground'}`}>
+            {prefix}{formattedValue}{suffix}
+          </p>
+          {subLabel && <p className="text-xs text-muted-foreground mt-1">{subLabel}</p>}
+        </div>
+
         {normalizedSparkline && normalizedSparkline.length > 0 && (
-          <div className="w-20 h-11 ml-auto relative">
+          <div className="w-16 h-10 flex-shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={normalizedSparkline} margin={{ top: 5, right: 1, left: 1, bottom: 3 }}>
                 <defs>
                   <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={sparklineStroke} stopOpacity={0.4} />
-                    <stop offset="55%" stopColor={sparklineStroke} stopOpacity={0.14} />
-                    <stop offset="85%" stopColor={sparklineStroke} stopOpacity={0.03} />
+                    <stop offset="0%" stopColor={sparklineStroke} stopOpacity={0.3} />
                     <stop offset="100%" stopColor={sparklineStroke} stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -120,38 +137,25 @@ export default function KpiCard({
                   type="monotone"
                   dataKey="value"
                   stroke={sparklineStroke}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill={`url(#${gradientId})`}
+                  strokeWidth={1.5}
                   dot={false}
-                  activeDot={{ r: 3, fill: sparklineStroke, strokeWidth: 0 }}
+                  fill={`url(#${gradientId})`}
                   isAnimationActive={false}
                   baseValue={sparklineDomain ? sparklineDomain[0] : 'dataMin'}
                 />
               </AreaChart>
             </ResponsiveContainer>
-            {/* subtle baseline so the fade has a clear resting edge instead of a hard clip */}
-            <div className="absolute inset-x-0 bottom-0 h-px bg-border/60 pointer-events-none" />
           </div>
         )}
       </div>
-      <div>
-        <p className="text-xs font-medium text-text-secondary mb-1">{displayTitle}</p>
-        <p className={`text-xl font-bold font-mono ${valueColor || 'text-text-primary'}`}>
-          {prefix}{formattedValue}{suffix}
-        </p>
-        {subLabel && <p className="text-2xs text-muted-foreground mt-0.5">{subLabel}</p>}
-      </div>
+
       {changeText && (
-        <div className="flex items-center gap-1.5">
-          <span className={`flex items-center gap-0.5 text-xs font-semibold ${changeNeutral ? 'text-muted-foreground' : isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
-            {!changeNeutral && (
-              <Icon name={isPositive ? 'ArrowTrendingUpIcon' : 'ArrowTrendingDownIcon'} size={13} />
-            )}
-            {changeText}
-          </span>
-          {isNumericChange && <span className="text-xs text-text-muted">{changeLabel}</span>}
+        <div className="flex items-center gap-1.5 mt-3">
+          <div className={`flex items-center gap-1 ${changeNeutral ? 'text-muted-foreground' : isPositive ? 'text-positive' : 'text-negative'}`}>
+            {!changeNeutral && (isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />)}
+            <span className="text-xs font-semibold font-mono-nums">{changeText}</span>
+          </div>
+          {isNumericChange && <span className="text-xs text-muted-foreground">{changeLabel}</span>}
         </div>
       )}
     </div>

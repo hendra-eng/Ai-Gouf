@@ -129,6 +129,16 @@ app.add_middleware(
         # console, walau backend-nya hidup & benar).
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        # [BARU] Dashboard "Gouf Consulting" ini sebenarnya jalan di port
+        # 4028 (lihat package.json: "next start -p 4028"), bukan 3000 --
+        # ditambahkan supaya browser tidak menolak request LANGSUNG ke
+        # backend ini (tanpa lewat proxy rewrites Next.js) dari origin
+        # yang sesungguhnya dipakai. Dipakai khusus oleh
+        # ImportRekeningKoranModal.tsx untuk upload PDF/Excel besar yang
+        # butuh waktu lama diproses -- lihat komentar di modal itu kenapa
+        # ia sengaja tidak lewat proxy /api/... Next.js.
+        "http://localhost:4028",
+        "http://127.0.0.1:4028",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -385,12 +395,56 @@ def api_tambah_client(
     # belakangan lewat PUT /api/client/{client_id}/kontak.
     nomor_wa: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
+    # [BARU] Field profil dipakai halaman Clients di dashboard (sebelumnya
+    # cuma tersimpan di localStorage, sekarang permanen lewat backend).
+    industry: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+    assigned_accountant: Optional[str] = Form(None),
+    contact_name: Optional[str] = Form(None),
+    npwp: Optional[str] = Form(None),
+    address: Optional[str] = Form(None),
     user: dict = Depends(auth.require_level(3)),  
 ):
-    client_id = dbc.tambah_client(nama, lokasi, tipe, nomor_wa=nomor_wa, email=email)
+    client_id = dbc.tambah_client(
+        nama, lokasi, tipe, nomor_wa=nomor_wa, email=email,
+        industry=industry, status=status, assigned_accountant=assigned_accountant,
+        contact_name=contact_name, npwp=npwp, address=address,
+    )
     if client_id is None:
         raise HTTPException(status_code=500, detail="Gagal menambah client.")
-    return {"id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe, "nomor_wa": nomor_wa, "email": email}
+    return {
+        "id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe,
+        "nomor_wa": nomor_wa, "email": email, "industry": industry, "status": status,
+        "assigned_accountant": assigned_accountant, "contact_name": contact_name,
+        "npwp": npwp, "address": address,
+    }
+
+
+class UpdateProfilClientRequest(BaseModel):
+    industry: Optional[str] = None
+    status: Optional[str] = None
+    assigned_accountant: Optional[str] = None
+    contact_name: Optional[str] = None
+    npwp: Optional[str] = None
+    address: Optional[str] = None
+
+
+@app.put("/api/client/{client_id}/profil")
+def api_update_profil_client(
+    client_id: int,
+    req: UpdateProfilClientRequest,
+    user: dict = Depends(auth.require_level(3)),
+):
+    """Update field profil client (industry/status/assigned_accountant/
+    contact_name/npwp/address) -- dipakai halaman Clients di dashboard."""
+    berhasil = dbc.update_profil_client(
+        client_id, industry=req.industry, status=req.status,
+        assigned_accountant=req.assigned_accountant, contact_name=req.contact_name,
+        npwp=req.npwp, address=req.address,
+    )
+    if not berhasil:
+        raise HTTPException(status_code=404, detail="Client tidak ditemukan.")
+    return {"berhasil": True}
 
 
 class UpdateKontakClientRequest(BaseModel):
@@ -408,6 +462,21 @@ def api_update_kontak_client(
     bisa dapat reminder deadline SPT lewat WA (in-app tetap jalan tanpa
     ini, tapi WA tidak akan terkirim kalau nomor_wa kosong)."""
     berhasil = dbc.update_kontak_client(client_id, nomor_wa=req.nomor_wa, email=req.email)
+    if not berhasil:
+        raise HTTPException(status_code=404, detail="Client tidak ditemukan.")
+    return {"berhasil": True}
+
+
+@app.delete("/api/client/{client_id}")
+def api_hapus_client(
+    client_id: int,
+    user: dict = Depends(auth.require_level(3)),
+):
+    """[BARU] Hapus client -- dipakai menu titik-3 (Edit/Delete) di
+    halaman Clients dashboard. dbc.delete_client() sudah menghapus dulu
+    baris 'hasil'/'hasil_esb' terkait supaya tidak melanggar foreign key
+    ke 'clients' sebelum baris client-nya sendiri dihapus."""
+    berhasil = dbc.delete_client(client_id)
     if not berhasil:
         raise HTTPException(status_code=404, detail="Client tidak ditemukan.")
     return {"berhasil": True}
@@ -715,6 +784,37 @@ def api_buat_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_c
         "narasi": narasi_claude,
         "model_ai": claude_client.MODEL_DEFAULT,
     }
+
+
+# ============================================================
+# [BARU] KPI BENTO DASHBOARD (8 kartu utama halaman Dashboard --
+# KPIBentoGrid.tsx) -- BEDA dari ringkasan-eksekutif di atas (itu utk
+# kartu ringkas non-akuntan + narasi AI opsional). Ini murni angka
+# akuntansi (Revenue/Net Profit/Gross Profit/Cash & Bank/AR/AP/EBITDA/
+# Tax Payable) dgn perubahan % dan sparkline bulanan, dihitung
+# real-time dari jurnal+COA (TANPA panggil AI, GET biasa) -- lihat
+# lapkeu.susun_kpi_bento_dashboard() utk detail & keterbatasan
+# (heuristik nama akun utk AP/Tax Payable, pendekatan EBITDA, dst).
+# ============================================================
+
+@app.get("/api/client/{client_id}/kpi-bento")
+def api_kpi_bento_dashboard(
+    client_id: int,
+    tahun: Optional[int] = None,
+    user: dict = Depends(auth.get_current_user),
+):
+    """Angka 8 kartu KPIBentoGrid.tsx, dihitung real-time dari jurnal
+    terposting + COA client tahun berjalan (atau `tahun` kalau diisi)."""
+    tahun_dipakai = tahun or date.today().year
+    jurnal = dbc.ambil_jurnal_terposting(
+        client_id,
+        tanggal_mulai=f"{tahun_dipakai}-01-01",
+        tanggal_akhir=f"{tahun_dipakai}-12-31",
+        hanya_terposting=False,
+    )
+    coa = dbc.ambil_coa_client(client_id)
+    hasil = lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
+    return hasil
 
 
 # ============================================================
@@ -1095,6 +1195,12 @@ _PEMROSES_DOKUMEN = {
     # supaya bisa dipanggil dari React/n8n lewat FastAPI juga.
     "rekening_koran": ("Rekening Koran / Mutasi Bank (Jurnal Koran)", ak.proses_file_rekening_koran),
     "penjualan": ("Data Penjualan (Invoice & POS/Kasir)", ak.proses_file_penjualan),
+    # [BARU] Laporan "Data Penjualan Detail" PDF per-blok transaksi (No
+    # Transaksi/Tanggal/Dept./Kode Pel./Nama Pelanggan/Alamat + tabel item
+    # + baris Pot./Pajak/Biaya/Total Akhir) -- BEDA dari "penjualan" di
+    # atas (yang butuh 1 baris rata per transaksi di sheet Excel/PDF
+    # bergrid). Lihat ak._ekstrak_pdf_jual_kasir_berbasis_posisi().
+    "jurnal_penjualan_kasir": ("Jurnal Penjualan Kasir (Laporan PDF Kasir/POS per-transaksi)", ak.proses_file_jurnal_penjualan_kasir),
     "penilaian_klien": ("Penilaian Klien/Maker", ak.proses_file_penilaian_klien),
     "buku_bantu_piutang": ("Buku Bantu Piutang (AR)", ak.proses_file_piutang),
     "laporan_keuangan": ("Laporan Keuangan Lengkap (31 Sheet)", ak.proses_file_laporan_keuangan),
@@ -1424,7 +1530,7 @@ async def api_ai_baca_banyak_file(
 # [FIX] Kode jenis dokumen yang fungsinya mendukung pembelajaran pola
 # per-client (client_id diteruskan supaya pola tersimpan terpisah per client,
 # bukan tercampur jadi satu pola global).
-_JENIS_DENGAN_POLA_PER_CLIENT = {"rekening_koran", "penjualan"}
+_JENIS_DENGAN_POLA_PER_CLIENT = {"rekening_koran", "penjualan", "jurnal_penjualan_kasir"}
 
 # [BARU] Nama dasar file pola per jenis dokumen (dipakai ak._path_pola()) --
 # sama persis dengan yang dipakai di dalam ak.proses_file_rekening_koran /
@@ -1433,6 +1539,10 @@ _JENIS_DENGAN_POLA_PER_CLIENT = {"rekening_koran", "penjualan"}
 _POLA_PER_JENIS = {
     "rekening_koran": "pola_bank",
     "penjualan": "pola_penjualan",
+    # [BARU] terpisah dari "pola_penjualan" -- lihat catatan di
+    # ak.proses_file_jurnal_penjualan_kasir() kenapa pola-nya tidak
+    # digabung dengan proses_file_penjualan biasa.
+    "jurnal_penjualan_kasir": "pola_penjualan_kasir",
 }
 
 
@@ -1540,6 +1650,20 @@ def _proses_semua_jenis(
         return b
 
     def _panggil(fungsi, kode):
+        if kode == "jurnal_penjualan_kasir":
+            # [BARU] PDF laporan kasir tidak pernah punya sheet COA sendiri
+            # di dalam filenya (beda dari rekening_koran/penjualan yang
+            # bisa terima Excel dgn sheet COA terpisah) -- COA permanen
+            # client dari DB diteruskan di sini supaya akun Kas/Piutang/
+            # Penjualan bisa dikenali dari kata kunci COA yang sesungguhnya,
+            # bukan selalu jatuh ke label generik. client_id=None (proses
+            # tanpa konteks client) -> df_coa_client kosong, fungsi tetap
+            # jalan (fallback label generik / AI kalau pakai_ai=True).
+            df_coa_client = pd.DataFrame(dbc.ambil_coa_client(client_id)) if client_id is not None else None
+            return fungsi(
+                _buat_buffer(), nama_file, client_id=client_id, pakai_ai=pakai_ai,
+                df_coa_client=df_coa_client,
+            )
         if kode in _JENIS_DENGAN_POLA_PER_CLIENT:
             # [BARU] pakai_ai diteruskan ke rekening_koran & penjualan --
             # dua-duanya sama-sama terima kwarg ini (lihat
@@ -1640,18 +1764,34 @@ def _proses_dan_simpan_satu_file(
     pakai_ai: bool = True,
 ) -> dict:
     """
-    [REFACTOR - batch upload] Badan asli /api/proses-file (deteksi -> simpan
-    hasil -> tarik draf jurnal ke posting -> reminder SPT -> klarifikasi ->
-    alert anomali) DIPINDAH ke sini apa adanya, supaya bisa dipanggil BERKALI-
-    KALI dari /api/client/{id}/proses-file-batch (satu file, satu panggilan)
-    TANPA duplikasi logic. /api/proses-file sendiri sekarang tinggal baca
-    file lalu delegasikan ke fungsi ini -- perilakunya untuk 1 file identik
-    dengan sebelum refactor ini (tidak ada logic yang diubah, cuma dipindah).
+    [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini
+    (kalau client_id diisi) melakukan BELASAN panggilan dbc.xxx() --
+    log_audit, simpan_hasil/simpan_hasil_esb, ambil_hasil_client,
+    dedup_transaksi (catat_upload_batch, ambil_batch_aktif,
+    tandai_batch_diganti), tarik_draf_jurnal_ke_posting,
+    simpan_reminder_deadline_spt, buat_pertanyaan_klarifikasi,
+    buat_alert_anomali, simpan_evaluasi_pola -- SETIAP SATU adalah round-
+    trip jaringan ke database (lihat catatan di db_client.py & komentar
+    chat_stream() soal ini). Karena Supabase sudah dihapus, blok ini
+    SELURUHNYA dibuang: file PDF/Excel sekarang HANYA diparsing
+    (_proses_semua_jenis, murni CPU/AI, tidak pernah menyentuh database)
+    lalu hasilnya langsung dikembalikan apa adanya ke caller.
 
-    pakai_ai default True (perilaku lama) -- diteruskan apa adanya ke
-    _proses_semua_jenis, lihat catatan di endpoint /api/proses-file.
+    client_id/conv_id/esb_account_id/konfirmasi_duplikat/user SENGAJA
+    TIDAK dipakai lagi di sini (parameter tetap dipertahankan supaya
+    signature & pemanggil di /api/proses-file, /api/proses-file-batch,
+    dst tidak perlu ikut diubah) -- konsekuensinya, TIDAK ADA LAGI hasil
+    yang otomatis tersimpan/riwayat/audit log/draf jurnal masuk ke
+    posting/reminder SPT/pertanyaan klarifikasi/alert anomali dari proses
+    upload ini. Kalau nanti perlu simpan hasil ke database lagi, itu
+    harus jadi endpoint terpisah yang eksplisit dipanggil BELAKANGAN
+    (bukan otomatis nempel di sini), supaya upload file tetap cepat &
+    tidak tergantung database sama sekali.
     """
-    hasil_semua, error_per_jenis = _proses_semua_jenis(isi, nama_file, jenis_dokumen, client_id, pakai_ai=pakai_ai)
+    import time as _time_debug  # [DEBUG SEMENTARA] hapus setelah selesai profiling
+    _t0 = _time_debug.perf_counter()
+    hasil_semua, error_per_jenis = _proses_semua_jenis(isi, nama_file, jenis_dokumen, client_id=None, pakai_ai=pakai_ai)
+    print(f"[DEBUG-TIMING] _proses_semua_jenis untuk '{nama_file}' selesai dalam {_time_debug.perf_counter() - _t0:.2f} detik")
 
     if not hasil_semua:
         return {
@@ -1663,218 +1803,6 @@ def _proses_dan_simpan_satu_file(
         }
 
     hasil_json = _bersihkan_untuk_json(hasil_semua)
-
-    if client_id is not None:
-        conv_id_final = conv_id or datetime.now().isoformat()
-        for kode, hasil in hasil_json.items():
-            data_disimpan = dict(hasil)
-            data_disimpan["nama_file"] = nama_file
-
-            # [BARU] Audit trail: kalau pemroses jenis dokumen ini melakukan
-            # auto-fix (mis. proses_file_penilaian_klien -> koreksi_otomatis
-            # dari perbaiki_data_penilaian), catat sebagai satu entri audit
-            # per upload -- bukan cuma balik ke response lalu hilang begitu
-            # tab ditutup. Detail berisi daftar lengkap perubahan per baris
-            # (kolom, nilai lama -> baru, alasan) supaya bisa ditelusuri
-            # siapa (via user login yg upload) - apa - kapan.
-            koreksi_otomatis = hasil.get("koreksi_otomatis") or []
-            if koreksi_otomatis:
-                dbc.log_audit(
-                    client_id=client_id,
-                    user=user.get("username", "unknown"),
-                    aksi="auto_fix_data",
-                    detail={
-                        "jenis_dokumen": kode,
-                        "nama_file": nama_file,
-                        "total_koreksi": len(koreksi_otomatis),
-                        "koreksi": koreksi_otomatis[:200],  # batasi ukuran 1 entri log
-                    },
-                )
-
-            if esb_account_id is not None:
-                # Hasil spesifik 1 akun ESB -> tabel terpisah hasil_esb
-                dbc.simpan_hasil_esb(client_id, esb_account_id, conv_id_final, kode, data_disimpan)
-            else:
-                # Hasil umum client -> tabel hasil
-                dbc.simpan_hasil(client_id, conv_id_final, kode, data_disimpan)
-
-                # [BARU] Tarik draf_jurnal (kalau ada) ke antrean review
-                # jurnal_posting -- supaya muncul di layar "Perlu Posting"
-                # sebelum bisa dihitung ke 5 Laporan Keuangan Standar.
-                # Tidak dilakukan untuk hasil_esb (belum ada alur review
-                # terpisah utk hasil per akun ESB).
-                draf_jurnal = data_disimpan.get("draf_jurnal") or []
-                if draf_jurnal:
-                    hasil_tersimpan = dbc.ambil_hasil_client(client_id, jenis=kode, limit=1)
-                    hasil_id = hasil_tersimpan[0]["id"] if hasil_tersimpan else None
-
-                    # [BARU - dedup upload] KHUSUS rekening_koran: cek dulu
-                    # apakah file/baris ini indikasi upload ulang atau
-                    # revisi dari upload sebelumnya, SEBELUM ditarik ke
-                    # jurnal_posting -- supaya tidak dobel hitung & tidak
-                    # membakar nomor voucher baru utk transaksi yang
-                    # sebenarnya sudah pernah masuk sistem.
-                    if kode == "rekening_koran":
-                        file_hash = dedup_transaksi.hitung_file_hash(isi)
-                        evaluasi = dedup_transaksi.evaluasi_upload_rekening_koran(
-                            client_id=client_id, draf_jurnal=draf_jurnal, file_hash=file_hash,
-                        )
-
-                        if evaluasi.perlu_konfirmasi and not konfirmasi_duplikat:
-                            # DITAHAN -- jangan tarik ke posting sama sekali,
-                            # simpan snapshot supaya bisa ditarik belakangan
-                            # kalau akuntan konfirmasi lewat endpoint terpisah.
-                            for kel in evaluasi.kelompok:
-                                dbc.catat_upload_batch(
-                                    client_id=client_id, kode_bank=kel.kode_bank, periode=kel.periode,
-                                    status="menunggu_konfirmasi", hasil_id=hasil_id, nama_file=nama_file,
-                                    file_hash=file_hash, jumlah_baris_total=kel.jumlah_baris_total,
-                                    jumlah_baris_baru=kel.jumlah_baris_baru,
-                                    jumlah_baris_overlap=kel.jumlah_baris_overlap,
-                                    status_deteksi=kel.status,
-                                    draf_jurnal=[b for b in draf_jurnal if
-                                                 dedup_transaksi._kode_bank_dari_nama(b.get("bank") or "BANK") == kel.kode_bank
-                                                 and dedup_transaksi._periode_dari_tanggal(b.get("tanggal")) == kel.periode],
-                                    diupload_oleh=user.get("username", "unknown"),
-                                )
-                            hasil_json[kode]["draf_jurnal"] = dedup_transaksi.hapus_kolom_internal(draf_jurnal)
-                            hasil_json[kode]["duplikat"] = evaluasi.to_dict()
-                            # TIDAK dipanggil: dbc.tarik_draf_jurnal_ke_posting(...)
-                            continue
-
-                        # BARU, atau sudah eksplisit dikonfirmasi lanjut --
-                        # tarik seperti biasa, lalu catat batch sbg 'aktif'
-                        # (jadi acuan pembanding utk upload berikutnya).
-                        #
-                        # [CATATAN] Kelompok (bank, periode) dihitung ULANG
-                        # di sini via kelompokkan_draf_jurnal() alih-alih
-                        # memakai evaluasi.kelompok langsung, karena utk
-                        # kasus FILE_IDENTIK yang tetap dikonfirmasi lanjut
-                        # (konfirmasi_duplikat=True), evaluasi.kelompok
-                        # sengaja KOSONG (evaluasi_upload_rekening_koran
-                        # return awal sebelum sempat menghitung per baris --
-                        # lihat "Lapis 1" di dedup_transaksi.py). Dengan
-                        # dihitung ulang di sini, kasus itu tetap tercatat
-                        # rapi sbg batch 'aktif' baru (hanya overlap stats-
-                        # nya tidak terisi, krn memang tidak dihitung ulang).
-                        dbc.tarik_draf_jurnal_ke_posting(client_id, hasil_id, kode, draf_jurnal)
-                        info_kelompok = {(k.kode_bank, k.periode): k for k in evaluasi.kelompok}
-                        for (kb, per), baris_list in dedup_transaksi.kelompokkan_draf_jurnal(draf_jurnal).items():
-                            kel = info_kelompok.get((kb, per))
-                            batch_baru_id = dbc.catat_upload_batch(
-                                client_id=client_id, kode_bank=kb, periode=per,
-                                status="aktif", hasil_id=hasil_id, nama_file=nama_file, file_hash=file_hash,
-                                jumlah_baris_total=len(baris_list),
-                                jumlah_baris_baru=(kel.jumlah_baris_baru if kel else len(baris_list)),
-                                jumlah_baris_overlap=(kel.jumlah_baris_overlap if kel else 0),
-                                status_deteksi=(kel.status if kel else evaluasi.status_keseluruhan),
-                                diupload_oleh=user.get("username", "unknown"),
-                            )
-                            batch_lama = kel.batch_sebelumnya if kel else dbc.ambil_batch_aktif(client_id, kb, per)
-                            if batch_lama and konfirmasi_duplikat:
-                                dbc.tandai_batch_diganti(batch_lama["id"], batch_baru_id)
-                        hasil_json[kode]["duplikat"] = evaluasi.to_dict()
-                    else:
-                        dbc.tarik_draf_jurnal_ke_posting(client_id, hasil_id, kode, draf_jurnal)
-
-        # [BARU] Reminder/deadline proaktif SPT: proses_spt() sudah
-        # menghitung tanggal_batas_lapor/tanggal_batas_setor & status
-        # sudah_lapor per baris -- ekstrak jadi kewajiban lapor/setor dan
-        # simpan ke reminder_deadline_spt supaya scheduler harian (lihat
-        # modules/notifikasi.py) bisa mengingatkan LEWAT WA/in-app SEBELUM
-        # jatuh tempo, bukan cuma dilaporkan di response upload ini. Pakai
-        # hasil_semua (bukan hasil_json) krn butuh df pandas asli dgn
-        # tanggal masih berupa objek date, bukan string hasil JSON-clean.
-        hasil_mentah_spt = hasil_semua.get("spt_masa")
-        if hasil_mentah_spt:
-            df_spt_mentah = hasil_mentah_spt.get("df")
-            item_reminder = notifikasi.ekstrak_item_reminder_dari_df(df_spt_mentah)
-            if item_reminder:
-                dbc.simpan_reminder_deadline_spt(client_id, item_reminder)
-
-        # [BARU] Mekanisme tanya balik ke akuntan: untuk jenis dokumen yang
-        # dikategorikan lewat proses_dataframe()/proses_dataframe_penjualan()
-        # (rekening koran & penjualan -- keduanya sudah punya kolom
-        # sumber_kategori/confidence_ai per baris), cari baris yang AI
-        # ragu/gagal kategorikan, lalu simpan sbg pertanyaan berstatus
-        # "pending" supaya muncul di dashboard klarifikasi -- bukan cuma
-        # terkubur diam-diam di sheet "Perlu Direview". Pakai hasil_semua
-        # (bukan hasil_json) krn butuh df pandas asli, bukan yg sudah
-        # di-JSON-kan oleh _bersihkan_untuk_json().
-        for kode in _JENIS_DENGAN_POLA_PER_CLIENT:
-            hasil_mentah = hasil_semua.get(kode)
-            if not hasil_mentah:
-                continue
-            df_mentah = hasil_mentah.get("df")
-            for item in ak.cari_baris_perlu_klarifikasi(df_mentah):
-                dbc.buat_pertanyaan_klarifikasi(
-                    client_id=client_id,
-                    jenis=kode,
-                    pertanyaan=item["pertanyaan"],
-                    conv_id=conv_id_final,
-                    baris_index=item["baris_index"],
-                    konteks=item,
-                    tebakan_kategori=item.get("tebakan_kategori"),
-                    butuh_konfirmasi_saja=item.get("butuh_konfirmasi_saja", False),
-                )
-
-        # [BARU] Alert anomali ke akuntan: sama pola dengan klarifikasi di
-        # atas, tapi sumbernya ak.deteksi_anomali_transaksi() (nominal
-        # transaksi janggal dibanding pola historis client) & ak.deteksi_
-        # pola_mencurigakan() (pasangan akun dipakai banyak pola berbeda
-        # yang masing2 baru 1x muncul). Pola di-reload dari disk krn sudah
-        # sempat diperbarui & disimpan di dalam ak.proses_file_xxx() di
-        # atas -- sama seperti cara chat_stream() mengambil konteks pola.
-        for kode in _JENIS_DENGAN_POLA_PER_CLIENT:
-            hasil_mentah = hasil_semua.get(kode)
-            nama_pola = _POLA_PER_JENIS.get(kode)
-            if not hasil_mentah or not nama_pola:
-                continue
-            try:
-                pola_client = ak.muat_pola(ak._path_pola(nama_pola, client_id))
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal muat pola utk deteksi anomali ({kode}): {e}")
-                continue
-
-            df_mentah = hasil_mentah.get("df")
-            for item in ak.cari_anomali_untuk_alert(df_mentah, pola_client):
-                dbc.buat_alert_anomali(
-                    client_id=client_id,
-                    jenis=kode,
-                    tipe_alert="nominal_ekstrim",
-                    pesan=item["pesan"],
-                    conv_id=conv_id_final,
-                    baris_index=item["baris_index"],
-                    konteks=item,
-                    skor=item.get("anomaly_score"),
-                )
-
-            # [BARU] Deteksi pola mencurigakan di-dedup lewat evaluasi_pola
-            # (ak.muat_evaluasi_pola/simpan_evaluasi_pola, sebelumnya sudah
-            # ada di akuntansi_ai.py tapi belum pernah dipanggil dari mana
-            # pun) -- supaya akuntan TIDAK dialert ulang utk pasangan akun
-            # yang sama di setiap upload file berikutnya, hanya saat
-            # pertama kali terdeteksi.
-            temuan_mencurigakan = ak.deteksi_pola_mencurigakan(pola_client)
-            if temuan_mencurigakan:
-                path_evaluasi = ak._path_pola(f"evaluasi_{nama_pola}", client_id)
-                temuan_benar_baru = ak.simpan_evaluasi_pola(path_evaluasi, temuan_mencurigakan)
-                for temuan in temuan_benar_baru:
-                    pesan = (
-                        f"Akun \"{temuan['nama_akun_debet']}\" (debet) / "
-                        f"\"{temuan['nama_akun_kredit']}\" (kredit) dipakai oleh "
-                        f"{temuan['jumlah_signature_berbeda']} pola transaksi berbeda "
-                        f"yang masing2 baru muncul 1x -- cek apakah kategorisasi ini benar."
-                    )
-                    dbc.buat_alert_anomali(
-                        client_id=client_id,
-                        jenis=kode,
-                        tipe_alert="pola_mencurigakan",
-                        pesan=pesan,
-                        conv_id=conv_id_final,
-                        konteks=temuan,
-                        skor=float(temuan["jumlah_signature_berbeda"]),
-                    )
 
     return {
         "nama_file": nama_file,
@@ -1919,16 +1847,35 @@ async def proses_file(
 ):
     isi = await file.read()
     nama_file = file.filename or "upload.xlsx"
-    # [FIX -- GAP EVENT LOOP] _proses_dan_simpan_satu_file() sync & berat
-    # (parsing penuh + beberapa write ke DB) -- lihat catatan identik di
-    # /api/deteksi-file di atas. Dibungkus asyncio.to_thread supaya tidak
-    # memblokir event loop -- endpoint ini yang PALING SERING dipakai utk
-    # upload harian, jadi paling penting dibenerin duluan.
-    return await asyncio.to_thread(
-        _proses_dan_simpan_satu_file,
-        isi, nama_file, jenis_dokumen, client_id, conv_id, esb_account_id,
-        konfirmasi_duplikat, user, pakai_ai,
-    )
+    # [BARU] Sebelumnya endpoint ini TIDAK membungkus exception apa pun --
+    # kalau _proses_dan_simpan_satu_file() gagal di tengah jalan (mis. PDF
+    # rekening koran yang gagal diparsing pdfplumber, error dari DB, dll),
+    # FastAPI membalas 500 KOSONG tanpa body JSON, sehingga frontend
+    # (ImportRekeningKoranModal.tsx: `detail.detail || 'Server membalas
+    # status 500'`) cuma bisa tampilkan pesan generik itu -- pesan error
+    # ASLI (kenapa gagalnya) hilang, cuma ada di log server. Sekarang
+    # dibungkus try/except yang sama polanya dengan endpoint lain
+    # (/api/deteksi-file dkk di atas) supaya pesan errornya ikut terkirim
+    # ke UI lewat field `detail`.
+    try:
+        # [FIX -- GAP EVENT LOOP] _proses_dan_simpan_satu_file() sync & berat
+        # (parsing penuh + beberapa write ke DB) -- lihat catatan identik di
+        # /api/deteksi-file di atas. Dibungkus asyncio.to_thread supaya tidak
+        # memblokir event loop -- endpoint ini yang PALING SERING dipakai utk
+        # upload harian, jadi paling penting dibenerin duluan.
+        return await asyncio.to_thread(
+            _proses_dan_simpan_satu_file,
+            isi, nama_file, jenis_dokumen, client_id, conv_id, esb_account_id,
+            konfirmasi_duplikat, user, pakai_ai,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # [FIX] main.py tidak punya `logger` module-level (pola logging di
+        # sini pakai `print`, lihat contoh lain di _proses_dan_simpan_satu_file
+        # di atas) -- pakai logger.exception() di sini akan NameError.
+        print(f"[ERROR] Gagal memproses file '{nama_file}' di /api/proses-file: {e}")
+        raise HTTPException(status_code=500, detail=f"Gagal memproses file: {e}")
 
 
 # ============================================================
@@ -2931,47 +2878,41 @@ def _siapkan_df_coa_untuk_kertas_kerja(
     client_id: int, coa_bytes: Optional[bytes], nama_coa_file: Optional[str],
 ) -> Tuple[pd.DataFrame, List[str]]:
     """
-    Sumber COA untuk kertas kerja, urutan prioritas:
-      1. File Excel COA skema kertas kerja diupload di request ini
-         (kolom Account No./Account Name/Normal Balance/Statement/
-         FS Group/Notes -- lihat kertas_kerja.muat_coa_kertas_kerja).
-      2. Fallback: COA client yang sudah tersimpan di database (skema
-         lebih sederhana, dipetakan best-effort -- lihat
-         kertas_kerja.bangun_coa_kertas_kerja_dari_db, PASTI menghasilkan
-         peringatan karena kolom Statement/staging cuma ditebak).
+    [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini punya
+    fallback ke `dbc.ambil_coa_client(client_id)` kalau coa_file tidak
+    diupload. Fallback itu DIHAPUS SELURUHNYA -- COA sekarang HANYA
+    berasal dari file Excel yang diupload di request yang sama (parameter
+    coa_file). Kalau tidak diupload, kertas kerja tetap digenerate (tidak
+    error), tapi TANPA pemetaan akun (label generik apa adanya dari PDF,
+    tidak dipetakan ke skema Statement/FS Group) -- upload coa_file kalau
+    butuh pemetaan akun yang rapi.
     """
-    if coa_bytes:
-        try:
-            wb_coa = openpyxl.load_workbook(io.BytesIO(coa_bytes), data_only=True)
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400,
-                detail=f"File COA '{nama_coa_file}' gagal dibaca sebagai Excel: {e}",
-            )
-        df_coa = kertas_kerja.muat_coa_kertas_kerja(wb_coa)
-        if df_coa.empty:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Sheet 'COA' tidak ditemukan atau kosong di file '{nama_coa_file}'. "
-                    "Pastikan ada sheet bernama mengandung 'COA' dengan header "
-                    "Account No./Account Name/Normal Balance/Statement/FS Group/Notes."
-                ),
-            )
-        return df_coa, []
+    if not coa_bytes:
+        return pd.DataFrame(), [
+            "Tidak ada file COA yang diupload di request ini -- kertas kerja "
+            "digenerate TANPA pemetaan akun (label generik apa adanya). "
+            "Sertakan file Excel COA skema kertas kerja lewat parameter "
+            "coa_file kalau butuh pemetaan akun yang rapi.",
+        ]
 
-    daftar_akun_db = dbc.ambil_coa_client(client_id)
-    df_coa, peringatan = kertas_kerja.bangun_coa_kertas_kerja_dari_db(daftar_akun_db)
+    try:
+        wb_coa = openpyxl.load_workbook(io.BytesIO(coa_bytes), data_only=True)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=400,
+            detail=f"File COA '{nama_coa_file}' gagal dibaca sebagai Excel: {e}",
+        )
+    df_coa = kertas_kerja.muat_coa_kertas_kerja(wb_coa)
     if df_coa.empty:
         raise HTTPException(
             status_code=400,
             detail=(
-                "COA client ini masih kosong (baik di database maupun tidak ada file "
-                "COA yang diupload di request ini). Upload COA dulu (menu COA, atau "
-                "sertakan file Excel COA skema kertas kerja lewat parameter coa_file)."
+                f"Sheet 'COA' tidak ditemukan atau kosong di file '{nama_coa_file}'. "
+                "Pastikan ada sheet bernama mengandung 'COA' dengan header "
+                "Account No./Account Name/Normal Balance/Statement/FS Group/Notes."
             ),
         )
-    return df_coa, peringatan
+    return df_coa, []
 
 
 @app.post("/api/client/{client_id}/generate-kertas-kerja")
@@ -3007,9 +2948,11 @@ async def api_generate_kertas_kerja(
     if not files:
         raise HTTPException(status_code=400, detail="Tidak ada file PDF rekening koran yang diupload.")
 
-    client = dbc.ambil_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail=f"Client dengan id {client_id} tidak ditemukan.")
+    # [FIX -- Supabase dihapus, TANPA DATABASE] Validasi dbc.ambil_client()
+    # dihapus -- client_id sekarang cuma dipakai sbg label/konteks (mis.
+    # nama file hasil), TIDAK divalidasi ke database. Kalau client_id
+    # salah/tidak ada, proses tetap jalan (tidak 404), karena tidak ada
+    # lagi yang dicek ke database sama sekali di jalur file PDF ini.
 
     coa_bytes = await coa_file.read() if coa_file is not None else None
     df_coa, peringatan_coa = _siapkan_df_coa_untuk_kertas_kerja(
@@ -3136,18 +3079,9 @@ def _jalankan_generate_kertas_kerja(
     ringkasan = kertas_kerja.ringkasan_status_kertas_kerja(hasil)
     nama_file_output = f"Kertas_Kerja_Laporan_Keuangan_{tahun}.xlsx"
 
-    dbc.log_audit(
-        client_id=client_id,
-        user=user.get("username", "unknown"),
-        aksi="generate_kertas_kerja",
-        detail={
-            "tahun": tahun,
-            "jumlah_file_pdf": len(daftar_file_pdf),
-            "jumlah_transaksi": ringkasan["jumlah_transaksi"],
-            "confidence_count": ringkasan["confidence_count"],
-            "jumlah_peringatan": ringkasan["jumlah_peringatan"],
-        },
-    )
+    # [FIX -- Supabase dihapus, TANPA DATABASE] dbc.log_audit() dihapus --
+    # tidak ada lagi audit trail yang ditulis ke database untuk proses
+    # generate kertas kerja ini.
 
     return {
         "client_id": client_id,
@@ -3184,9 +3118,11 @@ async def api_generate_kertas_kerja_stream(
     if not files:
         raise HTTPException(status_code=400, detail="Tidak ada file PDF rekening koran yang diupload.")
 
-    client = dbc.ambil_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail=f"Client dengan id {client_id} tidak ditemukan.")
+    # [FIX -- Supabase dihapus, TANPA DATABASE] Validasi dbc.ambil_client()
+    # dihapus -- client_id sekarang cuma dipakai sbg label/konteks (mis.
+    # nama file hasil), TIDAK divalidasi ke database. Kalau client_id
+    # salah/tidak ada, proses tetap jalan (tidak 404), karena tidak ada
+    # lagi yang dicek ke database sama sekali di jalur file PDF ini.
 
     coa_bytes = await coa_file.read() if coa_file is not None else None
     nama_coa_file = coa_file.filename if coa_file else None
@@ -3319,9 +3255,11 @@ async def api_generate_kertas_kerja_per_file_stream(
     if not files:
         raise HTTPException(status_code=400, detail="Tidak ada file PDF rekening koran yang diupload.")
 
-    client = dbc.ambil_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail=f"Client dengan id {client_id} tidak ditemukan.")
+    # [FIX -- Supabase dihapus, TANPA DATABASE] Validasi dbc.ambil_client()
+    # dihapus -- client_id sekarang cuma dipakai sbg label/konteks (mis.
+    # nama file hasil), TIDAK divalidasi ke database. Kalau client_id
+    # salah/tidak ada, proses tetap jalan (tidak 404), karena tidak ada
+    # lagi yang dicek ke database sama sekali di jalur file PDF ini.
 
     coa_bytes = await coa_file.read() if coa_file is not None else None
     nama_coa_file = coa_file.filename if coa_file else None
@@ -3530,17 +3468,8 @@ def _bangun_data_export_18_sheet_dari_kertas_kerja(
         penyesuaian_ekuitas_manual=req.penyesuaian_ekuitas_manual,
     )
 
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="konfirmasi_kertas_kerja_ke_18_sheet",
-        detail={
-            "tahun": tahun,
-            "nama_file_kertas_kerja": nama_file,
-            "jumlah_baris_jurnal": len(data_export.get("jurnal") or []),
-            "jumlah_akun_coa": len(data_export.get("coa") or []),
-            "jumlah_peringatan_tahun": len(peringatan_tahun),
-        },
-    )
+    # [FIX -- Supabase dihapus, TANPA DATABASE] dbc.log_audit() dihapus --
+    # tidak ada lagi audit trail yang ditulis ke database di sini.
     return data_export, peringatan_tahun
 
 
@@ -3585,9 +3514,8 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet(
     transaksi GL ternyata mencakup >1 tahun, peringatannya dikirim lewat
     header response `X-Peringatan-Tahun` (opsional dibaca frontend).
     """
-    client = dbc.ambil_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail=f"Client dengan id {client_id} tidak ditemukan.")
+    # [FIX -- Supabase dihapus, TANPA DATABASE] Validasi dbc.ambil_client()
+    # dihapus -- client_id cuma label, tidak divalidasi ke database.
 
     nama_file = file.filename or "kertas_kerja.xlsx"
     if not nama_file.lower().endswith(".xlsx"):
@@ -3652,9 +3580,8 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet_json(
     lihat _bangun_preview_18_sheet_json). Parameter sama persis dengan
     versi Excel di atas.
     """
-    client = dbc.ambil_client(client_id)
-    if not client:
-        raise HTTPException(status_code=404, detail=f"Client dengan id {client_id} tidak ditemukan.")
+    # [FIX -- Supabase dihapus, TANPA DATABASE] Validasi dbc.ambil_client()
+    # dihapus -- client_id cuma label, tidak divalidasi ke database.
 
     nama_file = file.filename or "kertas_kerja.xlsx"
     if not nama_file.lower().endswith(".xlsx"):

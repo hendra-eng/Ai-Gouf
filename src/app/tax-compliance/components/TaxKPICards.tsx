@@ -33,17 +33,17 @@ export default function TaxKPICards() {
       {CARDS.map((card) => {
         const cfg = STATUS_COLORS[card.status];
         return (
-          <div key={card.id} onClick={goToObligation} className="card-base p-4 hover:border-chart-3/30 transition-colors cursor-pointer group">
+          <div key={card.id} onClick={goToObligation} className="rounded-xl border p-4 bg-card border-border hover:shadow-card-md transition-all duration-200 cursor-pointer group">
             <div className="flex items-center justify-between mb-3">
               <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
                 <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={14} className="text-muted-foreground group-hover:text-chart-3 transition-colors" />
               </div>
-              <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full ${cfg.badge}`}>
+              <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>
                 {card.trend}
               </span>
             </div>
-            <p className="text-2xs text-muted-foreground font-500 mb-1 leading-tight">{card.label}</p>
-            <p className={`text-lg font-700 font-tabular leading-tight ${card.value === 0 ? 'text-positive' : cfg.text}`}>
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>
+            <p className={`number-display font-bold text-xl leading-tight ${card.value === 0 ? 'text-positive' : cfg.text}`}>
               {card.value === 0 ? 'Rp 0' : fx(formatIDR(card.value, true))}
             </p>
             <p className="text-2xs text-muted-foreground mt-1">{card.sub}</p>

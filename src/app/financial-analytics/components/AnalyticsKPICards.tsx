@@ -29,20 +29,20 @@ export default function AnalyticsKPICards() {
         <div
           key={card.id}
           onClick={() => router?.push(card.route)}
-          className="card-base p-4 hover:border-chart-4/30 transition-colors cursor-pointer group"
+          className="rounded-xl border p-4 bg-card border-border hover:shadow-card-md transition-all duration-200 cursor-pointer group"
         >
           <div className="flex items-center justify-between mb-3">
             <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
               <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={14} className="text-muted-foreground group-hover:text-chart-4 transition-colors" />
             </div>
-            <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full ${
+            <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${
               card.status === 'positive' ? 'bg-positive-subtle text-positive' : 'bg-negative-subtle text-negative'
             }`}>
               {card.change}
             </span>
           </div>
-          <p className="text-2xs text-muted-foreground font-500 mb-1 leading-tight">{card.label}</p>
-          <p className="text-xl font-700 text-foreground font-tabular leading-tight">{card.value}</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>
+          <p className="number-display font-bold text-xl text-foreground leading-tight">{card.value}</p>
           <div className="mt-2 pt-2 border-t border-border flex items-center justify-between">
             <span className="text-2xs text-muted-foreground">Prev: {card.prev}</span>
             <span className="text-2xs text-muted-foreground">Target: {card.benchmark}</span>

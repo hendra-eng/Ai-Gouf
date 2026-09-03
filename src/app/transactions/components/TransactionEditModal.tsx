@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { X, Save, AlertTriangle } from 'lucide-react';
-import { Transaction } from './transactionData';
+import { Transaction, getTransactionGroup, PAYMENT_STATUS_OPTIONS } from './transactionData';
 
 interface Props {
   transaction: Transaction;
@@ -9,13 +9,23 @@ interface Props {
   // Dipanggil dengan versi Transaction yang sudah diedit — parent (TransactionsContent)
   // yang bertanggung jawab menimpa entri lama di state `transactions`.
   onSave: (updated: Transaction) => void;
+  // [BARU] true saat modal dipakai untuk tombol "+ Jurnal Baru" di panel aksi
+  // jurnal 5 sub halaman — hanya mengubah judul/label tombol, `transaction`
+  // tetap wajib diisi (berupa template kosong) supaya form tidak perlu logic
+  // terpisah untuk state kosong.
+  isNew?: boolean;
 }
 
 // Kategori yang sudah dikenal sistem (dipakai untuk dropdown, tapi tetap boleh
 // isi kategori baru lewat opsi "Kategori lain..." di bawah select).
 const KNOWN_CATEGORIES = [
   'Revenue', 'Payroll', 'Software', 'Rent', 'Tax', 'Marketing', 'Travel',
-  'CapEx', 'AP Payment', 'Utilities', 'Financing', 'Import Rekening Koran',
+  'CapEx', 'AP Payment', 'Utilities', 'Financing',
+  // [DIUBAH] 'Import Rekening Koran' diganti 5 label grup ini — sekarang
+  // baris hasil import sudah otomatis diberi salah satu kategori ini
+  // (lihat classifyByAccountName di transactionData.ts), jadi opsi manualnya
+  // pun disamakan ke sini.
+  'Sales', 'Expense', 'Cash Payment', 'Cash Reserve', 'Other',
 ];
 
 const typeOptions: Transaction['type'][] = ['debit', 'credit', 'journal'];
@@ -47,7 +57,7 @@ function normalisasiTransaksi(tx: Transaction): Transaction {
   };
 }
 
-export default function TransactionEditModal({ transaction, onClose, onSave }: Props) {
+export default function TransactionEditModal({ transaction, onClose, onSave, isNew = false }: Props) {
   const [form, setForm] = useState<Transaction>(() => normalisasiTransaksi(transaction));
   // Kalau kategori transaksi belum ada di daftar dikenal, tampilkan sebagai
   // input bebas dari awal (bukan dropdown) supaya nilainya tidak "hilang".
@@ -90,9 +100,9 @@ export default function TransactionEditModal({ transaction, onClose, onSave }: P
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-border flex-shrink-0">
           <div>
-            <h2 className="text-xl font-700 text-foreground">Edit Transaksi</h2>
+            <h2 className="text-xl font-700 text-foreground">{isNew ? 'Tambah Jurnal Baru' : 'Edit Transaksi'}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {form.txId} · {form.jeId}
+              {isNew ? 'Isi detail transaksi di bawah, lalu simpan.' : `${form.txId} · ${form.jeId}`}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors">
@@ -259,6 +269,64 @@ export default function TransactionEditModal({ transaction, onClose, onSave }: P
             </div>
           </div>
 
+          {/* [BARU] Field pembayaran ke vendor — hanya tampil untuk transaksi
+              kelompok Expense, karena field inilah yang menghubungkan baris
+              ini ke halaman Account Payable (lihat apBridge.ts). */}
+          {getTransactionGroup(form) === 'expense' && (
+            <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 space-y-4">
+              <p className="text-xs font-semibold text-primary">Status Pembayaran ke Vendor (Account Payable)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Status Pembayaran</label>
+                  <select
+                    value={form.paymentStatus || 'Belum Dibayar'}
+                    onChange={(e) => {
+                      const next = e.target.value as NonNullable<Transaction['paymentStatus']>;
+                      setField('paymentStatus', next);
+                      if (next === 'Belum Dibayar') setField('paidAmount', 0);
+                      if (next === 'Lunas') setField('paidAmount', form.debit);
+                    }}
+                    className="input-base text-sm cursor-pointer"
+                  >
+                    {PAYMENT_STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Tanggal Jatuh Tempo</label>
+                  <input
+                    type="date"
+                    value={form.dueDate || ''}
+                    onChange={(e) => setField('dueDate', e.target.value)}
+                    className="input-base text-sm"
+                  />
+                </div>
+              </div>
+              {form.paymentStatus === 'Sebagian Dibayar' && (
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Jumlah Sudah Dibayar (Rp)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={form.debit || undefined}
+                    value={form.paidAmount ?? 0}
+                    onChange={(e) => setField('paidAmount', toNumberInput(e.target.value))}
+                    className="input-base text-sm font-mono"
+                  />
+                  <p className="text-2xs text-muted-foreground mt-1">
+                    Sisa akan otomatis tercatat sebagai tagihan terbuka (outstanding) di Account Payable: Rp{' '}
+                    {Math.max(0, (form.debit || 0) - (form.paidAmount ?? 0)).toLocaleString('id-ID')}
+                  </p>
+                </div>
+              )}
+              <p className="text-2xs text-muted-foreground">
+                Berapapun status posting jurnal di atas (Unposted/Posted/dll), baris ini akan tetap muncul sebagai
+                tagihan di halaman Account Payable selama Status Pembayaran belum "Lunas".
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Catatan (opsional)</label>
             <textarea
@@ -302,7 +370,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave }: P
             className={`btn-primary text-sm py-2 px-4 gap-1.5 flex items-center ${!canSave ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <Save size={14} />
-            Simpan Perubahan
+            {isNew ? 'Simpan Jurnal Baru' : 'Simpan Perubahan'}
           </button>
         </div>
       </div>

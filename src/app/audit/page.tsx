@@ -137,10 +137,10 @@ const auditTrail: AuditActivity[] = [
 
 function RiskBadge({ risk }: { risk: FindingRisk }) {
   const map: Record<FindingRisk, string> = {
-    Low: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]',
-    Medium: 'bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]',
+    Low: 'bg-positive-subtle text-positive border-[#A7F3D0]',
+    Medium: 'bg-warning-bg text-warning border-[#FDE68A]',
     High: 'bg-[#FFF7ED] text-[#EA580C] border-[#FED7AA]',
-    Critical: 'bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]',
+    Critical: 'bg-negative-subtle text-negative border-[#FECACA]',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${map[risk]}`}>
@@ -151,11 +151,11 @@ function RiskBadge({ risk }: { risk: FindingRisk }) {
 
 function StatusBadge({ status }: { status: FindingStatus }) {
   const map: Record<FindingStatus, string> = {
-    Open: 'bg-[#FEF2F2] text-[#DC2626]',
-    'Under Review': 'bg-[#EFF6FF] text-[#1B4FD8]',
-    'Management Response': 'bg-[#FFFBEB] text-[#D97706]',
-    Resolved: 'bg-[#ECFDF5] text-[#059669]',
-    Accepted: 'bg-[#F5F3FF] text-[#7C3AED]',
+    Open: 'bg-negative-subtle text-negative',
+    'Under Review': 'bg-[#EFF6FF] text-primary',
+    'Management Response': 'bg-warning-bg text-warning',
+    Resolved: 'bg-positive-subtle text-positive',
+    Accepted: 'bg-ai-subtle text-ai',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${map[status]}`}>
@@ -180,19 +180,19 @@ function FindingDrawer({ finding, onClose }: { finding: AuditFinding; onClose: (
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white">
+        <div className="px-5 py-4 border-b border-border bg-gradient-to-r from-[#F8FAFC] to-white">
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-mono font-bold text-[#1B4FD8]">{finding.id}</span>
+                <span className="text-xs font-mono font-bold text-primary">{finding.id}</span>
                 <RiskBadge risk={finding.risk} />
                 <StatusBadge status={finding.status} />
               </div>
-              <h2 className="text-sm font-bold text-[#0F172A]">{finding.description}</h2>
-              <p className="text-xs text-[#64748B] mt-0.5">{finding.area} · {finding.account}</p>
+              <h2 className="text-sm font-bold text-foreground">{finding.description}</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">{finding.area} · {finding.account}</p>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[#F8FAFC] transition-colors">
-              <XMarkIcon className="w-4 h-4 text-[#64748B]" />
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-background transition-colors">
+              <XMarkIcon className="w-4 h-4 text-muted-foreground" />
             </button>
           </div>
         </div>
@@ -201,89 +201,89 @@ function FindingDrawer({ finding, onClose }: { finding: AuditFinding; onClose: (
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Financial Impact */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 bg-[#FEF2F2] rounded-lg border border-[#FECACA]">
-              <p className="text-[10px] text-[#94A3B8] mb-1">Financial Impact</p>
-              <p className="text-sm font-bold font-mono text-[#DC2626]">{fx(formatIDR(finding.amount))}</p>
+            <div className="p-3 bg-negative-subtle rounded-lg border border-[#FECACA]">
+              <p className="text-[10px] text-muted-light mb-1">Financial Impact</p>
+              <p className="text-sm font-bold font-mono text-negative">{fx(formatIDR(finding.amount))}</p>
             </div>
-            <div className="p-3 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-              <p className="text-[10px] text-[#94A3B8] mb-1">Assigned To</p>
-              <p className="text-sm font-semibold text-[#0F172A]">{finding.assignedTo}</p>
+            <div className="p-3 bg-background rounded-lg border border-border">
+              <p className="text-[10px] text-muted-light mb-1">Assigned To</p>
+              <p className="text-sm font-semibold text-foreground">{finding.assignedTo}</p>
             </div>
-            <div className="p-3 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-              <p className="text-[10px] text-[#94A3B8] mb-1">Due Date</p>
-              <p className="text-sm font-semibold text-[#0F172A]">{finding.dueDate}</p>
+            <div className="p-3 bg-background rounded-lg border border-border">
+              <p className="text-[10px] text-muted-light mb-1">Due Date</p>
+              <p className="text-sm font-semibold text-foreground">{finding.dueDate}</p>
             </div>
           </div>
 
           {/* Risk Assessment */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">Risk Assessment</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Risk Assessment</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-                <p className="text-[10px] text-[#64748B] mb-1">Likelihood</p>
+              <div className="p-3 bg-background rounded-lg border border-border">
+                <p className="text-[10px] text-muted-foreground mb-1">Likelihood</p>
                 <div className="flex gap-1">
                   {[1,2,3,4,5].map(n => (
-                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.likelihood ? 'bg-[#DC2626]' : 'bg-[#E2E8F0]'}`} />
+                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.likelihood ? 'bg-negative' : 'bg-border'}`} />
                   ))}
                 </div>
-                <p className="text-[10px] text-[#94A3B8] mt-1">{finding.likelihood}/5</p>
+                <p className="text-[10px] text-muted-light mt-1">{finding.likelihood}/5</p>
               </div>
-              <div className="p-3 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-                <p className="text-[10px] text-[#64748B] mb-1">Impact</p>
+              <div className="p-3 bg-background rounded-lg border border-border">
+                <p className="text-[10px] text-muted-foreground mb-1">Impact</p>
                 <div className="flex gap-1">
                   {[1,2,3,4,5].map(n => (
-                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.impact ? 'bg-[#D97706]' : 'bg-[#E2E8F0]'}`} />
+                    <div key={n} className={`h-2 flex-1 rounded-sm ${n <= finding.impact ? 'bg-warning' : 'bg-border'}`} />
                   ))}
                 </div>
-                <p className="text-[10px] text-[#94A3B8] mt-1">{finding.impact}/5</p>
+                <p className="text-[10px] text-muted-light mt-1">{finding.impact}/5</p>
               </div>
             </div>
           </div>
 
           {/* Root Cause */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">Root Cause</p>
-            <p className="text-xs text-[#0F172A] leading-relaxed bg-[#FFFBEB] p-3 rounded-lg border border-[#FDE68A]">{finding.rootCause}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Root Cause</p>
+            <p className="text-xs text-foreground leading-relaxed bg-warning-bg p-3 rounded-lg border border-[#FDE68A]">{finding.rootCause}</p>
           </div>
 
           {/* Recommendation */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">Recommendation</p>
-            <p className="text-xs text-[#0F172A] leading-relaxed bg-[#EFF6FF] p-3 rounded-lg border border-[#DBEAFE]">{fx(finding.recommendation)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Recommendation</p>
+            <p className="text-xs text-foreground leading-relaxed bg-[#EFF6FF] p-3 rounded-lg border border-[#DBEAFE]">{fx(finding.recommendation)}</p>
           </div>
 
           {/* Management Response */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">Management Response</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Management Response</p>
             {finding.managementResponse ? (
-              <p className="text-xs text-[#0F172A] leading-relaxed bg-[#ECFDF5] p-3 rounded-lg border border-[#A7F3D0]">{finding.managementResponse}</p>
+              <p className="text-xs text-foreground leading-relaxed bg-positive-subtle p-3 rounded-lg border border-[#A7F3D0]">{finding.managementResponse}</p>
             ) : (
-              <div className="p-3 bg-[#F8FAFC] rounded-lg border border-dashed border-[#CBD5E1] text-center">
-                <p className="text-xs text-[#94A3B8]">No management response yet</p>
+              <div className="p-3 bg-background rounded-lg border border-dashed border-[#CBD5E1] text-center">
+                <p className="text-xs text-muted-light">No management response yet</p>
               </div>
             )}
           </div>
 
           {/* Evidence */}
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">Evidence</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Evidence</p>
             <div className="space-y-1.5">
               {finding.id === 'AUD-002' ? (
                 <>
-                  <div className="flex items-center gap-2 p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-                    <PaperClipIcon className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span className="text-xs text-[#0F172A] flex-1">AR_Aging_Aug2026.xlsx</span>
-                    <span className="text-[10px] text-[#94A3B8]">284 KB</span>
+                  <div className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
+                    <PaperClipIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-foreground flex-1">AR_Aging_Aug2026.xlsx</span>
+                    <span className="text-[10px] text-muted-light">284 KB</span>
                   </div>
-                  <div className="flex items-center gap-2 p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
-                    <PaperClipIcon className="w-3.5 h-3.5 text-[#64748B]" />
-                    <span className="text-xs text-[#0F172A] flex-1">Customer_Statements.pdf</span>
-                    <span className="text-[10px] text-[#94A3B8]">1.2 MB</span>
+                  <div className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
+                    <PaperClipIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs text-foreground flex-1">Customer_Statements.pdf</span>
+                    <span className="text-[10px] text-muted-light">1.2 MB</span>
                   </div>
                 </>
               ) : (
-                <div className="p-3 bg-[#F8FAFC] rounded-lg border border-dashed border-[#CBD5E1] text-center">
-                  <p className="text-xs text-[#94A3B8]">No evidence attached</p>
+                <div className="p-3 bg-background rounded-lg border border-dashed border-[#CBD5E1] text-center">
+                  <p className="text-xs text-muted-light">No evidence attached</p>
                 </div>
               )}
             </div>
@@ -291,13 +291,13 @@ function FindingDrawer({ finding, onClose }: { finding: AuditFinding; onClose: (
         </div>
 
         {/* Actions */}
-        <div className="flex-shrink-0 px-5 py-4 border-t border-[#E2E8F0] bg-[#F8FAFC]">
+        <div className="flex-shrink-0 px-5 py-4 border-t border-border bg-background">
           <div className="flex flex-wrap gap-2">
             {[
-              { label: 'Review', color: 'bg-[#EFF6FF] text-[#1B4FD8] border-[#DBEAFE]' },
-              { label: 'Add Evidence', color: 'bg-[#F5F3FF] text-[#7C3AED] border-[#EDE9FE]' },
-              { label: 'Resolve', color: 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]' },
-              { label: 'Escalate', color: 'bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]' },
+              { label: 'Review', color: 'bg-[#EFF6FF] text-primary border-[#DBEAFE]' },
+              { label: 'Add Evidence', color: 'bg-ai-subtle text-ai border-[#EDE9FE]' },
+              { label: 'Resolve', color: 'bg-positive-subtle text-positive border-[#A7F3D0]' },
+              { label: 'Escalate', color: 'bg-negative-subtle text-negative border-[#FECACA]' },
             ].map(({ label, color }) => (
               <button
                 key={label}
@@ -321,24 +321,24 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 
   const cellColor = (likelihood: number, impact: number): string => {
     const score = likelihood * impact;
-    if (score >= 16) return 'bg-[#FEF2F2] border-[#FECACA]';
+    if (score >= 16) return 'bg-negative-subtle border-[#FECACA]';
     if (score >= 9) return 'bg-[#FFF7ED] border-[#FED7AA]';
-    if (score >= 4) return 'bg-[#FFFBEB] border-[#FDE68A]';
-    return 'bg-[#ECFDF5] border-[#A7F3D0]';
+    if (score >= 4) return 'bg-warning-bg border-[#FDE68A]';
+    return 'bg-positive-subtle border-[#A7F3D0]';
   };
 
   const dotColor = (risk: FindingRisk): string => {
-    if (risk === 'Critical') return 'bg-[#DC2626]';
+    if (risk === 'Critical') return 'bg-negative';
     if (risk === 'High') return 'bg-[#EA580C]';
-    if (risk === 'Medium') return 'bg-[#D97706]';
-    return 'bg-[#059669]';
+    if (risk === 'Medium') return 'bg-warning';
+    return 'bg-positive';
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-[#0F172A]">Risk Matrix</h3>
-        <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
+        <h3 className="text-sm font-semibold text-foreground">Risk Matrix</h3>
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
           {(['Critical', 'High', 'Medium', 'Low'] as FindingRisk[]).map(r => (
             <div key={r} className="flex items-center gap-1">
               <div className={`w-2 h-2 rounded-full ${dotColor(r)}`} />
@@ -350,7 +350,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 
       <div className="relative">
         {/* Y-axis label */}
-        <div className="absolute -left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] whitespace-nowrap">
+        <div className="absolute -left-6 top-1/2 -translate-y-1/2 -rotate-90 text-[10px] font-semibold uppercase tracking-wider text-muted-light whitespace-nowrap">
           Likelihood →
         </div>
 
@@ -378,7 +378,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
                       </button>
                     ))}
                     {hoveredFinding && cellFindings.find(f => f.id === hoveredFinding) && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-40 bg-[#0F172A] text-white text-[10px] rounded-lg p-2 z-10 pointer-events-none">
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-40 bg-foreground text-white text-[10px] rounded-lg p-2 z-10 pointer-events-none">
                         {cellFindings.find(f => f.id === hoveredFinding)?.description}
                       </div>
                     )}
@@ -391,10 +391,10 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
           {/* X-axis labels */}
           <div className="grid grid-cols-5 gap-1">
             {['Low', 'Minor', 'Moderate', 'Major', 'Critical'].map(label => (
-              <div key={label} className="text-center text-[9px] text-[#94A3B8] font-medium">{label}</div>
+              <div key={label} className="text-center text-[9px] text-muted-light font-medium">{label}</div>
             ))}
           </div>
-          <p className="text-center text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mt-1">Impact →</p>
+          <p className="text-center text-[10px] font-semibold uppercase tracking-wider text-muted-light mt-1">Impact →</p>
         </div>
       </div>
     </div>
@@ -432,27 +432,27 @@ export default function AuditPage() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-bold text-[#0F172A]">Audit Center</h1>
-            <p className="text-sm text-[#64748B] mt-0.5">Monitor audit procedures, findings, risks, and supporting evidence.</p>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">Audit Center</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Monitor audit procedures, findings, risks, and supporting evidence.</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg">
-              <span className="text-xs font-medium text-[#64748B]">FY 2026</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-lg">
+              <span className="text-xs font-medium text-muted-foreground">FY 2026</span>
               <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-semibold text-[#1B4FD8]">78% Complete</span>
+              <span className="text-xs font-semibold text-primary">78% Complete</span>
               <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-medium text-[#D97706]">Risk: Moderate</span>
+              <span className="text-xs font-medium text-warning">Risk: Moderate</span>
             </div>
             <button
               onClick={() => toast.info('Membuka form New Finding')}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-[#1B4FD8] rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors"
             >
               <PlusIcon style={{ width: 13, height: 13 }} />
               New Finding
             </button>
             <button
               onClick={() => toast.success('Audit report diekspor')}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#64748B] bg-white border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-muted-foreground bg-white border border-border rounded-lg hover:bg-background transition-colors"
             >
               <ArrowDownTrayIcon style={{ width: 13, height: 13 }} />
               Export
@@ -461,15 +461,15 @@ export default function AuditPage() {
         </div>
 
         {/* Audit Progress Hero */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-5">
+        <div className="bg-white rounded-xl border border-border p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[#0F172A]">Audit Progress</h2>
-            <span className="text-xs text-[#64748B]">FY 2026 Annual Audit</span>
+            <h2 className="text-sm font-semibold text-foreground">Audit Progress</h2>
+            <span className="text-xs text-muted-foreground">FY 2026 Annual Audit</span>
           </div>
           <div className="relative">
             {/* Progress line */}
-            <div className="absolute top-5 left-0 right-0 h-0.5 bg-[#E2E8F0]" />
-            <div className="absolute top-5 left-0 h-0.5 bg-[#1B4FD8] transition-all" style={{ width: '40%' }} />
+            <div className="absolute top-5 left-0 right-0 h-0.5 bg-border" />
+            <div className="absolute top-5 left-0 h-0.5 bg-primary transition-all" style={{ width: '40%' }} />
 
             <div className="relative flex justify-between">
               {auditStages.map((stage, i) => (
@@ -480,24 +480,24 @@ export default function AuditPage() {
                 >
                   <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center z-10 transition-all ${
                     stage.done
-                      ? 'bg-[#1B4FD8] border-[#1B4FD8]'
+                      ? 'bg-primary border-primary'
                       : stage.current
-                        ? 'bg-white border-[#1B4FD8] ring-4 ring-[#DBEAFE]'
-                        : 'bg-white border-[#E2E8F0]'
+                        ? 'bg-white border-primary ring-4 ring-[#DBEAFE]'
+                        : 'bg-white border-border'
                   } ${activeStage === stage.id ? 'scale-110' : ''}`}>
                     {stage.done ? (
                       <CheckCircleIcon className="w-5 h-5 text-white" />
                     ) : stage.current ? (
-                      <div className="w-3 h-3 rounded-full bg-[#1B4FD8] animate-pulse" />
+                      <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
                     ) : (
                       <span className="text-xs font-bold text-[#CBD5E1]">{i + 1}</span>
                     )}
                   </div>
                   <div className="text-center">
-                    <p className={`text-xs font-semibold ${stage.done || stage.current ? 'text-[#0F172A]' : 'text-[#94A3B8]'}`}>
+                    <p className={`text-xs font-semibold ${stage.done || stage.current ? 'text-foreground' : 'text-muted-light'}`}>
                       {stage.label}
                     </p>
-                    <p className={`text-[10px] ${stage.current ? 'text-[#1B4FD8] font-medium' : 'text-[#94A3B8]'}`}>
+                    <p className={`text-[10px] ${stage.current ? 'text-primary font-medium' : 'text-muted-light'}`}>
                       {stage.date}
                     </p>
                   </div>
@@ -510,8 +510,8 @@ export default function AuditPage() {
         {/* KPI Strip */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
           {kpis.map((kpi) => (
-            <div key={kpi.label} className="bg-white rounded-xl border border-[#E2E8F0] p-4 hover:shadow-sm transition-shadow">
-              <p className="text-[10px] font-medium text-[#64748B] mb-2">{kpi.label}</p>
+            <div key={kpi.label} className="bg-card rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
+              <p className="text-[10px] font-medium text-muted-foreground mb-2">{kpi.label}</p>
               <p className="text-xl font-bold font-mono" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
             </div>
           ))}
@@ -520,21 +520,21 @@ export default function AuditPage() {
         {/* Findings + Risk Matrix */}
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
           {/* Findings Table */}
-          <div className="xl:col-span-3 bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
-            <div className="p-4 border-b border-[#E2E8F0]">
+          <div className="xl:col-span-3 bg-white rounded-xl border border-border overflow-hidden">
+            <div className="p-4 border-b border-border">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-[#0F172A]">Audit Findings</h2>
-                <span className="text-xs text-[#64748B]">{filteredFindings.length} findings</span>
+                <h2 className="text-sm font-semibold text-foreground">Audit Findings</h2>
+                <span className="text-xs text-muted-foreground">{filteredFindings.length} findings</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
+                  <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-light" />
                   <input
                     type="text"
                     placeholder="Search findings..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
                   />
                 </div>
                 <div className="flex gap-1">
@@ -543,7 +543,7 @@ export default function AuditPage() {
                       key={tab}
                       onClick={() => setActiveTab(tab)}
                       className={`px-2.5 py-1.5 text-[10px] font-medium rounded-md capitalize transition-colors ${
-                        activeTab === tab ? 'bg-[#EFF6FF] text-[#1B4FD8]' : 'text-[#64748B] hover:bg-[#F8FAFC]'
+                        activeTab === tab ? 'bg-[#EFF6FF] text-primary' : 'text-muted-foreground hover:bg-background'
                       }`}
                     >
                       {tab.replace('-', ' ')}
@@ -556,9 +556,9 @@ export default function AuditPage() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-[#F1F5F9]">
+                  <tr className="border-b border-muted">
                     {['ID', 'Area', 'Description', 'Amount', 'Risk', 'Assigned', 'Status'].map(h => (
-                      <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] px-4 py-2.5">{h}</th>
+                      <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-muted-light px-4 py-2.5">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -567,14 +567,14 @@ export default function AuditPage() {
                     <tr
                       key={finding.id}
                       onClick={() => setSelectedFinding(finding)}
-                      className="border-b border-[#F8FAFC] hover:bg-[#F8FAFC] cursor-pointer transition-colors"
+                      className="border-b border-background hover:bg-background cursor-pointer transition-colors"
                     >
-                      <td className="px-4 py-3 text-xs font-mono font-bold text-[#1B4FD8]">{finding.id}</td>
-                      <td className="px-4 py-3 text-xs text-[#64748B] whitespace-nowrap">{finding.area}</td>
-                      <td className="px-4 py-3 text-xs text-[#0F172A] max-w-[160px] truncate">{finding.description}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-[#DC2626]">{fx(formatIDR(finding.amount))}</td>
+                      <td className="px-4 py-3 text-xs font-mono font-bold text-primary">{finding.id}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{finding.area}</td>
+                      <td className="px-4 py-3 text-xs text-foreground max-w-[160px] truncate">{finding.description}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-negative">{fx(formatIDR(finding.amount))}</td>
                       <td className="px-4 py-3"><RiskBadge risk={finding.risk} /></td>
-                      <td className="px-4 py-3 text-xs text-[#64748B]">{finding.assignedTo}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{finding.assignedTo}</td>
                       <td className="px-4 py-3"><StatusBadge status={finding.status} /></td>
                     </tr>
                   ))}
@@ -584,22 +584,22 @@ export default function AuditPage() {
           </div>
 
           {/* Risk Heatmap */}
-          <div className="xl:col-span-2 bg-white rounded-xl border border-[#E2E8F0] p-5">
+          <div className="xl:col-span-2 bg-white rounded-xl border border-border p-5">
             <RiskHeatmap findings={findings} onFindingClick={setSelectedFinding} />
           </div>
         </div>
 
         {/* Audit Timeline */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-5">
-          <h2 className="text-sm font-semibold text-[#0F172A] mb-4">Audit Activity Timeline</h2>
+        <div className="bg-white rounded-xl border border-border p-5">
+          <h2 className="text-sm font-semibold text-foreground mb-4">Audit Activity Timeline</h2>
           <div className="space-y-0">
             {auditActivities.map((activity, i) => {
               const typeColors: Record<string, string> = {
-                finding: 'bg-[#FEF2F2] text-[#DC2626]',
-                evidence: 'bg-[#F5F3FF] text-[#7C3AED]',
-                test: 'bg-[#EFF6FF] text-[#1B4FD8]',
-                resolved: 'bg-[#ECFDF5] text-[#059669]',
-                response: 'bg-[#FFFBEB] text-[#D97706]',
+                finding: 'bg-negative-subtle text-negative',
+                evidence: 'bg-ai-subtle text-ai',
+                test: 'bg-[#EFF6FF] text-primary',
+                resolved: 'bg-positive-subtle text-positive',
+                response: 'bg-warning-bg text-warning',
               };
               return (
                 <div key={activity.id} className="flex gap-4 pb-4">
@@ -607,17 +607,17 @@ export default function AuditPage() {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${typeColors[activity.type]}`}>
                       {activity.user.split(' ')[0][0]}{activity.user.split(' ')[1]?.[0] ?? ''}
                     </div>
-                    {i < auditActivities.length - 1 && <div className="w-0.5 flex-1 bg-[#E2E8F0] mt-1" />}
+                    {i < auditActivities.length - 1 && <div className="w-0.5 flex-1 bg-border mt-1" />}
                   </div>
                   <div className="flex-1 pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="text-xs font-semibold text-[#0F172A]">{activity.user}</span>
-                        <span className="text-xs text-[#64748B] ml-2">{activity.action}</span>
+                        <span className="text-xs font-semibold text-foreground">{activity.user}</span>
+                        <span className="text-xs text-muted-foreground ml-2">{activity.action}</span>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-[10px] text-[#94A3B8]">{activity.time}</p>
-                        <p className="text-[10px] text-[#94A3B8]">{activity.date}</p>
+                        <p className="text-[10px] text-muted-light">{activity.time}</p>
+                        <p className="text-[10px] text-muted-light">{activity.date}</p>
                       </div>
                     </div>
                   </div>
@@ -628,35 +628,35 @@ export default function AuditPage() {
         </div>
 
         {/* Audit Trail */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden">
-          <div className="p-4 border-b border-[#E2E8F0]">
+        <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="p-4 border-b border-border">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-[#0F172A]">Audit Trail</h2>
+              <h2 className="text-sm font-semibold text-foreground">Audit Trail</h2>
               <button
                 onClick={() => { setTrailFilter(''); toast.info('Filter audit trail direset'); }}
-                className="flex items-center gap-1.5 text-xs text-[#64748B] hover:text-[#0F172A]"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
                 <FunnelIcon style={{ width: 13, height: 13 }} />
                 Filter
               </button>
             </div>
             <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
+              <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-light" />
               <input
                 type="text"
                 placeholder="Filter by user, module, or action..."
                 value={trailFilter}
                 onChange={e => setTrailFilter(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
               />
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-[#F1F5F9]">
+                <tr className="border-b border-muted">
                   {['User', 'Action', 'Module', 'Record', 'Timestamp', 'Previous Value', 'New Value'].map(h => (
-                    <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] px-4 py-2.5">{h}</th>
+                    <th key={h} className="text-left text-[10px] font-semibold uppercase tracking-wider text-muted-light px-4 py-2.5">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -664,21 +664,21 @@ export default function AuditPage() {
                 {auditTrail
                   .filter(t => !trailFilter || t.user.toLowerCase().includes(trailFilter.toLowerCase()) || t.module.toLowerCase().includes(trailFilter.toLowerCase()) || t.action.toLowerCase().includes(trailFilter.toLowerCase()))
                   .map(trail => (
-                    <tr key={trail.id} className="border-b border-[#F8FAFC] hover:bg-[#F8FAFC] transition-colors">
-                      <td className="px-4 py-3 text-xs font-semibold text-[#0F172A]">{trail.user}</td>
+                    <tr key={trail.id} className="border-b border-background hover:bg-background transition-colors">
+                      <td className="px-4 py-3 text-xs font-semibold text-foreground">{trail.user}</td>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          trail.action === 'Created' ? 'bg-[#ECFDF5] text-[#059669]' :
-                          trail.action === 'Modified' ? 'bg-[#FFFBEB] text-[#D97706]' :
-                          trail.action === 'Resolved' ? 'bg-[#EFF6FF] text-[#1B4FD8]' :
-                          'bg-[#F5F3FF] text-[#7C3AED]'
+                          trail.action === 'Created' ? 'bg-positive-subtle text-positive' :
+                          trail.action === 'Modified' ? 'bg-warning-bg text-warning' :
+                          trail.action === 'Resolved' ? 'bg-[#EFF6FF] text-primary' :
+                          'bg-ai-subtle text-ai'
                         }`}>{trail.action}</span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-[#64748B]">{trail.module}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-[#1B4FD8]">{trail.record}</td>
-                      <td className="px-4 py-3 text-xs text-[#64748B] whitespace-nowrap">{trail.timestamp}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-[#64748B]">{fx(trail.prevValue ?? '—')}</td>
-                      <td className="px-4 py-3 text-xs font-mono text-[#0F172A]">{fx(trail.newValue ?? '—')}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{trail.module}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-primary">{trail.record}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{trail.timestamp}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{fx(trail.prevValue ?? '—')}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-foreground">{fx(trail.newValue ?? '—')}</td>
                     </tr>
                   ))}
               </tbody>

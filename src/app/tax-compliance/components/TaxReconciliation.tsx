@@ -81,17 +81,17 @@ export default function TaxReconciliation() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Tax Reconciliation</h3>
+          <h3 className="text-lg font-semibold text-foreground">Tax Reconciliation</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Accounting records vs tax records · Aug 2026 — Validate with applicable Indonesian tax regulations
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-600 text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20 flex items-center gap-1">
+          <span className="text-xs font-semibold text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20 flex items-center gap-1">
             <Icon name="CheckCircleIcon" size={11} />3 Reconciled
           </span>
-          <span className="text-xs font-600 text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">1 Difference</span>
-          <span className="text-xs font-600 text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">1 Review</span>
+          <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">1 Difference</span>
+          <span className="text-xs font-semibold text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">1 Review</span>
         </div>
       </div>
 
@@ -99,13 +99,13 @@ export default function TaxReconciliation() {
         <table className="w-full min-w-[720px]">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground">Category</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Accounting Value</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Tax Record Value</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Difference</th>
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Diff %</th>
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground"></th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Category</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Accounting Value</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Tax Record Value</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Difference</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Diff %</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground"></th>
             </tr>
           </thead>
           <tbody>
@@ -115,17 +115,17 @@ export default function TaxReconciliation() {
               return (
                 <React.Fragment key={item.id}>
                   <tr className="border-b border-border hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3 text-sm font-500 text-foreground">{item.category}</td>
-                    <td className="px-4 py-3 text-right text-sm font-tabular text-muted-foreground">{fx(formatIDR(item.accountingValue, true))}</td>
-                    <td className="px-4 py-3 text-right text-sm font-tabular text-foreground">{fx(formatIDR(item.taxValue, true))}</td>
-                    <td className={`px-4 py-3 text-right text-sm font-600 font-tabular ${item.difference !== 0 ? 'text-warning' : 'text-positive'}`}>
+                    <td className="px-4 py-3 text-sm font-medium text-foreground">{item.category}</td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-muted-foreground">{fx(formatIDR(item.accountingValue, true))}</td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-foreground">{fx(formatIDR(item.taxValue, true))}</td>
+                    <td className={`px-4 py-3 text-right text-sm font-semibold tabular-nums ${item.difference !== 0 ? 'text-warning' : 'text-positive'}`}>
                       {item.difference !== 0 ? fx(formatIDR(item.difference, true)) : '—'}
                     </td>
-                    <td className={`px-4 py-3 text-right text-sm font-tabular ${item.diffPct !== 0 ? 'text-warning' : 'text-positive'}`}>
+                    <td className={`px-4 py-3 text-right text-sm tabular-nums ${item.diffPct !== 0 ? 'text-warning' : 'text-positive'}`}>
                       {item.diffPct !== 0 ? `${item.diffPct.toFixed(2)}%` : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-2xs font-600 px-2 py-1 rounded-full border flex items-center gap-1 w-fit ${cfg.badge}`}>
+                      <span className={`text-2xs font-semibold px-2 py-1 rounded-full border flex items-center gap-1 w-fit ${cfg.badge}`}>
                         <Icon name={cfg.icon as Parameters<typeof Icon>[0]['name']} size={10} />
                         {item.status}
                       </span>

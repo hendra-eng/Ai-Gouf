@@ -37,13 +37,13 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
         <div className="w-16 h-16 rounded-2xl bg-ai-purple-bg flex items-center justify-center mb-4">
           <Icon name="SparklesIcon" size={28} className="text-ai-purple" />
         </div>
-        <h2 className="text-2xl font-700 text-foreground mb-2">AI Financial Analyst</h2>
+        <h2 className="text-2xl font-bold text-foreground mb-2">AI Financial Analyst</h2>
         <p className="text-sm text-muted-foreground mb-6 max-w-md">
           Select an analysis from the sidebar, ask a suggested question, or start a new analysis to get AI-powered financial insights.
         </p>
         <button
           onClick={onNewAnalysis}
-          className="flex items-center gap-2 bg-ai-purple text-white font-500 rounded-lg px-5 py-2.5 hover:bg-purple-700 transition-colors"
+          className="flex items-center gap-2 bg-ai-purple text-white font-medium rounded-lg px-5 py-2.5 hover:bg-purple-700 transition-colors"
         >
           <Icon name="PlusIcon" size={16} />
           Start New Analysis
@@ -57,7 +57,7 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Analysis header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -65,9 +65,9 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
             <div className="w-6 h-6 rounded-md bg-ai-purple-bg flex items-center justify-center">
               <Icon name="SparklesIcon" size={13} className="text-ai-purple" />
             </div>
-            <span className="text-xs font-600 text-ai-purple uppercase tracking-wider">AI Financial Analysis</span>
+            <span className="text-xs font-semibold text-ai-purple uppercase tracking-wider">AI Financial Analysis</span>
           </div>
-          <h1 className="text-2xl font-700 text-foreground">{analysisLabels[activeAnalysis]}</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">{analysisLabels[activeAnalysis]}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">PT Nusantara Teknologi Indonesia · Jan–Aug 2026 · Confidence: 94%</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -94,7 +94,7 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
 
       {/* Recommended Actions Bar */}
       <div className="flex items-center gap-2 p-3 bg-ai-purple-bg border border-purple-200 rounded-lg flex-wrap">
-        <span className="text-xs font-600 text-ai-purple mr-1">Recommended Actions:</span>
+        <span className="text-xs font-semibold text-ai-purple mr-1">Recommended Actions:</span>
         {[
           { label: 'Analyze Further', icon: 'MagnifyingGlassIcon', action: () => toast.info('Opening deeper analysis...') },
           { label: 'View Transactions', icon: 'CurrencyDollarIcon', action: () => router.push('/transactions') },
@@ -105,7 +105,7 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
           <button
             key={`action-${action.label}`}
             onClick={action.action}
-            className="flex items-center gap-1 text-xs text-ai-purple-foreground bg-white border border-purple-200 rounded-md px-2.5 py-1.5 hover:bg-purple-50 transition-colors font-500"
+            className="flex items-center gap-1 text-xs text-ai-purple-foreground bg-white border border-purple-200 rounded-md px-2.5 py-1.5 hover:bg-purple-50 transition-colors font-medium"
           >
             <Icon name={action.icon as any} size={12} />
             {action.label}
@@ -126,13 +126,13 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
 
 function AnalyzingSkeleton({ label }: { label: string }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center gap-3 p-4 bg-ai-purple-bg border border-purple-200 rounded-lg">
         <div className="w-8 h-8 rounded-full bg-ai-purple flex items-center justify-center">
           <Icon name="SparklesIcon" size={16} className="text-white animate-spin" />
         </div>
         <div>
-          <p className="text-sm font-600 text-ai-purple">Analyzing: {label}</p>
+          <p className="text-sm font-semibold text-ai-purple">Analyzing: {label}</p>
           <p className="text-xs text-ai-purple-foreground mt-0.5">Processing financial data across all modules...</p>
         </div>
       </div>

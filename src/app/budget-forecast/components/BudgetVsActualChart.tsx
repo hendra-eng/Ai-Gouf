@@ -18,7 +18,7 @@ export default function BudgetVsActualChart() {
     <div className="card-base p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h3 className="text-xl font-600 text-foreground">Financial Performance: Budget vs Actual vs Forecast</h3>
+          <h3 className="text-xl font-semibold text-foreground">Financial Performance: Budget vs Actual vs Forecast</h3>
           <p className="text-sm text-muted-foreground mt-0.5">FY 2026 · PT Nusantara Teknologi Indonesia</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -28,7 +28,7 @@ export default function BudgetVsActualChart() {
               <button
                 key={`metric-${m}`}
                 onClick={() => setMetric(m)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-500 transition-all duration-150 ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 ${
                   m === metric ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-secondary'
                 }`}
               >
@@ -42,7 +42,7 @@ export default function BudgetVsActualChart() {
               <button
                 key={`horizon-${h}`}
                 onClick={() => setHorizon(h)}
-                className={`px-2.5 py-1 rounded-md text-xs font-500 transition-all ${
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                   h === horizon ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >

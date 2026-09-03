@@ -21,8 +21,8 @@ export default function TaxHeader() {
           <div className="w-8 h-8 rounded-lg bg-chart-3/10 flex items-center justify-center">
             <Icon name="DocumentCheckIcon" size={18} className="text-chart-3" />
           </div>
-          <h1 className="text-3xl font-700 text-foreground">Tax &amp; Compliance</h1>
-          <span className="px-2.5 py-0.5 rounded-full bg-positive-subtle text-positive text-xs font-600 border border-positive/20 flex items-center gap-1">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Tax &amp; Compliance</h1>
+          <span className="px-2.5 py-0.5 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20 flex items-center gap-1">
             <Icon name="ShieldCheckIcon" size={11} />
             Compliant
           </span>

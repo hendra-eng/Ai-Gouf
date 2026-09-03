@@ -14,10 +14,10 @@ Alur endpoint utama (POST /kertas-kerja/generate):
     1. Terima N file PDF rekening koran (berapapun jumlah bulan/bank --
        lihat catatan di susun_gl_dari_pdf_rekening_koran, tidak ada batas
        "harus 12 bulan").
-    2. Ambil COA client dari database (db_client.ambil_coa_client) ->
-       bangun_coa_kertas_kerja_dari_db(). Kalau client belum punya kolom
-       Statement/FS Group/Notes lengkap, tetap lanjut TAPI peringatan
-       dikembalikan ke user (bukan gagal keras) -- lihat kertas_kerja.py.
+    2. [FIX -- Supabase dihapus] COA TIDAK LAGI diambil dari database --
+       _ambil_coa_client() sekarang selalu mengembalikan COA kosong +
+       peringatan (lihat isi fungsinya). Sheet yang butuh COA akan kosong
+       kalau lewat router ini.
     3. generate_kertas_kerja() -> HasilKertasKerja (GL/Bank_Control/dst).
     4. tentukan_tahun_dari_gl() -> tahun otomatis dari transaksi.
     5. tulis_kertas_kerja_excel() -> bytes .xlsx 14-sheet.
@@ -25,14 +25,9 @@ Alur endpoint utama (POST /kertas-kerja/generate):
        ringkasan (jumlah transaksi/peringatan) di header response supaya
        frontend bisa tampilkan tanpa parse ulang file Excel-nya.
 
-TODO INTEGRASI (sesuaikan dengan project kamu, ditandai jelas di bawah):
-    - `db_client.ambil_coa_client(client_id)` -- ganti sesuai nama modul DB
-      COA client yang sebenarnya kalau berbeda (lihat docstring
-      bangun_coa_kertas_kerja_dari_db di kertas_kerja.py, itu asumsi
-      penamaan yang dipakai di sana).
-    - Endpoint ini TIDAK menyimpan hasil ke DB/storage -- kalau kamu mau
-      working paper tersimpan (supaya bisa diambil ulang tanpa upload PDF
-      lagi), tambahkan pemanggilan modules/storage.py setelah langkah 5.
+Endpoint ini TIDAK menyimpan hasil ke DB/storage sama sekali -- baik
+input (PDF/COA) maupun output (working paper) tidak pernah menyentuh
+database, dari awal sampai akhir.
 """
 
 from __future__ import annotations
@@ -53,13 +48,6 @@ from modules.kertas_kerja import (
     bangun_coa_kertas_kerja_dari_db,
     ringkasan_status_kertas_kerja,
 )
-
-# TODO INTEGRASI: sesuaikan import ini dengan modul DB client yang
-# sebenarnya dipakai project kamu untuk ambil COA per client.
-try:
-    from modules import db_client
-except ImportError:  # pragma: no cover
-    db_client = None
 
 logger = get_module_logger("kertas_kerja_router")
 
@@ -104,36 +92,23 @@ def _validasi_dan_baca_pdf(files: List[UploadFile]) -> List[tuple]:
 
 
 def _ambil_coa_client(client_id: int):
-    """TODO INTEGRASI: sesuaikan dengan cara project kamu menyimpan/ambil
-    COA client. Saat ini mengasumsikan modules/db_client.py dengan fungsi
-    ambil_coa_client(client_id) -> List[dict] (lihat docstring
-    bangun_coa_kertas_kerja_dari_db di kertas_kerja.py untuk skema dict
-    yang diharapkan: no_akun/nama_akun/kategori/normal_saldo/keterangan)."""
-    if db_client is None:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Modul db_client belum tersedia/terpasang -- lengkapi import "
-                "di modules/kertas_kerja_router.py (_ambil_coa_client) sesuai "
-                "modul DB COA client project ini."
-            ),
-        )
-    try:
-        daftar_akun_db = db_client.ambil_coa_client(client_id)
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Gagal ambil COA client {client_id} dari database: {e}")
-        daftar_akun_db = []
-
-    df_coa, peringatan_coa = bangun_coa_kertas_kerja_dari_db(daftar_akun_db)
-    if df_coa.empty:
-        # [BARU] Tidak lagi menghentikan proses -- kertas kerja tetap
-        # digenerate dari PDF, sheet yang butuh COA (BS/PNL/dst) akan
-        # kosong sampai COA client diisi.
-        peringatan_coa.append(
-            "COA client kosong -- kertas kerja tetap digenerate dari PDF, "
-            "tapi sheet yang butuh data COA (BS_Monthly/PNL_Monthly/dst) "
-            "akan KOSONG sampai COA client diisi."
-        )
+    """
+    [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini
+    memanggil db_client.ambil_coa_client(client_id) -- round-trip ke
+    database yang sekarang sudah tidak ada (Supabase dihapus). Panggilan
+    itu DIHAPUS SELURUHNYA. COA sekarang SELALU kosong di jalur router
+    ini (endpoint ini memang tidak menerima upload file COA terpisah --
+    kalau butuh pemetaan akun, pakai endpoint main.py
+    /api/client/{client_id}/generate-kertas-kerja yang menerima parameter
+    coa_file). Kertas kerja tetap digenerate dari PDF apa adanya, cuma
+    sheet yang butuh COA (BS_Monthly/PNL_Monthly/dst) akan kosong.
+    """
+    df_coa, peringatan_coa = bangun_coa_kertas_kerja_dari_db([])
+    peringatan_coa.append(
+        "Endpoint ini tidak lagi mengambil COA dari database -- kertas "
+        "kerja digenerate dari PDF TANPA pemetaan akun. Sheet yang butuh "
+        "data COA (BS_Monthly/PNL_Monthly/dst) akan KOSONG."
+    )
     return df_coa, peringatan_coa
 
 

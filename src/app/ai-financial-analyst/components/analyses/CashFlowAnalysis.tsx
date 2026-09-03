@@ -23,12 +23,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-      <p className="font-600 text-foreground mb-1.5">{label}</p>
+      <p className="font-semibold text-foreground mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={`cftt-${i}`} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className={`font-600 ${p.value < 0 ? 'text-danger' : 'text-foreground'}`}>{fx(`Rp ${fmtM(p.value)}`)}</span>
+          <span className={`font-semibold ${p.value < 0 ? 'text-danger' : 'text-foreground'}`}>{fx(`Rp ${fmtM(p.value)}`)}</span>
         </div>
       ))}
     </div>
@@ -40,11 +40,11 @@ export default function CashFlowAnalysis() {
   const { fx } = useCurrency();
 
   return (
-    <div className="space-y-5">
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+    <div className="space-y-6">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <Icon name="DocumentTextIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
+          <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
           Operating cash flow YTD is <strong>{fx('Rp 2.26M')}</strong>, healthy and sufficient to cover operations.
@@ -66,14 +66,14 @@ export default function CashFlowAnalysis() {
           { label: 'AR Impact', value: 'Rp 320M', color: 'text-warning', bg: 'bg-warning-bg' },
         ].map((m) => (
           <div key={`cfm-${m.label}`} className={`${m.bg} border border-border rounded-lg p-3`}>
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
-            <p className={`text-xl font-700 tabular-nums ${m.color}`}>{fx(m.value)}</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
+            <p className={`text-xl font-bold tabular-nums ${m.color}`}>{fx(m.value)}</p>
           </div>
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-1">Monthly Cash Flow Components</h3>
+      <div className="card-elevated-md rounded-xl p-5">
+        <h3 className="text-md font-semibold text-foreground mb-1">Monthly Cash Flow Components</h3>
         <p className="text-xs text-muted-foreground mb-4">Operating, Investing, Financing, and Net Cash Flow — Jan–Aug 2026</p>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={cashFlowData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -90,10 +90,10 @@ export default function CashFlowAnalysis() {
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="LightBulbIcon" size={16} className="text-warning" />
-          <h3 className="text-md font-600 text-foreground">AI Recommendations</h3>
+          <h3 className="text-md font-semibold text-foreground">AI Recommendations</h3>
         </div>
         <div className="space-y-3">
           {[
@@ -102,16 +102,16 @@ export default function CashFlowAnalysis() {
             { priority: 'Low', title: 'Review AP Payment Timing', desc: 'Optimizing AP payment timing (pay closer to due dates) could improve working capital by Rp 80–120M.', action: 'View AP', route: '/accounts-payable' },
           ].map((rec) => (
             <div key={`cf-rec-${rec.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
-              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 flex-shrink-0 mt-0.5 ${
+              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${
                 rec.priority === 'High' ? 'bg-orange-50 text-orange-700' :
                 rec.priority === 'Medium' ? 'bg-warning-bg text-warning-foreground' :
                 'bg-secondary text-muted-foreground'
               }`}>{rec.priority}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-600 text-foreground">{rec.title}</p>
+                <p className="text-sm font-semibold text-foreground">{rec.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{fx(rec.desc)}</p>
               </div>
-              <button onClick={() => router.push(rec.route)} className="text-xs text-primary hover:underline font-500 flex-shrink-0 whitespace-nowrap">
+              <button onClick={() => router.push(rec.route)} className="text-xs text-primary hover:underline font-medium flex-shrink-0 whitespace-nowrap">
                 {rec.action} →
               </button>
             </div>

@@ -57,14 +57,14 @@ export default function TaxCalendar() {
     <div id="tax-calendar" className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Tax Compliance Calendar</h3>
+          <h3 className="text-lg font-semibold text-foreground">Tax Compliance Calendar</h3>
           <p className="text-xs text-muted-foreground mt-0.5">{monthLabel} · Tax events and deadlines</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={goToPrevMonth} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
             <Icon name="ChevronLeftIcon" size={16} />
           </button>
-          <span className="text-sm font-600 text-foreground w-28 text-center">{monthLabel}</span>
+          <span className="text-sm font-semibold text-foreground w-28 text-center">{monthLabel}</span>
           <button onClick={goToNextMonth} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
             <Icon name="ChevronRightIcon" size={16} />
           </button>
@@ -90,7 +90,7 @@ export default function TaxCalendar() {
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-2">
         {DAYS.map((d) => (
-          <div key={`cal-day-${d}`} className="text-center text-xs font-600 text-muted-foreground py-2">
+          <div key={`cal-day-${d}`} className="text-center text-xs font-semibold text-muted-foreground py-2">
             {d}
           </div>
         ))}
@@ -115,7 +115,7 @@ export default function TaxCalendar() {
             >
               {day && (
                 <>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-600 mb-1 ${
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold mb-1 ${
                     isToday ? 'bg-primary text-primary-foreground' : 'text-foreground'
                   }`}>
                     {day}
@@ -124,7 +124,7 @@ export default function TaxCalendar() {
                     {events.slice(0, 2).map((ev, ei) => (
                       <div
                         key={`ev-${day}-${ei}`}
-                        className={`text-2xs px-1 py-0.5 rounded text-white font-500 truncate ${ev.color}`}
+                        className={`text-2xs px-1 py-0.5 rounded text-white font-medium truncate ${ev.color}`}
                         title={ev.label}
                       >
                         {ev.label.split(' ')[0]}
@@ -144,12 +144,12 @@ export default function TaxCalendar() {
       {/* Selected day detail */}
       {selectedDay && getEventsForDay(selectedDay).length > 0 && (
         <div className="mt-4 pt-4 border-t border-border animate-fade-in">
-          <p className="text-sm font-600 text-foreground mb-3">{MONTHS[month].slice(0, 3)} {selectedDay}, {year} — Tax Events</p>
+          <p className="text-sm font-semibold text-foreground mb-3">{MONTHS[month].slice(0, 3)} {selectedDay}, {year} — Tax Events</p>
           <div className="space-y-2">
             {getEventsForDay(selectedDay).map((ev, i) => (
               <div key={`detail-ev-${selectedDay}-${i}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted">
                 <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${ev.color}`} />
-                <span className="text-sm text-foreground font-500">{ev.label}</span>
+                <span className="text-sm text-foreground font-medium">{ev.label}</span>
                 <button
                   onClick={() => document.getElementById('tax-obligations')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   className="ml-auto text-xs text-primary hover:text-primary/80 transition-colors"

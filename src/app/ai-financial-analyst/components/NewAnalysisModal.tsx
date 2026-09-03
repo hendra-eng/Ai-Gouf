@@ -42,7 +42,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-border">
           <div>
-            <h2 className="text-xl font-700 text-foreground">New Financial Analysis</h2>
+            <h2 className="text-xl font-bold text-foreground">New Financial Analysis</h2>
             <p className="text-sm text-muted-foreground mt-0.5">Ask a financial question or choose an analysis template.</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors">
@@ -60,10 +60,10 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
               { label: 'Currency', value: 'IDR', icon: 'CurrencyDollarIcon' },
             ].map((cfg) => (
               <div key={`cfg-${cfg.label}`} className="bg-secondary rounded-lg p-3">
-                <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{cfg.label}</p>
+                <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{cfg.label}</p>
                 <div className="flex items-center gap-1.5">
                   <Icon name={cfg.icon as any} size={13} className="text-muted-foreground" />
-                  <p className="text-xs font-500 text-foreground truncate">{cfg.value}</p>
+                  <p className="text-xs font-medium text-foreground truncate">{cfg.value}</p>
                 </div>
               </div>
             ))}
@@ -71,7 +71,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
 
           {/* Custom Question */}
           <div className="mb-5">
-            <label className="text-sm font-600 text-foreground block mb-1.5">Custom Question</label>
+            <label className="text-sm font-semibold text-foreground block mb-1.5">Custom Question</label>
             <p className="text-xs text-muted-foreground mb-2">Ask any financial question in plain language</p>
             <div className="flex gap-2">
               <input
@@ -83,7 +83,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
               />
               <button
                 onClick={() => { if (customQuestion) { setSelectedTemplate('profit-decrease'); handleStart(); } }}
-                className="flex items-center gap-1.5 text-sm bg-ai-purple text-white font-500 rounded-md px-3 py-2 hover:bg-purple-700 transition-colors flex-shrink-0"
+                className="flex items-center gap-1.5 text-sm bg-ai-purple text-white font-medium rounded-md px-3 py-2 hover:bg-purple-700 transition-colors flex-shrink-0"
               >
                 <Icon name="SparklesIcon" size={13} />
                 Analyze
@@ -93,7 +93,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
 
           <div className="flex items-center gap-3 mb-4">
             <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground font-500">OR CHOOSE A TEMPLATE</span>
+            <span className="text-xs text-muted-foreground font-medium">OR CHOOSE A TEMPLATE</span>
             <div className="flex-1 h-px bg-border" />
           </div>
 
@@ -113,7 +113,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
                     <Icon name={t.icon as any} size={15} className={selectedTemplate === t.id ? 'text-white' : 'text-muted-foreground'} />
                   </div>
                   <div className="min-w-0">
-                    <p className={`text-sm font-600 ${selectedTemplate === t.id ? 'text-ai-purple' : 'text-foreground'}`}>{t.name}</p>
+                    <p className={`text-sm font-semibold ${selectedTemplate === t.id ? 'text-ai-purple' : 'text-foreground'}`}>{t.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{t.desc}</p>
                     <p className="text-2xs text-muted-foreground mt-1 italic">{t.recommended}</p>
                   </div>
@@ -128,13 +128,13 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-border bg-secondary/30">
-          <button onClick={onClose} className="text-sm font-500 text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={onClose} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
             Cancel
           </button>
           <button
             onClick={handleStart}
             disabled={!selectedTemplate || isStarting}
-            className="flex items-center gap-2 bg-ai-purple text-white text-sm font-500 rounded-md px-5 py-2 hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 bg-ai-purple text-white text-sm font-medium rounded-md px-5 py-2 hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isStarting ? (
               <>

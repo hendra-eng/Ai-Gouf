@@ -42,7 +42,7 @@ export default function RevenueDrivers() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Revenue Drivers</h3>
+          <h3 className="text-lg font-semibold text-foreground">Revenue Drivers</h3>
           <p className="text-xs text-muted-foreground mt-0.5">FY 2026 · Click row to drill down</p>
         </div>
         <div className="flex items-center bg-muted border border-border rounded-lg p-0.5">
@@ -50,7 +50,7 @@ export default function RevenueDrivers() {
             <button
               key={`rv-${v}`}
               onClick={() => setView(v)}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-500 transition-all ${
+              className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 v === view ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -71,12 +71,12 @@ export default function RevenueDrivers() {
               onClick={() => router?.push('/transactions')}
             >
               <div className="flex items-center gap-3 mb-2">
-                <span className="text-sm font-500 text-foreground flex-1 truncate">{item.name}</span>
-                <span className={`text-xs font-600 font-tabular flex-shrink-0 ${isPositive ? 'text-positive' : 'text-negative'}`}>
+                <span className="text-sm font-medium text-foreground flex-1 truncate">{item.name}</span>
+                <span className={`text-xs font-semibold tabular-nums flex-shrink-0 ${isPositive ? 'text-positive' : 'text-negative'}`}>
                   {isPositive ? '+' : ''}{item.growth.toFixed(1)}%
                 </span>
-                <span className="text-xs text-muted-foreground font-tabular flex-shrink-0 w-12 text-right">{item.contribution.toFixed(1)}%</span>
-                <span className="text-sm font-600 font-tabular text-foreground flex-shrink-0 w-20 text-right">{fx(formatIDR(item.revenue, true))}</span>
+                <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0 w-12 text-right">{item.contribution.toFixed(1)}%</span>
+                <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0 w-20 text-right">{fx(formatIDR(item.revenue, true))}</span>
               </div>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div

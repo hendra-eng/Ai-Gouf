@@ -38,7 +38,7 @@ export default function BudgetAllocation() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Budget Allocation</h3>
+          <h3 className="text-lg font-semibold text-foreground">Budget Allocation</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Distribution by department and category</p>
         </div>
         <div className="flex items-center bg-muted border border-border rounded-lg p-0.5">
@@ -46,7 +46,7 @@ export default function BudgetAllocation() {
             <button
               key={`alloc-view-${v}`}
               onClick={() => { setView(v); setSelected(null); }}
-              className={`px-3 py-1.5 rounded-md text-xs font-500 transition-all ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 v === view ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -73,9 +73,9 @@ export default function BudgetAllocation() {
             >
               <div className="flex items-center gap-3 mb-2">
                 <div className={`w-2.5 h-2.5 rounded-sm flex-shrink-0 ${item.color}`} />
-                <span className="text-sm font-500 text-foreground flex-1">{item.name}</span>
-                <span className="text-xs text-muted-foreground font-tabular">{budgetPct.toFixed(1)}%</span>
-                <span className={`text-xs font-600 font-tabular ${isOver ? 'text-negative' : 'text-positive'}`}>
+                <span className="text-sm font-medium text-foreground flex-1">{item.name}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">{budgetPct.toFixed(1)}%</span>
+                <span className={`text-xs font-semibold tabular-nums ${isOver ? 'text-negative' : 'text-positive'}`}>
                   {isOver ? '▲' : '▼'} {fx(`Rp ${Math.abs(item.actual - item.budget)}M`)}
                 </span>
               </div>
@@ -89,17 +89,17 @@ export default function BudgetAllocation() {
                 <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-border">
                   <div>
                     <p className="text-2xs text-muted-foreground">Budget</p>
-                    <p className="text-sm font-600 font-tabular text-foreground">{fx(formatIDR(item.budget, true))}</p>
+                    <p className="text-sm font-semibold tabular-nums text-foreground">{fx(formatIDR(item.budget, true))}</p>
                   </div>
                   <div>
                     <p className="text-2xs text-muted-foreground">Actual</p>
-                    <p className={`text-sm font-600 font-tabular ${isOver ? 'text-negative' : 'text-positive'}`}>
+                    <p className={`text-sm font-semibold tabular-nums ${isOver ? 'text-negative' : 'text-positive'}`}>
                       {fx(formatIDR(item.actual, true))}
                     </p>
                   </div>
                   <div>
                     <p className="text-2xs text-muted-foreground">Utilization</p>
-                    <p className={`text-sm font-600 font-tabular ${isOver ? 'text-negative' : 'text-foreground'}`}>
+                    <p className={`text-sm font-semibold tabular-nums ${isOver ? 'text-negative' : 'text-foreground'}`}>
                       {actualPct.toFixed(1)}%
                     </p>
                   </div>

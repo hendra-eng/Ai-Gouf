@@ -26,7 +26,7 @@ export default function ComplianceGaugeInner({ score }: Props) {
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="absolute bottom-6 text-center">
-        <p className={`text-4xl font-800 font-tabular ${score >= 90 ? 'text-positive' : score >= 75 ? 'text-warning' : 'text-negative'}`}>
+        <p className={`text-4xl font-extrabold tabular-nums ${score >= 90 ? 'text-positive' : score >= 75 ? 'text-warning' : 'text-negative'}`}>
           {score}
         </p>
         <p className="text-xs text-muted-foreground">/ 100</p>

@@ -1,11 +1,14 @@
 import React from 'react';
-import { TransactionsProvider } from './context/TransactionsContext';
 
-// [BARU] Layout ini membungkus halaman Transaksi utama DAN ke-5 sub
-// halamannya (sales, expense, cash-payment, cash-reserve, other) dengan satu
-// TransactionsProvider yang sama, supaya semuanya berbagi data transaksi
-// yang sama (state React tetap hidup selama masih di dalam /transactions/*,
-// termasuk saat pindah antar sub halaman lewat sidebar).
+// [DIUBAH] TransactionsProvider TIDAK lagi dipasang di sini — sudah
+// dinaikkan ke src/components/AppLayout.tsx (bungkus seluruh aplikasi),
+// supaya halaman di luar /transactions (khususnya Account Payable) bisa ikut
+// berbagi state transaksi yang sama lewat useTransactions(). Kalau provider
+// dipasang dua kali (di sini DAN di AppLayout), /transactions dan
+// /accounts-payable akan punya dua instance data yang terpisah — Expense dan
+// AP jadi TIDAK sinkron lagi. Layout ini disisakan sebagai passthrough saja
+// supaya struktur folder Next.js (dan kemungkinan config per-route lain di
+// masa depan) tetap utuh.
 export default function TransactionsLayout({ children }: { children: React.ReactNode }) {
-  return <TransactionsProvider>{children}</TransactionsProvider>;
+  return <>{children}</>;
 }

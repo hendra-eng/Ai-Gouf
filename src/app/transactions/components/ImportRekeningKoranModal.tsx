@@ -2,13 +2,32 @@
 import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Upload, X, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Transaction, kodeBankDariNama, buatVoucherNo } from './transactionData';
+import { Transaction, kodeBankDariNama, buatVoucherNo, classifyByAccountName, GROUP_LABELS } from './transactionData';
 import { useCurrency } from '@/lib/currency';
+import { useActiveClient } from '@/lib/activeClient';
 
 interface Props {
   onClose: () => void;
-  // Dipanggil sekali user menekan "Tambahkan ke Transaksi" di layar preview.
+  // Dipanggil sekali user menekan tombol konfirmasi di layar preview.
   onImported: (transactions: Transaction[]) => void;
+  // [BARU] 'replace' (default, dipakai halaman Transaksi utama) mengganti
+  // SELURUH tabel transaksi dengan hasil import. 'append' (dipakai panel aksi
+  // jurnal di 5 sub halaman: Sales/Expense/Cash Payment/Cash Reserve/Other)
+  // MENAMBAHKAN hasil import ke transaksi yang sudah ada tanpa menghapus apa
+  // pun — dipakai untuk upload data pembelian/penjualan langsung dari sub
+  // halaman terkait. 'replace-group' [BARU] MENGGANTI transaksi milik
+  // kelompok groupLabel saja (mis. hanya Expense) — kelompok lain tidak
+  // disentuh; berbeda dari 'replace' yang mengganti SELURUH tabel. Hanya
+  // teks & label tombol yang berbeda di modal ini; halaman pemanggil yang
+  // menentukan efek sebenarnya lewat implementasi onImported().
+  // [BARU] 'replace-group' juga mengunci sumber dokumen ke
+  // 'jurnal_penjualan_kasir' (PDF "Data Penjualan Detail") saja — belum
+  // mendukung Excel/rekening koran di mode ini.
+  mode?: 'replace' | 'append' | 'replace-group';
+  // Label kelompok (mis. "Sales", "Expense") untuk memperjelas konteks upload
+  // saat modal dibuka dari salah satu sub halaman. Kosongkan untuk halaman
+  // Transaksi utama.
+  groupLabel?: string;
 }
 
 // Satu baris draf_jurnal dari backend (lihat akuntansi_ai.py::proses_file_rekening_koran)
@@ -34,6 +53,11 @@ interface DrafJurnalRow {
   mutasi_kredit: number | null;
   sumber_kategori: string | null;
   catatan: string | null;
+  // [BARU] Hanya terisi utk hasil jenis_dokumen 'jurnal_penjualan_kasir'
+  // (lihat akuntansi_ai.py::proses_file_jurnal_penjualan_kasir) -- nomor
+  // transaksi asli dari PDF (mis. "KSR-0065719-26"), dipakai sbg voucherNo
+  // & reference/party pada drafJurnalPenjualanToTransactions() di bawah.
+  no_invoice?: string | null;
 }
 
 interface RekeningKoranHasil {
@@ -112,6 +136,17 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
 
     saldoBerjalan += dampakSaldoKas(row);
 
+    // [DIUBAH] Sebelumnya category selalu diisi teks statis
+    // 'Import Rekening Koran' untuk kedua leg (debet & kredit) sekaligus lewat
+    // `base`, jadi kolom "Kategori" di halaman Transaksi tidak pernah
+    // menunjukkan Sales/Expense/dst untuk baris hasil import. Sekarang tiap
+    // leg diklasifikasi SENDIRI-SENDIRI dari nama akunnya masing-masing
+    // (classifyByAccountName), lalu dipetakan ke salah satu dari 5 label
+    // grup yang sama dipakai sub halaman Transaksi (GROUP_LABELS) — jadi
+    // category tidak lagi lewat `base` bersama, tapi dihitung per leg.
+    const categoryDebet = GROUP_LABELS[classifyByAccountName(row.nama_akun_debet)];
+    const categoryKredit = GROUP_LABELS[classifyByAccountName(row.nama_akun_kredit)];
+
     const base = {
       date: row.tanggal || '',
       txId: `TXN-IMPORT-${batchTag}-${row.baris}`,
@@ -119,7 +154,6 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
       description: row.keterangan || '(tanpa keterangan)',
       reference: row.bank || '',
       party: row.bank || '',
-      category: 'Import Rekening Koran',
       // [DIUBAH] Semua baris hasil import rekening koran masuk berstatus
       // "Unposted" — baik yang berhasil dikategorikan otomatis maupun yang
       // belum. User meninjau lalu men-posting semuanya sekaligus lewat
@@ -137,6 +171,7 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
       debit: row.jml_debet || 0,
       credit: 0,
       type: 'debit',
+      category: categoryDebet,
       ...base,
     });
     out.push({
@@ -146,6 +181,68 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
       debit: 0,
       credit: row.jml_kredit || 0,
       type: 'credit',
+      category: categoryKredit,
+      ...base,
+    });
+  });
+  return out;
+}
+
+// [BARU] Versi drafJurnalToTransactions() di atas KHUSUS utk hasil
+// 'jurnal_penjualan_kasir' (PDF laporan penjualan detail per-transaksi,
+// lihat akuntansi_ai.py::proses_file_jurnal_penjualan_kasir). Beda dari
+// rekening koran: TIDAK ada konsep saldo kas berjalan (bukan mutasi bank
+// satu akun), jadi saldoAkhir diisi 0 (tidak dipakai/ditampilkan sbg
+// running balance yg berarti). voucherNo pakai no_invoice ASLI dari PDF
+// (mis. "KSR-0065719-26") supaya gampang ditelusuri balik ke dokumen
+// sumbernya, bukan format "<KodeBank>-<MMDD>-<urutan>" ala rekening koran.
+function drafJurnalPenjualanToTransactions(rows: DrafJurnalRow[], batchTag: string): Transaction[] {
+  const out: Transaction[] = [];
+
+  rows.forEach((row) => {
+    const jeId = `JE-IMPORT-${batchTag}-${row.baris}`;
+    const belumTerkategori = (row.sumber_kategori || '').includes('Belum Terkategori');
+    const catatanReview = row.catatan
+      || (belumTerkategori ? 'Belum terkategori otomatis — cek kembali akun sebelum diposting.' : undefined);
+    const voucherNo = row.no_invoice || `PJ-IMPORT-${batchTag}-${row.baris}`;
+
+    const categoryDebet = GROUP_LABELS[classifyByAccountName(row.nama_akun_debet)];
+    const categoryKredit = GROUP_LABELS[classifyByAccountName(row.nama_akun_kredit)];
+
+    const base = {
+      date: row.tanggal || '',
+      txId: `TXN-IMPORT-${batchTag}-${row.baris}`,
+      voucherNo,
+      description: row.keterangan || '(tanpa keterangan)',
+      reference: row.no_invoice || '',
+      party: row.no_invoice || '',
+      // Sama seperti hasil import rekening koran: semua baris masuk
+      // "Unposted" dulu, ditinjau lalu diposting sekaligus dari halaman
+      // Transaksi (lihat catatan di drafJurnalToTransactions di atas).
+      status: 'Unposted' as Transaction['status'],
+      jeId,
+      notes: catatanReview,
+      saldoAkhir: 0,
+      cek: false,
+    };
+    out.push({
+      id: `${jeId}-D`,
+      accountCode: row.no_akun_debet || '-',
+      accountName: row.nama_akun_debet || 'Belum Terkategori',
+      debit: row.jml_debet || 0,
+      credit: 0,
+      type: 'debit',
+      category: categoryDebet,
+      ...base,
+    });
+    out.push({
+      id: `${jeId}-K`,
+      accountCode: row.no_akun_kredit || '-',
+      accountName: row.nama_akun_kredit || 'Belum Terkategori',
+      debit: 0,
+      credit: row.jml_kredit || 0,
+      type: 'credit',
+      category: categoryKredit,
       ...base,
     });
   });
@@ -154,8 +251,31 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
 
 const formatIDR = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
-export default function ImportRekeningKoranModal({ onClose, onImported }: Props) {
+// [BARU] URL backend LANGSUNG (bukan lewat proxy /api/... di next.config.mjs
+// rewrites). Upload di modal ini (khususnya laporan PDF ribuan halaman)
+// bisa butuh beberapa menit diproses server -- proxy rewrites Next.js
+// punya batas waktu tunggu (proxyTimeout) yang TIDAK BISA dikonfigurasi
+// lagi di versi Next.js sekarang (opsi itu sudah dihapus, lihat
+// https://github.com/vercel/next.js/issues/62869), jadi request lambat
+// selalu diputus ("socket hang up") walau body size limit sudah dinaikkan
+// (lihat middlewareClientMaxBodySize di next.config.mjs -- itu cuma
+// mengatasi masalah UKURAN, bukan WAKTU). Solusinya: khusus endpoint
+// upload berat ini, browser panggil backend FastAPI di port 8000 secara
+// langsung, melewati proxy Next.js sepenuhnya. Backend sudah mengizinkan
+// origin ini lewat CORSMiddleware (lihat backend/main.py). Override host
+// backend lewat env NEXT_PUBLIC_BACKEND_URL kalau backend tidak jalan di
+// localhost:8000 (mis. saat production/deploy terpisah).
+const BACKEND_URL_LANGSUNG = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+export default function ImportRekeningKoranModal({ onClose, onImported, mode = 'replace', groupLabel }: Props) {
   const { fx } = useCurrency();
+  // [BARU] Client yang aktif di header (lihat src/lib/activeClient.tsx) --
+  // dikirim sebagai client_id ke /api/proses-file supaya hasil upload ini
+  // TERSIMPAN ke riwayat client tsb di backend (lihat main.py::
+  // _proses_dan_simpan_satu_file), bukan cuma numpang lewat lokal di
+  // TransactionsContext seperti sebelumnya (upload tanpa client_id tetap
+  // diproses tapi tidak pernah disimpan/terkait ke client mana pun).
+  const { activeClientId, activeClientName } = useActiveClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('upload');
   const [fileName, setFileName] = useState('');
@@ -170,6 +290,20 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
   // backend -- kategorisasi jurnal sekarang HANYA lewat Groq, bukan
   // Claude ataupun DeepSeek).
   const [pakaiAI, setPakaiAI] = useState(false);
+  // [BARU] Jenis dokumen yang mau diimpor -- menentukan jenis_dokumen apa
+  // yang dikirim ke /api/proses-file (lihat main.py::_PEMROSES_DOKUMEN).
+  // 'rekening_koran' (default, perilaku lama tidak berubah) = mutasi
+  // bank Excel/PDF. 'jurnal_penjualan_kasir' (baru) = laporan PDF
+  // "Data Penjualan Detail" per-blok transaksi (No Transaksi/Tanggal/
+  // Kode Pel./Nama Pelanggan/Alamat + tabel item + Total Akhir per
+  // transaksi) -- lihat akuntansi_ai.py::proses_file_jurnal_penjualan_kasir.
+  // [BARU] mode 'replace-group' mengunci ke 'jurnal_penjualan_kasir' sejak
+  // awal (belum ada pilihan lain di mode ini — Excel/rekening koran
+  // menyusul nanti), supaya user tidak perlu memilih jenis dokumen sama
+  // sekali di sub halaman yang pakai mode ini.
+  const [jenisSumber, setJenisSumber] = useState<'rekening_koran' | 'jurnal_penjualan_kasir'>(
+    mode === 'replace-group' ? 'jurnal_penjualan_kasir' : 'rekening_koran'
+  );
 
   const handleFile = async (file: File) => {
     setFileName(file.name);
@@ -179,12 +313,16 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
     try {
       const formData = new FormData();
       formData.append('file', file);
-      // Paksa backend proses sebagai rekening koran (bukan auto-deteksi jenis
-      // dokumen lain) — lihat _proses_semua_jenis di main.py.
-      formData.append('jenis_dokumen', 'rekening_koran');
+      // Paksa backend proses sebagai jenis yang dipilih user di layar upload
+      // (bukan auto-deteksi jenis dokumen lain) — lihat _proses_semua_jenis
+      // di main.py.
+      formData.append('jenis_dokumen', jenisSumber);
       formData.append('pakai_ai', pakaiAI ? 'true' : 'false');
+      // [BARU] Sertakan client aktif supaya hasil upload ini tersimpan ke
+      // riwayat client tsb di backend, bukan cuma diproses lalu dibuang.
+      if (activeClientId) formData.append('client_id', activeClientId);
 
-      const res = await fetch('/api/proses-file', { method: 'POST', body: formData });
+      const res = await fetch(`${BACKEND_URL_LANGSUNG}/api/proses-file`, { method: 'POST', body: formData });
 
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
@@ -194,10 +332,14 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
       const data = await res.json();
 
       if (data.tidak_terdeteksi) {
-        throw new Error(data.pesan || 'File tidak dikenali sebagai rekening koran/mutasi bank.');
+        throw new Error(data.pesan || 'File tidak dikenali sesuai jenis yang dipilih.');
       }
 
-      const rk: RekeningKoranHasil | undefined = data?.hasil?.rekening_koran;
+      // [DIUBAH] Kunci hasil sekarang mengikuti jenisSumber yang dipilih
+      // (dulu selalu 'rekening_koran') -- bentuk objeknya (ringkasan +
+      // draf_jurnal + sheet_dilewati) sama utk kedua jenis, lihat
+      // RekeningKoranHasil di atas.
+      const rk: RekeningKoranHasil | undefined = data?.hasil?.[jenisSumber];
       if (!rk || !rk.draf_jurnal || rk.draf_jurnal.length === 0) {
         throw new Error('Tidak ada baris transaksi yang berhasil dibaca dari file ini.');
       }
@@ -218,13 +360,26 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
 
   const handleConfirm = () => {
     if (!hasil) return;
-    // Import mengganti total tabel transaksi (lihat onImported di TransactionsContent),
-    // jadi saldo berjalan dihitung mulai dari 0 mengikuti urutan baris di file.
-    const txs = drafJurnalToTransactions(hasil.draf_jurnal, batchTag, 0);
+    // [DIUBAH] Konverter dipilih sesuai jenisSumber -- rekening koran perlu
+    // saldo kas berjalan (dampakSaldoKas), jurnal penjualan kasir tidak
+    // (lihat drafJurnalPenjualanToTransactions di atas).
+    const txs = jenisSumber === 'jurnal_penjualan_kasir'
+      ? drafJurnalPenjualanToTransactions(hasil.draf_jurnal, batchTag)
+      : drafJurnalToTransactions(hasil.draf_jurnal, batchTag, 0);
     onImported(txs);
-    toast.success('Tabel transaksi diganti dengan hasil import', {
-      description: `${hasil.ringkasan.jumlah_transaksi} baris mutasi (${txs.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi sebelumnya`,
-    });
+    if (mode === 'append') {
+      toast.success('Transaksi berhasil ditambahkan', {
+        description: `${hasil.ringkasan.jumlah_transaksi} baris mutasi (${txs.length} entri jurnal) dari ${fileName} ditambahkan ke transaksi${groupLabel ? ` ${groupLabel}` : ''} yang sudah ada`,
+      });
+    } else if (mode === 'replace-group') {
+      toast.success(`Transaksi ${groupLabel} diganti dengan hasil import`, {
+        description: `${hasil.ringkasan.jumlah_transaksi} baris (${txs.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi ${groupLabel} sebelumnya — kelompok lain tidak berubah`,
+      });
+    } else {
+      toast.success('Tabel transaksi diganti dengan hasil import', {
+        description: `${hasil.ringkasan.jumlah_transaksi} baris mutasi (${txs.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi sebelumnya`,
+      });
+    }
     onClose();
   };
 
@@ -236,9 +391,18 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
       >
         <div className="flex items-start justify-between p-6 border-b border-border">
           <div>
-            <h2 className="text-xl font-700 text-foreground">Import Rekening Koran</h2>
+            <h2 className="text-xl font-700 text-foreground">
+              {mode === 'append' && `Upload Data${groupLabel ? ` ${groupLabel}` : ''}`}
+              {mode === 'replace-group' && `Ganti Transaksi ${groupLabel} (PDF)`}
+              {mode === 'replace' &&
+                (jenisSumber === 'jurnal_penjualan_kasir' ? 'Import Jurnal Penjualan Kasir' : 'Import Rekening Koran')}
+            </h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Upload file mutasi bank (Excel/PDF) — sistem otomatis membaca &amp; menjurnalkan tiap transaksi.
+              {mode === 'replace-group'
+                ? `Upload PDF laporan "Data Penjualan Detail" (kasir/POS) — hasilnya akan menggantikan seluruh transaksi ${groupLabel} yang sedang tampil di halaman ini. Kelompok transaksi lain tidak terpengaruh.`
+                : jenisSumber === 'jurnal_penjualan_kasir'
+                ? 'Upload laporan PDF penjualan detail (kasir/POS) — sistem otomatis membaca & menjurnalkan tiap transaksi.'
+                : 'Upload file mutasi bank (Excel/PDF) — sistem otomatis membaca & menjurnalkan tiap transaksi.'}
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors">
@@ -246,9 +410,68 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
           </button>
         </div>
 
+        {/* [BARU] Indikator client aktif -- supaya jelas hasil upload ini
+            akan tersimpan ke client mana (lihat catatan di atas komponen). */}
+        <div className={`px-6 py-2.5 text-xs border-b border-border flex items-center gap-2 ${
+          activeClientId ? 'bg-secondary/40 text-muted-foreground' : 'bg-warning-subtle text-warning'
+        }`}>
+          {activeClientId ? (
+            <>
+              Upload ini akan tersimpan untuk client:{' '}
+              <span className="font-600 text-foreground">{activeClientName || '—'}</span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={12} className="flex-shrink-0" />
+              Belum ada client aktif — hasil upload ini tidak akan tersimpan ke riwayat client mana pun.
+              Pilih client dulu lewat "Switch Company" di header.
+            </>
+          )}
+        </div>
+
         <div className="p-6 overflow-y-auto flex-1">
           {step === 'upload' && (
             <div className="space-y-4">
+              {/* [BARU] Pilihan jenis dokumen -- menentukan jenis_dokumen yang
+                  dikirim ke backend (lihat handleFile). Hanya relevan utk
+                  halaman Transaksi utama (mode 'replace'); sub halaman lain
+                  yang pakai modal ini (mode 'append') masih rekening koran
+                  saja, jadi selector disembunyikan disana. */}
+              {mode === 'replace' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJenisSumber('rekening_koran')}
+                    className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-colors ${
+                      jenisSumber === 'rekening_koran'
+                        ? 'border-primary bg-primary/5 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                  >
+                    <p className="font-600">Rekening Koran</p>
+                    <p className="text-2xs mt-0.5">Mutasi bank — Excel/PDF</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJenisSumber('jurnal_penjualan_kasir')}
+                    className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-colors ${
+                      jenisSumber === 'jurnal_penjualan_kasir'
+                        ? 'border-primary bg-primary/5 text-foreground'
+                        : 'border-border text-muted-foreground hover:bg-secondary/50'
+                    }`}
+                  >
+                    <p className="font-600">Jurnal Penjualan Kasir</p>
+                    <p className="text-2xs mt-0.5">Laporan penjualan detail — PDF</p>
+                  </button>
+                </div>
+              )}
+
+              {mode === 'replace' && jenisSumber === 'jurnal_penjualan_kasir' && (
+                <p className="text-2xs text-muted-foreground italic">
+                  Catatan: laporan PDF ribuan halaman bisa butuh beberapa menit untuk diproses server — biarkan tab ini terbuka sampai selesai.
+                </p>
+              )}
+
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
@@ -258,12 +481,18 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
                 <Upload size={28} className="text-muted-foreground" />
                 <div className="text-center">
                   <p className="text-sm font-600 text-foreground">Klik untuk pilih file, atau tarik &amp; lepas di sini</p>
-                  <p className="text-xs text-muted-foreground mt-1">Format: .xlsx, .xls, atau .pdf hasil unduhan mutasi bank</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {jenisSumber === 'jurnal_penjualan_kasir'
+                      ? 'Format: .pdf laporan "Data Penjualan Detail" per-transaksi (kasir/POS)'
+                      : 'Format: .xlsx, .xls, atau .pdf hasil unduhan mutasi bank'}
+                  </p>
                 </div>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".xlsx,.xls,.pdf,.csv"
+                  // [BARU] mode 'replace-group' baru dukung PDF Jurnal
+                  // Penjualan Kasir — Excel/CSV menyusul nanti.
+                  accept={mode === 'replace-group' ? '.pdf' : '.xlsx,.xls,.pdf,.csv'}
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                 />
@@ -314,14 +543,38 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
                 <span className="font-600 text-foreground truncate">{fileName}</span>
               </div>
 
-              <div className="flex items-start gap-2 bg-negative-subtle border border-negative/20 rounded-lg p-3">
-                <AlertTriangle size={14} className="text-negative mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-foreground">
-                  <span className="font-600">Perhatian:</span> menekan tombol di bawah akan{' '}
-                  <span className="font-600">menghapus seluruh transaksi yang sedang ada di tabel</span>{' '}
-                  dan menggantinya dengan data dari file ini. Aksi ini tidak bisa dibatalkan.
-                </p>
-              </div>
+              {mode === 'append' && (
+                <div className="flex items-start gap-2 bg-info-subtle border border-info/20 rounded-lg p-3">
+                  <AlertTriangle size={14} className="text-info mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-foreground">
+                    Menekan tombol di bawah akan <span className="font-600">menambahkan</span> data ini ke
+                    transaksi yang sudah ada — transaksi lain (termasuk milik kelompok lain) tidak akan
+                    terhapus atau berubah.
+                  </p>
+                </div>
+              )}
+              {mode === 'replace-group' && (
+                <div className="flex items-start gap-2 bg-negative-subtle border border-negative/20 rounded-lg p-3">
+                  <AlertTriangle size={14} className="text-negative mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-foreground">
+                    <span className="font-600">Perhatian:</span> menekan tombol di bawah akan{' '}
+                    <span className="font-600">menghapus seluruh transaksi {groupLabel}</span> yang sedang
+                    tampil di halaman ini dan menggantinya dengan data dari file ini. Transaksi kelompok
+                    lain (Sales, Cash Payment, dll) <span className="font-600">tidak terpengaruh</span>.
+                    Aksi ini tidak bisa dibatalkan.
+                  </p>
+                </div>
+              )}
+              {mode === 'replace' && (
+                <div className="flex items-start gap-2 bg-negative-subtle border border-negative/20 rounded-lg p-3">
+                  <AlertTriangle size={14} className="text-negative mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-foreground">
+                    <span className="font-600">Perhatian:</span> menekan tombol di bawah akan{' '}
+                    <span className="font-600">menghapus seluruh transaksi yang sedang ada di tabel</span>{' '}
+                    dan menggantinya dengan data dari file ini. Aksi ini tidak bisa dibatalkan.
+                  </p>
+                </div>
+              )}
 
               {/* [BARU] Info bahwa seluruh baris masuk berstatus Unposted */}
               <div className="flex items-start gap-2 bg-info-subtle border border-info/20 rounded-lg p-3">
@@ -410,7 +663,9 @@ export default function ImportRekeningKoranModal({ onClose, onImported }: Props)
               Batal
             </button>
             <button onClick={handleConfirm} className="btn-primary text-sm py-2 px-4">
-              Ganti Tabel dengan {hasil?.draf_jurnal.length ?? 0} Transaksi Ini
+              {mode === 'append' && `Tambahkan ${hasil?.draf_jurnal.length ?? 0} Transaksi Ini`}
+              {mode === 'replace-group' && `Ganti Transaksi ${groupLabel} dengan ${hasil?.draf_jurnal.length ?? 0} Transaksi Ini`}
+              {mode === 'replace' && `Ganti Tabel dengan ${hasil?.draf_jurnal.length ?? 0} Transaksi Ini`}
             </button>
           </div>
         )}

@@ -28,12 +28,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-      <p className="font-600 text-foreground mb-1.5">{label}</p>
+      <p className="font-semibold text-foreground mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={`qtt-${i}`} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.fill }} />
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-600 text-foreground">Rp {p.value}M</span>
+          <span className="font-semibold text-foreground">Rp {p.value}M</span>
         </div>
       ))}
     </div>
@@ -42,11 +42,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function QuarterComparison() {
   return (
-    <div className="space-y-5">
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+    <div className="space-y-6">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <Icon name="DocumentTextIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
+          <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
           Q2 2026 showed <strong>revenue growth of +6.9%</strong> vs Q1, driven by new contract wins. However, gross margin contracted 1.5pp to 41.6%
@@ -58,15 +58,15 @@ export default function QuarterComparison() {
 
       {/* Side-by-side comparison table */}
       <div className="bg-card border border-border rounded-lg p-5 shadow-card overflow-x-auto">
-        <h3 className="text-md font-600 text-foreground mb-4">Q1 vs Q2 2026 — Detailed Comparison</h3>
+        <h3 className="text-md font-semibold text-foreground mb-4">Q1 vs Q2 2026 — Detailed Comparison</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="pb-2 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider">Metric</th>
-              <th className="pb-2 text-right text-2xs font-600 text-muted-foreground uppercase tracking-wider">Q1 2026</th>
-              <th className="pb-2 text-right text-2xs font-600 text-muted-foreground uppercase tracking-wider">Q2 2026</th>
-              <th className="pb-2 text-right text-2xs font-600 text-muted-foreground uppercase tracking-wider">Change</th>
-              <th className="pb-2 text-right text-2xs font-600 text-muted-foreground uppercase tracking-wider">% Change</th>
+              <th className="pb-2 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Metric</th>
+              <th className="pb-2 text-right text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Q1 2026</th>
+              <th className="pb-2 text-right text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Q2 2026</th>
+              <th className="pb-2 text-right text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Change</th>
+              <th className="pb-2 text-right text-2xs font-semibold text-muted-foreground uppercase tracking-wider">% Change</th>
             </tr>
           </thead>
           <tbody>
@@ -77,11 +77,11 @@ export default function QuarterComparison() {
               const isNeutral = Math.abs(row.change) < 1;
               return (
                 <tr key={`qc-${row.metric}`} className="border-b border-border hover:bg-secondary/40 transition-colors">
-                  <td className="py-2.5 font-500 text-foreground">{row.metric}</td>
+                  <td className="py-2.5 font-medium text-foreground">{row.metric}</td>
                   <td className="py-2.5 text-right tabular-nums text-muted-foreground">
                     {row.unit === '%' ? `${row.q1}%` : `Rp ${row.q1}M`}
                   </td>
-                  <td className="py-2.5 text-right tabular-nums font-600 text-foreground">
+                  <td className="py-2.5 text-right tabular-nums font-semibold text-foreground">
                     {row.unit === '%' ? `${row.q2}%` : `Rp ${row.q2}M`}
                   </td>
                   <td className="py-2.5 text-right tabular-nums">
@@ -90,7 +90,7 @@ export default function QuarterComparison() {
                     </span>
                   </td>
                   <td className="py-2.5 text-right">
-                    <span className={`text-xs font-600 px-1.5 py-0.5 rounded-full ${
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
                       isNeutral ? 'bg-secondary text-muted-foreground' :
                       isPositive ? 'bg-success-bg text-success-foreground': 'bg-danger-bg text-danger-foreground'
                     }`}>
@@ -105,8 +105,8 @@ export default function QuarterComparison() {
       </div>
 
       {/* Chart */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-4">Key Metrics — Q1 vs Q2 (Rp Million)</h3>
+      <div className="card-elevated-md rounded-xl p-5">
+        <h3 className="text-md font-semibold text-foreground mb-4">Key Metrics — Q1 vs Q2 (Rp Million)</h3>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -120,10 +120,10 @@ export default function QuarterComparison() {
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="LightBulbIcon" size={16} className="text-warning" />
-          <h3 className="text-md font-600 text-foreground">AI Interpretation</h3>
+          <h3 className="text-md font-semibold text-foreground">AI Interpretation</h3>
         </div>
         <div className="space-y-3">
           {[
@@ -146,7 +146,7 @@ export default function QuarterComparison() {
                 className={insight.type === 'positive' ? 'text-success' : insight.type === 'warning' ? 'text-warning' : insight.type === 'negative' ? 'text-danger' : 'text-muted-foreground'}
               />
               <div>
-                <p className="text-sm font-600 text-foreground">{insight.title}</p>
+                <p className="text-sm font-semibold text-foreground">{insight.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{insight.desc}</p>
               </div>
             </div>

@@ -56,7 +56,7 @@ export default function ScenarioPlanning() {
     <div className="card-base p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-xl font-600 text-foreground">Scenario Planning</h3>
+          <h3 className="text-xl font-semibold text-foreground">Scenario Planning</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Compare financial outcomes under different assumptions</p>
         </div>
         <button
@@ -80,20 +80,20 @@ export default function ScenarioPlanning() {
             }`}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-600 text-foreground">{name}</span>
+              <span className="text-sm font-semibold text-foreground">{name}</span>
               {active === name && <Icon name="CheckCircleIcon" size={16} className="text-primary" />}
             </div>
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">{s.description}</p>
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-2xs text-muted-foreground">Revenue Growth</p>
-                <p className={`text-base font-700 font-tabular ${name === 'Optimistic' ? 'text-positive' : name === 'Conservative' ? 'text-warning' : 'text-foreground'}`}>
+                <p className={`text-base font-bold tabular-nums ${name === 'Optimistic' ? 'text-positive' : name === 'Conservative' ? 'text-warning' : 'text-foreground'}`}>
                   +{s.revenueGrowth}%
                 </p>
               </div>
               <div>
                 <p className="text-2xs text-muted-foreground">Confidence</p>
-                <p className="text-base font-700 font-tabular text-foreground">{s.confidence}%</p>
+                <p className="text-base font-bold tabular-nums text-foreground">{s.confidence}%</p>
               </div>
             </div>
           </button>
@@ -105,32 +105,32 @@ export default function ScenarioPlanning() {
         <table className="w-full min-w-[600px]">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-4 py-3 text-left text-xs font-600 text-muted-foreground">Metric</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Metric</th>
               {(Object.keys(SCENARIOS) as ScenarioKey[]).map((name) => (
                 <th
                   key={`sh-${name}`}
-                  className={`px-4 py-3 text-right text-xs font-600 ${active === name ? 'text-primary' : 'text-muted-foreground'}`}
+                  className={`px-4 py-3 text-right text-xs font-semibold ${active === name ? 'text-primary' : 'text-muted-foreground'}`}
                 >
                   {name}
                 </th>
               ))}
-              <th className="px-4 py-3 text-right text-xs font-600 text-muted-foreground">Opt vs Cons</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Opt vs Cons</th>
             </tr>
           </thead>
           <tbody>
             {METRICS.map((m) => (
               <tr key={`sc-row-${m.key}`} className="border-b border-border hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3 text-sm font-500 text-foreground">{m.label}</td>
+                <td className="px-4 py-3 text-sm font-medium text-foreground">{m.label}</td>
                 {(Object.entries(SCENARIOS) as [ScenarioKey, typeof SCENARIOS['Base Case']][]).map(([name, s]) => (
                   <td
                     key={`sc-val-${name}-${m.key}`}
-                    className={`px-4 py-3 text-right text-sm font-600 font-tabular ${active === name ? 'text-primary' : 'text-foreground'}`}
+                    className={`px-4 py-3 text-right text-sm font-semibold tabular-nums ${active === name ? 'text-primary' : 'text-foreground'}`}
                   >
                     {fx(formatIDR(s[m.key], true))}
                   </td>
                 ))}
-                <td className="px-4 py-3 text-right text-sm font-tabular">
-                  <span className={`font-600 ${SCENARIOS['Optimistic'][m.key] > SCENARIOS['Conservative'][m.key] ? 'text-positive' : 'text-negative'}`}>
+                <td className="px-4 py-3 text-right text-sm tabular-nums">
+                  <span className={`font-semibold ${SCENARIOS['Optimistic'][m.key] > SCENARIOS['Conservative'][m.key] ? 'text-positive' : 'text-negative'}`}>
                     {fx(formatIDR(SCENARIOS['Optimistic'][m.key] - SCENARIOS['Conservative'][m.key], true))}
                   </span>
                 </td>

@@ -75,14 +75,14 @@ export default function TaxAIInsights() {
           <Icon name="SparklesIcon" size={16} className="text-chart-3" />
         </div>
         <div>
-          <h3 className="text-lg font-600 text-foreground">AI Compliance Insights</h3>
+          <h3 className="text-lg font-semibold text-foreground">AI Compliance Insights</h3>
           <p className="text-xs text-muted-foreground">
             Generated from recorded tax data · Aug 2026 · Not legal advice — validate with qualified tax professionals
           </p>
         </div>
         <button
           onClick={handleRefresh}
-          className="ml-auto flex items-center gap-1.5 text-xs font-500 text-chart-3 hover:text-chart-3/80 transition-colors px-3 py-2 rounded-lg bg-chart-3/10 border border-chart-3/20"
+          className="ml-auto flex items-center gap-1.5 text-xs font-medium text-chart-3 hover:text-chart-3/80 transition-colors px-3 py-2 rounded-lg bg-chart-3/10 border border-chart-3/20"
         >
           <Icon name="ArrowPathIcon" size={12} className={isRefreshing ? 'animate-spin' : ''} />
           Refresh
@@ -97,26 +97,26 @@ export default function TaxAIInsights() {
               <div className="flex items-start gap-3 mb-3">
                 <Icon name={insight.icon as Parameters<typeof Icon>[0]['name']} size={18} className={cfg.icon} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-600 text-foreground mb-1">{insight.title}</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">{insight.title}</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">{fx(insight.summary)}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {insight.numbers.map((n, ni) => (
-                  <span key={`tax-num-${insight.id}-${ni}`} className={`text-2xs font-500 px-2 py-1 rounded-full ${cfg.badge}`}>
+                  <span key={`tax-num-${insight.id}-${ni}`} className={`text-2xs font-medium px-2 py-1 rounded-full ${cfg.badge}`}>
                     {fx(n)}
                   </span>
                 ))}
               </div>
               <div className="pt-3 border-t border-border/40">
                 <p className="text-xs text-muted-foreground mb-2">
-                  <span className="font-600 text-foreground">Action: </span>
+                  <span className="font-semibold text-foreground">Action: </span>
                   {fx(insight.recommendation)}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleAnalyze(insight.id)}
-                    className="flex items-center gap-1.5 text-xs font-500 text-primary hover:text-primary/80 transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                   >
                     <Icon name="MagnifyingGlassIcon" size={12} />
                     Analyze

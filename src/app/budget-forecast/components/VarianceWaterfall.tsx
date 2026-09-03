@@ -18,7 +18,7 @@ export default function VarianceWaterfall() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">What Is Driving the Budget Variance?</h3>
+          <h3 className="text-lg font-semibold text-foreground">What Is Driving the Budget Variance?</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Net Profit bridge: Budget → Forecast</p>
         </div>
         <button
@@ -45,7 +45,7 @@ export default function VarianceWaterfall() {
             className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors group text-left ${selectedDriver === item?.label ? 'bg-secondary' : 'bg-muted hover:bg-secondary'}`}
           >
             <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">{item?.label}</span>
-            <span className={`text-xs font-600 font-tabular ${
+            <span className={`text-xs font-semibold tabular-nums ${
               item?.type === 'positive' ? 'text-positive' :
               item?.type === 'negative'? 'text-negative' : 'text-foreground'
             }`}>

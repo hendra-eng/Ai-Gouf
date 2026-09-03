@@ -46,12 +46,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-      <p className="font-600 text-foreground mb-1.5">{label}</p>
+      <p className="font-semibold text-foreground mb-1.5">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={`ptt-${i}`} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-600 text-foreground">{fx(`Rp ${p.value}M`)}</span>
+          <span className="font-semibold text-foreground">{fx(`Rp ${p.value}M`)}</span>
         </div>
       ))}
     </div>
@@ -70,12 +70,12 @@ export default function ProfitAnalysis() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Executive Summary */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <Icon name="DocumentTextIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
+          <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
           Net profit for Jan–Aug 2026 is <strong>{fx('Rp 1.84M')}</strong>, representing a margin of <strong>21.8%</strong> on revenue of {fx('Rp 8.42M')}.
@@ -95,17 +95,17 @@ export default function ProfitAnalysis() {
           <div key={`finding-${f.label}`} className={`${f.bg} border rounded-lg p-4`}>
             <div className="flex items-center gap-2 mb-2">
               <Icon name={f.icon as any} size={16} className={f.color} />
-              <span className="text-sm font-600 text-foreground">{f.label}</span>
+              <span className="text-sm font-semibold text-foreground">{f.label}</span>
             </div>
-            <p className={`text-2xl font-700 tabular-nums ${f.color}`}>{f.value}</p>
+            <p className={`text-2xl font-bold tabular-nums ${f.color}`}>{f.value}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
           </div>
         ))}
       </div>
 
       {/* Monthly Trend Chart */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-1">Monthly P&L Trend</h3>
+      <div className="card-elevated-md rounded-xl p-5">
+        <h3 className="text-md font-semibold text-foreground mb-1">Monthly P&L Trend</h3>
         <p className="text-xs text-muted-foreground mb-4">Revenue, COGS, Gross Profit, Opex, Net Profit — Jan–Aug 2026 (Rp Million)</p>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={monthlyProfit} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
@@ -124,8 +124,8 @@ export default function ProfitAnalysis() {
       </div>
 
       {/* Performance Drivers */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-4">Performance Drivers</h3>
+      <div className="card-elevated-md rounded-xl p-5">
+        <h3 className="text-md font-semibold text-foreground mb-4">Performance Drivers</h3>
         <div className="space-y-3">
           {drivers.map((d) => (
             <div key={`driver-${d.category}`} className="flex items-start gap-3 p-3 rounded-lg hover:bg-secondary/50 transition-colors">
@@ -134,8 +134,8 @@ export default function ProfitAnalysis() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-600 text-foreground">{d.category}</p>
-                  <span className={`text-sm font-700 tabular-nums flex-shrink-0 ${d.type === 'positive' ? 'text-success' : 'text-danger'}`}>
+                  <p className="text-sm font-semibold text-foreground">{d.category}</p>
+                  <span className={`text-sm font-bold tabular-nums flex-shrink-0 ${d.type === 'positive' ? 'text-success' : 'text-danger'}`}>
                     {d.impact < 0 ? '-' : '+'}{fx(`Rp ${(Math.abs(d.impact) / 1000000).toFixed(0)}M`)}
                   </span>
                 </div>
@@ -147,10 +147,10 @@ export default function ProfitAnalysis() {
       </div>
 
       {/* Investigation Drill-Down */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="MagnifyingGlassIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Investigation: Why is Opex Increasing?</h3>
+          <h3 className="text-md font-semibold text-foreground">Investigation: Why is Opex Increasing?</h3>
         </div>
 
         {/* Drill path */}
@@ -183,10 +183,10 @@ export default function ProfitAnalysis() {
               >
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-500 text-foreground">{item.name}</span>
+                    <span className="text-sm font-medium text-foreground">{item.name}</span>
                     <div className="flex items-center gap-3">
-                      <span className={`text-xs font-600 ${item.change.startsWith('+') ? 'text-danger' : 'text-success'}`}>{item.change}</span>
-                      <span className="text-sm font-600 tabular-nums text-foreground">{fx(`Rp ${(item.amount / 1000000).toFixed(0)}M`)}</span>
+                      <span className={`text-xs font-semibold ${item.change.startsWith('+') ? 'text-danger' : 'text-success'}`}>{item.change}</span>
+                      <span className="text-sm font-semibold tabular-nums text-foreground">{fx(`Rp ${(item.amount / 1000000).toFixed(0)}M`)}</span>
                     </div>
                   </div>
                   <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
@@ -215,13 +215,13 @@ export default function ProfitAnalysis() {
               >
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-500 text-foreground">{item.vendor}</span>
-                    <span className="text-sm font-600 tabular-nums text-foreground">{fx(`Rp ${(item.amount / 1000000).toFixed(0)}M`)}</span>
+                    <span className="text-sm font-medium text-foreground">{item.vendor}</span>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{fx(`Rp ${(item.amount / 1000000).toFixed(0)}M`)}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="text-xs text-muted-foreground">{item.category}</span>
                     <span className="text-xs text-muted-foreground">{item.invoices} invoice{item.invoices > 1 ? 's' : ''}</span>
-                    <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 ${item.status === 'Overdue' ? 'bg-danger-bg text-danger-foreground' : item.status === 'Due Soon' ? 'bg-warning-bg text-warning-foreground' : item.status === 'Paid' ? 'bg-success-bg text-success-foreground' : 'bg-secondary text-muted-foreground'}`}>
+                    <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold ${item.status === 'Overdue' ? 'bg-danger-bg text-danger-foreground' : item.status === 'Due Soon' ? 'bg-warning-bg text-warning-foreground' : item.status === 'Paid' ? 'bg-success-bg text-success-foreground' : 'bg-secondary text-muted-foreground'}`}>
                       {item.status}
                     </span>
                   </div>
@@ -246,12 +246,12 @@ export default function ProfitAnalysis() {
               >
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-600 text-primary">{bill.number}</span>
-                    <span className="text-sm font-600 tabular-nums text-danger">{fx(`Rp ${(bill.amount / 1000000).toFixed(0)}M`)}</span>
+                    <span className="text-sm font-semibold text-primary">{bill.number}</span>
+                    <span className="text-sm font-semibold tabular-nums text-danger">{fx(`Rp ${(bill.amount / 1000000).toFixed(0)}M`)}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="text-xs text-muted-foreground">Due: {bill.due}</span>
-                    <span className="text-xs font-600 text-danger">{bill.daysOverdue}d overdue</span>
+                    <span className="text-xs font-semibold text-danger">{bill.daysOverdue}d overdue</span>
                   </div>
                 </div>
                 <Icon name="ChevronRightIcon" size={14} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
@@ -263,7 +263,7 @@ export default function ProfitAnalysis() {
               </p>
               <button
                 onClick={() => toast.info('Navigating to AP...')}
-                className="text-xs text-ai-purple font-600 mt-1.5 hover:underline"
+                className="text-xs text-ai-purple font-semibold mt-1.5 hover:underline"
               >
                 View in Accounts Payable →
               </button>
@@ -273,7 +273,7 @@ export default function ProfitAnalysis() {
 
         {drillLevel >= 3 && (
           <div className="p-4 bg-secondary rounded-lg">
-            <p className="text-sm font-600 text-foreground mb-2">{drillPath[drillPath.length - 1]}</p>
+            <p className="text-sm font-semibold text-foreground mb-2">{drillPath[drillPath.length - 1]}</p>
             <div className="space-y-2 text-sm">
               {[
                 { label: 'Journal Entry', value: 'JE-2026-4821' },
@@ -284,7 +284,7 @@ export default function ProfitAnalysis() {
               ].map((row) => (
                 <div key={`je-${row.label}`} className="flex justify-between">
                   <span className="text-muted-foreground">{row.label}</span>
-                  <span className="font-500 text-foreground">{row.value}</span>
+                  <span className="font-medium text-foreground">{row.value}</span>
                 </div>
               ))}
             </div>
@@ -293,10 +293,10 @@ export default function ProfitAnalysis() {
       </div>
 
       {/* Recommendations */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="LightBulbIcon" size={16} className="text-warning" />
-          <h3 className="text-md font-600 text-foreground">AI Recommendations</h3>
+          <h3 className="text-md font-semibold text-foreground">AI Recommendations</h3>
         </div>
         <div className="space-y-3">
           {[
@@ -305,18 +305,18 @@ export default function ProfitAnalysis() {
             { priority: 'Low', title: 'Review Marketing Spend ROI', desc: 'Marketing expenses grew +12.8% but revenue attribution is unclear. Request performance analysis from marketing team.', action: 'View Transactions', route: '/transactions' },
           ].map((rec) => (
             <div key={`rec-${rec.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
-              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 flex-shrink-0 mt-0.5 ${
+              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${
                 rec.priority === 'High' ? 'bg-danger-bg text-danger-foreground' :
                 rec.priority === 'Medium' ? 'bg-warning-bg text-warning-foreground' :
                 'bg-secondary text-muted-foreground'
               }`}>{rec.priority}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-600 text-foreground">{rec.title}</p>
+                <p className="text-sm font-semibold text-foreground">{rec.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{fx(rec.desc)}</p>
               </div>
               <button
                 onClick={() => router.push(rec.route)}
-                className="text-xs text-primary hover:underline font-500 flex-shrink-0 whitespace-nowrap"
+                className="text-xs text-primary hover:underline font-medium flex-shrink-0 whitespace-nowrap"
               >
                 {rec.action} →
               </button>

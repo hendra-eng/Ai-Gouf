@@ -1,13 +1,31 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import KpiCard from '@/components/shared/KpiCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
-import { vendors, bills, paymentForecastData, formatRupiah, riskColors, apStatusColors, type Vendor, type Bill, type APStatus } from '@/lib/mockData';
+import { formatRupiah, riskColors, apStatusColors, type Vendor, type Bill, type APStatus } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
+// [BARU] Data vendors/bills/KPI di halaman ini TIDAK LAGI dari mock statis —
+// semuanya diturunkan langsung dari transaksi kelompok Expense di halaman
+// Transaksi lewat TransactionsContext + apBridge.ts. Kalau ada transaksi
+// Expense baru/diedit/status pembayarannya berubah, halaman ini otomatis
+// ikut berubah (re-render) karena sama-sama membaca context yang sama.
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+import {
+  AP_REFERENCE_DATE,
+  billsFromTransactions,
+  vendorsFromBills,
+  apKpisFromBills,
+  apAgingFromBills,
+  apTrendFromBills,
+  sparklineFromTrend,
+  paymentForecastFromBills,
+  markExpenseTxPaid,
+  rescheduleExpenseTx,
+} from '@/app/transactions/lib/apBridge';
 
 const APCharts = dynamic(() => import('./APCharts'), { ssr: false });
 const VendorDetailPanel = dynamic(() => import('./VendorDetailPanel'), { ssr: false });
@@ -18,6 +36,35 @@ type APTab = 'overview' | 'vendors' | 'bills' | 'payment-planning';
 export default function APContent() {
   const router = useRouter();
   const { fx } = useCurrency();
+  const { transactions, saveEdit } = useTransactions();
+
+  // [BARU] Aksi "Mark Paid" / "Schedule payment" di halaman AP menulis balik
+  // ke transaksi Expense sumbernya (bill.id === transaction.id), bukan cuma
+  // toast kosong — supaya perubahan di AP benar-benar sinkron dua arah
+  // dengan Expense, bukan cuma satu arah (Expense -> AP saja).
+  const markBillPaid = (bill: Bill) => {
+    const tx = transactions.find((t) => t.id === bill.id);
+    if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
+    saveEdit(markExpenseTxPaid(tx));
+    toast.success(`${bill.number} ditandai Lunas`, { description: `Status pembayaran ikut berubah di halaman Expense.` });
+  };
+
+  const scheduleBillPayment = (bill: Bill, newDueDate: string) => {
+    const tx = transactions.find((t) => t.id === bill.id);
+    if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
+    saveEdit(rescheduleExpenseTx(tx, newDueDate));
+    toast.success(`Jatuh tempo ${bill.number} dijadwalkan ulang`, { description: `Tanggal baru: ${newDueDate}` });
+  };
+
+  // ─── Turunan dari transaksi Expense (sumber tunggal) ───────────────────
+  const bills = useMemo(() => billsFromTransactions(transactions), [transactions]);
+  const vendors = useMemo(() => vendorsFromBills(bills), [bills]);
+  const kpiValues = useMemo(() => apKpisFromBills(bills, vendors), [bills, vendors]);
+  const agingData = useMemo(() => apAgingFromBills(bills), [bills]);
+  const trendData = useMemo(() => apTrendFromBills(bills), [bills]);
+  const forecastData = useMemo(() => paymentForecastFromBills(bills), [bills]);
+  const trendSparkline = useMemo(() => sparklineFromTrend(trendData), [trendData]);
+
   const [activeTab, setActiveTab] = useState<APTab>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<APStatus | 'All'>('All');
@@ -67,34 +114,41 @@ export default function APContent() {
     setSelectedRows(next);
   };
 
-  const kpis = [
-    { id: 'kpi-ap-total', label: 'TOTAL ACCOUNTS PAYABLE', value: 'Rp 860M', subLabel: 'Jan–Aug 2026', change: '+3.1% vs prev period', changePositive: false, sparkline: [720, 690, 655, 725, 678, 802, 725, 860], color: 'var(--primary)' },
-    { id: 'kpi-ap-current', label: 'CURRENT PAYABLES', value: 'Rp 540M', subLabel: '62.8% of total AP', change: '+1.4% vs prev period', changePositive: false, sparkline: [510, 498, 485, 520, 505, 525, 518, 540], color: 'var(--info)' },
-    { id: 'kpi-ap-overdue', label: 'OVERDUE PAYABLES', value: 'Rp 96M', subLabel: '11.2% of total AP', change: '+24.7% vs prev period', changePositive: false, alert: true, sparkline: [42, 48, 55, 62, 68, 74, 82, 96], color: 'var(--danger)' },
-    { id: 'kpi-ap-week', label: 'DUE THIS WEEK', value: 'Rp 142M', subLabel: '3 bills pending', change: '', changeNeutral: true, sparkline: [68, 82, 95, 78, 112, 125, 135, 142], color: 'var(--warning)' },
-    { id: 'kpi-ap-month', label: 'DUE THIS MONTH', value: 'Rp 320M', subLabel: '7 bills total', change: '+8.2% vs prev period', changePositive: false, sparkline: [242, 258, 275, 265, 288, 295, 308, 320], color: 'var(--warning)' },
-    { id: 'kpi-ap-days', label: 'AVG PAYMENT DAYS', value: '36 days', subLabel: 'Days Payable Outstanding', change: '+2 days vs prev period', changePositive: false, sparkline: [31, 33, 34, 32, 35, 36, 35, 36], color: 'var(--info)' },
-    { id: 'kpi-ap-forecast', label: 'PAYMENT FORECAST', value: 'Rp 480M', subLabel: 'Next 30 days', change: '', changeNeutral: true, sparkline: [380, 395, 412, 398, 425, 448, 462, 480], color: 'var(--primary)' },
-    { id: 'kpi-ap-vendor', label: 'VENDOR CONCENTRATION', value: '62%', subLabel: 'Top 10 vendors', change: '-1.8% vs prev period', changePositive: true, sparkline: [68, 66, 65, 64, 63, 63, 62, 62], color: 'var(--muted-foreground)' },
+  // [DIUBAH] Sebelumnya 8 angka ini hardcoded string. Sekarang dihitung
+  // langsung dari `bills` (hasil turunan transaksi Expense) lewat
+  // apKpisFromBills() — kalau status pembayaran/tanggal jatuh tempo transaksi
+  // Expense berubah, angka-angka ini otomatis ikut berubah.
+  const overduePct = kpiValues.totalAP > 0 ? Math.round((kpiValues.overdueAP / kpiValues.totalAP) * 1000) / 10 : 0;
+  const currentPct = kpiValues.totalAP > 0 ? Math.round((kpiValues.currentAP / kpiValues.totalAP) * 1000) / 10 : 0;
+
+  const kpis: { id: string; label: string; value: string; subLabel: string; change: string; changeNeutral: boolean; changePositive?: boolean; alert?: boolean; sparkline: number[]; color: string }[] = [
+    { id: 'kpi-ap-total', label: 'TOTAL ACCOUNTS PAYABLE', value: formatRupiah(kpiValues.totalAP, true), subLabel: `Dari ${bills.length} transaksi Expense`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
+    { id: 'kpi-ap-current', label: 'CURRENT PAYABLES', value: formatRupiah(kpiValues.currentAP, true), subLabel: `${currentPct}% dari total AP`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--info)' },
+    { id: 'kpi-ap-overdue', label: 'OVERDUE PAYABLES', value: formatRupiah(kpiValues.overdueAP, true), subLabel: `${overduePct}% dari total AP`, change: '', changeNeutral: true, alert: kpiValues.overdueAP > 0, sparkline: trendSparkline, color: 'var(--danger)' },
+    { id: 'kpi-ap-week', label: 'DUE THIS WEEK', value: formatRupiah(kpiValues.dueThisWeek, true), subLabel: `${kpiValues.dueThisWeekCount} tagihan`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
+    { id: 'kpi-ap-month', label: 'DUE THIS MONTH', value: formatRupiah(kpiValues.dueThisMonth, true), subLabel: `${kpiValues.dueThisMonthCount} tagihan`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
+    { id: 'kpi-ap-days', label: 'AVG PAYMENT DAYS', value: `${kpiValues.avgPaymentDays} hari`, subLabel: 'Days Payable Outstanding', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--info)' },
+    { id: 'kpi-ap-forecast', label: 'PAYMENT FORECAST', value: formatRupiah(kpiValues.paymentForecast30d, true), subLabel: 'Next 30 days', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
+    { id: 'kpi-ap-vendor', label: 'VENDOR CONCENTRATION', value: `${kpiValues.vendorConcentrationPct}%`, subLabel: 'Top 10 vendors', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--muted-foreground)' },
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-700 text-foreground">Accounts Payable</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Payable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor vendor obligations, upcoming payments, liabilities, and cash requirements.</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs font-600 text-primary">Jan 2026 – Aug 2026</span>
-            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-500">YTD</span>
-            <span className="text-xs text-muted-foreground">Last updated: 28 Aug 2026, 16:11 WIB</span>
+            <span className="badge-info">Tersinkron dari Transaksi → Expense</span>
+            <span className="badge-neutral">{bills.length} tagihan · {vendors.length} vendor</span>
+            <span className="text-xs text-muted-foreground">Per {AP_REFERENCE_DATE}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => router.push('/ai-financial-analyst?analysis=ap-risk')}
-            className="flex items-center gap-1.5 text-sm font-500 text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-3 py-1.5 transition-colors border border-purple-200"
+            className="flex items-center gap-1.5 text-sm font-medium text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-3 py-1.5 transition-colors border border-purple-200"
           >
             <Icon name="SparklesIcon" size={14} />
             AI Analysis
@@ -133,7 +187,7 @@ export default function APContent() {
           <button
             key={`ap-tab-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-500 border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === tab.id
                 ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
             }`}
@@ -146,12 +200,21 @@ export default function APContent() {
         ))}
       </div>
 
-      {activeTab === 'overview' && <APCharts />}
+      {activeTab === 'overview' && (
+        <APCharts
+          agingData={agingData}
+          trendData={trendData}
+          forecastData={forecastData}
+          vendors={vendors}
+          totalAP={kpiValues.totalAP}
+          overdueAP={kpiValues.overdueAP}
+        />
+      )}
 
       {activeTab === 'vendors' && (
         <div className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="text-md font-600 text-foreground">Vendor AP Balances</h3>
+            <h3 className="text-md font-semibold text-foreground">Vendor AP Balances</h3>
             <div className="flex items-center gap-1.5 bg-secondary rounded-md px-3 py-1.5 w-52">
               <Icon name="MagnifyingGlassIcon" size={13} className="text-muted-foreground" />
               <input
@@ -168,7 +231,7 @@ export default function APContent() {
               <thead>
                 <tr className="bg-secondary/50 border-b border-border">
                   {['Vendor', 'Total AP', 'Current', 'Overdue', 'Due Soon', 'Payment Terms', 'Avg Days', 'Risk', 'Next Payment', 'Status'].map((h) => (
-                    <th key={`vend-th-${h}`} className="px-4 py-2.5 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    <th key={`vend-th-${h}`} className="px-4 py-2.5 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                   <th className="px-4 py-2.5" />
                 </tr>
@@ -184,11 +247,11 @@ export default function APContent() {
                     >
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-500 text-foreground">{v.name}</p>
+                          <p className="font-medium text-foreground">{v.name}</p>
                           <p className="text-2xs text-muted-foreground">{v.code} · {v.category}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 tabular-nums font-600 text-foreground">{fx(formatRupiah(v.totalAP, true))}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{fx(formatRupiah(v.totalAP, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-success">{fx(formatRupiah(v.currentAP, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-danger">{v.overdueAP > 0 ? fx(formatRupiah(v.overdueAP, true)) : '—'}</td>
                       <td className="px-4 py-3 tabular-nums text-warning">{v.dueSoon > 0 ? fx(formatRupiah(v.dueSoon, true)) : '—'}</td>
@@ -249,7 +312,7 @@ export default function APContent() {
             <div className="flex items-center gap-2">
               {selectedRows.size > 0 && (
                 <div className="flex items-center gap-2 bg-primary/10 rounded-md px-3 py-1.5">
-                  <span className="text-sm font-600 text-primary">{selectedRows.size} selected</span>
+                  <span className="text-sm font-semibold text-primary">{selectedRows.size} selected</span>
                   <button className="text-sm text-primary hover:text-primary/80" onClick={() => toast.success(`${selectedRows.size} bills scheduled for payment`)}>Schedule</button>
                   <button className="text-sm text-muted-foreground hover:text-foreground" onClick={() => { setSelectedRows(new Set()); }}>Clear</button>
                 </div>
@@ -286,7 +349,7 @@ export default function APContent() {
                   ] as { key: keyof Bill; label: string }[]).map((col) => (
                     <th
                       key={`bill-th-${col.key}`}
-                      className="px-4 py-2.5 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground"
+                      className="px-4 py-2.5 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground"
                       onClick={() => handleSort(col.key)}
                     >
                       <div className="flex items-center gap-1">
@@ -297,7 +360,7 @@ export default function APContent() {
                       </div>
                     </th>
                   ))}
-                  <th className="px-4 py-2.5 text-2xs font-600 text-muted-foreground uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-2.5 text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -306,7 +369,7 @@ export default function APContent() {
                     <td colSpan={13} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <Icon name="DocumentTextIcon" size={32} className="text-muted-foreground/40" />
-                        <p className="text-sm font-500 text-muted-foreground">No bills match your current filters</p>
+                        <p className="text-sm font-medium text-muted-foreground">No bills match your current filters</p>
                         <button onClick={() => { setSearchQuery(''); setStatusFilter('All'); }} className="text-xs text-primary hover:underline">Clear filters</button>
                       </div>
                     </td>
@@ -320,18 +383,18 @@ export default function APContent() {
                       <td className="px-4 py-3">
                         <input type="checkbox" className="rounded" checked={selectedRows.has(bill.id)} onChange={() => toggleRow(bill.id)} onClick={(e) => e.stopPropagation()} />
                       </td>
-                      <td className="px-4 py-3 font-500 text-primary hover:underline cursor-pointer" onClick={() => setSelectedBill(bill)}>{bill.number}</td>
+                      <td className="px-4 py-3 font-medium text-primary hover:underline cursor-pointer" onClick={() => setSelectedBill(bill)}>{bill.number}</td>
                       <td className="px-4 py-3">
-                        <p className="font-500 text-foreground">{bill.vendorName}</p>
+                        <p className="font-medium text-foreground">{bill.vendorName}</p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{bill.billDate}</td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{bill.dueDate}</td>
-                      <td className="px-4 py-3 tabular-nums font-500">{fx(formatRupiah(bill.amount, true))}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium">{fx(formatRupiah(bill.amount, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-success">{bill.paid > 0 ? fx(formatRupiah(bill.paid, true)) : '—'}</td>
-                      <td className="px-4 py-3 tabular-nums font-600 text-foreground">{bill.outstanding > 0 ? fx(formatRupiah(bill.outstanding, true)) : '—'}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{bill.outstanding > 0 ? fx(formatRupiah(bill.outstanding, true)) : '—'}</td>
                       <td className="px-4 py-3 tabular-nums">
                         {bill.daysOverdue > 0 ? (
-                          <span className={`font-600 ${bill.daysOverdue > 60 ? 'text-danger' : bill.daysOverdue > 30 ? 'text-warning' : 'text-orange-600'}`}>
+                          <span className={`font-semibold ${bill.daysOverdue > 60 ? 'text-danger' : bill.daysOverdue > 30 ? 'text-warning' : 'text-orange-600'}`}>
                             {bill.daysOverdue}d
                           </span>
                         ) : '—'}
@@ -361,10 +424,13 @@ export default function APContent() {
                           <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="View bill" onClick={() => setSelectedBill(bill)}>
                             <Icon name="EyeIcon" size={14} />
                           </button>
-                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Schedule payment" onClick={() => toast.success(`Payment scheduled for ${bill.number}`)}>
+                          {/* Ikon kalender tidak punya input tanggal sendiri di baris tabel —
+                              buka panel detail (yang punya form "Schedule Payment" lengkap
+                              dengan date picker) daripada menjadwalkan ulang diam-diam. */}
+                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Schedule payment" onClick={() => setSelectedBill(bill)}>
                             <Icon name="CalendarIcon" size={14} />
                           </button>
-                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Mark paid" onClick={() => toast.success(`${bill.number} marked as paid`)}>
+                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Mark paid" onClick={() => markBillPaid(bill)}>
                             <Icon name="CheckCircleIcon" size={14} />
                           </button>
                         </div>
@@ -386,7 +452,7 @@ export default function APContent() {
                 <Icon name="ChevronLeftIcon" size={14} />
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <button key={`ap-page-${p}`} onClick={() => setCurrentPage(p)} className={`w-7 h-7 text-xs rounded font-500 transition-colors ${currentPage === p ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'}`}>{p}</button>
+                <button key={`ap-page-${p}`} onClick={() => setCurrentPage(p)} className={`w-7 h-7 text-xs rounded font-medium transition-colors ${currentPage === p ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'}`}>{p}</button>
               ))}
               <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages} className="p-1.5 rounded hover:bg-secondary text-muted-foreground disabled:opacity-40 transition-colors">
                 <Icon name="ChevronRightIcon" size={14} />
@@ -396,19 +462,26 @@ export default function APContent() {
         </div>
       )}
 
-      {activeTab === 'payment-planning' && <APPaymentPlanning />}
+      {activeTab === 'payment-planning' && <APPaymentPlanning bills={bills} forecastData={forecastData} onMarkPaid={markBillPaid} />}
 
-      {selectedVendor && <VendorDetailPanel vendor={selectedVendor} onClose={() => setSelectedVendor(null)} />}
-      {selectedBill && <BillDetailPanel bill={selectedBill} onClose={() => setSelectedBill(null)} />}
+      {selectedVendor && <VendorDetailPanel vendor={selectedVendor} bills={bills} onClose={() => setSelectedVendor(null)} />}
+      {selectedBill && (
+        <BillDetailPanel
+          bill={selectedBill}
+          onClose={() => setSelectedBill(null)}
+          onMarkPaid={() => { markBillPaid(selectedBill); setSelectedBill(null); }}
+          onSchedule={(newDueDate) => { scheduleBillPayment(selectedBill, newDueDate); setSelectedBill(null); }}
+        />
+      )}
     </div>
   );
 }
 
-function APPaymentPlanning() {
+function APPaymentPlanning({ bills, forecastData, onMarkPaid }: { bills: Bill[]; forecastData: ReturnType<typeof paymentForecastFromBills>; onMarkPaid: (bill: Bill) => void }) {
   const { fx } = useCurrency();
   const overdue = bills.filter((b) => b.status === 'Overdue' && b.outstanding > 0);
   const dueSoon = bills.filter((b) => b.status === 'Due Soon' && b.outstanding > 0);
-  const upcoming = bills.filter((b) => b.status === 'Open' && b.outstanding > 0);
+  const upcoming = bills.filter((b) => (b.status === 'Open' || b.status === 'Pending Approval') && b.outstanding > 0);
 
   const totalCashRequired = [...overdue, ...dueSoon].reduce((sum, b) => sum + b.outstanding, 0);
 
@@ -416,30 +489,30 @@ function APPaymentPlanning() {
     <div className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div>
-          <p className="text-sm font-600 text-foreground">{bill.vendorName}</p>
+          <p className="text-sm font-semibold text-foreground">{bill.vendorName}</p>
           <p className="text-xs text-muted-foreground">{bill.number}</p>
         </div>
         <StatusBadge label={bill.status} className={apStatusColors[bill.status]} />
       </div>
-      <p className="text-xl font-700 tabular-nums text-foreground">{fx(formatRupiah(bill.outstanding, true))}</p>
+      <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(bill.outstanding, true))}</p>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-muted-foreground">Due: {bill.dueDate}</span>
         <div className="flex gap-1">
-          <button className="text-xs text-primary hover:underline font-500" onClick={() => toast.success(`Payment scheduled for ${bill.number}`)}>Schedule</button>
-          <button className="text-xs text-muted-foreground hover:text-foreground font-500 ml-2" onClick={() => toast.success(`${bill.number} marked as paid`)}>Mark Paid</button>
+          <button className="text-xs text-primary hover:underline font-medium" onClick={() => toast.success(`Payment scheduled for ${bill.number}`)}>Schedule</button>
+          <button className="text-xs text-muted-foreground hover:text-foreground font-medium ml-2" onClick={() => onMarkPaid(bill)}>Mark Paid</button>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Cash Requirement Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {paymentForecastData.map((pf) => (
+        {forecastData.map((pf) => (
           <div key={`pf-${pf.period}`} className="bg-card border border-border rounded-lg p-4 shadow-card">
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{pf.period}</p>
-            <p className="text-2xl font-700 tabular-nums text-foreground">{fx(formatRupiah(pf.amount, true))}</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{pf.period}</p>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{fx(formatRupiah(pf.amount, true))}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{pf.bills} bill{pf.bills !== 1 ? 's' : ''} due</p>
           </div>
         ))}
@@ -449,12 +522,12 @@ function APPaymentPlanning() {
       <div className="flex items-center gap-3 bg-danger-bg border border-red-200 rounded-lg p-4">
         <Icon name="ExclamationTriangleIcon" size={18} className="text-danger flex-shrink-0" />
         <div>
-          <p className="text-sm font-600 text-danger">Immediate Cash Requirement: {fx(formatRupiah(totalCashRequired, true))}</p>
+          <p className="text-sm font-semibold text-danger">Immediate Cash Requirement: {fx(formatRupiah(totalCashRequired, true))}</p>
           <p className="text-xs text-danger/80 mt-0.5">Overdue and due-soon bills require immediate payment action to avoid vendor relationship risk.</p>
         </div>
         <button
           onClick={() => toast.success('Payment batch initiated')}
-          className="ml-auto text-sm font-500 text-white bg-danger hover:bg-danger/90 rounded-md px-3 py-1.5 transition-colors flex-shrink-0"
+          className="ml-auto text-sm font-medium text-white bg-danger hover:bg-danger/90 rounded-md px-3 py-1.5 transition-colors flex-shrink-0"
         >
           Pay All Overdue
         </button>
@@ -465,7 +538,7 @@ function APPaymentPlanning() {
         <div className="bg-danger-bg border border-red-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="ExclamationTriangleIcon" size={16} className="text-danger" />
-            <span className="text-sm font-600 text-danger">Overdue — Pay Immediately</span>
+            <span className="text-sm font-semibold text-danger">Overdue — Pay Immediately</span>
           </div>
           <div className="space-y-3">
             {overdue.length === 0 ? (
@@ -478,7 +551,7 @@ function APPaymentPlanning() {
         <div className="bg-warning-bg border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="ClockIcon" size={16} className="text-warning" />
-            <span className="text-sm font-600 text-warning">Due Soon — Schedule Now</span>
+            <span className="text-sm font-semibold text-warning">Due Soon — Schedule Now</span>
           </div>
           <div className="space-y-3">
             {dueSoon.length === 0 ? (
@@ -491,7 +564,7 @@ function APPaymentPlanning() {
         <div className="bg-secondary rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="CalendarIcon" size={16} className="text-muted-foreground" />
-            <span className="text-sm font-600 text-foreground">Upcoming — Plan Ahead</span>
+            <span className="text-sm font-semibold text-foreground">Upcoming — Plan Ahead</span>
           </div>
           <div className="space-y-3">
             {upcoming.slice(0, 4).map((b) => <BillCard key={b.id} bill={b} />)}

@@ -68,7 +68,7 @@ export default function AIConversationSidebar({
             <div className="w-6 h-6 rounded-md bg-ai-purple flex items-center justify-center">
               <Icon name="SparklesIcon" size={13} className="text-white" />
             </div>
-            <span className="text-sm font-700 text-foreground">AI Analyst</span>
+            <span className="text-sm font-bold text-foreground">AI Analyst</span>
           </div>
           <button onClick={onToggleCollapse} className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors">
             <Icon name="ChevronLeftIcon" size={14} />
@@ -77,7 +77,7 @@ export default function AIConversationSidebar({
 
         <button
           onClick={onNewAnalysis}
-          className="w-full flex items-center justify-center gap-1.5 bg-ai-purple text-white text-sm font-500 rounded-md py-2 hover:bg-purple-700 transition-colors"
+          className="w-full flex items-center justify-center gap-1.5 bg-ai-purple text-white text-sm font-medium rounded-md py-2 hover:bg-purple-700 transition-colors"
         >
           <Icon name="PlusIcon" size={14} />
           New Analysis
@@ -112,7 +112,7 @@ export default function AIConversationSidebar({
 
         {today.length > 0 && (
           <div className="mb-2">
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider px-3 py-1.5">TODAY</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-1.5">TODAY</p>
             {today.map((a) => (
               <AnalysisItem
                 key={a.id}
@@ -128,7 +128,7 @@ export default function AIConversationSidebar({
 
         {yesterday.length > 0 && (
           <div className="mb-2">
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider px-3 py-1.5">YESTERDAY</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-1.5">YESTERDAY</p>
             {yesterday.map((a) => (
               <AnalysisItem
                 key={a.id}
@@ -145,7 +145,7 @@ export default function AIConversationSidebar({
         {/* Suggested Questions */}
         {!searchQuery && (
           <div className="mt-2">
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider px-3 py-1.5">SUGGESTED</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-1.5">SUGGESTED</p>
             {suggestedQuestions.map((q) => (
               <button
                 key={q.id}

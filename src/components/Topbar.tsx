@@ -10,6 +10,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import { searchPages } from '@/lib/searchIndex';
 import { useCurrency } from '@/lib/currency';
 import { LANGUAGES, useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
 
 interface TopbarProps {
   onMobileMenuToggle: () => void;
@@ -17,11 +18,18 @@ interface TopbarProps {
   period?: string;
 }
 
-const companies = [
-  { id: 'co-001', name: 'PT Nusantara Teknologi Indonesia', short: 'NTI' },
-  { id: 'co-002', name: 'PT Maju Bersama Sentosa', short: 'MBS' },
-  { id: 'co-003', name: 'CV Karya Mandiri Digital', short: 'KMD' },
-];
+// Indonesian legal-entity prefixes to skip when generating a short 2–3 letter
+// code for the company switcher (e.g. "PT Nusantara Teknologi" -> "NT").
+const LEGAL_PREFIXES = new Set(['PT', 'CV', 'UD', 'TBK', 'PD', 'FA']);
+
+function companyShortCode(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '—';
+  const significant = words[0] && LEGAL_PREFIXES.has(words[0].toUpperCase()) ? words.slice(1) : words;
+  const source = significant.length > 0 ? significant : words;
+  const initials = source.slice(0, 3).map((w) => w[0]?.toUpperCase() ?? '').join('');
+  return initials || name.replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || '—';
+}
 
 const periods = [
   { id: 'p-2026-ytd', label: 'Jan 2026 – Aug 2026', sub: 'Year to Date' },
@@ -51,13 +59,21 @@ function getNotifIcon(type: string) {
 export default function Topbar({ onMobileMenuToggle, company, period }: TopbarProps) {
   const router = useRouter();
 
-  // Cocokkan prop company/period dengan daftar yang ada; kalau tidak cocok, fallback ke item pertama
-  const initialCompany = companies.find((c) => c.name === company || c.short === company) || companies[0];
+  // "Switch Company" is driven by the global active-client context (see
+  // src/lib/activeClient.tsx), which is the SAME client every other page in
+  // the dashboard reads from -- picking a company here is what makes every
+  // other page (Dashboard, Accounts Payable, Accounts Receivable, dst) show
+  // that client's data instead of a different one.
+  const { clients: clientList, activeClientId, setActiveClient } = useActiveClient();
+  const companies = useMemo(
+    () => clientList.map((c) => ({ id: c.id, name: c.companyName, short: companyShortCode(c.companyName) })),
+    [clientList]
+  );
+
   const initialPeriod = periods.find((p) => p.label === period || p.sub === period) || periods[0];
 
   const { currency, fx } = useCurrency();
   const { lang, setLang, t } = useLanguage();
-  const [selectedCompany, setSelectedCompany] = useState(initialCompany);
   const [selectedPeriod, setSelectedPeriod] = useState(initialPeriod);
   const [companyOpen, setCompanyOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
@@ -71,6 +87,8 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
 
   const unreadCount = notifications.filter((n) => !n.read).length;
   const searchResults = useMemo(() => searchPages(searchQuery), [searchQuery]);
+
+  const selectedCompany = companies.find((c) => c.id === activeClientId) || null;
 
   const closeAllDropdowns = () => {
     setCompanyOpen(false);
@@ -182,26 +200,42 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
           <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
             <Building2 size={12} className="text-primary" />
           </div>
-          <span className="font-semibold text-foreground truncate max-w-[160px] hidden lg:block">{selectedCompany.name}</span>
-          <span className="font-semibold text-foreground lg:hidden">{selectedCompany.short}</span>
+          <span className="font-semibold text-foreground truncate max-w-[160px] hidden lg:block">
+            {selectedCompany ? selectedCompany.name : 'No clients yet'}
+          </span>
+          <span className="font-semibold text-foreground lg:hidden">
+            {selectedCompany ? selectedCompany.short : '—'}
+          </span>
           <ChevronDown size={14} className={`text-muted-foreground transition-transform ${companyOpen ? 'rotate-180' : ''}`} />
         </button>
         {companyOpen && (
           <div className="absolute right-0 top-full mt-1 w-72 bg-card border border-border rounded-xl shadow-card-lg z-50 py-1 fade-in">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 py-2">Switch Company</p>
-            {companies.map((co) => (
+            {companies.length === 0 ? (
               <button
-                key={co.id}
-                onClick={() => { setSelectedCompany(co); setCompanyOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-left"
+                onClick={() => { setCompanyOpen(false); router.push('/clients'); }}
+                className="w-full flex items-center gap-3 px-3 py-3 hover:bg-muted transition-colors text-left"
               >
-                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-primary">{co.short}</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">No clients yet</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Add your first client on the Clients page</p>
                 </div>
-                <span className="flex-1 text-sm font-medium text-foreground">{co.name}</span>
-                {selectedCompany.id === co.id && <Check size={14} className="text-primary" />}
               </button>
-            ))}
+            ) : (
+              companies.map((co) => (
+                <button
+                  key={co.id}
+                  onClick={() => { setActiveClient(co.id, co.name); setCompanyOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-left"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-primary">{co.short}</span>
+                  </div>
+                  <span className="flex-1 text-sm font-medium text-foreground">{co.name}</span>
+                  {selectedCompany?.id === co.id && <Check size={14} className="text-primary" />}
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>

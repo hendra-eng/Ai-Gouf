@@ -38,13 +38,13 @@ export default function FinancialHealthHero() {
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-4xl font-800 font-tabular text-foreground">{overallScore}</span>
+              <span className="text-4xl font-extrabold tabular-nums text-foreground">{overallScore}</span>
               <span className="text-xs text-muted-foreground">/100</span>
             </div>
           </div>
-          <p className="text-sm font-600 text-foreground mt-2">Financial Health</p>
+          <p className="text-sm font-semibold text-foreground mt-2">Financial Health</p>
           <p className="text-2xs text-muted-foreground text-center mt-0.5">PT Nusantara Teknologi · FY 2026</p>
-          <span className="mt-2 px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-600 border border-positive/20">
+          <span className="mt-2 px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20">
             ✓ Healthy
           </span>
         </div>
@@ -63,8 +63,8 @@ export default function FinancialHealthHero() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-600 text-foreground">{d.label}</span>
-                  <span className={`text-xs font-700 font-tabular ${d.color}`}>{d.score}</span>
+                  <span className="text-xs font-semibold text-foreground">{d.label}</span>
+                  <span className={`text-xs font-bold tabular-nums ${d.color}`}>{d.score}</span>
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                   <div

@@ -4,15 +4,19 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { type Vendor, bills, formatRupiah, riskColors, apStatusColors } from '@/lib/mockData';
+import { type Vendor, type Bill, formatRupiah, riskColors, apStatusColors } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
 
 interface Props {
   vendor: Vendor;
+  // [DIUBAH] Sebelumnya panel ini import `bills` statis langsung dari
+  // mockData. Sekarang bills (hasil turunan transaksi Expense) dikirim dari
+  // APContent sebagai prop, supaya datanya selalu sinkron dengan yang lain.
+  bills: Bill[];
   onClose: () => void;
 }
 
-export default function VendorDetailPanel({ vendor, onClose }: Props) {
+export default function VendorDetailPanel({ vendor, bills, onClose }: Props) {
   const router = useRouter();
   const { fx } = useCurrency();
   const [activeTab, setActiveTab] = useState<'overview' | 'bills' | 'payments'>('overview');
@@ -40,7 +44,7 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
-                <h2 className="text-lg font-700 text-foreground truncate">{vendor.name}</h2>
+                <h2 className="text-lg font-bold text-foreground truncate">{vendor.name}</h2>
                 <StatusBadge label={vendor.riskLevel} className={riskColors[vendor.riskLevel]} size="md" />
               </div>
               <p className="text-sm text-muted-foreground">{vendor.code} · {vendor.category}</p>
@@ -52,14 +56,14 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
           <div className="flex items-center gap-2 mt-3">
             <button
               onClick={() => toast.success('Payment scheduled')}
-              className="flex items-center gap-1.5 text-xs font-500 text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="CalendarIcon" size={12} />
               Schedule Payment
             </button>
             <button
               onClick={() => router.push('/ai-financial-analyst?analysis=ap-risk')}
-              className="flex items-center gap-1.5 text-xs font-500 text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="SparklesIcon" size={12} />
               AI Payment Risk
@@ -70,7 +74,7 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
               <button
                 key={`vend-detail-tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-500 border-b-2 -mb-px transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                   activeTab === tab.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -96,22 +100,22 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
                   { label: 'Avg Payment Days', value: `${vendor.avgPaymentDays} days`, color: vendor.avgPaymentDays > 35 ? 'text-warning' : 'text-success' },
                 ].map((m) => (
                   <div key={`vend-metric-${m.label}`} className="bg-secondary/50 rounded-lg p-3">
-                    <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
-                    <p className={`text-xl font-700 tabular-nums ${m.color}`}>{m.value}</p>
+                    <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
+                    <p className={`text-xl font-bold tabular-nums ${m.color}`}>{m.value}</p>
                   </div>
                 ))}
               </div>
 
               <div className="bg-card border border-border rounded-lg p-4">
-                <h4 className="text-sm font-600 text-foreground mb-3">Payment Schedule</h4>
+                <h4 className="text-sm font-semibold text-foreground mb-3">Payment Schedule</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Next Payment Due</span>
-                    <span className="font-500 text-primary">{vendor.nextPayment}</span>
+                    <span className="font-medium text-primary">{vendor.nextPayment}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Payment Method</span>
-                    <span className="font-500">Bank Transfer</span>
+                    <span className="font-medium">Bank Transfer</span>
                   </div>
                 </div>
               </div>
@@ -119,7 +123,7 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
               <div className="bg-ai-purple-bg border border-purple-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Icon name="SparklesIcon" size={14} className="text-ai-purple" />
-                  <span className="text-sm font-600 text-ai-purple">AI Payment Risk</span>
+                  <span className="text-sm font-semibold text-ai-purple">AI Payment Risk</span>
                 </div>
                 <p className="text-xs text-ai-purple-foreground leading-relaxed">
                   {vendor.riskLevel === 'Critical'
@@ -143,15 +147,15 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
                   <div key={b.id} className="bg-card border border-border rounded-lg p-3 hover:shadow-card transition-all">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-sm font-600 text-foreground">{b.number}</p>
+                        <p className="text-sm font-semibold text-foreground">{b.number}</p>
                         <p className="text-xs text-muted-foreground">Due: {b.dueDate}</p>
                       </div>
                       <StatusBadge label={b.status} className={apStatusColors[b.status]} />
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-lg font-700 tabular-nums text-foreground">{fx(formatRupiah(b.amount, true))}</span>
+                      <span className="text-lg font-bold tabular-nums text-foreground">{fx(formatRupiah(b.amount, true))}</span>
                       {b.daysOverdue > 0 && (
-                        <span className="text-xs font-600 text-danger">{b.daysOverdue}d overdue</span>
+                        <span className="text-xs font-semibold text-danger">{b.daysOverdue}d overdue</span>
                       )}
                     </div>
                   </div>
@@ -166,12 +170,12 @@ export default function VendorDetailPanel({ vendor, onClose }: Props) {
                 <div key={p.id} className="bg-card border border-border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-600 text-foreground">{fx(formatRupiah(p.amount, true))}</p>
+                      <p className="text-sm font-semibold text-foreground">{fx(formatRupiah(p.amount, true))}</p>
                       <p className="text-xs text-muted-foreground">{p.ref} · {p.method}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">{p.date}</p>
-                      <span className="text-2xs bg-success-bg text-success-foreground px-1.5 py-0.5 rounded-full font-600">Paid</span>
+                      <span className="text-2xs bg-success-bg text-success-foreground px-1.5 py-0.5 rounded-full font-semibold">Paid</span>
                     </div>
                   </div>
                 </div>

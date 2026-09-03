@@ -87,22 +87,22 @@ export default function ARContent() {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-700 text-foreground">Accounts Receivable</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Receivable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor receivables, collections, customer exposure, and overdue balances.</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs font-600 text-primary">Jan 2026 – Aug 2026</span>
-            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-500">YTD</span>
+            <span className="badge-info">Jan 2026 – Aug 2026</span>
+            <span className="badge-neutral">YTD</span>
             <span className="text-xs text-muted-foreground">Last updated: 28 Aug 2026, 16:11 WIB</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={handleAIAnalyze}
-            className="flex items-center gap-1.5 text-sm font-500 text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-3 py-1.5 transition-colors border border-purple-200"
+            className="flex items-center gap-1.5 text-sm font-medium text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-3 py-1.5 transition-colors border border-purple-200"
           >
             <Icon name="SparklesIcon" size={14} />
             AI Analysis
@@ -141,7 +141,7 @@ export default function ARContent() {
           <button
             key={`ar-tab-${tab.id}`}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-500 border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === tab.id
                 ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
             }`}
@@ -160,7 +160,7 @@ export default function ARContent() {
       {activeTab === 'customers' && (
         <div className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
           <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="text-md font-600 text-foreground">Top Customers by AR Balance</h3>
+            <h3 className="text-md font-semibold text-foreground">Top Customers by AR Balance</h3>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 bg-secondary rounded-md px-3 py-1.5 w-52">
                 <Icon name="MagnifyingGlassIcon" size={13} className="text-muted-foreground" />
@@ -179,7 +179,7 @@ export default function ARContent() {
               <thead>
                 <tr className="bg-secondary/50 border-b border-border">
                   {['Customer', 'Total AR', 'Current', 'Overdue', '90+ Days', 'DSO', 'Credit Limit', 'Utilization', 'Risk', 'Last Payment'].map((h) => (
-                    <th key={`cust-th-${h}`} className="px-4 py-2.5 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
+                    <th key={`cust-th-${h}`} className="px-4 py-2.5 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                   <th className="px-4 py-2.5" />
                 </tr>
@@ -195,11 +195,11 @@ export default function ARContent() {
                     >
                       <td className="px-4 py-3">
                         <div>
-                          <p className="font-500 text-foreground">{c.name}</p>
+                          <p className="font-medium text-foreground">{c.name}</p>
                           <p className="text-2xs text-muted-foreground">{c.code} · {c.industry}</p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 tabular-nums font-600 text-foreground">{fx(formatRupiah(c.totalAR, true))}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{fx(formatRupiah(c.totalAR, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-success">{fx(formatRupiah(c.currentAR, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-danger">{c.overdueAR > 0 ? fx(formatRupiah(c.overdueAR, true)) : '—'}</td>
                       <td className="px-4 py-3 tabular-nums text-danger">{c.ar90Plus > 0 ? fx(formatRupiah(c.ar90Plus, true)) : '—'}</td>
@@ -265,7 +265,7 @@ export default function ARContent() {
             <div className="flex items-center gap-2">
               {selectedRows.size > 0 && (
                 <div className="flex items-center gap-2 bg-primary/10 rounded-md px-3 py-1.5">
-                  <span className="text-sm font-600 text-primary">{selectedRows.size} selected</span>
+                  <span className="text-sm font-semibold text-primary">{selectedRows.size} selected</span>
                   <button className="text-sm text-primary hover:text-primary/80" onClick={() => toast.success(`${selectedRows.size} invoices exported`)}>Export</button>
                   <button className="text-sm text-danger hover:text-danger/80" onClick={() => { setSelectedRows(new Set()); toast.info('Selection cleared'); }}>Clear</button>
                 </div>
@@ -301,7 +301,7 @@ export default function ARContent() {
                   ] as { key: keyof Invoice; label: string }[]).map((col) => (
                     <th
                       key={`inv-th-${col.key}`}
-                      className="px-4 py-2.5 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground"
+                      className="px-4 py-2.5 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground"
                       onClick={() => handleSort(col.key)}
                     >
                       <div className="flex items-center gap-1">
@@ -312,7 +312,7 @@ export default function ARContent() {
                       </div>
                     </th>
                   ))}
-                  <th className="px-4 py-2.5 text-2xs font-600 text-muted-foreground uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-2.5 text-2xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,7 +321,7 @@ export default function ARContent() {
                     <td colSpan={11} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <Icon name="DocumentTextIcon" size={32} className="text-muted-foreground/40" />
-                        <p className="text-sm font-500 text-muted-foreground">No invoices match your current filters</p>
+                        <p className="text-sm font-medium text-muted-foreground">No invoices match your current filters</p>
                         <button onClick={() => { setSearchQuery(''); setStatusFilter('All'); }} className="text-xs text-primary hover:underline">Clear filters</button>
                       </div>
                     </td>
@@ -335,19 +335,19 @@ export default function ARContent() {
                       <td className="px-4 py-3">
                         <input type="checkbox" className="rounded" checked={selectedRows.has(inv.id)} onChange={() => toggleRow(inv.id)} onClick={(e) => e.stopPropagation()} />
                       </td>
-                      <td className="px-4 py-3 font-500 text-primary hover:underline cursor-pointer" onClick={() => setSelectedInvoice(inv)}>{inv.number}</td>
+                      <td className="px-4 py-3 font-medium text-primary hover:underline cursor-pointer" onClick={() => setSelectedInvoice(inv)}>{inv.number}</td>
                       <td className="px-4 py-3">
-                        <p className="font-500 text-foreground">{inv.customerName}</p>
+                        <p className="font-medium text-foreground">{inv.customerName}</p>
                         <p className="text-2xs text-muted-foreground">{inv.accountManager}</p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{inv.invoiceDate}</td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{inv.dueDate}</td>
-                      <td className="px-4 py-3 tabular-nums font-500">{fx(formatRupiah(inv.amount, true))}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium">{fx(formatRupiah(inv.amount, true))}</td>
                       <td className="px-4 py-3 tabular-nums text-success">{inv.paid > 0 ? fx(formatRupiah(inv.paid, true)) : '—'}</td>
-                      <td className="px-4 py-3 tabular-nums font-600 text-foreground">{inv.outstanding > 0 ? fx(formatRupiah(inv.outstanding, true)) : '—'}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{inv.outstanding > 0 ? fx(formatRupiah(inv.outstanding, true)) : '—'}</td>
                       <td className="px-4 py-3 tabular-nums">
                         {inv.daysOverdue > 0 ? (
-                          <span className={`font-600 ${inv.daysOverdue > 60 ? 'text-danger' : inv.daysOverdue > 30 ? 'text-warning' : 'text-orange-600'}`}>
+                          <span className={`font-semibold ${inv.daysOverdue > 60 ? 'text-danger' : inv.daysOverdue > 30 ? 'text-warning' : 'text-orange-600'}`}>
                             {inv.daysOverdue}d
                           </span>
                         ) : '—'}
@@ -403,7 +403,7 @@ export default function ARContent() {
                 <button
                   key={`page-${p}`}
                   onClick={() => setCurrentPage(p)}
-                  className={`w-7 h-7 text-xs rounded font-500 transition-colors ${
+                  className={`w-7 h-7 text-xs rounded font-medium transition-colors ${
                     currentPage === p ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'
                   }`}
                 >
@@ -445,7 +445,7 @@ function ARCollections() {
     <div className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all">
       <div className="flex items-start justify-between gap-2 mb-2">
         <div>
-          <p className="text-sm font-600 text-foreground">{inv.customerName}</p>
+          <p className="text-sm font-semibold text-foreground">{inv.customerName}</p>
           <p className="text-xs text-muted-foreground">{inv.number}</p>
         </div>
         <StatusBadge
@@ -456,26 +456,26 @@ function ARCollections() {
           }
         />
       </div>
-      <p className="text-xl font-700 tabular-nums text-foreground">{fx(formatRupiah(inv.outstanding, true))}</p>
+      <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(inv.outstanding, true))}</p>
       <div className="flex items-center justify-between mt-2">
-        <span className={`text-xs font-500 ${inv.daysOverdue > 60 ? 'text-danger' : inv.daysOverdue > 0 ? 'text-warning' : 'text-muted-foreground'}`}>
+        <span className={`text-xs font-medium ${inv.daysOverdue > 60 ? 'text-danger' : inv.daysOverdue > 0 ? 'text-warning' : 'text-muted-foreground'}`}>
           {inv.daysOverdue > 0 ? `${inv.daysOverdue} days overdue` : 'Due soon'}
         </span>
         <div className="flex gap-1">
-          <button className="text-xs text-primary hover:underline font-500" onClick={() => toast.success('Collection action recorded')}>Record</button>
-          <button className="text-xs text-muted-foreground hover:text-foreground font-500 ml-2" onClick={() => toast.info('Note added')}>Note</button>
+          <button className="text-xs text-primary hover:underline font-medium" onClick={() => toast.success('Collection action recorded')}>Record</button>
+          <button className="text-xs text-muted-foreground hover:text-foreground font-medium ml-2" onClick={() => toast.info('Note added')}>Note</button>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-danger-bg border border-red-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="ExclamationTriangleIcon" size={16} className="text-danger" />
-            <span className="text-sm font-600 text-danger">Critical — Immediate Action</span>
+            <span className="text-sm font-semibold text-danger">Critical — Immediate Action</span>
           </div>
           <div className="space-y-3">
             {critical.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
@@ -484,7 +484,7 @@ function ARCollections() {
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="BellAlertIcon" size={16} className="text-orange-600" />
-            <span className="text-sm font-600 text-orange-700">High Priority</span>
+            <span className="text-sm font-semibold text-orange-700">High Priority</span>
           </div>
           <div className="space-y-3">
             {high.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
@@ -493,7 +493,7 @@ function ARCollections() {
         <div className="bg-warning-bg border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Icon name="ClockIcon" size={16} className="text-warning" />
-            <span className="text-sm font-600 text-warning">Medium Priority</span>
+            <span className="text-sm font-semibold text-warning">Medium Priority</span>
           </div>
           <div className="space-y-3">
             {medium.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
@@ -503,12 +503,12 @@ function ARCollections() {
 
       {/* Collection Forecast */}
       <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <h3 className="text-md font-600 text-foreground mb-4">Collection Forecast</h3>
+        <h3 className="text-md font-semibold text-foreground mb-4">Collection Forecast</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {collectionForecast.map((cf) => (
             <div key={`cf-${cf.period}`} className="text-center p-3 bg-secondary rounded-lg">
-              <p className="text-xs text-muted-foreground font-500 mb-1">{cf.period}</p>
-              <p className="text-xl font-700 tabular-nums text-foreground">{fx(formatRupiah(cf.expected, true))}</p>
+              <p className="text-xs text-muted-foreground font-medium mb-1">{cf.period}</p>
+              <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(cf.expected, true))}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{cf.probability}% probability</p>
             </div>
           ))}

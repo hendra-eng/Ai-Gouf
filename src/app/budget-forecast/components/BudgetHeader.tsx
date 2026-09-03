@@ -21,8 +21,8 @@ export default function BudgetHeader() {
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <Icon name="PresentationChartLineIcon" size={18} className="text-primary" />
           </div>
-          <h1 className="text-3xl font-700 text-foreground">Budget &amp; Forecast</h1>
-          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-600 border border-primary/20">
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">Budget &amp; Forecast</h1>
+          <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
             FY 2026
           </span>
         </div>

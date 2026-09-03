@@ -26,6 +26,8 @@ import logging
 import os
 import random
 import re
+import shutil
+import subprocess
 import time
 import traceback
 from collections import Counter, defaultdict, OrderedDict
@@ -10129,6 +10131,30 @@ def proses_dataframe_penjualan(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pol
     ]
     df_asli = df[kolom_asli_penjualan].copy()
 
+    # [BARU -- PERBAIKAN PERFORMA] tentukan_akun_kas_piutang() &
+    # cari_akun_penjualan_pasti() HANYA bergantung pada df_coa (konstan
+    # sepanjang fungsi ini) + cara_bayar (cuma 2 nilai mungkin: TUNAI/
+    # KREDIT) -- TIDAK bergantung pada isi baris lain sama sekali. Sebelum
+    # cache ini, tahap 2 di bawah memanggil keduanya UNTUK SETIAP BARIS,
+    # dan tiap panggilan itu men-scan ULANG SELURUH tabel COA dari nol
+    # (df_coa["nama_akun"].str.upper().str.contains(...)) -- utk laporan
+    # berisi ribuan transaksi, itu ribuan+ scan penuh atas tabel yang
+    # HASILNYA SELALU SAMA. Cukup dihitung SEKALI di sini per nilai
+    # cara_bayar yang mungkin muncul, lalu dipakai ulang lewat lookup
+    # dict O(1) di dalam loop -- tidak mengubah hasil sama sekali, murni
+    # menghilangkan kerja berulang yang tidak perlu (pola yang sama dgn
+    # optimasi nama_akun_upper_coa di proses_dataframe() utk rekening
+    # koran). Pada contoh "Data Penjualan Detail 01-30 Agustus 2026"
+    # (10.715 transaksi), ini memangkas tahap kategorisasi dari ~9-23
+    # detik jadi hitungan sub-detik.
+    _cache_akun_kas_piutang: dict = {}
+    def _akun_kas_piutang_cached(cara_bayar):
+        if cara_bayar not in _cache_akun_kas_piutang:
+            _cache_akun_kas_piutang[cara_bayar] = tentukan_akun_kas_piutang(df_coa, cara_bayar)
+        return _cache_akun_kas_piutang[cara_bayar]
+    _akun_ppn_keluaran_cache = tentukan_akun_ppn_keluaran(df_coa)
+    _akun_penjualan_pasti_cache = cari_akun_penjualan_pasti(df_coa)
+
     perlu_isi = df.index.tolist()
 
     # tahap 1: pola historis
@@ -10156,9 +10182,9 @@ def proses_dataframe_penjualan(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pol
     ambigu = []
     for idx in belum_pola:
         row = df.loc[idx]
-        akun_debet = tentukan_akun_kas_piutang(df_coa, row["cara_bayar"])
-        akun_ppn = tentukan_akun_ppn_keluaran(df_coa) if row["ppn"] else (None, None)
-        akun_penjualan = cari_akun_penjualan_pasti(df_coa)
+        akun_debet = _akun_kas_piutang_cached(row["cara_bayar"])
+        akun_ppn = _akun_ppn_keluaran_cache if row["ppn"] else (None, None)
+        akun_penjualan = _akun_penjualan_pasti_cache
 
         if akun_penjualan is not None:
             _isi_baris_penjualan(
@@ -10197,7 +10223,25 @@ def proses_dataframe_penjualan(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pol
             ambigu.append(idx)
 
     # tahap 3: AI menentukan akun Penjualan
-    if pakai_ai and ambigu:
+    # [FIX -- PERBAIKAN PERFORMA] Kalau df_coa kosong/tidak ada (mis. PDF
+    # "Jurnal Penjualan Kasir" diupload tanpa client_id/COA terhubung),
+    # prompt AI mewajibkan "no_akun_kredit_penjualan" berupa NOMOR AKUN
+    # persis dari COA -- tapi kalau COA-nya sendiri kosong, AI tidak
+    # mungkin bisa memenuhi syarat itu, sehingga SELALU balas null/tidak
+    # yakin untuk semua baris (baris tetap jatuh ke label generik di
+    # bagian "sisanya" di bawah, SAMA seperti kalau AI di-skip sejak
+    # awal). Memanggil AI di kondisi ini cuma menghabiskan waktu
+    # (network round-trip ke Groq/Claude, ratusan chunk utk file besar)
+    # TANPA mengubah hasil akhir sama sekali -- jadi di-skip langsung
+    # kalau df_coa kosong. ambigu TIDAK diubah/dikosongkan di sini
+    # supaya loop "sisanya" di bawah tetap mengisi label generik
+    # "PENJUALAN" + jml_kredit seperti biasa (perilaku akhir 100% sama,
+    # cuma tanpa panggilan AI yang percuma).
+    ada_coa = df_coa is not None and not df_coa.empty
+    print(f"[DEBUG-TIMING] tahap-3 AI: ada_coa={ada_coa}, jumlah baris ambigu={len(ambigu)}, "
+          f"pakai_ai={pakai_ai} -> AI {'DIPANGGIL' if (pakai_ai and ambigu and ada_coa) else 'DI-SKIP'}")
+
+    if pakai_ai and ambigu and ada_coa:
         api_key = api_key or ambil_api_key_claude()
         if api_key:
             batch = []
@@ -10820,8 +10864,14 @@ def proses_file_penjualan(
     lewat proses_dataframe_penjualan() (pola historis -> aturan standar
     penjualan + kata kunci COA -> AI).
     """
+    import time as _time_debug  # [DEBUG SEMENTARA] hapus/comment setelah selesai profiling
+
     nama_file = nama_file or getattr(file_like, "name", "") or ""
+
+    _t_parse = _time_debug.perf_counter()
     _df_bank, df_jual, _df_nilai, _df_piutang, df_coa, peringatan = muat_workbook(file_like, nama_file)
+    print(f"[DEBUG-TIMING] muat_workbook('{nama_file}'): {_time_debug.perf_counter() - _t_parse:.2f} detik "
+          f"({0 if df_jual is None else len(df_jual)} baris penjualan terdeteksi)")
 
     if df_jual is None or df_jual.empty:
         return {"df": pd.DataFrame(), "ringkasan": {}, "masalah": [], "draf_jurnal": [], "sheet_dilewati": peringatan}
@@ -10829,11 +10879,17 @@ def proses_file_penjualan(
     path_pola = _path_pola("pola_penjualan", client_id)
     pola = muat_pola(path_pola)
 
+    _t_kategori = _time_debug.perf_counter()
     df_hasil = proses_dataframe_penjualan(
         df_jual, df_coa, pola, pakai_ai=pakai_ai,
         api_key=ambil_api_key_claude() if pakai_ai else None,
     )
+    print(f"[DEBUG-TIMING] proses_dataframe_penjualan (pola+aturan+AI) untuk '{nama_file}': "
+          f"{_time_debug.perf_counter() - _t_kategori:.2f} detik")
+
+    _t_simpan_pola = _time_debug.perf_counter()
     simpan_pola(pola, path_pola, sumber_perubahan="proses_file_penjualan (auto dari data asli)")
+    print(f"[DEBUG-TIMING] simpan_pola untuk '{nama_file}': {_time_debug.perf_counter() - _t_simpan_pola:.2f} detik")
 
     keseimbangan = cek_keseimbangan_jurnal(df_hasil)
 
@@ -10882,6 +10938,442 @@ def proses_file_penjualan(
     }
 
     return {"df": df_hasil, "ringkasan": ringkasan, "masalah": masalah, "draf_jurnal": draf_jurnal, "sheet_dilewati": peringatan}
+
+
+# ============================================================
+# [BARU] EKSTRAKSI PDF "DATA PENJUALAN DETAIL" (LAPORAN KASIR/POS
+# PER-TRANSAKSI) -- dipakai jenis_dokumen "jurnal_penjualan_kasir"
+# ============================================================
+# Format sumber: laporan PDF hasil export sistem kasir/POS toko (bukan
+# rekening koran, bukan invoice-per-baris ala parse_sheet_penjualan()).
+# Tiap transaksi tercetak sbg SATU BLOK multi-baris:
+#
+#   <No Transaksi>  <Tanggal>  [Dept.]  <Kode Pel.>  <Nama Pelanggan>  <Alamat...>
+#   No.  Kd. Item  Nama Item  Jml  Satuan  Harga  Pot. %  Total
+#   1    <kode>    <nama item, bisa wrap beberapa baris>   ...
+#   2    ...
+#                                            <total qty>          <subtotal>
+#       Pot. : <n>   Pajak : <n>   Biaya : <n>   Total Akhir : <n>
+#
+# Header kolom "No Transaksi Tanggal Dept. Kode Pel. Nama Pelanggan Alamat"
+# DICETAK ULANG di baris pertama SETIAP HALAMAN (bukan transaksi baru) --
+# begitu juga footer laporan "<tgl> <jam> REPORT <hal>/<total>". Satu blok
+# transaksi bisa terpotong di tengah halaman (tabel item lanjut ke halaman
+# berikutnya tanpa header baru) -- makanya parsing dilakukan atas SELURUH
+# teks dokumen yang sudah digabung per baris, bukan per halaman terpisah,
+# dengan baris header/footer generik di atas cukup DILEWATI di mana pun
+# munculnya.
+#
+# BEDA PENTING dari _ekstrak_pdf_rekening_koran_berbasis_posisi() di atas:
+# fungsi itu berbasis KOORDINAT kata (x0/top dari pdfplumber.extract_words())
+# krn rekening koran butuh presisi kolom DEBIT/KREDIT/SALDO yang sejajar
+# tanpa garis. Laporan penjualan ini TIDAK butuh presisi kolom sama sekali
+# -- yang dijurnalkan hanyalah TOTAL AKHIR per transaksi (1 blok = 1 baris
+# jurnal penjualan), bukan rincian tiap item -- jadi cukup pakai
+# page.extract_text() (urutan baris apa adanya, tanpa perlu kembalikan ke
+# koordinat) lalu di-parse dgn state machine sederhana berbasis regex per
+# baris. Jauh lebih murah & lebih tahan banting terhadap variasi lebar
+# kolom dibanding pendekatan posisi-kata.
+#
+# Divalidasi terhadap contoh "Data Penjualan Detail 01-30 Agustus 2026"
+# (2003 halaman, ~1.600 transaksi, prefix No Transaksi "KSR-" & "JL-").
+
+_RE_HEADER_TRANSAKSI_JUAL = re.compile(
+    r"^([A-Z]{1,4}-\d{3,10}-\d{2,4})\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+(.*)$"
+)
+_RE_KODE_PEL_JUAL = re.compile(r"^([A-Z]{1,4}\d{2,8})\b\s*(.*)$")
+_RE_FOOTER_TRANSAKSI_JUAL = re.compile(
+    r"^Pot\.\s*:\s*([\d.,]+)\s+Pajak\s*:\s*([\d.,]+)\s+Biaya\s*:\s*([\d.,]+)\s+"
+    r"Total Akhir\s*:\s*([\d.,]+)\s*$"
+)
+_RE_HEADER_KOLOM_JUAL = re.compile(r"^No Transaksi\s+Tanggal\b")
+_RE_ITEM_HEADER_JUAL = re.compile(r"^No\.\s+Kd\.\s*Item\b")
+_RE_FOOTER_HALAMAN_JUAL = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}\s+REPORT\b")
+
+
+def _angka_id(teks) -> float:
+    """Parse angka format Indonesia ('900.000' -> 900000.0, '1.234,50' ->
+    1234.5) -- titik = pemisah ribuan, koma = pemisah desimal."""
+    if teks is None:
+        return 0.0
+    t = str(teks).strip()
+    if not t:
+        return 0.0
+    t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return 0.0
+
+
+def _ambil_teks_pdf_layout(data: bytes, nama_file: str) -> tuple[str, int]:
+    """
+    Ekstrak SELURUH teks PDF sekali jalan lewat `pdftotext -layout` (poppler-
+    utils), dibaca dari stdin & ditulis ke stdout langsung (tanpa file
+    sementara di disk -- aman dipanggil dari request FastAPI concurrent).
+
+    [BARU -- PERBAIKAN KECEPATAN] Sebelumnya PDF ini dibaca lewat
+    pdfplumber (buka tiap halaman -> re-layout & re-cluster posisi tiap
+    KARAKTER jadi kata via algoritma Python murni), yang perlu ~150-160ms
+    per halaman. Untuk laporan ribuan halaman (mis. contoh "Data
+    Penjualan Detail 01-30 Agustus 2026", 2003 halaman) itu ~5-6 MENIT
+    hanya utk tahap ekstraksi teks -- sebelum kategorisasi apa pun
+    dimulai. `pdftotext` (dari poppler, C++, dipakai jutaan kali di
+    banyak sistem) mengerjakan hal yang SAMA (susun ulang teks per baris
+    sesuai posisi asli lewat opsi -layout) dalam hitungan DETIK utk jumlah
+    halaman yang sama (diuji: 2003 halaman ~9 detik vs pdfplumber ~5.5
+    menit) -- ~35-40x lebih cepat, tanpa kehilangan informasi apa pun yg
+    dibutuhkan parser di bawah (fungsi ini murni baca URUTAN baris teks,
+    BEDA dari ekstraksi rekening koran yg butuh KOORDINAT x/y presisi tiap
+    kata utk memisahkan kolom DEBET/KREDIT/SALDO tanpa garis tabel --
+    laporan penjualan ini tidak butuh itu, lihat catatan di docstring
+    _ekstrak_pdf_jual_kasir_berbasis_posisi di bawah).
+
+    Kalau binary `pdftotext` tidak tersedia di server (belum install
+    poppler-utils), otomatis fallback ke pdfplumber (lambat tapi tetap
+    jalan) supaya tidak ada environment yang tiba-tiba error total.
+
+    Returns: (teks_gabungan, jumlah_halaman).
+    """
+    if shutil.which("pdftotext"):
+        try:
+            hasil = subprocess.run(
+                ["pdftotext", "-layout", "-", "-"],
+                input=data, capture_output=True, timeout=180, check=True,
+            )
+            teks = hasil.stdout.decode("utf-8", errors="replace")
+            jumlah_halaman = teks.count("\x0c") + (0 if teks.endswith("\x0c") else 1)
+            return teks, jumlah_halaman
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.warning(
+                "pdftotext gagal utk '%s' (%s) -- fallback ke pdfplumber (lebih lambat).",
+                nama_file, e,
+            )
+    # --- fallback: pdfplumber (dipertahankan sbg jaring pengaman kalau
+    # poppler-utils belum ter-install di server -- lihat catatan di atas) ---
+    try:
+        import pdfplumber
+    except ImportError as e:
+        raise RuntimeError(
+            "Gagal membaca file PDF -- baik 'pdftotext' (poppler-utils) maupun "
+            "library 'pdfplumber' tidak tersedia. Install salah satu: "
+            "'apt-get install poppler-utils' (direkomendasikan, jauh lebih cepat) "
+            "atau 'pip install pdfplumber --break-system-packages'."
+        ) from e
+    potongan = []
+    jumlah_halaman = 0
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        jumlah_halaman = len(pdf.pages)
+        for page in pdf.pages:
+            potongan.append(page.extract_text() or "")
+    return "\x0c".join(potongan), jumlah_halaman
+
+
+def _ekstrak_pdf_jual_kasir_berbasis_posisi(file_like, nama_file: str = None) -> tuple:
+    """
+    Ekstrak semua blok transaksi dari PDF "Data Penjualan Detail" (lihat
+    penjelasan format di atas) jadi DataFrame dengan skema PERSIS SAMA
+    dengan output parse_sheet_penjualan() (sheet, tanggal, no_invoice,
+    customer, keterangan, cara_bayar, dpp, ppn, total, + kolom jurnal
+    kosong) -- supaya bisa langsung diproses ulang oleh
+    proses_dataframe_penjualan() yang sudah ada, tanpa logic kategorisasi
+    baru.
+
+    Detail ITEM per transaksi SENGAJA tidak diekstrak (tidak dibutuhkan --
+    yang dijurnalkan adalah 1 baris Debet Kas/Piutang - Kredit Penjualan
+    per TRANSAKSI, bukan per item), jadi baris-baris tabel item cukup
+    dilewati sampai ketemu baris footer "Pot. : ... Total Akhir : ...".
+
+    cara_bayar ditebak dari PREFIX No Transaksi ("KSR" = kasir = TUNAI,
+    prefix lain mis. "JL" = dianggap KREDIT/piutang) karena PDF sumber
+    tidak mencantumkan metode bayar eksplisit -- lihat catatan lebih
+    lengkap di docstring proses_file_jurnal_penjualan_kasir().
+
+    [BARU] Sumber teks sekarang lewat _ambil_teks_pdf_layout() (pdftotext,
+    lihat catatan kecepatan di sana) -- karena pdftotext -layout menjaga
+    LEBAR KOLOM asli (banyak spasi utk sejajarkan kolom, beda dari
+    pdfplumber.extract_text() yg otomatis satu-spasi antar kata), tiap
+    baris di-normalisasi dulu (spasi/tab berurutan -> satu spasi) sebelum
+    dicocokkan ke regex -- regex-nya sendiri TIDAK berubah sama sekali,
+    supaya perilaku parsing per-baris identik dgn versi pdfplumber lama.
+
+    [BARU] Kuirk layout sumber: kalau tabel item 1 transaksi tidak muat di
+    sisa halaman, mesin kasir mencetak DUA KALI baris header transaksi
+    yang sama -- sekali "menggantung" di akhir halaman (tanpa tabel item/
+    footer, krn tidak ada ruang lagi) lalu diulang PERSIS di awal halaman
+    berikutnya (baru diikuti tabel item & footer yang sebenarnya). Baris
+    yang menggantung ini terdeteksi sbg "transaksi baru dibuka" oleh
+    parser padahal bukan transaksi baru -- kalau tidak ditangani, tiap
+    kemunculannya memicu peringatan palsu "tidak menemukan Total Akhir"
+    (walau transaksinya SENDIRI tetap tercatat benar dari kemunculan
+    kedua, jadi tidak ada data yang hilang -- sudah diverifikasi silang
+    total 24 kejadian pada contoh file "Data Penjualan Detail 01-30
+    Agustus 2026", semuanya no. transaksi yang sama persis muncul 2x
+    berturut-turut). Sekarang kemunculan kedua dgn no. transaksi SAMA
+    PERSIS langsung dianggap "buka ulang" tanpa mencatat peringatan --
+    peringatan hanya dicatat kalau no. transaksi BERBEDA yang menyusup di
+    tengah (baru itu indikasi baris 'Total Akhir' benar-benar hilang).
+
+    Returns: (df, peringatan) -- df kosong kalau tidak ada transaksi yang
+    berhasil diekstrak sama sekali (peringatan akan menjelaskan kenapa).
+    """
+    import time as _time_debug  # [DEBUG SEMENTARA]
+    nama_file = nama_file or getattr(file_like, "name", "") or "upload.pdf"
+    if hasattr(file_like, "read"):
+        data = file_like.read()
+    else:
+        data = file_like
+    _t_ekstrak_teks = _time_debug.perf_counter()
+    teks_gabungan, jumlah_halaman = _ambil_teks_pdf_layout(data, nama_file)
+    print(f"[DEBUG-TIMING] _ambil_teks_pdf_layout('{nama_file}', {jumlah_halaman} halaman): "
+          f"{_time_debug.perf_counter() - _t_ekstrak_teks:.2f} detik")
+
+    peringatan: list = []
+    baris_transaksi: list = []
+
+    transaksi_terbuka = None
+    teks_pelanggan: list = []
+    sedang_item = False
+
+    _t_parsing_loop = _time_debug.perf_counter()  # [DEBUG SEMENTARA]
+
+    def _tutup(footer_match):
+        nonlocal transaksi_terbuka, teks_pelanggan, sedang_item
+        pot, pajak, biaya, total_akhir = (_angka_id(x) for x in footer_match.groups())
+        customer_teks = " ".join(t for t in teks_pelanggan if t).strip()
+        no_transaksi = transaksi_terbuka["no_transaksi"]
+        # [ASUMSI] KSR = transaksi kasir langsung (dianggap tunai). Prefix
+        # lain (mis. "JL" -- kemungkinan "Jual"/pengiriman ke pelanggan
+        # terdaftar dgn alamat lengkap) dianggap kredit/piutang. Kalau
+        # ternyata salah untuk sebagian transaksi, baris tetap bisa
+        # dikoreksi manual seperti baris hasil kategorisasi otomatis lain
+        # (lewat review "Belum Terkategori" / klarifikasi).
+        cara_bayar = "TUNAI" if no_transaksi.upper().startswith("KSR") else "KREDIT"
+        baris_transaksi.append({
+            "sheet": nama_file,
+            "tanggal": transaksi_terbuka["tanggal"],
+            "no_invoice": no_transaksi,
+            "customer": customer_teks or transaksi_terbuka.get("kode_pel") or "-",
+            "keterangan": customer_teks or no_transaksi,
+            "cara_bayar": cara_bayar,
+            "dpp": max(total_akhir - pajak, 0.0),
+            "ppn": pajak,
+            "total": total_akhir,
+        })
+        transaksi_terbuka = None
+        teks_pelanggan = []
+        sedang_item = False
+
+    for raw_baris in teks_gabungan.split("\n"):
+        # Kolaps spasi/tab berurutan jadi 1 spasi -- lihat catatan di
+        # docstring di atas (pdftotext -layout menjaga lebar kolom asli
+        # pakai banyak spasi, regex di bawah dituning utk 1 spasi seperti
+        # keluaran pdfplumber.extract_text() lama). .strip() juga
+        # membuang karakter form-feed (\x0c, penanda pergantian halaman)
+        # yang menempel di awal baris pertama tiap halaman.
+        baris = re.sub(r"[ \t]+", " ", raw_baris).strip()
+        if not baris:
+            continue
+        if _RE_HEADER_KOLOM_JUAL.match(baris) or _RE_FOOTER_HALAMAN_JUAL.match(baris):
+            continue
+
+        m_header = _RE_HEADER_TRANSAKSI_JUAL.match(baris)
+        if m_header:
+            no_transaksi_baru = m_header.group(1)
+            if transaksi_terbuka is not None and transaksi_terbuka["no_transaksi"] != no_transaksi_baru:
+                peringatan.append(
+                    f"Transaksi {transaksi_terbuka['no_transaksi']} tidak menemukan "
+                    "baris 'Total Akhir' sebelum transaksi berikutnya dimulai -- dilewati."
+                )
+            # (else: header transaksi yg sama persis terulang krn tabel
+            # itemnya terpotong halaman -- lihat catatan kuirk di atas,
+            # bukan indikasi masalah, jadi tidak dicatat sbg peringatan)
+            no_transaksi, tanggal, sisa = m_header.groups()
+            m_kode = _RE_KODE_PEL_JUAL.match(sisa)
+            if m_kode:
+                kode_pel, sisa_teks = m_kode.groups()
+            else:
+                kode_pel, sisa_teks = None, sisa
+            transaksi_terbuka = {
+                "no_transaksi": no_transaksi, "tanggal": tanggal, "kode_pel": kode_pel,
+            }
+            teks_pelanggan = [sisa_teks.strip()] if sisa_teks.strip() else []
+            sedang_item = False
+            continue
+
+        m_footer = _RE_FOOTER_TRANSAKSI_JUAL.match(baris)
+        if m_footer and transaksi_terbuka is not None:
+            _tutup(m_footer)
+            continue
+
+        if transaksi_terbuka is None:
+            # Baris di luar blok transaksi mana pun (mis. judul
+            # laporan & alamat toko di awal halaman 1) -- lewati.
+            continue
+
+        if _RE_ITEM_HEADER_JUAL.match(baris):
+            sedang_item = True
+            continue
+
+        if not sedang_item:
+            # Masih bagian "Nama Pelanggan/Alamat" yang wrap ke
+            # baris berikutnya (sebelum tabel item dimulai).
+            teks_pelanggan.append(baris)
+        # else: isi tabel item -- detail per-item tidak diekstrak
+        # (lihat penjelasan di docstring), baris dilewati.
+
+    if transaksi_terbuka is not None:
+        peringatan.append(
+            f"Transaksi {transaksi_terbuka['no_transaksi']} tidak menemukan baris 'Total Akhir' "
+            "sampai akhir file -- dilewati (kemungkinan file terpotong)."
+        )
+
+    if not baris_transaksi:
+        peringatan.append(f"Tidak ditemukan transaksi yang bisa diekstrak dari '{nama_file}'.")
+        return pd.DataFrame(), peringatan
+
+    print(f"[DEBUG-TIMING] parsing loop regex ({len(baris_transaksi)} transaksi): "
+          f"{_time_debug.perf_counter() - _t_parsing_loop:.2f} detik")  # [DEBUG SEMENTARA]
+
+    df = pd.DataFrame(baris_transaksi)
+    df["tanggal"] = pd.to_datetime(df["tanggal"], errors="coerce", dayfirst=True).dt.date
+
+    # Kolom jurnal kosong -- diisi belakangan oleh proses_dataframe_penjualan()
+    # (skema disamakan dgn output parse_sheet_penjualan() supaya bisa dipakai
+    # ulang fungsi kategorisasi yang sama persis, termasuk pola historis &
+    # AI, tanpa logic baru).
+    for kol in ("no_akun_debet", "nama_akun_debet", "jml_debet",
+                "no_akun_kredit", "nama_akun_kredit", "jml_kredit",
+                "no_akun_kredit_ppn", "nama_akun_kredit_ppn", "jml_kredit_ppn"):
+        df[kol] = None
+
+    peringatan.append(
+        f"{len(df)} transaksi berhasil diekstrak dari {jumlah_halaman} halaman PDF ('{nama_file}')."
+    )
+    return df, peringatan
+
+
+def proses_file_jurnal_penjualan_kasir(
+    file_like, nama_file: str = None, client_id: Optional[int] = None, pakai_ai: bool = True,
+    df_coa_client: Optional[pd.DataFrame] = None,
+) -> dict:
+    """
+    "Jurnal Penjualan Kasir" -- laporan PDF "Data Penjualan Detail"
+    per-blok transaksi (No Transaksi/Tanggal/Dept./Kode Pel./Nama
+    Pelanggan/Alamat + tabel item + baris Pot./Pajak/Biaya/Total Akhir per
+    transaksi), lihat _ekstrak_pdf_jual_kasir_berbasis_posisi() di atas.
+
+    BEDA dari proses_file_penjualan(): fungsi itu mengharapkan 1 baris rata
+    per transaksi di sheet Excel/PDF bergrid (kolom invoice/customer/dpp/
+    ppn/total sejajar). Laporan ini per-blok multi-baris tanpa grid, dan
+    detail ITEM tidak dijurnalkan satu-satu -- yang dijurnalkan adalah
+    TOTAL AKHIR per transaksi (1 blok = 1 baris jurnal penjualan Debet
+    Kas/Piutang - Kredit Penjualan).
+
+    df_coa_client (opsional): COA permanen client dari DB
+    (dbc.ambil_coa_client), diteruskan oleh main.py krn PDF laporan kasir
+    ini TIDAK PERNAH punya sheet COA sendiri di dalam filenya sendiri
+    (beda dari proses_file_penjualan yg bisa terima Excel dgn sheet COA
+    terpisah dalam file yang sama) -- tanpa ini akun Penjualan/Kas/Piutang
+    akan selalu jatuh ke label generik ("KAS"/"PIUTANG USAHA"/"Belum
+    Terkategori") kecuali pakai_ai=True dan API key aktif.
+
+    Kategorisasi memakai pola historis TERPISAH dari proses_file_penjualan
+    ("pola_penjualan_kasir", bukan "pola_penjualan") krn signature sumber
+    beda karakter (ringkasan per-transaksi laporan kasir vs baris invoice
+    per-item) -- pola dari 1 jenis dokumen tidak seharusnya ikut
+    memengaruhi kategorisasi jenis dokumen lain.
+    """
+    nama_file = nama_file or getattr(file_like, "name", "") or "upload.pdf"
+    import time as _time_debug  # [DEBUG SEMENTARA]
+    _t_ekstrak = _time_debug.perf_counter()
+    df_jual, peringatan = _ekstrak_pdf_jual_kasir_berbasis_posisi(file_like, nama_file)
+    print(f"[DEBUG-TIMING] TOTAL _ekstrak_pdf_jual_kasir_berbasis_posisi: "
+          f"{_time_debug.perf_counter() - _t_ekstrak:.2f} detik")
+
+    if df_jual is None or df_jual.empty:
+        return {"df": pd.DataFrame(), "ringkasan": {}, "masalah": [], "draf_jurnal": [], "sheet_dilewati": peringatan}
+
+    df_coa = df_coa_client if (df_coa_client is not None and not df_coa_client.empty) else pd.DataFrame()
+
+    path_pola = _path_pola("pola_penjualan_kasir", client_id)
+    pola = muat_pola(path_pola)
+
+    _t_kategori = _time_debug.perf_counter()
+    df_hasil = proses_dataframe_penjualan(
+        df_jual, df_coa, pola, pakai_ai=pakai_ai,
+        api_key=ambil_api_key_claude() if pakai_ai else None,
+    )
+    print(f"[DEBUG-TIMING] proses_dataframe_penjualan (pola+aturan+AI): "
+          f"{_time_debug.perf_counter() - _t_kategori:.2f} detik")
+
+    _t_simpan_pola = _time_debug.perf_counter()
+    simpan_pola(pola, path_pola, sumber_perubahan="proses_file_jurnal_penjualan_kasir (auto dari data asli)")
+    print(f"[DEBUG-TIMING] simpan_pola: {_time_debug.perf_counter() - _t_simpan_pola:.2f} detik")
+
+    _t_keseimbangan = _time_debug.perf_counter()
+    keseimbangan = cek_keseimbangan_jurnal(df_hasil)
+    print(f"[DEBUG-TIMING] cek_keseimbangan_jurnal: {_time_debug.perf_counter() - _t_keseimbangan:.2f} detik")
+
+    _t_masalah = _time_debug.perf_counter()
+    masalah = []
+    for i, row in df_hasil.iterrows():
+        sumber = str(row.get("sumber_kategori") or "")
+        if "Belum Terkategori" in sumber or "perlu cek" in sumber:
+            masalah.append({
+                "baris": i + 1, "tanggal": row.get("tanggal"), "keterangan": row.get("keterangan"),
+                "no_invoice": row.get("no_invoice"),
+                "alasan": [f"Sumber kategori: {sumber or 'tidak diketahui'} -- akun belum pasti, cek manual."],
+            })
+    print(f"[DEBUG-TIMING] loop 'masalah' (iterrows x{len(df_hasil)}): "
+          f"{_time_debug.perf_counter() - _t_masalah:.2f} detik")
+
+    _t_draf = _time_debug.perf_counter()  # [DEBUG SEMENTARA]
+    # [CATATAN] Skema draf_jurnal disamakan dgn hasil rekening_koran
+    # (ImportRekeningKoranModal.tsx::DrafJurnalRow) supaya frontend bisa
+    # pakai interface & layar preview yang sama persis -- field "bank" &
+    # "mutasi_debet"/"mutasi_kredit" tidak relevan di sini (bukan mutasi
+    # bank) jadi diisi None; frontend hanya memakainya utk hitung saldo
+    # kas berjalan pada jalur rekening_koran, TIDAK dipakai sama sekali di
+    # jalur jurnal_penjualan_kasir (lihat drafJurnalPenjualanToTransactions
+    # di modal).
+    draf_jurnal = [
+        {
+            "baris": i + 1, "tanggal": row.get("tanggal"), "bank": None,
+            "keterangan": row.get("keterangan"),
+            "no_akun_debet": row.get("no_akun_debet"), "nama_akun_debet": row.get("nama_akun_debet"),
+            "jml_debet": row.get("jml_debet"),
+            "no_akun_kredit": row.get("no_akun_kredit"), "nama_akun_kredit": row.get("nama_akun_kredit"),
+            "jml_kredit": row.get("jml_kredit"),
+            "mutasi_debet": None, "mutasi_kredit": None,
+            "sumber_kategori": row.get("sumber_kategori"),
+            "catatan": row.get("catatan_ai"),
+            "no_invoice": row.get("no_invoice"),
+        }
+        for i, row in df_hasil.iterrows()
+    ]
+    print(f"[DEBUG-TIMING] loop 'draf_jurnal' (iterrows x{len(df_hasil)}): "
+          f"{_time_debug.perf_counter() - _t_draf:.2f} detik")
+
+    jumlah_transaksi = len(df_hasil)
+    total_penjualan = float(pd.to_numeric(df_hasil.get("jml_kredit"), errors="coerce").fillna(0).sum())
+    rata_rata_transaksi = total_penjualan / jumlah_transaksi if jumlah_transaksi else 0
+
+    ringkasan = {
+        "jumlah_transaksi": jumlah_transaksi,
+        "total_penjualan": total_penjualan,
+        "rata_rata_transaksi": rata_rata_transaksi,
+        "total_debet": keseimbangan["total_debet"],
+        "total_kredit": keseimbangan["total_kredit"],
+        "balance": keseimbangan["balance"],
+        "selisih": keseimbangan["selisih"],
+        "jumlah_perlu_review": len(masalah),
+    }
+
+    return {
+        "df": df_hasil, "ringkasan": ringkasan, "masalah": masalah,
+        "draf_jurnal": draf_jurnal, "sheet_dilewati": peringatan,
+    }
 
 
 def proses_file_penilaian_klien(file_like, nama_file: str = None) -> dict:

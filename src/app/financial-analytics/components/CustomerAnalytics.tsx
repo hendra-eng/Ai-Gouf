@@ -51,15 +51,15 @@ export default function CustomerAnalytics() {
     <div className="card-base">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Customer Financial Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">Customer Financial Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Revenue contribution, AR health, and collection performance</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Highlight badges */}
-          <span className="text-2xs font-500 text-positive bg-positive-subtle px-2 py-1 rounded-full border border-positive/20 hidden md:block">
+          <span className="text-2xs font-medium text-positive bg-positive-subtle px-2 py-1 rounded-full border border-positive/20 hidden md:block">
             Top: PT Maju Bersama Digital
           </span>
-          <span className="text-2xs font-500 text-negative bg-negative-subtle px-2 py-1 rounded-full border border-negative/20 hidden md:block">
+          <span className="text-2xs font-medium text-negative bg-negative-subtle px-2 py-1 rounded-full border border-negative/20 hidden md:block">
             High AR: CV Mitra Digital
           </span>
           <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-2">
@@ -91,7 +91,7 @@ export default function CustomerAnalytics() {
                 <th
                   key={`ca-th-${col.key}`}
                   onClick={() => col.key !== 'name' && col.key !== 'profitability' && handleSort(col.key)}
-                  className={`px-4 py-3 text-left text-xs font-600 text-muted-foreground select-none ${
+                  className={`px-4 py-3 text-left text-xs font-semibold text-muted-foreground select-none ${
                     col.key !== 'name' && col.key !== 'profitability' ? 'cursor-pointer hover:text-foreground transition-colors' : ''
                   }`}
                 >
@@ -112,22 +112,22 @@ export default function CustomerAnalytics() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-2xs font-700 text-primary">{customer.name.charAt(0)}</span>
+                        <span className="text-2xs font-bold text-primary">{customer.name.charAt(0)}</span>
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-500 text-foreground truncate max-w-[180px]">{customer.name}</p>
+                        <p className="text-sm font-medium text-foreground truncate max-w-[180px]">{customer.name}</p>
                         {isTopGrowth && <span className="text-2xs text-positive">▲ Fastest Growing</span>}
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm font-600 font-tabular text-foreground text-right">{fx(formatIDR(customer.revenue, true))}</td>
+                  <td className="px-4 py-3 text-sm font-semibold tabular-nums text-foreground text-right">{fx(formatIDR(customer.revenue, true))}</td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-sm font-600 font-tabular ${customer.growth >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    <span className={`text-sm font-semibold tabular-nums ${customer.growth >= 0 ? 'text-positive' : 'text-negative'}`}>
                       {customer.growth >= 0 ? '+' : ''}{customer.growth.toFixed(1)}%
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-sm font-600 font-tabular ${isHighAR ? 'text-negative' : 'text-foreground'}`}>
+                    <span className={`text-sm font-semibold tabular-nums ${isHighAR ? 'text-negative' : 'text-foreground'}`}>
                       {fx(formatIDR(customer.outstandingAR, true))}
                     </span>
                     {isHighAR && <Icon name="ExclamationCircleIcon" size={12} className="text-negative inline ml-1" />}
@@ -140,19 +140,19 @@ export default function CustomerAnalytics() {
                           style={{ width: `${customer.collectionRate}%` }}
                         />
                       </div>
-                      <span className={`text-sm font-600 font-tabular w-14 ${customer.collectionRate >= 90 ? 'text-positive' : customer.collectionRate >= 80 ? 'text-warning' : 'text-negative'}`}>
+                      <span className={`text-sm font-semibold tabular-nums w-14 ${customer.collectionRate >= 90 ? 'text-positive' : customer.collectionRate >= 80 ? 'text-warning' : 'text-negative'}`}>
                         {customer.collectionRate.toFixed(1)}%
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-tabular text-foreground">{customer.contribution.toFixed(1)}%</td>
+                  <td className="px-4 py-3 text-right text-sm tabular-nums text-foreground">{customer.contribution.toFixed(1)}%</td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`text-sm font-600 font-tabular ${customer.dso > 90 ? 'text-negative' : customer.dso > 60 ? 'text-warning' : 'text-positive'}`}>
+                    <span className={`text-sm font-semibold tabular-nums ${customer.dso > 90 ? 'text-negative' : customer.dso > 60 ? 'text-warning' : 'text-positive'}`}>
                       {customer.dso}d
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-2xs font-600 px-2 py-1 rounded-full ${PROFITABILITY_STYLES[customer.profitability]}`}>
+                    <span className={`text-2xs font-semibold px-2 py-1 rounded-full ${PROFITABILITY_STYLES[customer.profitability]}`}>
                       {customer.profitability}
                     </span>
                   </td>

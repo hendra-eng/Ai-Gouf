@@ -35,10 +35,10 @@ export default function LiquidityAnalytics() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Liquidity Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">Liquidity Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Thresholds are internal targets, not universal financial advice</p>
         </div>
-        <span className="text-xs font-600 text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20">
+        <span className="text-xs font-semibold text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20">
           ✓ Healthy
         </span>
       </div>
@@ -47,8 +47,8 @@ export default function LiquidityAnalytics() {
         {METRICS.map((m) => (
           <div key={`liq-${m.label}`} className="bg-muted rounded-xl p-3 text-center">
             <p className="text-2xs text-muted-foreground mb-1 leading-tight">{m.label}</p>
-            <p className={`text-base font-700 font-tabular ${STATUS_COLORS[m.status]}`}>{fx(m.value)}</p>
-            <span className={`text-2xs font-500 ${STATUS_COLORS[m.status]}`}>{m.status}</span>
+            <p className={`text-base font-bold tabular-nums ${STATUS_COLORS[m.status]}`}>{fx(m.value)}</p>
+            <span className={`text-2xs font-medium ${STATUS_COLORS[m.status]}`}>{m.status}</span>
           </div>
         ))}
       </div>

@@ -1,6 +1,6 @@
 import React from 'react';
-import DashboardContent from './components/DashboardContent';
+import OverviewContent from './components/OverviewContent';
 
 export default function Home() {
-  return <DashboardContent />;
+  return <OverviewContent />;
 }

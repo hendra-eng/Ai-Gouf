@@ -33,7 +33,26 @@ def get_database_url():
 
 DATABASE_URL = get_database_url()
 Base = declarative_base()
-engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True, pool_recycle=280)
+
+# [FIX -- Supabase dihapus] Sebelumnya create_engine() tidak punya
+# connect_timeout sama sekali. Kalau DATABASE_URL kebetulan masih
+# menunjuk ke host Postgres/Supabase yang sudah tidak ada (mis. project
+# Supabase sudah dihapus tapi .env belum sempat diupdate), SETIAP satu
+# panggilan dbc.xxx() (ambil_client, simpan_hasil, log_audit, dst -- ada
+# belasan per upload 1 file PDF, lihat _proses_dan_simpan_satu_file di
+# main.py) akan mencoba connect & menggantung lama sebelum gagal, lalu
+# panggilan berikutnya menggantung lagi -- inilah yang membuat proses
+# file PDF terasa "berulang-ulang dan sangat lama". connect_timeout di
+# bawah ini membuat percobaan koneksi ke host yang tidak bisa dihubungi
+# gagal dalam hitungan detik, bukan menggantung tanpa batas. Hanya
+# berlaku utk dialect postgresql (opsi ini tidak dikenal oleh driver
+# sqlite3, jadi harus dicabang berdasar engine yg akan dibuat).
+_connect_args = {"connect_timeout": 5} if DATABASE_URL.startswith("postgresql") else {}
+
+engine = create_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, pool_recycle=280,
+    connect_args=_connect_args,
+)
 SessionLocal = sessionmaker(bind=engine)
 
 
@@ -114,6 +133,15 @@ class Client(Base):
     # lama belum tentu punya data ini (isi belakangan lewat endpoint kontak).
     nomor_wa = Column(String(30), nullable=True)  # format internasional mis. 6281234567890
     email = Column(String(200), nullable=True)
+    # [BARU] Kolom profil client yang dipakai halaman Clients di dashboard
+    # (sebelumnya cuma tersimpan di localStorage browser, sekarang dipetakan
+    # ke tabel clients di Supabase supaya permanen & sama di semua device).
+    industry = Column(String(100), nullable=True)
+    status = Column(String(30), nullable=True)  # 'Healthy' | 'Stable' | 'Attention Required' | 'Critical'
+    assigned_accountant = Column(String(200), nullable=True)
+    contact_name = Column(String(200), nullable=True)
+    npwp = Column(String(30), nullable=True)
+    address = Column(Text, nullable=True)
     dibuat_at = Column(DateTime, default=datetime.now)
     diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -149,6 +177,18 @@ class EsbAccount(Base):
 
 class Hasil(Base):
     __tablename__ = "hasil"
+    # [FIX] JurnalPosting punya ForeignKeyConstraint gabungan ke
+    # (hasil.id, hasil.client_id) -- Postgres/Supabase MEWAJIBKAN ada
+    # UNIQUE constraint persis di kombinasi kolom itu di tabel yang
+    # dirujuk, kalau tidak create_all() gagal dgn error "there is no
+    # unique constraint matching given keys for referenced table hasil"
+    # dan (krn create_all satu transaksi) SEMUA tabel lain ikut batal
+    # dibuat, termasuk 'clients'. id sudah unique sendiri (primary key),
+    # jadi constraint gabungan ini tidak mengubah perilaku data sama
+    # sekali -- cuma memenuhi syarat teknis Postgres utk FK gabungan itu.
+    __table_args__ = (
+        UniqueConstraint("id", "client_id", name="uq_hasil_id_client_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
@@ -736,12 +776,22 @@ def tambah_client(
     tipe: str = "accounting",
     nomor_wa: Optional[str] = None,
     email: Optional[str] = None,
+    industry: Optional[str] = None,
+    status: Optional[str] = None,
+    assigned_accountant: Optional[str] = None,
+    contact_name: Optional[str] = None,
+    npwp: Optional[str] = None,
+    address: Optional[str] = None,
 ) -> Optional[int]:
-    """Tambah client baru. nomor_wa/email opsional, bisa diisi belakangan
-    lewat update_kontak_client()."""
+    """Tambah client baru. Semua field profil (industry/status/dll) opsional,
+    bisa diisi belakangan lewat update_profil_client()."""
     session = SessionLocal()
     try:
-        client = Client(nama=nama, lokasi=lokasi, tipe=tipe, nomor_wa=nomor_wa, email=email)
+        client = Client(
+            nama=nama, lokasi=lokasi, tipe=tipe, nomor_wa=nomor_wa, email=email,
+            industry=industry, status=status, assigned_accountant=assigned_accountant,
+            contact_name=contact_name, npwp=npwp, address=address,
+        )
         session.add(client)
         session.commit()
         client_id = client.id
@@ -781,6 +831,12 @@ def daftar_client(tipe: Optional[str] = None, punya_esb: Optional[bool] = None) 
                 "tipe": c.tipe,
                 "nomor_wa": c.nomor_wa,
                 "email": c.email,
+                "industry": c.industry,
+                "status": c.status,
+                "assigned_accountant": c.assigned_accountant,
+                "contact_name": c.contact_name,
+                "npwp": c.npwp,
+                "address": c.address,
                 "dibuat_at": c.dibuat_at.isoformat() if c.dibuat_at else None,
                 "jumlah_akun_esb": len(c.esb_accounts),
             }
@@ -2252,6 +2308,45 @@ def update_kontak_client(client_id: int, nomor_wa: Optional[str] = None, email: 
         return False
 
 
+def update_profil_client(
+    client_id: int,
+    industry: Optional[str] = None,
+    status: Optional[str] = None,
+    assigned_accountant: Optional[str] = None,
+    contact_name: Optional[str] = None,
+    npwp: Optional[str] = None,
+    address: Optional[str] = None,
+) -> bool:
+    """Update field profil client (halaman Clients di dashboard). Kirim
+    None utk field yang tidak mau diubah; kirim "" utk mengosongkan."""
+    session = SessionLocal()
+    try:
+        row = session.query(Client).filter(Client.id == client_id).first()
+        if row is None:
+            return False
+        if industry is not None:
+            row.industry = industry or None
+        if status is not None:
+            row.status = status or None
+        if assigned_accountant is not None:
+            row.assigned_accountant = assigned_accountant or None
+        if contact_name is not None:
+            row.contact_name = contact_name or None
+        if npwp is not None:
+            row.npwp = npwp or None
+        if address is not None:
+            row.address = address or None
+        row.diperbarui_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error update profil client: {e}")
+        return False
+    finally:
+        session.close()
+
+
 # ============================================================
 # [BARU] FUNGSI REMINDER DEADLINE SPT
 # ============================================================
@@ -2259,8 +2354,6 @@ def update_kontak_client(client_id: int, nomor_wa: Optional[str] = None, email: 
 # supaya setiap kewajiban lapor/setor per NPWP+jenis+periode tercatat
 # sbg 1 baris yang bisa dipantau scheduler harian (lihat modules/
 # notifikasi.py -- jalankan_pengecekan_reminder_spt()).
-    finally:
-        session.close()
 
 def simpan_reminder_deadline_spt(client_id: int, daftar_item: List[Dict[str, Any]]) -> int:
     """Upsert daftar kewajiban SPT (lapor & setor) utk 1 client. Setiap

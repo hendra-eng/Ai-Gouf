@@ -15,11 +15,11 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
-      <p className="text-xs font-600 text-foreground mb-2">{label} 2026</p>
+      <p className="text-xs font-semibold text-foreground mb-2">{label} 2026</p>
       {payload.map((p, i) => (
         <div key={`ppn-tt-${i}`} className="flex justify-between gap-4 mb-1">
           <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
-          <span className="text-xs font-600 font-tabular" style={{ color: p.color }}>Rp {p.value}M</span>
+          <span className="text-xs font-semibold tabular-nums" style={{ color: p.color }}>Rp {p.value}M</span>
         </div>
       ))}
     </div>

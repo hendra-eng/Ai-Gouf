@@ -74,7 +74,7 @@ export default function FinancialAIInsights() {
           <Icon name="SparklesIcon" size={16} className="text-chart-4" />
         </div>
         <div>
-          <h3 className="text-lg font-600 text-foreground">AI Financial Insights</h3>
+          <h3 className="text-lg font-semibold text-foreground">AI Financial Insights</h3>
           <p className="text-xs text-muted-foreground">
             Generated from FY2026 financial data · Aug 26, 2026 · PT Nusantara Teknologi Indonesia
           </p>
@@ -82,7 +82,7 @@ export default function FinancialAIInsights() {
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={handleRefresh}
-            className="flex items-center gap-1.5 text-xs font-500 text-chart-4 hover:text-chart-4/80 transition-colors px-3 py-2 rounded-lg bg-chart-4/10 border border-chart-4/20"
+            className="flex items-center gap-1.5 text-xs font-medium text-chart-4 hover:text-chart-4/80 transition-colors px-3 py-2 rounded-lg bg-chart-4/10 border border-chart-4/20"
           >
             <Icon name="ArrowPathIcon" size={12} />
             Refresh
@@ -105,21 +105,21 @@ export default function FinancialAIInsights() {
               <div className="flex items-start gap-3 mb-3">
                 <Icon name={insight.icon as Parameters<typeof Icon>[0]['name']} size={18} className={cfg.icon} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-600 text-foreground mb-1">{insight.title}</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">{insight.title}</p>
                   <p className="text-xs text-muted-foreground leading-relaxed">{fx(insight.summary)}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {insight.numbers.map((n, ni) => (
-                  <span key={`fa-num-${insight.id}-${ni}`} className={`text-2xs font-500 px-2 py-1 rounded-full ${cfg.badge}`}>
+                  <span key={`fa-num-${insight.id}-${ni}`} className={`text-2xs font-medium px-2 py-1 rounded-full ${cfg.badge}`}>
                     {fx(n)}
                   </span>
                 ))}
               </div>
 
               <div className="mb-3">
-                <p className="text-2xs font-600 text-muted-foreground mb-1.5">Contributing Factors</p>
+                <p className="text-2xs font-semibold text-muted-foreground mb-1.5">Contributing Factors</p>
                 <div className="space-y-1">
                   {insight.factors.map((f, fi) => (
                     <div key={`fa-factor-${insight.id}-${fi}`} className="flex items-start gap-2">
@@ -132,13 +132,13 @@ export default function FinancialAIInsights() {
 
               <div className="pt-3 border-t border-border/40">
                 <p className="text-xs text-muted-foreground mb-2">
-                  <span className="font-600 text-foreground">Recommendation: </span>
+                  <span className="font-semibold text-foreground">Recommendation: </span>
                   {fx(insight.recommendation)}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => router?.push(`/ai-financial-analyst?analysis=${insight.analysisType}`)}
-                    className="flex items-center gap-1.5 text-xs font-500 text-primary hover:text-primary/80 transition-colors"
+                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                   >
                     <Icon name="MagnifyingGlassIcon" size={12} />
                     Analyze

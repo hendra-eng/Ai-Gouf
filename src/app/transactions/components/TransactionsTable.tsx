@@ -66,6 +66,14 @@ const categoryColors: Record<string, string> = {
   'AP Payment': 'badge-neutral',
   Utilities: 'badge-neutral',
   Financing: 'badge-info',
+  // [BARU] 5 label kategori hasil import rekening koran (lihat
+  // classifyByAccountName/GROUP_LABELS di transactionData.ts) — dipetakan ke
+  // warna yang selaras dengan kategori sejenis di atas.
+  Sales: 'badge-positive',
+  Expense: 'badge-neutral',
+  'Cash Payment': 'badge-warning',
+  'Cash Reserve': 'badge-info',
+  Other: 'badge-neutral',
 };
 
 function SortIcon({ field, sortField, sortDir }: { field: keyof Transaction; sortField: keyof Transaction; sortDir: 'asc' | 'desc' }) {

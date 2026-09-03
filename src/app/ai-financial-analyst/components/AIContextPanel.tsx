@@ -60,7 +60,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
       <div className="sticky top-0 bg-card border-b border-border px-4 py-3 z-10 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon name="InformationCircleIcon" size={15} className="text-ai-purple" />
-          <span className="text-sm font-600 text-foreground">Analysis Context</span>
+          <span className="text-sm font-semibold text-foreground">Analysis Context</span>
         </div>
         <button onClick={onCollapse} className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors">
           <Icon name="ChevronRightIcon" size={14} />
@@ -76,7 +76,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
           >
             <div className="flex items-center gap-2">
               <Icon name="CpuChipIcon" size={14} className="text-ai-purple" />
-              <span className="text-sm font-600 text-foreground">AI Confidence</span>
+              <span className="text-sm font-semibold text-foreground">AI Confidence</span>
             </div>
             <Icon name={expandedSection === 'confidence' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
@@ -94,11 +94,11 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                     />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xs font-700 text-foreground">{confidence}%</span>
+                    <span className="text-xs font-bold text-foreground">{confidence}%</span>
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-700 text-ai-purple">High Confidence</p>
+                  <p className="text-sm font-bold text-ai-purple">High Confidence</p>
                   <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Based on 6 connected data sources with complete data coverage</p>
                 </div>
               </div>
@@ -125,7 +125,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
           >
             <div className="flex items-center gap-2">
               <Icon name="HeartIcon" size={14} className="text-success" />
-              <span className="text-sm font-600 text-foreground">Financial Health</span>
+              <span className="text-sm font-semibold text-foreground">Financial Health</span>
             </div>
             <Icon name={expandedSection === 'health' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
@@ -143,11 +143,11 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                     />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xs font-700 text-foreground">{overallScore}</span>
+                    <span className="text-xs font-bold text-foreground">{overallScore}</span>
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-700 text-success">{overallScore} / 100</p>
+                  <p className="text-sm font-bold text-success">{overallScore} / 100</p>
                   <p className="text-2xs text-muted-foreground">Good financial health</p>
                 </div>
               </div>
@@ -157,7 +157,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="text-muted-foreground">{m.label}</span>
                       <div className="flex items-center gap-1">
-                        <span className={`font-600 tabular-nums ${m.color}`}>{m.score}</span>
+                        <span className={`font-semibold tabular-nums ${m.color}`}>{m.score}</span>
                         <Icon
                           name={m.trend === 'up' ? 'ArrowTrendingUpIcon' : m.trend === 'down' ? 'ArrowTrendingDownIcon' : 'MinusIcon'}
                           size={10}
@@ -186,8 +186,8 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
           >
             <div className="flex items-center gap-2">
               <Icon name="ExclamationTriangleIcon" size={14} className="text-danger" />
-              <span className="text-sm font-600 text-foreground">Key Risks</span>
-              <span className="text-2xs bg-danger-bg text-danger-foreground px-1.5 py-0.5 rounded-full font-600">4</span>
+              <span className="text-sm font-semibold text-foreground">Key Risks</span>
+              <span className="text-2xs bg-danger-bg text-danger-foreground px-1.5 py-0.5 rounded-full font-semibold">4</span>
             </div>
             <Icon name={expandedSection === 'risks' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
@@ -200,7 +200,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-foreground leading-relaxed">{fx(risk.title)}</p>
                     </div>
-                    <span className={`text-2xs font-700 flex-shrink-0 ${risk.color}`}>{risk.severity}</span>
+                    <span className={`text-2xs font-bold flex-shrink-0 ${risk.color}`}>{risk.severity}</span>
                   </div>
                 ))}
               </div>
@@ -216,8 +216,8 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
           >
             <div className="flex items-center gap-2">
               <Icon name="SparklesIcon" size={14} className="text-ai-purple" />
-              <span className="text-sm font-600 text-foreground">AI Insights</span>
-              <span className="text-2xs bg-ai-purple-bg text-ai-purple px-1.5 py-0.5 rounded-full font-600">4</span>
+              <span className="text-sm font-semibold text-foreground">AI Insights</span>
+              <span className="text-2xs bg-ai-purple-bg text-ai-purple px-1.5 py-0.5 rounded-full font-semibold">4</span>
             </div>
             <Icon name={expandedSection === 'insights' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
@@ -233,7 +233,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                       ins.type === 'positive'? 'bg-success-bg border-green-200' : 'bg-secondary border-border'
                     }`}
                   >
-                    <p className="font-600 text-foreground mb-0.5">{ins.title}</p>
+                    <p className="font-semibold text-foreground mb-0.5">{ins.title}</p>
                     <p className="text-muted-foreground leading-relaxed">{ins.desc}</p>
                   </div>
                 ))}
@@ -250,7 +250,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
           >
             <div className="flex items-center gap-2">
               <Icon name="AdjustmentsHorizontalIcon" size={14} className="text-muted-foreground" />
-              <span className="text-sm font-600 text-foreground">Analysis Scope</span>
+              <span className="text-sm font-semibold text-foreground">Analysis Scope</span>
             </div>
             <Icon name={expandedSection === 'scope' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
@@ -266,7 +266,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                 ].map((row) => (
                   <div key={`scope-${row.label}`} className="flex justify-between">
                     <span className="text-muted-foreground">{row.label}</span>
-                    <span className="font-500 text-foreground text-right max-w-[120px] truncate">{row.value}</span>
+                    <span className="font-medium text-foreground text-right max-w-[120px] truncate">{row.value}</span>
                   </div>
                 ))}
               </div>

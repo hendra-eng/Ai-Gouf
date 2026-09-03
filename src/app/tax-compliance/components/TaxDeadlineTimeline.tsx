@@ -41,7 +41,7 @@ export default function TaxDeadlineTimeline() {
     <div className="card-base p-5 h-full">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Upcoming Tax Deadlines</h3>
+          <h3 className="text-lg font-semibold text-foreground">Upcoming Tax Deadlines</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Next 90 days · Aug 26, 2026</p>
         </div>
         <button onClick={goToCalendar} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-muted">
@@ -72,16 +72,16 @@ export default function TaxDeadlineTimeline() {
                 <div className={`flex-1 rounded-xl border p-3 transition-all duration-150 group-hover:border-primary/30 ${cfg.bg}`}>
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-600 text-foreground">{dl.taxType}</span>
-                      <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}>
+                      <span className="text-sm font-semibold text-foreground">{dl.taxType}</span>
+                      <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}>
                         {dl.status === 'Compliant' ? 'Filed & Paid' : `${dl.daysUntil}d`}
                       </span>
                     </div>
-                    <span className="text-xs font-500 text-muted-foreground flex-shrink-0">{dl.dueDate}</span>
+                    <span className="text-xs font-medium text-muted-foreground flex-shrink-0">{dl.dueDate}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-2">{dl.description}</p>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-600 font-tabular text-foreground">
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
                       {dl.amount > 0 ? fx(formatIDR(dl.amount, true)) : '—'}
                     </span>
                     <div className="flex items-center gap-2">
@@ -90,7 +90,7 @@ export default function TaxDeadlineTimeline() {
                       {!dl.filed && (
                         <button
                           onClick={(e) => { e.stopPropagation(); fileNow(dl.id); }}
-                          className="text-2xs font-500 text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
+                          className="text-2xs font-medium text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
                         >
                           File Now →
                         </button>

@@ -41,7 +41,7 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 mb-0.5">
-                <h2 className="text-lg font-700 text-foreground">{invoice.number}</h2>
+                <h2 className="text-lg font-bold text-foreground">{invoice.number}</h2>
                 <StatusBadge label={invoice.status} className={arStatusColors[invoice.status]} size="md" />
               </div>
               <p className="text-sm text-muted-foreground">{invoice.customerName} · {invoice.accountManager}</p>
@@ -55,28 +55,28 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
               onClick={() => setShowPaymentForm(!showPaymentForm)}
-              className="flex items-center gap-1.5 text-xs font-500 text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="BanknotesIcon" size={12} />
               Record Payment
             </button>
             <button
               onClick={() => router.push('/ai-financial-analyst?analysis=ar-risk')}
-              className="flex items-center gap-1.5 text-xs font-500 text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-ai-purple bg-ai-purple-bg hover:bg-purple-100 rounded-md px-2.5 py-1.5 transition-colors"
             >
               <Icon name="SparklesIcon" size={12} />
               AI Risk
             </button>
             <button
               onClick={() => toast.success('Invoice exported as PDF')}
-              className="flex items-center gap-1.5 text-xs font-500 text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
             >
               <Icon name="ArrowDownTrayIcon" size={12} />
               Export
             </button>
             <button
               onClick={() => toast.warning('Invoice flagged as high risk')}
-              className="flex items-center gap-1.5 text-xs font-500 text-danger border border-red-200 rounded-md px-2.5 py-1.5 hover:bg-danger-bg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-danger border border-red-200 rounded-md px-2.5 py-1.5 hover:bg-danger-bg transition-colors"
             >
               <Icon name="FlagIcon" size={12} />
               Flag Risk
@@ -88,10 +88,10 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
           {/* Payment Form */}
           {showPaymentForm && (
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 slide-up">
-              <h4 className="text-sm font-600 text-foreground mb-3">Record Payment</h4>
+              <h4 className="text-sm font-semibold text-foreground mb-3">Record Payment</h4>
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-600 text-muted-foreground block mb-1">Payment Amount (IDR)</label>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">Payment Amount (IDR)</label>
                   <input
                     type="number"
                     value={paymentAmount}
@@ -101,7 +101,7 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-600 text-muted-foreground block mb-1">Payment Date</label>
+                  <label className="text-xs font-semibold text-muted-foreground block mb-1">Payment Date</label>
                   <input
                     type="date"
                     value={paymentDate}
@@ -110,10 +110,10 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={handleRecordPayment} className="flex-1 bg-primary text-white text-sm font-500 rounded-md py-2 hover:bg-primary/90 transition-colors">
+                  <button onClick={handleRecordPayment} className="flex-1 bg-primary text-white text-sm font-medium rounded-md py-2 hover:bg-primary/90 transition-colors">
                     Save Payment
                   </button>
-                  <button onClick={() => setShowPaymentForm(false)} className="px-4 text-sm font-500 text-muted-foreground border border-border rounded-md hover:bg-secondary transition-colors">
+                  <button onClick={() => setShowPaymentForm(false)} className="px-4 text-sm font-medium text-muted-foreground border border-border rounded-md hover:bg-secondary transition-colors">
                     Cancel
                   </button>
                 </div>
@@ -123,23 +123,23 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
 
           {/* Invoice Summary */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <h4 className="text-sm font-600 text-foreground mb-3">Invoice Summary</h4>
+            <h4 className="text-sm font-semibold text-foreground mb-3">Invoice Summary</h4>
             <div className="space-y-2 text-sm">
               {[
                 { label: 'Invoice Amount', value: fx(formatRupiah(invoice.amount, true)), bold: true },
                 { label: 'Amount Paid', value: invoice.paid > 0 ? fx(formatRupiah(invoice.paid, true)) : '—', color: 'text-success' },
-                { label: 'Outstanding', value: fx(formatRupiah(invoice.outstanding, true)), color: invoice.outstanding > 0 ? 'text-danger font-700' : 'text-success' },
+                { label: 'Outstanding', value: fx(formatRupiah(invoice.outstanding, true)), color: invoice.outstanding > 0 ? 'text-danger font-bold' : 'text-success' },
               ].map((row) => (
                 <div key={`inv-row-${row.label}`} className="flex justify-between">
                   <span className="text-muted-foreground">{row.label}</span>
-                  <span className={`tabular-nums ${row.color || ''} ${row.bold ? 'font-600' : ''}`}>{row.value}</span>
+                  <span className={`tabular-nums ${row.color || ''} ${row.bold ? 'font-semibold' : ''}`}>{row.value}</span>
                 </div>
               ))}
               {invoice.amount > 0 && (
                 <div className="pt-2">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-muted-foreground">Payment Progress</span>
-                    <span className="font-600">{progressPct}%</span>
+                    <span className="font-semibold">{progressPct}%</span>
                   </div>
                   <div className="h-2 bg-secondary rounded-full overflow-hidden">
                     <div
@@ -154,18 +154,18 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
 
           {/* Dates & Terms */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <h4 className="text-sm font-600 text-foreground mb-3">Dates & Terms</h4>
+            <h4 className="text-sm font-semibold text-foreground mb-3">Dates & Terms</h4>
             <div className="space-y-2 text-sm">
               {[
                 { label: 'Invoice Date', value: invoice.invoiceDate },
                 { label: 'Due Date', value: invoice.dueDate },
-                { label: 'Days Overdue', value: invoice.daysOverdue > 0 ? `${invoice.daysOverdue} days` : 'Not overdue', color: invoice.daysOverdue > 0 ? 'text-danger font-600' : 'text-success' },
+                { label: 'Days Overdue', value: invoice.daysOverdue > 0 ? `${invoice.daysOverdue} days` : 'Not overdue', color: invoice.daysOverdue > 0 ? 'text-danger font-semibold' : 'text-success' },
                 { label: 'Payment Terms', value: 'Net 30' },
                 { label: 'Priority', value: invoice.priority },
               ].map((row) => (
                 <div key={`inv-date-${row.label}`} className="flex justify-between">
                   <span className="text-muted-foreground">{row.label}</span>
-                  <span className={`font-500 ${row.color || ''}`}>{row.value}</span>
+                  <span className={`font-medium ${row.color || ''}`}>{row.value}</span>
                 </div>
               ))}
             </div>
@@ -174,8 +174,8 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
           {/* Collection Notes */}
           <div className="bg-card border border-border rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-600 text-foreground">Collection Notes</h4>
-              <button onClick={() => toast.info('Note saved')} className="text-xs text-primary hover:underline font-500">Save Note</button>
+              <h4 className="text-sm font-semibold text-foreground">Collection Notes</h4>
+              <button onClick={() => toast.info('Note saved')} className="text-xs text-primary hover:underline font-medium">Save Note</button>
             </div>
             <textarea
               value={note}
@@ -191,7 +191,7 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
             className="w-full flex items-center justify-between p-3 bg-secondary/50 rounded-lg hover:bg-secondary transition-colors text-sm"
             onClick={() => toast.info('Opening customer profile...')}
           >
-            <span className="font-500 text-foreground">View Customer Profile</span>
+            <span className="font-medium text-foreground">View Customer Profile</span>
             <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground" />
           </button>
         </div>

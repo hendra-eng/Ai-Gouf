@@ -80,6 +80,7 @@ const translations: Dict = {
   '31–60 Days': { en: '31–60 Days', id: '31–60 Hari', zh: '31-60天' },
   '61–90 Days': { en: '61–90 Days', id: '61–90 Hari', zh: '61-90天' },
   '90+ Days': { en: '90+ Days', id: '90+ Hari', zh: '90天以上' },
+  'estimate': { en: 'estimate', id: 'perkiraan', zh: '预估' },
   '⚠ Rp 320Jt overdue 60+ days': { en: '⚠ Rp 320M overdue 60+ days', id: '⚠ Rp 320Jt jatuh tempo lebih dari 60 hari', zh: '⚠ Rp 320M 逾期超过60天' },
   '3 customers require immediate follow-up': { en: '3 customers require immediate follow-up', id: '3 pelanggan memerlukan tindak lanjut segera', zh: '3位客户需要立即跟进' },
 

@@ -16,12 +16,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-      <p className="font-600 text-foreground mb-1">{label}</p>
+      <p className="font-semibold text-foreground mb-1">{label}</p>
       {payload.map((p: any, i: number) => (
         <div key={`artt-${i}`} className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ background: p.fill || p.color }} />
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-600">{typeof p.value === 'number' && p.value > 1000 ? fx(`Rp ${(p.value / 1000000).toFixed(0)}M`) : `${p.value}%`}</span>
+          <span className="font-semibold">{typeof p.value === 'number' && p.value > 1000 ? fx(`Rp ${(p.value / 1000000).toFixed(0)}M`) : `${p.value}%`}</span>
         </div>
       ))}
     </div>
@@ -36,12 +36,12 @@ export default function ARRiskAnalysis() {
   const overdueInvoices = invoices.filter((i) => i.status === 'Overdue').sort((a, b) => b.daysOverdue - a.daysOverdue);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Executive Summary */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-3">
           <Icon name="DocumentTextIcon" size={16} className="text-ai-purple" />
-          <h3 className="text-md font-600 text-foreground">Executive Summary</h3>
+          <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
           Total AR stands at <strong>{fx('Rp 1.24M')}</strong> with <strong>{fx('Rp 320M')} (25.8%) overdue</strong> — a concerning trend that has grown +18.4% vs the prior period.
@@ -64,16 +64,16 @@ export default function ARRiskAnalysis() {
           { label: 'Due This Week', value: 'Rp 142M', color: 'text-info', bg: 'bg-info-bg' },
         ].map((m) => (
           <div key={`arm-${m.label}`} className={`${m.bg} border border-border rounded-lg p-3`}>
-            <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
-            <p className={`text-xl font-700 tabular-nums ${m.color}`}>{fx(m.value)}</p>
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
+            <p className={`text-xl font-bold tabular-nums ${m.color}`}>{fx(m.value)}</p>
           </div>
         ))}
       </div>
 
       {/* AR Aging Chart */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-          <h3 className="text-md font-600 text-foreground mb-4">AR Aging Distribution</h3>
+        <div className="card-elevated-md rounded-xl p-5">
+          <h3 className="text-md font-semibold text-foreground mb-4">AR Aging Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={arAgingData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -89,8 +89,8 @@ export default function ARRiskAnalysis() {
           </ResponsiveContainer>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-          <h3 className="text-md font-600 text-foreground mb-4">Customer Concentration Risk</h3>
+        <div className="card-elevated-md rounded-xl p-5">
+          <h3 className="text-md font-semibold text-foreground mb-4">Customer Concentration Risk</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie
@@ -109,17 +109,17 @@ export default function ARRiskAnalysis() {
       </div>
 
       {/* High Risk Customers */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-md font-600 text-foreground">High Risk Customer Analysis</h3>
-          <button onClick={() => router.push('/accounts-receivable')} className="text-xs text-primary hover:underline font-500">View All →</button>
+          <h3 className="text-md font-semibold text-foreground">High Risk Customer Analysis</h3>
+          <button onClick={() => router.push('/accounts-receivable')} className="text-xs text-primary hover:underline font-medium">View All →</button>
         </div>
         <div className="space-y-3">
           {overdueCustomers.slice(0, 4).map((c) => (
             <div key={`ar-risk-cust-${c.id}`} className="flex items-center gap-3 p-3 border border-border rounded-lg hover:bg-secondary/50 transition-colors">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <p className="text-sm font-600 text-foreground truncate">{c.name}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
                   <StatusBadge label={c.riskLevel} className={riskColors[c.riskLevel]} />
                 </div>
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -130,7 +130,7 @@ export default function ARRiskAnalysis() {
               </div>
               <button
                 onClick={() => router.push('/accounts-receivable')}
-                className="text-xs text-primary hover:underline font-500 flex-shrink-0"
+                className="text-xs text-primary hover:underline font-medium flex-shrink-0"
               >
                 Collect →
               </button>
@@ -140,28 +140,28 @@ export default function ARRiskAnalysis() {
       </div>
 
       {/* Overdue Invoices */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-md font-600 text-foreground">Critical Overdue Invoices</h3>
-          <button onClick={() => router.push('/accounts-receivable')} className="text-xs text-primary hover:underline font-500">View All Invoices →</button>
+          <h3 className="text-md font-semibold text-foreground">Critical Overdue Invoices</h3>
+          <button onClick={() => router.push('/accounts-receivable')} className="text-xs text-primary hover:underline font-medium">View All Invoices →</button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
                 {['Invoice', 'Customer', 'Amount', 'Days Overdue', 'Risk'].map((h) => (
-                  <th key={`arri-${h}`} className="pb-2 text-left text-2xs font-600 text-muted-foreground uppercase tracking-wider">{h}</th>
+                  <th key={`arri-${h}`} className="pb-2 text-left text-2xs font-semibold text-muted-foreground uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {overdueInvoices.slice(0, 5).map((inv) => (
                 <tr key={inv.id} className="border-b border-border hover:bg-secondary/40 transition-colors">
-                  <td className="py-2.5 font-500 text-primary">{inv.number}</td>
+                  <td className="py-2.5 font-medium text-primary">{inv.number}</td>
                   <td className="py-2.5 text-foreground">{inv.customerName}</td>
-                  <td className="py-2.5 tabular-nums font-600">{fx(formatRupiah(inv.outstanding, true))}</td>
+                  <td className="py-2.5 tabular-nums font-semibold">{fx(formatRupiah(inv.outstanding, true))}</td>
                   <td className="py-2.5">
-                    <span className={`font-600 ${inv.daysOverdue > 60 ? 'text-danger' : 'text-warning'}`}>{inv.daysOverdue}d</span>
+                    <span className={`font-semibold ${inv.daysOverdue > 60 ? 'text-danger' : 'text-warning'}`}>{inv.daysOverdue}d</span>
                   </td>
                   <td className="py-2.5">
                     <StatusBadge
@@ -177,10 +177,10 @@ export default function ARRiskAnalysis() {
       </div>
 
       {/* Recommendations */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
+      <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-center gap-2 mb-4">
           <Icon name="LightBulbIcon" size={16} className="text-warning" />
-          <h3 className="text-md font-600 text-foreground">AI Recommendations</h3>
+          <h3 className="text-md font-semibold text-foreground">AI Recommendations</h3>
         </div>
         <div className="space-y-3">
           {[
@@ -189,15 +189,15 @@ export default function ARRiskAnalysis() {
             { priority: 'Medium', title: 'Review Bad Debt Provision', desc: 'Rp 72M exposure warrants provisioning review. Consult with auditors on appropriate provision rate given current aging.', action: 'View Report', route: '/reports' },
           ].map((rec) => (
             <div key={`ar-rec-${rec.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
-              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-600 flex-shrink-0 mt-0.5 ${
+              <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${
                 rec.priority === 'Critical' ? 'bg-danger-bg text-danger-foreground' :
                 rec.priority === 'High'? 'bg-orange-50 text-orange-700' : 'bg-warning-bg text-warning-foreground'
               }`}>{rec.priority}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-600 text-foreground">{rec.title}</p>
+                <p className="text-sm font-semibold text-foreground">{rec.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{fx(rec.desc)}</p>
               </div>
-              <button onClick={() => router.push(rec.route)} className="text-xs text-primary hover:underline font-500 flex-shrink-0 whitespace-nowrap">
+              <button onClick={() => router.push(rec.route)} className="text-xs text-primary hover:underline font-medium flex-shrink-0 whitespace-nowrap">
                 {rec.action} →
               </button>
             </div>

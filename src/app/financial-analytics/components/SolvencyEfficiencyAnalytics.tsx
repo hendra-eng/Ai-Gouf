@@ -40,7 +40,7 @@ export default function SolvencyEfficiencyAnalytics() {
   return (
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-600 text-foreground">
+        <h3 className="text-lg font-semibold text-foreground">
           {tab === 'solvency' ? 'Solvency Analysis' : 'Operational Efficiency'}
         </h3>
         <div className="flex items-center bg-muted border border-border rounded-lg p-0.5">
@@ -48,7 +48,7 @@ export default function SolvencyEfficiencyAnalytics() {
             <button
               key={`solvtab-${t}`}
               onClick={() => setTab(t)}
-              className={`px-3 py-1.5 rounded-md text-xs font-500 transition-all ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 t === tab ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -62,7 +62,7 @@ export default function SolvencyEfficiencyAnalytics() {
         {items.map((item) => (
           <div key={`solv-${item.label}`} className="bg-muted rounded-xl p-3">
             <p className="text-2xs text-muted-foreground mb-1">{item.label}</p>
-            <p className="text-xl font-700 font-tabular text-foreground">{fx(item.value)}</p>
+            <p className="text-xl font-bold tabular-nums text-foreground">{fx(item.value)}</p>
             <p className="text-2xs text-muted-foreground mt-0.5">{fx(item.sub)}</p>
           </div>
         ))}

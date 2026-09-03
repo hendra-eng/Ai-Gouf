@@ -35,7 +35,7 @@ function VCell({ budget, actual, invert = false }: { budget: number; actual: num
   const pct = ((diff / budget) * 100);
   const isFav = invert ? diff <= 0 : diff >= 0;
   return (
-    <td className={`px-3 py-2.5 text-right text-sm font-tabular font-500 ${isFav ? 'text-positive' : 'text-negative'}`}>
+    <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-medium ${isFav ? 'text-positive' : 'text-negative'}`}>
       {isFav ? '+' : ''}{diff.toFixed(0)}
       <span className="text-2xs ml-1 opacity-70">({isFav ? '+' : ''}{pct.toFixed(1)}%)</span>
     </td>
@@ -50,7 +50,7 @@ export default function MonthlyBudgetTable() {
     <div className="card-base">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Monthly Budget Performance</h3>
+          <h3 className="text-lg font-semibold text-foreground">Monthly Budget Performance</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Jan–Dec 2026 · Forecast from Sep onwards</p>
         </div>
         <div className="flex items-center gap-2">
@@ -77,19 +77,19 @@ export default function MonthlyBudgetTable() {
         <table className="w-full min-w-[1100px]">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-3 py-3 text-left text-xs font-600 text-muted-foreground sticky left-0 bg-card z-10">Month</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">Rev Budget</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">Rev Actual</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">Rev Var</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">COGS Budget</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">COGS Actual</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">COGS Var</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">OpEx Budget</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">OpEx Actual</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">EBITDA Budget</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">EBITDA Actual</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">NP Budget</th>
-              <th className="px-3 py-3 text-right text-xs font-600 text-muted-foreground">NP Actual</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground sticky left-0 bg-card z-10">Month</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">Rev Budget</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">Rev Actual</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">Rev Var</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">COGS Budget</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">COGS Actual</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">COGS Var</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">OpEx Budget</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">OpEx Actual</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">EBITDA Budget</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">EBITDA Actual</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">NP Budget</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-muted-foreground">NP Actual</th>
             </tr>
           </thead>
           <tbody>
@@ -100,44 +100,44 @@ export default function MonthlyBudgetTable() {
               >
                 <td className="px-3 py-2.5 sticky left-0 bg-card z-10">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-600 text-foreground">{row.month}</span>
+                    <span className="text-sm font-semibold text-foreground">{row.month}</span>
                     {row.isForecast && (
-                      <span className="text-2xs px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/20 font-500">
+                      <span className="text-2xs px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/20 font-medium">
                         Forecast
                       </span>
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular text-muted-foreground">{row.revBudget}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular font-500 text-foreground">{row.revActual}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.revBudget}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.revActual}M</td>
                 <VCell budget={row.revBudget} actual={row.revActual} />
-                <td className="px-3 py-2.5 text-right text-sm font-tabular text-muted-foreground">{row.cogsBudget}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular font-500 text-foreground">{row.cogsActual}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.cogsBudget}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.cogsActual}M</td>
                 <VCell budget={row.cogsBudget} actual={row.cogsActual} invert />
-                <td className="px-3 py-2.5 text-right text-sm font-tabular text-muted-foreground">{row.opexBudget}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular font-500 text-foreground">{row.opexActual}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular text-muted-foreground">{row.ebitdaBudget}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular font-500 text-foreground">{row.ebitdaActual}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular text-muted-foreground">{row.netProfitBudget}M</td>
-                <td className="px-3 py-2.5 text-right text-sm font-tabular font-500 text-foreground">{row.netProfitActual}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.opexBudget}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.opexActual}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.ebitdaBudget}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.ebitdaActual}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.netProfitBudget}M</td>
+                <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.netProfitActual}M</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30">
-              <td className="px-3 py-3 text-sm font-700 text-foreground sticky left-0 bg-muted/30 z-10">FY Total</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-muted-foreground">10,200M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-foreground">10,480M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-positive">+280M (+2.7%)</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-muted-foreground">5,610M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-foreground">5,720M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-negative">-110M (-2.0%)</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-muted-foreground">1,380M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-foreground">1,340M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-muted-foreground">2,550M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-foreground">2,720M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-muted-foreground">1,760M</td>
-              <td className="px-3 py-3 text-right text-sm font-700 font-tabular text-positive">1,910M</td>
+              <td className="px-3 py-3 text-sm font-bold text-foreground sticky left-0 bg-muted/30 z-10">FY Total</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">10,200M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">10,480M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-positive">+280M (+2.7%)</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">5,610M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">5,720M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-negative">-110M (-2.0%)</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">1,380M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">1,340M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">2,550M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">2,720M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">1,760M</td>
+              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-positive">1,910M</td>
             </tr>
           </tfoot>
         </table>

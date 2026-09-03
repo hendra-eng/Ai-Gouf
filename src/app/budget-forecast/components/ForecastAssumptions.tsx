@@ -39,12 +39,12 @@ export default function ForecastAssumptions() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Forecast Assumptions</h3>
+          <h3 className="text-lg font-semibold text-foreground">Forecast Assumptions</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Adjust key drivers to update forecast projections</p>
         </div>
         <button
           onClick={() => setSaved(true)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-500 transition-all duration-150 active:scale-95 ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 active:scale-95 ${
             saved
               ? 'bg-positive-subtle text-positive border border-positive/20' :'bg-primary text-primary-foreground hover:bg-primary/90'
           }`}
@@ -64,7 +64,7 @@ export default function ForecastAssumptions() {
             <div key={a.id} className="group">
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-500 text-foreground">{a.label}</span>
+                  <span className="text-sm font-medium text-foreground">{a.label}</span>
                   <span className="text-2xs text-muted-foreground">{a.description}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -75,7 +75,7 @@ export default function ForecastAssumptions() {
                     min={a.min}
                     max={a.max}
                     step={a.step}
-                    className="w-20 text-right text-sm font-600 font-tabular text-foreground bg-muted border border-border rounded-lg px-2 py-1 outline-none focus:border-primary transition-colors"
+                    className="w-20 text-right text-sm font-semibold tabular-nums text-foreground bg-muted border border-border rounded-lg px-2 py-1 outline-none focus:border-primary transition-colors"
                   />
                   <span className="text-xs text-muted-foreground w-5">{a.unit}</span>
                 </div>

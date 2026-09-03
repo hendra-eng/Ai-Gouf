@@ -26,31 +26,63 @@ export function txAmount(tx: Transaction): number {
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
-/** Tren bulanan (jumlah nominal per bulan) dari transaksi satu kelompok. */
-export function monthlyTrendFor(transactions: Transaction[]): { month: string; total: number; count: number }[] {
-  const byMonth = new Map<string, { total: number; count: number; order: number }>();
+/**
+ * [DIUBAH] Tahun yang dipakai untuk grafik tren bulanan: kalau tidak
+ * ditentukan lewat parameter `year` di monthlyTrendFor(), otomatis pakai
+ * tahun dengan transaksi TERBANYAK di dalam data yang diberikan (paling
+ * relevan untuk ditampilkan) — atau tahun berjalan (`new Date().getFullYear()`)
+ * kalau kelompok itu belum punya transaksi sama sekali.
+ */
+function resolveTrendYear(transactions: Transaction[]): number {
+  const countByYear = new Map<number, number>();
   transactions.forEach((tx) => {
     const d = new Date(tx.date);
     if (isNaN(d.getTime())) return;
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
-    const label = MONTH_LABELS[d.getMonth()];
-    const entry = byMonth.get(key) || { total: 0, count: 0, order: d.getFullYear() * 12 + d.getMonth() };
-    entry.total += txAmount(tx);
-    entry.count += 1;
-    byMonth.set(key, entry);
+    const y = d.getFullYear();
+    countByYear.set(y, (countByYear.get(y) || 0) + 1);
   });
-  return Array.from(byMonth.entries())
-    .sort((a, b) => a[1].order - b[1].order)
-    .map(([key, v]) => ({ month: MONTH_LABELS[Number(key.split('-')[1])], total: v.total, count: v.count }));
+  if (countByYear.size === 0) return new Date().getFullYear();
+  return Array.from(countByYear.entries()).sort((a, b) => b[1] - a[1])[0][0];
 }
 
-/** Breakdown per kategori (mis. dalam kelompok Expense: Payroll/Rent/Software/dst). */
-export function categoryBreakdown(transactions: Transaction[]): { name: string; value: number }[] {
-  const byCat = new Map<string, number>();
+/**
+ * [DIUBAH] Tren bulanan (jumlah nominal per bulan) dari transaksi satu
+ * kelompok — SELALU mengembalikan 12 titik, Januari s/d Desember, untuk satu
+ * tahun (bulan tanpa transaksi tetap tampil dengan total 0, bukan hilang dari
+ * grafik). `year` opsional; kalau tidak diisi, otomatis pilih tahun dengan
+ * transaksi terbanyak (lihat resolveTrendYear()).
+ */
+export function monthlyTrendFor(transactions: Transaction[], year?: number): { month: string; total: number; count: number }[] {
+  const targetYear = year ?? resolveTrendYear(transactions);
+  const totals = Array.from({ length: 12 }, () => ({ total: 0, count: 0 }));
   transactions.forEach((tx) => {
-    byCat.set(tx.category, (byCat.get(tx.category) || 0) + txAmount(tx));
+    const d = new Date(tx.date);
+    if (isNaN(d.getTime())) return;
+    if (d.getFullYear() !== targetYear) return;
+    const m = d.getMonth();
+    totals[m].total += txAmount(tx);
+    totals[m].count += 1;
   });
-  return Array.from(byCat.entries())
+  return MONTH_LABELS.map((label, i) => ({ month: label, total: totals[i].total, count: totals[i].count }));
+}
+
+// [DIUBAH] Sebelumnya breakdown ini mengelompokkan per `tx.category` — itu
+// cocok untuk data statis/demo yang tiap barisnya sudah punya kategori rinci
+// (Revenue, Payroll, Software, dst). Tapi sejak baris hasil IMPORT rekening
+// koran diberi `category` berupa salah satu dari 5 label grup saja (Sales/
+// Expense/Cash Payment/Cash Reserve/Other — lihat classifyByAccountName di
+// transactionData.ts), semua baris dalam satu sub halaman otomatis punya
+// `category` yang SAMA (mis. semuanya "Sales") sehingga breakdown ini
+// kolaps jadi cuma 1 batang. Sekarang dikelompokkan per `accountName` (nama
+// akun COA yang sebenarnya, mis. "Pendapatan Jasa Konsultasi", "Pendapatan
+// Maintenance") supaya tetap pecah rinci untuk data statis MAUPUN data hasil
+// import.
+export function categoryBreakdown(transactions: Transaction[]): { name: string; value: number }[] {
+  const byAccount = new Map<string, number>();
+  transactions.forEach((tx) => {
+    byAccount.set(tx.accountName, (byAccount.get(tx.accountName) || 0) + txAmount(tx));
+  });
+  return Array.from(byAccount.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 }

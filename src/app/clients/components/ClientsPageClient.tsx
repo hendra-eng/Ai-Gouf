@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown,  } from 'lucide-react';
+import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown, MoreVertical, Pencil, Trash2,  } from 'lucide-react';
 import {
-  clients as initialClients,
   clientActivityFeed,
   type Client,
   type ClientStatus,
 } from '@/lib/clientsMockData';
+import { useClientsList, addClient as addClientToStore, addImportedClients, updateClient as updateClientInStore, deleteClient as deleteClientFromStore } from '@/lib/clientsStore';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer,
   LineChart, Line, Tooltip,
@@ -17,6 +17,25 @@ import {
 import { useCurrency } from '@/lib/currency';
 
 const PAGE_SIZE = 8;
+
+const INDUSTRY_OPTIONS = [
+  'Technology',
+  'Manufacturing',
+  'Distribution',
+  'Retail',
+  'Food & Beverage',
+  'Healthcare',
+  'Real Estate',
+  'Construction',
+  'Logistics',
+  'Energy',
+  'Agriculture',
+  'Financial Services',
+  'Education',
+  'Hospitality & Tourism',
+  'Professional Services',
+  'Other',
+];
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
 
@@ -311,7 +330,7 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'overview' && (
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-muted/30 rounded-xl p-4">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Contact</p>
@@ -400,7 +419,7 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
           )}
 
           {activeTab === 'health' && (
-            <div className="space-y-5">
+            <div className="space-y-6">
               <div className="flex items-center gap-4 bg-muted/30 rounded-xl p-4">
                 <HealthScoreRing score={client.healthScore.overall} />
                 <div>
@@ -545,13 +564,37 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
 
 // ─── Portfolio Card ──────────────────────────────────────────────────────────
 
-function ClientPortfolioCard({ client, onClick }: { client: Client; onClick: () => void }) {
+function ClientPortfolioCard({
+  client,
+  onClick,
+  onEdit,
+  onDelete,
+}: {
+  client: Client;
+  onClick: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const { fx } = useCurrency();
   const isPositive = client.financials.revenueGrowth >= 0;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
+
   return (
     <div
       onClick={onClick}
-      className="bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
+      className="relative bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -563,7 +606,39 @@ function ClientPortfolioCard({ client, onClick }: { client: Client; onClick: () 
             <p className="text-xs text-muted-foreground">{client.industry}</p>
           </div>
         </div>
-        <HealthScoreRing score={client.healthScore.overall} />
+        <div className="flex items-center gap-1">
+          <HealthScoreRing score={client.healthScore.overall} />
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); }}
+              className="p-1 rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
+              aria-label="Menu client"
+            >
+              <MoreVertical size={16} />
+            </button>
+            {menuOpen && (
+              <div
+                onClick={e => e.stopPropagation()}
+                className="absolute right-0 top-full mt-1 w-36 bg-card border border-border rounded-lg shadow-lg py-1 z-10"
+              >
+                <button
+                  onClick={() => { setMenuOpen(false); onEdit(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-muted/40 transition-colors"
+                >
+                  <Pencil size={13} />
+                  Edit
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onDelete(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
@@ -616,48 +691,65 @@ function ClientPortfolioCard({ client, onClick }: { client: Client; onClick: () 
 function AddClientModal({
   onClose,
   onSubmit,
+  initialClient,
 }: {
   onClose: () => void;
-  onSubmit: (c: Omit<Client, 'id' | 'financials' | 'healthScore' | 'joinDate' | 'lastActivity' | 'aiInsight'>) => void;
+  onSubmit: (c: Omit<Client, 'id' | 'financials' | 'healthScore' | 'joinDate' | 'lastActivity' | 'aiInsight'>) => Promise<void> | void;
+  /** Kalau diisi, modal jadi mode Edit (prefill + judul/tombol berubah,
+   *  companyName dikunci karena backend tidak expose endpoint ganti nama). */
+  initialClient?: Client;
 }) {
-  const [companyName, setCompanyName] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [contactName, setContactName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
-  const [npwp, setNpwp] = useState('');
-  const [address, setAddress] = useState('');
-  const [assignedAccountant, setAssignedAccountant] = useState('');
-  const [status, setStatus] = useState<ClientStatus>('Stable');
+  const isEditMode = !!initialClient;
+  const [companyName, setCompanyName] = useState(initialClient?.companyName ?? '');
+  const [industry, setIndustry] = useState(initialClient?.industry ?? '');
+  const [contactName, setContactName] = useState(initialClient?.contactName ?? '');
+  const [contactEmail, setContactEmail] = useState(initialClient?.contactEmail ?? '');
+  const [contactPhone, setContactPhone] = useState(initialClient?.contactPhone ?? '');
+  const [npwp, setNpwp] = useState(initialClient?.npwp ?? '');
+  const [address, setAddress] = useState(initialClient?.address ?? '');
+  const [assignedAccountant, setAssignedAccountant] = useState(initialClient?.assignedAccountant ?? '');
+  const [status, setStatus] = useState<ClientStatus>(initialClient?.status ?? 'Stable');
+  // [FIX] Sebelumnya tombol submit tidak pernah di-nonaktifkan selama
+  // request ke backend masih berjalan -- klik ganda (double-click) yang
+  // cepat akan memicu handleSubmit 2x sebelum request pertama selesai,
+  // hasilnya client (atau perubahan) tersimpan dobel. isSubmitting
+  // mengunci form begitu submit pertama mulai.
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isValid = companyName.trim() && industry.trim() && assignedAccountant.trim();
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isSubmitting) return; // [FIX] cegah submit ganda
     if (!isValid) {
       toast.error('Lengkapi data wajib', { description: 'Nama perusahaan, industri, dan akuntan wajib diisi.' });
       return;
     }
-    onSubmit({
-      companyName: companyName.trim(),
-      industry: industry.trim(),
-      status,
-      taxStatus: 'Pending',
-      accountingStatus: 'Pending Review',
-      assignedAccountant: assignedAccountant.trim(),
-      contactName: contactName.trim(),
-      contactEmail: contactEmail.trim(),
-      contactPhone: contactPhone.trim(),
-      npwp: npwp.trim(),
-      address: address.trim(),
-    });
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        companyName: companyName.trim(),
+        industry: industry.trim(),
+        status,
+        taxStatus: 'Pending',
+        accountingStatus: 'Pending Review',
+        assignedAccountant: assignedAccountant.trim(),
+        contactName: contactName.trim(),
+        contactEmail: contactEmail.trim(),
+        contactPhone: contactPhone.trim(),
+        npwp: npwp.trim(),
+        address: address.trim(),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-card rounded-xl shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold text-foreground">Add New Client</h2>
+          <h2 className="text-sm font-semibold text-foreground">{isEditMode ? 'Edit Client' : 'Add New Client'}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors">
             <X size={16} className="text-muted-foreground" />
           </button>
@@ -670,17 +762,25 @@ function AddClientModal({
                 value={companyName}
                 onChange={e => setCompanyName(e.target.value)}
                 placeholder="PT Contoh Sejahtera"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+                disabled={isEditMode}
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-muted/40 disabled:text-muted-foreground"
               />
+              {isEditMode && (
+                <p className="text-[10px] text-muted-foreground mt-1">Nama perusahaan tidak bisa diubah.</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Industry *</label>
-              <input
+              <select
                 value={industry}
                 onChange={e => setIndustry(e.target.value)}
-                placeholder="Technology"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground"
+              >
+                <option value="" disabled>Select industry</option>
+                {INDUSTRY_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Status</label>
@@ -752,15 +852,17 @@ function AddClientModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+              disabled={isSubmitting}
+              className="flex-1 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors"
+              disabled={isSubmitting}
+              className="flex-1 py-2 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60"
             >
-              Add Client
+              {isSubmitting ? 'Menyimpan...' : (isEditMode ? 'Save Changes' : 'Add Client')}
             </button>
           </div>
         </form>
@@ -773,7 +875,9 @@ function AddClientModal({
 
 export default function ClientsPageClient() {
   const { fx } = useCurrency();
-  const [clientList, setClientList] = useState<Client[]>(initialClients);
+  // Single shared source of truth: built-in mock clients + anything the user
+  // has added, kept in sync with the header "Switch Company" dropdown.
+  const { clients: clientList, loading: clientsLoading, error: clientsError } = useClientsList();
   const [viewMode, setViewMode] = useState<'table' | 'portfolio'>('portfolio');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -782,6 +886,7 @@ export default function ClientsPageClient() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
@@ -853,8 +958,13 @@ export default function ClientsPageClient() {
           toast.error('Import gagal', { description: 'File CSV tidak berisi data klien yang valid.' });
           return;
         }
-        setClientList(prev => [...imported, ...prev]);
-        toast.success('Import berhasil', { description: `${imported.length} klien ditambahkan dari CSV.` });
+        addImportedClients(imported)
+          .then(() => {
+            toast.success('Import berhasil', { description: `${imported.length} klien ditambahkan dari CSV.` });
+          })
+          .catch((err) => {
+            toast.error('Import gagal', { description: err instanceof Error ? err.message : 'Terjadi kesalahan.' });
+          });
       } catch {
         toast.error('Import gagal', { description: 'Format file tidak dapat dibaca.' });
       }
@@ -863,21 +973,37 @@ export default function ClientsPageClient() {
     e.target.value = '';
   }
 
-  function handleAddClient(newClient: Omit<Client, 'id' | 'financials' | 'healthScore' | 'joinDate' | 'lastActivity' | 'aiInsight'>) {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const client: Client = {
-      ...newClient,
-      id: `client-${Date.now()}`,
-      financials: { revenue: 0, netProfit: 0, cash: 0, ar: 0, ap: 0, grossMargin: 0, revenueGrowth: 0, trendData: [0, 0, 0, 0, 0, 0, 0, 0] },
-      healthScore: { overall: 50, liquidity: 50, profitability: 50, cashFlow: 50, solvency: 50, compliance: 50 },
-      joinDate: dateStr,
-      lastActivity: dateStr,
-      aiInsight: 'New client — insufficient data for AI assessment yet.',
-    };
-    setClientList(prev => [client, ...prev]);
-    setShowAddModal(false);
-    toast.success('Klien ditambahkan', { description: `${client.companyName} berhasil ditambahkan ke portfolio.` });
+  async function handleAddClient(newClient: Omit<Client, 'id' | 'financials' | 'healthScore' | 'joinDate' | 'lastActivity' | 'aiInsight'>) {
+    try {
+      const client = await addClientToStore(newClient);
+      setShowAddModal(false);
+      toast.success('Klien ditambahkan', { description: `${client.companyName} berhasil ditambahkan ke portfolio.` });
+    } catch (err) {
+      toast.error('Gagal menambah klien', { description: err instanceof Error ? err.message : 'Terjadi kesalahan.' });
+    }
+  }
+
+  async function handleUpdateClient(updates: Omit<Client, 'id' | 'financials' | 'healthScore' | 'joinDate' | 'lastActivity' | 'aiInsight'>) {
+    if (!editingClient) return;
+    try {
+      await updateClientInStore(editingClient.id, updates);
+      setEditingClient(null);
+      toast.success('Klien diperbarui', { description: `${updates.companyName} berhasil diperbarui.` });
+    } catch (err) {
+      toast.error('Gagal memperbarui klien', { description: err instanceof Error ? err.message : 'Terjadi kesalahan.' });
+    }
+  }
+
+  async function handleDeleteClient(client: Client) {
+    const konfirmasi = window.confirm(`Hapus client "${client.companyName}"? Tindakan ini tidak bisa dibatalkan.`);
+    if (!konfirmasi) return;
+    try {
+      await deleteClientFromStore(client.id);
+      if (selectedClient?.id === client.id) setSelectedClient(null);
+      toast.success('Klien dihapus', { description: `${client.companyName} berhasil dihapus dari portfolio.` });
+    } catch (err) {
+      toast.error('Gagal menghapus klien', { description: err instanceof Error ? err.message : 'Terjadi kesalahan.' });
+    }
   }
 
   const statusOptions = ['all', 'Healthy', 'Stable', 'Attention Required', 'Critical'];
@@ -891,7 +1017,7 @@ export default function ClientsPageClient() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Users size={20} className="text-primary" />
-                <h1 className="text-xl font-bold text-foreground">Clients</h1>
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">Clients</h1>
               </div>
               <p className="text-sm text-muted-foreground">Monitor client financial health, accounting status, and service activity.</p>
             </div>
@@ -930,6 +1056,14 @@ export default function ClientsPageClient() {
       </div>
 
       <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-6">
+        {clientsLoading && (
+          <div className="text-xs text-muted-foreground px-1">Memuat data klien...</div>
+        )}
+        {clientsError && (
+          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            Gagal memuat data klien dari server: {clientsError}
+          </div>
+        )}
         {/* Portfolio Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {[
@@ -1039,6 +1173,8 @@ export default function ClientsPageClient() {
                 key={client.id}
                 client={client}
                 onClick={() => setSelectedClient(client)}
+                onEdit={() => setEditingClient(client)}
+                onDelete={() => handleDeleteClient(client)}
               />
             ))}
             {filtered.length === 0 && (
@@ -1220,6 +1356,14 @@ export default function ClientsPageClient() {
 
       {showAddModal && (
         <AddClientModal onClose={() => setShowAddModal(false)} onSubmit={handleAddClient} />
+      )}
+
+      {editingClient && (
+        <AddClientModal
+          initialClient={editingClient}
+          onClose={() => setEditingClient(null)}
+          onSubmit={handleUpdateClient}
+        />
       )}
     </div>
   );

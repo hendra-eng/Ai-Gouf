@@ -29,7 +29,7 @@ export default function ProfitabilityAnalytics() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Profitability Analysis</h3>
+          <h3 className="text-lg font-semibold text-foreground">Profitability Analysis</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Monthly trend · FY 2026</p>
         </div>
         <button
@@ -47,7 +47,7 @@ export default function ProfitabilityAnalytics() {
           <button
             key={`prof-${m}`}
             onClick={() => setMetric(m)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-500 transition-all ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
               m === metric ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -65,7 +65,7 @@ export default function ProfitabilityAnalytics() {
         ].map((s) => (
           <div key={`prof-sum-${s.label}`} className="bg-muted rounded-xl p-3 text-center">
             <p className="text-2xs text-muted-foreground mb-1">{s.label}</p>
-            <p className={`text-base font-700 font-tabular ${s.color}`}>{s.value}</p>
+            <p className={`text-base font-bold tabular-nums ${s.color}`}>{s.value}</p>
           </div>
         ))}
       </div>

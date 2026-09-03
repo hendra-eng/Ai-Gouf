@@ -63,13 +63,13 @@ export default function ForecastRisks() {
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-600 text-foreground">Forecast Risks</h3>
+          <h3 className="text-lg font-semibold text-foreground">Forecast Risks</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Key risks to the FY2026 financial forecast</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-negative font-600 bg-negative-subtle px-2 py-1 rounded-full border border-negative/20">1 High</span>
-          <span className="text-xs text-warning font-600 bg-warning-subtle px-2 py-1 rounded-full border border-warning/20">1 Medium</span>
-          <span className="text-xs text-info font-600 bg-info-subtle px-2 py-1 rounded-full border border-info/20">2 Low</span>
+          <span className="text-xs text-negative font-semibold bg-negative-subtle px-2 py-1 rounded-full border border-negative/20">1 High</span>
+          <span className="text-xs text-warning font-semibold bg-warning-subtle px-2 py-1 rounded-full border border-warning/20">1 Medium</span>
+          <span className="text-xs text-info font-semibold bg-info-subtle px-2 py-1 rounded-full border border-info/20">2 Low</span>
         </div>
       </div>
 
@@ -95,8 +95,8 @@ export default function ForecastRisks() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-600 text-foreground">{risk.title}</span>
-                  <span className={`text-2xs font-600 px-1.5 py-0.5 rounded-full border ${SEVERITY_STYLES[risk.severity]}`}>
+                  <span className="text-sm font-semibold text-foreground">{risk.title}</span>
+                  <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full border ${SEVERITY_STYLES[risk.severity]}`}>
                     {risk.severity}
                   </span>
                 </div>
@@ -107,7 +107,7 @@ export default function ForecastRisks() {
             <div className="flex items-center justify-between pt-3 border-t border-border/50">
               <div>
                 <p className="text-2xs text-muted-foreground">Financial Impact</p>
-                <p className="text-sm font-600 font-tabular text-negative">{fx(formatIDR(risk.impact, true))}</p>
+                <p className="text-sm font-semibold tabular-nums text-negative">{fx(formatIDR(risk.impact, true))}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -118,7 +118,7 @@ export default function ForecastRisks() {
                 </button>
                 <button
                   onClick={() => router.push(`/ai-financial-analyst?analysis=${risk.category.toLowerCase().replace(/\s+/g, '-')}-risk`)}
-                  className="flex items-center gap-1.5 text-xs font-500 text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
                 >
                   <Icon name="MagnifyingGlassIcon" size={12} />
                   Analyze
