@@ -5,9 +5,25 @@ import AIConversationSidebar from './AIConversationSidebar';
 import AIAnalysisArea from './AIAnalysisArea';
 import AIContextPanel from './AIContextPanel';
 import NewAnalysisModal from './NewAnalysisModal';
-import { aiAnalyses, type AIAnalysis } from '@/lib/mockData';
+import { aiAnalyses, type AIAnalysis, type AIAnalysisTemplateType } from '@/lib/mockData';
 
-export type ActiveAnalysisType = 'profit-decrease' | 'ar-risk' | 'cash-flow' | 'q-comparison' | 'expense-anomaly' | 'ap-risk' | null;
+export type ActiveAnalysisType = AIAnalysisTemplateType | null;
+
+// [RAPI] Label & tipe display ("Profitability Analysis", dst.) dipusatkan di
+// sini supaya entri baru dari "New Analysis" konsisten dengan seed data di
+// mockData.ts, tanpa duplikasi daftar template dari NewAnalysisModal.tsx.
+const TEMPLATE_LABELS: Record<Exclude<ActiveAnalysisType, null>, { title: string; type: string }> = {
+  'profit-decrease': { title: 'Why did net profit decrease?', type: 'Profitability Analysis' },
+  'ar-risk': { title: 'Analyze receivables risk', type: 'Receivables Risk' },
+  'ap-risk': { title: 'Review payables risk', type: 'Payables Risk' },
+  'cash-flow': { title: 'Explain cash flow', type: 'Cash Flow Analysis' },
+  'q-comparison': { title: 'Compare quarters', type: 'Quarter Comparison' },
+  'expense-anomaly': { title: 'Find unusual expenses', type: 'Anomaly Detection' },
+};
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function AIAnalystLayout() {
   const searchParams = useSearchParams();
@@ -33,7 +49,46 @@ export default function AIAnalystLayout() {
 
   const handleNewAnalysis = (type: ActiveAnalysisType) => {
     setShowNewAnalysis(false);
+    if (type) {
+      const label = TEMPLATE_LABELS[type];
+      const today = todayISO();
+      const newEntry: AIAnalysis = {
+        id: `ai-${Date.now()}`,
+        title: label.title,
+        type: label.type,
+        analysisType: type,
+        createdAt: today,
+        updatedAt: today,
+        period: 'Jan–Aug 2026',
+        risk: 'Medium',
+        isFavorite: false,
+        isArchived: false,
+      };
+      setAnalyses((prev) => [newEntry, ...prev]);
+    }
     handleSelectAnalysis(type);
+  };
+
+  const handleToggleFavorite = (id: string) => {
+    setAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, isFavorite: !a.isFavorite } : a)));
+  };
+
+  const handleRenameAnalysis = (id: string, title: string) => {
+    setAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, title } : a)));
+  };
+
+  const handleDuplicateAnalysis = (id: string) => {
+    setAnalyses((prev) => {
+      const source = prev.find((a) => a.id === id);
+      if (!source) return prev;
+      const today = todayISO();
+      const copy: AIAnalysis = { ...source, id: `ai-${Date.now()}`, title: `${source.title} (Copy)`, createdAt: today, updatedAt: today };
+      return [copy, ...prev];
+    });
+  };
+
+  const handleArchiveAnalysis = (id: string) => {
+    setAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, isArchived: true } : a)));
   };
 
   return (
@@ -52,6 +107,10 @@ export default function AIAnalystLayout() {
             onSelectAnalysis={handleSelectAnalysis}
             onNewAnalysis={() => setShowNewAnalysis(true)}
             onDeleteAnalysis={(id) => setAnalyses((prev) => prev.filter((a) => a.id !== id))}
+            onToggleFavorite={handleToggleFavorite}
+            onRenameAnalysis={handleRenameAnalysis}
+            onDuplicateAnalysis={handleDuplicateAnalysis}
+            onArchiveAnalysis={handleArchiveAnalysis}
             onToggleCollapse={() => setAiSidebarCollapsed(true)}
           />
         </div>

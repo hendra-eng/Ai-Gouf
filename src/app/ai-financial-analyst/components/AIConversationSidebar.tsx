@@ -25,7 +25,18 @@ interface Props {
   onSelectAnalysis: (type: ActiveAnalysisType) => void;
   onNewAnalysis: () => void;
   onDeleteAnalysis: (id: string) => void;
+  onToggleFavorite: (id: string) => void;
+  onRenameAnalysis: (id: string, title: string) => void;
+  onDuplicateAnalysis: (id: string) => void;
+  onArchiveAnalysis: (id: string) => void;
   onToggleCollapse: () => void;
+}
+
+// [RAPI] createdAt di-parse jadi tanggal ISO lokal (bukan string literal
+// hardcoded) supaya grouping TODAY/YESTERDAY/EARLIER selalu benar relatif ke
+// hari ini, tidak cuma cocok untuk seed data tertentu.
+function toISODate(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 export default function AIConversationSidebar({
@@ -34,25 +45,27 @@ export default function AIConversationSidebar({
   onSelectAnalysis,
   onNewAnalysis,
   onDeleteAnalysis,
+  onToggleFavorite,
+  onRenameAnalysis,
+  onDuplicateAnalysis,
+  onArchiveAnalysis,
   onToggleCollapse,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
-  const analysisTypeMap: Record<string, ActiveAnalysisType> = {
-    'ai-001': 'profit-decrease',
-    'ai-002': 'ar-risk',
-    'ai-003': 'cash-flow',
-    'ai-004': 'q-comparison',
-    'ai-005': 'expense-anomaly',
-  };
-
   const filteredAnalyses = analyses.filter(
-    (a) => searchQuery === '' || a.title.toLowerCase().includes(searchQuery.toLowerCase()) || a.type.toLowerCase().includes(searchQuery.toLowerCase())
+    (a) =>
+      !a.isArchived &&
+      (searchQuery === '' || a.title.toLowerCase().includes(searchQuery.toLowerCase()) || a.type.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const today = filteredAnalyses.filter((a) => a.createdAt === '2026-08-28');
-  const yesterday = filteredAnalyses.filter((a) => a.createdAt === '2026-08-27');
+  const todayStr = toISODate(new Date());
+  const yesterdayStr = toISODate(new Date(Date.now() - 86400000));
+
+  const today = filteredAnalyses.filter((a) => a.createdAt === todayStr);
+  const yesterday = filteredAnalyses.filter((a) => a.createdAt === yesterdayStr);
+  const earlier = filteredAnalyses.filter((a) => a.createdAt !== todayStr && a.createdAt !== yesterdayStr);
 
   const handleContextMenu = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -117,8 +130,8 @@ export default function AIConversationSidebar({
               <AnalysisItem
                 key={a.id}
                 analysis={a}
-                isActive={analysisTypeMap[a.id] === activeAnalysis}
-                onSelect={() => onSelectAnalysis(analysisTypeMap[a.id] || 'profit-decrease')}
+                isActive={a.analysisType === activeAnalysis}
+                onSelect={() => onSelectAnalysis(a.analysisType)}
                 onContextMenu={(e) => handleContextMenu(e, a.id)}
                 onDelete={() => onDeleteAnalysis(a.id)}
               />
@@ -133,8 +146,24 @@ export default function AIConversationSidebar({
               <AnalysisItem
                 key={a.id}
                 analysis={a}
-                isActive={analysisTypeMap[a.id] === activeAnalysis}
-                onSelect={() => onSelectAnalysis(analysisTypeMap[a.id] || 'profit-decrease')}
+                isActive={a.analysisType === activeAnalysis}
+                onSelect={() => onSelectAnalysis(a.analysisType)}
+                onContextMenu={(e) => handleContextMenu(e, a.id)}
+                onDelete={() => onDeleteAnalysis(a.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {earlier.length > 0 && (
+          <div className="mb-2">
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider px-3 py-1.5">EARLIER</p>
+            {earlier.map((a) => (
+              <AnalysisItem
+                key={a.id}
+                analysis={a}
+                isActive={a.analysisType === activeAnalysis}
+                onSelect={() => onSelectAnalysis(a.analysisType)}
                 onContextMenu={(e) => handleContextMenu(e, a.id)}
                 onDelete={() => onDeleteAnalysis(a.id)}
               />
@@ -168,10 +197,36 @@ export default function AIConversationSidebar({
           onMouseLeave={() => setContextMenu(null)}
         >
           {[
-            { icon: 'PencilIcon', label: 'Rename', action: () => toast.info('Rename analysis') },
-            { icon: 'StarIcon', label: 'Favorite', action: () => toast.success('Added to favorites') },
-            { icon: 'DocumentDuplicateIcon', label: 'Duplicate', action: () => toast.success('Analysis duplicated') },
-            { icon: 'ArchiveBoxIcon', label: 'Archive', action: () => toast.info('Analysis archived') },
+            {
+              icon: 'PencilIcon',
+              label: 'Rename',
+              action: () => {
+                const current = analyses.find((a) => a.id === contextMenu.id);
+                const nextTitle = window.prompt('Rename analysis', current?.title || '');
+                if (nextTitle && nextTitle.trim()) {
+                  onRenameAnalysis(contextMenu.id, nextTitle.trim());
+                  toast.success('Analysis renamed');
+                }
+              },
+            },
+            {
+              icon: 'StarIcon',
+              label: analyses.find((a) => a.id === contextMenu.id)?.isFavorite ? 'Unfavorite' : 'Favorite',
+              action: () => {
+                onToggleFavorite(contextMenu.id);
+                toast.success('Favorite updated');
+              },
+            },
+            {
+              icon: 'DocumentDuplicateIcon',
+              label: 'Duplicate',
+              action: () => { onDuplicateAnalysis(contextMenu.id); toast.success('Analysis duplicated'); },
+            },
+            {
+              icon: 'ArchiveBoxIcon',
+              label: 'Archive',
+              action: () => { onArchiveAnalysis(contextMenu.id); toast.info('Analysis archived'); },
+            },
             { icon: 'TrashIcon', label: 'Delete', action: () => { onDeleteAnalysis(contextMenu.id); setContextMenu(null); toast.success('Analysis deleted'); }, danger: true },
           ].map((item) => (
             <button

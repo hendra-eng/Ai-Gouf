@@ -205,10 +205,23 @@ export const paymentForecastData = [
 ];
 
 // ─── AI ANALYSES ─────────────────────────────────────────────────────────────
+// [RAPI] `analysisType` ditambahkan supaya AIConversationSidebar tidak perlu
+// lagi hardcode peta id->type terpisah (analysisTypeMap) yang gampang telat
+// diupdate saat entri baru ditambah lewat "New Analysis". Nilainya harus
+// sama persis dengan literal ActiveAnalysisType di AIAnalystLayout.tsx.
+export type AIAnalysisTemplateType =
+  | 'profit-decrease'
+  | 'ar-risk'
+  | 'cash-flow'
+  | 'q-comparison'
+  | 'expense-anomaly'
+  | 'ap-risk';
+
 export interface AIAnalysis {
   id: string;
   title: string;
   type: string;
+  analysisType: AIAnalysisTemplateType;
   createdAt: string;
   updatedAt: string;
   period: string;
@@ -218,11 +231,11 @@ export interface AIAnalysis {
 }
 
 export const aiAnalyses: AIAnalysis[] = [
-  { id: 'ai-001', title: 'Why did net profit decrease?', type: 'Profitability Analysis', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'High', isFavorite: true, isArchived: false },
-  { id: 'ai-002', title: 'Analyze receivables risk', type: 'Receivables Risk', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'High', isFavorite: false, isArchived: false },
-  { id: 'ai-003', title: 'Explain cash flow', type: 'Cash Flow Analysis', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'Medium', isFavorite: false, isArchived: false },
-  { id: 'ai-004', title: 'Compare Q2 vs Q1', type: 'Quarter Comparison', createdAt: '2026-08-27', updatedAt: '2026-08-27', period: 'Q1–Q2 2026', risk: 'Medium', isFavorite: true, isArchived: false },
-  { id: 'ai-005', title: 'Find unusual expenses', type: 'Anomaly Detection', createdAt: '2026-08-27', updatedAt: '2026-08-27', period: 'Jan–Aug 2026', risk: 'High', isFavorite: false, isArchived: false },
+  { id: 'ai-001', title: 'Why did net profit decrease?', type: 'Profitability Analysis', analysisType: 'profit-decrease', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'High', isFavorite: true, isArchived: false },
+  { id: 'ai-002', title: 'Analyze receivables risk', type: 'Receivables Risk', analysisType: 'ar-risk', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'High', isFavorite: false, isArchived: false },
+  { id: 'ai-003', title: 'Explain cash flow', type: 'Cash Flow Analysis', analysisType: 'cash-flow', createdAt: '2026-08-28', updatedAt: '2026-08-28', period: 'Jan–Aug 2026', risk: 'Medium', isFavorite: false, isArchived: false },
+  { id: 'ai-004', title: 'Compare Q2 vs Q1', type: 'Quarter Comparison', analysisType: 'q-comparison', createdAt: '2026-08-27', updatedAt: '2026-08-27', period: 'Q1–Q2 2026', risk: 'Medium', isFavorite: true, isArchived: false },
+  { id: 'ai-005', title: 'Find unusual expenses', type: 'Anomaly Detection', analysisType: 'expense-anomaly', createdAt: '2026-08-27', updatedAt: '2026-08-27', period: 'Jan–Aug 2026', risk: 'High', isFavorite: false, isArchived: false },
 ];
 
 // ─── FORMATTERS ──────────────────────────────────────────────────────────────

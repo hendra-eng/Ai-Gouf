@@ -3,7 +3,9 @@
 export type ReportCategory =
   | 'financial-statements' |'management' |'tax' |'ar-ap' |'budget' |'audit' |'custom';
 
-export type ReportFormat = 'PDF' | 'Excel' | 'CSV';
+// [BARU] 'Word' ditambahkan karena CALK asli (lihat downloadCalk() di
+// agent-ai/lib/api.js) bisa diunduh sebagai .docx, bukan cuma PDF/Excel/CSV.
+export type ReportFormat = 'PDF' | 'Excel' | 'CSV' | 'Word';
 export type ReportStatus = 'ready' | 'generating' | 'scheduled' | 'error';
 
 export interface Report {

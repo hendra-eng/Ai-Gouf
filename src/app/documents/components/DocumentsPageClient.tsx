@@ -3,8 +3,11 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { FolderOpen, FileText, Receipt, Landmark, FileCheck, ScrollText, ShieldCheck, BarChart3, Folder, Search, Upload, Download, LayoutGrid, List, X, Eye, Trash2, Link2, Tag, CheckCircle, AlertTriangle, Clock, Sparkles, Copy, Move, File, FileSpreadsheet, Image as ImageIcon, FileArchive,  } from 'lucide-react';
-import { documents, documentFolders, type FinancialDocument, type DocumentFolder,  } from '@/lib/documentsMockData';
+import { type FinancialDocument, type DocumentFolder,  } from '@/lib/documentsMockData';
 import { useCurrency } from '@/lib/currency';
+// [BARU] Sambungkan ke client aktif -- lihat lib/useDocumentsData.ts untuk
+// sumber backend & keterbatasan pemetaan (folder/status/confidence).
+import { useDocumentsData } from '../lib/useDocumentsData';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -378,6 +381,7 @@ const folderTypeMap: Record<string, string> = {
 };
 
 export default function DocumentsPageClient() {
+  const { documents, documentFolders, isSampleData, loading: loadingDocs } = useDocumentsData();
   const [activeFolder, setActiveFolder] = useState('folder-all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -410,7 +414,7 @@ export default function DocumentsPageClient() {
       );
     }
     return list;
-  }, [activeFolder, statusFilter, searchQuery]);
+  }, [documents, activeFolder, statusFilter, searchQuery]);
 
   const needsAttentionCount = documents.filter(d => d.status === 'Needs Attention' || (d.aiAnalysis?.flags?.length ?? 0) > 0).length;
   const pendingCount = documents.filter(d => d.status === 'Pending Review').length;
@@ -447,6 +451,15 @@ export default function DocumentsPageClient() {
           </div>
         </div>
       </div>
+
+      {isSampleData && !loadingDocs && (
+        <div className="max-w-screen-2xl mx-auto px-6 pt-4">
+          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertTriangle size={13} className="flex-shrink-0" />
+            Showing sample data — select a client with processed documents to see real files.
+          </div>
+        </div>
+      )}
 
       {/* Upload Zone */}
       {showUploadZone && (

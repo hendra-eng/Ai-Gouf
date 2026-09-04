@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { FileBarChart, TrendingUp, Receipt, ArrowLeftRight, Target, ShieldCheck, Sliders, LayoutGrid, Plus, Calendar, Upload, Search, Download, Eye, Copy, Clock, CheckCircle, AlertCircle, Loader2, FileText, FileSpreadsheet, MoreVertical, X, Printer, RefreshCw, Mail, Pause, Play, BarChart3,  } from 'lucide-react';
 import { reports as initialReports, reportCategories, scheduledReports as initialScheduledReports, reportPreviewData, type Report, type ReportCategory, type ScheduledReport,  } from '@/lib/reportsMockData';
 import { useCurrency } from '@/lib/currency';
+// [BARU] Sambungkan ke client aktif -- lihat lib/useReportsData.ts untuk
+// sumber backend & keterbatasan pemetaan (kategori tanpa backend, dst).
+import { useReportsData } from '../lib/useReportsData';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -692,7 +695,18 @@ function AddScheduleModal({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function ReportsPageClient() {
+  const { reports: liveReports, isSampleData, loading: loadingReports } = useReportsData();
   const [reportList, setReportList] = useState<Report[]>(initialReports);
+  // [BARU] `reportList` adalah state lokal yang bisa diubah langsung oleh
+  // aksi user (delete/duplicate/regenerate) -- karena itu tidak bisa langsung
+  // pakai hasil hook sebagai nilai render, tapi disinkronkan lewat efek ini
+  // tiap kali data real berubah (mis. client aktif ganti, atau fetch awal
+  // selesai). Efek ini SENGAJA menimpa perubahan lokal yang belum disimpan
+  // ke backend saat itu terjadi -- sama seperti halaman lain (Liabilities,
+  // dst) yang reset ke data server tiap client aktif berganti.
+  useEffect(() => {
+    setReportList(liveReports);
+  }, [liveReports]);
   const [scheduleList, setScheduleList] = useState<ScheduledReport[]>(initialScheduledReports);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -834,6 +848,15 @@ export default function ReportsPageClient() {
           </div>
         </div>
       </div>
+
+      {isSampleData && !loadingReports && (
+        <div className="max-w-screen-2xl mx-auto px-6 pt-4">
+          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertCircle size={13} className="flex-shrink-0" />
+            Showing sample data — select a client with generated reports to see real files.
+          </div>
+        </div>
+      )}
 
       <div className="max-w-screen-2xl mx-auto px-6 py-6">
         {/* Tabs */}

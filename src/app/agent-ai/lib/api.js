@@ -956,6 +956,18 @@ export async function riwayatCalk(clientId) {
 }
 
 /**
+ * [BARU] Riwayat semua perhitungan PPh Badan (Pasal 31E) yang pernah
+ * digenerate client ini, terbaru dulu -- dipakai halaman Reports (kategori
+ * "tax"). Lihat GET /api/client/{client_id}/pph-badan/riwayat di main.py.
+ * @param {number|string} clientId
+ * @param {number} [tahunPajak] -- opsional, filter 1 tahun pajak saja
+ */
+export async function riwayatPphBadan(clientId, tahunPajak) {
+  const query = tahunPajak ? `?tahun_pajak=${encodeURIComponent(tahunPajak)}` : "";
+  return request(`/api/client/${clientId}/pph-badan/riwayat${query}`);
+}
+
+/**
  * Unduh file CALK (docx/pdf) yang sudah digenerate -- pola SAMA dgn
  * exportLaporan18Sheet() di atas (endpoint balikin file binary +
  * butuh header Authorization, jadi tidak bisa lewat `<a href>` polos).

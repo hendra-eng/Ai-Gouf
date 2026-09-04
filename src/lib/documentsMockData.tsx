@@ -4,6 +4,12 @@ export type DocumentType = 'Invoice' | 'Receipt' | 'Bank Statement' | 'Tax Docum
 export type DocumentStatus = 'Processed' | 'Pending Review' | 'Needs Attention' | 'Archived';
 export type FileFormat = 'PDF' | 'Excel' | 'Image' | 'CSV' | 'Word';
 
+// [BARU] Field aiAnalysis di bawah ini dipakai juga oleh data ASLI (lihat
+// src/app/documents/lib/useDocumentsData.ts) -- backend generik
+// GET /api/client/{id}/riwayat TIDAK menyimpan skor keyakinan (confidence)
+// per dokumen, jadi field itu dibuat opsional supaya tidak perlu mengarang
+// angka untuk data real (hanya data contoh di bawah yang mengisinya).
+
 export interface DocumentFolder {
   id: string;
   name: string;
@@ -31,7 +37,7 @@ export interface FinancialDocument {
     taxAmount?: number;
     invoiceNumber?: string;
     flags?: string[];
-    confidence: number;
+    confidence?: number;
   };
 }
 

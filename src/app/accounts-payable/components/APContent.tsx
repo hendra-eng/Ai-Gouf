@@ -30,8 +30,12 @@ import {
 const APCharts = dynamic(() => import('./APCharts'), { ssr: false });
 const VendorDetailPanel = dynamic(() => import('./VendorDetailPanel'), { ssr: false });
 const BillDetailPanel = dynamic(() => import('./BillDetailPanel'), { ssr: false });
+// [BARU] Panel "AI Error Detection" -- menjalankan 7 pengecekan rule-based
+// Agent AI (deteksiKesalahanPembelian) atas dokumen pembelian client aktif.
+// Lihat lib/apErrorDetection.ts untuk detail jembatannya ke backend.
+const APErrorDetection = dynamic(() => import('./APErrorDetection'), { ssr: false });
 
-type APTab = 'overview' | 'vendors' | 'bills' | 'payment-planning';
+type APTab = 'overview' | 'vendors' | 'bills' | 'payment-planning' | 'error-detection';
 
 export default function APContent() {
   const router = useRouter();
@@ -81,6 +85,7 @@ export default function APContent() {
     { id: 'vendors', label: 'Vendors', count: vendors.length },
     { id: 'bills', label: 'Bills', count: bills.length },
     { id: 'payment-planning', label: 'Payment Planning' },
+    { id: 'error-detection', label: 'AI Error Detection' },
   ];
 
   const filteredBills = bills
@@ -463,6 +468,8 @@ export default function APContent() {
       )}
 
       {activeTab === 'payment-planning' && <APPaymentPlanning bills={bills} forecastData={forecastData} onMarkPaid={markBillPaid} />}
+
+      {activeTab === 'error-detection' && <APErrorDetection />}
 
       {selectedVendor && <VendorDetailPanel vendor={selectedVendor} bills={bills} onClose={() => setSelectedVendor(null)} />}
       {selectedBill && (
