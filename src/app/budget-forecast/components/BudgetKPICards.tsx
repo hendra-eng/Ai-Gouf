@@ -2,32 +2,25 @@
 import React from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
-import { formatIDR, FINANCIALS, BUDGET, FORECAST, calcVariance } from '@/lib/financialData';
+import { formatIDR, calcVariance } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-
-interface KPICard {
-  id: string;
-  label: string;
-  actual: number;
-  budget: number;
-  forecast: number;
-  icon: string;
-  invertVariance?: boolean;
-}
-
-const CARDS: KPICard[] = [
-  { id: 'rev-budget', label: 'Revenue Budget', actual: FINANCIALS.revenue, budget: BUDGET.revenue, forecast: FORECAST.revenue, icon: 'BanknotesIcon' },
-  { id: 'ebitda-budget', label: 'EBITDA Budget', actual: FINANCIALS.ebitda, budget: BUDGET.ebitda, forecast: FORECAST.ebitda, icon: 'ChartBarIcon' },
-  { id: 'net-profit-budget', label: 'Net Profit Budget', actual: FINANCIALS.netProfit, budget: BUDGET.netProfit, forecast: FORECAST.netProfit, icon: 'ArrowTrendingUpIcon' },
-  { id: 'cogs-budget', label: 'COGS Budget', actual: FINANCIALS.cogs, budget: BUDGET.cogs, forecast: FORECAST.cogs, icon: 'CubeIcon', invertVariance: true },
-  { id: 'opex-budget', label: 'OpEx Budget', actual: FINANCIALS.operatingExpenses, budget: BUDGET.operatingExpenses, forecast: FORECAST.operatingExpenses, icon: 'ReceiptPercentIcon', invertVariance: true },
-  { id: 'gross-profit-budget', label: 'Gross Profit Budget', actual: FINANCIALS.grossProfit, budget: BUDGET.grossProfit, forecast: FORECAST.grossProfit, icon: 'CurrencyDollarIcon' },
-  { id: 'rev-forecast', label: 'Revenue Forecast', actual: FINANCIALS.revenue, budget: BUDGET.revenue, forecast: FORECAST.revenue, icon: 'ArrowPathIcon' },
-  { id: 'total-variance', label: 'Total Budget Variance', actual: FINANCIALS.netProfit, budget: BUDGET.netProfit, forecast: FORECAST.netProfit, icon: 'ScaleIcon' },
-];
+import { useBudgetData } from '../lib/budgetBridge';
 
 export default function BudgetKPICards() {
   const { fx } = useCurrency();
+  const { lines, kpis } = useBudgetData();
+
+  const CARDS: { id: string; label: string; actual: number; budget: number; forecast: number; icon: string; invertVariance?: boolean }[] = [
+    { id: 'rev-budget', label: 'Revenue Budget', ...lines.revenue, icon: 'BanknotesIcon' },
+    { id: 'ebitda-budget', label: 'EBITDA Budget', ...lines.ebitda, icon: 'ChartBarIcon' },
+    { id: 'net-profit-budget', label: 'Net Profit Budget', ...lines.netProfit, icon: 'ArrowTrendingUpIcon' },
+    { id: 'cogs-budget', label: 'COGS Budget', ...lines.cogs, icon: 'CubeIcon', invertVariance: true },
+    { id: 'opex-budget', label: 'OpEx Budget', ...lines.operatingExpenses, icon: 'ReceiptPercentIcon', invertVariance: true },
+    { id: 'gross-profit-budget', label: 'Gross Profit Budget', ...lines.grossProfit, icon: 'CurrencyDollarIcon' },
+    { id: 'rev-forecast', label: 'Revenue Full-Year Forecast', ...lines.revenue, icon: 'ArrowPathIcon' },
+    { id: 'total-variance', label: 'Total Budget Variance', actual: kpis.totalActual, budget: kpis.totalBudget, forecast: lines.revenue.forecast, icon: 'ScaleIcon' },
+  ];
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-3">
       {CARDS.map((card) => {

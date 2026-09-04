@@ -1,9 +1,11 @@
 'use client';
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { EquityTrendRow } from '../lib/useEquityData';
 
-// Backend integration point: replace with API call to /api/equity/trend?period=...
-const trendData = [
+// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat EquityContent.tsx
+// (useEquityData()) untuk sumber data ASLI client aktif.
+const mockTrendData: EquityTrendRow[] = [
   { month: 'Jan', total: 3800, retained: 900, capital: 3000 },
   { month: 'Feb', total: 3920, retained: 950, capital: 3000 },
   { month: 'Mar', total: 4050, retained: 1000, capital: 3000 },
@@ -31,15 +33,22 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function EquityTrendChart() {
+interface EquityTrendChartProps {
+  trendData?: EquityTrendRow[];
+  companyName?: string | null;
+}
+
+export default function EquityTrendChart({ trendData, companyName }: EquityTrendChartProps) {
   const [activePeriod, setActivePeriod] = useState('YTD');
+  const trend = trendData && trendData.length > 0 ? trendData : mockTrendData;
+  const subtitle = companyName ? `Monthly equity composition — ${companyName}` : 'Monthly equity composition — 2026';
 
   return (
     <div className="fin-card p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
           <div className="text-[14px] font-600 text-foreground">Total Equity Trend</div>
-          <div className="text-[11px] text-muted-foreground">Monthly equity composition — 2026</div>
+          <div className="text-[11px] text-muted-foreground">{subtitle}</div>
         </div>
         <div className="flex gap-1">
           {periodOptions.map(p => (
@@ -55,7 +64,7 @@ export default function EquityTrendChart() {
       </div>
 
       <ResponsiveContainer width="100%" height={240}>
-        <AreaChart data={trendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+        <AreaChart data={trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="totalEqGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.15} />

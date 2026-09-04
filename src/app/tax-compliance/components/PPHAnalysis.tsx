@@ -3,17 +3,20 @@ import React from 'react';
 
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
+import { useTaxComplianceData } from '../lib/taxBridge';
 
-const PPH_ITEMS = [
-  { id: 'pph21', type: 'PPh 21', description: 'Employee income tax withholding', current: 38_400_000, previous: 37_200_000, outstanding: 38_400_000, status: 'Due Soon' },
-  { id: 'pph23', type: 'PPh 23', description: 'Withholding tax on services & royalties', current: 12_800_000, previous: 11_600_000, outstanding: 12_800_000, status: 'Due Soon' },
-  { id: 'pph25', type: 'PPh 25', description: 'Monthly corporate income tax installment', current: 36_600_000, previous: 35_200_000, outstanding: 36_600_000, status: 'Ready to File' },
-  { id: 'pph29', type: 'PPh 29', description: 'Annual corporate income tax settlement', current: 0, previous: 0, outstanding: 0, status: 'Not Due' },
-];
+const DESCRIPTIONS: Record<string, string> = {
+  'PPh 21': 'Employee income tax withholding',
+  'PPh 23': 'Withholding tax on services & royalties',
+  'PPh 25': 'Monthly corporate income tax installment',
+  'PPh 29': 'Annual corporate income tax settlement',
+};
 
 const STATUS_STYLES: Record<string, string> = {
   'Due Soon': 'bg-warning-subtle text-warning',
   'Ready to File': 'bg-info-subtle text-info',
+  'Calculated': 'bg-info-subtle text-info',
+  'Draft': 'bg-muted text-muted-foreground',
   'Paid': 'bg-positive-subtle text-positive',
   'Not Due': 'bg-muted text-muted-foreground',
   'Overdue': 'bg-negative-subtle text-negative',
@@ -21,6 +24,18 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function PPHAnalysis() {
   const { fx } = useCurrency();
+  const { byType } = useTaxComplianceData();
+  const items = byType.map((t) => ({
+    id: t.taxType.toLowerCase().replace(/\s+/g, ''),
+    type: t.taxType,
+    description: DESCRIPTIONS[t.taxType],
+    current: t.current,
+    previous: t.previous,
+    outstanding: t.outstanding,
+    status: t.current > 0 ? t.status : 'Not Due',
+  }));
+  const totalOutstanding = items.reduce((s, i) => s + i.outstanding, 0);
+
   const goToObligation = () => {
     document.getElementById('tax-obligations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -30,15 +45,15 @@ export default function PPHAnalysis() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-lg font-semibold text-foreground">PPh Analysis</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Pajak Penghasilan · Aug 2026</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Pajak Penghasilan · Latest posted period</p>
         </div>
         <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">
-          {fx(formatIDR(38_400_000 + 12_800_000 + 36_600_000, true))} Outstanding
+          {fx(formatIDR(totalOutstanding, true))} Outstanding
         </span>
       </div>
 
       <div className="space-y-3">
-        {PPH_ITEMS.map((item) => {
+        {items.map((item) => {
           const change = item.previous > 0 ? ((item.current - item.previous) / item.previous) * 100 : 0;
           const isUp = change >= 0;
           return (
@@ -47,7 +62,7 @@ export default function PPHAnalysis() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-sm font-bold text-foreground">{item.type}</span>
-                    <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${STATUS_STYLES[item.status]}`}>
+                    <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${STATUS_STYLES[item.status] || 'bg-muted text-muted-foreground'}`}>
                       {item.status}
                     </span>
                   </div>

@@ -1,9 +1,11 @@
 'use client';
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,  } from 'recharts';
+import type { AssetsTrendRow, AssetsCompositionSlice } from '../lib/useAssetsData';
 
-// Backend integration point: replace with API call to /api/assets/charts?period=...
-const compositionData = [
+// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat AssetsContent.tsx
+// (useAssetsData()) untuk sumber data ASLI client aktif.
+const mockCompositionData: AssetsCompositionSlice[] = [
   { name: 'Cash & Bank', value: 2960, pct: 43.3, color: '#2563eb' },
   { name: 'Accounts Receivable', value: 1240, pct: 18.1, color: '#7c3aed' },
   { name: 'Inventory', value: 420, pct: 6.1, color: '#16a34a' },
@@ -13,7 +15,7 @@ const compositionData = [
   { name: 'Other Assets', value: 370, pct: 5.4, color: '#64748b' },
 ];
 
-const trendData = [
+const mockTrendData: AssetsTrendRow[] = [
   { month: 'Jan', total: 5200, current: 3100, nonCurrent: 2100 },
   { month: 'Feb', total: 5450, current: 3250, nonCurrent: 2200 },
   { month: 'Mar', total: 5680, current: 3380, nonCurrent: 2300 },
@@ -41,8 +43,18 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function AssetsChartsSection() {
+interface AssetsChartsSectionProps {
+  trendData?: AssetsTrendRow[];
+  compositionData?: AssetsCompositionSlice[];
+  companyName?: string | null;
+  periodLabel?: string;
+}
+
+export default function AssetsChartsSection({ trendData, compositionData, companyName, periodLabel }: AssetsChartsSectionProps) {
   const [activePeriod, setActivePeriod] = useState('YTD');
+  const trend = trendData && trendData.length > 0 ? trendData : mockTrendData;
+  const composition = compositionData && compositionData.length > 0 ? compositionData : mockCompositionData;
+  const subtitle = companyName ? `Monthly asset values — ${companyName}` : 'Monthly asset values — PT Nusantara Teknologi Indonesia';
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
@@ -51,7 +63,7 @@ export default function AssetsChartsSection() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <div className="text-[14px] font-600 text-foreground">Total Assets Trend</div>
-            <div className="text-[11px] text-muted-foreground">Monthly asset values — PT Nusantara Teknologi Indonesia</div>
+            <div className="text-[11px] text-muted-foreground">{subtitle}</div>
           </div>
           <div className="flex gap-1">
             {periodOptions.map(p => (
@@ -66,7 +78,7 @@ export default function AssetsChartsSection() {
           </div>
         </div>
         <ResponsiveContainer width="100%" height={240}>
-          <AreaChart data={trendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <AreaChart data={trend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="totalAssetsGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.15} />
@@ -103,22 +115,22 @@ export default function AssetsChartsSection() {
       {/* Composition */}
       <div className="fin-card p-5">
         <div className="text-[14px] font-600 text-foreground mb-0.5">Asset Composition</div>
-        <div className="text-[11px] text-muted-foreground mb-4">By category — Aug 2026</div>
+        <div className="text-[11px] text-muted-foreground mb-4">By category{periodLabel ? ` — ${periodLabel}` : ' — Aug 2026'}</div>
         <div className="flex justify-center">
           <PieChart width={180} height={180}>
-            <Pie data={compositionData} cx={85} cy={85} innerRadius={52} outerRadius={82} dataKey="value" paddingAngle={2}>
-              {compositionData.map((entry, i) => (
+            <Pie data={composition} cx={85} cy={85} innerRadius={52} outerRadius={82} dataKey="value" paddingAngle={2}>
+              {composition.map((entry, i) => (
                 <Cell key={`comp-cell-${i}`} fill={entry.color} />
               ))}
             </Pie>
             <Tooltip
               contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}
-              formatter={(v: number, name: string) => [`Rp ${v.toLocaleString('id-ID')}M (${compositionData.find(d => d.name === name)?.pct ?? 0}%)`, name]}
+              formatter={(v: number, name: string) => [`Rp ${v.toLocaleString('id-ID')}M (${composition.find(d => d.name === name)?.pct ?? 0}%)`, name]}
             />
           </PieChart>
         </div>
         <div className="space-y-1.5 mt-2">
-          {compositionData.map((d, i) => (
+          {composition.map((d, i) => (
             <div key={`comp-legend-${i}`} className="flex items-center justify-between text-[11px]">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ background: d.color }} />

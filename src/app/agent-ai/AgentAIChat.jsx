@@ -18,6 +18,9 @@ import DeteksiKesalahanResults from "./components/DeteksiKesalahanResults";
 import * as api from "./lib/api";
 import { DOCUMENT_TYPES } from "./lib/documentTypes";
 import { ClientProvider, useClient } from "./context/ClientContext";
+// [BARU] Kabari halaman lain (Transaksi, dst) begitu upload file di sini
+// selesai diproses & terposting untuk client aktif -- lihat dataSync.ts.
+import { notifyClientDataChanged } from "@/lib/dataSync";
 import "./theme.css";
 
 // [MIGRASI Next.js] Asset dipindah ke /public/agent-ai/ (bukan lagi
@@ -906,6 +909,13 @@ function AgentAIChatInner() {
     // panel "Buat Laporan Keuangan Lengkap (18 Sheet)" di <HasilTerpadu>
     // (selalu tampil begitu ada client aktif) langsung siap dipakai.
     if (kategoriBaru.length > 0 && activeClientId) {
+      // [BARU] Data batch ini SUDAH tersimpan di backend untuk
+      // `activeClientId` (draf jurnal dibuat sebelum blok ini jalan) --
+      // kabari halaman lain (mis. Transaksi, kalau lagi dibuka di tab/
+      // client yang sama) sekarang juga, tidak perlu tunggu hasil
+      // auto-posting di bawah supaya baris "Unposted" pun langsung
+      // kelihatan meski auto-posting gagal/tertunda.
+      notifyClientDataChanged(activeClientId);
       try {
         const draftSaatIni = await api.daftarJurnalPosting(activeClientId, "draft");
         const hasilIdPerlu = [
@@ -945,6 +955,12 @@ function AgentAIChatInner() {
             ...prev,
             { role: "assistant", text: (bagianPosting + bagianPlaceholder).trim() },
           ]);
+        }
+        // [BARU] Status jurnal baru saja berubah lagi (draft -> posted) --
+        // kabari ulang supaya kolom "Status" di tabel Transaksi ikut
+        // update, bukan cuma baris barunya saja yang muncul.
+        if (totalDiposting > 0) {
+          notifyClientDataChanged(activeClientId);
         }
         // [FIX] Sebelumnya di sini ada pesan tambahan "📊 Laporan Keuangan
         // Lengkap (18 Sheet) siap dibuat -- lihat panel di bawah." begitu

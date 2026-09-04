@@ -2,7 +2,10 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const DATA = [
+interface GrowthShape { revenue: number; grossProfit: number; ebitda: number; netProfit: number; assets: number; equity: number; }
+interface Props { growth?: GrowthShape; }
+
+const SAMPLE_DATA = [
   { metric: 'Revenue', current: 12.8, previous: 9.4 },
   { metric: 'Gross Profit', current: 15.2, previous: 11.8 },
   { metric: 'EBITDA', current: 18.4, previous: 14.2 },
@@ -19,23 +22,34 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
       {payload.map((p, i) => (
         <div key={`growth-tt-${i}`} className="flex justify-between gap-4 mb-1">
           <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
-          <span className="text-xs font-semibold tabular-nums" style={{ color: p.color }}>+{p.value}%</span>
+          <span className="text-xs font-semibold tabular-nums" style={{ color: p.color }}>{p.value >= 0 ? '+' : ''}{p.value}%</span>
         </div>
       ))}
     </div>
   );
 };
 
-export default function GrowthChartInner() {
+export default function GrowthChartInner({ growth }: Props) {
+  const data = growth
+    ? [
+        { metric: 'Revenue', current: growth.revenue },
+        { metric: 'Gross Profit', current: growth.grossProfit },
+        { metric: 'EBITDA', current: growth.ebitda },
+        { metric: 'Net Profit', current: growth.netProfit },
+        { metric: 'Assets', current: growth.assets },
+        { metric: 'Equity', current: growth.equity },
+      ]
+    : SAMPLE_DATA;
+
   return (
     <ResponsiveContainer width="100%" height={160}>
-      <BarChart data={DATA} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barSize={14} barGap={2}>
+      <BarChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barSize={14} barGap={2}>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="metric" tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={35} />
         <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="previous" fill="var(--muted-foreground)" opacity={0.5} radius={[3, 3, 0, 0]} name="FY 2025" />
-        <Bar dataKey="current" fill="var(--primary)" radius={[3, 3, 0, 0]} name="FY 2026" />
+        {!growth && <Bar dataKey="previous" fill="var(--muted-foreground)" opacity={0.5} radius={[3, 3, 0, 0]} name="Previous" />}
+        <Bar dataKey="current" fill="var(--primary)" radius={[3, 3, 0, 0]} name={growth ? 'MoM Growth' : 'Current'} />
       </BarChart>
     </ResponsiveContainer>
   );

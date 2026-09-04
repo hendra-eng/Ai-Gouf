@@ -466,6 +466,72 @@ def susun_arus_kas_sederhana(jurnal: List[Dict[str, Any]], peta_coa: Dict[str, D
     }
 
 
+def susun_arus_kas_bulanan_setahun(jurnal: List[Dict[str, Any]], coa: List[Dict[str, Any]], tahun: int) -> Dict[str, Any]:
+    """
+    [BARU] Susun Arus Kas bulanan Jan-Des untuk satu tahun (metode
+    langsung) -- dipanggil dari susun_laporan_bulanan_setahun() supaya
+    halaman Cash Flow (financial-statements/cash-flow) bisa tersambung
+    ke data client aktif, mengikuti pola yang sama seperti Profit & Loss
+    (trial_balance_bulanan/laba_rugi_bulanan) yang sudah lebih dulu ada.
+
+    Beda dengan trial_balance_bulanan/balance_sheet_bulanan yang bersifat
+    KUMULATIF (saldo per akhir bulan ke-N sejak awal tahun), arus kas di
+    sini dihitung per PERGERAKAN bulan berjalan saja (bukan YTD) --
+    delegasikan ke susun_arus_kas_sederhana() yang sudah ada, dipanggil
+    12x dengan potongan jurnal SATU BULAN saja (bukan kumulatif) supaya
+    tidak menghitung ganda -- lalu dijumlahkan berjalan (running total)
+    utk dapat saldo kas awal/akhir tiap bulan.
+
+    Saldo kas awal TAHUN diambil dari total kolom saldo_awal semua akun
+    Kas/Bank di COA (sumber sama yang dipakai Neraca via
+    peta_akun_dari_coa) -- otomatis, tidak dihardcode.
+
+    Baris jurnal tanpa tanggal (tanggal=None) dimasukkan ke bulan Januari
+    SATU KALI SAJA (beda dari susun_laporan_bulanan_setahun yang sengaja
+    menghitungnya di SEMUA bulan -- itu aman utk saldo kumulatif, tapi
+    kalau dipakai di sini akan menggandakan arus kas per bulan berkali-
+    kali). Jumlahnya dilaporkan di meta.jumlah_baris_tanpa_tanggal.
+    """
+    jurnal = jurnal or []
+    peta_coa = peta_akun_dari_coa(coa)
+    saldo_kas_awal_tahun = round(
+        sum(info.get("saldo_awal", 0.0) for info in peta_coa.values() if _akun_kas(info)), 2
+    )
+    jumlah_tanpa_tanggal = sum(1 for b in jurnal if _tanggal_jurnal(b) is None)
+
+    per_bulan_hasil = []
+    kas_berjalan = saldo_kas_awal_tahun
+    for bulan in range(1, 13):
+        awal_bulan = date(tahun, bulan, 1)
+        akhir_bulan = _akhir_bulan(tahun, bulan)
+        jurnal_bulan_ini = [
+            b for b in jurnal
+            if (_tanggal_jurnal(b) is None and bulan == 1)
+            or (_tanggal_jurnal(b) is not None and awal_bulan <= _tanggal_jurnal(b) <= akhir_bulan)
+        ]
+        arus = susun_arus_kas_sederhana(jurnal_bulan_ini, peta_coa)
+        begin_cash = kas_berjalan
+        net_change = arus["total_arus_kas_bersih"]
+        end_cash = round(begin_cash + net_change, 2)
+        kas_berjalan = end_cash
+        per_bulan_hasil.append({
+            "bulan": bulan,
+            "begin_cash": round(begin_cash, 2),
+            "operating_cf": arus["arus_kas_operasi"],
+            "investing_cf": arus["arus_kas_investasi"],
+            "financing_cf": arus["arus_kas_pendanaan"],
+            "net_change": round(net_change, 2),
+            "end_cash": end_cash,
+            "rincian": arus["rincian"],
+        })
+
+    return {
+        "saldo_kas_awal_tahun": saldo_kas_awal_tahun,
+        "per_bulan": per_bulan_hasil,
+        "meta": {"jumlah_baris_tanpa_tanggal": jumlah_tanpa_tanggal},
+    }
+
+
 # ============================================================
 # 6. CALK (CATATAN ATAS LAPORAN KEUANGAN) -- kerangka otomatis
 # ============================================================
@@ -730,6 +796,7 @@ def susun_laporan_bulanan_setahun(
             "trial_balance_bulanan": {no_akun: {nama_akun, kategori, per_bulan: [12 saldo_akhir]}},
             "laba_rugi_bulanan": {"pendapatan_ytd": [...], "beban_ytd": [...], "laba_bersih_ytd": [...], "laba_bersih_bulanan": [...], "total_pendapatan_bulanan": [...]},
             "balance_sheet_bulanan": {"total_aset": [...], "total_liabilitas": [...], "total_ekuitas": [...], "balance": [...]},
+            "arus_kas_bulanan": {"saldo_kas_awal_tahun": ..., "per_bulan": [{bulan, begin_cash, operating_cf, investing_cf, financing_cf, net_change, end_cash, rincian}, ...]},
             "meta": {...}
         }
     """
@@ -817,11 +884,19 @@ def susun_laporan_bulanan_setahun(
 
     bulan_tidak_balance = [i + 1 for i, ok in enumerate(balance_sheet_bulanan["balance"]) if not ok]
 
+    # [BARU] Arus Kas bulanan -- ADDITIVE, dihitung dari `jurnal`+`coa` yang
+    # sama persis (fungsi murni terpisah, lihat susun_arus_kas_bulanan_setahun()
+    # di atas) supaya halaman Cash Flow bisa pakai endpoint laporan-bulanan
+    # yang SUDAH ADA (generate & GET), sama seperti Profit & Loss -- tidak
+    # perlu endpoint/pemanggilan API baru di frontend.
+    arus_kas_bulanan = susun_arus_kas_bulanan_setahun(jurnal, coa, tahun)
+
     hasil: Dict[str, Any] = {
         "tahun": tahun,
         "trial_balance_bulanan": trial_balance_bulanan,
         "laba_rugi_bulanan": laba_rugi_bulanan,
         "balance_sheet_bulanan": balance_sheet_bulanan,
+        "arus_kas_bulanan": arus_kas_bulanan,
         "meta": {
             "jumlah_baris_jurnal": len(jurnal),
             "jumlah_baris_tanpa_tanggal": jumlah_tanpa_tanggal,

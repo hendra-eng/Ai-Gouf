@@ -1,12 +1,15 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import FinancialStatusBadge from '@/components/ui/FinancialStatusBadge';
 import { useCurrency } from '@/lib/currency';
+import { formatIDR } from '@/lib/financialData';
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 
-// Backend integration point: replace with API call to /api/assets/transactions?page=...
-const transactions = [
+// Data contoh -- HANYA dipakai kalau client aktif belum punya jurnal
+// terkait akun aset tetap/penyusutan.
+const SAMPLE_TRANSACTIONS = [
   { id: 'TXN-AST-0881', date: '26 Aug 2026', asset: 'Server Dell PowerEdge R750', type: 'Depreciation', account: 'Beban Penyusutan', debit: 'Rp 3M', credit: '—', ref: 'JE-2026-0881', user: 'Siti Rahayu', status: 'paid' as const },
   { id: 'TXN-AST-0880', date: '25 Aug 2026', asset: 'Software ERP License', type: 'Depreciation', account: 'Beban Penyusutan', debit: 'Rp 3.83M', credit: '—', ref: 'JE-2026-0880', user: 'Siti Rahayu', status: 'paid' as const },
   { id: 'TXN-AST-0875', date: '20 Aug 2026', asset: 'CCTV System 48 kamera', type: 'Acquisition', account: 'Aset Tetap', debit: '—', credit: 'Rp 65M', ref: 'PO-2026-0145', user: 'Budi Santoso', status: 'active' as const },
@@ -16,9 +19,47 @@ const transactions = [
   { id: 'TXN-AST-0848', date: '01 Aug 2026', asset: 'Gedung Kantor Jakarta', type: 'Revaluation', account: 'Surplus Revaluasi', debit: '—', credit: 'Rp 50M', ref: 'REV-2026-0001', user: 'Rizky Wardana', status: 'active' as const },
 ];
 
+function detectAssetTxnType(accountName: string, description: string): string {
+  const t = `${accountName} ${description}`.toLowerCase();
+  if (/(penyusutan|depresiasi)/.test(t)) return 'Depreciation';
+  if (/(pelepasan|penghapusan|disposal|dijual)/.test(t)) return 'Disposal';
+  if (/(revaluasi|revaluation)/.test(t)) return 'Revaluation';
+  if (/(transfer|mutasi)/.test(t)) return 'Transfer';
+  return 'Acquisition';
+}
+
 export default function AssetTransactions() {
   const { fx } = useCurrency();
+  const { transactions: allTransactions } = useTransactions();
   const [search, setSearch] = useState('');
+
+  // Jembatan langsung ke TransactionsContext (sumber sama dgn halaman
+  // Transaksi/AP/AR) -- saring baris jurnal yang menyentuh akun Aset Tetap/
+  // Penyusutan/Akumulasi Penyusutan, tidak perlu bridge file terpisah
+  // karena ini derivasi sederhana (filter + relabel), sama seperti
+  // TaxReconciliation.tsx menyaring akun AR langsung dari context.
+  const realTransactions = useMemo(() => {
+    return allTransactions
+      .filter((t) => /(aset tetap|penyusutan|depresiasi|fixed asset)/i.test(t.accountName))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 20)
+      .map((t) => ({
+        id: t.id,
+        date: new Date(t.date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }),
+        asset: t.description || t.party || t.accountName,
+        type: detectAssetTxnType(t.accountName, t.description),
+        account: t.accountName,
+        debit: t.debit > 0 ? formatIDR(t.debit / 1_000_000, true) : '—',
+        credit: t.credit > 0 ? formatIDR(t.credit / 1_000_000, true) : '—',
+        ref: t.reference || t.jeId || t.txId,
+        user: '—',
+        status: (t.status === 'Posted' || t.status === 'Reconciled' ? 'paid' : 'active') as 'paid' | 'active',
+      }));
+  }, [allTransactions]);
+
+  const isSampleData = realTransactions.length === 0;
+  const transactions = isSampleData ? SAMPLE_TRANSACTIONS : realTransactions;
+
   const filtered = transactions.filter(t =>
     t.asset.toLowerCase().includes(search.toLowerCase()) ||
     t.id.toLowerCase().includes(search.toLowerCase()) ||

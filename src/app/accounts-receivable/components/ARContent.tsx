@@ -1,13 +1,30 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import KpiCard from '@/components/shared/KpiCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
-import { customers, invoices, collectionForecast, formatRupiah, riskColors, arStatusColors, type Customer, type Invoice, type ARStatus } from '@/lib/mockData';
+import { formatRupiah, riskColors, arStatusColors, type Customer, type Invoice, type ARStatus } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
+// [BARU] Data customers/invoices/KPI di halaman ini TIDAK LAGI dari mock
+// statis — semuanya diturunkan langsung dari transaksi kelompok Sales di
+// halaman Transaksi lewat TransactionsContext + arBridge.ts. Kalau ada
+// transaksi Sales baru/diedit, halaman ini otomatis ikut berubah (re-render)
+// karena sama-sama membaca context yang sama. Polanya sama persis dengan
+// APContent.tsx (Expense -> Account Payable).
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+import {
+  AR_REFERENCE_DATE,
+  invoicesFromTransactions,
+  customersFromInvoices,
+  arKpisFromInvoices,
+  arAgingFromInvoices,
+  arTrendFromInvoices,
+  sparklineFromTrend,
+  collectionForecastFromInvoices,
+} from '@/app/transactions/lib/arBridge';
 
 const ARCharts = dynamic(() => import('./ARCharts'), { ssr: false });
 const CustomerDetailPanel = dynamic(() => import('./CustomerDetailPanel'), { ssr: false });
@@ -18,6 +35,17 @@ type ARTab = 'overview' | 'customers' | 'invoices' | 'collections';
 export default function ARContent() {
   const router = useRouter();
   const { fx } = useCurrency();
+  const { transactions } = useTransactions();
+
+  // ─── Turunan dari transaksi Sales (sumber tunggal) ─────────────────────
+  const invoices = useMemo(() => invoicesFromTransactions(transactions), [transactions]);
+  const customers = useMemo(() => customersFromInvoices(invoices), [invoices]);
+  const kpiValues = useMemo(() => arKpisFromInvoices(invoices, customers), [invoices, customers]);
+  const agingData = useMemo(() => arAgingFromInvoices(invoices), [invoices]);
+  const trendData = useMemo(() => arTrendFromInvoices(invoices), [invoices]);
+  const forecastData = useMemo(() => collectionForecastFromInvoices(invoices), [invoices]);
+  const trendSparkline = useMemo(() => sparklineFromTrend(trendData), [trendData]);
+
   const [activeTab, setActiveTab] = useState<ARTab>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ARStatus | 'All'>('All');
@@ -75,15 +103,23 @@ export default function ARContent() {
     router.push('/ai-financial-analyst?analysis=ar-risk');
   };
 
-  const kpis = [
-    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: 'Rp 1.24M', subLabel: 'Jan–Aug 2026', change: '-4.3% vs prev period', changePositive: false, sparkline: [980, 1020, 995, 1065, 1038, 1162, 1085, 1240], color: 'var(--primary)' },
-    { id: 'kpi-ar-current', label: 'CURRENT RECEIVABLES', value: 'Rp 620M', subLabel: '50% of total AR', change: '+2.1% vs prev period', changePositive: true, sparkline: [580, 595, 610, 600, 615, 608, 612, 620], color: 'var(--success)' },
-    { id: 'kpi-ar-overdue', label: 'OVERDUE RECEIVABLES', value: 'Rp 320M', subLabel: '25.8% of total AR', change: '+18.4% vs prev period', changePositive: false, alert: true, sparkline: [180, 195, 210, 205, 240, 268, 295, 320], color: 'var(--danger)' },
-    { id: 'kpi-ar-week', label: 'DUE THIS WEEK', value: 'Rp 142M', subLabel: '3 invoices pending', change: '', changeNeutral: true, sparkline: [85, 92, 110, 98, 125, 132, 138, 142], color: 'var(--warning)' },
-    { id: 'kpi-ar-90', label: '90+ DAYS OVERDUE', value: 'Rp 85M', subLabel: 'Bad debt risk', change: '+32.8% vs prev period', changePositive: false, alert: true, sparkline: [42, 48, 52, 58, 62, 68, 74, 85], color: 'var(--danger)' },
-    { id: 'kpi-ar-dso', label: 'DSO', value: '42 days', subLabel: 'Days Sales Outstanding', change: '+4 days vs prev period', changePositive: false, sparkline: [38, 35, 40, 37, 44, 46, 43, 42], color: 'var(--warning)' },
-    { id: 'kpi-ar-collection', label: 'COLLECTION RATE', value: '87.4%', subLabel: 'YTD performance', change: '-1.2% vs prev period', changePositive: false, sparkline: [91, 89, 88, 90, 87, 86, 88, 87.4], color: 'var(--info)' },
-    { id: 'kpi-ar-baddebt', label: 'BAD DEBT EXPOSURE', value: 'Rp 72M', subLabel: '5.8% of total AR', change: '+28.6% vs prev period', changePositive: false, alert: true, sparkline: [35, 40, 45, 48, 55, 60, 66, 72], color: 'var(--danger)' },
+  // [DIUBAH] Sebelumnya 8 angka ini hardcoded string. Sekarang dihitung
+  // langsung dari `invoices` (hasil turunan transaksi Sales) lewat
+  // arKpisFromInvoices() — kalau ada transaksi Sales baru/status
+  // pembayarannya berubah, angka-angka ini otomatis ikut berubah, sama
+  // seperti kpiValues di APContent.tsx.
+  const overduePct = kpiValues.totalAR > 0 ? Math.round((kpiValues.overdueAR / kpiValues.totalAR) * 1000) / 10 : 0;
+  const ar90PlusPct = kpiValues.totalAR > 0 ? Math.round((kpiValues.ar90Plus / kpiValues.totalAR) * 1000) / 10 : 0;
+
+  const kpis: { id: string; label: string; value: string; subLabel: string; change: string; changeNeutral: boolean; changePositive?: boolean; alert?: boolean; sparkline: number[]; color: string }[] = [
+    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: formatRupiah(kpiValues.totalAR, true), subLabel: `Dari ${invoices.length} transaksi Sales`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
+    { id: 'kpi-ar-current', label: 'CURRENT RECEIVABLES', value: formatRupiah(kpiValues.currentAR, true), subLabel: `${kpiValues.totalAR > 0 ? Math.round((kpiValues.currentAR / kpiValues.totalAR) * 1000) / 10 : 0}% dari total AR`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--success)' },
+    { id: 'kpi-ar-overdue', label: 'OVERDUE RECEIVABLES', value: formatRupiah(kpiValues.overdueAR, true), subLabel: `${overduePct}% dari total AR`, change: '', changeNeutral: true, alert: kpiValues.overdueAR > 0, sparkline: trendSparkline, color: 'var(--danger)' },
+    { id: 'kpi-ar-week', label: 'DUE SOON', value: formatRupiah(kpiValues.dueSoonAR, true), subLabel: 'Jatuh tempo ≤ 7 hari', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
+    { id: 'kpi-ar-90', label: '90+ DAYS OVERDUE', value: formatRupiah(kpiValues.ar90Plus, true), subLabel: 'Bad debt risk', change: '', changeNeutral: true, alert: kpiValues.ar90Plus > 0, sparkline: trendSparkline, color: 'var(--danger)' },
+    { id: 'kpi-ar-dso', label: 'DSO', value: `${kpiValues.dso} days`, subLabel: 'Days Sales Outstanding', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
+    { id: 'kpi-ar-collection', label: 'COLLECTION RATE', value: `${kpiValues.collectionRate}%`, subLabel: 'YTD performance', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--info)' },
+    { id: 'kpi-ar-baddebt', label: 'BAD DEBT EXPOSURE', value: formatRupiah(kpiValues.badDebtExposure, true), subLabel: `${ar90PlusPct}% dari total AR`, change: '', changeNeutral: true, alert: kpiValues.badDebtExposure > 0, sparkline: trendSparkline, color: 'var(--danger)' },
   ];
 
   return (
@@ -94,9 +130,9 @@ export default function ARContent() {
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Receivable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor receivables, collections, customer exposure, and overdue balances.</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="badge-info">Jan 2026 – Aug 2026</span>
-            <span className="badge-neutral">YTD</span>
-            <span className="text-xs text-muted-foreground">Last updated: 28 Aug 2026, 16:11 WIB</span>
+            <span className="badge-info">Tersinkron dari Transaksi → Sales</span>
+            <span className="badge-neutral">{invoices.length} invoice · {customers.length} customer</span>
+            <span className="text-xs text-muted-foreground">Per {AR_REFERENCE_DATE}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -155,7 +191,16 @@ export default function ARContent() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && <ARCharts />}
+      {activeTab === 'overview' && (
+        <ARCharts
+          agingData={agingData}
+          trendData={trendData}
+          customers={customers}
+          totalAR={kpiValues.totalAR}
+          overdueAR={kpiValues.overdueAR}
+          dso={kpiValues.dso}
+        />
+      )}
 
       {activeTab === 'customers' && (
         <div className="bg-card border border-border rounded-lg shadow-card overflow-hidden">
@@ -185,51 +230,62 @@ export default function ARContent() {
                 </tr>
               </thead>
               <tbody>
-                {customers
-                  .filter((c) => searchQuery === '' || c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((c) => (
-                    <tr
-                      key={c.id}
-                      className="border-b border-border hover:bg-secondary/40 cursor-pointer transition-colors"
-                      onClick={() => setSelectedCustomer(c)}
-                    >
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium text-foreground">{c.name}</p>
-                          <p className="text-2xs text-muted-foreground">{c.code} · {c.industry}</p>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{fx(formatRupiah(c.totalAR, true))}</td>
-                      <td className="px-4 py-3 tabular-nums text-success">{fx(formatRupiah(c.currentAR, true))}</td>
-                      <td className="px-4 py-3 tabular-nums text-danger">{c.overdueAR > 0 ? fx(formatRupiah(c.overdueAR, true)) : '—'}</td>
-                      <td className="px-4 py-3 tabular-nums text-danger">{c.ar90Plus > 0 ? fx(formatRupiah(c.ar90Plus, true)) : '—'}</td>
-                      <td className="px-4 py-3 tabular-nums">{c.dso}d</td>
-                      <td className="px-4 py-3 tabular-nums text-muted-foreground">{fx(formatRupiah(c.creditLimit, true))}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${c.creditUtilization > 80 ? 'bg-danger' : c.creditUtilization > 60 ? 'bg-warning' : 'bg-success'}`}
-                              style={{ width: `${c.creditUtilization}%` }}
-                            />
+                {customers.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-12 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <Icon name="UsersIcon" size={32} className="text-muted-foreground/40" />
+                        <p className="text-sm font-medium text-muted-foreground">Belum ada transaksi Sales</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  customers
+                    .filter((c) => searchQuery === '' || c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .map((c) => (
+                      <tr
+                        key={c.id}
+                        className="border-b border-border hover:bg-secondary/40 cursor-pointer transition-colors"
+                        onClick={() => setSelectedCustomer(c)}
+                      >
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-medium text-foreground">{c.name}</p>
+                            <p className="text-2xs text-muted-foreground">{c.code} · {c.industry}</p>
                           </div>
-                          <span className="text-xs tabular-nums">{c.creditUtilization}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge label={c.riskLevel} className={riskColors[c.riskLevel]} />
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{c.lastPayment}</td>
-                      <td className="px-4 py-3">
-                        <button
-                          className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors"
-                          onClick={(e) => { e.stopPropagation(); toast.info(`Menu aksi untuk ${c.name}`); }}
-                        >
-                          <Icon name="EllipsisHorizontalIcon" size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums font-semibold text-foreground">{fx(formatRupiah(c.totalAR, true))}</td>
+                        <td className="px-4 py-3 tabular-nums text-success">{fx(formatRupiah(c.currentAR, true))}</td>
+                        <td className="px-4 py-3 tabular-nums text-danger">{c.overdueAR > 0 ? fx(formatRupiah(c.overdueAR, true)) : '—'}</td>
+                        <td className="px-4 py-3 tabular-nums text-danger">{c.ar90Plus > 0 ? fx(formatRupiah(c.ar90Plus, true)) : '—'}</td>
+                        <td className="px-4 py-3 tabular-nums">{c.dso}d</td>
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{fx(formatRupiah(c.creditLimit, true))}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${c.creditUtilization > 80 ? 'bg-danger' : c.creditUtilization > 60 ? 'bg-warning' : 'bg-success'}`}
+                                style={{ width: `${c.creditUtilization}%` }}
+                              />
+                            </div>
+                            <span className="text-xs tabular-nums">{c.creditUtilization}%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge label={c.riskLevel} className={riskColors[c.riskLevel]} />
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{c.lastPayment}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors"
+                            onClick={(e) => { e.stopPropagation(); toast.info(`Menu aksi untuk ${c.name}`); }}
+                          >
+                            <Icon name="EllipsisHorizontalIcon" size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                )}
               </tbody>
             </table>
           </div>
@@ -422,11 +478,11 @@ export default function ARContent() {
         </div>
       )}
 
-      {activeTab === 'collections' && <ARCollections />}
+      {activeTab === 'collections' && <ARCollections invoices={invoices} forecastData={forecastData} />}
 
       {/* Detail Panels */}
       {selectedCustomer && (
-        <CustomerDetailPanel customer={selectedCustomer} onClose={() => setSelectedCustomer(null)} />
+        <CustomerDetailPanel customer={selectedCustomer} invoices={invoices} onClose={() => setSelectedCustomer(null)} />
       )}
       {selectedInvoice && (
         <InvoiceDetailPanel invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
@@ -435,7 +491,10 @@ export default function ARContent() {
   );
 }
 
-function ARCollections() {
+// [DIUBAH] invoices & forecastData sekarang diterima lewat props (hasil
+// turunan transaksi Sales), bukan import langsung dari mockData — sama
+// seperti APPaymentPlanning di APContent.tsx.
+function ARCollections({ invoices, forecastData }: { invoices: Invoice[]; forecastData: ReturnType<typeof collectionForecastFromInvoices> }) {
   const { fx } = useCurrency();
   const critical = invoices.filter((i) => i.priority === 'Critical' && i.outstanding > 0);
   const high = invoices.filter((i) => i.priority === 'High' && i.outstanding > 0);
@@ -478,7 +537,11 @@ function ARCollections() {
             <span className="text-sm font-semibold text-danger">Critical — Immediate Action</span>
           </div>
           <div className="space-y-3">
-            {critical.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
+            {critical.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">Tidak ada invoice kritis</p>
+            ) : (
+              critical.map((inv) => <CollectionCard key={inv.id} inv={inv} />)
+            )}
           </div>
         </div>
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
@@ -487,7 +550,11 @@ function ARCollections() {
             <span className="text-sm font-semibold text-orange-700">High Priority</span>
           </div>
           <div className="space-y-3">
-            {high.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
+            {high.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">Tidak ada invoice high priority</p>
+            ) : (
+              high.map((inv) => <CollectionCard key={inv.id} inv={inv} />)
+            )}
           </div>
         </div>
         <div className="bg-warning-bg border border-yellow-200 rounded-lg p-4">
@@ -496,7 +563,11 @@ function ARCollections() {
             <span className="text-sm font-semibold text-warning">Medium Priority</span>
           </div>
           <div className="space-y-3">
-            {medium.map((inv) => <CollectionCard key={inv.id} inv={inv} />)}
+            {medium.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">Tidak ada invoice medium priority</p>
+            ) : (
+              medium.map((inv) => <CollectionCard key={inv.id} inv={inv} />)
+            )}
           </div>
         </div>
       </div>
@@ -505,7 +576,7 @@ function ARCollections() {
       <div className="bg-card border border-border rounded-lg p-5 shadow-card">
         <h3 className="text-md font-semibold text-foreground mb-4">Collection Forecast</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {collectionForecast.map((cf) => (
+          {forecastData.map((cf) => (
             <div key={`cf-${cf.period}`} className="text-center p-3 bg-secondary rounded-lg">
               <p className="text-xs text-muted-foreground font-medium mb-1">{cf.period}</p>
               <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(cf.expected, true))}</p>

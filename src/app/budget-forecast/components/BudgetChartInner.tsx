@@ -1,63 +1,89 @@
 'use client';
 import React from 'react';
-import { ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,  } from 'recharts';
+import { ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import type { MonthBudgetRow } from '../lib/budgetBridge';
 
-const generateData = (metric: string, horizon: string) => {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const count = horizon === '3M' ? 3 : horizon === '6M' ? 6 : 12;
-  const actualMonths = 8; // Jan-Aug are actual
+const ALL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  const baseValues: Record<string, { budget: number; actual: number; forecast: number }> = {
-    'Revenue': { budget: 850, actual: 702, forecast: 874 },
-    'COGS': { budget: 467, actual: 392, forecast: 477 },
-    'Gross Profit': { budget: 383, actual: 310, forecast: 397 },
-    'OpEx': { budget: 115, actual: 98, forecast: 112 },
-    'EBITDA': { budget: 213, actual: 193, forecast: 227 },
-    'Net Profit': { budget: 147, actual: 153, forecast: 159 },
-  };
-
-  const base = baseValues[metric] || baseValues['Revenue'];
-  const variance = [0.92, 0.95, 1.02, 0.88, 0.97, 1.05, 1.01, 0.98, null, null, null, null];
-  const forecastVar = [null, null, null, null, null, null, null, null, 1.03, 1.06, 1.08, 1.10];
-
-  return months.slice(0, count).map((m, i) => ({
-    month: m,
-    budget: Math.round(base.budget * (1 + i * 0.01)),
-    actual: i < actualMonths ? Math.round(base.actual * (variance[i] || 1) * (1 + i * 0.008)) : null,
-    forecast: i >= actualMonths - 1 ? Math.round(base.forecast * (forecastVar[i] || 1) * (1 + i * 0.009)) : null,
-    confidenceLow: i >= actualMonths - 1 ? Math.round(base.forecast * 0.92 * (1 + i * 0.007)) : null,
-    confidenceHigh: i >= actualMonths - 1 ? Math.round(base.forecast * 1.08 * (1 + i * 0.011)) : null,
-    isForecast: i >= actualMonths,
-  }));
+const METRIC_FIELDS: Record<string, { budget: keyof MonthBudgetRow; actual: keyof MonthBudgetRow }> = {
+  'Revenue': { budget: 'revBudget', actual: 'revActual' },
+  'COGS': { budget: 'cogsBudget', actual: 'cogsActual' },
+  'OpEx': { budget: 'opexBudget', actual: 'opexActual' },
+  'EBITDA': { budget: 'ebitdaBudget', actual: 'ebitdaActual' },
+  'Net Profit': { budget: 'netProfitBudget', actual: 'netProfitActual' },
 };
 
-interface Props {
-  metric: string;
-  horizon: string;
+/** "Gross Profit" bukan field langsung -- dihitung dari revenue - cogs per bulan. */
+function metricValue(row: MonthBudgetRow, metric: string, field: 'budget' | 'actual'): number {
+  if (metric === 'Gross Profit') {
+    return field === 'budget' ? row.revBudget - row.cogsBudget : row.revActual - row.cogsActual;
+  }
+  const cfg = METRIC_FIELDS[metric] || METRIC_FIELDS['Revenue'];
+  return Number(row[cfg[field]]);
 }
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated min-w-[180px]">
-      <p className="text-sm font-semibold text-foreground mb-2">{label} 2026</p>
+      <p className="text-sm font-semibold text-foreground mb-2">{label}</p>
       {payload.map((p, i) => (
-        <div key={`tt-${i}`} className="flex items-center justify-between gap-4 mb-1">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
-            <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
+        p.value == null ? null : (
+          <div key={`tt-${i}`} className="flex items-center justify-between gap-4 mb-1">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+              <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
+            </div>
+            <span className="text-xs font-semibold text-foreground tabular-nums">
+              Rp {p.value?.toFixed(0)}M
+            </span>
           </div>
-          <span className="text-xs font-semibold text-foreground tabular-nums">
-            Rp {p.value?.toFixed(0)}M
-          </span>
-        </div>
+        )
       ))}
     </div>
   );
 };
 
-export default function BudgetChartInner({ metric, horizon }: Props) {
-  const data = generateData(metric, horizon);
+interface Props {
+  metric: string;
+  horizon: string;
+  monthlyRows: MonthBudgetRow[];
+}
+
+export default function BudgetChartInner({ metric, horizon, monthlyRows }: Props) {
+  const count = horizon === '3M' ? 3 : horizon === '6M' ? 6 : 12;
+  const actualMonths = monthlyRows.length;
+
+  const recentActuals = monthlyRows.slice(-3).map((r) => metricValue(r, metric, 'actual'));
+  const forecastBase = recentActuals.length > 0 ? recentActuals.reduce((s, v) => s + v, 0) / recentActuals.length : 0;
+  const lastBudget = monthlyRows.length > 0 ? metricValue(monthlyRows[monthlyRows.length - 1], metric, 'budget') : 0;
+
+  const fullData = ALL_MONTHS.map((m, i) => {
+    const row = monthlyRows.find((r) => r.month === m);
+    const budget = row ? metricValue(row, metric, 'budget') : lastBudget;
+    const actual = row ? metricValue(row, metric, 'actual') : null;
+    const isForecastMonth = i >= actualMonths - 1;
+    const forecast = isForecastMonth ? Math.round(forecastBase * (1 + (i - actualMonths + 1) * 0.015)) : null;
+    return {
+      month: m,
+      budget: Math.round(budget),
+      actual,
+      forecast,
+      confidenceLow: isForecastMonth && forecast != null ? Math.round(forecast * 0.92) : null,
+      confidenceHigh: isForecastMonth && forecast != null ? Math.round(forecast * 1.08) : null,
+    };
+  });
+
+  const data = fullData.slice(0, count);
+  const lastActualMonth = actualMonths > 0 ? ALL_MONTHS[actualMonths - 1] : null;
+
+  if (actualMonths === 0) {
+    return (
+      <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+        No posted monthly data yet for this client.
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height={320}>
@@ -83,24 +109,10 @@ export default function BudgetChartInner({ metric, horizon }: Props) {
           width={55}
         />
         <Tooltip content={<CustomTooltip />} />
-        <ReferenceLine x="Aug" stroke="var(--muted-foreground)" strokeDasharray="4 4" strokeWidth={1} />
+        {lastActualMonth && <ReferenceLine x={lastActualMonth} stroke="var(--muted-foreground)" strokeDasharray="4 4" strokeWidth={1} />}
         <Bar dataKey="budget" fill="var(--chart-2)" opacity={0.4} radius={[3, 3, 0, 0]} name="budget" barSize={18} />
-        <Area
-          type="monotone"
-          dataKey="confidenceHigh"
-          stroke="none"
-          fill="url(#confidenceGrad)"
-          name="confidence"
-          legendType="none"
-        />
-        <Area
-          type="monotone"
-          dataKey="confidenceLow"
-          stroke="none"
-          fill="var(--background)"
-          name="confidence-low"
-          legendType="none"
-        />
+        <Area type="monotone" dataKey="confidenceHigh" stroke="none" fill="url(#confidenceGrad)" name="confidence" legendType="none" />
+        <Area type="monotone" dataKey="confidenceLow" stroke="none" fill="var(--background)" name="confidence-low" legendType="none" />
         <Line
           type="monotone"
           dataKey="actual"

@@ -9,8 +9,17 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
 } from 'recharts';
 import {
-  CF_CORE, CF_MONTHLY, CF_FORECAST, CF_AI_INSIGHTS, COMPANY, PL_CORE
+  CF_FORECAST, CF_AI_INSIGHTS
 } from '@/lib/financialData';
+// [BARU] CF_CORE, CF_MONTHLY, OPERATING/INVESTING/FINANCING_ITEMS &
+// RECENT_TRANSACTIONS sekarang REAL -- diambil dari client aktif lewat
+// useCashFlowData() (lihat lib/useCashFlowData.ts untuk detail & sumber
+// backend), bukan lagi konstanta hardcoded dari '@/lib/financialData'.
+// CF_FORECAST & CF_AI_INSIGHTS di atas TETAP data contoh -- backend belum
+// punya modul proyeksi/AI-insight utk Cash Flow (sama seperti
+// BUDGET_VS_ACTUAL & PL_AI_INSIGHTS di halaman Profit & Loss).
+import { useCashFlowData } from '../lib/useCashFlowData';
+import { useProfitLossData } from '../lib/useProfitLossData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import {
   ArrowDownTrayIcon, CalendarIcon, BuildingOfficeIcon,
@@ -35,15 +44,17 @@ function downloadCsv(rows: Record<string, string | number>[], filename: string) 
 }
 
 // ─── Cash Flow Waterfall Data ─────────────────────────────────────────────────
-const cfWaterfallRaw = [
-  { name: 'Beginning Cash', value: CF_CORE.beginningCash, type: 'total', color: '#6366f1' },
-  { name: 'Operating CF', value: CF_CORE.netOperatingCF, type: 'increase', color: '#0d9488' },
-  { name: 'Investing CF', value: CF_CORE.netInvestingCF, type: 'decrease', color: '#ef4444' },
-  { name: 'Financing CF', value: CF_CORE.netFinancingCF, type: 'decrease', color: '#f97316' },
-  { name: 'Ending Cash', value: CF_CORE.endingCash, type: 'total', color: '#059669' },
-];
-
-function buildCFWaterfall() {
+// [BARU] Sekarang fungsi murni yang menerima CF_CORE ASLI (dipanggil di
+// dalam komponen CashFlowPage), bukan lagi array module-level yang
+// dihitung sekali dari konstanta hardcoded saat import.
+function buildCFWaterfall(cfCore: { beginningCash: number; netOperatingCF: number; netInvestingCF: number; netFinancingCF: number; endingCash: number }) {
+  const cfWaterfallRaw = [
+    { name: 'Beginning Cash', value: cfCore.beginningCash, type: 'total', color: '#6366f1' },
+    { name: 'Operating CF', value: cfCore.netOperatingCF, type: 'increase', color: '#0d9488' },
+    { name: 'Investing CF', value: cfCore.netInvestingCF, type: 'decrease', color: '#ef4444' },
+    { name: 'Financing CF', value: cfCore.netFinancingCF, type: 'decrease', color: '#f97316' },
+    { name: 'Ending Cash', value: cfCore.endingCash, type: 'total', color: '#059669' },
+  ];
   let running = 0;
   return cfWaterfallRaw.map(d => {
     if (d.type === 'total') {
@@ -60,60 +71,6 @@ function buildCFWaterfall() {
     }
   });
 }
-const cfWaterfall = buildCFWaterfall();
-
-// ─── Operating Activities ─────────────────────────────────────────────────────
-const OPERATING_ITEMS = [
-  { name: 'Customer Collections', inflow: CF_CORE.customerCollections, outflow: 0, href: '/accounts-receivable' },
-  { name: 'Other Operating Income', inflow: Math.abs(CF_CORE.otherOperatingCF), outflow: 0, href: '/transactions' },
-  { name: 'Supplier Payments', inflow: 0, outflow: Math.abs(CF_CORE.supplierPayments), href: '/accounts-payable' },
-  { name: 'Payroll Payments', inflow: 0, outflow: Math.abs(CF_CORE.payrollPayments), href: '/transactions' },
-  { name: 'Tax Payments', inflow: 0, outflow: Math.abs(CF_CORE.taxPayments), href: '/transactions' },
-  { name: 'Operating Expenses', inflow: 0, outflow: Math.abs(CF_CORE.operatingExpensesCF), href: '/transactions' },
-];
-
-const INVESTING_ITEMS = [
-  { name: 'Asset Sales', inflow: Math.abs(CF_CORE.assetSales), outflow: 0, href: '/assets' },
-  { name: 'Asset Purchases', inflow: 0, outflow: Math.abs(CF_CORE.assetPurchases), href: '/assets' },
-  { name: 'Equipment Purchases', inflow: 0, outflow: Math.abs(CF_CORE.equipmentPurchases), href: '/assets' },
-  { name: 'Investments', inflow: 0, outflow: Math.abs(CF_CORE.investments), href: '/assets' },
-];
-
-const FINANCING_ITEMS = [
-  { name: 'Debt Proceeds', inflow: Math.abs(CF_CORE.debtProceeds), outflow: 0, href: '/liabilities' },
-  { name: 'Debt Repayment', inflow: 0, outflow: Math.abs(CF_CORE.debtRepayment), href: '/liabilities' },
-  { name: 'Dividend Payments', inflow: 0, outflow: Math.abs(CF_CORE.dividendPayments), href: '/equity' },
-  { name: 'Lease Payments', inflow: 0, outflow: Math.abs(CF_CORE.leasePayments), href: '/liabilities' },
-  { name: 'Other Financing', inflow: 0, outflow: Math.abs(CF_CORE.otherFinancingCF), href: '/transactions' },
-];
-
-// ─── Cash Flow Drivers ────────────────────────────────────────────────────────
-const CF_INFLOWS = [
-  { name: 'Customer Payments', value: CF_CORE.customerCollections, color: '#0d9488' },
-  { name: 'Debt Proceeds', value: Math.abs(CF_CORE.debtProceeds), color: '#6366f1' },
-  { name: 'Asset Sales', value: Math.abs(CF_CORE.assetSales), color: '#10b981' },
-  { name: 'Other Income', value: Math.abs(CF_CORE.otherOperatingCF), color: '#3b82f6' },
-];
-
-const CF_OUTFLOWS = [
-  { name: 'Vendor Payments', value: Math.abs(CF_CORE.supplierPayments), color: '#ef4444' },
-  { name: 'Payroll', value: Math.abs(CF_CORE.payrollPayments), color: '#f97316' },
-  { name: 'Taxes', value: Math.abs(CF_CORE.taxPayments), color: '#f59e0b' },
-  { name: 'Operating Expenses', value: Math.abs(CF_CORE.operatingExpensesCF), color: '#dc2626' },
-  { name: 'Asset Purchases', value: Math.abs(CF_CORE.assetPurchases) + Math.abs(CF_CORE.equipmentPurchases), color: '#b91c1c' },
-  { name: 'Debt Repayment', value: Math.abs(CF_CORE.debtRepayment), color: '#9f1239' },
-  { name: 'Dividends', value: Math.abs(CF_CORE.dividendPayments), color: '#7f1d1d' },
-];
-
-// ─── Recent Transactions ──────────────────────────────────────────────────────
-const RECENT_TRANSACTIONS = [
-  { date: '2026-08-28', id: 'TXN-2026-0842', type: 'Receipt', desc: 'Customer Payment - Bank Mandiri', account: 'Cash', inflow: 420, outflow: 0, party: 'Bank Mandiri', ref: 'INV-2026-0234', status: 'Completed' },
-  { date: '2026-08-27', id: 'TXN-2026-0841', type: 'Payment', desc: 'Vendor Payment - PT Infratech', account: 'Bank BCA', inflow: 0, outflow: 180, party: 'PT Infratech', ref: 'PO-2026-0198', status: 'Completed' },
-  { date: '2026-08-26', id: 'TXN-2026-0840', type: 'Payment', desc: 'Payroll - August 2026', account: 'Bank BCA', inflow: 0, outflow: 85, party: 'Employees', ref: 'PAY-2026-08', status: 'Completed' },
-  { date: '2026-08-25', id: 'TXN-2026-0839', type: 'Receipt', desc: 'Customer Payment - Telkom', account: 'Cash', inflow: 315, outflow: 0, party: 'Telkom Indonesia', ref: 'INV-2026-0228', status: 'Completed' },
-  { date: '2026-08-24', id: 'TXN-2026-0838', type: 'Payment', desc: 'Tax Payment - PPh 25', account: 'Bank BRI', inflow: 0, outflow: 54, party: 'DJP', ref: 'TAX-2026-08', status: 'Completed' },
-  { date: '2026-08-22', id: 'TXN-2026-0837', type: 'Payment', desc: 'Equipment Purchase', account: 'Bank BCA', inflow: 0, outflow: 120, party: 'PT Lenovo Indonesia', ref: 'PO-2026-0195', status: 'Completed' },
-];
 
 // ─── Activity Section ─────────────────────────────────────────────────────────
 function ActivitySection({
@@ -205,22 +162,52 @@ function ActivitySection({
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function CashFlowPage() {
+  const {
+    loading, isSampleData, companyName, periodLabel,
+    CF_CORE, CF_MONTHLY, OPERATING_ITEMS, INVESTING_ITEMS, FINANCING_ITEMS, RECENT_TRANSACTIONS,
+  } = useCashFlowData();
+  // [BARU] Net Profit (utk rasio Cash Conversion) diambil dari hook Profit
+  // & Loss yang SUDAH tersambung ke client aktif -- bukan lagi PL_CORE
+  // hardcoded dari financialData.tsx, supaya rasio ini konsisten dengan
+  // angka Net Profit ASLI yang tampil di halaman Profit & Loss.
+  const { PL_CORE } = useProfitLossData();
   const { currency } = useCurrency();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
   const [forecastRange, setForecastRange] = useState<'3M' | '6M' | '12M'>('6M');
   const [chartView, setChartView] = useState<'area' | 'bar'>('area');
   const [periodMode, setPeriodMode] = useState<'Actual' | 'Forecast'>('Actual');
 
-  const monthlyBurn = Math.abs(CF_CORE.netOperatingCF - CF_CORE.customerCollections) / 8;
-  const runway = CF_CORE.endingCash / monthlyBurn;
+  // [BARU] "Cash Flow Drivers" (inflow/outflow terbesar) sekarang diturunkan
+  // dari OPERATING/INVESTING/FINANCING_ITEMS ASLI, bukan array hardcoded.
+  const CF_DRIVER_COLORS = ['#0d9488', '#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6'];
+  const CF_OUTFLOW_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#dc2626', '#b91c1c', '#9f1239', '#7f1d1d'];
+  const semuaItemCF = [...OPERATING_ITEMS, ...INVESTING_ITEMS, ...FINANCING_ITEMS];
+  const CF_INFLOWS = semuaItemCF
+    .filter(it => it.inflow > 0)
+    .sort((a, b) => b.inflow - a.inflow)
+    .map((it, i) => ({ name: it.name, value: it.inflow, color: CF_DRIVER_COLORS[i % CF_DRIVER_COLORS.length] }));
+  const CF_OUTFLOWS = semuaItemCF
+    .filter(it => it.outflow > 0)
+    .sort((a, b) => b.outflow - a.outflow)
+    .map((it, i) => ({ name: it.name, value: it.outflow, color: CF_OUTFLOW_COLORS[i % CF_OUTFLOW_COLORS.length] }));
+
+  const hitungPerubahan = (skrg: number, dulu?: number) => (dulu ? ((skrg - dulu) / Math.abs(dulu)) * 100 : 0);
+  const statusDari = (v: number) => (v >= 0 ? 'positive' as const : 'negative' as const);
+  const bulanTerakhir = CF_MONTHLY[CF_MONTHLY.length - 1];
+  const bulanSebelumnya = CF_MONTHLY.length > 1 ? CF_MONTHLY[CF_MONTHLY.length - 2] : undefined;
+
+  const monthlyBurn = Math.abs(CF_CORE.netOperatingCF - CF_CORE.customerCollections) / Math.max(CF_MONTHLY.length, 1);
+  const runway = monthlyBurn > 0 ? CF_CORE.endingCash / monthlyBurn : 0;
   const freeCashFlow = CF_CORE.netOperatingCF + CF_CORE.netInvestingCF;
-  const cashConversion = (CF_CORE.netOperatingCF / PL_CORE.netProfit) * 100;
+  const cashConversion = PL_CORE.netProfit ? (CF_CORE.netOperatingCF / PL_CORE.netProfit) * 100 : 0;
   const minCashThreshold = 800;
 
   const allCFData = [
     ...CF_MONTHLY.map(d => ({ ...d, isForecast: false })),
     ...CF_FORECAST.slice(0, forecastRange === '3M' ? 3 : forecastRange === '6M' ? 6 : 12),
   ];
+
+  const cfWaterfall = buildCFWaterfall(CF_CORE);
 
   const operatingInflow = CF_CORE.customerCollections + Math.abs(CF_CORE.otherOperatingCF);
   const operatingOutflow = Math.abs(CF_CORE.supplierPayments) + Math.abs(CF_CORE.payrollPayments) + Math.abs(CF_CORE.taxPayments) + Math.abs(CF_CORE.operatingExpensesCF);
@@ -255,7 +242,7 @@ export default function CashFlowPage() {
       { Item: 'Cash Runway (months)', Amount: Number(runway.toFixed(1)) },
       { Item: 'Free Cash Flow', Amount: freeCashFlow },
     ];
-    downloadCsv(rows, `cash-flow-${COMPANY.name.replace(/\s+/g, '-')}-${Date.now()}.csv`);
+    downloadCsv(rows, `cash-flow-${companyName.replace(/\s+/g, '-')}-${Date.now()}.csv`);
     toast.success('Export berhasil', { description: 'Cash Flow Statement diunduh sebagai CSV.' });
   }
 
@@ -272,12 +259,17 @@ export default function CashFlowPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-teal-600 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full flex items-center gap-1.5">
               <CalendarIcon className="w-3.5 h-3.5" />
-              January 2026 – August 2026
+              {periodLabel} {new Date().getFullYear()}
             </span>
             <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full flex items-center gap-1.5">
               <BuildingOfficeIcon className="w-3.5 h-3.5" />
-              {COMPANY.name}
+              {companyName}
             </span>
+            {isSampleData && (
+              <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                Showing sample data
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {(['Actual', 'Forecast'] as const).map(m => (
@@ -309,7 +301,7 @@ export default function CashFlowPage() {
               <div>
                 <p className="text-indigo-200 text-sm font-medium">Cash Position</p>
                 <p className="text-4xl font-bold">{fx(CF_CORE.endingCash)}</p>
-                <p className="text-indigo-200 text-xs mt-1">As of August 31, 2026</p>
+                <p className="text-indigo-200 text-xs mt-1">As of end of {bulanTerakhir?.month || periodLabel} {new Date().getFullYear()}</p>
               </div>
             </div>
             <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-3 lg:ml-6">
@@ -333,14 +325,14 @@ export default function CashFlowPage() {
 
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <KPICard title="Operating CF" value={fx(CF_CORE.netOperatingCF)} change={8.4} previousValue={fx(2620)} status="positive" sparkline={CF_MONTHLY.map(d => d.operatingCF)} />
-          <KPICard title="Investing CF" value={fx(CF_CORE.netInvestingCF)} change={-12.0} previousValue={fx(-590)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.investingCF))} />
-          <KPICard title="Financing CF" value={fx(CF_CORE.netFinancingCF)} change={-5.2} previousValue={fx(-686)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.financingCF))} />
-          <KPICard title="Net Change" value={fx(CF_CORE.endingCash - CF_CORE.beginningCash)} change={22.1} previousValue={fx(920)} status="positive" sparkline={CF_MONTHLY.map(d => d.netChange)} />
-          <KPICard title="Ending Cash" value={fx(CF_CORE.endingCash)} change={17.5} previousValue={fx(2520)} status="positive" sparkline={CF_MONTHLY.map(d => d.endCash)} />
-          <KPICard title="Cash Runway" value={`${runway.toFixed(1)} mo`} change={4.3} previousValue="4.6 mo" status="positive" />
-          <KPICard title="Free Cash Flow" value={fx(freeCashFlow)} change={6.8} previousValue={fx(2100)} status="positive" sparkline={CF_MONTHLY.map(d => d.operatingCF + d.investingCF)} />
-          <KPICard title="Cash Conversion" value={`${cashConversion.toFixed(1)}%`} change={2.1} previousValue="152.5%" status="positive" />
+          <KPICard title="Operating CF" value={fx(CF_CORE.netOperatingCF)} change={hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF)} previousValue={fx(bulanSebelumnya?.operatingCF ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF))} sparkline={CF_MONTHLY.map(d => d.operatingCF)} />
+          <KPICard title="Investing CF" value={fx(CF_CORE.netInvestingCF)} change={hitungPerubahan(bulanTerakhir?.investingCF ?? 0, bulanSebelumnya?.investingCF)} previousValue={fx(bulanSebelumnya?.investingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.investingCF))} />
+          <KPICard title="Financing CF" value={fx(CF_CORE.netFinancingCF)} change={hitungPerubahan(bulanTerakhir?.financingCF ?? 0, bulanSebelumnya?.financingCF)} previousValue={fx(bulanSebelumnya?.financingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.financingCF))} />
+          <KPICard title="Net Change" value={fx(CF_CORE.endingCash - CF_CORE.beginningCash)} change={hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange)} previousValue={fx(bulanSebelumnya?.netChange ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange))} sparkline={CF_MONTHLY.map(d => d.netChange)} />
+          <KPICard title="Ending Cash" value={fx(CF_CORE.endingCash)} change={hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash)} previousValue={fx(bulanSebelumnya?.endCash ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash))} sparkline={CF_MONTHLY.map(d => d.endCash)} />
+          <KPICard title="Cash Runway" value={`${runway.toFixed(1)} mo`} status={runway >= 6 ? 'positive' : runway >= 3 ? 'neutral' : 'negative'} />
+          <KPICard title="Free Cash Flow" value={fx(freeCashFlow)} status={statusDari(freeCashFlow)} sparkline={CF_MONTHLY.map(d => d.operatingCF + d.investingCF)} />
+          <KPICard title="Cash Conversion" value={`${cashConversion.toFixed(1)}%`} status={statusDari(cashConversion)} />
         </div>
 
         {/* ── Cash Flow Movement Chart ── */}
@@ -571,7 +563,7 @@ export default function CashFlowPage() {
             <div>
               <h3 className="font-semibold text-slate-800">Cash Flow Forecast</h3>
               <p className="text-slate-500 text-xs mt-0.5">
-                <span className="text-teal-600 font-medium">Actual</span> data through Aug 2026 ·
+                <span className="text-teal-600 font-medium">Actual</span> data through {bulanTerakhir?.month || 'current period'} {new Date().getFullYear()} ·
                 <span className="text-indigo-500 font-medium ml-1">Forecast</span> shown with dashed line — not actual results
               </p>
             </div>
@@ -608,7 +600,7 @@ export default function CashFlowPage() {
                   contentStyle={{ borderRadius: 8, fontSize: 11 }}
                 />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <ReferenceLine x="Aug" stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Forecast →', position: 'top', fontSize: 10, fill: '#94a3b8' }} />
+                <ReferenceLine x={bulanTerakhir?.month} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Forecast →', position: 'top', fontSize: 10, fill: '#94a3b8' }} />
                 <ReferenceLine y={minCashThreshold} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'Min Threshold', position: 'right', fontSize: 9, fill: '#ef4444' }} />
                 <Area type="monotone" dataKey="endCash" name="Cash Position" stroke="#0d9488" strokeWidth={2.5} fill="url(#gradActual)" dot={false} />
                 <Area type="monotone" dataKey="operatingCF" name="Operating CF" stroke="#6366f1" strokeWidth={2} fill="url(#gradForecast)" dot={false} strokeDasharray="0" />
@@ -676,11 +668,16 @@ export default function CashFlowPage() {
             <p className="text-slate-500 text-xs mt-0.5">Key cash flow quality metrics</p>
           </div>
           <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* [BARU] "current" sekarang dihitung dari CF_CORE/PL_CORE ASLI.
+                "prev" & "benchmark" TETAP nilai statis -- backend belum expose
+                rasio periode sebelumnya utk metrik gabungan ini (beda dgn
+                change% KPI card di atas yang bisa dihitung dari CF_MONTHLY
+                bulan-ke-bulan) -- best-effort, bukan sumber kebenaran. */}
             {[
-              { label: 'OCF Margin', current: `${((CF_CORE.netOperatingCF / 8420) * 100).toFixed(1)}%`, prev: '31.1%', trend: 'up', benchmark: '28%' },
+              { label: 'OCF Margin', current: `${(PL_CORE.revenue ? (CF_CORE.netOperatingCF / PL_CORE.revenue) * 100 : 0).toFixed(1)}%`, prev: '31.1%', trend: 'up', benchmark: '28%' },
               { label: 'Free Cash Flow', current: fx(freeCashFlow), prev: fx(2100), trend: 'up', benchmark: '—' },
               { label: 'Cash Conversion', current: `${cashConversion.toFixed(1)}%`, prev: '152.5%', trend: 'up', benchmark: '100%' },
-              { label: 'OCF / Net Profit', current: `${(CF_CORE.netOperatingCF / PL_CORE.netProfit).toFixed(2)}x`, prev: '1.52x', trend: 'up', benchmark: '1.0x' },
+              { label: 'OCF / Net Profit', current: `${(PL_CORE.netProfit ? CF_CORE.netOperatingCF / PL_CORE.netProfit : 0).toFixed(2)}x`, prev: '1.52x', trend: 'up', benchmark: '1.0x' },
               { label: 'CapEx', current: fx(Math.abs(CF_CORE.assetPurchases) + Math.abs(CF_CORE.equipmentPurchases)), prev: fx(580), trend: 'down', benchmark: '—' },
               { label: 'Cash Burn Rate', current: fx(monthlyBurn) + '/mo', prev: fx(monthlyBurn * 0.95) + '/mo', trend: 'neutral', benchmark: '—' },
             ].map(m => (

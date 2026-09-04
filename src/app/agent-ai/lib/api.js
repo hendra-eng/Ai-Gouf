@@ -694,6 +694,34 @@ export async function ambilKpiBento(clientId, tahun /* optional */) {
   return request(`/api/client/${clientId}/kpi-bento${query}`);
 }
 
+// [BARU] Laporan bulanan (Trial Balance/Laba Rugi/Balance Sheet Jan-Des
+// dalam 1 tabel, tiap bulan kumulatif YTD) -- dipakai halaman Financial
+// Statements (Profit & Loss, Balance Sheet, Cash Flow) utk chart & tabel
+// tren bulanan. Lihat backend/modules/laporan_keuangan.py::
+// susun_laporan_bulanan_setahun() utk skema lengkap hasilnya.
+//
+// GET akan 404 kalau laporan bulanan tahun ini belum PERNAH digenerate
+// utk client ini -- pemanggil (lihat useLaporanBulananTahun.ts) sebaiknya
+// fallback ke generateLaporanBulanan() saat ambilLaporanBulanan() gagal.
+export async function ambilLaporanBulanan(clientId, tahun) {
+  return request(`/api/client/${clientId}/laporan-bulanan/${encodeURIComponent(tahun)}`);
+}
+
+/**
+ * Generate ulang laporan bulanan tahun ini dari jurnal+COA client SEKARANG
+ * (snapshot baru, menimpa hasil `laporan_bulanan_{tahun}` yang lama --
+ * beda dari laporan-keuangan/generate yang selalu bikin histori baru).
+ * @param {number|string} clientId
+ * @param {number} tahun
+ */
+export async function generateLaporanBulanan(clientId, tahun) {
+  return request(`/api/client/${clientId}/laporan-bulanan/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tahun }),
+  });
+}
+
 /** URL unduh template Excel kosong 31 sheet -- dipakai lewat <a href>, bukan fetch. */
 export function urlTemplateLaporanKeuangan() {
   return `${API_BASE_URL}/api/template-laporan-keuangan`;

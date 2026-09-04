@@ -2,12 +2,14 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { useBudgetData } from '../lib/budgetBridge';
 
 const SCENARIOS = ['Base Case', 'Optimistic', 'Conservative'];
 const VIEWS = ['Actual', 'Budget', 'Forecast'];
 const BRANCHES = ['All Branches', 'Jakarta HQ', 'Surabaya', 'Bandung'];
 
 export default function BudgetHeader() {
+  const { periodLabel } = useBudgetData();
   const [scenario, setScenario] = useState('Base Case');
   const [view, setView] = useState('Actual');
   const [branch, setBranch] = useState('All Branches');

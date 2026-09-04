@@ -1,41 +1,30 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { formatIDR } from '@/lib/financialData';
+import { useCurrency } from '@/lib/currency';
+import { useTaxComplianceData, type TaxObligation } from '../lib/taxBridge';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-interface TaxEvent {
-  day: number;
-  label: string;
-  type: 'payment' | 'filing' | 'spt' | 'reconciliation' | 'close';
-  color: string;
-}
-
-const EVENTS: TaxEvent[] = [
-  { day: 1, label: 'Tax Period Close Aug', type: 'close', color: 'bg-muted-foreground/60' },
-  { day: 10, label: 'PPh 21 Payment', type: 'payment', color: 'bg-warning' },
-  { day: 10, label: 'PPh 23 Payment', type: 'payment', color: 'bg-warning' },
-  { day: 15, label: 'PPh 25 Installment', type: 'payment', color: 'bg-chart-2' },
-  { day: 20, label: 'Tax Reconciliation', type: 'reconciliation', color: 'bg-chart-4' },
-  { day: 30, label: 'PPN Masa Filing', type: 'filing', color: 'bg-chart-3' },
-  { day: 30, label: 'PPN Masa Payment', type: 'payment', color: 'bg-warning' },
-];
-
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// Data hanya tersedia untuk September 2026 (mock). Bulan lain akan tampil kosong.
-const DATA_YEAR = 2026;
-const DATA_MONTH = 8; // September (0-indexed)
-const TODAY = { year: 2026, month: 7, day: 26 }; // 26 Aug 2026 (real "today" di app ini)
+const TYPE_COLOR: Record<string, string> = {
+  'PPh 21': 'bg-warning',
+  'PPh 23': 'bg-warning',
+  'PPh 25': 'bg-chart-2',
+  'PPh 29': 'bg-chart-4',
+  'PPN': 'bg-chart-3',
+};
 
 export default function TaxCalendar() {
+  const { fx } = useCurrency();
+  const { obligations, referenceDate } = useTaxComplianceData();
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [viewDate, setViewDate] = useState(new Date(DATA_YEAR, DATA_MONTH, 1));
+  const [viewDate, setViewDate] = useState(new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1));
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const monthLabel = `${MONTHS[month]} ${year}`;
-  const hasEventData = year === DATA_YEAR && month === DATA_MONTH;
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthStartDay = new Date(year, month, 1).getDay();
@@ -47,18 +36,30 @@ export default function TaxCalendar() {
     ...Array(monthStartDay).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
-
-  // Pad to complete last row
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const getEventsForDay = (day: number) => (hasEventData ? EVENTS.filter((e) => e.day === day) : []);
+  // Kelompokkan obligasi (jatuh tempo) yang jatuh di bulan/tahun yang sedang dilihat, per tanggal.
+  const eventsByDay = useMemo(() => {
+    const map = new Map<number, TaxObligation[]>();
+    obligations.forEach((o) => {
+      if (o.dueDate.getFullYear() === year && o.dueDate.getMonth() === month) {
+        const day = o.dueDate.getDate();
+        const list = map.get(day) || [];
+        list.push(o);
+        map.set(day, list);
+      }
+    });
+    return map;
+  }, [obligations, year, month]);
+
+  const getEventsForDay = (day: number) => eventsByDay.get(day) || [];
 
   return (
     <div id="tax-calendar" className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Tax Compliance Calendar</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{monthLabel} · Tax events and deadlines</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{monthLabel} · Due dates from posted &amp; upcoming tax obligations</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={goToPrevMonth} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -74,11 +75,10 @@ export default function TaxCalendar() {
       {/* Legend */}
       <div className="flex flex-wrap gap-3 mb-4">
         {[
-          { label: 'Payment', color: 'bg-warning' },
-          { label: 'Filing', color: 'bg-chart-3' },
-          { label: 'Installment', color: 'bg-chart-2' },
-          { label: 'Reconciliation', color: 'bg-chart-4' },
-          { label: 'Period Close', color: 'bg-muted-foreground/60' },
+          { label: 'PPh 21/23', color: 'bg-warning' },
+          { label: 'PPN', color: 'bg-chart-3' },
+          { label: 'PPh 25', color: 'bg-chart-2' },
+          { label: 'PPh 29', color: 'bg-chart-4' },
         ].map((l) => (
           <div key={`cal-legend-${l.label}`} className="flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full ${l.color}`} />
@@ -101,7 +101,7 @@ export default function TaxCalendar() {
         {cells.map((day, i) => {
           const events = day ? getEventsForDay(day) : [];
           const isSelected = day === selectedDay;
-          const isToday = day === TODAY.day && year === TODAY.year && month === TODAY.month;
+          const isToday = day === referenceDate.getDate() && year === referenceDate.getFullYear() && month === referenceDate.getMonth();
 
           return (
             <div
@@ -124,10 +124,10 @@ export default function TaxCalendar() {
                     {events.slice(0, 2).map((ev, ei) => (
                       <div
                         key={`ev-${day}-${ei}`}
-                        className={`text-2xs px-1 py-0.5 rounded text-white font-medium truncate ${ev.color}`}
-                        title={ev.label}
+                        className={`text-2xs px-1 py-0.5 rounded text-white font-medium truncate ${TYPE_COLOR[ev.taxType] || 'bg-muted-foreground/60'}`}
+                        title={`${ev.taxType} · ${ev.period}`}
                       >
-                        {ev.label.split(' ')[0]}
+                        {ev.taxType}
                       </div>
                     ))}
                     {events.length > 2 && (
@@ -148,8 +148,9 @@ export default function TaxCalendar() {
           <div className="space-y-2">
             {getEventsForDay(selectedDay).map((ev, i) => (
               <div key={`detail-ev-${selectedDay}-${i}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted">
-                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${ev.color}`} />
-                <span className="text-sm text-foreground font-medium">{ev.label}</span>
+                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_COLOR[ev.taxType] || 'bg-muted-foreground/60'}`} />
+                <span className="text-sm text-foreground font-medium">{ev.taxType} · {ev.period}</span>
+                <span className="text-xs text-muted-foreground">{fx(formatIDR(ev.taxAmount, true))}</span>
                 <button
                   onClick={() => document.getElementById('tax-obligations')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   className="ml-auto text-xs text-primary hover:text-primary/80 transition-colors"

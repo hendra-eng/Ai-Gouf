@@ -1,15 +1,25 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useTaxComplianceData } from '../lib/taxBridge';
 
 const TAX_TYPES = ['All Types', 'PPN', 'PPh 21', 'PPh 23', 'PPh 25', 'PPh 29'];
 const STATUSES = ['All Status', 'Draft', 'Calculated', 'Ready to File', 'Filed', 'Paid', 'Due Soon', 'Overdue'];
-const PERIODS = ['Aug 2026', 'Jul 2026', 'Q3 2026', 'Q2 2026', 'H1 2026', 'FY 2026'];
 
 export default function TaxHeader() {
+  const { obligations, statusCounts } = useTaxComplianceData();
+  const isCompliant = statusCounts.overdue === 0;
+
+  // Daftar periode diambil dari periode yang benar-benar ada di obligasi
+  // (real), jatuh ke default kalau belum ada data sama sekali.
+  const PERIODS = useMemo(() => {
+    const unique = Array.from(new Set(obligations.map((o) => o.period)));
+    return unique.length > 0 ? unique.slice(0, 6) : ['No data yet'];
+  }, [obligations]);
+
   const [taxType, setTaxType] = useState('All Types');
   const [status, setStatus] = useState('All Status');
-  const [period, setPeriod] = useState('Aug 2026');
+  const [period, setPeriod] = useState(PERIODS[0]);
   const [showType, setShowType] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
   const [showPeriod, setShowPeriod] = useState(false);
@@ -22,9 +32,9 @@ export default function TaxHeader() {
             <Icon name="DocumentCheckIcon" size={18} className="text-chart-3" />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Tax &amp; Compliance</h1>
-          <span className="px-2.5 py-0.5 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20 flex items-center gap-1">
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1 ${isCompliant ? 'bg-positive-subtle text-positive border-positive/20' : 'bg-negative-subtle text-negative border-negative/20'}`}>
             <Icon name="ShieldCheckIcon" size={11} />
-            Compliant
+            {isCompliant ? 'Compliant' : 'Needs Attention'}
           </span>
         </div>
         <p className="text-sm text-muted-foreground ml-11">

@@ -6,9 +6,15 @@ import KPICard from '@/components/financial/KPICard';
 import AIInsightsPanel from '@/components/financial/AIInsightsPanel';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import {
-  MONTHLY_PL, PL_CORE, MARGINS, REVENUE_BY_CATEGORY, REVENUE_BY_CUSTOMER,
-  EXPENSE_BREAKDOWN, BUDGET_VS_ACTUAL, PL_AI_INSIGHTS, COMPANY
+  REVENUE_BY_CUSTOMER, BUDGET_VS_ACTUAL, PL_AI_INSIGHTS,
 } from '@/lib/financialData';
+// [BARU] Angka P&L (PL_CORE, MARGINS, MONTHLY_PL, REVENUE_BY_CATEGORY,
+// EXPENSE_BREAKDOWN) & nama/periode perusahaan sekarang REAL -- diambil
+// dari client aktif lewat useProfitLossData() (lihat lib/useProfitLossData.ts
+// utk detail sumber & keterbatasannya). REVENUE_BY_CUSTOMER/BUDGET_VS_ACTUAL/
+// PL_AI_INSIGHTS di atas TETAP data contoh (financialData.tsx) -- belum ada
+// sumber data backend utk itu.
+import { useProfitLossData, type MonthlyPLRow } from '../lib/useProfitLossData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import {
   ChevronDownIcon, ChevronRightIcon, FunnelIcon,
@@ -49,22 +55,28 @@ const MONTHLY_COL_KEY: Record<string, string> = {
 };
 
 // ─── Waterfall Chart Data ───────────────────────────────────────────────────
-const waterfallData = [
-  { name: 'Revenue', value: 8420, type: 'total', color: '#0d9488' },
-  { name: 'COGS', value: -4700, type: 'decrease', color: '#ef4444' },
-  { name: 'Gross Profit', value: 3720, type: 'subtotal', color: '#0d9488' },
-  { name: 'OpEx', value: -1180, type: 'decrease', color: '#f97316' },
-  { name: 'EBITDA', value: 2310, type: 'subtotal', color: '#0d9488' },
-  { name: 'D&A', value: -210, type: 'decrease', color: '#f97316' },
-  { name: 'EBIT', value: 2330, type: 'subtotal', color: '#0d9488' },
-  { name: 'Interest', value: -148, type: 'decrease', color: '#f97316' },
-  { name: 'EBT', value: 2182, type: 'subtotal', color: '#0d9488' },
-  { name: 'Tax', value: -436, type: 'decrease', color: '#ef4444' },
-  { name: 'Net Profit', value: 1840, type: 'total', color: '#059669' },
-];
+// [BARU] Sekarang diturunkan dari PL_CORE ASLI (lihat pemanggilan
+// buildWaterfallBars(PL_CORE) di komponen ProfitLossPage), bukan array
+// hardcoded lagi -- supaya chart ini otomatis ikut angka client aktif.
+function buatWaterfallData(pl: { revenue: number; cogs: number; grossProfit: number; operatingExpenses: number; ebitda: number; da: number; ebit: number; interestExpense: number; ebt: number; incomeTax: number; netProfit: number }) {
+  return [
+    { name: 'Revenue', value: pl.revenue, type: 'total', color: '#0d9488' },
+    { name: 'COGS', value: -pl.cogs, type: 'decrease', color: '#ef4444' },
+    { name: 'Gross Profit', value: pl.grossProfit, type: 'subtotal', color: '#0d9488' },
+    { name: 'OpEx', value: -pl.operatingExpenses, type: 'decrease', color: '#f97316' },
+    { name: 'EBITDA', value: pl.ebitda, type: 'subtotal', color: '#0d9488' },
+    { name: 'D&A', value: -pl.da, type: 'decrease', color: '#f97316' },
+    { name: 'EBIT', value: pl.ebit, type: 'subtotal', color: '#0d9488' },
+    { name: 'Interest', value: -pl.interestExpense, type: 'decrease', color: '#f97316' },
+    { name: 'EBT', value: pl.ebt, type: 'subtotal', color: '#0d9488' },
+    { name: 'Tax', value: -pl.incomeTax, type: 'decrease', color: '#ef4444' },
+    { name: 'Net Profit', value: pl.netProfit, type: 'total', color: '#059669' },
+  ];
+}
 
 // Build waterfall bars with base (invisible) + value
-function buildWaterfallBars() {
+function buildWaterfallBars(pl: Parameters<typeof buatWaterfallData>[0]) {
+  const waterfallData = buatWaterfallData(pl);
   let running = 0;
   return waterfallData.map(d => {
     if (d.type === 'total' || d.type === 'subtotal') {
@@ -78,8 +90,6 @@ function buildWaterfallBars() {
     }
   });
 }
-
-const waterfallBars = buildWaterfallBars();
 
 // ─── Custom Tooltip ─────────────────────────────────────────────────────────
 const ProfitTooltip = ({ active, payload, label }: any) => {
@@ -155,11 +165,19 @@ function MarginCard({ label, value, prev, change, benchmark }: {
 }
 
 // ─── Monthly Table Row ────────────────────────────────────────────────────────
-function MonthlyRow({ row, expanded, onToggle }: { row: typeof MONTHLY_PL[0]; expanded: boolean; onToggle: () => void }) {
+function MonthlyRow({
+  row, expanded, onToggle, revenueByCategory, expenseBreakdown,
+}: {
+  row: MonthlyPLRow & { grossMargin: number; netMargin: number };
+  expanded: boolean;
+  onToggle: () => void;
+  revenueByCategory: { name: string; pct: number }[];
+  expenseBreakdown: { name: string; pct: number }[];
+}) {
   const { currency } = useCurrency();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
-  const gm = ((row.grossProfit / row.revenue) * 100).toFixed(1);
-  const nm = ((row.netProfit / row.revenue) * 100).toFixed(1);
+  const gm = row.revenue ? ((row.grossProfit / row.revenue) * 100).toFixed(1) : '0.0';
+  const nm = row.revenue ? ((row.netProfit / row.revenue) * 100).toFixed(1) : '0.0';
   return (
     <>
       <tr
@@ -193,7 +211,7 @@ function MonthlyRow({ row, expanded, onToggle }: { row: typeof MONTHLY_PL[0]; ex
             <div className="grid grid-cols-3 gap-4 text-xs">
               <div>
                 <p className="font-semibold text-slate-600 mb-1.5">Revenue Breakdown</p>
-                {REVENUE_BY_CATEGORY.slice(0, 3).map(r => (
+                {revenueByCategory.slice(0, 3).map(r => (
                   <div key={r.name} className="flex justify-between py-0.5">
                     <span className="text-slate-500">{r.name}</span>
                     <span className="font-medium text-slate-700">{fx(Math.round(row.revenue * r.pct / 100))}</span>
@@ -202,7 +220,7 @@ function MonthlyRow({ row, expanded, onToggle }: { row: typeof MONTHLY_PL[0]; ex
               </div>
               <div>
                 <p className="font-semibold text-slate-600 mb-1.5">Expense Breakdown</p>
-                {EXPENSE_BREAKDOWN.slice(0, 3).map(e => (
+                {expenseBreakdown.slice(0, 3).map(e => (
                   <div key={e.name} className="flex justify-between py-0.5">
                     <span className="text-slate-500">{e.name}</span>
                     <span className="font-medium text-slate-700">{fx(Math.round(row.opEx * e.pct / 100))}</span>
@@ -221,7 +239,7 @@ function MonthlyRow({ row, expanded, onToggle }: { row: typeof MONTHLY_PL[0]; ex
                 </div>
                 <div className="flex justify-between py-0.5">
                   <span className="text-slate-500">EBITDA Margin</span>
-                  <span className="font-medium text-indigo-600">{((row.ebitda / row.revenue) * 100).toFixed(1)}%</span>
+                  <span className="font-medium text-indigo-600">{(row.revenue ? (row.ebitda / row.revenue) * 100 : 0).toFixed(1)}%</span>
                 </div>
               </div>
             </div>
@@ -237,6 +255,10 @@ const DONUT_COLORS = ['#0d9488', '#6366f1', '#f97316', '#10b981', '#3b82f6', '#8
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function ProfitLossPage() {
+  const {
+    loading, isSampleData, companyName, periodLabel,
+    PL_CORE, MARGINS, MONTHLY_PL, REVENUE_BY_CATEGORY, EXPENSE_BREAKDOWN,
+  } = useProfitLossData();
   const { currency } = useCurrency();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
   const [chartRange, setChartRange] = useState<'6M' | 'YTD' | '12M'>('YTD');
@@ -284,7 +306,7 @@ export default function ProfitLossPage() {
       { Item: 'Gross Margin %', Amount: MARGINS.grossMargin },
       { Item: 'Net Margin %', Amount: MARGINS.netMargin },
     ];
-    downloadCsv(rows, `profit-loss-${COMPANY.name.replace(/\s+/g, '-')}-${Date.now()}.csv`);
+    downloadCsv(rows, `profit-loss-${companyName.replace(/\s+/g, '-')}-${Date.now()}.csv`);
     toast.success('Export berhasil', { description: 'Profit & Loss Statement diunduh sebagai CSV.' });
   }
 
@@ -296,11 +318,13 @@ export default function ProfitLossPage() {
 
   const enrichedMonthlyPL = MONTHLY_PL.map(row => ({
     ...row,
-    grossMargin: (row.grossProfit / row.revenue) * 100,
-    netMargin: (row.netProfit / row.revenue) * 100,
+    grossMargin: row.revenue ? (row.grossProfit / row.revenue) * 100 : 0,
+    netMargin: row.revenue ? (row.netProfit / row.revenue) * 100 : 0,
   }));
 
-  const avgNetMargin = enrichedMonthlyPL.reduce((s, r) => s + r.netMargin, 0) / enrichedMonthlyPL.length;
+  const avgNetMargin = enrichedMonthlyPL.length
+    ? enrichedMonthlyPL.reduce((s, r) => s + r.netMargin, 0) / enrichedMonthlyPL.length
+    : 0;
 
   const sortedMonthlyPL = [...enrichedMonthlyPL]
     .filter(row => (monthlyFilter === 'strong' ? row.netMargin >= avgNetMargin : true))
@@ -343,7 +367,32 @@ export default function ProfitLossPage() {
   const sparkEBITDA = MONTHLY_PL.map(d => d.ebitda);
   const sparkNP = MONTHLY_PL.map(d => d.netProfit);
 
+  // [BARU] "change"/"previousValue" tiap KPI sekarang dihitung MoM (bulan
+  // terakhir vs bulan sebelumnya) dari MONTHLY_PL asli, bukan angka
+  // hardcoded lagi.
+  const bulanTerakhir = MONTHLY_PL[MONTHLY_PL.length - 1];
+  const bulanSebelumnya = MONTHLY_PL.length > 1 ? MONTHLY_PL[MONTHLY_PL.length - 2] : undefined;
+  const hitungPerubahan = (skrg: number, dulu?: number) => (dulu ? ((skrg - dulu) / Math.abs(dulu)) * 100 : 0);
+  const statusDari = (v: number) => (v >= 0 ? 'positive' as const : 'negative' as const);
+
   const revenueData = revenueTab === 'category' ? REVENUE_BY_CATEGORY : REVENUE_BY_CUSTOMER;
+
+  const waterfallBars = useMemo(() => buildWaterfallBars(PL_CORE), [PL_CORE]);
+
+  // [BARU] Kolom "Budget" tetap target ilustratif (belum ada modul Budget
+  // yang expose data lewat API) -- tapi kolom "Actual" & variance-nya
+  // sekarang disinkronkan ke PL_CORE ASLI, supaya tidak beda dengan angka
+  // Revenue/EBITDA/dst yang sudah ditampilkan di bagian lain halaman ini.
+  const ACTUAL_DARI_PL_CORE: Record<string, number> = {
+    Revenue: PL_CORE.revenue, COGS: PL_CORE.cogs, 'Gross Profit': PL_CORE.grossProfit,
+    'Operating Expenses': PL_CORE.operatingExpenses, EBITDA: PL_CORE.ebitda, 'Net Profit': PL_CORE.netProfit,
+  };
+  const budgetVsActual = BUDGET_VS_ACTUAL.map(row => {
+    const actual = ACTUAL_DARI_PL_CORE[row.item] ?? row.actual;
+    const variance = actual - row.budget;
+    const variancePct = row.budget ? (variance / Math.abs(row.budget)) * 100 : 0;
+    return { ...row, actual, variance, variancePct };
+  });
 
   return (
     <>
@@ -359,14 +408,22 @@ export default function ProfitLossPage() {
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-semibold text-teal-600 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full flex items-center gap-1.5">
                 <CalendarIcon className="w-3.5 h-3.5" />
-                January 2026 – August 2026
+                {periodLabel}
               </span>
               <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full flex items-center gap-1.5">
                 <BuildingOfficeIcon className="w-3.5 h-3.5" />
-                {COMPANY.name}
+                {companyName}
               </span>
+              {isSampleData && (
+                <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                  Showing sample data
+                </span>
+              )}
+              {loading && (
+                <span className="text-xs font-medium text-slate-400">Memuat data…</span>
+              )}
             </div>
-            <p className="text-slate-500 text-sm">8 months YTD · {COMPANY.industry}</p>
+            <p className="text-slate-500 text-sm">{MONTHLY_PL.length} month{MONTHLY_PL.length !== 1 ? 's' : ''} YTD</p>
           </div>
           <div className="flex items-center gap-2">
             {(['Actual', 'Budget', 'Previous Year'] as const).map(m => (
@@ -395,12 +452,12 @@ export default function ProfitLossPage() {
             Profitability Snapshot
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <KPICard title="Revenue" value={fx(PL_CORE.revenue)} change={12.8} previousValue={fx(7468)} sparkline={sparkRevenue} status="positive" />
-            <KPICard title="Gross Profit" value={fx(PL_CORE.grossProfit)} change={10.2} previousValue={fx(3375)} sparkline={sparkGP} status="positive" />
-            <KPICard title="EBITDA" value={fx(PL_CORE.ebitda)} change={8.9} previousValue={fx(2121)} sparkline={sparkEBITDA} status="positive" />
-            <KPICard title="EBIT" value={fx(PL_CORE.ebit)} change={9.1} previousValue={fx(2136)} sparkline={sparkEBITDA} status="positive" />
-            <KPICard title="Net Profit" value={fx(PL_CORE.netProfit)} change={15.0} previousValue={fx(1600)} sparkline={sparkNP} status="positive" />
-            <KPICard title="Net Margin" value={`${MARGINS.netMargin}%`} change={0.4} previousValue="21.5%" sparkline={sparkNP.map(v => v / 10)} status="positive" />
+            <KPICard title="Revenue" value={fx(PL_CORE.revenue)} change={hitungPerubahan(bulanTerakhir?.revenue ?? 0, bulanSebelumnya?.revenue)} previousValue={fx(bulanSebelumnya?.revenue ?? 0)} sparkline={sparkRevenue} status={statusDari(hitungPerubahan(bulanTerakhir?.revenue ?? 0, bulanSebelumnya?.revenue))} />
+            <KPICard title="Gross Profit" value={fx(PL_CORE.grossProfit)} change={hitungPerubahan(bulanTerakhir?.grossProfit ?? 0, bulanSebelumnya?.grossProfit)} previousValue={fx(bulanSebelumnya?.grossProfit ?? 0)} sparkline={sparkGP} status={statusDari(hitungPerubahan(bulanTerakhir?.grossProfit ?? 0, bulanSebelumnya?.grossProfit))} />
+            <KPICard title="EBITDA" value={fx(PL_CORE.ebitda)} change={hitungPerubahan(bulanTerakhir?.ebitda ?? 0, bulanSebelumnya?.ebitda)} previousValue={fx(bulanSebelumnya?.ebitda ?? 0)} sparkline={sparkEBITDA} status={statusDari(hitungPerubahan(bulanTerakhir?.ebitda ?? 0, bulanSebelumnya?.ebitda))} />
+            <KPICard title="EBIT" value={fx(PL_CORE.ebit)} change={hitungPerubahan(bulanTerakhir?.ebit ?? 0, bulanSebelumnya?.ebit)} previousValue={fx(bulanSebelumnya?.ebit ?? 0)} sparkline={sparkEBITDA} status={statusDari(hitungPerubahan(bulanTerakhir?.ebit ?? 0, bulanSebelumnya?.ebit))} />
+            <KPICard title="Net Profit" value={fx(PL_CORE.netProfit)} change={hitungPerubahan(bulanTerakhir?.netProfit ?? 0, bulanSebelumnya?.netProfit)} previousValue={fx(bulanSebelumnya?.netProfit ?? 0)} sparkline={sparkNP} status={statusDari(hitungPerubahan(bulanTerakhir?.netProfit ?? 0, bulanSebelumnya?.netProfit))} />
+            <KPICard title="Net Margin" value={`${MARGINS.netMargin}%`} change={MARGINS.netMargin - (bulanSebelumnya && bulanSebelumnya.revenue ? (bulanSebelumnya.netProfit / bulanSebelumnya.revenue) * 100 : MARGINS.netMargin)} previousValue={`${(bulanSebelumnya && bulanSebelumnya.revenue ? (bulanSebelumnya.netProfit / bulanSebelumnya.revenue) * 100 : MARGINS.netMargin).toFixed(1)}%`} sparkline={sparkNP.map(v => v / 10)} status={statusDari(MARGINS.netMargin - (bulanSebelumnya && bulanSebelumnya.revenue ? (bulanSebelumnya.netProfit / bulanSebelumnya.revenue) * 100 : MARGINS.netMargin))} />
           </div>
         </div>
 
@@ -512,10 +569,13 @@ export default function ProfitLossPage() {
               <h3 className="font-semibold text-slate-800 text-sm">Profitability Margins</h3>
               <p className="text-slate-500 text-xs">vs previous period & industry benchmark</p>
             </div>
-            <MarginCard label="Gross Margin" value={44.2} prev={43.0} change={1.2} benchmark={42.0} />
-            <MarginCard label="EBITDA Margin" value={27.4} prev={26.8} change={0.6} benchmark={25.0} />
-            <MarginCard label="EBIT Margin" value={27.7} prev={27.0} change={0.7} benchmark={24.0} />
-            <MarginCard label="Net Margin" value={21.9} prev={21.5} change={0.4} benchmark={18.5} />
+            {/* [BARU] "value" = margin ASLI dari PL_CORE/MARGINS. "prev" &
+                "benchmark" tetap ilustratif -- backend belum expose margin
+                periode sebelumnya / benchmark industri lewat API. */}
+            <MarginCard label="Gross Margin" value={MARGINS.grossMargin} prev={MARGINS.grossMargin - 1.2} change={1.2} benchmark={42.0} />
+            <MarginCard label="EBITDA Margin" value={MARGINS.ebitdaMargin} prev={MARGINS.ebitdaMargin - 0.6} change={0.6} benchmark={25.0} />
+            <MarginCard label="EBIT Margin" value={MARGINS.ebitMargin} prev={MARGINS.ebitMargin - 0.7} change={0.7} benchmark={24.0} />
+            <MarginCard label="Net Margin" value={MARGINS.netMargin} prev={MARGINS.netMargin - 0.4} change={0.4} benchmark={18.5} />
           </div>
         </div>
 
@@ -632,7 +692,7 @@ export default function ProfitLossPage() {
                 </tr>
               </thead>
               <tbody>
-                {BUDGET_VS_ACTUAL.map((row, i) => {
+                {budgetVsActual.map((row, i) => {
                   const isPos = row.variance >= 0;
                   const isRevOrProfit = ['Revenue', 'Gross Profit', 'EBITDA', 'Net Profit'].includes(row.item);
                   const good = isRevOrProfit ? isPos : !isPos;
@@ -708,6 +768,8 @@ export default function ProfitLossPage() {
                     row={row}
                     expanded={expandedMonths.has(row.month)}
                     onToggle={() => toggleMonth(row.month)}
+                    revenueByCategory={REVENUE_BY_CATEGORY}
+                    expenseBreakdown={EXPENSE_BREAKDOWN}
                   />
                 ))}
                 {/* Totals Row */}

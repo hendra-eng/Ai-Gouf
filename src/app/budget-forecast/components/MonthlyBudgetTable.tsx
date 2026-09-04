@@ -2,37 +2,11 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-interface MonthRow {
-  month: string;
-  isForecast: boolean;
-  revBudget: number; revActual: number;
-  cogsBudget: number; cogsActual: number;
-  opexBudget: number; opexActual: number;
-  ebitdaBudget: number; ebitdaActual: number;
-  netProfitBudget: number; netProfitActual: number;
-}
-
-const TABLE_DATA: MonthRow[] = [
-  { month: 'Jan', isForecast: false, revBudget: 780, revActual: 718, cogsBudget: 429, cogsActual: 398, opexBudget: 105, opexActual: 98, ebitdaBudget: 198, ebitdaActual: 185, netProfitBudget: 138, netProfitActual: 142 },
-  { month: 'Feb', isForecast: false, revBudget: 810, revActual: 769, cogsBudget: 446, cogsActual: 421, opexBudget: 108, opexActual: 104, ebitdaBudget: 206, ebitdaActual: 200, netProfitBudget: 143, netProfitActual: 149 },
-  { month: 'Mar', isForecast: false, revBudget: 840, revActual: 858, cogsBudget: 462, cogsActual: 471, opexBudget: 112, opexActual: 109, ebitdaBudget: 213, ebitdaActual: 224, netProfitBudget: 148, netProfitActual: 156 },
-  { month: 'Apr', isForecast: false, revBudget: 820, revActual: 724, cogsBudget: 451, cogsActual: 401, opexBudget: 110, opexActual: 108, ebitdaBudget: 207, ebitdaActual: 181, netProfitBudget: 144, netProfitActual: 132 },
-  { month: 'May', isForecast: false, revBudget: 860, revActual: 834, cogsBudget: 473, cogsActual: 458, opexBudget: 115, opexActual: 112, ebitdaBudget: 218, ebitdaActual: 211, netProfitBudget: 151, netProfitActual: 154 },
-  { month: 'Jun', isForecast: false, revBudget: 890, revActual: 936, cogsBudget: 490, cogsActual: 514, opexBudget: 119, opexActual: 122, ebitdaBudget: 225, ebitdaActual: 248, netProfitBudget: 156, netProfitActual: 168 },
-  { month: 'Jul', isForecast: false, revBudget: 870, revActual: 881, cogsBudget: 479, cogsActual: 484, opexBudget: 116, opexActual: 119, ebitdaBudget: 220, ebitdaActual: 226, netProfitBudget: 153, netProfitActual: 158 },
-  { month: 'Aug', isForecast: false, revBudget: 850, revActual: 700, cogsBudget: 468, cogsActual: 390, opexBudget: 114, opexActual: 106, ebitdaBudget: 215, ebitdaActual: 177, netProfitBudget: 149, netProfitActual: 141 },
-  { month: 'Sep', isForecast: true, revBudget: 880, revActual: 906, cogsBudget: 484, cogsActual: 498, opexBudget: 118, opexActual: 115, ebitdaBudget: 223, ebitdaActual: 229, netProfitBudget: 155, netProfitActual: 159 },
-  { month: 'Oct', isForecast: true, revBudget: 920, revActual: 948, cogsBudget: 506, cogsActual: 521, opexBudget: 123, opexActual: 119, ebitdaBudget: 233, ebitdaActual: 240, netProfitBudget: 162, netProfitActual: 167 },
-  { month: 'Nov', isForecast: true, revBudget: 950, revActual: 978, cogsBudget: 523, cogsActual: 537, opexBudget: 127, opexActual: 123, ebitdaBudget: 240, ebitdaActual: 248, netProfitBudget: 167, netProfitActual: 172 },
-  { month: 'Dec', isForecast: true, revBudget: 980, revActual: 1028, cogsBudget: 539, cogsActual: 565, opexBudget: 131, opexActual: 126, ebitdaBudget: 248, ebitdaActual: 261, netProfitBudget: 172, netProfitActual: 182 },
-];
+import { useBudgetData, type MonthBudgetRow } from '../lib/budgetBridge';
 
 function VCell({ budget, actual, invert = false }: { budget: number; actual: number; invert?: boolean }) {
   const diff = actual - budget;
-  const pct = ((diff / budget) * 100);
+  const pct = budget !== 0 ? (diff / budget) * 100 : 0;
   const isFav = invert ? diff <= 0 : diff >= 0;
   return (
     <td className={`px-3 py-2.5 text-right text-sm tabular-nums font-medium ${isFav ? 'text-positive' : 'text-negative'}`}>
@@ -42,16 +16,39 @@ function VCell({ budget, actual, invert = false }: { budget: number; actual: num
   );
 }
 
+function fyTotal(rows: MonthBudgetRow[], key: keyof MonthBudgetRow): number {
+  return rows.reduce((s, r) => s + (r[key] as number), 0);
+}
+
 export default function MonthlyBudgetTable() {
   const [search, setSearch] = useState('');
-  const filtered = TABLE_DATA.filter((r) => r.month.toLowerCase().includes(search.toLowerCase()));
+  const { monthlyRows, isSampleData, periodLabel } = useBudgetData();
+  const filtered = monthlyRows.filter((r) => r.month.toLowerCase().includes(search.toLowerCase()));
+
+  const fyRevBudget = fyTotal(monthlyRows, 'revBudget');
+  const fyRevActual = fyTotal(monthlyRows, 'revActual');
+  const fyCogsBudget = fyTotal(monthlyRows, 'cogsBudget');
+  const fyCogsActual = fyTotal(monthlyRows, 'cogsActual');
+  const fyOpexBudget = fyTotal(monthlyRows, 'opexBudget');
+  const fyOpexActual = fyTotal(monthlyRows, 'opexActual');
+  const fyEbitdaBudget = fyTotal(monthlyRows, 'ebitdaBudget');
+  const fyEbitdaActual = fyTotal(monthlyRows, 'ebitdaActual');
+  const fyNpBudget = fyTotal(monthlyRows, 'netProfitBudget');
+  const fyNpActual = fyTotal(monthlyRows, 'netProfitActual');
+  const revDiff = fyRevActual - fyRevBudget;
+  const revPct = fyRevBudget !== 0 ? (revDiff / fyRevBudget) * 100 : 0;
+  const cogsDiff = fyCogsActual - fyCogsBudget;
+  const cogsPct = fyCogsBudget !== 0 ? (cogsDiff / fyCogsBudget) * 100 : 0;
 
   return (
     <div className="card-base">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Monthly Budget Performance</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Jan–Dec 2026 · Forecast from Sep onwards</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {periodLabel || 'Year to date'} · Actual from posted transactions
+            {isSampleData ? ' · Sample data' : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-2">
@@ -93,20 +90,13 @@ export default function MonthlyBudgetTable() {
             </tr>
           </thead>
           <tbody>
+            {filtered.length === 0 && (
+              <tr><td colSpan={13} className="px-4 py-8 text-center text-sm text-muted-foreground">No monthly data posted yet for this client.</td></tr>
+            )}
             {filtered.map((row) => (
-              <tr
-                key={`monthly-${row.month}`}
-                className={`border-b border-border hover:bg-muted/40 transition-colors ${row.isForecast ? 'opacity-80' : ''}`}
-              >
+              <tr key={`monthly-${row.month}`} className="border-b border-border hover:bg-muted/40 transition-colors">
                 <td className="px-3 py-2.5 sticky left-0 bg-card z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">{row.month}</span>
-                    {row.isForecast && (
-                      <span className="text-2xs px-1.5 py-0.5 rounded-full bg-warning-subtle text-warning border border-warning/20 font-medium">
-                        Forecast
-                      </span>
-                    )}
-                  </div>
+                  <span className="text-sm font-semibold text-foreground">{row.month}</span>
                 </td>
                 <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{row.revBudget}M</td>
                 <td className="px-3 py-2.5 text-right text-sm tabular-nums font-medium text-foreground">{row.revActual}M</td>
@@ -123,23 +113,29 @@ export default function MonthlyBudgetTable() {
               </tr>
             ))}
           </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-border bg-muted/30">
-              <td className="px-3 py-3 text-sm font-bold text-foreground sticky left-0 bg-muted/30 z-10">FY Total</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">10,200M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">10,480M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-positive">+280M (+2.7%)</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">5,610M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">5,720M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-negative">-110M (-2.0%)</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">1,380M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">1,340M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">2,550M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">2,720M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">1,760M</td>
-              <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-positive">1,910M</td>
-            </tr>
-          </tfoot>
+          {monthlyRows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-border bg-muted/30">
+                <td className="px-3 py-3 text-sm font-bold text-foreground sticky left-0 bg-muted/30 z-10">YTD Total</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">{fyRevBudget}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">{fyRevActual}M</td>
+                <td className={`px-3 py-3 text-right text-sm font-bold tabular-nums ${revDiff >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {revDiff >= 0 ? '+' : ''}{revDiff.toFixed(0)}M ({revDiff >= 0 ? '+' : ''}{revPct.toFixed(1)}%)
+                </td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">{fyCogsBudget}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">{fyCogsActual}M</td>
+                <td className={`px-3 py-3 text-right text-sm font-bold tabular-nums ${cogsDiff <= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {cogsDiff >= 0 ? '+' : ''}{cogsDiff.toFixed(0)}M ({cogsDiff >= 0 ? '+' : ''}{cogsPct.toFixed(1)}%)
+                </td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">{fyOpexBudget}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">{fyOpexActual}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">{fyEbitdaBudget}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">{fyEbitdaActual}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">{fyNpBudget}M</td>
+                <td className="px-3 py-3 text-right text-sm font-bold tabular-nums text-foreground">{fyNpActual}M</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

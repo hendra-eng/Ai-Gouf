@@ -1,31 +1,42 @@
 'use client';
 import React from 'react';
 import dynamic from 'next/dynamic';
-
+import { useAnalyticsData } from '../lib/useAnalyticsData';
 
 const GrowthChartInner = dynamic(() => import('./GrowthChartInner'), { ssr: false, loading: () => (
   <div className="h-52 animate-pulse bg-muted rounded-xl" />
 ) });
 
-const GROWTH_METRICS = [
-  { id: 'rev-growth', label: 'Revenue Growth', value: '+12.8%', prev: '+9.4%', color: 'text-positive', bar: 'bg-positive', pct: 12.8 },
-  { id: 'gp-growth', label: 'Gross Profit Growth', value: '+15.2%', prev: '+11.8%', color: 'text-positive', bar: 'bg-chart-2', pct: 15.2 },
-  { id: 'ebitda-growth', label: 'EBITDA Growth', value: '+18.4%', prev: '+14.2%', color: 'text-positive', bar: 'bg-chart-4', pct: 18.4 },
-  { id: 'np-growth', label: 'Net Profit Growth', value: '+16.2%', prev: '+12.6%', color: 'text-positive', bar: 'bg-chart-5', pct: 16.2 },
-  { id: 'asset-growth', label: 'Asset Growth', value: '+8.4%', prev: '+6.2%', color: 'text-positive', bar: 'bg-chart-6', pct: 8.4 },
-  { id: 'equity-growth', label: 'Equity Growth', value: '+11.6%', prev: '+9.8%', color: 'text-positive', bar: 'bg-chart-3', pct: 11.6 },
-];
-
 export default function GrowthAnalytics() {
+  const { growth, comparisonLabel, isSampleData } = useAnalyticsData();
+
+  const fmt = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const barColor = (v: number) => v >= 0 ? { color: 'text-positive', bar: 'bg-positive' } : { color: 'text-negative', bar: 'bg-negative' };
+
+  const GROWTH_METRICS = [
+    { id: 'rev-growth', label: 'Revenue Growth', value: fmt(growth.revenue), bar: barColor(growth.revenue).bar, color: barColor(growth.revenue).color, pct: Math.abs(growth.revenue) },
+    { id: 'gp-growth', label: 'Gross Profit Growth', value: fmt(growth.grossProfit), bar: 'bg-chart-2', color: barColor(growth.grossProfit).color, pct: Math.abs(growth.grossProfit) },
+    { id: 'ebitda-growth', label: 'EBITDA Growth', value: fmt(growth.ebitda), bar: 'bg-chart-4', color: barColor(growth.ebitda).color, pct: Math.abs(growth.ebitda) },
+    { id: 'np-growth', label: 'Net Profit Growth', value: fmt(growth.netProfit), bar: 'bg-chart-5', color: barColor(growth.netProfit).color, pct: Math.abs(growth.netProfit) },
+    { id: 'asset-growth', label: 'Asset Growth', value: fmt(growth.assets), bar: 'bg-chart-6', color: barColor(growth.assets).color, pct: Math.abs(growth.assets) },
+    { id: 'equity-growth', label: 'Equity Growth', value: fmt(growth.equity), bar: 'bg-chart-3', color: barColor(growth.equity).color, pct: Math.abs(growth.equity) },
+  ];
+
+  const allPositive = GROWTH_METRICS.every((m) => !m.value.startsWith('-'));
+
   return (
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Growth Analysis</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">YoY comparison · FY 2026 vs FY 2025</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {isSampleData ? 'YoY comparison · FY 2026 vs FY 2025 (sample data)' : `Month-over-month · ${comparisonLabel}`}
+          </p>
         </div>
-        <span className="text-xs font-semibold text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20">
-          All Metrics Positive
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+          allPositive ? 'text-positive bg-positive-subtle border-positive/20' : 'text-warning bg-warning-subtle border-warning/20'
+        }`}>
+          {allPositive ? 'All Metrics Positive' : 'Mixed Performance'}
         </span>
       </div>
 
@@ -35,7 +46,6 @@ export default function GrowthAnalytics() {
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-sm text-foreground font-medium">{m?.label}</span>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground tabular-nums">Prev: {m?.prev}</span>
                 <span className={`text-sm font-bold tabular-nums w-16 text-right ${m?.color}`}>{m?.value}</span>
               </div>
             </div>
@@ -49,7 +59,7 @@ export default function GrowthAnalytics() {
         ))}
       </div>
 
-      <GrowthChartInner />
+      <GrowthChartInner growth={growth} />
     </div>
   );
 }

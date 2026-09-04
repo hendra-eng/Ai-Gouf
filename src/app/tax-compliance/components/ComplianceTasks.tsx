@@ -1,15 +1,18 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useTaxComplianceData } from '../lib/taxBridge';
 
-const INITIAL_TASKS = [
-  { id: 'task-pph21-file', task: 'File PPh 21 Aug 2026', taxType: 'PPh 21', period: 'Aug 2026', owner: 'Siti Rahayu', dueDate: 'Sep 10, 2026', status: 'In Progress', priority: 'High' },
-  { id: 'task-pph23-file', task: 'File PPh 23 Aug 2026', taxType: 'PPh 23', period: 'Aug 2026', owner: 'Siti Rahayu', dueDate: 'Sep 10, 2026', status: 'Not Started', priority: 'High' },
-  { id: 'task-pph25-pay', task: 'Pay PPh 25 Installment Aug', taxType: 'PPh 25', period: 'Aug 2026', owner: 'Budi Santoso', dueDate: 'Sep 15, 2026', status: 'In Progress', priority: 'Medium' },
-  { id: 'task-ppn-recon', task: 'Reconcile PPN Aug 2026', taxType: 'PPN', period: 'Aug 2026', owner: 'Ahmad Fauzi', dueDate: 'Sep 25, 2026', status: 'Not Started', priority: 'Medium' },
-  { id: 'task-depreciation', task: 'Review depreciation fiscal adjustment', taxType: 'PPh 29', period: 'FY 2026', owner: 'Ahmad Fauzi', dueDate: 'Oct 15, 2026', status: 'Blocked', priority: 'Low' },
-  { id: 'task-ppn-file', task: 'File PPN Masa Aug 2026', taxType: 'PPN', period: 'Aug 2026', owner: 'Siti Rahayu', dueDate: 'Sep 30, 2026', status: 'Not Started', priority: 'High' },
-];
+interface ComplianceTask {
+  id: string;
+  task: string;
+  taxType: string;
+  period: string;
+  owner: string;
+  dueDate: string;
+  status: 'Not Started' | 'In Progress' | 'Completed' | 'Blocked';
+  priority: 'High' | 'Medium' | 'Low';
+}
 
 const STATUS_CYCLE = ['Not Started', 'In Progress', 'Completed'] as const;
 
@@ -27,11 +30,35 @@ const PRIORITY_STYLES: Record<string, string> = {
 };
 
 export default function ComplianceTasks() {
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const { obligations } = useTaxComplianceData();
+  const [tasks, setTasks] = useState<ComplianceTask[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTaskName, setNewTaskName] = useState('');
+
+  // Setiap obligasi pajak yang belum lunas otomatis jadi task -- begitu client
+  // ganti / data transaksi berubah, daftar task ikut diperbarui (kecuali task
+  // custom yang ditambahkan manual, itu tetap dipertahankan).
+  useEffect(() => {
+    const generated: ComplianceTask[] = obligations
+      .filter((o) => o.status !== 'Paid')
+      .slice(0, 8)
+      .map((o) => ({
+        id: `task-${o.id}`,
+        task: o.status === 'Overdue' ? `Resolve overdue ${o.taxType} — ${o.period}` : `File & pay ${o.taxType} — ${o.period}`,
+        taxType: o.taxType,
+        period: o.period,
+        owner: 'Unassigned',
+        dueDate: o.dueDateLabel,
+        status: o.status === 'Overdue' ? 'Blocked' : (o.status === 'Due Soon' ? 'In Progress' : 'Not Started'),
+        priority: o.status === 'Overdue' ? 'High' : o.status === 'Due Soon' ? 'High' : 'Medium',
+      }));
+    setTasks((prev) => {
+      const custom = prev.filter((t) => t.id.startsWith('task-custom-'));
+      return [...generated, ...custom];
+    });
+  }, [obligations]);
 
   const filtered = tasks.filter((t) => {
     const matchSearch = t.task.toLowerCase().includes(search.toLowerCase()) || t.owner.toLowerCase().includes(search.toLowerCase());
@@ -55,7 +82,7 @@ export default function ComplianceTasks() {
         id: `task-custom-${Date.now()}`,
         task: newTaskName.trim(),
         taxType: '—',
-        period: 'Aug 2026',
+        period: '—',
         owner: 'Unassigned',
         dueDate: '—',
         status: 'Not Started',
@@ -72,7 +99,7 @@ export default function ComplianceTasks() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Compliance Tasks</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} tasks · Aug 2026</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} tasks · Generated from unpaid tax obligations</p>
         </div>
         <button
           onClick={() => setShowAddForm((p) => !p)}
@@ -124,6 +151,9 @@ export default function ComplianceTasks() {
       </div>
 
       <div className="space-y-2">
+        {filtered.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-6">No open compliance tasks — all tax obligations are settled.</p>
+        )}
         {filtered.map((task) => (
           <div
             key={task.id}

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
+import { useTaxComplianceData, type TaxObligation } from '../lib/taxBridge';
 
 const STATUS_STYLES: Record<string, string> = {
   'Draft': 'bg-muted text-muted-foreground',
@@ -14,31 +15,19 @@ const STATUS_STYLES: Record<string, string> = {
   'Overdue': 'bg-negative-subtle text-negative border border-negative/30',
 };
 
-const OBLIGATIONS = [
-  { id: 'ob-pph21-aug', taxType: 'PPh 21', period: 'Aug 2026', taxBase: 192_000_000, taxAmount: 38_400_000, dueDate: 'Sep 10, 2026', paymentDate: null, filingDate: null, status: 'Due Soon', reference: 'PPh21/VIII/2026/001' },
-  { id: 'ob-pph23-aug', taxType: 'PPh 23', period: 'Aug 2026', taxBase: 64_000_000, taxAmount: 12_800_000, dueDate: 'Sep 10, 2026', paymentDate: null, filingDate: null, status: 'Due Soon', reference: 'PPh23/VIII/2026/001' },
-  { id: 'ob-ppn-aug', taxType: 'PPN Masa', period: 'Aug 2026', taxBase: 942_000_000, taxAmount: 94_200_000, dueDate: 'Sep 30, 2026', paymentDate: null, filingDate: null, status: 'Calculated', reference: 'PPN/VIII/2026/001' },
-  { id: 'ob-pph25-aug', taxType: 'PPh 25', period: 'Aug 2026', taxBase: 183_000_000, taxAmount: 36_600_000, dueDate: 'Sep 15, 2026', paymentDate: null, filingDate: null, status: 'Ready to File', reference: 'PPh25/VIII/2026/001' },
-  { id: 'ob-pph21-jul', taxType: 'PPh 21', period: 'Jul 2026', taxBase: 186_000_000, taxAmount: 37_200_000, dueDate: 'Aug 10, 2026', paymentDate: 'Aug 8, 2026', filingDate: 'Aug 9, 2026', status: 'Paid', reference: 'PPh21/VII/2026/001' },
-  { id: 'ob-pph23-jul', taxType: 'PPh 23', period: 'Jul 2026', taxBase: 58_000_000, taxAmount: 11_600_000, dueDate: 'Aug 10, 2026', paymentDate: 'Aug 8, 2026', filingDate: 'Aug 9, 2026', status: 'Paid', reference: 'PPh23/VII/2026/001' },
-  { id: 'ob-ppn-jul', taxType: 'PPN Masa', period: 'Jul 2026', taxBase: 908_000_000, taxAmount: 90_800_000, dueDate: 'Aug 31, 2026', paymentDate: 'Aug 28, 2026', filingDate: 'Aug 29, 2026', status: 'Paid', reference: 'PPN/VII/2026/001' },
-  { id: 'ob-pph25-jul', taxType: 'PPh 25', period: 'Jul 2026', taxBase: 176_000_000, taxAmount: 35_200_000, dueDate: 'Aug 15, 2026', paymentDate: 'Aug 12, 2026', filingDate: 'Aug 13, 2026', status: 'Paid', reference: 'PPh25/VII/2026/001' },
-  { id: 'ob-pph21-jun', taxType: 'PPh 21', period: 'Jun 2026', taxBase: 194_000_000, taxAmount: 38_800_000, dueDate: 'Jul 10, 2026', paymentDate: 'Jul 8, 2026', filingDate: 'Jul 9, 2026', status: 'Paid', reference: 'PPh21/VI/2026/001' },
-  { id: 'ob-ppn-jun', taxType: 'PPN Masa', period: 'Jun 2026', taxBase: 936_000_000, taxAmount: 93_600_000, dueDate: 'Jul 31, 2026', paymentDate: 'Jul 29, 2026', filingDate: 'Jul 30, 2026', status: 'Filed', reference: 'PPN/VI/2026/001' },
-];
-
 export default function TaxObligationTable() {
   const { fx } = useCurrency();
+  const { obligations, isSampleData } = useTaxComplianceData();
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<string>('dueDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
-  const [detailObligation, setDetailObligation] = useState<(typeof OBLIGATIONS)[number] | null>(null);
+  const [detailObligation, setDetailObligation] = useState<TaxObligation | null>(null);
   const PAGE_SIZE = 7;
 
-  const downloadCsv = (rows: typeof OBLIGATIONS, filename: string) => {
+  const downloadCsv = (rows: TaxObligation[], filename: string) => {
     const header = ['Tax Type', 'Period', 'Tax Base', 'Tax Amount', 'Due Date', 'Payment Date', 'Filing Date', 'Status', 'Reference'];
-    const csvRows = rows.map((o) => [o.taxType, o.period, o.taxBase, o.taxAmount, o.dueDate, o.paymentDate || '', o.filingDate || '', o.status, o.reference]);
+    const csvRows = rows.map((o) => [o.taxType, o.period, o.taxBase, o.taxAmount, o.dueDateLabel, o.paymentDate || '', o.filingDate || '', o.status, o.reference]);
     const csv = [header, ...csvRows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -49,20 +38,28 @@ export default function TaxObligationTable() {
     URL.revokeObjectURL(url);
   };
 
-  const filtered = OBLIGATIONS.filter((o) =>
+  const filtered = obligations.filter((o) =>
     o.taxType.toLowerCase().includes(search.toLowerCase()) ||
     o.period.toLowerCase().includes(search.toLowerCase()) ||
     o.reference.toLowerCase().includes(search.toLowerCase())
   );
 
+  const sortValue = (o: TaxObligation, key: string) => {
+    if (key === 'dueDate') return o.dueDate.getTime();
+    return (o as unknown as Record<string, unknown>)[key] ?? '';
+  };
+
   const sorted = [...filtered].sort((a, b) => {
-    const av = a[sortKey as keyof typeof a] ?? '';
-    const bv = b[sortKey as keyof typeof b] ?? '';
+    const av = sortValue(a, sortKey);
+    const bv = sortValue(b, sortKey);
+    if (typeof av === 'number' && typeof bv === 'number') {
+      return sortDir === 'asc' ? av - bv : bv - av;
+    }
     return sortDir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
   });
 
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
 
   const handleSort = (key: string) => {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -82,7 +79,9 @@ export default function TaxObligationTable() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-border">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Tax Obligations</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} obligations · Aug 2026</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {filtered.length} obligations{isSampleData ? ' · Sample data' : ' · From posted tax transactions'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-2">
@@ -134,6 +133,13 @@ export default function TaxObligationTable() {
             </tr>
           </thead>
           <tbody>
+            {paginated.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No tax obligations found. They appear here once tax payment journals (category "Tax") are posted for this client.
+                </td>
+              </tr>
+            )}
             {paginated.map((ob) => (
               <tr key={ob.id} className="border-b border-border hover:bg-muted/40 transition-colors group">
                 <td className="px-4 py-3">
@@ -142,7 +148,7 @@ export default function TaxObligationTable() {
                 <td className="px-4 py-3 text-sm text-foreground tabular-nums">{ob.period}</td>
                 <td className="px-4 py-3 text-sm text-right tabular-nums text-muted-foreground">{fx(formatIDR(ob.taxBase, true))}</td>
                 <td className="px-4 py-3 text-sm text-right tabular-nums font-semibold text-foreground">{fx(formatIDR(ob.taxAmount, true))}</td>
-                <td className="px-4 py-3 text-sm text-foreground">{ob.dueDate}</td>
+                <td className="px-4 py-3 text-sm text-foreground">{ob.dueDateLabel}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{ob.paymentDate || '—'}</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground">{ob.filingDate || '—'}</td>
                 <td className="px-4 py-3">
@@ -170,7 +176,7 @@ export default function TaxObligationTable() {
       {/* Pagination */}
       <div className="flex items-center justify-between px-5 py-3 border-t border-border">
         <p className="text-xs text-muted-foreground">
-          Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length}
+          {sorted.length === 0 ? 'Showing 0 of 0' : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, sorted.length)} of ${sorted.length}`}
         </p>
         <div className="flex items-center gap-1">
           <button
@@ -217,7 +223,7 @@ export default function TaxObligationTable() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Tax Base</span><span className="tabular-nums text-foreground">{fx(formatIDR(detailObligation.taxBase, true))}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Tax Amount</span><span className="tabular-nums font-semibold text-foreground">{fx(formatIDR(detailObligation.taxAmount, true))}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span className="text-foreground">{detailObligation.dueDate}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span className="text-foreground">{detailObligation.dueDateLabel}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Payment Date</span><span className="text-foreground">{detailObligation.paymentDate || '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Filing Date</span><span className="text-foreground">{detailObligation.filingDate || '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Status</span><span className="text-foreground">{detailObligation.status}</span></div>

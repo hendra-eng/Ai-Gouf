@@ -1,31 +1,46 @@
 'use client';
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,  } from 'recharts';
+import type { EquityWaterfallStep } from '../lib/useEquityData';
 
-// Backend integration point: replace with API call to /api/equity/movement?period=...
-// Waterfall chart data — each bar represents an equity movement component
-const waterfallData = [
-  { name: 'Beginning Equity', value: 4290, cumulative: 4290, type: 'base', color: '#2563eb' },
-  { name: 'Net Profit', value: 1840, cumulative: 6130, type: 'positive', color: '#16a34a' },
-  { name: 'Capital Injection', value: 0, cumulative: 6130, type: 'neutral', color: '#64748b' },
-  { name: 'Dividends Paid', value: -880, cumulative: 5250, type: 'negative', color: '#dc2626' },
-  { name: 'Revaluation Gain', value: 50, cumulative: 5300, type: 'positive', color: '#16a34a' },
-  { name: 'OCI Adjustments', value: -600, cumulative: 4700, type: 'negative', color: '#d97706' },
-  { name: 'Ending Equity', value: 4700, cumulative: 4700, type: 'base', color: '#2563eb' },
+// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat EquityContent.tsx
+// (useEquityData()) untuk sumber data ASLI client aktif. Versi ASLI cuma
+// punya 2 komponen (Net Profit + Other Equity Movements digabung) karena
+// trial_balance_bulanan tidak menyimpan jenis mutasi ekuitas per transaksi
+// (dividen/setoran modal/revaluasi/OCI) -- lihat komentar di useEquityData.ts.
+const mockWaterfallData: EquityWaterfallStep[] = [
+  { name: 'Beginning Equity', value: 4290, type: 'base' },
+  { name: 'Net Profit', value: 1840, type: 'positive' },
+  { name: 'Capital Injection', value: 0, type: 'neutral' },
+  { name: 'Dividends Paid', value: -880, type: 'negative' },
+  { name: 'Revaluation Gain', value: 50, type: 'positive' },
+  { name: 'OCI Adjustments', value: -600, type: 'negative' },
+  { name: 'Ending Equity', value: 4700, type: 'base' },
 ];
 
-// For waterfall we show invisible base bars + visible delta bars
-const chartData = waterfallData.map((d, i) => {
-  if (d.type === 'base') {
-    return { ...d, invisible: 0, display: d.value };
-  }
-  const prev = waterfallData[i - 1];
-  const base = Math.min(prev.cumulative, d.cumulative);
-  const display = Math.abs(d.value);
-  return { ...d, invisible: base, display };
-});
+const TYPE_COLOR: Record<EquityWaterfallStep['type'], string> = {
+  base: '#2563eb',
+  positive: '#16a34a',
+  negative: '#dc2626',
+  neutral: '#64748b',
+};
 
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { payload: typeof chartData[0] }[]; label?: string }) => {
+function buildChartData(steps: EquityWaterfallStep[]) {
+  let runningCumulative = 0;
+  return steps.map((d, i) => {
+    if (d.type === 'base') {
+      runningCumulative = d.value;
+      return { ...d, cumulative: d.value, color: TYPE_COLOR[d.type], invisible: 0, display: d.value };
+    }
+    const before = runningCumulative;
+    runningCumulative += d.value;
+    const base = Math.min(before, runningCumulative);
+    const display = Math.abs(d.value);
+    return { ...d, cumulative: runningCumulative, color: TYPE_COLOR[d.type], invisible: base, display };
+  });
+}
+
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { payload: ReturnType<typeof buildChartData>[0] }[]; label?: string }) => {
   if (!active || !payload || !payload[0]) return null;
   const d = payload[0].payload;
   return (
@@ -45,12 +60,22 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function EquityMovementChart() {
+interface EquityMovementChartProps {
+  steps?: EquityWaterfallStep[];
+  periodLabel?: string;
+}
+
+export default function EquityMovementChart({ steps, periodLabel }: EquityMovementChartProps) {
+  const source = steps && steps.length > 0 ? steps : mockWaterfallData;
+  const chartData = buildChartData(source);
+  const maxCumulative = Math.max(...chartData.map((d) => Math.max(d.cumulative, (d as any).invisible + (d as any).display)));
+  const yMax = Math.ceil((maxCumulative * 1.1) / 500) * 500 || 500;
+
   return (
     <div className="fin-card p-5">
       <div className="mb-4">
         <div className="text-[14px] font-600 text-foreground">Equity Movement (Waterfall)</div>
-        <div className="text-[11px] text-muted-foreground">Beginning to ending equity — Jan–Aug 2026</div>
+        <div className="text-[11px] text-muted-foreground">Beginning to ending equity{periodLabel ? ` — ${periodLabel}` : ' — Jan–Aug 2026'}</div>
       </div>
 
       <ResponsiveContainer width="100%" height={280}>
@@ -70,7 +95,7 @@ export default function EquityMovementChart() {
             axisLine={false}
             tickLine={false}
             tickFormatter={v => `${v}M`}
-            domain={[0, 7000]}
+            domain={[0, yMax]}
           />
           <Tooltip content={<CustomTooltip />} />
           {/* Invisible base bar */}

@@ -1,12 +1,15 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import FinancialStatusBadge from '@/components/ui/FinancialStatusBadge';
 import { useCurrency } from '@/lib/currency';
+import { formatIDR } from '@/lib/financialData';
+import { useAssetRegisterData } from '../lib/assetRegisterBridge';
 
-// Backend integration point: replace with API call to /api/assets/fixed-assets?page=...&sort=...
-const fixedAssets = [
+// Data contoh -- dipakai HANYA kalau client aktif belum pernah upload file
+// "Aset Tetap" (lihat lib/assetRegisterBridge.ts, isSampleData).
+const SAMPLE_FIXED_ASSETS = [
   { id: 'FA-2024-001', name: 'Gedung Kantor Jakarta', category: 'Property', purchaseDate: '15 Mar 2020', cost: 'Rp 850M', usefulLife: '20 yr', method: 'Straight-line', accDepr: '(Rp 170M)', nbv: 'Rp 680M', status: 'active' as const, location: 'Jakarta HQ', dept: 'Operations' },
   { id: 'FA-2024-002', name: 'Server Dell PowerEdge R750', category: 'IT Equipment', purchaseDate: '10 Jan 2023', cost: 'Rp 180M', usefulLife: '5 yr', method: 'Straight-line', accDepr: '(Rp 54M)', nbv: 'Rp 126M', status: 'active' as const, location: 'Data Center', dept: 'IT' },
   { id: 'FA-2024-003', name: 'Toyota Fortuner 2022', category: 'Vehicles', purchaseDate: '20 Apr 2022', cost: 'Rp 520M', usefulLife: '8 yr', method: 'Declining Balance', accDepr: '(Rp 97.5M)', nbv: 'Rp 422.5M', status: 'active' as const, location: 'Jakarta HQ', dept: 'Management' },
@@ -21,15 +24,44 @@ const fixedAssets = [
   { id: 'FA-2024-012', name: 'CCTV System 48 kamera', category: 'Security Equipment', purchaseDate: '08 Aug 2022', cost: 'Rp 65M', usefulLife: '5 yr', method: 'Straight-line', accDepr: '(Rp 26M)', nbv: 'Rp 39M', status: 'active' as const, location: 'All Offices', dept: 'Security' },
 ];
 
+interface DisplayRow {
+  id: string; name: string; category: string; purchaseDate: string; cost: string;
+  usefulLife: string; method: string; accDepr: string; nbv: string;
+  status: 'active' | 'maintenance' | 'fully-depreciated' | 'disposed';
+  location: string; dept: string;
+}
+
 const columns = ['Asset ID', 'Asset Name', 'Category', 'Purchase Date', 'Cost', 'Useful Life', 'Method', 'Acc. Depr.', 'Net Book Value', 'Status', 'Location', 'Department'];
 
 export default function FixedAssetRegister() {
   const { fx } = useCurrency();
+  const registerData = useAssetRegisterData();
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [perPage] = useState(8);
+
+  // Kalau client aktif punya register real (sudah upload file "Aset
+  // Tetap"), pakai itu. Kalau belum, jatuh ke data contoh supaya halaman
+  // tidak pernah kosong (sama seperti pola bridge lain di dashboard ini).
+  const fixedAssets: DisplayRow[] = useMemo(() => {
+    if (registerData.isSampleData) return SAMPLE_FIXED_ASSETS;
+    return registerData.assets.map((a) => ({
+      id: a.id,
+      name: a.name,
+      category: a.category,
+      purchaseDate: a.purchaseDate,
+      cost: formatIDR(a.cost / 1_000_000, true),
+      usefulLife: a.usefulLifeYears != null ? `${a.usefulLifeYears} yr` : '—',
+      method: a.method,
+      accDepr: a.accumulatedDepreciation > 0 ? `(${formatIDR(a.accumulatedDepreciation / 1_000_000, true)})` : 'Rp 0',
+      nbv: formatIDR(a.netBookValue / 1_000_000, true),
+      status: a.status,
+      location: '—',
+      dept: '—',
+    }));
+  }, [registerData]);
 
   const filtered = fixedAssets.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||

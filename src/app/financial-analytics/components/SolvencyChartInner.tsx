@@ -1,8 +1,9 @@
 'use client';
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { MonthlyAnalyticsRow } from '../lib/useAnalyticsData';
 
-const SOLVENCY_DATA = [
+const SOLVENCY_SAMPLE = [
   { month: 'Jan', debtEquity: 0.26, debtRatio: 0.16 },
   { month: 'Feb', debtEquity: 0.25, debtRatio: 0.15 },
   { month: 'Mar', debtEquity: 0.24, debtRatio: 0.15 },
@@ -13,7 +14,7 @@ const SOLVENCY_DATA = [
   { month: 'Aug', debtEquity: 0.21, debtRatio: 0.14 },
 ];
 
-const EFFICIENCY_DATA = [
+const EFFICIENCY_SAMPLE = [
   { month: 'Jan', dso: 56, dpo: 62 },
   { month: 'Feb', dso: 54, dpo: 64 },
   { month: 'Mar', dso: 55, dpo: 68 },
@@ -24,7 +25,7 @@ const EFFICIENCY_DATA = [
   { month: 'Aug', dso: 54, dpo: 67 },
 ];
 
-interface Props { mode: 'solvency' | 'efficiency'; }
+interface Props { mode: 'solvency' | 'efficiency'; monthlyTrend?: MonthlyAnalyticsRow[]; }
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (!active || !payload?.length) return null;
@@ -41,8 +42,11 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function SolvencyChartInner({ mode }: Props) {
-  const data = mode === 'solvency' ? SOLVENCY_DATA : EFFICIENCY_DATA;
+export default function SolvencyChartInner({ mode, monthlyTrend }: Props) {
+  const hasReal = monthlyTrend && monthlyTrend.length > 0;
+  const data = mode === 'solvency'
+    ? (hasReal ? monthlyTrend!.map((r) => ({ month: r.month, debtEquity: r.debtToEquity, debtRatio: r.debtRatio })) : SOLVENCY_SAMPLE)
+    : (hasReal ? monthlyTrend!.map((r) => ({ month: r.month, dso: r.dso, dpo: r.dpo })) : EFFICIENCY_SAMPLE);
   return (
     <ResponsiveContainer width="100%" height={160}>
       <BarChart data={data} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barSize={12}>

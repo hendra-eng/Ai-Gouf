@@ -1,7 +1,8 @@
 'use client';
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-
+import { useActiveClient } from '@/lib/activeClient';
+import { useBudgetData } from '../lib/budgetBridge';
 
 const BudgetChartInner = dynamic(() => import('./BudgetChartInner'), { ssr: false, loading: () => (
   <div className="h-80 animate-pulse bg-muted rounded-xl" />
@@ -13,13 +14,17 @@ const HORIZONS = ['3M', '6M', '12M'];
 export default function BudgetVsActualChart() {
   const [metric, setMetric] = useState('Revenue');
   const [horizon, setHorizon] = useState('12M');
+  const { activeClientName } = useActiveClient();
+  const { monthlyRows, periodLabel, isSampleData } = useBudgetData();
 
   return (
     <div className="card-base p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h3 className="text-xl font-semibold text-foreground">Financial Performance: Budget vs Actual vs Forecast</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">FY 2026 · PT Nusantara Teknologi Indonesia</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {periodLabel || 'FY 2026'} · {activeClientName || 'No active client'}{isSampleData ? ' · Sample data' : ''}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Metric switcher */}
@@ -76,11 +81,15 @@ export default function BudgetVsActualChart() {
         ))}
         <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
           <div className="w-2 h-2 rounded-full bg-muted-foreground/40 border-2 border-dashed border-muted-foreground/60" />
-          <span>Forecast Period Starts Sep 2026</span>
+          <span>
+            {monthlyRows.length > 0
+              ? `Forecast Starts After ${monthlyRows[monthlyRows.length - 1].month}`
+              : 'No actual data posted yet'}
+          </span>
         </div>
       </div>
 
-      <BudgetChartInner metric={metric} horizon={horizon} />
+      <BudgetChartInner metric={metric} horizon={horizon} monthlyRows={monthlyRows} />
     </div>
   );
 }

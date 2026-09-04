@@ -906,6 +906,23 @@ def chat_stream(req: ChatRequest, user: dict = Depends(auth.get_current_user)):
                 print(f"[PERINGATAN] Gagal ambil konteks pola untuk chat: {e}")
         return jumlah_pola_, jumlah_temuan_mencurigakan_
 
+    def _ambil_konteks_client_aktif():
+        # [BARU] Kasih tahu AI profil client yang sedang aktif di percakapan
+        # ini (nama/tipe/lokasi) -- supaya AI sadar dia sedang membantu
+        # client SPESIFIK di dashboard ini, bukan menjawab general seolah
+        # tidak tahu sedang di project siapa.
+        if req.client_id is not None:
+            try:
+                client = dbc.ambil_client(req.client_id)
+                if client:
+                    return (
+                        f"\n- Client aktif di percakapan ini: '{client['nama']}' "
+                        f"(tipe: {client.get('tipe') or '-'}, lokasi: {client.get('lokasi') or '-'})."
+                    )
+            except Exception as e:  # noqa: BLE001
+                print(f"[PERINGATAN] Gagal ambil profil client aktif untuk chat: {e}")
+        return ""
+
     def _ambil_info_esb():
         # [BARU] Kasih tahu AI status integrasi ESB, dengan 2 mode:
         # - kalau req.esb_account_id diisi (percakapan jalur "esb_account"):
@@ -1036,14 +1053,16 @@ def chat_stream(req: ChatRequest, user: dict = Depends(auth.get_current_user)):
                 label="Membaca pola transaksi & data client",
                 status="processing",
             )
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 future_pola = executor.submit(_ambil_konteks_pola)
                 future_esb = executor.submit(_ambil_info_esb)
                 future_kpi = executor.submit(_ambil_konteks_kpi)
+                future_client = executor.submit(_ambil_konteks_client_aktif)
 
                 jumlah_pola, jumlah_temuan_mencurigakan = future_pola.result()
                 info_esb = future_esb.result()
                 konteks_data_kpi = future_kpi.result()
+                info_client_aktif = future_client.result()
             yield _format_sse_progress(
                 type="progress", step="konteks",
                 label="Membaca pola transaksi & data client",
@@ -1060,7 +1079,7 @@ def chat_stream(req: ChatRequest, user: dict = Depends(auth.get_current_user)):
             konteks = ak.buat_ringkasan_konteks_data(
                 req.ringkasan_data or [], jumlah_pola, jumlah_temuan_mencurigakan
             )
-            system_prompt = ak.buat_system_prompt_akuntansi() + konteks + info_esb + konteks_data_kpi
+            system_prompt = ak.buat_system_prompt_akuntansi() + konteks + info_client_aktif + info_esb + konteks_data_kpi
             riwayat_untuk_ai = [{"role": p.role, "content": p.content} for p in (req.riwayat or [])]
             yield _format_sse_progress(
                 type="progress", step="susun_prompt",

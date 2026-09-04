@@ -3,25 +3,21 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
+import { useAnalyticsData } from '../lib/useAnalyticsData';
 
 const HealthRadarInner = dynamic(() => import('./HealthRadarInner'), { ssr: false, loading: () => (
   <div className="h-56 animate-pulse bg-muted rounded-xl" />
 ) });
 
-const DIMENSIONS = [
-  { label: 'Profitability', score: 88, icon: 'ChartBarIcon', color: 'text-positive', detail: 'Net Margin 21.9%, EBITDA 27.4%' },
-  { label: 'Liquidity', score: 92, icon: 'BanknotesIcon', color: 'text-chart-2', detail: 'Current Ratio 2.41, Cash Rp 2.96M' },
-  { label: 'Solvency', score: 79, icon: 'ScaleIcon', color: 'text-chart-3', detail: 'D/E 0.21, Interest Coverage 27.5x' },
-  { label: 'Efficiency', score: 74, icon: 'ArrowPathIcon', color: 'text-chart-4', detail: 'DSO 53.8d, DPO 66.8d' },
-  { label: 'Growth', score: 83, icon: 'ArrowTrendingUpIcon', color: 'text-chart-5', detail: 'Revenue +12.8%, NP +16.2%' },
-];
-
-const overallScore = Math.round(DIMENSIONS.reduce((sum, d) => sum + d.score, 0) / DIMENSIONS.length);
-
 export default function FinancialHealthHero() {
   const { fx } = useCurrency();
+  const { healthDimensions, overallHealthScore, companyName, periodLabel, isSampleData } = useAnalyticsData();
+
   return (
     <div className="card-base p-6 bg-gradient-to-br from-card to-muted/40">
+      {isSampleData && (
+        <p className="text-xs text-muted-foreground mb-3">Showing sample data</p>
+      )}
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left: Overall score */}
         <div className="flex flex-col items-center justify-center lg:w-48 flex-shrink-0">
@@ -34,29 +30,31 @@ export default function FinancialHealthHero() {
                 stroke="var(--primary)"
                 strokeWidth="12"
                 strokeLinecap="round"
-                strokeDasharray={`${(overallScore / 100) * 376.99} 376.99`}
+                strokeDasharray={`${(overallHealthScore / 100) * 376.99} 376.99`}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-4xl font-extrabold tabular-nums text-foreground">{overallScore}</span>
+              <span className="text-4xl font-extrabold tabular-nums text-foreground">{overallHealthScore}</span>
               <span className="text-xs text-muted-foreground">/100</span>
             </div>
           </div>
           <p className="text-sm font-semibold text-foreground mt-2">Financial Health</p>
-          <p className="text-2xs text-muted-foreground text-center mt-0.5">PT Nusantara Teknologi · FY 2026</p>
-          <span className="mt-2 px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20">
-            ✓ Healthy
+          <p className="text-2xs text-muted-foreground text-center mt-0.5">{companyName} · {periodLabel}</p>
+          <span className={`mt-2 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+            overallHealthScore >= 70 ? 'bg-positive-subtle text-positive border-positive/20' : overallHealthScore >= 50 ? 'bg-warning-subtle text-warning border-warning/20' : 'bg-negative-subtle text-negative border-negative/20'
+          }`}>
+            {overallHealthScore >= 70 ? '✓ Healthy' : overallHealthScore >= 50 ? '⚠ Watch' : '⚠ At Risk'}
           </span>
         </div>
 
         {/* Center: Radar chart */}
         <div className="flex-1 min-w-0">
-          <HealthRadarInner dimensions={DIMENSIONS} />
+          <HealthRadarInner dimensions={healthDimensions} />
         </div>
 
         {/* Right: Dimension breakdown */}
         <div className="lg:w-64 flex-shrink-0 space-y-3">
-          {DIMENSIONS.map((d) => (
+          {healthDimensions.map((d) => (
             <div key={`health-dim-${d.label}`} className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                 <Icon name={d.icon as Parameters<typeof Icon>[0]['name']} size={14} className={d.color} />

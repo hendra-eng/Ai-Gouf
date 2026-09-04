@@ -4,15 +4,21 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { type Customer, invoices, formatRupiah, riskColors, arStatusColors } from '@/lib/mockData';
+import { type Customer, type Invoice, formatRupiah, riskColors, arStatusColors } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
 
+// [DIUBAH] `invoices` sekarang diterima lewat props (daftar Invoice hasil
+// turunan transaksi Sales yang sesungguhnya dari ARContent.tsx), bukan lagi
+// import langsung dari mockData — panel ini dulu selalu kosong/salah untuk
+// customer real karena ID customer real (cust-sales-xxx, lihat arBridge.ts)
+// tidak pernah cocok dengan customerId di invoice mock statis (cust-001, dst).
 interface Props {
   customer: Customer;
+  invoices: Invoice[];
   onClose: () => void;
 }
 
-export default function CustomerDetailPanel({ customer, onClose }: Props) {
+export default function CustomerDetailPanel({ customer, invoices, onClose }: Props) {
   const { fx } = useCurrency();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'payments'>('overview');

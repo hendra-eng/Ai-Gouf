@@ -2,9 +2,11 @@
 import React from 'react';
 import FinancialKPICard from '@/components/ui/FinancialKPICard';
 import { useCurrency } from '@/lib/currency';
+import type { EquityKpiCard } from '../lib/useEquityData';
 
-// Backend integration point: replace with API call to /api/equity/kpi?period=...
-const kpiCards = [
+// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat EquityContent.tsx
+// (useEquityData()) untuk sumber data ASLI client aktif.
+const mockKpiCards: EquityKpiCard[] = [
   {
     label: 'TOTAL EQUITY',
     value: 'Rp 4,70M',
@@ -12,7 +14,7 @@ const kpiCards = [
     change: 9.6,
     changeLabel: 'vs prev period',
     sparkData: [{ v: 3.8 }, { v: 3.9 }, { v: 4.0 }, { v: 4.1 }, { v: 4.2 }, { v: 4.4 }, { v: 4.55 }, { v: 4.70 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
   {
     label: 'PAID-IN CAPITAL',
@@ -21,7 +23,7 @@ const kpiCards = [
     change: 0.0,
     changeLabel: 'vs prev period',
     sparkData: [{ v: 3.0 }, { v: 3.0 }, { v: 3.0 }, { v: 3.0 }, { v: 3.0 }, { v: 3.0 }, { v: 3.0 }, { v: 3.0 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
   {
     label: 'RETAINED EARNINGS',
@@ -30,7 +32,7 @@ const kpiCards = [
     change: 14.8,
     changeLabel: 'vs prev period',
     sparkData: [{ v: 0.9 }, { v: 0.95 }, { v: 1.0 }, { v: 1.05 }, { v: 1.1 }, { v: 1.15 }, { v: 1.20 }, { v: 1.24 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
   {
     label: 'CURRENT YEAR PROFIT',
@@ -39,7 +41,7 @@ const kpiCards = [
     change: 8.4,
     changeLabel: 'vs prev period',
     sparkData: [{ v: 1.4 }, { v: 1.5 }, { v: 1.6 }, { v: 1.65 }, { v: 1.7 }, { v: 1.75 }, { v: 1.80 }, { v: 1.84 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
   {
     label: 'OTHER EQUITY',
@@ -48,7 +50,7 @@ const kpiCards = [
     change: 12.2,
     changeLabel: 'vs prev period',
     sparkData: [{ v: 340 }, { v: 355 }, { v: 370 }, { v: 390 }, { v: 410 }, { v: 425 }, { v: 440 }, { v: 460 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
   {
     label: 'EQUITY GROWTH',
@@ -57,12 +59,13 @@ const kpiCards = [
     change: 9.6,
     changeLabel: 'YTD 2026',
     sparkData: [{ v: 5.2 }, { v: 6.1 }, { v: 7.4 }, { v: 8.0 }, { v: 8.8 }, { v: 9.1 }, { v: 9.4 }, { v: 9.6 }],
-    status: 'neutral' as const,
+    status: 'neutral',
   },
 ];
 
-export default function EquityKPIGrid() {
+export default function EquityKPIGrid({ cards }: { cards?: EquityKpiCard[] }) {
   const { fx } = useCurrency();
+  const kpiCards = cards && cards.length > 0 ? cards : mockKpiCards;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-6 gap-3 mb-6">
       {kpiCards.map((kpi, i) => (

@@ -3,14 +3,14 @@ import React from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
+import { useTaxComplianceData } from '../lib/taxBridge';
 
-const EXPOSURES = [
-  { id: 'exp-outstanding', category: 'Outstanding Tax', amount: 182_000_000, description: 'Tax payable recorded and due within 30 days', severity: 'Medium', icon: 'ClockIcon' },
-  { id: 'exp-overdue', category: 'Overdue Tax', amount: 0, description: 'No overdue tax obligations recorded', severity: 'None', icon: 'CheckCircleIcon' },
-  { id: 'exp-unreconciled', category: 'Unreconciled Tax', amount: 24_000_000, description: 'Depreciation timing difference requiring fiscal adjustment', severity: 'Low', icon: 'ArrowsRightLeftIcon' },
-  { id: 'exp-upcoming', category: 'Upcoming Tax (30d)', amount: 145_000_000, description: 'Tax obligations maturing in the next 30 days', severity: 'Low', icon: 'CalendarDaysIcon' },
-  { id: 'exp-unfiled', category: 'Unfiled Tax Records', amount: 87_800_000, description: 'PPh 21 and PPh 23 for Aug not yet filed', severity: 'Medium', icon: 'DocumentTextIcon' },
-];
+const ICONS: Record<string, string> = {
+  'exp-outstanding': 'ClockIcon',
+  'exp-overdue': 'CheckCircleIcon',
+  'exp-upcoming': 'CalendarDaysIcon',
+  'exp-unfiled': 'DocumentTextIcon',
+};
 
 const SEVERITY_STYLES: Record<string, { badge: string; bar: string }> = {
   'None': { badge: 'bg-positive-subtle text-positive', bar: 'bg-positive' },
@@ -19,10 +19,11 @@ const SEVERITY_STYLES: Record<string, { badge: string; bar: string }> = {
   'High': { badge: 'bg-negative-subtle text-negative', bar: 'bg-negative' },
 };
 
-const totalExposure = EXPOSURES.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
-
 export default function TaxExposure() {
   const { fx } = useCurrency();
+  const { exposure } = useTaxComplianceData();
+  const totalExposure = exposure.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
+
   return (
     <div className="card-base p-5">
       <div className="flex items-center justify-between mb-5">
@@ -37,7 +38,7 @@ export default function TaxExposure() {
       </div>
 
       <div className="space-y-3">
-        {EXPOSURES.map((item) => {
+        {exposure.map((item) => {
           const cfg = SEVERITY_STYLES[item.severity];
           const pct = totalExposure > 0 ? (item.amount / totalExposure) * 100 : 0;
           return (
@@ -45,9 +46,9 @@ export default function TaxExposure() {
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex items-center gap-2">
                   <Icon
-                    name={item.icon as Parameters<typeof Icon>[0]['name']}
+                    name={(ICONS[item.id] || 'DocumentTextIcon') as Parameters<typeof Icon>[0]['name']}
                     size={16}
-                    className={item.severity === 'None' ? 'text-positive' : item.severity === 'Medium' ? 'text-warning' : 'text-muted-foreground'}
+                    className={item.severity === 'None' ? 'text-positive' : item.severity === 'Medium' || item.severity === 'High' ? 'text-warning' : 'text-muted-foreground'}
                   />
                   <span className="text-sm font-semibold text-foreground">{item.category}</span>
                 </div>

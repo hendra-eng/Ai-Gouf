@@ -3,17 +3,7 @@ import React from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-
-const CARDS = [
-  { id: 'tax-payable', label: 'Total Tax Payable', value: 182_000_000, sub: 'Aug 2026', icon: 'ReceiptPercentIcon', status: 'warning', trend: '+8.4% vs Jul' },
-  { id: 'tax-receivable', label: 'Tax Receivable', value: 48_500_000, sub: 'Input VAT credit', icon: 'ArrowDownCircleIcon', status: 'positive', trend: 'Claimable' },
-  { id: 'ppn', label: 'PPN (VAT)', value: 94_200_000, sub: 'Output - Input', icon: 'DocumentTextIcon', status: 'neutral', trend: 'Due Sep 30' },
-  { id: 'pph21', label: 'PPh 21', value: 38_400_000, sub: 'Employee income tax', icon: 'UserGroupIcon', status: 'neutral', trend: 'Due Sep 10' },
-  { id: 'pph23', label: 'PPh 23', value: 12_800_000, sub: 'Withholding tax', icon: 'ArrowsRightLeftIcon', status: 'neutral', trend: 'Due Sep 10' },
-  { id: 'pph2529', label: 'PPh 25/29', value: 36_600_000, sub: 'Corporate income tax', icon: 'BuildingOfficeIcon', status: 'neutral', trend: 'Installment' },
-  { id: 'upcoming', label: 'Upcoming Tax', value: 145_000_000, sub: 'Next 30 days', icon: 'ClockIcon', status: 'warning', trend: '3 obligations' },
-  { id: 'overdue', label: 'Overdue Tax', value: 0, sub: 'No overdue items', icon: 'ExclamationTriangleIcon', status: 'positive', trend: 'All current' },
-];
+import { useTaxComplianceData } from '../lib/taxBridge';
 
 const STATUS_COLORS: Record<string, { text: string; badge: string }> = {
   positive: { text: 'text-positive', badge: 'bg-positive-subtle text-positive' },
@@ -24,6 +14,25 @@ const STATUS_COLORS: Record<string, { text: string; badge: string }> = {
 
 export default function TaxKPICards() {
   const { fx } = useCurrency();
+  const { byType, ppn, exposure } = useTaxComplianceData();
+
+  const pph21 = byType.find((t) => t.taxType === 'PPh 21');
+  const pph23 = byType.find((t) => t.taxType === 'PPh 23');
+  const pph25 = byType.find((t) => t.taxType === 'PPh 25');
+  const upcoming = exposure.find((e) => e.id === 'exp-upcoming')?.amount || 0;
+  const overdue = exposure.find((e) => e.id === 'exp-overdue')?.amount || 0;
+
+  const CARDS = [
+    { id: 'tax-payable', label: 'Total Tax Payable', value: ppn.netPayable + (pph21?.outstanding || 0) + (pph23?.outstanding || 0) + (pph25?.outstanding || 0), sub: ppn.latestPeriod || 'Latest period', icon: 'ReceiptPercentIcon', status: 'warning' },
+    { id: 'tax-receivable', label: 'Input VAT Credit', value: ppn.inputVAT, sub: 'From purchases', icon: 'ArrowDownCircleIcon', status: 'positive' },
+    { id: 'ppn', label: 'PPN (VAT)', value: ppn.netPayable, sub: 'Output - Input', icon: 'DocumentTextIcon', status: 'neutral' },
+    { id: 'pph21', label: 'PPh 21', value: pph21?.current || 0, sub: 'Employee income tax', icon: 'UserGroupIcon', status: 'neutral' },
+    { id: 'pph23', label: 'PPh 23', value: pph23?.current || 0, sub: 'Withholding tax', icon: 'ArrowsRightLeftIcon', status: 'neutral' },
+    { id: 'pph2529', label: 'PPh 25/29', value: pph25?.current || 0, sub: 'Corporate income tax', icon: 'BuildingOfficeIcon', status: 'neutral' },
+    { id: 'upcoming', label: 'Upcoming Tax', value: upcoming, sub: 'Next 30 days', icon: 'ClockIcon', status: upcoming > 0 ? 'warning' : 'positive' },
+    { id: 'overdue', label: 'Overdue Tax', value: overdue, sub: overdue > 0 ? 'Requires attention' : 'No overdue items', icon: 'ExclamationTriangleIcon', status: overdue > 0 ? 'negative' : 'positive' },
+  ];
+
   const goToObligation = () => {
     document.getElementById('tax-obligations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -39,7 +48,7 @@ export default function TaxKPICards() {
                 <Icon name={card.icon as Parameters<typeof Icon>[0]['name']} size={14} className="text-muted-foreground group-hover:text-chart-3 transition-colors" />
               </div>
               <span className={`text-2xs font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>
-                {card.trend}
+                {card.sub}
               </span>
             </div>
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>

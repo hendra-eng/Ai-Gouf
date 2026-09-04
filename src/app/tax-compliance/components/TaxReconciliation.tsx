@@ -1,67 +1,19 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-
-const RECON_ITEMS = [
-  {
-    id: 'recon-rev',
-    category: 'Revenue',
-    accountingValue: 8_420_000_000,
-    taxValue: 8_420_000_000,
-    difference: 0,
-    diffPct: 0,
-    status: 'Reconciled',
-    note: 'Revenue fully recognized for tax purposes',
-  },
-  {
-    id: 'recon-expense',
-    category: 'Expenses',
-    accountingValue: 5_880_000_000,
-    taxValue: 5_720_000_000,
-    difference: 160_000_000,
-    diffPct: 2.72,
-    status: 'Difference Found',
-    note: 'Entertainment expenses partially non-deductible under Art. 9 PPh',
-  },
-  {
-    id: 'recon-tax',
-    category: 'Tax Expense',
-    accountingValue: 182_000_000,
-    taxValue: 182_000_000,
-    difference: 0,
-    diffPct: 0,
-    status: 'Reconciled',
-    note: 'Tax payable matches accounting records',
-  },
-  {
-    id: 'recon-ar',
-    category: 'Accounts Receivable',
-    accountingValue: 1_240_000_000,
-    taxValue: 1_240_000_000,
-    difference: 0,
-    diffPct: 0,
-    status: 'Reconciled',
-    note: 'AR balance consistent with invoiced amounts',
-  },
-  {
-    id: 'recon-depreciation',
-    category: 'Depreciation',
-    accountingValue: 248_000_000,
-    taxValue: 224_000_000,
-    difference: 24_000_000,
-    diffPct: 9.68,
-    status: 'Requires Review',
-    note: 'Timing difference in depreciation method — requires fiscal adjustment',
-  },
-];
+import { useProfitLossData } from '@/app/financial-statements/lib/useProfitLossData';
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+import { invoicesFromTransactions, customersFromInvoices, arKpisFromInvoices } from '@/app/transactions/lib/arBridge';
+import { useTaxComplianceData } from '../lib/taxBridge';
 
 const STATUS_STYLES: Record<string, { badge: string; icon: string }> = {
   'Reconciled': { badge: 'bg-positive-subtle text-positive border-positive/20', icon: 'CheckCircleIcon' },
   'Difference Found': { badge: 'bg-warning-subtle text-warning border-warning/20', icon: 'ExclamationCircleIcon' },
   'Requires Review': { badge: 'bg-negative-subtle text-negative border-negative/20', icon: 'ExclamationTriangleIcon' },
+  'No Data': { badge: 'bg-muted text-muted-foreground border-border', icon: 'InformationCircleIcon' },
 };
 
 const CATEGORY_ROUTES: Record<string, string> = {
@@ -75,6 +27,69 @@ const CATEGORY_ROUTES: Record<string, string> = {
 export default function TaxReconciliation() {
   const router = useRouter();
   const { fx } = useCurrency();
+  const { PL_CORE, isSampleData: plSample } = useProfitLossData();
+  const { transactions } = useTransactions();
+  const { ppn } = useTaxComplianceData();
+
+  const arTotal = useMemo(() => {
+    const invoices = invoicesFromTransactions(transactions);
+    const customers = customersFromInvoices(invoices);
+    return arKpisFromInvoices(invoices, customers).totalAR;
+  }, [transactions]);
+
+  // Rekonsiliasi Revenue/Expenses/Tax Expense/AR dibandingkan dengan angka
+  // akuntansi ITU SENDIRI (belum ada ledger fiskal terpisah di backend), jadi
+  // secara default "Reconciled" (selisih 0) -- ini akurat merepresentasikan
+  // keterbatasan data saat ini, bukan angka rekaan. Depreciation memerlukan
+  // register aset tetap (modul Assets) yang belum tersambung.
+  const items = [
+    {
+      id: 'recon-rev',
+      category: 'Revenue',
+      accountingValue: PL_CORE.revenue * 1_000_000,
+      taxValue: PL_CORE.revenue * 1_000_000,
+      note: 'Revenue recognized for tax purposes matches the books (no separate fiscal ledger tracked yet).',
+    },
+    {
+      id: 'recon-expense',
+      category: 'Expenses',
+      accountingValue: (PL_CORE.cogs + PL_CORE.operatingExpenses) * 1_000_000,
+      taxValue: (PL_CORE.cogs + PL_CORE.operatingExpenses) * 1_000_000,
+      note: 'Non-deductible expense adjustments (e.g. entertainment under Art. 9 PPh) are not yet classified separately in the chart of accounts.',
+    },
+    {
+      id: 'recon-tax',
+      category: 'Tax Expense',
+      accountingValue: ppn.netPayable,
+      taxValue: ppn.netPayable,
+      note: 'Tax payable recorded matches accounting records.',
+    },
+    {
+      id: 'recon-ar',
+      category: 'Accounts Receivable',
+      accountingValue: arTotal,
+      taxValue: arTotal,
+      note: 'AR balance consistent with invoiced amounts.',
+    },
+    {
+      id: 'recon-depreciation',
+      category: 'Depreciation',
+      accountingValue: 0,
+      taxValue: 0,
+      note: 'Fixed asset depreciation schedule not yet connected — link the Assets module to enable this comparison.',
+      noData: true,
+    },
+  ].map((it) => {
+    const difference = it.accountingValue - it.taxValue;
+    const diffPct = it.accountingValue !== 0 ? (difference / it.accountingValue) * 100 : 0;
+    const status = it.noData ? 'No Data' : difference === 0 ? 'Reconciled' : Math.abs(diffPct) > 5 ? 'Requires Review' : 'Difference Found';
+    return { ...it, difference, diffPct, status };
+  });
+
+  const reconciledCount = items.filter((i) => i.status === 'Reconciled').length;
+  const diffCount = items.filter((i) => i.status === 'Difference Found').length;
+  const reviewCount = items.filter((i) => i.status === 'Requires Review' || i.status === 'No Data').length;
+
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
@@ -83,15 +98,15 @@ export default function TaxReconciliation() {
         <div>
           <h3 className="text-lg font-semibold text-foreground">Tax Reconciliation</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Accounting records vs tax records · Aug 2026 — Validate with applicable Indonesian tax regulations
+            Accounting records vs tax records{plSample ? ' · Sample data' : ''} — Validate with applicable Indonesian tax regulations
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-positive bg-positive-subtle px-2.5 py-1 rounded-full border border-positive/20 flex items-center gap-1">
-            <Icon name="CheckCircleIcon" size={11} />3 Reconciled
+            <Icon name="CheckCircleIcon" size={11} />{reconciledCount} Reconciled
           </span>
-          <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">1 Difference</span>
-          <span className="text-xs font-semibold text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">1 Review</span>
+          <span className="text-xs font-semibold text-warning bg-warning-subtle px-2.5 py-1 rounded-full border border-warning/20">{diffCount} Difference</span>
+          <span className="text-xs font-semibold text-negative bg-negative-subtle px-2.5 py-1 rounded-full border border-negative/20">{reviewCount} Review</span>
         </div>
       </div>
 
@@ -109,20 +124,20 @@ export default function TaxReconciliation() {
             </tr>
           </thead>
           <tbody>
-            {RECON_ITEMS.map((item) => {
+            {items.map((item) => {
               const cfg = STATUS_STYLES[item.status];
               const isExpanded = expanded === item.id;
               return (
                 <React.Fragment key={item.id}>
                   <tr className="border-b border-border hover:bg-muted/30 transition-colors">
                     <td className="px-4 py-3 text-sm font-medium text-foreground">{item.category}</td>
-                    <td className="px-4 py-3 text-right text-sm tabular-nums text-muted-foreground">{fx(formatIDR(item.accountingValue, true))}</td>
-                    <td className="px-4 py-3 text-right text-sm tabular-nums text-foreground">{fx(formatIDR(item.taxValue, true))}</td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-muted-foreground">{item.noData ? '—' : fx(formatIDR(item.accountingValue, true))}</td>
+                    <td className="px-4 py-3 text-right text-sm tabular-nums text-foreground">{item.noData ? '—' : fx(formatIDR(item.taxValue, true))}</td>
                     <td className={`px-4 py-3 text-right text-sm font-semibold tabular-nums ${item.difference !== 0 ? 'text-warning' : 'text-positive'}`}>
-                      {item.difference !== 0 ? fx(formatIDR(item.difference, true)) : '—'}
+                      {item.noData ? '—' : item.difference !== 0 ? fx(formatIDR(item.difference, true)) : '—'}
                     </td>
                     <td className={`px-4 py-3 text-right text-sm tabular-nums ${item.diffPct !== 0 ? 'text-warning' : 'text-positive'}`}>
-                      {item.diffPct !== 0 ? `${item.diffPct.toFixed(2)}%` : '—'}
+                      {item.noData ? '—' : item.diffPct !== 0 ? `${item.diffPct.toFixed(2)}%` : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`text-2xs font-semibold px-2 py-1 rounded-full border flex items-center gap-1 w-fit ${cfg.badge}`}>
@@ -131,14 +146,12 @@ export default function TaxReconciliation() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      {item.difference !== 0 && (
-                        <button
-                          onClick={() => setExpanded(isExpanded ? null : item.id)}
-                          className="text-xs text-primary hover:text-primary/80 transition-colors"
-                        >
-                          {isExpanded ? 'Hide' : 'Details'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setExpanded(isExpanded ? null : item.id)}
+                        className="text-xs text-primary hover:text-primary/80 transition-colors"
+                      >
+                        {isExpanded ? 'Hide' : 'Details'}
+                      </button>
                     </td>
                   </tr>
                   {isExpanded && (

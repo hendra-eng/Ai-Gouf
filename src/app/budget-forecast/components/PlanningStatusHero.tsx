@@ -3,18 +3,26 @@ import React from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-
-const STATUS_ITEMS = [
-  { label: 'Budget Achievement', value: '94.8%', trend: '+2.1%', status: 'positive', icon: 'CheckCircleIcon' },
-  { label: 'Forecast vs Budget', value: '+3.6%', trend: 'Above Plan', status: 'positive', icon: 'ArrowTrendingUpIcon' },
-  { label: 'Actual Revenue', value: formatIDR(8_420_000_000, true), trend: 'YTD Aug 2026', status: 'neutral', icon: 'BanknotesIcon' },
-  { label: 'Forecast Revenue', value: formatIDR(10_480_000_000, true), trend: 'FY 2026', status: 'positive', icon: 'ChartBarIcon' },
-  { label: 'Forecast Confidence', value: '87.3%', trend: 'High Confidence', status: 'positive', icon: 'ShieldCheckIcon' },
-];
+import { useActiveClient } from '@/lib/activeClient';
+import { useBudgetData } from '../lib/budgetBridge';
 
 export default function PlanningStatusHero() {
   const { fx } = useCurrency();
-  const achievement = 94.8;
+  const { activeClientName } = useActiveClient();
+  const { kpis, lines, periodLabel, isSampleData } = useBudgetData();
+
+  const achievement = kpis.totalBudget !== 0 ? Math.round((kpis.totalActual / kpis.totalBudget) * 1000) / 10 : 0;
+  const forecastVsBudget = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 0;
+  const isOnTrack = achievement >= 95;
+  const forecastConfidence = Math.max(50, Math.min(95, 95 - Math.abs(forecastVsBudget) * 2));
+
+  const STATUS_ITEMS = [
+    { label: 'Budget Achievement', value: `${achievement}%`, trend: kpis.variance >= 0 ? 'Above budget' : 'Below budget', status: achievement >= 95 ? 'positive' : 'neutral', icon: 'CheckCircleIcon' },
+    { label: 'Forecast vs Budget', value: `${forecastVsBudget >= 0 ? '+' : ''}${forecastVsBudget.toFixed(1)}%`, trend: forecastVsBudget >= 0 ? 'Above Plan' : 'Below Plan', status: forecastVsBudget >= 0 ? 'positive' : 'neutral', icon: 'ArrowTrendingUpIcon' },
+    { label: 'Actual Revenue', value: formatIDR(kpis.totalActual * 1_000_000, true), trend: `YTD ${periodLabel || ''}`, status: 'neutral', icon: 'BanknotesIcon' },
+    { label: 'Forecast Revenue', value: formatIDR(lines.revenue.forecast * 1_000_000, true), trend: 'Full Year', status: 'positive', icon: 'ChartBarIcon' },
+    { label: 'Forecast Confidence', value: `${forecastConfidence.toFixed(1)}%`, trend: forecastConfidence >= 80 ? 'High Confidence' : 'Moderate Confidence', status: forecastConfidence >= 80 ? 'positive' : 'neutral', icon: 'ShieldCheckIcon' },
+  ];
 
   return (
     <div className="card-base p-6 bg-gradient-to-br from-card to-muted/40 border-primary/20">
@@ -26,12 +34,15 @@ export default function PlanningStatusHero() {
               <Icon name="FlagIcon" size={20} className="text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-foreground">FY2026 Financial Plan</h2>
-              <p className="text-xs text-muted-foreground">PT Nusantara Teknologi Indonesia · Updated Aug 26, 2026</p>
+              <h2 className="text-xl font-bold text-foreground">Financial Plan</h2>
+              <p className="text-xs text-muted-foreground">
+                {activeClientName || 'No active client'} · {periodLabel || 'Year to date'}
+                {isSampleData ? ' · Sample data' : ''}
+              </p>
             </div>
-            <span className="ml-auto px-2.5 py-1 rounded-full bg-positive-subtle text-positive text-xs font-semibold border border-positive/20 flex items-center gap-1">
-              <Icon name="CheckCircleIcon" size={12} />
-              On Track
+            <span className={`ml-auto px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 ${isOnTrack ? 'bg-positive-subtle text-positive border-positive/20' : 'bg-warning-subtle text-warning border-warning/20'}`}>
+              <Icon name={isOnTrack ? 'CheckCircleIcon' : 'ExclamationCircleIcon'} size={12} />
+              {isOnTrack ? 'On Track' : 'Behind Plan'}
             </span>
           </div>
 
@@ -44,12 +55,12 @@ export default function PlanningStatusHero() {
             <div className="h-3 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-primary to-chart-2 transition-all duration-700"
-                style={{ width: `${achievement}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, achievement))}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{fx('Rp 0')}</span>
-              <span>{fx('Budget: Rp 10.20M')}</span>
+              <span>{fx(formatIDR(kpis.totalActual * 1_000_000, true))}</span>
+              <span>{fx(`Budget: ${formatIDR(kpis.totalBudget * 1_000_000, true)}`)}</span>
             </div>
           </div>
         </div>

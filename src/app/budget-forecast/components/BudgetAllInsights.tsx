@@ -1,48 +1,12 @@
 'use client';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-
-const INSIGHTS = [
-  {
-    id: 'ai-budget-1',
-    title: 'Revenue Recovery Trajectory',
-    summary: 'Revenue is currently below the annual budget trajectory, but the latest forecast indicates recovery in Q4 driven by three enterprise contracts expected to close.',
-    numbers: ['YTD Budget Achievement: 94.8%', 'Forecast FY Revenue: Rp 10.48M (+2.7% vs Budget)', 'Q4 Pipeline: Rp 1.92M'],
-    recommendation: 'Prioritize Q4 pipeline conversion. Ensure enterprise deals in Oct–Nov close on schedule.',
-    severity: 'info',
-    icon: 'ArrowTrendingUpIcon',
-  },
-  {
-    id: 'ai-budget-2',
-    title: 'Marketing Overspend Alert',
-    summary: 'Marketing expenses are currently 12.4% above budget. The overspend is concentrated in digital campaign spend and event costs in Q2–Q3.',
-    numbers: ['Budget: Rp 180M', 'Actual YTD: Rp 202M', 'Overspend: Rp 22M (+12.4%)'],
-    recommendation: 'Review marketing budget allocation for Q4. Consider reallocating from brand to performance campaigns.',
-    severity: 'warning',
-    icon: 'ExclamationTriangleIcon',
-  },
-  {
-    id: 'ai-budget-3',
-    title: 'EBITDA Forecast Positive',
-    summary: 'Based on current trends, projected EBITDA is expected to exceed budget by 6.7% due to payroll savings and COGS efficiency improvements.',
-    numbers: ['Budget EBITDA: Rp 2.55M', 'Forecast EBITDA: Rp 2.72M', 'Upside: +Rp 170M (+6.7%)'],
-    recommendation: 'Protect EBITDA margin by maintaining cost discipline in Q4 OpEx categories.',
-    severity: 'positive',
-    icon: 'CheckCircleIcon',
-  },
-  {
-    id: 'ai-budget-4',
-    title: 'Cash Flow Adequacy',
-    summary: 'Cash position remains strong at Rp 2.96M. Forecast ending cash of Rp 3.84M indicates healthy liquidity through FY2026.',
-    numbers: ['Current Cash: Rp 2.96M', 'Forecast Ending Cash: Rp 3.84M', 'Minimum Threshold: Rp 1.50M'],
-    recommendation: 'Consider deploying excess cash into short-term instruments to optimize returns.',
-    severity: 'positive',
-    icon: 'BanknotesIcon',
-  },
-];
+import { useBudgetData } from '../lib/budgetBridge';
+import { useCashFlowData } from '@/app/financial-statements/lib/useCashFlowData';
 
 const SEVERITY_CONFIG = {
   positive: { bg: 'bg-positive-subtle border-positive/20', icon: 'text-positive', badge: 'bg-positive/10 text-positive' },
@@ -54,6 +18,64 @@ const SEVERITY_CONFIG = {
 export default function BudgetAIInsights() {
   const router = useRouter();
   const { fx } = useCurrency();
+  const { kpis, lines, periodLabel, expenseCategoryVariance } = useBudgetData();
+  const { CF_CORE } = useCashFlowData();
+
+  const INSIGHTS = useMemo(() => {
+    const list: { id: string; title: string; summary: string; numbers: string[]; recommendation: string; severity: keyof typeof SEVERITY_CONFIG; icon: string }[] = [];
+    const achievement = kpis.totalBudget !== 0 ? (kpis.totalActual / kpis.totalBudget) * 100 : 0;
+    const revForecastVar = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 0;
+
+    list.push({
+      id: 'ai-budget-revenue',
+      title: achievement >= 95 ? 'Revenue On Track' : 'Revenue Below Trajectory',
+      summary: achievement >= 95
+        ? 'Revenue is tracking close to or above the annual budget trajectory based on posted transactions.'
+        : 'Revenue is currently below the annual budget trajectory based on posted transactions.',
+      numbers: [`YTD Budget Achievement: ${achievement.toFixed(1)}%`, `Forecast FY Revenue: ${fx(formatIDR(lines.revenue.forecast * 1_000_000, true))} (${revForecastVar >= 0 ? '+' : ''}${revForecastVar.toFixed(1)}% vs Budget)`],
+      recommendation: achievement >= 95 ? 'Maintain current sales cadence to protect the FY trajectory.' : 'Prioritize pipeline conversion in the remaining months to close the gap to budget.',
+      severity: achievement >= 95 ? 'positive' : 'info',
+      icon: 'ArrowTrendingUpIcon',
+    });
+
+    const worstOverspend = [...expenseCategoryVariance].filter((v) => v.variance > 0).sort((a, b) => b.variance - a.variance)[0];
+    if (worstOverspend) {
+      list.push({
+        id: 'ai-budget-expense',
+        title: `${worstOverspend.name} Overspend Alert`,
+        summary: `${worstOverspend.name} expenses are currently ${worstOverspend.variancePct.toFixed(1)}% above budget for the period.`,
+        numbers: [`Budget: ${fx(formatIDR(worstOverspend.budget * 1_000_000, true))}`, `Actual YTD: ${fx(formatIDR(worstOverspend.actual * 1_000_000, true))}`, `Overspend: ${fx(formatIDR(worstOverspend.variance * 1_000_000, true))} (+${worstOverspend.variancePct.toFixed(1)}%)`],
+        recommendation: `Review ${worstOverspend.name.toLowerCase()} spend for the remaining months and consider reallocating budget.`,
+        severity: 'warning',
+        icon: 'ExclamationTriangleIcon',
+      });
+    }
+
+    const ebitdaVar = lines.ebitda.budget !== 0 ? ((lines.ebitda.forecast - lines.ebitda.budget) / lines.ebitda.budget) * 100 : 0;
+    list.push({
+      id: 'ai-budget-ebitda',
+      title: ebitdaVar >= 0 ? 'EBITDA Forecast Positive' : 'EBITDA Below Budget',
+      summary: ebitdaVar >= 0
+        ? `Based on current trends, projected full-year EBITDA is expected to exceed budget by ${ebitdaVar.toFixed(1)}%.`
+        : `Based on current trends, projected full-year EBITDA is tracking ${Math.abs(ebitdaVar).toFixed(1)}% below budget.`,
+      numbers: [`Budget EBITDA: ${fx(formatIDR(lines.ebitda.budget * 1_000_000, true))}`, `Forecast EBITDA: ${fx(formatIDR(lines.ebitda.forecast * 1_000_000, true))}`],
+      recommendation: ebitdaVar >= 0 ? 'Protect the EBITDA margin by maintaining cost discipline in remaining months.' : 'Identify cost efficiencies or revenue upside to close the EBITDA gap.',
+      severity: ebitdaVar >= 0 ? 'positive' : 'negative',
+      icon: 'CheckCircleIcon',
+    });
+
+    list.push({
+      id: 'ai-budget-cash',
+      title: 'Cash Position Update',
+      summary: `Current cash position is ${fx(formatIDR(CF_CORE.endingCash * 1_000_000, true))}, based on posted cash flow transactions for ${periodLabel || 'the period'}.`,
+      numbers: [`Current Cash: ${fx(formatIDR(CF_CORE.endingCash * 1_000_000, true))}`, `Beginning Cash: ${fx(formatIDR(CF_CORE.beginningCash * 1_000_000, true))}`],
+      recommendation: CF_CORE.endingCash >= CF_CORE.beginningCash ? 'Consider deploying excess cash into short-term instruments to optimize returns.' : 'Monitor upcoming payables closely to maintain adequate liquidity.',
+      severity: CF_CORE.endingCash >= CF_CORE.beginningCash ? 'positive' : 'warning',
+      icon: 'BanknotesIcon',
+    });
+
+    return list;
+  }, [kpis, lines, expenseCategoryVariance, CF_CORE, periodLabel, fx]);
 
   return (
     <div className="card-base p-5">
@@ -63,7 +85,7 @@ export default function BudgetAIInsights() {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">AI Planning Insights</h3>
-          <p className="text-xs text-muted-foreground">Generated from FY2026 budget and forecast data · Aug 26, 2026</p>
+          <p className="text-xs text-muted-foreground">Generated from {periodLabel || 'current'} budget and forecast data</p>
         </div>
         <button
           onClick={() => toast.info('Memperbarui insight AI...')}
@@ -76,7 +98,7 @@ export default function BudgetAIInsights() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {INSIGHTS.map((insight) => {
-          const cfg = SEVERITY_CONFIG[insight.severity as keyof typeof SEVERITY_CONFIG];
+          const cfg = SEVERITY_CONFIG[insight.severity];
           return (
             <div key={insight.id} className={`rounded-xl border p-4 ${cfg.bg}`}>
               <div className="flex items-start gap-3 mb-3">
@@ -90,7 +112,7 @@ export default function BudgetAIInsights() {
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {insight.numbers.map((n, ni) => (
                   <span key={`num-${insight.id}-${ni}`} className={`text-2xs font-medium px-2 py-1 rounded-full ${cfg.badge}`}>
-                    {fx(n)}
+                    {n}
                   </span>
                 ))}
               </div>
@@ -109,7 +131,7 @@ export default function BudgetAIInsights() {
                     Analyze
                   </button>
                   <button
-                    onClick={() => toast.info(insight.title, { description: fx(insight.numbers.join(' · ')) })}
+                    onClick={() => toast.info(insight.title, { description: insight.numbers.join(' · ') })}
                     className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <Icon name="TableCellsIcon" size={12} />

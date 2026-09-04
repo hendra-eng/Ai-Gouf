@@ -4,34 +4,32 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 
-const RAW = [
-  { name: 'Budget\nProfit', value: 1760, isBase: true, cumulative: 1760 },
-  { name: 'Revenue\nUpside', value: 80, isBase: false, cumulative: 1840 },
-  { name: 'COGS\nSavings', value: 60, isBase: false, cumulative: 1900 },
-  { name: 'Payroll\nSavings', value: 22, isBase: false, cumulative: 1922 },
-  { name: 'Marketing\nOverspend', value: -22, isBase: false, cumulative: 1900 },
-  { name: 'Other\nSavings', value: 10, isBase: false, cumulative: 1910 },
-  { name: 'Forecast\nProfit', value: 1910, isBase: true, cumulative: 1910 },
-];
+export interface WaterfallItem { name: string; value: number; isBase: boolean }
 
-// Build waterfall: each bar has a transparent "invisible" base + a colored bar
-const DATA = RAW.map((item, i) => {
-  if (item.isBase) {
-    return { ...item, invisible: 0, positive: item.value, negative: 0 };
-  }
-  const prev = RAW[i - 1]?.cumulative || 0;
-  const base = item.value >= 0 ? prev : prev + item.value;
-  return {
-    ...item,
-    invisible: base,
-    positive: item.value >= 0 ? item.value : 0,
-    negative: item.value < 0 ? Math.abs(item.value) : 0,
-  };
-});
+function buildData(raw: WaterfallItem[]) {
+  let cumulative = 0;
+  const withCumulative = raw.map((item) => {
+    cumulative = item.isBase ? item.value : cumulative + item.value;
+    return { ...item, cumulative };
+  });
+  return withCumulative.map((item, i) => {
+    if (item.isBase) {
+      return { ...item, invisible: 0, positive: item.value, negative: 0 };
+    }
+    const prev = withCumulative[i - 1]?.cumulative || 0;
+    const base = item.value >= 0 ? prev : prev + item.value;
+    return {
+      ...item,
+      invisible: base,
+      positive: item.value >= 0 ? item.value : 0,
+      negative: item.value < 0 ? Math.abs(item.value) : 0,
+    };
+  });
+}
 
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) => {
+const CustomTooltip = ({ active, payload, label, raw }: { active?: boolean; payload?: Array<{ value: number }>; label?: string; raw: ReturnType<typeof buildData> }) => {
   if (!active || !payload?.length) return null;
-  const item = RAW.find((r) => r.name === label);
+  const item = raw.find((r) => r.name === label);
   if (!item) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
@@ -44,7 +42,13 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function WaterfallChartInner() {
+export default function WaterfallChartInner({ items }: { items: WaterfallItem[] }) {
+  const DATA = buildData(items);
+
+  if (items.length === 0) {
+    return <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">No data available yet.</div>;
+  }
+
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={DATA} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
@@ -62,7 +66,7 @@ export default function WaterfallChartInner() {
           tickFormatter={(v) => `${v}M`}
           width={45}
         />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<CustomTooltip raw={DATA} />} />
         <Bar dataKey="invisible" stackId="a" fill="transparent" legendType="none" />
         <Bar dataKey="positive" stackId="a" radius={[3, 3, 0, 0]} legendType="none">
           {DATA.map((entry, i) => (

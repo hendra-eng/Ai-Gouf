@@ -1,8 +1,9 @@
 'use client';
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import type { MonthlyAnalyticsRow } from '../lib/useAnalyticsData';
 
-const DATA = [
+const SAMPLE_DATA = [
   { month: 'Jan', currentRatio: 2.12, quickRatio: 1.88 },
   { month: 'Feb', currentRatio: 2.18, quickRatio: 1.94 },
   { month: 'Mar', currentRatio: 2.24, quickRatio: 1.98 },
@@ -13,11 +14,13 @@ const DATA = [
   { month: 'Aug', currentRatio: 2.41, quickRatio: 2.12 },
 ];
 
+interface Props { monthlyTrend?: MonthlyAnalyticsRow[]; }
+
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
-      <p className="text-xs font-semibold text-foreground mb-2">{label} 2026</p>
+      <p className="text-xs font-semibold text-foreground mb-2">{label}</p>
       {payload.map((p, i) => (
         <div key={`liq-tt-${i}`} className="flex justify-between gap-4 mb-1">
           <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
@@ -28,10 +31,15 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function LiquidityChartInner() {
+export default function LiquidityChartInner({ monthlyTrend }: Props) {
+  const data = monthlyTrend && monthlyTrend.length > 0
+    ? monthlyTrend.map((row) => ({ month: row.month, currentRatio: row.currentRatio, quickRatio: row.quickRatio }))
+    : SAMPLE_DATA;
+  const maxVal = Math.max(3, ...data.map((d) => Math.max(d.currentRatio, d.quickRatio)) , 0);
+
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={DATA} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="liqGrad1" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.2} />
@@ -44,7 +52,7 @@ export default function LiquidityChartInner() {
         </defs>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="month" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} domain={[1, 3]} tickFormatter={(v) => `${v}x`} width={35} />
+        <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(maxVal)]} tickFormatter={(v) => `${v}x`} width={35} />
         <Tooltip content={<CustomTooltip />} />
         <ReferenceLine y={2.0} stroke="var(--warning)" strokeDasharray="4 4" strokeWidth={1} />
         <ReferenceLine y={1.0} stroke="var(--negative)" strokeDasharray="4 4" strokeWidth={1} />

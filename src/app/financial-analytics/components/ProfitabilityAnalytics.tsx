@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
+import { useAnalyticsData } from '../lib/useAnalyticsData';
 
 const ProfitabilityChartInner = dynamic(() => import('./ProfitabilityChartInner'), { ssr: false, loading: () => (
   <div className="h-52 animate-pulse bg-muted rounded-xl" />
@@ -13,14 +14,13 @@ const METRICS = ['Gross Margin', 'EBITDA Margin', 'EBIT Margin', 'Net Margin', '
 export default function ProfitabilityAnalytics() {
   const router = useRouter();
   const [metric, setMetric] = useState('Net Margin');
+  const data = useAnalyticsData();
+  const { margins, monthlyTrend, periodLabel, isSampleData } = data;
 
-  const VALUES: Record<string, { current: string; previous: string; benchmark: string; status: string }> = {
-    'Gross Margin': { current: '44.2%', previous: '42.8%', benchmark: '40%', status: 'positive' },
-    'EBITDA Margin': { current: '27.4%', previous: '25.9%', benchmark: '20%', status: 'positive' },
-    'EBIT Margin': { current: '25.9%', previous: '24.3%', benchmark: '18%', status: 'positive' },
-    'Net Margin': { current: '21.9%', previous: '20.1%', benchmark: '15%', status: 'positive' },
-    'ROA': { current: '14.4%', previous: '12.8%', benchmark: '10%', status: 'positive' },
-    'ROE': { current: '21.4%', previous: '18.2%', benchmark: '15%', status: 'positive' },
+  const BENCHMARK: Record<string, number> = { 'Gross Margin': 40, 'EBITDA Margin': 20, 'EBIT Margin': 18, 'Net Margin': 15, 'ROA': 10, 'ROE': 15 };
+  const VALUES: Record<string, { current: number; previous: number }> = {
+    'Gross Margin': margins.gross, 'EBITDA Margin': margins.ebitda, 'EBIT Margin': margins.ebit,
+    'Net Margin': margins.net, 'ROA': margins.roa, 'ROE': margins.roe,
   };
 
   const val = VALUES[metric];
@@ -30,7 +30,9 @@ export default function ProfitabilityAnalytics() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-semibold text-foreground">Profitability Analysis</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Monthly trend · FY 2026</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {isSampleData ? 'Monthly trend · FY 2026 (sample data)' : `Monthly trend · ${periodLabel}`}
+          </p>
         </div>
         <button
           onClick={() => router?.push('/ai-financial-analyst?analysis=profit-decrease')}
@@ -59,9 +61,9 @@ export default function ProfitabilityAnalytics() {
       {/* Summary row */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         {[
-          { label: 'Current', value: val.current, color: 'text-positive' },
-          { label: 'Previous', value: val.previous, color: 'text-muted-foreground' },
-          { label: 'Internal Target', value: `>${val.benchmark}`, color: 'text-info' },
+          { label: 'Current', value: `${val.current.toFixed(1)}%`, color: val.current >= (BENCHMARK[metric] || 0) ? 'text-positive' : 'text-warning' },
+          { label: isSampleData ? 'Previous' : 'Prev. Month', value: `${val.previous.toFixed(1)}%`, color: 'text-muted-foreground' },
+          { label: 'Internal Target', value: `>${BENCHMARK[metric]}%`, color: 'text-info' },
         ].map((s) => (
           <div key={`prof-sum-${s.label}`} className="bg-muted rounded-xl p-3 text-center">
             <p className="text-2xs text-muted-foreground mb-1">{s.label}</p>
@@ -70,7 +72,7 @@ export default function ProfitabilityAnalytics() {
         ))}
       </div>
 
-      <ProfitabilityChartInner metric={metric} />
+      <ProfitabilityChartInner metric={metric} monthlyTrend={monthlyTrend} benchmark={BENCHMARK[metric] || 15} />
     </div>
   );
 }

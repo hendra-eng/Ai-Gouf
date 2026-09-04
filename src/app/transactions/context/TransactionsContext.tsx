@@ -12,6 +12,11 @@ import { toast } from 'sonner';
 import { ALL_TRANSACTIONS, Transaction, TransactionGroup, getTransactionGroup } from '../components/transactionData';
 import { transactionsFromJurnalPosting, type BackendJurnalRow } from '../lib/jurnalBridge';
 import { useActiveClient } from '@/lib/activeClient';
+// [BARU] Dengarkan notifikasi "data client berubah" yang dikirim Agent AI
+// begitu selesai upload & auto-posting file (lihat dataSync.ts) -- supaya
+// tabel Transaksi otomatis refresh tanpa user harus ganti client atau
+// reload halaman manual dulu.
+import { listenClientDataChanged } from '@/lib/dataSync';
 // [BARU] Sumber transaksi sekarang REAL: diambil dari backend
 // GET /api/client/{id}/jurnal-posting (semua status) dan diterjemahkan lewat
 // jurnalBridge.ts. Data statis ALL_TRANSACTIONS (transactionData.ts) hanya
@@ -114,6 +119,21 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     loadFromBackend();
   }, [loadFromBackend]);
+
+  // [BARU] Begitu Agent AI selesai upload & auto-posting untuk CLIENT YANG
+  // SAMA dengan yang sedang aktif di sini, muat ulang jurnal dari backend --
+  // supaya baris transaksi baru langsung muncul di tabel tanpa perlu ganti
+  // client atau reload halaman manual. Kalau notifikasi datang untuk client
+  // LAIN (bukan yang lagi aktif di layar ini), diabaikan -- nanti otomatis
+  // ke-fetch sendiri begitu user pindah ke client itu (efek activeClientId
+  // di atas).
+  useEffect(() => {
+    return listenClientDataChanged((changedClientId) => {
+      if (changedClientId === activeClientId) {
+        loadFromBackend();
+      }
+    });
+  }, [activeClientId, loadFromBackend]);
 
   const unpostedCount = useMemo(
     () => transactions.filter((tx) => tx.status === 'Unposted').length,

@@ -3,10 +3,19 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
-import KpiCard from '@/components/shared/KpiCard';
 import dynamic from 'next/dynamic';
 import { useLanguage } from '@/lib/language';
 import { CURRENCIES, useCurrency } from '@/lib/currency';
+// [BARU] KPI grid sekarang REAL: KPIBentoGrid.tsx sudah lengkap ambil data
+// dari backend (GET /api/client/{id}/kpi-bento, lihat ambilKpiBento() di
+// agent-ai/lib/api.js) untuk client yang lagi aktif (useActiveClient) --
+// sebelumnya komponen ini sudah ada & sudah benar, tapi TIDAK PERNAH dipakai
+// di halaman manapun; OverviewContent (halaman "/" yang sebenarnya) masih
+// pakai 8 kartu KPI hardcoded sendiri (`kpiCards` di bawah, sekarang
+// dihapus). KPIBentoGrid otomatis fallback ke data contoh + banner "Showing
+// sample data" kalau belum ada client aktif / client belum ada jurnal sama
+// sekali -- jadi halaman tidak pernah kosong.
+import KPIBentoGrid from './KPIBentoGrid';
 
 const OverviewCharts = dynamic(() => import('./OverviewCharts'), { ssr: false });
 
@@ -15,30 +24,6 @@ export default function OverviewContent() {
   const [branch, setBranch] = useState('All Branches');
   const { t } = useLanguage();
   const { currency, setCurrency, fx } = useCurrency();
-
-  // labelKey/subLabelKey/changePeriodKey reference the shared translations
-  // table (see src/lib/language.tsx); rawValue is a "Rp ..." shorthand run
-  // through fx() so it follows the selected currency.
-  const kpiCards = [
-    { id: 'kpi-revenue', labelKey: 'Total Revenue', rawValue: 'Rp 8,42M', subLabelKey: 'Jan–Aug 2026 YTD', changeNum: 12.8, changePeriodKey: 'vs Jan–Aug 2025', changePositive: true, size: 'large' as const, sparkline: [620, 680, 720, 690, 810, 850, 890, 842] },
-    { id: 'kpi-netprofit', labelKey: 'Net Profit', rawValue: 'Rp 1,84M', subLabelKey: 'Margin 21.8%', changeNum: 8.4, changePeriodKey: 'vs prev period', changePositive: true, sparkline: [140, 155, 160, 148, 175, 182, 188, 184] },
-    { id: 'kpi-grossprofit', labelKey: 'Gross Profit', rawValue: 'Rp 3,72M', subLabelKey: 'Margin 44.2%', changeNum: 10.2, changePeriodKey: 'vs prev period', changePositive: true, sparkline: [310, 330, 345, 320, 365, 370, 375, 372] },
-    { id: 'kpi-cash', labelKey: 'Cash & Bank', rawValue: 'Rp 2,96M', subLabelKey: '4.8 mo runway', changeNum: 5.7, changePeriodKey: 'vs prev period', changePositive: true, sparkline: [260, 270, 280, 275, 285, 290, 295, 296] },
-    { id: 'kpi-ar', labelKey: 'Accounts Receivable', rawValue: 'Rp 1,24M', subLabelKey: 'Rp 320M overdue', changeNum: -4.3, changePeriodKey: 'vs prev period', changePositive: false, alert: true, sparkline: [980, 1020, 995, 1065, 1038, 1162, 1085, 1240] },
-    { id: 'kpi-ap', labelKey: 'Accounts Payable', rawValue: 'Rp 860Jt', subLabelKey: 'Rp 142M due this week', changeNum: 3.1, changePeriodKey: 'vs prev period', changePositive: true, sparkline: [720, 690, 655, 725, 678, 802, 725, 860] },
-    { id: 'kpi-ebitda', labelKey: 'EBITDA', rawValue: 'Rp 2,31M', subLabelKey: 'Margin 27.4%', changeNum: 11.7, changePeriodKey: 'vs prev period', changePositive: true, sparkline: [195, 210, 215, 205, 225, 228, 232, 231] },
-    { id: 'kpi-tax', labelKey: 'Tax Payable', rawValue: 'Rp 182Jt', subLabelKey: '', alertLabelKey: 'Due in 14 days — 8 Sep 2026', changeNum: 6.2, changePeriodKey: 'vs prev period', changePositive: false, alert: true, sparkline: [145, 158, 162, 155, 170, 174, 178, 182] },
-  ];
-
-  const translatedKpiCards = kpiCards.map((kpi) => ({
-    ...kpi,
-    label: t(kpi.labelKey),
-    value: fx(kpi.rawValue),
-    subLabel: kpi.subLabelKey.startsWith('Rp ') ? fx(t(kpi.subLabelKey)) : t(kpi.subLabelKey),
-    change: kpi.changeNum,
-    changeLabel: t(kpi.changePeriodKey),
-    ...(kpi.alertLabelKey ? { alertLabel: fx(t(kpi.alertLabelKey)) } : {}),
-  }));
 
   return (
     <div className="space-y-6">
@@ -99,20 +84,8 @@ export default function OverviewContent() {
         </div>
       </div>
 
-      {/* KPI Grid — 3 cols row 1: hero spans 2 + 1, row 2: 4 equal, row 3: 1 tax */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
-        {/* Row 1 */}
-        <KpiCard {...translatedKpiCards[0]} sparklineData={translatedKpiCards[0].sparkline} sparklineColor="var(--primary)" className="lg:col-span-2" />
-        <KpiCard {...translatedKpiCards[1]} sparklineData={translatedKpiCards[1].sparkline} sparklineColor="var(--success)" />
-        <KpiCard {...translatedKpiCards[2]} sparklineData={translatedKpiCards[2].sparkline} sparklineColor="var(--success)" />
-        {/* Row 2 */}
-        <KpiCard {...translatedKpiCards[3]} sparklineData={translatedKpiCards[3].sparkline} sparklineColor="var(--info)" />
-        <KpiCard {...translatedKpiCards[4]} sparklineData={translatedKpiCards[4].sparkline} sparklineColor="var(--danger)" />
-        <KpiCard {...translatedKpiCards[5]} sparklineData={translatedKpiCards[5].sparkline} sparklineColor="var(--warning)" />
-        <KpiCard {...translatedKpiCards[6]} sparklineData={translatedKpiCards[6].sparkline} sparklineColor="var(--success)" />
-        {/* Row 3 */}
-        <KpiCard {...translatedKpiCards[7]} sparklineData={translatedKpiCards[7].sparkline} sparklineColor="var(--warning)" className="lg:col-span-1" />
-      </div>
+      {/* KPI Grid — sekarang REAL, ambil dari backend untuk client aktif (lihat import KPIBentoGrid di atas) */}
+      <KPIBentoGrid />
 
       {/* Charts */}
       <OverviewCharts />

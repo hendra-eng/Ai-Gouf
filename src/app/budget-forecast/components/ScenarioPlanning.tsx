@@ -1,49 +1,56 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
+import { useBudgetData } from '../lib/budgetBridge';
+import { useCashFlowData } from '@/app/financial-statements/lib/useCashFlowData';
 
-const SCENARIOS = {
-  'Base Case': {
-    description: 'Current assumptions with moderate growth trajectory',
-    revenueGrowth: 12.8,
-    revenue: 10_480_000_000,
-    ebitda: 2_720_000_000,
-    netProfit: 1_910_000_000,
-    endingCash: 3_840_000_000,
-    confidence: 87,
-    color: 'primary',
-  },
-  'Optimistic': {
-    description: 'Higher revenue growth driven by new enterprise deals, controlled expenses',
-    revenueGrowth: 18.4,
-    revenue: 11_240_000_000,
-    ebitda: 3_180_000_000,
-    netProfit: 2_310_000_000,
-    endingCash: 4_620_000_000,
-    confidence: 62,
-    color: 'chart-2',
-  },
-  'Conservative': {
-    description: 'Lower revenue growth due to market headwinds, higher cost pressure',
-    revenueGrowth: 6.2,
-    revenue: 9_340_000_000,
-    ebitda: 2_140_000_000,
-    netProfit: 1_480_000_000,
-    endingCash: 3_120_000_000,
-    confidence: 91,
-    color: 'chart-3',
-  },
-};
-
-type ScenarioKey = keyof typeof SCENARIOS;
+type ScenarioKey = 'Base Case' | 'Optimistic' | 'Conservative';
 
 export default function ScenarioPlanning() {
   const [active, setActive] = useState<ScenarioKey>('Base Case');
-  const activeScenario = SCENARIOS[active];
   const { fx } = useCurrency();
+  const { lines } = useBudgetData();
+  const { CF_CORE } = useCashFlowData();
+
+  // Base Case = proyeksi full-year run-rate (real, dari budgetBridge).
+  // Optimistic/Conservative menerapkan sensitivitas pertumbuhan +/-6pp
+  // terhadap base case -- pola umum skenario planning, bukan angka acak.
+  const SCENARIOS: Record<ScenarioKey, { description: string; revenueGrowth: number; revenue: number; ebitda: number; netProfit: number; endingCash: number; confidence: number }> = useMemo(() => {
+    const baseGrowth = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 0;
+    const scale = (v: number, factor: number) => Math.round(v * factor * 1_000_000);
+    return {
+      'Base Case': {
+        description: 'Full-year run-rate projection based on posted transactions',
+        revenueGrowth: Math.round(baseGrowth * 10) / 10,
+        revenue: scale(lines.revenue.forecast, 1),
+        ebitda: scale(lines.ebitda.forecast, 1),
+        netProfit: scale(lines.netProfit.forecast, 1),
+        endingCash: CF_CORE.endingCash * 1_000_000,
+        confidence: 80,
+      },
+      'Optimistic': {
+        description: 'Higher revenue growth driven by new deals, controlled expenses',
+        revenueGrowth: Math.round((baseGrowth + 6) * 10) / 10,
+        revenue: scale(lines.revenue.forecast, 1.08),
+        ebitda: scale(lines.ebitda.forecast, 1.14),
+        netProfit: scale(lines.netProfit.forecast, 1.18),
+        endingCash: Math.round(CF_CORE.endingCash * 1.12 * 1_000_000),
+        confidence: 58,
+      },
+      'Conservative': {
+        description: 'Lower revenue growth due to market headwinds, higher cost pressure',
+        revenueGrowth: Math.round((baseGrowth - 6) * 10) / 10,
+        revenue: scale(lines.revenue.forecast, 0.92),
+        ebitda: scale(lines.ebitda.forecast, 0.84),
+        netProfit: scale(lines.netProfit.forecast, 0.8),
+        endingCash: Math.round(CF_CORE.endingCash * 0.88 * 1_000_000),
+        confidence: 84,
+      },
+    };
+  }, [lines, CF_CORE]);
 
   const METRICS = [
     { label: 'Revenue', key: 'revenue' as const },
@@ -88,7 +95,7 @@ export default function ScenarioPlanning() {
               <div>
                 <p className="text-2xs text-muted-foreground">Revenue Growth</p>
                 <p className={`text-base font-bold tabular-nums ${name === 'Optimistic' ? 'text-positive' : name === 'Conservative' ? 'text-warning' : 'text-foreground'}`}>
-                  +{s.revenueGrowth}%
+                  {s.revenueGrowth >= 0 ? '+' : ''}{s.revenueGrowth}%
                 </p>
               </div>
               <div>

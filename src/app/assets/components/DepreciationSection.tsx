@@ -1,11 +1,13 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useCurrency } from '@/lib/currency';
+import { formatIDR } from '@/lib/financialData';
+import { useAssetRegisterData } from '../lib/assetRegisterBridge';
 
-// Backend integration point: replace with API call to /api/assets/depreciation?period=...
-const monthlyDepreciation = [
+// Data contoh -- HANYA dipakai kalau client aktif belum upload file "Aset Tetap".
+const SAMPLE_MONTHLY_DEPRECIATION = [
   { month: 'Jan', amount: 44.2 },
   { month: 'Feb', amount: 44.2 },
   { month: 'Mar', amount: 47.8 },
@@ -16,7 +18,7 @@ const monthlyDepreciation = [
   { month: 'Aug', amount: 56.1 },
 ];
 
-const nearlyDepreciated = [
+const SAMPLE_NEARLY_DEPRECIATED = [
   { id: 'FA-2024-010', name: 'Printer Xerox C8000', nbv: 'Rp 9.6M', remaining: '8 months', pct: 88 },
   { id: 'FA-2024-004', name: 'Laptop MacBook Pro M3', nbv: 'Rp 18.2M', remaining: '14 months', pct: 76 },
   { id: 'FA-2024-005', name: 'Mesin Produksi CNC-X200', nbv: 'Rp 106M', remaining: '16 months', pct: 67 },
@@ -24,7 +26,7 @@ const nearlyDepreciated = [
   { id: 'FA-2024-007', name: 'Honda CRV 2021', nbv: 'Rp 370M', remaining: '38 months', pct: 23 },
 ];
 
-const summaryStats = [
+const SAMPLE_SUMMARY_STATS = [
   { label: 'Depreciation This Period', value: 'Rp 56.1M', sub: 'Aug 2026' },
   { label: 'Accumulated Depreciation', value: 'Rp 410M', sub: 'All fixed assets' },
   { label: 'Remaining Book Value', value: 'Rp 1.85M', sub: 'Net book value' },
@@ -34,6 +36,27 @@ const summaryStats = [
 export default function DepreciationSection() {
   const { fx } = useCurrency();
   const [hoveredBar, setHoveredBar] = useState<string | null>(null);
+  const registerData = useAssetRegisterData();
+
+  const monthlyDepreciation = registerData.isSampleData ? SAMPLE_MONTHLY_DEPRECIATION : registerData.monthlyTrend;
+
+  const nearlyDepreciated = useMemo(() => {
+    if (registerData.isSampleData) return SAMPLE_NEARLY_DEPRECIATED;
+    return registerData.nearlyDepreciated.map((a) => ({
+      id: a.id, name: a.name, nbv: formatIDR(a.nbv / 1_000_000, true),
+      remaining: `${a.remainingMonths} months`, pct: Math.min(100, Math.max(0, Math.round(a.pct))),
+    }));
+  }, [registerData]);
+
+  const summaryStats = useMemo(() => {
+    if (registerData.isSampleData) return SAMPLE_SUMMARY_STATS;
+    return [
+      { label: 'Depreciation This Period', value: formatIDR(registerData.totalMonthlyDepreciation / 1_000_000, true), sub: registerData.periodLabel },
+      { label: 'Accumulated Depreciation', value: formatIDR(registerData.totalAccumulatedDepreciation / 1_000_000, true), sub: 'All fixed assets' },
+      { label: 'Remaining Book Value', value: formatIDR(registerData.totalNetBookValue / 1_000_000, true), sub: 'Net book value' },
+      { label: 'Assets Near Full Depr.', value: `${registerData.assetsNearFullDepreciationCount} assets`, sub: 'Within 24 months' },
+    ];
+  }, [registerData]);
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">

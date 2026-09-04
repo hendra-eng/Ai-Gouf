@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon,  } from '@heroicons/react/24/outline';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
+import { useAuditTrail } from './lib/useAuditTrail';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,18 +29,16 @@ interface AuditFinding {
   impact: number; // 1-5
 }
 
-interface AuditActivity {
-  id: string;
-  user: string;
-  action: string;
-  module: string;
-  record: string;
-  timestamp: string;
-  prevValue?: string;
-  newValue?: string;
-}
-
 // ─── Data ────────────────────────────────────────────────────────────────────
+// [PENTING] auditStages, findings, auditActivities, dan kpis di bawah ini
+// SENGAJA TETAP data contoh -- isinya adalah hasil kerja/judgment auditor
+// (temuan, root cause, rekomendasi, tanggapan manajemen, progres audit)
+// yang tidak punya sumber data terstruktur di backend akuntansi (beda
+// dengan Financial Overview/Statements/Transaksi/AP/AR yang murni angka
+// dari jurnal). Satu-satunya bagian di halaman ini yang tersambung ke
+// client aktif adalah "Audit Trail" di bagian bawah (lihat useAuditTrail.ts
+// -- diturunkan dari jurnal_posting asli, endpoint yang sama dipakai
+// halaman Transaksi).
 
 const auditStages = [
   { id: 'planning', label: 'Planning', date: '1 Jun 2026', done: true },
@@ -123,14 +122,6 @@ const auditActivities = [
   { id: 'a3', user: 'Ahmad R.', action: 'Control test completed — Revenue recognition procedures', time: '9:00 AM', date: '26 Aug 2026', type: 'test' },
   { id: 'a4', user: 'Dewi P.', action: 'AUD-004 resolved — Bank reconciliation completed', time: '4:45 PM', date: '25 Aug 2026', type: 'resolved' },
   { id: 'a5', user: 'Budi S.', action: 'Management response submitted for AUD-005', time: '11:20 AM', date: '24 Aug 2026', type: 'response' },
-];
-
-const auditTrail: AuditActivity[] = [
-  { id: 't1', user: 'Budi S.', action: 'Modified', module: 'Accounts Receivable', record: 'INV-2026-089', timestamp: '2026-08-28 10:30', prevValue: 'Rp 45M', newValue: 'Rp 50M' },
-  { id: 't2', user: 'Sari W.', action: 'Created', module: 'Audit Finding', record: 'AUD-002', timestamp: '2026-08-27 14:15', prevValue: '—', newValue: 'New Finding' },
-  { id: 't3', user: 'System', action: 'Auto-flagged', module: 'Revenue', record: 'JE-2026-445', timestamp: '2026-08-26 09:00', prevValue: '—', newValue: 'Anomaly detected' },
-  { id: 't4', user: 'Ahmad R.', action: 'Approved', module: 'Expenses', record: 'EXP-2026-440', timestamp: '2026-08-25 16:45', prevValue: 'Pending', newValue: 'Approved' },
-  { id: 't5', user: 'Dewi P.', action: 'Resolved', module: 'Audit Finding', record: 'AUD-004', timestamp: '2026-08-25 11:20', prevValue: 'Open', newValue: 'Resolved' },
 ];
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -410,6 +401,7 @@ export default function AuditPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStage, setActiveStage] = useState('testing');
   const [trailFilter, setTrailFilter] = useState('');
+  const { trail: auditTrail, isSampleData: isTrailSample } = useAuditTrail();
 
   const filteredFindings = findings.filter(f => {
     const matchesSearch = !searchQuery || f.description.toLowerCase().includes(searchQuery.toLowerCase()) || f.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -631,7 +623,12 @@ export default function AuditPage() {
         <div className="bg-white rounded-xl border border-border overflow-hidden">
           <div className="p-4 border-b border-border">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-foreground">Audit Trail</h2>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Audit Trail</h2>
+                <p className="text-[10px] text-muted-light mt-0.5">
+                  {isTrailSample ? 'Showing sample data' : 'Connected to active client · from posted journal entries'}
+                </p>
+              </div>
               <button
                 onClick={() => { setTrailFilter(''); toast.info('Filter audit trail direset'); }}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
@@ -669,9 +666,8 @@ export default function AuditPage() {
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
                           trail.action === 'Created' ? 'bg-positive-subtle text-positive' :
-                          trail.action === 'Modified' ? 'bg-warning-bg text-warning' :
-                          trail.action === 'Resolved' ? 'bg-[#EFF6FF] text-primary' :
-                          'bg-ai-subtle text-ai'
+                          trail.action === 'Posted' ? 'bg-[#EFF6FF] text-primary' :
+                          'bg-negative-subtle text-negative'
                         }`}>{trail.action}</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{trail.module}</td>
@@ -681,6 +677,11 @@ export default function AuditPage() {
                       <td className="px-4 py-3 text-xs font-mono text-foreground">{fx(trail.newValue ?? '—')}</td>
                     </tr>
                   ))}
+                {auditTrail.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-xs text-muted-light">No journal activity yet for this client.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
