@@ -1,56 +1,47 @@
 'use client';
 import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
-import { useCurrency } from '@/lib/currency';
+import { useCurrency, formatMoney } from '@/lib/currency';
+import type { EquityTreeItem } from '../lib/equityBridge';
 
-// Backend integration point: replace with API call to /api/equity/classification?period=...
-interface EquityItem {
-  id: string;
-  label: string;
-  value: string;
-  amount: number;
-  pct: number;
-  children?: EquityItem[];
-}
-
-const equityTree: EquityItem[] = [
+// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
+const SAMPLE_TREE: EquityTreeItem[] = [
   {
     id: 'share-capital',
     label: 'Share Capital',
-    value: 'Rp 3,000M',
-    amount: 3000,
+    amount: 3_000_000_000,
     pct: 63.8,
     children: [
-      { id: 'paid-in', label: 'Paid-in Capital', value: 'Rp 2,500M', amount: 2500, pct: 53.2 },
-      { id: 'additional', label: 'Additional Paid-in Capital', value: 'Rp 500M', amount: 500, pct: 10.6 },
+      { id: 'paid-in', label: 'Paid-in Capital', amount: 2_500_000_000, pct: 53.2 },
+      { id: 'additional', label: 'Additional Paid-in Capital', amount: 500_000_000, pct: 10.6 },
     ],
   },
   {
     id: 'retained-earnings',
     label: 'Retained Earnings',
-    value: 'Rp 2,040M',
-    amount: 2040,
+    amount: 2_040_000_000,
     pct: 43.4,
     children: [
-      { id: 'prior-retained', label: 'Prior Year Retained Earnings', value: 'Rp 1,080M', amount: 1080, pct: 23.0 },
-      { id: 'current-profit', label: 'Current Year Profit', value: 'Rp 1,840M', amount: 1840, pct: 39.1 },
-      { id: 'dividends', label: 'Dividends Paid', value: '(Rp 880M)', amount: -880, pct: -18.7 },
+      { id: 'prior-retained', label: 'Prior Year Retained Earnings', amount: 1_080_000_000, pct: 23.0 },
+      { id: 'current-profit', label: 'Current Year Profit', amount: 1_840_000_000, pct: 39.1 },
+      { id: 'dividends', label: 'Dividends Paid', amount: -880_000_000, pct: -18.7 },
     ],
   },
   {
     id: 'other-equity',
     label: 'Other Equity',
-    value: 'Rp 460M',
-    amount: 460,
+    amount: 460_000_000,
     pct: 9.8,
     children: [
-      { id: 'oci', label: 'Other Comprehensive Income', value: 'Rp 280M', amount: 280, pct: 6.0 },
-      { id: 'reval', label: 'Revaluation Reserve', value: 'Rp 180M', amount: 180, pct: 3.8 },
+      { id: 'oci', label: 'Other Comprehensive Income', amount: 280_000_000, pct: 6.0 },
+      { id: 'reval', label: 'Revaluation Reserve', amount: 180_000_000, pct: 3.8 },
     ],
   },
 ];
+const SAMPLE_TOTAL = 4_700_000_000;
+const SAMPLE_GROWTH = 9.6;
 
-function EquityTreeRow({ item, depth = 0 }: { item: EquityItem; depth?: number }) {
+function EquityTreeRow({ item, depth = 0 }: { item: EquityTreeItem; depth?: number }) {
   const { fx } = useCurrency();
   const [expanded, setExpanded] = useState(depth === 0);
   const hasChildren = item.children && item.children.length > 0;
@@ -81,12 +72,12 @@ function EquityTreeRow({ item, depth = 0 }: { item: EquityItem; depth?: number }
         </td>
         <td className="px-4 py-2.5 text-right">
           <span className={`text-[12px] font-600 financial-value ${isNegative ? 'text-negative' : depth === 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-            {fx(item.value)}
+            {fx(formatMoney(item.amount, 'IDR'))}
           </span>
         </td>
         <td className="px-4 py-2.5 text-right">
           <span className={`text-[11px] font-500 ${isNegative ? 'text-negative' : 'text-muted-foreground'}`}>
-            {isNegative ? '' : ''}{item.pct > 0 ? '+' : ''}{item.pct}%
+            {item.pct > 0 ? '+' : ''}{item.pct}%
           </span>
         </td>
         <td className="px-4 py-2.5">
@@ -108,8 +99,19 @@ function EquityTreeRow({ item, depth = 0 }: { item: EquityItem; depth?: number }
   );
 }
 
-export default function EquityClassification() {
+interface EquityClassificationProps {
+  isSampleData: boolean;
+  tree: EquityTreeItem[];
+  totalEquity: number;
+  growthPct: number;
+}
+
+export default function EquityClassification({ isSampleData, tree, totalEquity, growthPct }: EquityClassificationProps) {
   const { fx } = useCurrency();
+  const source = isSampleData ? SAMPLE_TREE : tree;
+  const total = isSampleData ? SAMPLE_TOTAL : totalEquity;
+  const growth = isSampleData ? SAMPLE_GROWTH : growthPct;
+
   return (
     <div className="fin-card p-5">
       <div className="mb-4">
@@ -117,29 +119,37 @@ export default function EquityClassification() {
         <div className="text-[11px] text-muted-foreground">Hierarchical breakdown of shareholder equity components</div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-[12px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/40">
-              <th className="text-left px-4 py-2.5 font-600 text-muted-foreground">Account</th>
-              <th className="text-right px-4 py-2.5 font-600 text-muted-foreground">Amount</th>
-              <th className="text-right px-4 py-2.5 font-600 text-muted-foreground">% of Total</th>
-              <th className="px-4 py-2.5 font-600 text-muted-foreground">Composition</th>
-            </tr>
-          </thead>
-          <tbody>
-            {equityTree.map(item => (
-              <EquityTreeRow key={`eq-class-${item.id}`} item={item} depth={0} />
-            ))}
-            <tr className="border-t-2 border-border bg-primary/5">
-              <td className="px-4 py-3 text-[13px] font-700 text-primary">Total Equity</td>
-              <td className="px-4 py-3 text-right text-[13px] font-700 text-primary financial-value">{fx('Rp 4,700M')}</td>
-              <td className="px-4 py-3 text-right text-[11px] font-600 text-positive">+9.6% growth</td>
-              <td className="px-4 py-3" />
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {!isSampleData && source.length === 0 ? (
+        <div className="text-[12px] text-muted-foreground py-6 text-center">
+          No equity account balances found for this client yet.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="border-b border-border bg-muted/40">
+                <th className="text-left px-4 py-2.5 font-600 text-muted-foreground">Account</th>
+                <th className="text-right px-4 py-2.5 font-600 text-muted-foreground">Amount</th>
+                <th className="text-right px-4 py-2.5 font-600 text-muted-foreground">% of Total</th>
+                <th className="px-4 py-2.5 font-600 text-muted-foreground">Composition</th>
+              </tr>
+            </thead>
+            <tbody>
+              {source.map(item => (
+                <EquityTreeRow key={`eq-class-${item.id}`} item={item} depth={0} />
+              ))}
+              <tr className="border-t-2 border-border bg-primary/5">
+                <td className="px-4 py-3 text-[13px] font-700 text-primary">Total Equity</td>
+                <td className="px-4 py-3 text-right text-[13px] font-700 text-primary financial-value">{fx(formatMoney(total, 'IDR'))}</td>
+                <td className={`px-4 py-3 text-right text-[11px] font-600 ${growth >= 0 ? 'text-positive' : 'text-negative'}`}>
+                  {growth >= 0 ? '+' : ''}{growth}% growth
+                </td>
+                <td className="px-4 py-3" />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

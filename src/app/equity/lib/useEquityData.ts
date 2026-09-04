@@ -16,7 +16,7 @@
 // menandai jurnal ekuitas per jenis (belum ada modulnya).
 
 import { useMemo } from 'react';
-import { useNeracaAccounts, bulatkanJuta, NAMA_BULAN, type AkunNeraca } from '@/lib/neracaBridge';
+import { useNeracaAccounts, bulatkanJuta, NAMA_BULAN, type AkunNeraca, type NeracaAccounts } from '@/lib/neracaBridge';
 import { formatMoney } from '@/lib/currency';
 
 export interface EquityKpiCard {
@@ -42,6 +42,22 @@ export interface EquityData {
   kpiCards: EquityKpiCard[];
   trendData: EquityTrendRow[];
   waterfall: EquityWaterfallStep[];
+  // [BARU] Data mentah + turunan tambahan, dipakai src/app/equity/lib/equityBridge.ts
+  // (Equity Classification, Transactions, Retained Earnings Analysis, AI Insights)
+  // supaya tidak perlu hitung ulang klasifikasi ASET/LIABILITAS/EKUITAS dari nol.
+  accounts: NeracaAccounts | null;
+  equityAccounts: AkunNeraca[];
+  tahun: number;
+  lastIdx: number;
+  totalEquityPrev: number;
+  paidInCapital: number;
+  paidInCapitalPrev: number;
+  retainedEarnings: number;
+  retainedEarningsPrev: number;
+  otherEquity: number;
+  otherEquityPrev: number;
+  netIncomeYtd: number;
+  netIncomeYtdPrev: number;
 }
 
 function sumAt(list: AkunNeraca[], idx: number): number {
@@ -60,6 +76,10 @@ export function useEquityData(): EquityData {
       return {
         loading, isSampleData: true, companyName, periodLabel: '',
         totalEquity: 0, kpiCards: [], trendData: [], waterfall: [],
+        accounts: null, equityAccounts: [], tahun: new Date().getFullYear(), lastIdx: -1,
+        totalEquityPrev: 0, paidInCapital: 0, paidInCapitalPrev: 0,
+        retainedEarnings: 0, retainedEarningsPrev: 0, otherEquity: 0, otherEquityPrev: 0,
+        netIncomeYtd: 0, netIncomeYtdPrev: 0,
       };
     }
     const { ekuitas, labaBersihYtd, lastIdx, tahun } = data;
@@ -155,6 +175,13 @@ export function useEquityData(): EquityData {
 
     const periodLabel = `Jan\u2013${NAMA_BULAN[lastIdx]} ${tahun}`;
 
-    return { loading, isSampleData: false, companyName, periodLabel, totalEquity: totalNow, kpiCards, trendData, waterfall };
+    return {
+      loading, isSampleData: false, companyName, periodLabel, totalEquity: totalNow, kpiCards, trendData, waterfall,
+      accounts: data, equityAccounts: ekuitas, tahun, lastIdx,
+      totalEquityPrev: totalPrev, paidInCapital: paidInNow, paidInCapitalPrev: paidInPrev,
+      retainedEarnings: retainedNow, retainedEarningsPrev: retainedPrev,
+      otherEquity: otherNow, otherEquityPrev: otherPrev,
+      netIncomeYtd: netProfitNow, netIncomeYtdPrev: netProfitPrev,
+    };
   }, [loading, isSampleData, companyName, data]);
 }
