@@ -1,11 +1,34 @@
 'use client';
-import React, { useState } from 'react';
+// [BARU] Sambungkan 2 chart di Financial Overview ke data ASLI client aktif
+// -- sebelumnya kedua chart di sini (Revenue vs Expenses vs Net Profit, AR
+// Aging Donut) 100% pakai array hardcoded (`revenueData`, `arAgingPie`)
+// meskipun sumber data yang dibutuhkan SUDAH ADA & sudah dipakai halaman
+// lain:
+//   - Revenue/Expenses/Net Profit per bulan -> `useProfitLossData()`
+//     (financial-statements/lib/useProfitLossData.ts), MONTHLY_PL -- sama
+//     persis dengan yang dipakai chart P&L, cuma di sini expenses = jumlah
+//     cogs+opEx+da+interest+tax (satu garis, bukan dipecah per komponen).
+//   - AR Aging -> `useTransactions()` (transaksi Sales client aktif) diolah
+//     lewat `invoicesFromTransactions` + `arAgingFromInvoices` dari
+//     transactions/lib/arBridge.ts -- SAMA PERSIS dengan yang dipakai
+//     halaman Account Receivable, supaya angkanya selalu konsisten dengan
+//     AR Aging di halaman AR.
+// Kalau belum ada client aktif / client belum ada jurnal & transaksi Sales
+// sama sekali, kedua chart fallback ke data contoh (sama seperti versi
+// sebelumnya) supaya halaman tidak pernah kosong.
+import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import InteractiveAgingDonut, { AgingLivePreview } from './InteractiveAgingDonut';
 import { useLanguage } from '@/lib/language';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { useProfitLossData } from '@/app/financial-statements/lib/useProfitLossData';
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+import { invoicesFromTransactions, arAgingFromInvoices } from '@/app/transactions/lib/arBridge';
 
-const revenueData = [
+// ── Data contoh (fallback) -- dipakai saat belum ada client aktif / belum
+// ada jurnal & transaksi Sales sama sekali, supaya tampilan sama seperti
+// versi mock sebelumnya (tidak ada regresi saat demo tanpa data asli). ──
+const SAMPLE_REVENUE = [
   { month: 'Jan', revenue: 950000000, expenses: 760000000, netProfit: 190000000 },
   { month: 'Feb', revenue: 1020000000, expenses: 790000000, netProfit: 230000000 },
   { month: 'Mar', revenue: 1080000000, expenses: 820000000, netProfit: 260000000 },
@@ -17,13 +40,14 @@ const revenueData = [
 ];
 
 // Values are in Jt (Rp million) units — converted to raw IDR before display.
-const arAgingPie = [
+const SAMPLE_AGING = [
   { name: 'Current', value: 620, color: '#16A34A' },
   { name: '1–30 Days', value: 215, color: '#2563EB' },
   { name: '31–60 Days', value: 168, color: '#D97706' },
   { name: '61–90 Days', value: 152, color: '#EA580C' },
   { name: '90+ Days', value: 85, color: '#DC2626' },
 ];
+const SAMPLE_AGING_TOTAL = SAMPLE_AGING.reduce((s, a) => s + a.value, 0);
 
 export default function OverviewCharts() {
   const [period, setPeriod] = useState<'6M' | 'YTD' | '12M' | '3Y'>('YTD');
@@ -31,6 +55,32 @@ export default function OverviewCharts() {
   const [livePreview, setLivePreview] = useState<AgingLivePreview[] | null>(null);
   const { t } = useLanguage();
   const { currency, fx } = useCurrency();
+
+  const { isSampleData: plIsSample, MONTHLY_PL, periodLabel, companyName } = useProfitLossData();
+  const { transactions, isSampleData: txIsSample } = useTransactions();
+
+  // ── Revenue vs Expenses vs Net Profit (dari MONTHLY_PL, satuan Jt -> raw IDR) ──
+  const revenueData = useMemo(() => {
+    if (plIsSample || MONTHLY_PL.length === 0) return SAMPLE_REVENUE;
+    return MONTHLY_PL.map((row) => ({
+      month: row.month,
+      revenue: row.revenue * 1e6,
+      expenses: (row.cogs + row.opEx + row.da + row.interest + row.tax) * 1e6,
+      netProfit: row.netProfit * 1e6,
+    }));
+  }, [plIsSample, MONTHLY_PL]);
+
+  // ── AR Aging (dari transaksi Sales client aktif, lewat arBridge -- sama seperti halaman AR) ──
+  const agingData = useMemo(() => {
+    if (txIsSample) return SAMPLE_AGING;
+    const invoices = invoicesFromTransactions(transactions);
+    if (invoices.length === 0) return SAMPLE_AGING;
+    const aging = arAgingFromInvoices(invoices);
+    if (aging.every((a) => a.amount === 0)) return SAMPLE_AGING;
+    return aging.map((a) => ({ name: a.bucket, value: a.amount / 1e6, color: a.color, percentage: a.percentage }));
+  }, [txIsSample, transactions]);
+  const isAgingSample = agingData === SAMPLE_AGING;
+  const totalAgingJt = agingData.reduce((s, a) => s + a.value, 0);
 
   const fmt = (v: number) => formatMoney(v, currency);
 
@@ -57,7 +107,9 @@ export default function OverviewCharts() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-md font-600 text-foreground">{t('Revenue vs Expenses vs Net Profit')}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">PT Nusantara Teknologi Indonesia · Jan–Aug 2026</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {plIsSample ? 'PT Nusantara Teknologi Indonesia · Jan–Aug 2026' : `${companyName} · ${periodLabel}`}
+            </p>
           </div>
           <div className="flex gap-1">
             {(['6M', 'YTD', '12M', '3Y'] as const).map((p) => (
@@ -100,19 +152,27 @@ export default function OverviewCharts() {
       <div className="bg-card border border-border rounded-lg p-5 shadow-card">
         <div className="mb-4">
           <h3 className="text-md font-600 text-foreground">{t('AR Aging Analysis')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{fx(t('Total AR: Rp 1,24M outstanding'))}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {isAgingSample
+              ? fx(t('Total AR: Rp 1,24M outstanding'))
+              : fx(`Total AR: ${formatMoney(totalAgingJt * 1e6, currency)} outstanding`)}
+          </p>
         </div>
         <InteractiveAgingDonut
-          data={arAgingPie}
+          data={agingData}
           activeIndex={activeAging}
           onActiveChange={setActiveAging}
           onLiveChange={setLivePreview}
         />
         <div className="space-y-1.5 mt-2">
-          {arAgingPie.map((item, index) => {
+          {agingData.map((item: any, index) => {
             const preview = livePreview?.[index];
             const displayValueJt = preview ? preview.value : item.value;
-            const displayPct = preview ? preview.pct : (item.value / 1240) * 100;
+            const displayPct = preview
+              ? preview.pct
+              : isAgingSample
+              ? (item.value / SAMPLE_AGING_TOTAL) * 100
+              : item.percentage ?? 0;
             return (
               <div
                 key={`aging-legend-${item.name}`}

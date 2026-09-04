@@ -2,12 +2,24 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { useAnalyticsData } from '../lib/useAnalyticsData';
 
-const COMPARISON_PERIODS = ['Previous Month', 'Previous Quarter', 'Previous Year', 'Budget', 'Internal Target'];
-const BRANCHES = ['All Branches', 'Jakarta HQ', 'Surabaya', 'Bandung'];
+const COMPARISON_PERIODS = ['Previous Month', 'Budget'];
+const BRANCHES = ['All Branches'];
 
+// [BARU] Header sekarang menampilkan nama client aktif & periode data ASLI
+// dari useAnalyticsData (sama dengan yang dipakai KPI/chart di bawahnya),
+// bukan lagi teks statis generik. Dropdown "Branch" disederhanakan jadi
+// "All Branches" saja -- backend tidak punya dimensi cabang/branch per client
+// (1 client = 1 entitas), jadi opsi Jakarta HQ/Surabaya/Bandung yang lama
+// dihapus supaya tidak terkesan bisa memfilter data padahal tidak ada
+// datanya. Dropdown "Comparison" disaring ke opsi yang benar-benar didukung
+// data real: "Previous Month" (MoM, dari trial balance bulanan) dan "Budget"
+// (dari budgetBridge.ts) -- opsi lain (Previous Quarter/Internal Target)
+// dihapus karena tidak ada sumber datanya sama sekali di backend saat ini.
 export default function AnalyticsHeader() {
-  const [comparison, setComparison] = useState('Previous Year');
+  const { companyName, periodLabel, isSampleData, loading } = useAnalyticsData();
+  const [comparison, setComparison] = useState('Previous Month');
   const [branch, setBranch] = useState('All Branches');
   const [showComp, setShowComp] = useState(false);
   const [showBranch, setShowBranch] = useState(false);
@@ -26,9 +38,14 @@ export default function AnalyticsHeader() {
             <Icon name="BeakerIcon" size={18} className="text-chart-4" />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Financial Analytics</h1>
+          {isSampleData && (
+            <span className="text-2xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+              Sample data
+            </span>
+          )}
         </div>
         <p className="text-sm text-muted-foreground ml-11">
-          Explore financial performance, ratios, trends, efficiency, liquidity, and business drivers
+          {loading ? 'Loading…' : `${companyName} · ${periodLabel}`}
         </p>
       </div>
 

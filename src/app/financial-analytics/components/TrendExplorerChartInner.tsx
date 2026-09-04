@@ -1,27 +1,36 @@
 'use client';
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import type { MonthlyAbsoluteRow } from '../lib/useAnalyticsData';
 
-const BASE_DATA: Record<string, number[]> = {
-  'Revenue': [680, 712, 748, 692, 780, 842, 818, 702, 820, 864, 892, 920],
-  'COGS': [374, 392, 411, 381, 429, 463, 450, 386, 451, 475, 490, 506],
-  'Gross Profit': [306, 320, 337, 311, 351, 379, 368, 316, 369, 389, 402, 414],
-  'EBITDA': [176, 188, 198, 172, 204, 228, 218, 177, 208, 224, 236, 244],
-  'Net Profit': [138, 148, 158, 132, 162, 182, 174, 141, 166, 178, 188, 196],
-  'Cash': [2420, 2480, 2560, 2620, 2700, 2780, 2840, 2960, 3020, 3080, 3140, 3200],
-  'AR': [1020, 1060, 1120, 1080, 1140, 1200, 1180, 1240, 1260, 1280, 1300, 1320],
-  'AP': [780, 800, 820, 810, 840, 860, 850, 860, 870, 880, 890, 900],
-  'Assets': [11800, 11900, 12000, 12100, 12200, 12400, 12500, 12800, 12900, 13000, 13100, 13200],
-  'Liabilities': [4100, 4120, 4140, 4160, 4180, 4200, 4190, 4200, 4210, 4220, 4230, 4240],
-  'Equity': [7700, 7780, 7860, 7940, 8020, 8200, 8310, 8600, 8690, 8780, 8870, 8960],
+// [BARU] Data chart sekarang datang dari `monthlyAbsoluteTrend` (real, via
+// useAnalyticsData) atau data contoh dengan bentuk identik -- lihat
+// TrendExplorer.tsx. BASE_DATA hardcoded lama sudah dihapus; FIELD_MAP di
+// bawah cuma memetakan label metric (yang dipilih user) ke field di
+// MonthlyAbsoluteRow.
+const FIELD_MAP: Record<string, keyof MonthlyAbsoluteRow> = {
+  'Revenue': 'revenue', 'COGS': 'cogs', 'Gross Profit': 'grossProfit', 'EBITDA': 'ebitda', 'Net Profit': 'netProfit',
+  'Cash': 'cash', 'AR': 'ar', 'AP': 'ap', 'Assets': 'assets', 'Liabilities': 'liabilities', 'Equity': 'equity',
 };
-
-const MONTHS_12 = ['Sep\'25', 'Oct', 'Nov', 'Dec', 'Jan\'26', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
-const MONTHS_6 = ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
 
 const COLORS = ['var(--primary)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
 
-interface Props { selected: string[]; horizon: string; }
+interface Props { selected: string[]; horizon: string; data: MonthlyAbsoluteRow[]; }
+
+// Filter rows sesuai horizon yang dipilih. Data selalu terurut kronologis
+// (lama -> baru). "YTD" = sejak kemunculan "Jan" TERAKHIR di data (real data
+// dari backend memang sudah otomatis mulai dari Jan tahun berjalan).
+function filterByHorizon(rows: MonthlyAbsoluteRow[], horizon: string): MonthlyAbsoluteRow[] {
+  if (rows.length === 0) return rows;
+  if (horizon === '6M') return rows.slice(-6);
+  if (horizon === '12M') return rows.slice(-12);
+  if (horizon === '3Y') return rows.slice(-36);
+  if (horizon === 'YTD') {
+    const lastJan = rows.map((r) => r.month.startsWith('Jan')).lastIndexOf(true);
+    return lastJan >= 0 ? rows.slice(lastJan) : rows;
+  }
+  return rows;
+}
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (!active || !payload?.length) return null;
@@ -41,15 +50,14 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-export default function TrendExplorerChartInner({ selected, horizon }: Props) {
-  const months = horizon === '6M' ? MONTHS_6 : MONTHS_12;
-  const startIdx = horizon === '6M' ? 6 : 0;
+export default function TrendExplorerChartInner({ selected, horizon, data: rows }: Props) {
+  const filtered = filterByHorizon(rows, horizon);
 
-  const data = months.map((m, i) => {
-    const entry: Record<string, string | number> = { month: m };
+  const data = filtered.map((row) => {
+    const entry: Record<string, string | number> = { month: row.month };
     selected.forEach((metric) => {
-      const series = BASE_DATA[metric] || [];
-      entry[metric] = series[startIdx + i] || 0;
+      const field = FIELD_MAP[metric];
+      entry[metric] = field ? row[field] : 0;
     });
     return entry;
   });

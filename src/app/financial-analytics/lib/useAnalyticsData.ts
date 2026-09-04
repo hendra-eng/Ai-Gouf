@@ -56,6 +56,11 @@ export interface MonthlyAnalyticsRow {
   currentRatio: number; quickRatio: number; debtToEquity: number; debtRatio: number; dso: number; dpo: number;
 }
 export interface HealthDimension { label: string; score: number; detail: string; icon: string; color: string; }
+export interface MonthlyAbsoluteRow {
+  month: string;
+  revenue: number; cogs: number; grossProfit: number; ebitda: number; netProfit: number;
+  cash: number; ar: number; ap: number; assets: number; liabilities: number; equity: number;
+}
 
 interface AnalyticsData {
   loading: boolean;
@@ -80,7 +85,19 @@ interface AnalyticsData {
   growth: {
     revenue: number; grossProfit: number; ebitda: number; netProfit: number; assets: number; equity: number;
   };
+  // [BARU] Nilai absolut (Rp Juta, bulanan -- current = bulan berjalan
+  // terakhir, previous = bulan sebelumnya) -- dipakai Performance Matrix
+  // yang butuh angka Rupiah, bukan cuma rasio/margin %. Konsisten dengan
+  // `workingCapital`/`totalDebt` di atas yang juga sudah pakai Rp Juta.
+  absolutes: {
+    revenue: AnalyticsMetric; grossProfit: AnalyticsMetric; ebitda: AnalyticsMetric; netProfit: AnalyticsMetric;
+    cash: AnalyticsMetric; ar: AnalyticsMetric; ap: AnalyticsMetric;
+  };
   monthlyTrend: MonthlyAnalyticsRow[];
+  // [BARU] Tren bulanan nilai ABSOLUT (Rp Juta) -- dipakai Trend Explorer,
+  // yang butuh Revenue/COGS/GP/EBITDA/NP/Cash/AR/AP/Assets/Liabilities/
+  // Equity per bulan (bukan rasio/margin % seperti `monthlyTrend` di atas).
+  monthlyAbsoluteTrend: MonthlyAbsoluteRow[];
   revenueByCategory: DriverItem[];
   expenseBreakdown: DriverItem[];
   healthDimensions: HealthDimension[];
@@ -331,6 +348,20 @@ function hitungAnalytics(hasil: any, coa: any[], tahun: number) {
     });
   }
 
+  // ── Tren bulanan nilai absolut (Rp Juta) -- dipakai Trend Explorer ──
+  const monthlyAbsoluteTrend: MonthlyAbsoluteRow[] = [];
+  for (let i = 0; i <= lastIdx; i++) {
+    const p = monthlyPL[i];
+    const b = monthlyBS[i];
+    monthlyAbsoluteTrend.push({
+      month: NAMA_BULAN[i],
+      revenue: bulatkanJuta(p.revenue), cogs: bulatkanJuta(p.cogs), grossProfit: bulatkanJuta(p.grossProfit),
+      ebitda: bulatkanJuta(p.ebitda), netProfit: bulatkanJuta(p.netProfit),
+      cash: bulatkanJuta(b.cash), ar: bulatkanJuta(b.ar), ap: bulatkanJuta(b.ap),
+      assets: bulatkanJuta(b.totalAssets), liabilities: bulatkanJuta(b.totalLiabilities), equity: bulatkanJuta(b.totalEquity),
+    });
+  }
+
   // ── Revenue by category (dari akun PENDAPATAN, sub_kategori) ──
   const buatDriver = (akunList: AkunInfo[]): DriverItem[] => {
     const petaCurrent: Record<string, number> = {};
@@ -357,8 +388,18 @@ function hitungAnalytics(hasil: any, coa: any[], tahun: number) {
 
   const periodLabel = lastIdx === 0 ? `${NAMA_BULAN[0]} ${tahun}` : `${NAMA_BULAN[0]} ${tahun} – ${NAMA_BULAN[lastIdx]} ${tahun}`;
 
+  const absolutes = {
+    revenue: metric(bulatkanJuta(pl.revenue), plPrev ? bulatkanJuta(plPrev.revenue) : null),
+    grossProfit: metric(bulatkanJuta(pl.grossProfit), plPrev ? bulatkanJuta(plPrev.grossProfit) : null),
+    ebitda: metric(bulatkanJuta(pl.ebitda), plPrev ? bulatkanJuta(plPrev.ebitda) : null),
+    netProfit: metric(bulatkanJuta(pl.netProfit), plPrev ? bulatkanJuta(plPrev.netProfit) : null),
+    cash: metric(bulatkanJuta(bs.cash), bsPrev ? bulatkanJuta(bsPrev.cash) : null),
+    ar: metric(bulatkanJuta(bs.ar), bsPrev ? bulatkanJuta(bsPrev.ar) : null),
+    ap: metric(bulatkanJuta(bs.ap), bsPrev ? bulatkanJuta(bsPrev.ap) : null),
+  };
+
   return {
-    periodLabel, margins, liquidity, solvency, efficiency, growth, monthlyTrend, revenueByCategory, expenseBreakdown,
+    periodLabel, margins, liquidity, solvency, efficiency, growth, absolutes, monthlyTrend, monthlyAbsoluteTrend, revenueByCategory, expenseBreakdown,
   };
 }
 
@@ -406,6 +447,11 @@ const SAMPLE: Omit<AnalyticsData, 'loading' | 'isSampleData' | 'companyName'> = 
     dpo: { current: 66.8, previous: 64.1 }, cashConversionCycle: { current: -13.0, previous: -7.9 },
   },
   growth: { revenue: 12.8, grossProfit: 15.2, ebitda: 18.4, netProfit: 16.2, assets: 8.4, equity: 11.6 },
+  absolutes: {
+    revenue: { current: 842, previous: 747 }, grossProfit: { current: 372, previous: 319 },
+    ebitda: { current: 231, previous: 195 }, netProfit: { current: 184, previous: 158 },
+    cash: { current: 296, previous: 248 }, ar: { current: 124, previous: 108 }, ap: { current: 86, previous: 78 },
+  },
   monthlyTrend: [
     { month: 'Jan', grossMargin: 42.1, ebitdaMargin: 22.1, netMargin: 19.8, currentRatio: 2.12, quickRatio: 1.88, debtToEquity: 0.26, debtRatio: 0.16, dso: 56, dpo: 62 },
     { month: 'Feb', grossMargin: 43.2, ebitdaMargin: 23.4, netMargin: 19.4, currentRatio: 2.18, quickRatio: 1.94, debtToEquity: 0.25, debtRatio: 0.15, dso: 54, dpo: 64 },
@@ -415,6 +461,20 @@ const SAMPLE: Omit<AnalyticsData, 'loading' | 'isSampleData' | 'companyName'> = 
     { month: 'Jun', grossMargin: 44.9, ebitdaMargin: 26.4, netMargin: 17.9, currentRatio: 2.38, quickRatio: 2.12, debtToEquity: 0.22, debtRatio: 0.14, dso: 51, dpo: 68 },
     { month: 'Jul', grossMargin: 45.1, ebitdaMargin: 27.1, netMargin: 17.9, currentRatio: 2.35, quickRatio: 2.08, debtToEquity: 0.21, debtRatio: 0.14, dso: 54, dpo: 67 },
     { month: 'Aug', grossMargin: 44.3, ebitdaMargin: 28.2, netMargin: 20.1, currentRatio: 2.41, quickRatio: 2.12, debtToEquity: 0.21, debtRatio: 0.14, dso: 54, dpo: 67 },
+  ],
+  monthlyAbsoluteTrend: [
+    { month: "Sep'25", revenue: 680, cogs: 374, grossProfit: 306, ebitda: 176, netProfit: 138, cash: 2420, ar: 1020, ap: 780, assets: 11800, liabilities: 4100, equity: 7700 },
+    { month: 'Oct', revenue: 712, cogs: 392, grossProfit: 320, ebitda: 188, netProfit: 148, cash: 2480, ar: 1060, ap: 800, assets: 11900, liabilities: 4120, equity: 7780 },
+    { month: 'Nov', revenue: 748, cogs: 411, grossProfit: 337, ebitda: 198, netProfit: 158, cash: 2560, ar: 1120, ap: 820, assets: 12000, liabilities: 4140, equity: 7860 },
+    { month: 'Dec', revenue: 692, cogs: 381, grossProfit: 311, ebitda: 172, netProfit: 132, cash: 2620, ar: 1080, ap: 810, assets: 12100, liabilities: 4160, equity: 7940 },
+    { month: "Jan'26", revenue: 780, cogs: 429, grossProfit: 351, ebitda: 204, netProfit: 162, cash: 2700, ar: 1140, ap: 840, assets: 12200, liabilities: 4180, equity: 8020 },
+    { month: 'Feb', revenue: 842, cogs: 463, grossProfit: 379, ebitda: 228, netProfit: 182, cash: 2780, ar: 1200, ap: 860, assets: 12400, liabilities: 4200, equity: 8200 },
+    { month: 'Mar', revenue: 818, cogs: 450, grossProfit: 368, ebitda: 218, netProfit: 174, cash: 2840, ar: 1180, ap: 850, assets: 12500, liabilities: 4190, equity: 8310 },
+    { month: 'Apr', revenue: 702, cogs: 386, grossProfit: 316, ebitda: 177, netProfit: 141, cash: 2960, ar: 1240, ap: 860, assets: 12800, liabilities: 4200, equity: 8600 },
+    { month: 'May', revenue: 820, cogs: 451, grossProfit: 369, ebitda: 208, netProfit: 166, cash: 3020, ar: 1260, ap: 870, assets: 12900, liabilities: 4210, equity: 8690 },
+    { month: 'Jun', revenue: 864, cogs: 475, grossProfit: 389, ebitda: 224, netProfit: 178, cash: 3080, ar: 1280, ap: 880, assets: 13000, liabilities: 4220, equity: 8780 },
+    { month: 'Jul', revenue: 892, cogs: 490, grossProfit: 402, ebitda: 236, netProfit: 188, cash: 3140, ar: 1300, ap: 890, assets: 13100, liabilities: 4230, equity: 8870 },
+    { month: 'Aug', revenue: 920, cogs: 506, grossProfit: 414, ebitda: 244, netProfit: 196, cash: 3200, ar: 1320, ap: 900, assets: 13200, liabilities: 4240, equity: 8960 },
   ],
   revenueByCategory: [
     { id: 'cat-1', name: 'Recurring Revenue', current: 5820, previous: 4924, growth: 18.2, contribution: 69.1 },

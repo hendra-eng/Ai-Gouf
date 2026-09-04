@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown, MoreVertical, Pencil, Trash2,  } from 'lucide-react';
 import {
-  clientActivityFeed,
   type Client,
   type ClientStatus,
 } from '@/lib/clientsMockData';
+import { useClientActivity } from '@/app/clients/lib/clientActivityBridge';
 import { useClientsList, addClient as addClientToStore, addImportedClients, updateClient as updateClientInStore, deleteClient as deleteClientFromStore } from '@/lib/clientsStore';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer,
@@ -257,7 +257,7 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
     { label: 'Compliance', score: client.healthScore.compliance },
   ];
 
-  const activity = clientActivityFeed.filter(a => a.clientId === client.id);
+  const { activity, loading: activityLoading } = useClientActivity(client.id);
 
   function scoreColor(s: number) {
     if (s >= 80) return 'bg-emerald-500';
@@ -451,7 +451,11 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
 
           {activeTab === 'activity' && (
             <div className="space-y-3">
-              {activity.length === 0 ? (
+              {activityLoading ? (
+                <div className="text-center py-10">
+                  <p className="text-sm text-muted-foreground">Memuat aktivitas…</p>
+                </div>
+              ) : activity.length === 0 ? (
                 <div className="text-center py-10">
                   <Activity size={24} className="text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">No recent activity for this client.</p>

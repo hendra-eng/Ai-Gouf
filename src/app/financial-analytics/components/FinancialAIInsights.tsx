@@ -1,11 +1,22 @@
 'use client';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
-import { useCurrency } from '@/lib/currency';
+import { useCurrency, formatMoney } from '@/lib/currency';
+import { useAnalyticsData } from '../lib/useAnalyticsData';
+import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+import { invoicesFromTransactions, customersFromInvoices } from '@/app/transactions/lib/arBridge';
+import { generateFinancialInsights, type FinancialInsight } from '../lib/financialInsights';
 
-const INSIGHTS = [
+// [BARU] Kartu "AI Financial Insights" sekarang di-generate dari data REAL
+// client aktif -- lihat lib/financialInsights.ts (pola identik dengan
+// liabilitiesBridge.ts::generateLiabilityInsights) -- menggantikan 4 kartu
+// hardcoded (fa-ai-1..4) yang sebelumnya statis. Sumber datanya:
+// useAnalyticsData.ts (margins/liquidity/growth/expense, sudah tersambung
+// ke trial balance bulanan backend) + arBridge.ts (konsentrasi piutang per
+// customer, sumber yang sama dengan halaman Account Receivable).
+const SAMPLE_INSIGHTS: FinancialInsight[] = [
   {
     id: 'fa-ai-1',
     title: 'Profitability: Strong Margin Expansion',
@@ -62,10 +73,29 @@ const SEVERITY_CONFIG = {
 export default function FinancialAIInsights() {
   const router = useRouter();
   const { fx } = useCurrency();
+  const analytics = useAnalyticsData();
+  const { transactions } = useTransactions();
+
+  const customers = useMemo(() => {
+    const invoices = invoicesFromTransactions(transactions);
+    return customersFromInvoices(invoices);
+  }, [transactions]);
+
+  const rp = (v: number) => fx(formatMoney(v, 'IDR'));
+
+  const insights = useMemo(() => {
+    if (analytics.isSampleData) return SAMPLE_INSIGHTS;
+    return generateFinancialInsights({ analytics, customers, rp });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analytics, customers]);
 
   const handleRefresh = () => {
     toast.success('Insights refreshed', { description: 'AI insights regenerated from the latest financial data' });
   };
+
+  const generatedLabel = analytics.isSampleData
+    ? 'Sample data · select a client to generate real insights'
+    : `Generated from ${analytics.periodLabel} data · ${analytics.companyName}`;
 
   return (
     <div className="card-base p-5">
@@ -75,9 +105,7 @@ export default function FinancialAIInsights() {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-foreground">AI Financial Insights</h3>
-          <p className="text-xs text-muted-foreground">
-            Generated from FY2026 financial data · Aug 26, 2026 · PT Nusantara Teknologi Indonesia
-          </p>
+          <p className="text-xs text-muted-foreground">{generatedLabel}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -97,72 +125,78 @@ export default function FinancialAIInsights() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {INSIGHTS.map((insight) => {
-          const cfg = SEVERITY_CONFIG[insight.severity as keyof typeof SEVERITY_CONFIG];
-          return (
-            <div key={insight.id} className={`rounded-xl border p-4 ${cfg.bg}`}>
-              <div className="flex items-start gap-3 mb-3">
-                <Icon name={insight.icon as Parameters<typeof Icon>[0]['name']} size={18} className={cfg.icon} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground mb-1">{insight.title}</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{fx(insight.summary)}</p>
+      {insights.length === 0 ? (
+        <div className="text-xs text-muted-foreground py-6 text-center">
+          No notable insights detected in this client&apos;s posted journals yet.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {insights.map((insight) => {
+            const cfg = SEVERITY_CONFIG[insight.severity as keyof typeof SEVERITY_CONFIG];
+            return (
+              <div key={insight.id} className={`rounded-xl border p-4 ${cfg.bg}`}>
+                <div className="flex items-start gap-3 mb-3">
+                  <Icon name={insight.icon as Parameters<typeof Icon>[0]['name']} size={18} className={cfg.icon} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground mb-1">{insight.title}</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{fx(insight.summary)}</p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {insight.numbers.map((n, ni) => (
-                  <span key={`fa-num-${insight.id}-${ni}`} className={`text-2xs font-medium px-2 py-1 rounded-full ${cfg.badge}`}>
-                    {fx(n)}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mb-3">
-                <p className="text-2xs font-semibold text-muted-foreground mb-1.5">Contributing Factors</p>
-                <div className="space-y-1">
-                  {insight.factors.map((f, fi) => (
-                    <div key={`fa-factor-${insight.id}-${fi}`} className="flex items-start gap-2">
-                      <div className={`w-1 h-1 rounded-full mt-1.5 flex-shrink-0 ${cfg.icon.replace('text-', 'bg-')}`} />
-                      <span className="text-xs text-muted-foreground">{f}</span>
-                    </div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {insight.numbers.map((n, ni) => (
+                    <span key={`fa-num-${insight.id}-${ni}`} className={`text-2xs font-medium px-2 py-1 rounded-full ${cfg.badge}`}>
+                      {fx(n)}
+                    </span>
                   ))}
                 </div>
-              </div>
 
-              <div className="pt-3 border-t border-border/40">
-                <p className="text-xs text-muted-foreground mb-2">
-                  <span className="font-semibold text-foreground">Recommendation: </span>
-                  {fx(insight.recommendation)}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => router?.push(`/ai-financial-analyst?analysis=${insight.analysisType}`)}
-                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <Icon name="MagnifyingGlassIcon" size={12} />
-                    Analyze
-                  </button>
-                  <button
-                    onClick={() => router?.push('/transactions')}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Icon name="TableCellsIcon" size={12} />
-                    View Transactions
-                  </button>
-                  <button
-                    onClick={() => router?.push('/financial-statements/profit-loss')}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Icon name="ArrowTopRightOnSquareIcon" size={12} />
-                    Open in P&amp;L
-                  </button>
+                <div className="mb-3">
+                  <p className="text-2xs font-semibold text-muted-foreground mb-1.5">Contributing Factors</p>
+                  <div className="space-y-1">
+                    {insight.factors.map((f, fi) => (
+                      <div key={`fa-factor-${insight.id}-${fi}`} className="flex items-start gap-2">
+                        <div className={`w-1 h-1 rounded-full mt-1.5 flex-shrink-0 ${cfg.icon.replace('text-', 'bg-')}`} />
+                        <span className="text-xs text-muted-foreground">{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-border/40">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <span className="font-semibold text-foreground">Recommendation: </span>
+                    {fx(insight.recommendation)}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => router?.push(`/ai-financial-analyst?analysis=${insight.analysisType}`)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                    >
+                      <Icon name="MagnifyingGlassIcon" size={12} />
+                      Analyze
+                    </button>
+                    <button
+                      onClick={() => router?.push('/transactions')}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Icon name="TableCellsIcon" size={12} />
+                      View Transactions
+                    </button>
+                    <button
+                      onClick={() => router?.push('/financial-statements/profit-loss')}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Icon name="ArrowTopRightOnSquareIcon" size={12} />
+                      Open in P&amp;L
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

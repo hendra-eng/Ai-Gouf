@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-
+import { useAnalyticsData } from '../lib/useAnalyticsData';
 
 const TrendExplorerChartInner = dynamic(() => import('./TrendExplorerChartInner'), { ssr: false, loading: () => (
   <div className="h-72 animate-pulse bg-muted rounded-xl" />
@@ -17,6 +17,7 @@ const METRIC_COLORS = [
 ];
 
 export default function TrendExplorer() {
+  const { monthlyAbsoluteTrend, isSampleData } = useAnalyticsData();
   const [selected, setSelected] = useState<string[]>(['Revenue', 'EBITDA', 'Net Profit']);
   const [period, setPeriod] = useState('Monthly');
   const [horizon, setHorizon] = useState('12M');
@@ -34,7 +35,9 @@ export default function TrendExplorer() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
           <h3 className="text-xl font-semibold text-foreground">Financial Trend Explorer</h3>
-          <p className="text-sm text-muted-foreground mt-0.5">Select up to 5 metrics to compare · Click metric to toggle</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Select up to 5 metrics to compare · Click metric to toggle{isSampleData ? ' · Sample data' : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-muted border border-border rounded-lg p-0.5">
@@ -96,7 +99,7 @@ export default function TrendExplorer() {
         </span>
       </div>
 
-      <TrendExplorerChartInner selected={selected} horizon={horizon} />
+      <TrendExplorerChartInner selected={selected} horizon={horizon} data={monthlyAbsoluteTrend} />
 
       {/* Selected metrics legend */}
       <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-border">
