@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { useLanguage } from '@/lib/language';
 
 const PLWaterfallChart = dynamic(() => import('./PLWaterfallChart'), {
   ssr: false,
@@ -72,6 +73,7 @@ interface PLRowProps {
 
 function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBold, subRows, revenueBase }: PLRowProps) {
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   const [expanded, setExpanded] = useState(false);
   const hasChildren = subRows && subRows.length > 0;
@@ -94,7 +96,7 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
                        : <ChevronRight size={14} className="text-muted-foreground flex-shrink-0" />
             )}
             <span className={`text-sm ${isBold || isTotal || isSubtotal ? 'font-bold text-foreground' : 'font-medium text-foreground'} ${indent > 0 ? 'text-muted-foreground font-normal' : ''}`}>
-              {label}
+              {t(label)}
             </span>
           </div>
         </td>
@@ -124,7 +126,7 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
       {hasChildren && expanded && subRows.map((child, i) => (
         <tr key={`plchild-${label}-${i}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
           <td className="py-2.5" style={{ paddingLeft: `${20 + (indent + 1) * 20}px` }}>
-            <span className="text-xs text-muted-foreground">{child.label}</span>
+            <span className="text-xs text-muted-foreground">{t(child.label)}</span>
           </td>
           <td className="px-5 py-2.5 text-right">
             <span className="text-xs font-mono text-muted-foreground">{formatRp(child.value)}</span>
@@ -145,14 +147,15 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
 
 export default function PLStatement() {
   const { fx, currency } = useCurrency();
+  const { t } = useLanguage();
   const rev = plData.revenue.value;
 
   return (
     <div className="space-y-6">
       {/* Waterfall chart */}
       <div className="card-elevated-md rounded-xl p-5">
-        <h3 className="text-base font-bold text-foreground mb-1">P&L Waterfall — Revenue to Net Profit</h3>
-        <p className="text-xs text-muted-foreground mb-4">{fx('How Rp 8.42M revenue becomes Rp 1.84M net profit')}</p>
+        <h3 className="text-base font-bold text-foreground mb-1">{t('P&L Waterfall — Revenue to Net Profit')}</h3>
+        <p className="text-xs text-muted-foreground mb-4">{fx(t('How Rp 8.42M revenue becomes Rp 1.84M net profit'))}</p>
         <PLWaterfallChart />
       </div>
 
@@ -160,11 +163,11 @@ export default function PLStatement() {
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold text-foreground">Laporan Laba Rugi</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Periode: Januari – Agustus 2026</p>
+            <h3 className="text-base font-bold text-foreground">{t('Laporan Laba Rugi')}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026')}</p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="hidden sm:inline">Click a row to expand details</span>
+            <span className="hidden sm:inline">{t('Click a row to expand details')}</span>
           </div>
         </div>
 
@@ -172,10 +175,10 @@ export default function PLStatement() {
           <table className="w-full">
             <thead>
               <tr className="bg-muted/40 border-b border-border">
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Account</th>
-                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Amount ({currency})</th>
-                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">% Revenue</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hidden lg:table-cell">Visual</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Account')}</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t('Amount')} ({currency})</th>
+                <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hidden md:table-cell">{t('% Revenue')}</th>
+                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hidden lg:table-cell">{t('Visual')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -183,13 +186,13 @@ export default function PLStatement() {
               <PLRow label={plData.cogs.label} value={plData.cogs.value} isNegative subRows={plData.cogs.children} revenueBase={rev} />
               <PLRow label={plData.grossProfit.label} value={plData.grossProfit.value} isSubtotal isBold revenueBase={rev} />
 
-              <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Operating</span></td></tr>
+              <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t('Operating')}</span></td></tr>
               <PLRow label={plData.opex.label} value={plData.opex.value} isNegative subRows={plData.opex.children} revenueBase={rev} />
               <PLRow label={plData.ebitda.label} value={plData.ebitda.value} isSubtotal isBold revenueBase={rev} />
               <PLRow label={plData.depreciation.label} value={plData.depreciation.value} isNegative revenueBase={rev} />
               <PLRow label={plData.ebit.label} value={plData.ebit.value} isSubtotal revenueBase={rev} />
 
-              <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Below the Line</span></td></tr>
+              <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t('Below the Line')}</span></td></tr>
               <PLRow label={plData.interest.label} value={plData.interest.value} isNegative revenueBase={rev} />
               <PLRow label={plData.ebt.label} value={plData.ebt.value} isSubtotal revenueBase={rev} />
               <PLRow label={plData.tax.label} value={plData.tax.value} isNegative revenueBase={rev} />
@@ -207,7 +210,7 @@ export default function PLStatement() {
             { label: 'Tax Rate Effective', value: `${((plData.tax.value / plData.ebt.value) * 100).toFixed(1)}%`, positive: false },
           ].map((m) => (
             <div key={`plsum-${m.label}`} className="bg-card px-5 py-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{m.label}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t(m.label)}</p>
               <p className={`text-xl font-bold font-mono mt-1 ${m.positive ? 'text-positive' : 'text-foreground'}`}>{m.value}</p>
             </div>
           ))}

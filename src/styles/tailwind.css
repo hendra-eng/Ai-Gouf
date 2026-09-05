@@ -61,6 +61,11 @@
      nilainya mengikuti kodingan 1 (sumber acuan) */
   --sidebar-collapsed: var(--sidebar-collapsed-width);
   --topbar-height: var(--header-height);
+
+  /* ===== Ditambahkan dari kodingan 2 (dipakai halaman CALK / EquityNotes) ===== */
+  --positive-light: #DCFCE7;
+  --negative-light: #FEE2E2;
+  --warning-light: #FEF3C7;
 }
 
 @layer base {
@@ -235,6 +240,30 @@
     box-shadow: 0 4px 16px rgba(0,0,0,0.08);
     transform: translateY(-1px);
   }
+
+  /* ===== Ditambahkan dari kodingan 2 (dipakai halaman CALK / EquityNotes) ===== */
+  .financial-value {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .accordion-content {
+    overflow: hidden;
+    transition: max-height 280ms cubic-bezier(0.4,0,0.2,1), opacity 220ms ease;
+  }
+
+  .note-card-hover {
+    transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease;
+  }
+  .note-card-hover:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(27,110,243,0.10);
+    border-color: rgba(27,110,243,0.25);
+  }
+
+  .row-hover:hover td {
+    background-color: rgba(241,245,249,0.7);
+  }
 }
 
 @layer components {
@@ -367,6 +396,41 @@
     background-color: #eff6ff;
     color: var(--primary);
   }
+
+  /* ===== Ditambahkan dari kodingan 2 (khusus dipakai halaman baru: CALK / disclosures) ===== */
+  .sidebar-nav-item {
+    @apply flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-medium text-muted-foreground transition-all duration-150 cursor-pointer hover:bg-muted hover:text-foreground select-none;
+  }
+  .sidebar-nav-item.active {
+    @apply text-primary;
+  }
+  .sidebar-section-label {
+    @apply text-[10px] font-bold uppercase tracking-[0.08em] px-2.5 pt-3 pb-1;
+  }
+
+  .note-nav-item {
+    @apply flex items-center gap-2 px-2.5 py-[6px] rounded-lg text-xs font-medium text-muted-foreground transition-all duration-150 cursor-pointer hover:bg-muted hover:text-foreground;
+  }
+  .note-nav-item.active {
+    @apply text-primary font-semibold;
+  }
+
+  .accounting-th {
+    @apply text-[11px] font-semibold text-muted-foreground uppercase tracking-wide py-2.5 px-4 text-right whitespace-nowrap border-b border-border;
+  }
+  .accounting-th:first-child {
+    @apply text-left;
+  }
+  .accounting-td {
+    @apply py-2.5 px-4 text-right text-sm tabular-nums border-b;
+  }
+  .accounting-td:first-child {
+    @apply text-left;
+  }
+
+  .disclosure-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold;
+  }
 }
 
 @keyframes fadeIn {
@@ -447,4 +511,10 @@
   .nav-item-inactive {
     @apply text-muted-foreground hover:bg-muted hover:text-foreground;
   }
+}
+
+/* ===== Ditambahkan dari kodingan 2 ===== */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
 }

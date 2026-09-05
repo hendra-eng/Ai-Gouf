@@ -220,6 +220,27 @@ function hitungDataProfitLoss(hasil: any, coa: any[], tahun: number) {
   return { PL_CORE, MARGINS, MONTHLY_PL, REVENUE_BY_CATEGORY, EXPENSE_BREAKDOWN, periodLabel };
 }
 
+// [BARU] Dipakai OverviewCharts.tsx (Financial Overview) untuk fitur filter
+// periode 12M/3Y yang butuh data tahun-tahun sebelumnya juga -- reuse
+// LANGSUNG logika klasifikasi/hitung yang sama dengan hook di atas
+// (hitungDataProfitLoss) supaya angkanya selalu konsisten dengan halaman
+// P&L, tidak duplikat logic. Tidak mengubah perilaku useProfitLossData()
+// yang sudah ada di atas.
+export async function fetchMonthlyPLForYear(clientId: string, tahun: number): Promise<MonthlyPLRow[] | null> {
+  try {
+    const [coaRes, laporanRes] = await Promise.all([
+      ambilCoaClient(clientId).catch(() => ({ coa: [] })),
+      ambilLaporanBulanan(clientId, tahun).catch(() => generateLaporanBulanan(clientId, tahun)),
+    ]);
+    const hasil = (laporanRes as any)?.hasil;
+    const coa = (coaRes as any)?.coa || [];
+    const computed = hitungDataProfitLoss(hasil, coa, tahun);
+    return computed?.MONTHLY_PL || null;
+  } catch {
+    return null;
+  }
+}
+
 export function useProfitLossData(): ProfitLossData {
   const { activeClientId, activeClientName } = useActiveClient();
   const [loading, setLoading] = useState(false);

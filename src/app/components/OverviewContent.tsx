@@ -6,6 +6,8 @@ import Icon from '@/components/ui/AppIcon';
 import dynamic from 'next/dynamic';
 import { useLanguage } from '@/lib/language';
 import { CURRENCIES, useCurrency } from '@/lib/currency';
+import { useActiveClient } from '@/lib/activeClient';
+import { COMPANY } from '@/lib/financialData';
 // [BARU] KPI grid sekarang REAL: KPIBentoGrid.tsx sudah lengkap ambil data
 // dari backend (GET /api/client/{id}/kpi-bento, lihat ambilKpiBento() di
 // agent-ai/lib/api.js) untuk client yang lagi aktif (useActiveClient) --
@@ -24,6 +26,8 @@ export default function OverviewContent() {
   const [branch, setBranch] = useState('All Branches');
   const { t } = useLanguage();
   const { currency, setCurrency, fx } = useCurrency();
+  const { activeClientName } = useActiveClient();
+  const companyName = activeClientName || COMPANY.name;
 
   return (
     <div className="space-y-6">
@@ -31,7 +35,7 @@ export default function OverviewContent() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-700 text-foreground">{t('Financial Overview')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{t('Comprehensive financial performance and business health — PT Nusantara Teknologi Indonesia')}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{t('Comprehensive financial performance and business health')} — {companyName}</p>
           <div className="flex items-center gap-3 mt-1.5">
             <span className="text-xs font-600 text-primary">Jan 2026 – Aug 2026</span>
             <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-500">YTD</span>

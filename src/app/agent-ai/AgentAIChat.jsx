@@ -6,6 +6,7 @@
 // project Vite yang lama). Logika komponen TIDAK diubah.
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import AgentSidebar from "./components/AgentSidebar";
 import ChatComposer from "./components/ChatComposer";
 import ChatBubble from "./components/ChatBubble";
 import ArtifactPanel from "./components/ArtifactPanel";
@@ -649,8 +650,16 @@ function AgentAIChatInner() {
       // akhir stream) berisi data YANG SAMA PERSIS dengan return value
       // prosesFileBatch() lama, jadi seluruh logic di bawah ini (baca
       // hasilBatch.rencana/hasil_per_file/dst) TIDAK PERLU berubah.
+      // [BARU -- PARITAS KECEPATAN DGN HALAMAN TRANSAKSI] pakaiAi=false &
+      // autoGenerateLaporan=false diteruskan eksplisit di sini (bukan cuma
+      // mengandalkan default di api.js) supaya jelas: upload dari chat ini
+      // sekarang SENGAJA secepat upload di halaman Transaksi -- tanpa
+      // panggilan AI kategorisasi per baris & tanpa auto-generate laporan
+      // 18-sheet (yang juga manggil AI lagi untuk narasi) di setiap upload.
+      // Laporan 18-sheet tetap bisa dibuat kapan saja lewat panel "Buat
+      // Laporan Keuangan Lengkap (18 Sheet)" di HasilTerpadu.jsx.
       let hasilBatch = null;
-      for await (const evt of api.prosesFileBatchStream(files, activeClientId, undefined, false, controllerBatch.signal)) {
+      for await (const evt of api.prosesFileBatchStream(files, activeClientId, undefined, false, controllerBatch.signal, false, false)) {
         if (evt.type === "progress") {
           perbaruiStepProsesBatch(evt);
         } else if (evt.type === "error") {
@@ -1076,6 +1085,22 @@ function AgentAIChatInner() {
 
   return (
     <div className="app-shell agent-ai-root">
+      <AgentSidebar
+        aiActive={statusAI.aiActive}
+        claudeActive={statusAI.claudeActive}
+        conversations={daftarPercakapan.map((c) => ({ ...c, aktif: c.id === activePercakapanId }))}
+        onSelectConversation={handlePilihPercakapan}
+        onNewConversation={handleObrolanBaru}
+        onDeleteConversation={handleHapusPercakapan}
+        extraTop={
+          <TaxSettings
+            npwp={npwp}
+            onNpwpChange={setNpwp}
+            tarifPpn={tarifPpn}
+            onTarifChange={setTarifPpn}
+          />
+        }
+      />
       <div className={`main-container ${isLanding ? "landing" : ""}`}>
         {isLanding && (
           <>

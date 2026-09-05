@@ -22,10 +22,10 @@ type Dict = Record<string, Record<LanguageCode, string>>;
 const translations: Dict = {
   // ─── DashboardHeader ───
   'Financial Overview': { en: 'Financial Overview', id: 'Ringkasan Keuangan', zh: '财务概览' },
-  'Comprehensive financial performance and business health — PT Nusantara Teknologi Indonesia': {
-    en: 'Comprehensive financial performance and business health — PT Nusantara Teknologi Indonesia',
-    id: 'Kinerja keuangan dan kesehatan bisnis secara menyeluruh — PT Nusantara Teknologi Indonesia',
-    zh: '全面的财务表现与业务健康状况 — PT Nusantara Teknologi Indonesia',
+  'Comprehensive financial performance and business health': {
+    en: 'Comprehensive financial performance and business health',
+    id: 'Kinerja keuangan dan kesehatan bisnis secara menyeluruh',
+    zh: '全面的财务表现与业务健康状况',
   },
   'Last updated': { en: 'Last updated', id: 'Terakhir diperbarui', zh: '最后更新' },
   'All Branches': { en: 'All Branches', id: 'Semua Cabang', zh: '所有分公司' },
@@ -203,6 +203,11 @@ const translations: Dict = {
 
   // ─── PLStatement / BalanceSheetStatement / CashFlowStatement (shared components) ───
   'P&L Waterfall — Revenue to Net Profit': { en: 'P&L Waterfall — Revenue to Net Profit', id: 'Waterfall Laba Rugi — Pendapatan ke Laba Bersih', zh: '损益瀑布图 — 收入至净利润' },
+  'How Rp 8.42M revenue becomes Rp 1.84M net profit': {
+    en: 'How Rp 8.42M revenue becomes Rp 1.84M net profit',
+    id: 'Bagaimana Rp 8,42M pendapatan menjadi Rp 1,84M laba bersih',
+    zh: 'Rp 8.42M收入如何转化为Rp 1.84M净利润',
+  },
   'Laporan Laba Rugi': { en: 'Profit & Loss Statement', id: 'Laporan Laba Rugi', zh: '损益表' },
   'Periode: Januari – Agustus 2026': { en: 'Period: January – August 2026', id: 'Periode: Januari – Agustus 2026', zh: '期间：2026年1月–8月' },
   'Account': { en: 'Account', id: 'Akun', zh: '科目' },

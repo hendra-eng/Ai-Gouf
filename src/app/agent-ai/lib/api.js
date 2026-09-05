@@ -239,12 +239,27 @@ export async function* prosesFileStream(file, jenisDokumen /* optional */, clien
  *   memilih tetap lanjutkan semua baris apa adanya
  * @param {AbortSignal} [signal] -- [BARU] opsional, dari AbortController --
  *   dipakai tombol "Stop" untuk membatalkan batch ini di tengah jalan.
+ * @param {boolean} [pakaiAi=false] -- [BARU -- PARITAS KECEPATAN] Toggle
+ *   kategorisasi AI (Groq) untuk baris yang tidak kecocokan pola/kata
+ *   kunci COA. Default false, SAMA seperti default upload di halaman
+ *   Transaksi (ImportRekeningKoranModal.tsx) -- sebelumnya endpoint ini
+ *   diam-diam selalu pakai_ai=True karena parameter ini tidak pernah
+ *   dikirim sama sekali, jadi upload lewat chat jauh lebih lambat dari
+ *   upload lewat halaman Transaksi untuk data yang sama.
+ * @param {boolean} [autoGenerateLaporan=false] -- [BARU -- PARITAS
+ *   KECEPATAN] Toggle auto-generate laporan 18-sheet penuh (termasuk
+ *   sub-tahap narasi_ai yang manggil Claude API lagi) di akhir batch ini.
+ *   Default false -- sebelumnya SELALU jalan otomatis di setiap upload,
+ *   ini paling berat dari seluruh tahap batch. Laporan tetap bisa dibuat
+ *   kapan saja lewat panel "Buat Laporan Keuangan Lengkap (18 Sheet)".
  */
-export async function prosesFileBatch(files, clientId, jenisDokumen /* optional */, konfirmasiDuplikat = false, signal = undefined) {
+export async function prosesFileBatch(files, clientId, jenisDokumen /* optional */, konfirmasiDuplikat = false, signal = undefined, pakaiAi = false, autoGenerateLaporan = false) {
   const formData = new FormData();
   for (const file of files) formData.append("files", file);
   if (jenisDokumen) formData.append("jenis_dokumen", jenisDokumen);
   formData.append("konfirmasi_duplikat", konfirmasiDuplikat ? "true" : "false");
+  formData.append("pakai_ai", pakaiAi ? "true" : "false");
+  formData.append("auto_generate_laporan", autoGenerateLaporan ? "true" : "false");
   return request(`/api/client/${clientId}/proses-file-batch`, { method: "POST", body: formData, signal });
 }
 
@@ -281,8 +296,12 @@ export async function prosesFileBatch(files, clientId, jenisDokumen /* optional 
  * @param {string} [jenisDokumen] -- opsional, sama seperti prosesFileBatch
  * @param {boolean} [konfirmasiDuplikat=false]
  * @param {AbortSignal} [signal] -- opsional, dari AbortController (tombol "Stop")
+ * @param {boolean} [pakaiAi=false] -- [BARU -- PARITAS KECEPATAN] sama
+ *   seperti prosesFileBatch(), lihat docstring-nya di atas.
+ * @param {boolean} [autoGenerateLaporan=false] -- [BARU -- PARITAS
+ *   KECEPATAN] sama seperti prosesFileBatch(), lihat docstring-nya di atas.
  */
-export async function* prosesFileBatchStream(files, clientId, jenisDokumen /* optional */, konfirmasiDuplikat = false, signal = undefined) {
+export async function* prosesFileBatchStream(files, clientId, jenisDokumen /* optional */, konfirmasiDuplikat = false, signal = undefined, pakaiAi = false, autoGenerateLaporan = false) {
   const headers = {};
   if (_token) {
     headers["Authorization"] = `Bearer ${_token}`;
@@ -292,6 +311,8 @@ export async function* prosesFileBatchStream(files, clientId, jenisDokumen /* op
   for (const file of files) formData.append("files", file);
   if (jenisDokumen) formData.append("jenis_dokumen", jenisDokumen);
   formData.append("konfirmasi_duplikat", konfirmasiDuplikat ? "true" : "false");
+  formData.append("pakai_ai", pakaiAi ? "true" : "false");
+  formData.append("auto_generate_laporan", autoGenerateLaporan ? "true" : "false");
 
   const res = await fetch(`${API_BASE_URL}/api/client/${clientId}/proses-file-batch/stream`, {
     method: "POST",

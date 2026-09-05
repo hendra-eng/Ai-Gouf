@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, ArrowUpCircle, MoreHorizontal, Shield } from 'lucide-react';
+import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, ArrowUpCircle, MoreHorizontal, Shield, RefreshCcw, NotebookText } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 
 
@@ -42,6 +42,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
           { id: 'nav-pl', label: 'Profit & Loss', icon: TrendingUp, href: '/financial-statements/profit-loss' },
           { id: 'nav-bs', label: 'Balance Sheet', icon: Scale, href: '/financial-statements/balance-sheet' },
           { id: 'nav-cf', label: 'Cash Flow', icon: Activity, href: '/financial-statements/cash-flow' },
+          { id: 'nav-coe', label: 'Statement of Changes in Equity', icon: RefreshCcw, href: '/financial-statements/changes-in-equity' },
+          { id: 'nav-notes', label: 'Notes to Financial Statements', icon: NotebookText, href: '/financial-statements/notes' },
         ],
       },
       {

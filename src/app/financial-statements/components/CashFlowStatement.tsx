@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { ChevronDown, ChevronRight, TrendingUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { useLanguage } from '@/lib/language';
 
 const CashFlowChart = dynamic(() => import('./CashFlowChart'), {
   ssr: false,
@@ -58,6 +59,7 @@ interface CFSectionProps {
 
 function CFSection({ section, colorClass }: CFSectionProps) {
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   const [expanded, setExpanded] = useState(true);
   return (
@@ -67,7 +69,7 @@ function CFSection({ section, colorClass }: CFSectionProps) {
         className="w-full flex items-center gap-2 px-5 py-3 bg-muted/40 border-y border-border hover:bg-muted/60 transition-colors"
       >
         {expanded ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
-        <span className="text-sm font-semibold text-foreground">{section.label}</span>
+        <span className="text-sm font-semibold text-foreground">{t(section.label)}</span>
         <div className="ml-auto">
           <span className={`text-sm font-bold font-mono ${section.total >= 0 ? 'text-positive' : 'text-negative'}`}>
             {section.total >= 0 ? '+' : ''}{formatRp(section.total)}
@@ -78,14 +80,14 @@ function CFSection({ section, colorClass }: CFSectionProps) {
         <>
           {section.items.map((item, i) => (
             <div key={`cfitem-${section.label}-${i}`} className={`flex items-center justify-between px-8 py-2.5 border-b border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 1 ? 'bg-muted/10' : ''}`}>
-              <span className="text-sm text-muted-foreground">{item.label}</span>
+              <span className="text-sm text-muted-foreground">{t(item.label)}</span>
               <span className={`text-sm font-semibold font-mono ${item.value >= 0 ? 'text-foreground' : 'text-negative'}`}>
                 {item.value >= 0 ? '' : '('}{formatRp(Math.abs(item.value))}{item.value < 0 ? ')' : ''}
               </span>
             </div>
           ))}
           <div className={`flex items-center justify-between px-5 py-3 bg-muted/20 border-b border-border`}>
-            <span className={`text-sm font-bold ${colorClass}`}>Net {section.label}</span>
+            <span className={`text-sm font-bold ${colorClass}`}>{t('Net')} {t(section.label)}</span>
             <span className={`text-sm font-bold font-mono ${colorClass}`}>
               {section.total >= 0 ? '+' : ''}{formatRp(section.total)}
             </span>
@@ -98,6 +100,7 @@ function CFSection({ section, colorClass }: CFSectionProps) {
 
 export default function CashFlowStatement() {
   const { currency, fx } = useCurrency();
+  const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   const [forecastPeriod, setForecastPeriod] = useState('3M');
 
@@ -107,8 +110,8 @@ export default function CashFlowStatement() {
       <div className="card-elevated-md rounded-xl p-5">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h3 className="text-base font-bold text-foreground">Cash Flow by Activity</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Jan–Aug 2026 monthly breakdown</p>
+            <h3 className="text-base font-bold text-foreground">{t('Cash Flow by Activity')}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('Jan–Aug 2026 monthly breakdown')}</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border">
@@ -138,7 +141,7 @@ export default function CashFlowStatement() {
           { label: 'Cash Runway', value: null, display: `${runwayMonths} months`, color: 'text-positive' },
         ].map((c) => (
           <div key={`cfsum-${c.label}`} className="card-elevated rounded-xl p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{c.label}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{t(c.label)}</p>
             <p className={`text-xl font-bold font-mono ${c.color}`}>
               {c.value !== null ? `${c.prefix || ''}${formatRp(c.value)}` : c.display}
             </p>
@@ -150,10 +153,10 @@ export default function CashFlowStatement() {
       <div className="flex items-start gap-3 p-4 rounded-xl bg-positive-subtle border border-positive/20">
         <TrendingUp size={18} className="text-positive flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-foreground">Cash Runway: 4.8 Months</p>
+          <p className="text-sm font-semibold text-foreground">{t('Cash Runway: 4.8 Months')}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {fx('Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).')}
-            {' '}Operating cash flow is positive and improving. No immediate liquidity risk.
+            {fx(t('Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).'))}
+            {' '}{t('Operating cash flow is positive and improving. No immediate liquidity risk.')}
           </p>
         </div>
       </div>
@@ -161,8 +164,8 @@ export default function CashFlowStatement() {
       {/* Statement table */}
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
-          <h3 className="text-base font-bold text-foreground">Laporan Arus Kas</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Periode: Januari – Agustus 2026 (Metode Tidak Langsung)</p>
+          <h3 className="text-base font-bold text-foreground">{t('Laporan Arus Kas')}</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026 (Metode Tidak Langsung)')}</p>
         </div>
 
         <CFSection section={cfData.operating} colorClass="text-positive" />
@@ -171,15 +174,15 @@ export default function CashFlowStatement() {
 
         <div className="divide-y divide-border">
           <div className="flex items-center justify-between px-5 py-3 bg-muted/30">
-            <span className="text-sm font-semibold text-foreground">Kenaikan (Penurunan) Bersih Kas</span>
+            <span className="text-sm font-semibold text-foreground">{t('Kenaikan (Penurunan) Bersih Kas')}</span>
             <span className="text-sm font-bold font-mono text-positive">+{formatRp(cfData.netChange)}</span>
           </div>
           <div className="flex items-center justify-between px-5 py-3">
-            <span className="text-sm text-muted-foreground">Saldo Kas Awal Periode</span>
+            <span className="text-sm text-muted-foreground">{t('Saldo Kas Awal Periode')}</span>
             <span className="text-sm font-semibold font-mono text-foreground">{formatRp(cfData.beginning)}</span>
           </div>
           <div className="flex items-center justify-between px-5 py-4 bg-primary/5 border-t-2 border-primary/20">
-            <span className="text-base font-bold text-primary">SALDO KAS AKHIR PERIODE</span>
+            <span className="text-base font-bold text-primary">{t('SALDO KAS AKHIR PERIODE')}</span>
             <span className="text-base font-bold font-mono text-primary">{formatRp(cfData.ending)}</span>
           </div>
         </div>

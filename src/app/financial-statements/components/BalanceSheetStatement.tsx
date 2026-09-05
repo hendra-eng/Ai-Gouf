@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { ChevronDown, ChevronRight, CheckCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { useLanguage } from '@/lib/language';
 
 const BSDonutChart = dynamic(() => import('./BSDonutChart'), {
   ssr: false,
@@ -71,6 +72,7 @@ interface BSSection {
 
 function BSSectionTable({ title, items, subtotalLabel, subtotal, accent = 'text-foreground' }: BSSection) {
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   const [expanded, setExpanded] = useState(true);
   return (
@@ -80,18 +82,18 @@ function BSSectionTable({ title, items, subtotalLabel, subtotal, accent = 'text-
         className="w-full flex items-center gap-2 px-5 py-3 bg-muted/40 border-y border-border hover:bg-muted/60 transition-colors"
       >
         {expanded ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
-        <span className="text-sm font-semibold text-foreground">{title}</span>
+        <span className="text-sm font-semibold text-foreground">{t(title)}</span>
       </button>
       {expanded && (
         <>
           {items.map((item, i) => (
             <div key={`bsitem-${title}-${i}`} className={`flex items-center justify-between px-8 py-2.5 border-b border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 1 ? 'bg-muted/10' : ''}`}>
-              <span className="text-sm text-muted-foreground">{item.label}</span>
+              <span className="text-sm text-muted-foreground">{t(item.label)}</span>
               <span className="text-sm font-semibold font-mono text-foreground">{formatRp(item.value)}</span>
             </div>
           ))}
           <div className="flex items-center justify-between px-5 py-3 bg-muted/20 border-b border-border">
-            <span className={`text-sm font-bold ${accent}`}>{subtotalLabel}</span>
+            <span className={`text-sm font-bold ${accent}`}>{t(subtotalLabel)}</span>
             <span className={`text-sm font-bold font-mono ${accent}`}>{formatRp(subtotal)}</span>
           </div>
         </>
@@ -102,14 +104,15 @@ function BSSectionTable({ title, items, subtotalLabel, subtotal, accent = 'text-
 
 export default function BalanceSheetStatement() {
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   return (
     <div className="space-y-6">
       {/* Chart + Balance validation */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <h3 className="text-base font-bold text-foreground mb-1">Asset Composition</h3>
-          <p className="text-xs text-muted-foreground mb-4">Assets = Liabilities + Equity</p>
+          <h3 className="text-base font-bold text-foreground mb-1">{t('Asset Composition')}</h3>
+          <p className="text-xs text-muted-foreground mb-4">{t('Assets = Liabilities + Equity')}</p>
           <BSDonutChart
             totalAssets={totalAssets}
             currentAssets={currentAssetsTotal}
@@ -125,7 +128,7 @@ export default function BalanceSheetStatement() {
             <div className="flex items-center gap-2 mb-3">
               <CheckCircle size={18} className={isBalanced ? 'text-positive' : 'text-negative'} />
               <span className={`text-sm font-bold ${isBalanced ? 'text-positive' : 'text-negative'}`}>
-                {isBalanced ? 'Balance Sheet Balanced' : 'Balance Sheet Error'}
+                {isBalanced ? t('Balance Sheet Balanced') : t('Balance Sheet Error')}
               </span>
             </div>
             <div className="space-y-2">
@@ -136,7 +139,7 @@ export default function BalanceSheetStatement() {
                 { label: 'Liab + Equity', value: totalLiabEquity },
               ].map((r) => (
                 <div key={`bsval-${r.label}`} className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{r.label}</span>
+                  <span className="text-xs text-muted-foreground">{t(r.label)}</span>
                   <span className="text-xs font-bold font-mono text-foreground">{formatRp(r.value)}</span>
                 </div>
               ))}
@@ -145,7 +148,7 @@ export default function BalanceSheetStatement() {
 
           {/* Key ratios */}
           <div className="card-elevated-md rounded-xl p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Key Ratios</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">{t('Key Ratios')}</p>
             {[
               { label: 'Current Ratio', value: (currentAssetsTotal / currentLiabTotal).toFixed(2), good: currentAssetsTotal / currentLiabTotal > 1.5 },
               { label: 'Debt-to-Equity', value: (totalLiabilities / totalEquity).toFixed(2), good: totalLiabilities / totalEquity < 1.5 },
@@ -153,7 +156,7 @@ export default function BalanceSheetStatement() {
               { label: 'Equity Ratio', value: `${((totalEquity / totalAssets) * 100).toFixed(1)}%`, good: true },
             ].map((r) => (
               <div key={`bsratio-${r.label}`} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                <span className="text-xs text-muted-foreground">{r.label}</span>
+                <span className="text-xs text-muted-foreground">{t(r.label)}</span>
                 <span className={`text-sm font-bold font-mono ${r.good ? 'text-positive' : 'text-warning'}`}>{r.value}</span>
               </div>
             ))}
@@ -166,8 +169,8 @@ export default function BalanceSheetStatement() {
         {/* Assets */}
         <div className="card-elevated-md rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-base font-bold text-foreground">ASET</h3>
-            <p className="text-xs text-muted-foreground">Per 31 Agustus 2026</p>
+            <h3 className="text-base font-bold text-foreground">{t('ASET')}</h3>
+            <p className="text-xs text-muted-foreground">{t('Per 31 Agustus 2026')}</p>
           </div>
           <BSSectionTable
             title="Aset Lancar (Current Assets)"
@@ -184,7 +187,7 @@ export default function BalanceSheetStatement() {
             accent="text-primary"
           />
           <div className="flex items-center justify-between px-5 py-4 bg-primary/5 border-t-2 border-primary/20">
-            <span className="text-base font-bold text-primary">TOTAL ASET</span>
+            <span className="text-base font-bold text-primary">{t('TOTAL ASET')}</span>
             <span className="text-base font-bold font-mono text-primary">{formatRp(totalAssets)}</span>
           </div>
         </div>
@@ -192,8 +195,8 @@ export default function BalanceSheetStatement() {
         {/* Liabilities + Equity */}
         <div className="card-elevated-md rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
-            <h3 className="text-base font-bold text-foreground">KEWAJIBAN & EKUITAS</h3>
-            <p className="text-xs text-muted-foreground">Per 31 Agustus 2026</p>
+            <h3 className="text-base font-bold text-foreground">{t('KEWAJIBAN & EKUITAS')}</h3>
+            <p className="text-xs text-muted-foreground">{t('Per 31 Agustus 2026')}</p>
           </div>
           <BSSectionTable
             title="Kewajiban Lancar (Current Liabilities)"
@@ -210,7 +213,7 @@ export default function BalanceSheetStatement() {
             accent="text-negative"
           />
           <div className="flex items-center justify-between px-5 py-3 bg-muted/30 border-t border-border">
-            <span className="text-sm font-bold text-foreground">Total Kewajiban</span>
+            <span className="text-sm font-bold text-foreground">{t('Total Kewajiban')}</span>
             <span className="text-sm font-bold font-mono text-negative">{formatRp(totalLiabilities)}</span>
           </div>
 
@@ -222,7 +225,7 @@ export default function BalanceSheetStatement() {
             accent="text-positive"
           />
           <div className="flex items-center justify-between px-5 py-4 bg-primary/5 border-t-2 border-primary/20">
-            <span className="text-base font-bold text-primary">TOTAL KEWAJIBAN & EKUITAS</span>
+            <span className="text-base font-bold text-primary">{t('TOTAL KEWAJIBAN & EKUITAS')}</span>
             <span className="text-base font-bold font-mono text-primary">{formatRp(totalLiabEquity)}</span>
           </div>
         </div>

@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, LabelList
 } from 'recharts';
+import { useLanguage } from '@/lib/language';
 
 const waterfallRaw = [
   { name: 'Revenue', value: 8420, start: 0, end: 8420, type: 'total' },
@@ -32,12 +33,12 @@ function getColor(type: string) {
   return 'var(--negative)';
 }
 
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: { payload: typeof chartData[0] }[]; label?: string }) {
+function CustomTooltip({ active, payload, label, t }: { active?: boolean; payload?: { payload: typeof chartData[0] }[]; label?: string; t: (text: string) => string }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div className="bg-card border border-border rounded-xl shadow-card-lg p-3">
-      <p className="text-xs font-bold text-foreground mb-1">{label}</p>
+      <p className="text-xs font-bold text-foreground mb-1">{t(label ?? '')}</p>
       <p className={`text-sm font-bold font-mono ${d.value < 0 ? 'text-negative' : 'text-primary'}`}>
         {d.value < 0 ? '−' : ''}Rp {Math.abs(d.value).toFixed(0)}Jt
       </p>
@@ -46,12 +47,14 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 }
 
 export default function PLWaterfallChart() {
+  const { t } = useLanguage();
   return (
     <ResponsiveContainer width="100%" height={280}>
       <BarChart data={chartData} margin={{ top: 20, right: 16, left: 16, bottom: 4 }} barSize={38}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
         <XAxis
           dataKey="name"
+          tickFormatter={(v: string) => t(v)}
           tick={{ fontSize: 11, fill: 'var(--muted-foreground)', fontFamily: 'var(--font-plus-jakarta-sans)' }}
           axisLine={false}
           tickLine={false}
@@ -63,7 +66,7 @@ export default function PLWaterfallChart() {
           tickLine={false}
           width={44}
         />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<CustomTooltip t={t} />} />
         {/* Invisible base bar */}
         <Bar dataKey="base" stackId="wf" fill="transparent" stroke="none" />
         {/* Visible colored bar */}

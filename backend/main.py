@@ -2164,6 +2164,29 @@ async def proses_file_batch(
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     konfirmasi_duplikat: bool = Form(False),
+    # [BARU -- PARITAS KECEPATAN DGN /api/proses-file] Sebelumnya endpoint
+    # batch ini TIDAK PERNAH meneruskan pakai_ai ke
+    # _proses_dan_simpan_satu_file()/_jalankan_generate_kertas_kerja(),
+    # jadi diam-diam selalu jalan dengan pakai_ai=True (default fungsi
+    # tsb) -- tiap baris yang tidak cocok pola historis/kata kunci COA
+    # memanggil API AI (Groq) SATU PER SATU, jauh lebih lambat dari
+    # /api/proses-file yang dipakai halaman Transaksi (di sana frontend
+    # eksplisit kirim pakai_ai=false secara default). Sekarang endpoint
+    # batch ini juga default False -- perilaku (kecepatan) sama dengan
+    # halaman Transaksi kecuali user memang mau AI dinyalakan.
+    pakai_ai: bool = Form(False),
+    # [BARU -- PARITAS KECEPATAN] Auto-generate laporan 18-sheet penuh
+    # (COA+jurnal+laporan keuangan+lampiran SPT+laporan bulanan+aset
+    # tetap+PPh Badan+piutang/hutang+tren saldo+NARASI AI+susun Excel --
+    # lihat _auto_generate_laporan_18_sheet) sebelumnya SELALU jalan
+    # otomatis di akhir tiap batch upload -- termasuk sub-tahap
+    # "narasi_ai" yang manggil Claude API lagi, di luar pakai_ai di atas.
+    # Ini paling berat dari semua tahap batch ini. Sekarang default OFF
+    # -- laporan tetap bisa dibuat kapan saja lewat panel "Buat Laporan
+    # Keuangan Lengkap (18 Sheet)" di HasilTerpadu.jsx (endpoint terpisah
+    # /api/client/{client_id}/export-18-sheet), jadi tidak ada fitur yang
+    # hilang, cuma tidak lagi otomatis nempel di SETIAP upload.
+    auto_generate_laporan: bool = Form(False),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     if not files:
@@ -2204,7 +2227,7 @@ async def proses_file_batch(
             kertas_kerja_hasil = await asyncio.to_thread(
                 _jalankan_generate_kertas_kerja,
                 client_id, daftar_file_pdf_kk, df_coa_kk, peringatan_coa_kk,
-                [], True, user,
+                [], pakai_ai, user,
             )
         except HTTPException as e:
             kertas_kerja_hasil = {
@@ -2271,7 +2294,7 @@ async def proses_file_batch(
             hasil = await asyncio.to_thread(
                 _proses_dan_simpan_satu_file,
                 isi, nama_file, jenis_dokumen, client_id, conv_id_final, None,
-                konfirmasi_duplikat, user,
+                konfirmasi_duplikat, user, pakai_ai,
             )
             hasil_per_file.append({"nama_file": nama_file, "urutan": langkah["urutan"], **hasil})
             hasil_mentah_per_file[nama_file] = hasil
@@ -2333,10 +2356,16 @@ async def proses_file_batch(
     # [FIX -- GAP EVENT LOOP] Generate workbook 18-sheet itu kerja berat
     # (openpyxl susun banyak sheet dari data DB) -- dibungkus to_thread
     # sama alasannya dgn pemanggilan lain di endpoint batch ini.
-    laporan_18_sheet = await asyncio.to_thread(
-        _auto_generate_laporan_18_sheet,
-        client_id, _tahun_dari_hasil_batch(hasil_per_file), user,
-    )
+    # [BARU -- PARITAS KECEPATAN] Sekarang cuma jalan kalau diminta
+    # eksplisit (auto_generate_laporan=True) -- lihat catatan di param
+    # auto_generate_laporan di atas.
+    if auto_generate_laporan:
+        laporan_18_sheet = await asyncio.to_thread(
+            _auto_generate_laporan_18_sheet,
+            client_id, _tahun_dari_hasil_batch(hasil_per_file), user,
+        )
+    else:
+        laporan_18_sheet = []
 
     dbc.log_audit(
         client_id=client_id, user=user.get("username", "unknown"),
@@ -2380,6 +2409,15 @@ async def proses_file_batch_stream(
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     konfirmasi_duplikat: bool = Form(False),
+    # [BARU -- PARITAS KECEPATAN] Sama seperti proses_file_batch() di
+    # atas (versi non-stream) -- lihat catatan lengkap di sana. Default
+    # False supaya kecepatan sama dengan halaman Transaksi (/api/proses-
+    # file, yang defaultnya juga false) kecuali user memang mau AI.
+    pakai_ai: bool = Form(False),
+    # [BARU -- PARITAS KECEPATAN] Sama seperti proses_file_batch() --
+    # default OFF, laporan 18-sheet (termasuk sub-tahap narasi_ai yang
+    # manggil Claude API) tidak lagi otomatis nempel di setiap upload.
+    auto_generate_laporan: bool = Form(False),
     user: dict = Depends(auth.require_level(3)),
 ):
     """
@@ -2473,7 +2511,7 @@ async def proses_file_batch_stream(
                         daftar_file_pdf_kk.append((buf, nama_file_pdf))
                     kertas_kerja_hasil = _jalankan_generate_kertas_kerja(
                         client_id, daftar_file_pdf_kk, df_coa_kk, peringatan_coa_kk,
-                        [], True, user,
+                        [], pakai_ai, user,
                     )
                     q.put({
                         "type": "progress", "step": "kertas_kerja",
@@ -2562,7 +2600,7 @@ async def proses_file_batch_stream(
                 try:
                     hasil = _proses_dan_simpan_satu_file(
                         isi, nama_file, jenis_dokumen, client_id, conv_id_final, None,
-                        konfirmasi_duplikat, user,
+                        konfirmasi_duplikat, user, pakai_ai,
                     )
                     hasil_per_file.append({"nama_file": nama_file, "urutan": langkah["urutan"], **hasil})
                     q.put({
@@ -2653,10 +2691,22 @@ async def proses_file_batch_stream(
                     "label": label, "status": status, "pesan": pesan,
                 })
 
-            tahun_set = _tahun_dari_hasil_batch(hasil_per_file)
-            laporan_18_sheet = _auto_generate_laporan_18_sheet(
-                client_id, tahun_set, user, on_progress=on_progress_18_sheet,
-            )
+            # [BARU -- PARITAS KECEPATAN] Default OFF -- lihat catatan di
+            # param auto_generate_laporan pada endpoint ini. Kirim 1 event
+            # "skip" supaya UI (ProcessingSteps.jsx) tetap tahu tahap ini
+            # sengaja dilewati, bukan diam-diam hilang.
+            if auto_generate_laporan:
+                tahun_set = _tahun_dari_hasil_batch(hasil_per_file)
+                laporan_18_sheet = _auto_generate_laporan_18_sheet(
+                    client_id, tahun_set, user, on_progress=on_progress_18_sheet,
+                )
+            else:
+                laporan_18_sheet = []
+                q.put({
+                    "type": "progress", "step": "18sheet",
+                    "label": "Laporan 18-Sheet tidak dibuat otomatis -- gunakan panel \"Buat Laporan Keuangan Lengkap\" kapan saja.",
+                    "status": "skip",
+                })
 
             dbc.log_audit(
                 client_id=client_id, user=user.get("username", "unknown"),

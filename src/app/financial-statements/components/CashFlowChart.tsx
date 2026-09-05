@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts';
+import { useLanguage } from '@/lib/language';
 
 // Backend integration point: replace with /api/statements/cash-flow/monthly
 const cfMonthly = [
@@ -17,7 +18,7 @@ const cfMonthly = [
   { month: 'Aug', operating: 218, investing: -47, financing: -5 },
 ];
 
-function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string }) {
+function CustomTooltip({ active, payload, label, t }: { active?: boolean; payload?: { name: string; value: number; color: string }[]; label?: string; t: (text: string) => string }) {
   if (!active || !payload?.length) return null;
   const net = (payload[0]?.value || 0) + (payload[1]?.value || 0) + (payload[2]?.value || 0);
   return (
@@ -27,7 +28,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
         <div key={`cftip-${entry.name}`} className="flex items-center justify-between gap-4 mb-1">
           <div className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: entry.color }} />
-            <span className="text-xs text-muted-foreground">{entry.name}</span>
+            <span className="text-xs text-muted-foreground">{t(entry.name)}</span>
           </div>
           <span className={`text-xs font-semibold font-mono ${entry.value >= 0 ? 'text-positive' : 'text-negative'}`}>
             {entry.value >= 0 ? '+' : ''}Rp {entry.value}Jt
@@ -35,7 +36,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
         </div>
       ))}
       <div className="mt-2 pt-2 border-t border-border flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Net Cash</span>
+        <span className="text-xs text-muted-foreground">{t('Net Cash')}</span>
         <span className={`text-xs font-bold font-mono ${net >= 0 ? 'text-positive' : 'text-negative'}`}>
           {net >= 0 ? '+' : ''}Rp {net}Jt
         </span>
@@ -45,6 +46,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 }
 
 export default function CashFlowChart() {
+  const { t } = useLanguage();
   return (
     <ResponsiveContainer width="100%" height={280}>
       <BarChart data={cfMonthly} margin={{ top: 4, right: 8, left: 8, bottom: 4 }} barSize={20} barGap={2}>
@@ -62,11 +64,12 @@ export default function CashFlowChart() {
           tickLine={false}
           width={52}
         />
-        <Tooltip content={<CustomTooltip />} />
+        <Tooltip content={<CustomTooltip t={t} />} />
         <Legend
           iconType="square"
           iconSize={10}
           wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-plus-jakarta-sans)', paddingTop: 12 }}
+          formatter={(value: string) => t(value)}
         />
         <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} />
         <Bar dataKey="operating" name="Operating" fill="var(--positive)" fillOpacity={0.85} radius={[3, 3, 0, 0]} />

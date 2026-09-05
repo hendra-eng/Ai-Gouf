@@ -5,6 +5,7 @@ import PLStatement from './PLStatement';
 import BalanceSheetStatement from './BalanceSheetStatement';
 import CashFlowStatement from './CashFlowStatement';
 import { Download, Printer, FileText } from 'lucide-react';
+import { useLanguage } from '@/lib/language';
 
 const tabs = [
   { id: 'tab-pl', label: 'Profit & Loss', short: 'P&L' },
@@ -19,19 +20,20 @@ const tabNames: Record<string, string> = {
 };
 
 export default function FinancialStatementsContent() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('tab-pl');
 
   function handlePrint() {
-    toast.info('Menyiapkan cetak', { description: tabNames[activeTab] });
+    toast.info(t('Menyiapkan cetak'), { description: t(tabNames[activeTab]) });
     window.print();
   }
 
   function handleExportPdf() {
-    toast.success('PDF sedang dibuat', { description: `${tabNames[activeTab]} · PT Nusantara Teknologi Indonesia` });
+    toast.success(t('PDF sedang dibuat'), { description: `${t(tabNames[activeTab])} · PT Nusantara Teknologi Indonesia` });
   }
 
   function handleExportExcel() {
-    toast.success('Export Excel dimulai', { description: `${tabNames[activeTab]} akan tersedia untuk diunduh sebentar lagi.` });
+    toast.success(t('Export Excel dimulai'), { description: `${t(tabNames[activeTab])} ${t('akan tersedia untuk diunduh sebentar lagi.')}` });
   }
 
   return (
@@ -39,28 +41,28 @@ export default function FinancialStatementsContent() {
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Financial Statements</h1>
+          <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Financial Statements')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            PT Nusantara Teknologi Indonesia · Jan 2026 – Aug 2026
+            {t('PT Nusantara Teknologi Indonesia · Jan 2026 – Aug 2026')}
           </p>
           <div className="flex items-center gap-2 mt-2">
-            <span className="badge-info">PSAK Compliant</span>
-            <span className="badge-positive">Balanced ✓</span>
-            <span className="text-xs text-muted-foreground">Last reconciled: 25 Aug 2026</span>
+            <span className="badge-info">{t('PSAK Compliant')}</span>
+            <span className="badge-positive">{t('Balanced ✓')}</span>
+            <span className="text-xs text-muted-foreground">{t('Last reconciled: 25 Aug 2026')}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handlePrint} className="btn-secondary text-xs py-1.5 gap-1.5">
             <Printer size={13} />
-            Print
+            {t('Print')}
           </button>
           <button onClick={handleExportPdf} className="btn-secondary text-xs py-1.5 gap-1.5">
             <FileText size={13} />
-            PDF
+            {t('PDF')}
           </button>
           <button onClick={handleExportExcel} className="btn-primary text-xs py-1.5 gap-1.5">
             <Download size={13} />
-            Export Excel
+            {t('Export Excel')}
           </button>
         </div>
       </div>
@@ -76,7 +78,7 @@ export default function FinancialStatementsContent() {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <span className="hidden sm:inline">{tab?.label}</span>
+            <span className="hidden sm:inline">{t(tab?.label)}</span>
             <span className="sm:hidden">{tab?.short}</span>
           </button>
         ))}
