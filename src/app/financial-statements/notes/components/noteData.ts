@@ -1,1 +1,0 @@
-// Data moved to noteData.tsx — this file is intentionally empty to avoid module conflicts.
