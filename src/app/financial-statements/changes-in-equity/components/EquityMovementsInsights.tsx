@@ -1,3 +1,4 @@
+'use client';
 import React from 'react';
 import { TrendingUp, TrendingDown, Lightbulb, Info } from 'lucide-react';
 import { useLanguage } from '@/lib/language';

@@ -1,3 +1,4 @@
+'use client';
 import React from 'react';
 import { allNotes } from './noteData';
 import { useLanguage } from '@/lib/language';

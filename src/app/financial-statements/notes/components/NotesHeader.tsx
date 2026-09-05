@@ -1,3 +1,4 @@
+'use client';
 import React from 'react';
 import { Printer, FileDown, Download, CheckCircle2, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/language';

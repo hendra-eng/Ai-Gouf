@@ -1,3 +1,4 @@
+'use client';
 import React from 'react';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
