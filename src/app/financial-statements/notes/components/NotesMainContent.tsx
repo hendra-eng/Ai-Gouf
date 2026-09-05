@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { allNotes } from './noteData';
 import NotesNavPanel from './NotesNavPanel';
 import NoteSection from './NoteSection';
+import { useLanguage } from '@/lib/language';
 
 export default function NotesMainContent() {
+  const { t } = useLanguage();
   const [activeNote, setActiveNote] = useState('01');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -48,7 +50,7 @@ export default function NotesMainContent() {
             onClick={() => setMobileNavOpen(p => !p)}
             className="w-full flex items-center justify-between px-4 py-3 bg-card border border-border rounded-xl text-[13px] font-semibold text-foreground"
           >
-            <span>Note {activeNote} — {currentNote?.title}</span>
+            <span>{t('Note')} {activeNote} — {t(currentNote?.title ?? '')}</span>
             <span className="text-muted-foreground text-xs">{mobileNavOpen ? '▲' : '▼'}</span>
           </button>
           {mobileNavOpen && (
@@ -63,7 +65,7 @@ export default function NotesMainContent() {
                   }`}
                 >
                   <span className="font-mono text-[10px] mr-2 tabular-nums">{note.num}</span>
-                  {note.title}
+                  {t(note.title)}
                 </button>
               ))}
             </div>
@@ -80,4 +82,3 @@ export default function NotesMainContent() {
     </div>
   );
 }
-

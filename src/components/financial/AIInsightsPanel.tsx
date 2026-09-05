@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { SparklesIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/solid';
 import Icon from '@/components/ui/AppIcon';
+import { useLanguage } from '@/lib/language';
 
 
 interface Insight {
@@ -59,6 +60,7 @@ const severityConfig = {
 
 export default function AIInsightsPanel({ title = 'AI Insights', insights, onAnalyze }: AIInsightsPanelProps) {
   const router = useRouter();
+  const { t } = useLanguage();
 
   const handleAnalyze = (insight: Insight) => {
     if (onAnalyze) {
@@ -74,8 +76,8 @@ export default function AIInsightsPanel({ title = 'AI Insights', insights, onAna
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-indigo-600 flex items-center justify-center">
           <SparklesIcon className="w-4 h-4 text-white" />
         </div>
-        <h3 className="font-semibold text-slate-800 text-sm">{title}</h3>
-        <span className="ml-auto text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">AI Generated</span>
+        <h3 className="font-semibold text-slate-800 text-sm">{t(title)}</h3>
+        <span className="ml-auto text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{t('AI Generated')}</span>
       </div>
       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         {insights.map(insight => {
@@ -87,21 +89,21 @@ export default function AIInsightsPanel({ title = 'AI Insights', insights, onAna
                 <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${cfg.iconColor}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-slate-800 text-sm font-semibold">{insight.title}</h4>
+                    <h4 className="text-slate-800 text-sm font-semibold">{t(insight.title)}</h4>
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>
-                      {cfg.label}
+                      {t(cfg.label)}
                     </span>
                   </div>
-                  <p className="text-slate-600 text-xs leading-relaxed mb-2">{insight.description}</p>
+                  <p className="text-slate-600 text-xs leading-relaxed mb-2">{t(insight.description)}</p>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-700 text-xs font-semibold bg-white/70 px-2 py-0.5 rounded-md border border-white/50">
-                      {insight.metric}
+                      {t(insight.metric)}
                     </span>
                     <button
                       onClick={() => handleAnalyze(insight)}
                       className="flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 transition-colors"
                     >
-                      Analyze
+                      {t('Analyze')}
                       <ArrowRightIcon className="w-3 h-3" />
                     </button>
                   </div>

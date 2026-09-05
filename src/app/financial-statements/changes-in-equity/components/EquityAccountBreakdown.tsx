@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { useLanguage } from '@/lib/language';
 
 interface Detail { id: string; label: string; value: string; sign?: 'pos' | 'neg' | null }
 interface Account {
@@ -62,6 +63,7 @@ const accounts: Account[] = [
 ];
 
 export default function EquityAccountBreakdown() {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState<string[]>([]);
   const toggle = (id: string) =>
     setExpanded(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
@@ -69,8 +71,8 @@ export default function EquityAccountBreakdown() {
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-border">
-        <h2 className="text-[14px] font-bold text-foreground">Equity Account Details</h2>
-        <p className="text-[11px] text-muted-foreground mt-0.5">Click any account to view supporting movements</p>
+        <h2 className="text-[14px] font-bold text-foreground">{t('Equity Account Details')}</h2>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{t('Click any account to view supporting movements')}</p>
       </div>
 
       <div className="divide-y divide-border">
@@ -89,19 +91,19 @@ export default function EquityAccountBreakdown() {
                     size={14}
                     className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
                   />
-                  <span className="text-[13px] font-semibold text-foreground">{acct.name}</span>
+                  <span className="text-[13px] font-semibold text-foreground">{t(acct.name)}</span>
                 </div>
                 <div className="flex items-center gap-6 text-[12px] tabular-nums">
                   <div className="hidden sm:block text-right">
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Opening</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('Opening')}</div>
                     <div className="font-medium text-foreground">{acct.opening}</div>
                   </div>
                   <div className="hidden md:block text-right">
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Movement</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('Movement')}</div>
                     <div className={`font-semibold ${movCls}`}>{acct.movement}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">Closing</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wide mb-0.5">{t('Closing')}</div>
                     <div className="font-bold text-foreground">{acct.closing}</div>
                   </div>
                 </div>
@@ -117,7 +119,7 @@ export default function EquityAccountBreakdown() {
                           {isLast && <div className="border-t border-border/60 my-2" />}
                           <div className={`flex items-center justify-between py-2 px-3 rounded-lg ${isLast ? 'bg-primary/5' : 'hover:bg-muted/50'} transition-colors`}>
                             <span className={`text-[12px] ${isLast ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>
-                              {d.label}
+                              {t(d.label)}
                             </span>
                             <span className={`text-[12px] tabular-nums font-semibold ${
                               d.sign === 'pos' ? 'text-positive' :

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
+import { useLanguage } from '@/lib/language';
 
 interface KPICardProps {
   title: string;
@@ -56,6 +57,7 @@ export default function KPICard({
   subtitle,
   onClick,
 }: KPICardProps) {
+  const { t } = useLanguage();
   const isWarning = status === 'warning';
   const isPositive = status === 'positive' || (change !== undefined && change > 0 && status !== 'negative');
   const isNegative = status === 'negative' || (change !== undefined && change < 0 && status !== 'positive');
@@ -78,15 +80,15 @@ export default function KPICard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 truncate">
-            {title}
+            {t(title)}
           </p>
           <p className="number-display font-bold text-foreground leading-none text-xl">
             {value}
           </p>
           {previousValue ? (
-            <p className="text-xs text-muted-foreground mt-1">{previousLabel}: {previousValue}</p>
+            <p className="text-xs text-muted-foreground mt-1">{t(previousLabel)}: {previousValue}</p>
           ) : subtitle ? (
-            <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+            <p className="text-xs text-muted-foreground mt-1">{t(subtitle)}</p>
           ) : null}
         </div>
 
@@ -109,7 +111,7 @@ export default function KPICard({
               {change > 0 ? '+' : ''}{change.toFixed(1)}%
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">{previousLabel}</span>
+          <span className="text-xs text-muted-foreground">{t(previousLabel)}</span>
         </div>
       )}
     </div>

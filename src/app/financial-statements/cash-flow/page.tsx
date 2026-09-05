@@ -21,6 +21,7 @@ import {
 import { useCashFlowData } from '../lib/useCashFlowData';
 import { useProfitLossData } from '../lib/useProfitLossData';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { useLanguage } from '@/lib/language';
 import {
   ArrowDownTrayIcon, CalendarIcon, BuildingOfficeIcon,
   BanknotesIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon,
@@ -85,6 +86,7 @@ function ActivitySection({
   href: string;
 }) {
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
   const [expanded, setExpanded] = useState(true);
   const isPositive = netCF >= 0;
@@ -100,10 +102,10 @@ function ActivitySection({
           <h3 className="font-semibold text-slate-800 text-sm">{title}</h3>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <span className="text-emerald-600 font-medium">In: {fx(totalInflow)}</span>
-          <span className="text-red-500 font-medium">Out: ({fx(totalOutflow)})</span>
+          <span className="text-emerald-600 font-medium">{t('In:')} {fx(totalInflow)}</span>
+          <span className="text-red-500 font-medium">{t('Out:')} ({fx(totalOutflow)})</span>
           <span className={`font-bold px-3 py-1 rounded-full text-xs ${isPositive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-            Net: {isPositive ? '+' : ''}{fx(netCF)}
+            {t('Net:')} {isPositive ? '+' : ''}{fx(netCF)}
           </span>
         </div>
       </button>
@@ -113,10 +115,10 @@ function ActivitySection({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-5 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Activity</th>
-                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-emerald-600 uppercase tracking-wide">Inflow</th>
-                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-red-500 uppercase tracking-wide">Outflow</th>
-                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Net</th>
+                  <th className="px-5 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Activity')}</th>
+                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-emerald-600 uppercase tracking-wide">{t('Inflow')}</th>
+                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-red-500 uppercase tracking-wide">{t('Outflow')}</th>
+                  <th className="px-5 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Net')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,7 +146,7 @@ function ActivitySection({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50 border-t border-slate-200 font-bold">
-                  <td className="px-5 py-3 text-sm text-slate-700">Net {title}</td>
+                  <td className="px-5 py-3 text-sm text-slate-700">{t('Net')} {title}</td>
                   <td className="px-5 py-3 text-right text-emerald-600">{fx(totalInflow)}</td>
                   <td className="px-5 py-3 text-right text-red-500">({fx(totalOutflow)})</td>
                   <td className={`px-5 py-3 text-right text-base ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -172,6 +174,7 @@ export default function CashFlowPage() {
   // angka Net Profit ASLI yang tampil di halaman Profit & Loss.
   const { PL_CORE } = useProfitLossData();
   const { currency } = useCurrency();
+  const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
   const [forecastRange, setForecastRange] = useState<'3M' | '6M' | '12M'>('6M');
   const [chartView, setChartView] = useState<'area' | 'bar'>('area');
@@ -243,14 +246,14 @@ export default function CashFlowPage() {
       { Item: 'Free Cash Flow', Amount: freeCashFlow },
     ];
     downloadCsv(rows, `cash-flow-${companyName.replace(/\s+/g, '-')}-${Date.now()}.csv`);
-    toast.success('Export berhasil', { description: 'Cash Flow Statement diunduh sebagai CSV.' });
+    toast.success(t('Export berhasil'), { description: t('Cash Flow diunduh sebagai CSV.') });
   }
 
   return (
     <>
       <div className="px-6 pt-6">
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Cash Flow</h1>
-        <p className="text-sm text-muted-foreground mt-1">Monitor cash inflows, outflows, liquidity, and future cash position</p>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Cash Flow')}</h1>
+        <p className="text-sm text-muted-foreground mt-1">{t('Monitor cash inflows, outflows, liquidity, and future cash position')}</p>
       </div>
       <div className="p-6 space-y-6">
 
@@ -267,7 +270,7 @@ export default function CashFlowPage() {
             </span>
             {isSampleData && (
               <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                Showing sample data
+                {t('Showing sample data')}
               </span>
             )}
           </div>
@@ -278,7 +281,7 @@ export default function CashFlowPage() {
                 onClick={() => handlePeriodModeChange(m)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${periodMode === m ? 'bg-teal-500 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
               >
-                {m}
+                {t(m)}
               </button>
             ))}
             <button
@@ -286,7 +289,7 @@ export default function CashFlowPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors"
             >
               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-              Export
+              {t('Export')}
             </button>
           </div>
         </div>
@@ -299,9 +302,9 @@ export default function CashFlowPage() {
                 <BanknotesIcon className="w-8 h-8 text-white" />
               </div>
               <div>
-                <p className="text-indigo-200 text-sm font-medium">Cash Position</p>
+                <p className="text-indigo-200 text-sm font-medium">{t('Cash Position')}</p>
                 <p className="text-4xl font-bold">{fx(CF_CORE.endingCash)}</p>
-                <p className="text-indigo-200 text-xs mt-1">As of end of {bulanTerakhir?.month || periodLabel} {new Date().getFullYear()}</p>
+                <p className="text-indigo-200 text-xs mt-1">{t('As of end of')} {bulanTerakhir?.month || periodLabel} {new Date().getFullYear()}</p>
               </div>
             </div>
             <div className="flex-1 grid grid-cols-2 sm:grid-cols-5 gap-3 lg:ml-6">
@@ -313,7 +316,7 @@ export default function CashFlowPage() {
                 { label: 'Ending Cash', value: CF_CORE.endingCash, icon: '●' },
               ].map(item => (
                 <div key={item.label} className="bg-white/15 rounded-xl p-3 text-center">
-                  <p className="text-indigo-200 text-[10px] font-medium mb-1">{item.label}</p>
+                  <p className="text-indigo-200 text-[10px] font-medium mb-1">{t(item.label)}</p>
                   <p className={`text-base font-bold ${item.positive === true ? 'text-emerald-300' : item.positive === false ? 'text-red-300' : 'text-white'}`}>
                     {item.positive === false ? `(${fx(item.value)})` : fx(Math.abs(item.value))}
                   </p>
@@ -325,22 +328,22 @@ export default function CashFlowPage() {
 
         {/* ── KPI Cards ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-          <KPICard title="Operating CF" value={fx(CF_CORE.netOperatingCF)} change={hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF)} previousValue={fx(bulanSebelumnya?.operatingCF ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF))} sparkline={CF_MONTHLY.map(d => d.operatingCF)} />
-          <KPICard title="Investing CF" value={fx(CF_CORE.netInvestingCF)} change={hitungPerubahan(bulanTerakhir?.investingCF ?? 0, bulanSebelumnya?.investingCF)} previousValue={fx(bulanSebelumnya?.investingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.investingCF))} />
-          <KPICard title="Financing CF" value={fx(CF_CORE.netFinancingCF)} change={hitungPerubahan(bulanTerakhir?.financingCF ?? 0, bulanSebelumnya?.financingCF)} previousValue={fx(bulanSebelumnya?.financingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.financingCF))} />
-          <KPICard title="Net Change" value={fx(CF_CORE.endingCash - CF_CORE.beginningCash)} change={hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange)} previousValue={fx(bulanSebelumnya?.netChange ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange))} sparkline={CF_MONTHLY.map(d => d.netChange)} />
-          <KPICard title="Ending Cash" value={fx(CF_CORE.endingCash)} change={hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash)} previousValue={fx(bulanSebelumnya?.endCash ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash))} sparkline={CF_MONTHLY.map(d => d.endCash)} />
-          <KPICard title="Cash Runway" value={`${runway.toFixed(1)} mo`} status={runway >= 6 ? 'positive' : runway >= 3 ? 'neutral' : 'negative'} />
-          <KPICard title="Free Cash Flow" value={fx(freeCashFlow)} status={statusDari(freeCashFlow)} sparkline={CF_MONTHLY.map(d => d.operatingCF + d.investingCF)} />
-          <KPICard title="Cash Conversion" value={`${cashConversion.toFixed(1)}%`} status={statusDari(cashConversion)} />
+          <KPICard title={t('Operating CF')} value={fx(CF_CORE.netOperatingCF)} change={hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF)} previousValue={fx(bulanSebelumnya?.operatingCF ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.operatingCF ?? 0, bulanSebelumnya?.operatingCF))} sparkline={CF_MONTHLY.map(d => d.operatingCF)} />
+          <KPICard title={t('Investing CF')} value={fx(CF_CORE.netInvestingCF)} change={hitungPerubahan(bulanTerakhir?.investingCF ?? 0, bulanSebelumnya?.investingCF)} previousValue={fx(bulanSebelumnya?.investingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.investingCF))} />
+          <KPICard title={t('Financing CF')} value={fx(CF_CORE.netFinancingCF)} change={hitungPerubahan(bulanTerakhir?.financingCF ?? 0, bulanSebelumnya?.financingCF)} previousValue={fx(bulanSebelumnya?.financingCF ?? 0)} status="neutral" sparkline={CF_MONTHLY.map(d => Math.abs(d.financingCF))} />
+          <KPICard title={t('Net Change')} value={fx(CF_CORE.endingCash - CF_CORE.beginningCash)} change={hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange)} previousValue={fx(bulanSebelumnya?.netChange ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.netChange ?? 0, bulanSebelumnya?.netChange))} sparkline={CF_MONTHLY.map(d => d.netChange)} />
+          <KPICard title={t('Ending Cash')} value={fx(CF_CORE.endingCash)} change={hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash)} previousValue={fx(bulanSebelumnya?.endCash ?? 0)} status={statusDari(hitungPerubahan(bulanTerakhir?.endCash ?? 0, bulanSebelumnya?.endCash))} sparkline={CF_MONTHLY.map(d => d.endCash)} />
+          <KPICard title={t('Cash Runway')} value={`${runway.toFixed(1)} mo`} status={runway >= 6 ? 'positive' : runway >= 3 ? 'neutral' : 'negative'} />
+          <KPICard title={t('Free Cash Flow')} value={fx(freeCashFlow)} status={statusDari(freeCashFlow)} sparkline={CF_MONTHLY.map(d => d.operatingCF + d.investingCF)} />
+          <KPICard title={t('Cash Conversion')} value={`${cashConversion.toFixed(1)}%`} status={statusDari(cashConversion)} />
         </div>
 
         {/* ── Cash Flow Movement Chart ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="font-semibold text-slate-800">Cash Inflow vs Outflow</h3>
-              <p className="text-slate-500 text-xs mt-0.5">Monthly cash movement by activity type</p>
+              <h3 className="font-semibold text-slate-800">{t('Cash Inflow vs Outflow')}</h3>
+              <p className="text-slate-500 text-xs mt-0.5">{t('Monthly cash movement by activity type')}</p>
             </div>
             <div className="flex items-center gap-2">
               {(['area', 'bar'] as const).map(v => (
@@ -349,7 +352,7 @@ export default function CashFlowPage() {
                   onClick={() => setChartView(v)}
                   className={`px-3 py-1 text-xs font-medium rounded-lg capitalize transition-colors ${chartView === v ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
-                  {v === 'area' ? 'Area' : 'Bar'}
+                  {v === 'area' ? t('Area') : t('Bar')}
                 </button>
               ))}
             </div>
@@ -373,9 +376,9 @@ export default function CashFlowPage() {
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
                   <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
                   <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Area type="monotone" dataKey="operatingCF" name="Operating CF" stroke="#0d9488" strokeWidth={2.5} fill="url(#gradOCF)" dot={false} />
-                  <Area type="monotone" dataKey="endCash" name="Ending Cash" stroke="#6366f1" strokeWidth={2} fill="url(#gradEndCash)" dot={false} />
-                  <Area type="monotone" dataKey="netChange" name="Net Change" stroke="#f97316" strokeWidth={2} fill="none" dot={false} strokeDasharray="4 2" />
+                  <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradOCF)" dot={false} />
+                  <Area type="monotone" dataKey="endCash" name={t('Ending Cash')} stroke="#6366f1" strokeWidth={2} fill="url(#gradEndCash)" dot={false} />
+                  <Area type="monotone" dataKey="netChange" name={t('Net Change')} stroke="#f97316" strokeWidth={2} fill="none" dot={false} strokeDasharray="4 2" />
                 </AreaChart>
               ) : (
                 <ComposedChart data={CF_MONTHLY} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
@@ -384,8 +387,8 @@ export default function CashFlowPage() {
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
                   <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
                   <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="operatingCF" name="Operating CF" fill="#0d9488" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="netChange" name="Net Change" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="operatingCF" name={t('Operating CF')} fill="#0d9488" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="netChange" name={t('Net Change')} fill="#6366f1" radius={[3, 3, 0, 0]} />
                   <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
                 </ComposedChart>
               )}
@@ -397,8 +400,8 @@ export default function CashFlowPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800">Cash Movement Waterfall</h3>
-              <p className="text-slate-500 text-xs mt-0.5">Beginning Cash → Operating → Investing → Financing → Ending Cash</p>
+              <h3 className="font-semibold text-slate-800">{t('Cash Movement Waterfall')}</h3>
+              <p className="text-slate-500 text-xs mt-0.5">{t('Beginning Cash → Operating → Investing → Financing → Ending Cash')}</p>
             </div>
             <div className="p-5">
               <ResponsiveContainer width="100%" height={260}>
@@ -428,8 +431,8 @@ export default function CashFlowPage() {
           {/* Cash Runway */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-800">Cash Runway</h3>
-              <p className="text-slate-500 text-xs mt-0.5">Estimated months of operations</p>
+              <h3 className="font-semibold text-slate-800">{t('Cash Runway')}</h3>
+              <p className="text-slate-500 text-xs mt-0.5">{t('Estimated months of operations')}</p>
             </div>
             <div className="p-5">
               <div className="text-center mb-5">
@@ -446,11 +449,11 @@ export default function CashFlowPage() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-3xl font-bold text-slate-800">{runway.toFixed(1)}</span>
-                    <span className="text-xs text-slate-500">months</span>
+                    <span className="text-xs text-slate-500">{t('months')}</span>
                   </div>
                 </div>
                 <p className="text-sm text-slate-600 mt-3 text-center px-2">
-                  Current cash reserves can cover approximately <strong>{runway.toFixed(1)} months</strong> of projected operating expenses.
+                  {t('Current cash reserves can cover approximately')} <strong>{runway.toFixed(1)} {t('months')}</strong> {t('of projected operating expenses.')}
                 </p>
               </div>
               <div className="space-y-2.5">
@@ -461,7 +464,7 @@ export default function CashFlowPage() {
                   { label: 'Min Cash Threshold', value: fx(minCashThreshold) },
                 ].map(item => (
                   <div key={item.label} className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                    <span className="text-xs text-slate-500">{item.label}</span>
+                    <span className="text-xs text-slate-500">{t(item.label)}</span>
                     <span className="text-xs font-semibold text-slate-800">{item.value}</span>
                   </div>
                 ))}
@@ -469,7 +472,7 @@ export default function CashFlowPage() {
               {runway < 6 && (
                 <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                   <ExclamationTriangleIcon className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700">Cash runway below 6-month threshold. Monitor cash position closely.</p>
+                  <p className="text-xs text-amber-700">{t('Cash runway below 6-month threshold. Monitor cash position closely.')}</p>
                 </div>
               )}
             </div>
@@ -478,7 +481,7 @@ export default function CashFlowPage() {
 
         {/* ── Activity Sections ── */}
         <ActivitySection
-          title="Operating Cash Flow"
+          title={t('Operating Cash Flow')}
           items={OPERATING_ITEMS}
           totalInflow={operatingInflow}
           totalOutflow={operatingOutflow}
@@ -487,7 +490,7 @@ export default function CashFlowPage() {
           href="/transactions"
         />
         <ActivitySection
-          title="Investing Activities"
+          title={t('Investing Activities')}
           items={INVESTING_ITEMS}
           totalInflow={investingInflow}
           totalOutflow={investingOutflow}
@@ -496,7 +499,7 @@ export default function CashFlowPage() {
           href="/assets"
         />
         <ActivitySection
-          title="Financing Activities"
+          title={t('Financing Activities')}
           items={FINANCING_ITEMS}
           totalInflow={financingInflow}
           totalOutflow={financingOutflow}
@@ -511,14 +514,14 @@ export default function CashFlowPage() {
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                 <ArrowTrendingUpIcon className="w-4 h-4 text-emerald-500" />
-                Cash Inflow Drivers
+                {t('Cash Inflow Drivers')}
               </h3>
             </div>
             <div className="p-5 space-y-3">
               {CF_INFLOWS.map(item => (
                 <div key={item.name}>
                   <div className="flex justify-between mb-1">
-                    <span className="text-xs text-slate-600 font-medium">{item.name}</span>
+                    <span className="text-xs text-slate-600 font-medium">{t(item.name)}</span>
                     <span className="text-xs font-bold text-slate-800">{fx(item.value)}</span>
                   </div>
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -535,14 +538,14 @@ export default function CashFlowPage() {
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                 <ArrowTrendingDownIcon className="w-4 h-4 text-red-500" />
-                Cash Outflow Drivers
+                {t('Cash Outflow Drivers')}
               </h3>
             </div>
             <div className="p-5 space-y-3">
               {CF_OUTFLOWS.map(item => (
                 <div key={item.name}>
                   <div className="flex justify-between mb-1">
-                    <span className="text-xs text-slate-600 font-medium">{item.name}</span>
+                    <span className="text-xs text-slate-600 font-medium">{t(item.name)}</span>
                     <span className="text-xs font-bold text-slate-800">({fx(item.value)})</span>
                   </div>
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -563,8 +566,8 @@ export default function CashFlowPage() {
             <div>
               <h3 className="font-semibold text-slate-800">Cash Flow Forecast</h3>
               <p className="text-slate-500 text-xs mt-0.5">
-                <span className="text-teal-600 font-medium">Actual</span> data through {bulanTerakhir?.month || 'current period'} {new Date().getFullYear()} ·
-                <span className="text-indigo-500 font-medium ml-1">Forecast</span> shown with dashed line — not actual results
+                <span className="text-teal-600 font-medium">{t('Actual')}</span> {t('data through')} {bulanTerakhir?.month || t('current period')} {new Date().getFullYear()} ·
+                <span className="text-indigo-500 font-medium ml-1">{t('Forecast')}</span> {t('shown with dashed line — not actual results')}
               </p>
             </div>
             <div className="flex gap-1">
@@ -596,14 +599,14 @@ export default function CashFlowPage() {
                 <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
                 <Tooltip
-                  formatter={(v: any, name: string, props: any) => [fx(v), props.payload?.isForecast ? `${name} (Forecast)` : name]}
+                  formatter={(v: any, name: string, props: any) => [fx(v), props.payload?.isForecast ? `${name} (${t('Forecast')})` : name]}
                   contentStyle={{ borderRadius: 8, fontSize: 11 }}
                 />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                 <ReferenceLine x={bulanTerakhir?.month} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Forecast →', position: 'top', fontSize: 10, fill: '#94a3b8' }} />
                 <ReferenceLine y={minCashThreshold} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'Min Threshold', position: 'right', fontSize: 9, fill: '#ef4444' }} />
-                <Area type="monotone" dataKey="endCash" name="Cash Position" stroke="#0d9488" strokeWidth={2.5} fill="url(#gradActual)" dot={false} />
-                <Area type="monotone" dataKey="operatingCF" name="Operating CF" stroke="#6366f1" strokeWidth={2} fill="url(#gradForecast)" dot={false} strokeDasharray="0" />
+                <Area type="monotone" dataKey="endCash" name={t('Cash Position')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradActual)" dot={false} />
+                <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#6366f1" strokeWidth={2} fill="url(#gradForecast)" dot={false} strokeDasharray="0" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -612,8 +615,8 @@ export default function CashFlowPage() {
         {/* ── Forecast Table ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800">Projected Cash Position</h3>
-            <p className="text-slate-500 text-xs mt-0.5">Forecast values are projections only — not actual financial results</p>
+            <h3 className="font-semibold text-slate-800">{t('Projected Cash Position')}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">{t('Forecast values are projections only — not actual financial results')}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[700px]">
@@ -621,7 +624,7 @@ export default function CashFlowPage() {
                 <tr className="bg-slate-50 border-b border-slate-200">
                   {['Month', 'Beginning Cash', 'Operating CF', 'Investing CF', 'Financing CF', 'Net Change', 'Ending Cash', 'Status'].map(h => (
                     <th key={h} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide ${h === 'Month' || h === 'Status' ? 'text-left' : 'text-right'}`}>
-                      {h}
+                      {t(h)}
                     </th>
                   ))}
                 </tr>
@@ -634,7 +637,7 @@ export default function CashFlowPage() {
                     <tr key={i} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${isForecast ? 'bg-indigo-50/30' : ''}`}>
                       <td className="px-4 py-2.5 text-sm font-medium text-slate-700">
                         {String(row.month)}
-                        {isForecast && <span className="ml-1.5 text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">Forecast</span>}
+                        {isForecast && <span className="ml-1.5 text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-semibold">{t('Forecast')}</span>}
                       </td>
                       <td className="px-4 py-2.5 text-sm text-right text-slate-600">{fx(row.beginCash)}</td>
                       <td className={`px-4 py-2.5 text-sm text-right font-medium ${row.operatingCF >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fx(row.operatingCF)}</td>
@@ -647,10 +650,10 @@ export default function CashFlowPage() {
                       <td className="px-4 py-2.5 text-sm text-left">
                         {isForecast ? (
                           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isWarning ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                            {isWarning ? '⚠ Watch' : '◆ Projected'}
+                            {isWarning ? t('⚠ Watch') : t('◆ Projected')}
                           </span>
                         ) : (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Actual</span>
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{t('✓ Actual')}</span>
                         )}
                       </td>
                     </tr>
@@ -664,8 +667,8 @@ export default function CashFlowPage() {
         {/* ── Cash Flow Health ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800">Cash Flow Health</h3>
-            <p className="text-slate-500 text-xs mt-0.5">Key cash flow quality metrics</p>
+            <h3 className="font-semibold text-slate-800">{t('Cash Flow Health')}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">{t('Key cash flow quality metrics')}</p>
           </div>
           <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {/* [BARU] "current" sekarang dihitung dari CF_CORE/PL_CORE ASLI.
@@ -682,10 +685,10 @@ export default function CashFlowPage() {
               { label: 'Cash Burn Rate', current: fx(monthlyBurn) + '/mo', prev: fx(monthlyBurn * 0.95) + '/mo', trend: 'neutral', benchmark: '—' },
             ].map(m => (
               <div key={m.label} className="bg-slate-50 rounded-xl p-3.5">
-                <p className="text-xs text-slate-500 font-medium mb-2">{m.label}</p>
+                <p className="text-xs text-slate-500 font-medium mb-2">{t(m.label)}</p>
                 <p className="text-base font-bold text-slate-800 mb-1">{m.current}</p>
-                <p className="text-xs text-slate-400">Prev: {m.prev}</p>
-                {m.benchmark !== '—' && <p className="text-xs text-teal-600 mt-0.5">Benchmark: {m.benchmark}</p>}
+                <p className="text-xs text-slate-400">{t('Prev')}: {m.prev}</p>
+                {m.benchmark !== '—' && <p className="text-xs text-teal-600 mt-0.5">{t('Benchmark')}: {m.benchmark}</p>}
               </div>
             ))}
           </div>
@@ -695,10 +698,10 @@ export default function CashFlowPage() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-slate-800">Recent Cash Transactions</h3>
-              <p className="text-slate-500 text-xs mt-0.5">Click a transaction to view details</p>
+              <h3 className="font-semibold text-slate-800">{t('Recent Cash Transactions')}</h3>
+              <p className="text-slate-500 text-xs mt-0.5">{t('Click a transaction to view details')}</p>
             </div>
-            <Link href="/transactions" className="text-xs text-teal-600 hover:text-teal-700 font-medium">View All →</Link>
+            <Link href="/transactions" className="text-xs text-teal-600 hover:text-teal-700 font-medium">{t('View All →')}</Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[800px]">
@@ -706,7 +709,7 @@ export default function CashFlowPage() {
                 <tr className="bg-slate-50 border-b border-slate-200">
                   {['Date', 'ID', 'Type', 'Description', 'Account', 'Inflow', 'Outflow', 'Party', 'Status'].map(h => (
                     <th key={h} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide ${['Inflow', 'Outflow'].includes(h) ? 'text-right' : 'text-left'}`}>
-                      {h}
+                      {t(h)}
                     </th>
                   ))}
                 </tr>
@@ -718,7 +721,7 @@ export default function CashFlowPage() {
                     <td className="px-4 py-2.5 text-xs font-mono text-teal-600">{tx.id}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tx.type === 'Receipt' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                        {tx.type}
+                        {t(tx.type)}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-xs text-slate-700 max-w-[180px] truncate">{tx.desc}</td>
@@ -732,7 +735,7 @@ export default function CashFlowPage() {
                     <td className="px-4 py-2.5 text-xs text-slate-600">{tx.party}</td>
                     <td className="px-4 py-2.5">
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                        {tx.status}
+                        {t(tx.status)}
                       </span>
                     </td>
                   </tr>
@@ -743,7 +746,7 @@ export default function CashFlowPage() {
         </div>
 
         {/* ── AI Insights ── */}
-        <AIInsightsPanel title="AI Cash Flow Insights" insights={CF_AI_INSIGHTS} />
+        <AIInsightsPanel title={t('AI Cash Flow Insights')} insights={CF_AI_INSIGHTS} />
 
       </div>
     </>

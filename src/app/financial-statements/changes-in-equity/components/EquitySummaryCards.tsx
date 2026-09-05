@@ -3,6 +3,7 @@ import {
   DollarSign, TrendingUp, TrendingDown,
   PlusCircle, MinusCircle, Activity,
 } from 'lucide-react';
+import { useLanguage } from '@/lib/language';
 
 interface CardDef {
   id: string;
@@ -71,6 +72,7 @@ const cards: CardDef[] = [
 ];
 
 export default function EquitySummaryCards() {
+  const { t } = useLanguage();
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
       {cards.map(card => {
@@ -82,16 +84,16 @@ export default function EquitySummaryCards() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-primary-foreground/70">
-                  {card.label}
+                  {t(card.label)}
                 </span>
                 <span className="p-1 rounded-md bg-white/15">{card.icon}</span>
               </div>
               <div className="text-[22px] font-bold tabular-nums leading-tight text-primary-foreground">
                 {card.value}
               </div>
-              <div className="text-[11px] text-primary-foreground/70 leading-tight">{card.desc}</div>
+              <div className="text-[11px] text-primary-foreground/70 leading-tight">{t(card.desc)}</div>
               {card.sub && (
-                <div className="text-[11px] font-semibold text-primary-foreground/90 mt-0.5">{card.sub}</div>
+                <div className="text-[11px] font-semibold text-primary-foreground/90 mt-0.5">{t(card.sub)}</div>
               )}
             </div>
           );
@@ -117,16 +119,16 @@ export default function EquitySummaryCards() {
           <div key={card.id} className={`kpi-card border ${borderCls} ${bgCls} flex flex-col gap-1.5`}>
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {card.label}
+                {t(card.label)}
               </span>
               <span className={`p-1 rounded-md ${iconBg}`}>{card.icon}</span>
             </div>
             <div className={`text-[20px] font-bold tabular-nums leading-tight ${valCls}`}>
               {card.value}
             </div>
-            <div className="text-[11px] text-muted-foreground leading-tight">{card.desc}</div>
+            <div className="text-[11px] text-muted-foreground leading-tight">{t(card.desc)}</div>
             {card.sub && (
-              <div className={`text-[11px] font-medium mt-0.5 ${valCls}`}>{card.sub}</div>
+              <div className={`text-[11px] font-medium mt-0.5 ${valCls}`}>{t(card.sub)}</div>
             )}
           </div>
         );

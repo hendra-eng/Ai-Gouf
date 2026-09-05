@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
+import { useLanguage } from '@/lib/language';
 
 /* Waterfall data: base = invisible stack, bar = visible portion */
 const raw = [
@@ -32,9 +33,13 @@ const data = raw.map((item, idx) => {
 
 const fmtY = (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}M` : `$${v}K`;
 
-interface TooltipProps { active?: boolean; payload?: Array<{ payload: typeof data[0] }>; }
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: typeof data[0] }>;
+  t: (text: string) => string;
+}
 
-function CustomTooltip({ active, payload }: TooltipProps) {
+function CustomTooltip({ active, payload, t }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   const cls = d.type === 'positive' ? 'text-positive' : d.type === 'negative' ? 'text-negative' : 'text-primary';
@@ -43,20 +48,21 @@ function CustomTooltip({ active, payload }: TooltipProps) {
       <div className="font-semibold text-foreground mb-1 text-xs">{d.name.replace('\n', ' ')}</div>
       <div className={`text-base font-bold tabular-nums ${cls}`}>{d.display}</div>
       <div className="text-[10px] text-muted-foreground mt-1 capitalize">
-        {d.type === 'base' ? 'Balance' : `${d.type} movement`}
+        {d.type === 'base' ? t('Balance') : t(`${d.type} movement`)}
       </div>
     </div>
   );
 }
 
 export default function EquityBridgeChartInner() {
+  const { t } = useLanguage();
   return (
     <div className="bg-card border border-border rounded-xl p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
         <div>
-          <h2 className="text-[14px] font-bold text-foreground">Equity Movement Bridge</h2>
+          <h2 className="text-[14px] font-bold text-foreground">{t('Equity Movement Bridge')}</h2>
           <p className="text-[12px] text-muted-foreground mt-0.5">
-            How opening equity changed to closing equity — Jan to Aug 2026
+            {t('How opening equity changed to closing equity — Jan to Aug 2026')}
           </p>
         </div>
         <div className="flex items-center gap-4 text-[11px] flex-wrap">
@@ -67,14 +73,14 @@ export default function EquityBridgeChartInner() {
           ].map(l => (
             <div key={l.id} className="flex items-center gap-1.5">
               <span className={`w-2.5 h-2.5 rounded-sm ${l.color}`} />
-              <span className="text-muted-foreground">{l.label}</span>
+              <span className="text-muted-foreground">{t(l.label)}</span>
             </div>
           ))}
         </div>
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} margin={{ top: 28, right: 16, left: 0, bottom: 16 }} barCategoryGap="32%">
+        <BarChart data={data.map(d => ({ ...d, name: t(d.name) }))} margin={{ top: 28, right: 16, left: 0, bottom: 16 }} barCategoryGap="32%">
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="name"
@@ -86,7 +92,7 @@ export default function EquityBridgeChartInner() {
             tick={{ fontSize: 10, fill: 'var(--muted-foreground)', fontFamily: 'var(--font-sans)' }}
             axisLine={false} tickLine={false} domain={[0, 12000]} width={52}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--muted)', opacity: 0.4 }} />
+          <Tooltip content={<CustomTooltip t={t} />} cursor={{ fill: 'var(--muted)', opacity: 0.4 }} />
           {/* Invisible base */}
           <Bar dataKey="base" stackId="wf" fill="transparent" />
           {/* Visible colored bar */}
@@ -109,9 +115,9 @@ export default function EquityBridgeChartInner() {
       </ResponsiveContainer>
 
       <div className="flex items-center justify-between mt-2 pt-3 border-t border-border text-[11px]">
-        <span className="font-medium text-foreground">Opening: $8,420,000</span>
-        <span className="font-semibold text-positive">Net change: +$2,085,000</span>
-        <span className="font-medium text-foreground">Closing: $10,505,000</span>
+        <span className="font-medium text-foreground">{t('Opening')}: $8,420,000</span>
+        <span className="font-semibold text-positive">{t('Net change')}: +$2,085,000</span>
+        <span className="font-medium text-foreground">{t('Closing')}: $10,505,000</span>
       </div>
     </div>
   );

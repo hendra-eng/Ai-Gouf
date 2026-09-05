@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle2 } from 'lucide-react';
+import { useLanguage } from '@/lib/language';
 
 const items = [
   { id: 'rec-1', label: 'Opening Retained Earnings',   value: '1,980,000',  sign: null,       isResult: false },
@@ -10,16 +11,17 @@ const items = [
 ];
 
 export default function RetainedEarningsReconciliation() {
+  const { t } = useLanguage();
   return (
     <div className="bg-card border border-border rounded-xl p-5 h-full">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-[14px] font-bold text-foreground">Retained Earnings Reconciliation</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Movement from opening to closing balance</p>
+          <h2 className="text-[14px] font-bold text-foreground">{t('Retained Earnings Reconciliation')}</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{t('Movement from opening to closing balance')}</p>
         </div>
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--positive-bg)] text-positive border border-[var(--positive-light)] text-[10px] font-semibold">
           <CheckCircle2 size={9} />
-          Reconciled
+          {t('Reconciled')}
         </span>
       </div>
 
@@ -33,7 +35,7 @@ export default function RetainedEarningsReconciliation() {
                 item?.isResult ? 'bg-primary/5 border border-primary/15' : 'hover:bg-muted/50'
               }`}>
                 <span className={`text-[13px] ${item?.isResult ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>
-                  {item?.label}
+                  {t(item?.label)}
                 </span>
                 <span className={`tabular-nums font-semibold text-[13px] ${
                   item?.sign === 'positive' ? 'text-positive' :
@@ -49,7 +51,7 @@ export default function RetainedEarningsReconciliation() {
 
       <div className="mt-4 p-3 bg-[var(--positive-bg)] border border-[var(--positive-light)] rounded-lg">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          <span className="font-semibold text-positive">✓ Verified:</span> Opening retained earnings of $1,980,000 plus current period movements reconcile to the closing balance of $3,365,000.
+          <span className="font-semibold text-positive">{t('✓ Verified:')}</span> {t('Opening retained earnings of $1,980,000 plus current period movements reconcile to the closing balance of $3,365,000.')}
         </p>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLanguage } from '@/lib/language';
 
 interface ERow {
   id: string;
@@ -66,13 +67,14 @@ function renderCell(val: string | null) {
 }
 
 export default function EquityMainTable() {
+  const { t } = useLanguage();
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-border flex items-center justify-between">
         <div>
-          <h2 className="text-[14px] font-bold text-foreground">Statement of Changes in Equity</h2>
+          <h2 className="text-[14px] font-bold text-foreground">{t('Statement of Changes in Equity')}</h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD
+            {t('PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD')}
           </p>
         </div>
         <span className="text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded-md font-medium">USD</span>
@@ -87,7 +89,7 @@ export default function EquityMainTable() {
                   key={c.id}
                   className={`accounting-th ${c.align === 'right' ? 'text-right' : 'text-left'}`}
                 >
-                  {c.label}
+                  {t(c.label)}
                 </th>
               ))}
             </tr>
@@ -98,7 +100,7 @@ export default function EquityMainTable() {
                 return (
                   <tr key={row.id} className="bg-muted/60">
                     <td colSpan={7} className="py-2 px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border">
-                      {row.label}
+                      {t(row.label)}
                     </td>
                   </tr>
                 );
@@ -112,7 +114,7 @@ export default function EquityMainTable() {
                   className={`row-hover ${row.isGrand ? 'bg-primary/5 border-t-2 border-primary/20' : row.isTotal ? 'bg-muted/30' : ''}`}
                 >
                   <td className={`accounting-td text-left ${row.indent ? 'pl-7 text-muted-foreground text-[12px]' : ''} ${row.isGrand ? 'font-bold text-[12px] uppercase tracking-wide' : row.isTotal ? 'font-semibold' : ''}`}>
-                    {row.label}
+                    {t(row.label)}
                   </td>
                   {vals.map((v, ci) => (
                     <td
@@ -130,8 +132,8 @@ export default function EquityMainTable() {
       </div>
 
       <div className="px-5 py-2.5 bg-muted/30 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Amounts in United States Dollars (USD)</span>
-        <span>Prepared in accordance with PSAK</span>
+        <span>{t('Amounts in United States Dollars (USD)')}</span>
+        <span>{t('Prepared in accordance with PSAK')}</span>
       </div>
     </div>
   );
