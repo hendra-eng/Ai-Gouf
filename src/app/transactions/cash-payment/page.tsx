@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';
 import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
@@ -8,7 +8,45 @@ import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
 import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
+
+// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Expense). ──
+const PAYMENT_AXIS_WIDTH = 65;
+const PAYMENT_AXIS_OVERLAY_WIDTH = PAYMENT_AXIS_WIDTH + 10;
+const PAYMENT_SPRING_MS = 380;
+const paymentEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
+
+interface PaymentDragPreview {
+  index: number;
+  value: number;
+}
+
+function PaymentTrendTooltip({
+  active,
+  payload,
+  label,
+  dragPreview,
+}: {
+  active?: boolean;
+  payload?: { value: number; name: string; color: string; payload: { month: string } }[];
+  label?: string;
+  dragPreview?: PaymentDragPreview | null;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  const entry = payload[0];
+  const isDragged = !!dragPreview;
+  const value = isDragged ? dragPreview!.value : entry.value;
+  return (
+    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
+      <p className="font-semibold text-slate-800 mb-1">{label}</p>
+      <p className="text-rose-600">
+        {entry.name}: {isDragged ? 'Estimasi · ' : ''}
+        {formatIDR(value)}
+      </p>
+    </div>
+  );
+}
 
 const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
   Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
@@ -32,6 +70,178 @@ export default function CashPaymentPage() {
   const trend = useMemo(() => monthlyTrendFor(paymentTx), [paymentTx]);
   const byCategory = useMemo(() => categoryBreakdown(paymentTx).slice(0, 6), [paymentTx]);
   const topPayees = useMemo(() => topParties(paymentTx, 5), [paymentTx]);
+
+  // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
+  // Sales / Expense / Financial Overview. ──
+  const paymentBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
+  const [paymentPriceZoom, setPaymentPriceZoom] = useState(1);
+  const paymentZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+
+  const { ticks: paymentYTicks } = useMemo(
+    () => getNiceTicksFromZero(paymentBaseMax / paymentPriceZoom, 5),
+    [paymentBaseMax, paymentPriceZoom]
+  );
+  const paymentYDomain = useMemo<[number, number]>(
+    () => [0, paymentBaseMax / paymentPriceZoom],
+    [paymentBaseMax, paymentPriceZoom]
+  );
+  const paymentYDomainRef = useRef(paymentYDomain);
+  paymentYDomainRef.current = paymentYDomain;
+
+  const handlePaymentAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    paymentZoomDragRef.current = { startY: e.clientY, startZoom: paymentPriceZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!paymentZoomDragRef.current) return;
+      const deltaY = paymentZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, paymentZoomDragRef.current.startZoom * factor));
+      setPaymentPriceZoom(next);
+    };
+    const onUp = () => {
+      paymentZoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetPaymentZoom = () => setPaymentPriceZoom(1);
+
+  // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
+  // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
+  const paymentDotsRef = useRef<{ value: number; cy: number }[]>([]);
+  const [paymentDragPreview, setPaymentDragPreview] = useState<PaymentDragPreview | null>(null);
+  const paymentDragStateRef = useRef<{
+    index: number;
+    originalValue: number;
+    currentValue: number;
+    startClientY: number;
+    pxPerUnit: number;
+  } | null>(null);
+  const paymentAnimRef = useRef<number | null>(null);
+
+  const stopPaymentSpring = () => {
+    if (paymentAnimRef.current) cancelAnimationFrame(paymentAnimRef.current);
+    paymentAnimRef.current = null;
+  };
+
+  useEffect(() => {
+    stopPaymentSpring();
+    paymentDragStateRef.current = null;
+    setPaymentDragPreview(null);
+    paymentDotsRef.current = [];
+  }, [trend]);
+
+  useEffect(() => stopPaymentSpring, []);
+
+  const springBackPayment = useCallback(() => {
+    const drag = paymentDragStateRef.current;
+    if (!drag) return;
+    stopPaymentSpring();
+    const from = drag.currentValue;
+    const target = drag.originalValue;
+    const { index } = drag;
+    const start = performance.now();
+    const step = (now: number) => {
+      const elapsed = Math.min(1, (now - start) / PAYMENT_SPRING_MS);
+      const eased = paymentEaseOutQuint(elapsed);
+      const next = from + (target - from) * eased;
+      if (paymentDragStateRef.current) paymentDragStateRef.current.currentValue = next;
+      setPaymentDragPreview({ index, value: next });
+      if (elapsed < 1) {
+        paymentAnimRef.current = requestAnimationFrame(step);
+      } else {
+        paymentDragStateRef.current = null;
+        paymentAnimRef.current = null;
+        setPaymentDragPreview(null);
+      }
+    };
+    paymentAnimRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const handlePaymentDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopPaymentSpring();
+
+    const samples = paymentDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    let pxPerUnit = -1;
+    if (samples.length >= 2) {
+      const a = samples[0];
+      const b = samples[samples.length - 1];
+      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
+    }
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
+      const [dMin, dMax] = paymentYDomainRef.current;
+      pxPerUnit = -160 / (dMax - dMin || 1);
+    }
+
+    paymentDragStateRef.current = {
+      index,
+      originalValue,
+      currentValue: originalValue,
+      startClientY: e.clientY,
+      pxPerUnit,
+    };
+    setPaymentDragPreview({ index, value: originalValue });
+  }, []);
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const drag = paymentDragStateRef.current;
+      if (!drag) return;
+      const deltaY = e.clientY - drag.startClientY;
+      const [, dMax] = paymentYDomainRef.current;
+      const maxValue = dMax * 1.4;
+      const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
+      drag.currentValue = value;
+      setPaymentDragPreview({ index: drag.index, value });
+    };
+    const handleUp = () => {
+      if (paymentDragStateRef.current) springBackPayment();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [springBackPayment]);
+
+  const paymentDisplayTrend = useMemo(() => {
+    if (!paymentDragPreview) return trend;
+    return trend.map((d, i) => (i === paymentDragPreview.index ? { ...d, total: paymentDragPreview.value } : d));
+  }, [trend, paymentDragPreview]);
+
+  // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
+  const renderPaymentCalibrationDot = (props: any) => {
+    const { cx, cy, index, payload } = props;
+    paymentDotsRef.current[index] = { value: payload.total, cy };
+    return <circle key={`payment-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+  };
+
+  // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
+  const renderPaymentActiveDot = (props: any) => {
+    const { cx, cy, index, payload } = props;
+    if (cx == null || cy == null) return null;
+    const isDraggingThis = paymentDragPreview?.index === index;
+    return (
+      <g key={`payment-pt-${index}`}>
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#e11d48" stroke="#fff" strokeWidth={1.5} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={12}
+          fill="transparent"
+          style={{ cursor: 'ns-resize', touchAction: 'none' }}
+          onPointerDown={(e) => handlePaymentDotPointerDown(e, index, payload.total)}
+        />
+      </g>
+    );
+  };
 
   const columns = [
     { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
@@ -72,21 +282,50 @@ export default function CashPaymentPage() {
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Payment untuk ditampilkan.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradPaymentMain" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#e11d48" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#e11d48" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={v => formatIDR(v, true)} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={65} />
-                <Tooltip formatter={(v: number) => formatIDR(v)} contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                <Area type="monotone" dataKey="total" name="Cash Payment" stroke="#e11d48" strokeWidth={2.5} fill="url(#gradPaymentMain)" dot={{ r: 3, fill: '#e11d48' }} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={paymentDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradPaymentMain" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#e11d48" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#e11d48" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tickFormatter={v => formatIDR(v, true)}
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={PAYMENT_AXIS_WIDTH}
+                    ticks={paymentYTicks}
+                    domain={paymentYDomain}
+                    allowDataOverflow
+                  />
+                  <Tooltip content={<PaymentTrendTooltip dragPreview={paymentDragPreview} />} cursor={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    name="Cash Payment"
+                    stroke="#e11d48"
+                    strokeWidth={2.5}
+                    fill="url(#gradPaymentMain)"
+                    dot={renderPaymentCalibrationDot as any}
+                    activeDot={renderPaymentActiveDot as any}
+                    isAnimationActive={!paymentDragPreview}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+              <div
+                onMouseDown={handlePaymentAxisMouseDown}
+                onDoubleClick={resetPaymentZoom}
+                title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+                className="absolute top-0 left-0 h-full cursor-ns-resize"
+                style={{ width: PAYMENT_AXIS_OVERLAY_WIDTH }}
+              />
+            </div>
           )}
         </div>
 

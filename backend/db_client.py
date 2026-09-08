@@ -261,6 +261,18 @@ class Coa(Base):
     # sebenarnya -- kalau kosong, export tetap jalan dengan fallback "-".
     lawan_transaksi_saldo_awal = Column(String(100), nullable=True)
     project_unit_saldo_awal = Column(String(100), nullable=True)
+    # [BARU - filter Cabang Financial Overview] Tag cabang/lokasi akun ini,
+    # nullable & opsional (spt segment/arus_kas di atas) -- SENGAJA diisi
+    # per AKUN (bukan per baris jurnal), supaya tidak menambah langkah
+    # manual apa pun ke alur upload/posting jurnal sehari-hari. Sekali akun
+    # ditandai (mis. "Kas - Jakarta" -> cabang="Jakarta"), SEMUA jurnal yang
+    # menyentuh akun itu otomatis ikut cabang tsb tanpa input tambahan.
+    # None/kosong = akun umum/HO, dianggap MILIK SEMUA cabang (tidak
+    # disaring hilang) supaya angka tidak "hilang" sebelum COA ditag.
+    # Dipakai oleh laporan_keuangan.py::filter_jurnal_per_cabang() utk
+    # endpoint kpi-bento (lihat main.py). Nilai bebas teks, FE saat ini
+    # pakai "Jakarta"/"Surabaya" (lihat OverviewContent.tsx).
+    cabang = Column(String(100), nullable=True)
     aktif = Column(Boolean, default=True)
     dibuat_at = Column(DateTime, default=datetime.now)
     diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -2639,6 +2651,7 @@ def ambil_coa_client(client_id: int, hanya_aktif: bool = True) -> List[Dict[str,
                 "keterangan": a.keterangan,  # [BARU]
                 "lawan_transaksi_saldo_awal": a.lawan_transaksi_saldo_awal,  # [BARU]
                 "project_unit_saldo_awal": a.project_unit_saldo_awal,  # [BARU]
+                "cabang": a.cabang,  # [BARU - filter Cabang Financial Overview]
                 "aktif": a.aktif,
             }
             for a in query.order_by(Coa.no_akun).all()

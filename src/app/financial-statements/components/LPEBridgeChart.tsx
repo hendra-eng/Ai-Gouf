@@ -4,50 +4,62 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LabelList
 } from 'recharts';
+import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero, formatAxisValue } from '@/lib/chartTicks';
 
-// type: 'total' | 'subtotal' -> biru/hijau, drag ke ATAS = nilai membesar
-//       'negative'           -> merah, drag ke BAWAH = potongan makin dalam (arah drag dibalik)
-//       'adjustable'         -> orange, bisa ditarik ATAS & BAWAH secara natural (tidak dibalik)
-const waterfallRaw = [
-  { name: 'Revenue', value: 8420, start: 0, end: 8420, type: 'total' },
-  { name: 'COGS', value: -4700, start: 3720, end: 8420, type: 'negative' },
-  { name: 'Gross Profit', value: 3720, start: 0, end: 3720, type: 'subtotal' },
-  { name: 'OpEx', value: -1180, start: 2540, end: 3720, type: 'adjustable' },
-  { name: 'EBITDA', value: 2540, start: 0, end: 2540, type: 'subtotal' },
-  { name: 'D&A', value: -210, start: 2330, end: 2540, type: 'adjustable' },
-  { name: 'EBIT', value: 2330, start: 0, end: 2330, type: 'subtotal' },
-  { name: 'Interest', value: -148, start: 2182, end: 2330, type: 'adjustable' },
-  { name: 'EBT', value: 2182, start: 0, end: 2182, type: 'subtotal' },
-  { name: 'Tax', value: -436, start: 1746, end: 2182, type: 'negative' },
-  { name: 'Net Profit', value: 1746, start: 0, end: 1746, type: 'total' },
+// Backend integration point: replace with /api/statements/equity?company=&period=
+const bridgeRaw = [
+  { name: 'Opening\nEquity', value: 8420, start: 0, end: 8420, type: 'base' },
+  { name: 'Capital\nContributions', value: 750, start: 8420, end: 9170, type: 'positive' },
+  { name: 'Net\nProfit', value: 1840, start: 9170, end: 11010, type: 'positive' },
+  { name: 'Dividends', value: -420, start: 10590, end: 11010, type: 'negative' },
+  { name: 'Other\nAdjustments', value: -85, start: 10505, end: 10590, type: 'negative' },
+  { name: 'Closing\nEquity', value: 10505, start: 0, end: 10505, type: 'base' },
 ];
 
-// Build invisible base + visible bar for each item
-const baseChartData = waterfallRaw.map((d) => ({
+// Build invisible base + visible bar for each item (sama pola dengan chart P&L / Cash Flow)
+const baseChartData = bridgeRaw.map((d) => ({
   name: d.name,
-  base: d.type === 'total' || d.type === 'subtotal' ? 0 : Math.min(d.start, d.end),
+  base: d.type === 'base' ? 0 : Math.min(d.start, d.end),
   bar: Math.abs(d.value),
   type: d.type,
   value: d.value,
 }));
 
 function getColor(type: string) {
-  if (type === 'total') return 'var(--primary)';
-  if (type === 'subtotal') return 'var(--info)';
-  if (type === 'adjustable') return 'var(--warning)';
-  return 'var(--negative)';
+  if (type === 'base') return 'var(--primary)';
+  if (type === 'negative') return 'var(--negative)';
+  return 'var(--positive)';
 }
 
-function CustomTooltip({ active, payload, label, t }: { active?: boolean; payload?: { payload: typeof baseChartData[0] }[]; label?: string; t: (text: string) => string }) {
+interface ChartDatum {
+  name: string;
+  base: number;
+  bar: number;
+  type: string;
+  value: number;
+}
+
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: ChartDatum }>;
+  t: (text: string) => string;
+  formatRp: (v: number) => string;
+}
+
+function CustomTooltip({ active, payload, t, formatRp }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  const cls = d.type === 'positive' ? 'text-positive' : d.type === 'negative' ? 'text-negative' : 'text-primary';
   return (
     <div className="bg-card border border-border rounded-xl shadow-card-lg p-3">
-      <p className="text-xs font-bold text-foreground mb-1">{t(label ?? '')}</p>
-      <p className={`text-sm font-bold font-mono ${d.value < 0 ? 'text-negative' : 'text-primary'}`}>
-        {d.value < 0 ? '−' : ''}Rp {Math.abs(d.value).toFixed(0)}Jt
+      <p className="text-xs font-bold text-foreground mb-1">{t(d.name).replace('\n', ' ')}</p>
+      <p className={`text-sm font-bold font-mono ${cls}`}>
+        {d.value < 0 ? '−' : ''}{formatRp(Math.abs(d.value))}
+      </p>
+      <p className="text-[10px] text-muted-foreground mt-1">
+        {d.type === 'base' ? t('Balance') : t(`${d.type} movement`)}
       </p>
     </div>
   );
@@ -56,16 +68,12 @@ function CustomTooltip({ active, payload, label, t }: { active?: boolean; payloa
 const AXIS_WIDTH = 44;
 const AXIS_OVERLAY_WIDTH = AXIS_WIDTH + 16; // + margin.left dari BarChart
 
-// Harus sinkron dengan height ResponsiveContainer & margin BarChart di JSX bawah --
-// dipakai untuk kalibrasi drag berbasis skala sumbu-Y (lihat handleBarPointerDown).
-const CHART_HEIGHT = 280;
-const CHART_MARGIN_TOP = 20;
-const CHART_MARGIN_BOTTOM = 4;
-
-export default function PLWaterfallChart() {
+export default function LPEBridgeChart() {
+  const { currency } = useCurrency();
   const { t } = useLanguage();
+  const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
 
-  // ── Zoom skala harga (drag vertikal di sumbu Y, sama seperti chart Financial Overview) ──
+  // ── Zoom skala harga (drag vertikal di sumbu Y, sama seperti chart P&L / Cash Flow) ──
   const baseMax = useMemo(() => Math.max(0, ...baseChartData.map((d) => d.base + d.bar)) * 1.15 || 1, []);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
@@ -99,6 +107,11 @@ export default function PLWaterfallChart() {
   const resetZoom = () => setPriceZoom(1);
 
   // ── Drag badan bar: tarik naik/turun untuk preview nilai (live), lepas -> spring back ke nilai asli ──
+  // Kotak "base" (Opening/Closing Equity, biru) & "positive" (Capital Contributions, Net
+  // Profit, hijau) mewakili saldo/penambah -> tarik ke ATAS = membesar.
+  // Kotak "negative" (Dividends, Other Adjustments, merah) mewakili pengurang, titik ATAS-nya
+  // adalah anchor tetap (level kumulatif sebelumnya) -> tarik ke BAWAH = magnitude membesar
+  // (potongan makin dalam), tarik ke ATAS = mengecil.
   const [dragBar, setDragBar] = useState<{ index: number; liveValue: number } | null>(null);
   const dragBarRef = useRef<{
     index: number;
@@ -142,30 +155,13 @@ export default function PLWaterfallChart() {
     springAnimRef.current = requestAnimationFrame(step);
   };
 
-  // Kotak "negative" (COGS/OpEx/D&A/Interest/Tax, warna merah) mewakili pengurang,
-  // jadi arah tariknya dibalik: tarik ke BAWAH -> magnitude membesar (potongan makin
-  // dalam), tarik ke ATAS -> mengecil. Kotak total/subtotal (biru) tetap: atas = besar.
-  // invertDrag: true HANYA untuk bar merah ('negative') -> tarik ke BAWAH = magnitude membesar.
-  // Bar orange ('adjustable') & biru/hijau (total/subtotal) TIDAK dibalik -> tarik ke ATAS = membesar,
-  // tarik ke BAWAH = mengecil, jadi orange otomatis bisa digenggam & digerakkan dua arah secara natural.
-  //
-  // Kalibrasi pxPerUnit dihitung dari SKALA SUMBU-Y CHART (bukan dari tinggi pixel
-  // bar itu sendiri) supaya konsisten untuk semua bar. Sebelumnya kalibrasi dihitung
-  // dari tinggi bar saat mulai drag -- untuk bar kecil seperti D&A/Interest (nilainya
-  // kecil, tinggi pixel-nya cuma beberapa px), rasio ini jadi sangat kecil sehingga
-  // sedikit saja gerakan ke bawah langsung "meloncat" ke nilai 0 (kelihatan seperti
-  // tidak bisa ditarik turun secara halus, cuma naik yang terasa jalan). Dengan basis
-  // skala sumbu-Y penuh, drag naik & turun jadi sama-sama halus & proporsional untuk
-  // bar besar maupun kecil (khususnya bar orange yang nilainya kecil).
-  const handleBarPointerDown = (index: number, startValue: number, invertDrag: boolean) => (e: React.PointerEvent) => {
+  const handleBarPointerDown = (index: number, startValue: number, barHeight: number, isNegativeType: boolean) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     stopSpring();
-    const plotHeightPx = CHART_HEIGHT - CHART_MARGIN_TOP - CHART_MARGIN_BOTTOM;
-    const domainMax = baseMax / priceZoom;
-    let pxPerUnit = domainMax !== 0 ? -plotHeightPx / domainMax : -1;
+    let pxPerUnit = startValue !== 0 ? -barHeight / startValue : -1;
     if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) pxPerUnit = -1;
-    if (invertDrag) pxPerUnit = -pxPerUnit;
+    if (isNegativeType) pxPerUnit = -pxPerUnit;
     dragBarRef.current = { index, startValue, startClientY: e.clientY, liveValue: startValue, pxPerUnit };
     setDragBar({ index, liveValue: startValue });
   };
@@ -198,11 +194,8 @@ export default function PLWaterfallChart() {
   // satu bar yang sedang ditarik/spring-back diganti nilai live-nya.
   // Kotak "negative" (merah) titik ATAS-nya adalah anchor tetap (level kumulatif
   // sebelumnya) -- jadi saat magnitude membesar/mengecil, titik BAWAH yang
-  // bergerak (turun saat membesar), searah tarikan (drag dibalik: tarik bawah = besar).
-  // Kotak "adjustable" (orange) titik BAWAH-nya anchor tetap -- titik ATAS yang
-  // bergerak naik saat magnitude membesar, searah tarikan (drag natural: tarik atas
-  // = besar). Base selalu >= 0 di kedua kasus supaya tidak pernah keluar domain sumbu Y.
-  // Kotak total/subtotal (biru) anchornya di 0 (bawah tetap), titik ATAS yang bergerak seperti biasa.
+  // bergerak (turun saat membesar), bukan titik atas. Kotak "base"/"positive"
+  // (biru/hijau) anchornya di bawah tetap, titik ATAS yang bergerak seperti biasa.
   const displayData = useMemo(() => {
     if (!dragBar) return baseChartData;
     return baseChartData.map((d, i) => {
@@ -211,11 +204,6 @@ export default function PLWaterfallChart() {
         const anchorTop = d.base + d.bar; // level kumulatif sebelumnya, tetap
         const newBar = dragBar.liveValue;
         return { ...d, base: anchorTop - newBar, bar: newBar, value: -newBar };
-      }
-      if (d.type === 'adjustable') {
-        const anchorBottom = d.base; // titik bawah tetap, badan tumbuh ke ATAS (searah tarikan)
-        const newBar = dragBar.liveValue;
-        return { ...d, base: anchorBottom, bar: newBar, value: -newBar };
       }
       return { ...d, bar: dragBar.liveValue, value: dragBar.liveValue };
     });
@@ -226,20 +214,15 @@ export default function PLWaterfallChart() {
     const { x, y, width, height, index, payload } = props;
     if (x == null || y == null) return null;
     const isDraggingThis = dragBar?.index === index;
-    const isSubtractive = payload.type === 'negative' || payload.type === 'adjustable';
-    const invertDrag = payload.type === 'negative';
+    const isNegativeType = payload.type === 'negative';
     const color = getColor(payload.type);
-    const opacity = isSubtractive ? 0.75 : 1;
-    // Sama seperti CashFlowChart: Recharts bisa ngirim `height` negatif untuk
-    // segmen stack tertentu -- jangan di-clamp pakai Math.max(0, height) (itu
-    // yang bikin bar hilang), normalisasi pakai Math.abs + geser y.
-    const h = Math.abs(height);
-    const rectY = height < 0 ? y + height : y;
+    const opacity = isNegativeType ? 0.75 : 1;
+    const h = Math.max(0, height);
     return (
       <g>
         <rect
           x={x}
-          y={rectY}
+          y={y}
           width={width}
           height={h}
           fill={color}
@@ -249,45 +232,34 @@ export default function PLWaterfallChart() {
           stroke={isDraggingThis ? color : 'none'}
           strokeWidth={isDraggingThis ? 1.5 : 0}
           style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(index, payload.bar, invertDrag)}
+          onPointerDown={handleBarPointerDown(index, payload.bar, height, isNegativeType)}
         />
-        {/* Perluas area genggam ke atas & bawah sedikit, biar mudah ditarik walau bar-nya pendek/kecil
-            (bar orange 'adjustable' butuh genggaman dua arah, jadi diperluas di kedua sisi) */}
+        {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek/kecil */}
         <rect
           x={x}
-          y={rectY - 10}
+          y={y - 10}
           width={width}
           height={10}
           fill="transparent"
           style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(index, payload.bar, invertDrag)}
+          onPointerDown={handleBarPointerDown(index, payload.bar, height, isNegativeType)}
         />
-        {payload.type === 'adjustable' && (
-          <rect
-            x={x}
-            y={rectY + h}
-            width={width}
-            height={10}
-            fill="transparent"
-            style={{ cursor: 'ns-resize' }}
-            onPointerDown={handleBarPointerDown(index, payload.bar, invertDrag)}
-          />
-        )}
       </g>
     );
   };
 
   return (
     <div className="relative">
-      <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-        <BarChart data={displayData} margin={{ top: CHART_MARGIN_TOP, right: 16, left: 16, bottom: CHART_MARGIN_BOTTOM }} barSize={38}>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={displayData} margin={{ top: 20, right: 16, left: 16, bottom: 4 }} barSize={38}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="name"
-            tickFormatter={(v: string) => t(v)}
-            tick={{ fontSize: 11, fill: 'var(--muted-foreground)', fontFamily: 'var(--font-plus-jakarta-sans)' }}
+            tickFormatter={(v: string) => t(v).replace('\n', ' ')}
+            tick={{ fontSize: 10, fill: 'var(--muted-foreground)', fontFamily: 'var(--font-plus-jakarta-sans)' }}
             axisLine={false}
             tickLine={false}
+            interval={0}
           />
           <YAxis
             ticks={yTicks}
@@ -299,7 +271,7 @@ export default function PLWaterfallChart() {
             domain={yDomain}
             allowDataOverflow
           />
-          <Tooltip content={<CustomTooltip t={t} />} cursor={false} />
+          <Tooltip content={<CustomTooltip t={t} formatRp={formatRp} />} cursor={false} />
           {/* Invisible base bar */}
           <Bar dataKey="base" stackId="wf" fill="transparent" stroke="none" isAnimationActive={!dragBar} />
           {/* Visible colored bar — badannya bisa ditarik */}

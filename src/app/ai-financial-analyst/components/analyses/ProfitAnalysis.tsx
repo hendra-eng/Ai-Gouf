@@ -1,10 +1,11 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
 const waterfallData = [
   { name: 'Revenue', value: 8420000000, type: 'positive' },
@@ -28,6 +29,13 @@ const monthlyProfit = [
   { month: 'Jul', revenue: 1150, cogs: 665, grossProfit: 485, opex: 190, netProfit: 260 },
   { month: 'Aug', revenue: 1160, cogs: 680, grossProfit: 480, opex: 195, netProfit: 240 },
 ];
+
+type PlKey = 'revenue' | 'cogs' | 'grossProfit' | 'opex' | 'netProfit';
+
+// Spring-back setelah drag titik dilepas — pola & durasi sama persis dengan
+// chart lain (Financial Overview, Total Assets/Liabilities/Equity Trend, dst).
+const PL_SPRING_DURATION_MS = 420;
+const plEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 const drivers = [
   { category: 'Revenue Growth', impact: +285000000, type: 'positive', description: 'New contracts from PT Global Teknindo and CV Berkah Mandiri' },
@@ -63,6 +71,185 @@ export default function ProfitAnalysis() {
   const { fx } = useCurrency();
   const [drillLevel, setDrillLevel] = useState(0);
   const [drillPath, setDrillPath] = useState<string[]>([]);
+
+  // ── Fitur 1: Drag-zoom skala sumbu Y (harga) — tarik naik/turun di area
+  // label sumbu Y buat zoom in/out skala, double-click buat reset. Data
+  // (`monthlyProfit`) tidak pernah diubah, cuma domain/tick sumbu yang berubah. ──
+  const plBaseMax = useMemo(
+    () => Math.max(0, ...monthlyProfit.map((d) => Math.max(d.revenue, d.cogs, d.grossProfit, d.opex, d.netProfit))) * 1.08 || 1,
+    []
+  );
+  const [plZoom, setPlZoom] = useState(1);
+  const plZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+  const { ticks: plYTicks } = useMemo(
+    () => getNiceTicksFromZero(plBaseMax / plZoom, 5),
+    [plBaseMax, plZoom]
+  );
+  const plYDomain = useMemo<[number, number]>(
+    () => [0, plBaseMax / plZoom],
+    [plBaseMax, plZoom]
+  );
+
+  const handlePlAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    plZoomDragRef.current = { startY: e.clientY, startZoom: plZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!plZoomDragRef.current) return;
+      const deltaY = plZoomDragRef.current.startY - ev.clientY; // drag ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, plZoomDragRef.current.startZoom * factor));
+      setPlZoom(next);
+    };
+    const onUp = () => {
+      plZoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetPlZoom = () => setPlZoom(1);
+
+  // ── Fitur 2: Drag titik garis (Revenue/COGS/Gross Profit/Opex/Net Profit)
+  // di bulan yang sedang di-hover — tarik naik/turun untuk preview nilai
+  // (live), lepas -> "spring back" ke nilai aslinya. Kalibrasi piksel<->nilai
+  // diambil dari titik-titik lain yang sudah dirender, jadi tetap akurat
+  // walau chart sedang di-zoom (plZoom) atau lebar containernya berubah-ubah. ──
+  const plDotsRef = useRef<Record<PlKey, { value: number; cy: number }[]>>({
+    revenue: [],
+    cogs: [],
+    grossProfit: [],
+    opex: [],
+    netProfit: [],
+  });
+
+  const [plDragPoint, setPlDragPoint] = useState<{ key: PlKey; index: number; liveValue: number } | null>(null);
+  const plDragPointRef = useRef<{
+    key: PlKey;
+    index: number;
+    startValue: number;
+    startClientY: number;
+    liveValue: number;
+    pxPerUnit: number; // px per 1 satuan nilai (negatif: makin ke atas makin besar nilainya)
+  } | null>(null);
+  const plPointAnimRef = useRef<number | null>(null);
+  const plYDomainRef = useRef(plYDomain);
+  plYDomainRef.current = plYDomain;
+
+  const stopPlPointSpring = () => {
+    if (plPointAnimRef.current) cancelAnimationFrame(plPointAnimRef.current);
+    plPointAnimRef.current = null;
+  };
+
+  const plSpringBackPoint = useCallback(() => {
+    const drag = plDragPointRef.current;
+    if (!drag) return;
+    stopPlPointSpring();
+    const from = drag.liveValue;
+    const to = drag.startValue;
+    const { key, index } = drag;
+    const start = performance.now();
+    const step = (now: number) => {
+      const elapsed = Math.min(1, (now - start) / PL_SPRING_DURATION_MS);
+      const eased = plEaseOutQuint(elapsed);
+      const next = from + (to - from) * eased;
+      if (plDragPointRef.current) plDragPointRef.current.liveValue = next;
+      setPlDragPoint({ key, index, liveValue: next });
+      if (elapsed < 1) {
+        plPointAnimRef.current = requestAnimationFrame(step);
+      } else {
+        plDragPointRef.current = null;
+        plPointAnimRef.current = null;
+        setPlDragPoint(null);
+      }
+    };
+    plPointAnimRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const handlePlDotPointerDown = (key: PlKey, index: number, startValue: number) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopPlPointSpring();
+
+    // Kalibrasi px-per-unit dari 2 titik lain (selain yang sedang ditarik) di
+    // garis yang sama -- linear, jadi titik mana saja bisa dipakai asal beda nilai.
+    const samples = plDotsRef.current[key].filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    let pxPerUnit = -1;
+    if (samples.length >= 2) {
+      const a = samples[0];
+      const b = samples[samples.length - 1];
+      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
+    }
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
+      // fallback kalau kalibrasi gagal (mis. cuma 1 titik data): perkiraan kasar dari yDomain
+      const [dMin, dMax] = plYDomainRef.current;
+      pxPerUnit = -180 / (dMax - dMin || 1);
+    }
+
+    plDragPointRef.current = { key, index, startValue, startClientY: e.clientY, liveValue: startValue, pxPerUnit };
+    setPlDragPoint({ key, index, liveValue: startValue });
+  };
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const drag = plDragPointRef.current;
+      if (!drag) return;
+      const deltaY = e.clientY - drag.startClientY;
+      const [, dMax] = plYDomainRef.current;
+      const maxValue = dMax * 1.4;
+      const next = Math.max(0, Math.min(maxValue, drag.startValue + deltaY / drag.pxPerUnit));
+      drag.liveValue = next;
+      setPlDragPoint({ key: drag.key, index: drag.index, liveValue: next });
+    };
+    const handleUp = () => {
+      if (plDragPointRef.current) plSpringBackPoint();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [plSpringBackPoint]);
+
+  // Data yang benar-benar dikirim ke chart: sama seperti `monthlyProfit`,
+  // kecuali satu titik (bulan + garis) yang sedang ditarik/spring-back
+  // diganti nilai live-nya. Data asli (`monthlyProfit`) TIDAK pernah dimutasi.
+  const plDisplayData = useMemo(() => {
+    if (!plDragPoint) return monthlyProfit;
+    return monthlyProfit.map((d, i) => (i === plDragPoint.index ? { ...d, [plDragPoint.key]: plDragPoint.liveValue } : d));
+  }, [plDragPoint]);
+
+  // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
+  // (cy) & nilai asli tiap titik ke plDotsRef, dipakai buat kalibrasi drag.
+  const renderPlCalibrationDot = (key: PlKey) => (props: any) => {
+    const { cx, cy, index, payload } = props;
+    plDotsRef.current[key][index] = { value: payload[key], cy };
+    return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+  };
+
+  // Dot yang terlihat & bisa digenggam di bulan yang sedang di-hover — tarik
+  // vertikal untuk preview, lepas untuk spring-back ke nilai asli.
+  const renderPlActiveDot = (key: PlKey, color: string) => (props: any) => {
+    const { cx, cy, index, payload } = props;
+    if (cx == null || cy == null) return null;
+    const isDraggingThis = plDragPoint?.key === key && plDragPoint?.index === index;
+    return (
+      <g key={`pt-${key}-${index}`}>
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 4} fill={color} stroke="#fff" strokeWidth={1.5} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={12}
+          fill="transparent"
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={handlePlDotPointerDown(key, index, payload[key])}
+        />
+      </g>
+    );
+  };
 
   const handleDrill = (item: string) => {
     setDrillLevel((l) => l + 1);
@@ -107,20 +294,85 @@ export default function ProfitAnalysis() {
       <div className="card-elevated-md rounded-xl p-5">
         <h3 className="text-md font-semibold text-foreground mb-1">Monthly P&L Trend</h3>
         <p className="text-xs text-muted-foreground mb-4">Revenue, COGS, Gross Profit, Opex, Net Profit — Jan–Aug 2026 (Rp Million)</p>
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={monthlyProfit} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={fmtM} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={42} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line type="monotone" dataKey="revenue" name="Revenue" stroke="var(--primary)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="cogs" name="COGS" stroke="var(--danger)" strokeWidth={1.5} dot={false} />
-            <Line type="monotone" dataKey="grossProfit" name="Gross Profit" stroke="var(--success)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="opex" name="Opex" stroke="var(--warning)" strokeWidth={1.5} strokeDasharray="4 2" dot={false} />
-            <Line type="monotone" dataKey="netProfit" name="Net Profit" stroke="var(--ai-purple)" strokeWidth={2} dot={{ fill: 'var(--ai-purple)', r: 3 }} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="relative">
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={plDisplayData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis
+                tickFormatter={fmtM}
+                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                axisLine={false}
+                tickLine={false}
+                width={42}
+                ticks={plYTicks}
+                domain={plYDomain}
+                allowDataOverflow
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line
+                type="monotone"
+                dataKey="revenue"
+                name="Revenue"
+                stroke="var(--primary)"
+                strokeWidth={2}
+                dot={renderPlCalibrationDot('revenue') as any}
+                activeDot={renderPlActiveDot('revenue', 'var(--primary)') as any}
+                isAnimationActive={!plDragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="cogs"
+                name="COGS"
+                stroke="var(--danger)"
+                strokeWidth={1.5}
+                dot={renderPlCalibrationDot('cogs') as any}
+                activeDot={renderPlActiveDot('cogs', 'var(--danger)') as any}
+                isAnimationActive={!plDragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="grossProfit"
+                name="Gross Profit"
+                stroke="var(--success)"
+                strokeWidth={2}
+                dot={renderPlCalibrationDot('grossProfit') as any}
+                activeDot={renderPlActiveDot('grossProfit', 'var(--success)') as any}
+                isAnimationActive={!plDragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="opex"
+                name="Opex"
+                stroke="var(--warning)"
+                strokeWidth={1.5}
+                strokeDasharray="4 2"
+                dot={renderPlCalibrationDot('opex') as any}
+                activeDot={renderPlActiveDot('opex', 'var(--warning)') as any}
+                isAnimationActive={!plDragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="netProfit"
+                name="Net Profit"
+                stroke="var(--ai-purple)"
+                strokeWidth={2}
+                dot={renderPlCalibrationDot('netProfit') as any}
+                activeDot={renderPlActiveDot('netProfit', 'var(--ai-purple)') as any}
+                isAnimationActive={!plDragPoint}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          {/* Overlay drag: tarik naik/turun di atas label sumbu Y buat zoom in/out skala harga */}
+          <div
+            onMouseDown={handlePlAxisMouseDown}
+            onDoubleClick={resetPlZoom}
+            title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+            className="absolute top-0 left-0 h-full cursor-ns-resize"
+            style={{ width: 42 }}
+          />
+        </div>
       </div>
 
       {/* Performance Drivers */}

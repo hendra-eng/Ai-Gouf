@@ -710,8 +710,15 @@ export async function ambilLaporanKeuangan(clientId, periode /* optional */) {
 // GET /api/client/{client_id}/kpi-bento, lihat
 // backend/modules/laporan_keuangan.py::susun_kpi_bento_dashboard()
 // utk detail hasil & keterbatasannya (heuristik AP/Tax Payable, dst).
-export async function ambilKpiBento(clientId, tahun /* optional */) {
-  const query = tahun ? `?tahun=${encodeURIComponent(tahun)}` : "";
+// [BARU - filter Cabang Financial Overview] `cabang` opsional (mis.
+// "Jakarta"/"Surabaya"), diteruskan ke query string backend -- kosong/
+// "All Branches" sengaja TIDAK dikirim (backend anggap sama dgn tidak
+// difilter), lihat KPIBentoGrid.tsx utk pemanggilnya.
+export async function ambilKpiBento(clientId, tahun /* optional */, cabang /* optional */) {
+  const params = new URLSearchParams();
+  if (tahun) params.set('tahun', tahun);
+  if (cabang && cabang !== 'All Branches') params.set('cabang', cabang);
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/client/${clientId}/kpi-bento${query}`);
 }
 

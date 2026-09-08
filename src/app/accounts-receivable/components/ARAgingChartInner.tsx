@@ -3,56 +3,58 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-const SAMPLE_DATA = [
-  { period: 'Mar 2026', payable: 76 },
-  { period: 'Apr 2026', payable: 70 },
-  { period: 'May 2026', payable: 80 },
-  { period: 'Jun 2026', payable: 90 },
-  { period: 'Jul 2026', payable: 91 },
-  { period: 'Aug 2026', payable: 94 },
-];
+export interface ARAgingRow {
+  bucket: string;
+  amount: number;
+  percentage: number;
+  color: string;
+}
 
-const AXIS_WIDTH = 40;
-const AXIS_OVERLAY_WIDTH = AXIS_WIDTH; // margin.left BarChart di sini = 0
+const AXIS_WIDTH = 42;
+const AXIS_OVERLAY_WIDTH = AXIS_WIDTH + 4; // + margin.left dari BarChart
 const SPRING_DURATION_MS = 380;
 const easeOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-const CustomTooltip = ({
+function CustomTooltip({
   active,
   payload,
-  label,
+  fx,
   dragPreview,
 }: {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string; payload: { __index: number } }>;
-  label?: string;
+  payload?: { payload: ARAgingRow & { __index: number } }[];
+  fx: (v: number) => string;
   dragPreview?: { index: number; value: number } | null;
-}) => {
-  if (!active || !payload?.length) return null;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const isDragged = !!dragPreview && dragPreview.index === d.__index;
+  const value = isDragged ? dragPreview!.value : d.amount;
   return (
-    <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
-      <p className="text-xs font-semibold text-foreground mb-2">{label}</p>
-      {payload.map((p, i) => {
-        const isDragged = !!dragPreview && dragPreview.index === p.payload?.__index;
-        const value = isDragged ? dragPreview!.value : p.value;
-        return (
-          <div key={`ppn-tt-${i}`} className="flex justify-between gap-4 mb-1">
-            <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
-            <span className="text-xs font-semibold tabular-nums" style={{ color: p.color }}>
-              {isDragged ? 'est. · ' : ''}Rp {Math.round(value)}Jt
-            </span>
-          </div>
-        );
-      })}
+    <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
+      <p className="font-semibold text-foreground mb-1.5">{d.bucket}</p>
+      <div className="flex items-center gap-2 py-0.5">
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
+        <span className="text-muted-foreground">Amount:</span>
+        <span className="font-semibold text-foreground">
+          {isDragged ? 'est. · ' : ''}
+          {fx(value)}
+        </span>
+      </div>
     </div>
   );
-};
+}
 
-export default function PPNChartInner({ data }: { data?: { period: string; payable: number }[] }) {
-  const baseData = data && data.length > 0 ? data : SAMPLE_DATA;
-
-  // ── Zoom skala harga (drag vertikal di sumbu Y) — pola sama seperti chart lain ──
-  const baseMax = useMemo(() => Math.max(1, ...baseData.map((d) => d.payable)) * 1.15, [baseData]);
+export default function ARAgingChartInner({
+  data,
+  fx,
+}: {
+  data: ARAgingRow[];
+  fx: (v: number) => string;
+}) {
+  // ── Zoom skala harga (drag vertikal di sumbu Y) — pola sama seperti chart
+  // Working Capital Trend / Financial Position. ──
+  const baseMax = useMemo(() => Math.max(1, ...data.map((d) => d.amount)) * 1.15, [data]);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
@@ -82,8 +84,7 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
   const resetZoom = () => setPriceZoom(1);
 
   // ── Drag badan bar (preview realtime, spring-back saat dilepas) — anchor
-  // di 0, tarik ATAS = nilai makin besar, tarik BAWAH = makin kecil. Ini
-  // cuma preview visual, tidak mengubah data asli (`data` prop). ──
+  // di 0, tarik ATAS = nilai makin besar, tarik BAWAH = makin kecil. ──
   const [dragPreview, setDragPreview] = useState<{ index: number; value: number } | null>(null);
   const dragStateRef = useRef<{
     index: number; startValue: number; startClientY: number; currentValue: number; pxPerUnit: number;
@@ -120,12 +121,12 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     animRef.current = requestAnimationFrame(step);
   }, []);
 
-  // Reset drag + zoom kalau data berubah (mis. ganti periode/perusahaan).
+  // Reset drag + zoom kalau data berubah (mis. ganti client aktif).
   useEffect(() => {
     stopSpring();
     dragStateRef.current = null;
     setDragPreview(null);
-  }, [baseData]);
+  }, [data]);
 
   useEffect(() => stopSpring, []);
 
@@ -170,29 +171,27 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     };
   }, [springBack]);
 
-  const chartData = useMemo(() => {
-    return baseData.map((d, i) => ({
-      ...d,
-      __index: i,
-      payable: dragPreview && dragPreview.index === i ? dragPreview.value : d.payable,
-    }));
-  }, [baseData, dragPreview]);
+  const displayData = useMemo(() => {
+    if (!dragPreview) return data;
+    return data.map((d, i) => (i === dragPreview.index ? { ...d, amount: dragPreview.value } : d));
+  }, [data, dragPreview]);
 
-  // Custom bar shape: seluruh badan bar bisa digenggam & ditarik, plus area
-  // transparan tambahan di atas/bawah supaya gampang ditarik walau bar-nya pendek.
+  // Custom bar shape: seluruh badan bar bisa digenggam & ditarik (warna per-
+  // bucket dipertahankan dari `color`), plus area transparan tambahan di
+  // atas/bawah supaya gampang ditarik walau bar-nya pendek.
   const renderBar = (props: any) => {
     const { x, y, width, height, index, payload } = props;
     if (x == null || y == null) return null;
     const isDraggingThis = dragPreview?.index === index;
     const h = Math.abs(height);
     const rectY = height < 0 ? y + height : y;
-    const dragHandlers = handleBarPointerDown(index, payload.payable, height);
+    const dragHandlers = handleBarPointerDown(index, payload.amount, height);
     return (
       <g>
         <rect
           x={x} y={rectY} width={width} height={h}
-          fill="var(--warning)" fillOpacity={0.85} rx={3} ry={3}
-          stroke={isDraggingThis ? 'var(--warning)' : 'none'}
+          fill={payload.color} rx={3} ry={3}
+          stroke={isDraggingThis ? payload.color : 'none'}
           strokeWidth={isDraggingThis ? 1.5 : 0}
           style={{ cursor: 'ns-resize' }}
           onPointerDown={dragHandlers}
@@ -203,24 +202,26 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     );
   };
 
+  const chartData = useMemo(() => displayData.map((d, i) => ({ ...d, __index: i })), [displayData]);
+
   return (
     <div className="relative">
       <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barSize={20}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="period" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
+        <BarChart data={chartData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
           <YAxis
-            tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+            tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`}
+            tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(v) => `${v}Jt`}
             width={AXIS_WIDTH}
             ticks={yTicks}
             domain={yDomain}
             allowDataOverflow
           />
-          <Tooltip content={<CustomTooltip dragPreview={dragPreview} />} cursor={false} />
-          <Bar dataKey="payable" name="net payable" shape={renderBar as any} isAnimationActive={false} />
+          <Tooltip content={<CustomTooltip fx={fx} dragPreview={dragPreview} />} cursor={false} />
+          <Bar dataKey="amount" name="Amount" shape={renderBar as any} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
       {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}

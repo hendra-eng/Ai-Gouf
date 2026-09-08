@@ -1,15 +1,35 @@
 'use client';
-import React, { useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 
+import {
+  BarChart, Bar, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { customers, invoices, arAgingData, formatRupiah, riskColors } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
-import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
-import ARAgingChartInner from '@/app/accounts-receivable/components/ARAgingChartInner';
+import InteractiveDonutChart from '@/components/shared/InteractiveDonutChart';
 
 const CONC_COLORS = ['#DC2626', '#D97706', '#2563EB', '#16A34A', '#94A3B8'];
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  const { fx } = useCurrency();
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
+      <p className="font-semibold text-foreground mb-1">{label}</p>
+      {payload.map((p: any, i: number) => (
+        <div key={`artt-${i}`} className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full" style={{ background: p.fill || p.color }} />
+          <span className="text-muted-foreground">{p.name}:</span>
+          <span className="font-semibold">{typeof p.value === 'number' && p.value > 1000 ? fx(`Rp ${(p.value / 1000000).toFixed(0)}M`) : `${p.value}%`}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export default function ARRiskAnalysis() {
   const router = useRouter();
@@ -17,19 +37,6 @@ export default function ARRiskAnalysis() {
 
   const overdueCustomers = customers.filter((c) => c.overdueAR > 0).sort((a, b) => b.overdueAR - a.overdueAR);
   const overdueInvoices = invoices.filter((i) => i.status === 'Overdue').sort((a, b) => b.daysOverdue - a.daysOverdue);
-  // ARAgingChartInner butuh fx yang menerima number (nilai rupiah mentah),
-  // sedangkan fx dari useCurrency menerima string -- bungkus lewat formatRupiah.
-  const fxAmount = (v: number) => fx(formatRupiah(v, true));
-
-  const [activeConcAR, setActiveConcAR] = useState<number | null>(null);
-  const [concARLivePreview, setConcARLivePreview] = useState<DonutLivePreview[] | null>(null);
-  const concentrationCustomers = customers.slice(0, 5);
-  const concTotal = concentrationCustomers.reduce((s, c) => s + c.totalAR, 0);
-  const customerConcentration = concentrationCustomers.map((c, i) => ({
-    name: c.name.replace('PT ', '').replace('CV ', ''),
-    value: c.totalAR,
-    color: CONC_COLORS[i % CONC_COLORS.length],
-  }));
 
   return (
     <div className="space-y-6">
@@ -70,43 +77,35 @@ export default function ARRiskAnalysis() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="card-elevated-md rounded-xl p-5">
           <h3 className="text-md font-semibold text-foreground mb-4">AR Aging Distribution</h3>
-          <ARAgingChartInner data={arAgingData} fx={fxAmount} />
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={arAgingData} margin={{ top: 0, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} width={42} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="amount" name="Amount" radius={[3, 3, 0, 0]}>
+                {arAgingData.map((entry, index) => (
+                  <Cell key={`ar-age-cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
 
         <div className="card-elevated-md rounded-xl p-5">
           <h3 className="text-md font-semibold text-foreground mb-4">Customer Concentration Risk</h3>
           <div className="flex justify-center">
             <InteractiveDonutChart
-              data={customerConcentration}
-              height={180}
+              data={customers.slice(0, 5).map((c, i) => ({
+                name: c.name.replace('PT ', '').replace('CV ', ''),
+                value: c.totalAR,
+                color: CONC_COLORS[i],
+              }))}
+              height={200}
               rawValue
-              activeIndex={activeConcAR}
-              onActiveChange={setActiveConcAR}
-              onLiveChange={setConcARLivePreview}
             />
           </div>
-          <div className="space-y-1.5 mt-2">
-            {customerConcentration.map((c, i) => {
-              const preview = concARLivePreview?.[i];
-              const displayPct = preview ? preview.pct : concTotal > 0 ? (c.value / concTotal) * 100 : 0;
-              return (
-                <div
-                  key={`conc-ar-leg-${i}`}
-                  onClick={() => setActiveConcAR((prev) => (prev === i ? null : i))}
-                  className={`flex items-center justify-between text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
-                    activeConcAR === i ? 'bg-secondary' : 'hover:bg-secondary/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color }} />
-                    <span className={`truncate ${activeConcAR === i ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>{c.name}</span>
-                  </div>
-                  <span className="font-semibold text-foreground ml-2 flex-shrink-0">{displayPct.toFixed(1)}%</span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-xs text-center text-muted-foreground mt-2">Top 3 customers = 59.1% of total AR</p>
+          <p className="text-xs text-center text-muted-foreground mt-1">Top 3 customers = 59.1% of total AR</p>
         </div>
       </div>
 

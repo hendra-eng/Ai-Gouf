@@ -4,10 +4,9 @@ import React, { useMemo } from 'react';
 import { toast } from 'sonner';
 import KPICard from '@/components/financial/KPICard';
 import AIInsightsPanel from '@/components/financial/AIInsightsPanel';
-import {
-  AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie
-} from 'recharts';
+import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
+import FinancialPositionChart from './components/FinancialPositionChart';
+import WorkingCapitalTrendChart from './components/WorkingCapitalTrendChart';
 import { BS_AI_INSIGHTS } from '@/lib/financialData';
 // [BARU] Angka Balance Sheet (total aset/liabilitas/ekuitas, rincian per akun,
 // tren bulanan) & nama perusahaan sekarang REAL -- diambil dari client aktif
@@ -122,6 +121,8 @@ function CompositionChart({ title, data, total, href }: {
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
+  const [livePreview, setLivePreview] = React.useState<DonutLivePreview[] | null>(null);
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -136,22 +137,37 @@ function CompositionChart({ title, data, total, href }: {
           <p className="text-xs text-slate-400 italic">{t('No data yet.')}</p>
         ) : (
           <div className="flex gap-3">
-            <ResponsiveContainer width={120} height={120}>
-              <PieChart>
-                <Pie data={data} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={2}>
-                  {data.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-                <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="w-[120px] flex-shrink-0">
+              <InteractiveDonutChart
+                data={data}
+                height={120}
+                activeIndex={activeIndex}
+                onActiveChange={setActiveIndex}
+                onLiveChange={setLivePreview}
+                centerLabel={fx(total).replace(/\s?(Rp|S?\$)\s?/, '')}
+                centerSubLabel={t('Total')}
+              />
+            </div>
             <div className="flex-1 space-y-1.5">
-              {data.map(item => (
-                <div key={item.name} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                  <span className="text-[11px] text-slate-600 flex-1 truncate">{t(item.name)}</span>
-                  <span className="text-[11px] font-semibold text-slate-800">{fx(item.value)}</span>
-                </div>
-              ))}
+              {data.map((item, i) => {
+                const preview = livePreview?.[i];
+                const displayValue = preview ? preview.value : item.value;
+                const displayPct = preview ? preview.pct : (total ? (item.value / total) * 100 : 0);
+                return (
+                  <button
+                    key={item.name}
+                    type="button"
+                    onClick={() => setActiveIndex(prev => (prev === i ? null : i))}
+                    className="w-full flex items-center gap-1.5 text-left rounded transition-opacity"
+                    style={{ opacity: activeIndex !== null && activeIndex !== i ? 0.4 : 1 }}
+                  >
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                    <span className={`text-[11px] flex-1 truncate ${activeIndex === i ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>{t(item.name)}</span>
+                    <span className="text-[11px] font-semibold text-slate-800 tabular-nums">{fx(displayValue)}</span>
+                    <span className="text-[10px] text-slate-400 w-9 text-right tabular-nums">{displayPct.toFixed(0)}%</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -321,28 +337,7 @@ export default function BalanceSheetPage() {
               {/* Stacked Bar */}
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">{t('Monthly Trend')}</p>
-                <ResponsiveContainer width="100%" height={240}>
-                  <AreaChart data={BS_MONTHLY_TREND} margin={{ top: 5, right: 5, left: 5, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradAssets" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="gradEquity" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                    <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                    <Area type="monotone" dataKey="assets" name={t('Assets')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradAssets)" dot={false} />
-                    <Area type="monotone" dataKey="equity" name={t('Equity')} stroke="#6366f1" strokeWidth={2} fill="url(#gradEquity)" dot={false} />
-                    <Area type="monotone" dataKey="liabilities" name={t('Liabilities')} stroke="#ef4444" strokeWidth={2} fill="none" dot={false} strokeDasharray="4 2" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <FinancialPositionChart data={BS_MONTHLY_TREND} fx={fx} />
               </div>
               {/* Current Composition */}
               <div>
@@ -433,18 +428,13 @@ export default function BalanceSheetPage() {
               </div>
               <div className="lg:col-span-2">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">{t('Monthly Working Capital Trend')}</p>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={BS_MONTHLY_TREND.map(d => ({
+                <WorkingCapitalTrendChart
+                  data={BS_MONTHLY_TREND.map(d => ({
                     month: d.month,
                     workingCapital: (d.assets * 0.72) - (d.liabilities * 0.78),
-                  }))} margin={{ top: 5, right: 5, left: 5, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                    <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                    <Bar dataKey="workingCapital" name={t('Working Capital')} fill="#0d9488" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                  }))}
+                  fx={fx}
+                />
               </div>
             </div>
           </div>

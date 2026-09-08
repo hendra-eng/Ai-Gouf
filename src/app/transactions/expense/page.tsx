@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import KpiCard from '@/components/shared/KpiCard';
 import TransactionDrawer from '../components/TransactionDrawer';
@@ -10,8 +10,47 @@ import { useTransactions } from '../context/TransactionsContext';
 import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
 import { expenseOutstanding, expenseBillStatus } from '../lib/apBridge';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { ArrowUpRight } from 'lucide-react';
+
+// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales / Financial
+// Overview / Balance Sheet): width YAxis (65) + margin.left AreaChart (10). ──
+const EXPENSE_AXIS_WIDTH = 65;
+const EXPENSE_AXIS_OVERLAY_WIDTH = EXPENSE_AXIS_WIDTH + 10;
+const EXPENSE_SPRING_MS = 380;
+const expenseEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
+
+interface ExpenseDragPreview {
+  index: number;
+  value: number;
+}
+
+function ExpenseTrendTooltip({
+  active,
+  payload,
+  label,
+  dragPreview,
+}: {
+  active?: boolean;
+  payload?: { value: number; name: string; color: string; payload: { month: string } }[];
+  label?: string;
+  dragPreview?: ExpenseDragPreview | null;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  const entry = payload[0];
+  const isDragged = !!dragPreview;
+  const value = isDragged ? dragPreview!.value : entry.value;
+  return (
+    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
+      <p className="font-semibold text-slate-800 mb-1">{label}</p>
+      <p className="text-orange-600">
+        {entry.name}: {isDragged ? 'Estimasi · ' : ''}
+        {formatIDR(value)}
+      </p>
+    </div>
+  );
+}
 
 const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
   Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
@@ -43,6 +82,178 @@ export default function ExpensePage() {
   const trend = useMemo(() => monthlyTrendFor(expenseTx), [expenseTx]);
   const byCategory = useMemo(() => categoryBreakdown(expenseTx).slice(0, 6), [expenseTx]);
   const topVendors = useMemo(() => topParties(expenseTx, 5), [expenseTx]);
+
+  // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
+  // Sales / Financial Overview / Balance Sheet. ──
+  const expenseBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
+  const [expensePriceZoom, setExpensePriceZoom] = useState(1);
+  const expenseZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+
+  const { ticks: expenseYTicks } = useMemo(
+    () => getNiceTicksFromZero(expenseBaseMax / expensePriceZoom, 5),
+    [expenseBaseMax, expensePriceZoom]
+  );
+  const expenseYDomain = useMemo<[number, number]>(
+    () => [0, expenseBaseMax / expensePriceZoom],
+    [expenseBaseMax, expensePriceZoom]
+  );
+  const expenseYDomainRef = useRef(expenseYDomain);
+  expenseYDomainRef.current = expenseYDomain;
+
+  const handleExpenseAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    expenseZoomDragRef.current = { startY: e.clientY, startZoom: expensePriceZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!expenseZoomDragRef.current) return;
+      const deltaY = expenseZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, expenseZoomDragRef.current.startZoom * factor));
+      setExpensePriceZoom(next);
+    };
+    const onUp = () => {
+      expenseZoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetExpenseZoom = () => setExpensePriceZoom(1);
+
+  // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
+  // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
+  const expenseDotsRef = useRef<{ value: number; cy: number }[]>([]);
+  const [expenseDragPreview, setExpenseDragPreview] = useState<ExpenseDragPreview | null>(null);
+  const expenseDragStateRef = useRef<{
+    index: number;
+    originalValue: number;
+    currentValue: number;
+    startClientY: number;
+    pxPerUnit: number;
+  } | null>(null);
+  const expenseAnimRef = useRef<number | null>(null);
+
+  const stopExpenseSpring = () => {
+    if (expenseAnimRef.current) cancelAnimationFrame(expenseAnimRef.current);
+    expenseAnimRef.current = null;
+  };
+
+  useEffect(() => {
+    stopExpenseSpring();
+    expenseDragStateRef.current = null;
+    setExpenseDragPreview(null);
+    expenseDotsRef.current = [];
+  }, [trend]);
+
+  useEffect(() => stopExpenseSpring, []);
+
+  const springBackExpense = useCallback(() => {
+    const drag = expenseDragStateRef.current;
+    if (!drag) return;
+    stopExpenseSpring();
+    const from = drag.currentValue;
+    const target = drag.originalValue;
+    const { index } = drag;
+    const start = performance.now();
+    const step = (now: number) => {
+      const elapsed = Math.min(1, (now - start) / EXPENSE_SPRING_MS);
+      const eased = expenseEaseOutQuint(elapsed);
+      const next = from + (target - from) * eased;
+      if (expenseDragStateRef.current) expenseDragStateRef.current.currentValue = next;
+      setExpenseDragPreview({ index, value: next });
+      if (elapsed < 1) {
+        expenseAnimRef.current = requestAnimationFrame(step);
+      } else {
+        expenseDragStateRef.current = null;
+        expenseAnimRef.current = null;
+        setExpenseDragPreview(null);
+      }
+    };
+    expenseAnimRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const handleExpenseDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopExpenseSpring();
+
+    const samples = expenseDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    let pxPerUnit = -1;
+    if (samples.length >= 2) {
+      const a = samples[0];
+      const b = samples[samples.length - 1];
+      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
+    }
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
+      const [dMin, dMax] = expenseYDomainRef.current;
+      pxPerUnit = -160 / (dMax - dMin || 1);
+    }
+
+    expenseDragStateRef.current = {
+      index,
+      originalValue,
+      currentValue: originalValue,
+      startClientY: e.clientY,
+      pxPerUnit,
+    };
+    setExpenseDragPreview({ index, value: originalValue });
+  }, []);
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const drag = expenseDragStateRef.current;
+      if (!drag) return;
+      const deltaY = e.clientY - drag.startClientY;
+      const [, dMax] = expenseYDomainRef.current;
+      const maxValue = dMax * 1.4;
+      const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
+      drag.currentValue = value;
+      setExpenseDragPreview({ index: drag.index, value });
+    };
+    const handleUp = () => {
+      if (expenseDragStateRef.current) springBackExpense();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [springBackExpense]);
+
+  const expenseDisplayTrend = useMemo(() => {
+    if (!expenseDragPreview) return trend;
+    return trend.map((d, i) => (i === expenseDragPreview.index ? { ...d, total: expenseDragPreview.value } : d));
+  }, [trend, expenseDragPreview]);
+
+  // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
+  const renderExpenseCalibrationDot = (props: any) => {
+    const { cx, cy, index, payload } = props;
+    expenseDotsRef.current[index] = { value: payload.total, cy };
+    return <circle key={`expense-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+  };
+
+  // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
+  const renderExpenseActiveDot = (props: any) => {
+    const { cx, cy, index, payload } = props;
+    if (cx == null || cy == null) return null;
+    const isDraggingThis = expenseDragPreview?.index === index;
+    return (
+      <g key={`expense-pt-${index}`}>
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#f97316" stroke="#fff" strokeWidth={1.5} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={12}
+          fill="transparent"
+          style={{ cursor: 'ns-resize', touchAction: 'none' }}
+          onPointerDown={(e) => handleExpenseDotPointerDown(e, index, payload.total)}
+        />
+      </g>
+    );
+  };
 
   const columns = [
     { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
@@ -124,21 +335,50 @@ export default function ExpensePage() {
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Expense untuk ditampilkan.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradExpenseMain" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={v => formatIDR(v, true)} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={65} />
-                <Tooltip formatter={(v: number) => formatIDR(v)} contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                <Area type="monotone" dataKey="total" name="Expense" stroke="#f97316" strokeWidth={2.5} fill="url(#gradExpenseMain)" dot={{ r: 3, fill: '#f97316' }} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={expenseDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradExpenseMain" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tickFormatter={v => formatIDR(v, true)}
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={EXPENSE_AXIS_WIDTH}
+                    ticks={expenseYTicks}
+                    domain={expenseYDomain}
+                    allowDataOverflow
+                  />
+                  <Tooltip content={<ExpenseTrendTooltip dragPreview={expenseDragPreview} />} cursor={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    name="Expense"
+                    stroke="#f97316"
+                    strokeWidth={2.5}
+                    fill="url(#gradExpenseMain)"
+                    dot={renderExpenseCalibrationDot as any}
+                    activeDot={renderExpenseActiveDot as any}
+                    isAnimationActive={!expenseDragPreview}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+              <div
+                onMouseDown={handleExpenseAxisMouseDown}
+                onDoubleClick={resetExpenseZoom}
+                title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+                className="absolute top-0 left-0 h-full cursor-ns-resize"
+                style={{ width: EXPENSE_AXIS_OVERLAY_WIDTH }}
+              />
+            </div>
           )}
         </div>
 

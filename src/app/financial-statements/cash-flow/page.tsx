@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import KPICard from '@/components/financial/KPICard';
 import AIInsightsPanel from '@/components/financial/AIInsightsPanel';
 import {
   AreaChart, Area, BarChart, Bar, ComposedChart,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts';
 import {
   CF_FORECAST, CF_AI_INSIGHTS
@@ -22,12 +22,15 @@ import { useCashFlowData } from '../lib/useCashFlowData';
 import { useProfitLossData } from '../lib/useProfitLossData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import {
   ArrowDownTrayIcon, CalendarIcon, BuildingOfficeIcon,
   BanknotesIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon,
   ExclamationTriangleIcon, ChevronDownIcon, ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
+import CashWaterfallChart from './components/CashWaterfallChart';
+import type { CFWaterfallEntry } from './components/CashWaterfallChartInner';
 
 // ─── CSV helper ───────────────────────────────────────────────────────────────
 function downloadCsv(rows: Record<string, string | number>[], filename: string) {
@@ -48,8 +51,8 @@ function downloadCsv(rows: Record<string, string | number>[], filename: string) 
 // [BARU] Sekarang fungsi murni yang menerima CF_CORE ASLI (dipanggil di
 // dalam komponen CashFlowPage), bukan lagi array module-level yang
 // dihitung sekali dari konstanta hardcoded saat import.
-function buildCFWaterfall(cfCore: { beginningCash: number; netOperatingCF: number; netInvestingCF: number; netFinancingCF: number; endingCash: number }) {
-  const cfWaterfallRaw = [
+function buildCFWaterfall(cfCore: { beginningCash: number; netOperatingCF: number; netInvestingCF: number; netFinancingCF: number; endingCash: number }): CFWaterfallEntry[] {
+  const cfWaterfallRaw: { name: string; value: number; type: 'total' | 'increase' | 'decrease'; color: string }[] = [
     { name: 'Beginning Cash', value: cfCore.beginningCash, type: 'total', color: '#6366f1' },
     { name: 'Operating CF', value: cfCore.netOperatingCF, type: 'increase', color: '#0d9488' },
     { name: 'Investing CF', value: cfCore.netInvestingCF, type: 'decrease', color: '#ef4444' },
@@ -180,6 +183,46 @@ export default function CashFlowPage() {
   const [chartView, setChartView] = useState<'area' | 'bar'>('area');
   const [periodMode, setPeriodMode] = useState<'Actual' | 'Forecast'>('Actual');
 
+  // ── [BARU] Fungsi interaktif chart "Cash Inflow vs Outflow" (area view),
+  // disalin dari pola OverviewCharts.tsx (Financial Overview) &
+  // FinancialPositionChartInner.tsx (Balance Sheet):
+  // Drag sumbu Y (tarik area label sumbu -> zoom in/out skala harga)
+  // ──
+  const cfBaseMax = useMemo(
+    () => Math.max(1, ...CF_MONTHLY.flatMap((d) => [d.operatingCF, d.endCash, d.netChange])) * 1.15,
+    [CF_MONTHLY]
+  );
+  const [cfPriceZoom, setCfPriceZoom] = useState(1);
+  const cfZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+  const { ticks: cfYTicks } = useMemo(
+    () => getNiceTicksFromZero(cfBaseMax / cfPriceZoom, 5),
+    [cfBaseMax, cfPriceZoom]
+  );
+  const cfYDomain = useMemo<[number, number]>(() => [0, cfBaseMax / cfPriceZoom], [cfBaseMax, cfPriceZoom]);
+
+  const handleCFAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    cfZoomDragRef.current = { startY: e.clientY, startZoom: cfPriceZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!cfZoomDragRef.current) return;
+      const deltaY = cfZoomDragRef.current.startY - ev.clientY; // drag ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, cfZoomDragRef.current.startZoom * factor));
+      setCfPriceZoom(next);
+    };
+    const onUp = () => {
+      cfZoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetCFZoom = () => setCfPriceZoom(1);
+
+  const CF_AXIS_WIDTH = 60;
+  const CF_AXIS_OVERLAY_WIDTH = CF_AXIS_WIDTH + 10; // + margin.left milik AreaChart
+
   // [BARU] "Cash Flow Drivers" (inflow/outflow terbesar) sekarang diturunkan
   // dari OPERATING/INVESTING/FINANCING_ITEMS ASLI, bukan array hardcoded.
   const CF_DRIVER_COLORS = ['#0d9488', '#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#14b8a6'];
@@ -209,6 +252,45 @@ export default function CashFlowPage() {
     ...CF_MONTHLY.map(d => ({ ...d, isForecast: false })),
     ...CF_FORECAST.slice(0, forecastRange === '3M' ? 3 : forecastRange === '6M' ? 6 : 12),
   ];
+
+  // ── [BARU] Fungsi interaktif untuk chart "Cash Flow Forecast" (Cash
+  // Position vs Operating CF, actual + proyeksi): drag sumbu Y untuk zoom
+  // skala harga. State terpisah (prefix "fc") supaya tidak bentrok dengan
+  // zoom milik chart lain. ──
+  const fcBaseMax = useMemo(
+    () => Math.max(1, ...allCFData.flatMap((d: any) => [d.endCash, d.operatingCF])) * 1.15,
+    [allCFData]
+  );
+  const [fcPriceZoom, setFcPriceZoom] = useState(1);
+  const fcZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+  const { ticks: fcYTicks } = useMemo(
+    () => getNiceTicksFromZero(fcBaseMax / fcPriceZoom, 5),
+    [fcBaseMax, fcPriceZoom]
+  );
+  const fcYDomain = useMemo<[number, number]>(() => [0, fcBaseMax / fcPriceZoom], [fcBaseMax, fcPriceZoom]);
+
+  const handleFCAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    fcZoomDragRef.current = { startY: e.clientY, startZoom: fcPriceZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!fcZoomDragRef.current) return;
+      const deltaY = fcZoomDragRef.current.startY - ev.clientY; // drag ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, fcZoomDragRef.current.startZoom * factor));
+      setFcPriceZoom(next);
+    };
+    const onUp = () => {
+      fcZoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetFCZoom = () => setFcPriceZoom(1);
+
+  const FC_AXIS_WIDTH = 60;
+  const FC_AXIS_OVERLAY_WIDTH = FC_AXIS_WIDTH + 10; // + margin.left milik AreaChart forecast
 
   const cfWaterfall = buildCFWaterfall(CF_CORE);
 
@@ -358,41 +440,62 @@ export default function CashFlowPage() {
             </div>
           </div>
           <div className="p-5">
-            <ResponsiveContainer width="100%" height={300}>
-              {chartView === 'area' ? (
-                <AreaChart data={CF_MONTHLY} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradOCF" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gradEndCash" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                  <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradOCF)" dot={false} />
-                  <Area type="monotone" dataKey="endCash" name={t('Ending Cash')} stroke="#6366f1" strokeWidth={2} fill="url(#gradEndCash)" dot={false} />
-                  <Area type="monotone" dataKey="netChange" name={t('Net Change')} stroke="#f97316" strokeWidth={2} fill="none" dot={false} strokeDasharray="4 2" />
-                </AreaChart>
-              ) : (
-                <ComposedChart data={CF_MONTHLY} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                  <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="operatingCF" name={t('Operating CF')} fill="#0d9488" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="netChange" name={t('Net Change')} fill="#6366f1" radius={[3, 3, 0, 0]} />
-                  <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
-                </ComposedChart>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={300}>
+                {chartView === 'area' ? (
+                  <AreaChart data={CF_MONTHLY} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradOCF" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gradEndCash" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#94a3b8' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')}
+                      width={CF_AXIS_WIDTH}
+                      ticks={cfYTicks}
+                      domain={cfYDomain}
+                      allowDataOverflow
+                    />
+                    <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} cursor={false} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                    <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradOCF)" dot={false} />
+                    <Area type="monotone" dataKey="endCash" name={t('Ending Cash')} stroke="#6366f1" strokeWidth={2} fill="url(#gradEndCash)" dot={false} />
+                    <Area type="monotone" dataKey="netChange" name={t('Net Change')} stroke="#f97316" strokeWidth={2} fill="none" dot={false} strokeDasharray="4 2" />
+                  </AreaChart>
+                ) : (
+                  <ComposedChart data={CF_MONTHLY} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
+                    <Tooltip formatter={(v: any) => fx(v)} contentStyle={{ borderRadius: 8, fontSize: 11 }} cursor={false} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="operatingCF" name={t('Operating CF')} fill="#0d9488" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="netChange" name={t('Net Change')} fill="#6366f1" radius={[3, 3, 0, 0]} />
+                    <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
+                  </ComposedChart>
+                )}
+              </ResponsiveContainer>
+              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga (khusus tampilan Area) */}
+              {chartView === 'area' && (
+                <div
+                  onMouseDown={handleCFAxisMouseDown}
+                  onDoubleClick={resetCFZoom}
+                  title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
+                  className="absolute top-0 left-0 h-full cursor-ns-resize"
+                  style={{ width: CF_AXIS_OVERLAY_WIDTH }}
+                />
               )}
-            </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
@@ -404,27 +507,7 @@ export default function CashFlowPage() {
               <p className="text-slate-500 text-xs mt-0.5">{t('Beginning Cash → Operating → Investing → Financing → Ending Cash')}</p>
             </div>
             <div className="p-5">
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={cfWaterfall} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                  <Tooltip
-                    formatter={(value: any, name: string, props: any) => {
-                      const d = props.payload;
-                      if (name === 'bar') return [fx(d.type === 'decrease' ? -d.bar : d.bar), d.name];
-                      return [null, null];
-                    }}
-                    contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
-                  />
-                  <Bar dataKey="base" stackId="a" fill="transparent" />
-                  <Bar dataKey="bar" stackId="a" radius={[4, 4, 0, 0]}>
-                    {cfWaterfall.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <CashWaterfallChart data={cfWaterfall} fx={fx} />
             </div>
           </div>
 
@@ -583,32 +666,52 @@ export default function CashFlowPage() {
             </div>
           </div>
           <div className="p-5">
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={allCFData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradActual" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradForecast" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')} />
-                <Tooltip
-                  formatter={(v: any, name: string, props: any) => [fx(v), props.payload?.isForecast ? `${name} (${t('Forecast')})` : name]}
-                  contentStyle={{ borderRadius: 8, fontSize: 11 }}
-                />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <ReferenceLine x={bulanTerakhir?.month} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Forecast →', position: 'top', fontSize: 10, fill: '#94a3b8' }} />
-                <ReferenceLine y={minCashThreshold} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'Min Threshold', position: 'right', fontSize: 9, fill: '#ef4444' }} />
-                <Area type="monotone" dataKey="endCash" name={t('Cash Position')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradActual)" dot={false} />
-                <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#6366f1" strokeWidth={2} fill="url(#gradForecast)" dot={false} strokeDasharray="0" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={allCFData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradActual" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradForecast" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={v => fx(v).replace(/^(Rp|S?\$)\s?/, '')}
+                    width={FC_AXIS_WIDTH}
+                    ticks={fcYTicks}
+                    domain={fcYDomain}
+                    allowDataOverflow
+                  />
+                  <Tooltip
+                    formatter={(v: any, name: string, props: any) => [fx(v), props.payload?.isForecast ? `${name} (${t('Forecast')})` : name]}
+                    contentStyle={{ borderRadius: 8, fontSize: 11 }}
+                    cursor={false}
+                  />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine x={bulanTerakhir?.month} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Forecast →', position: 'top', fontSize: 10, fill: '#94a3b8' }} />
+                  <ReferenceLine y={minCashThreshold} stroke="#ef4444" strokeDasharray="4 2" label={{ value: 'Min Threshold', position: 'right', fontSize: 9, fill: '#ef4444' }} />
+                  <Area type="monotone" dataKey="endCash" name={t('Cash Position')} stroke="#0d9488" strokeWidth={2.5} fill="url(#gradActual)" dot={false} />
+                  <Area type="monotone" dataKey="operatingCF" name={t('Operating CF')} stroke="#6366f1" strokeWidth={2} fill="url(#gradForecast)" dot={false} strokeDasharray="0" />
+                </AreaChart>
+              </ResponsiveContainer>
+              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+              <div
+                onMouseDown={handleFCAxisMouseDown}
+                onDoubleClick={resetFCZoom}
+                title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
+                className="absolute top-0 left-0 h-full cursor-ns-resize"
+                style={{ width: FC_AXIS_OVERLAY_WIDTH }}
+              />
+            </div>
           </div>
         </div>
 

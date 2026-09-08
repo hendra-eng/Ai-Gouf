@@ -1100,6 +1100,62 @@ const translations: Dict = {
   'New 3-year cloud services contract — PT Astra International': { en: 'New 3-year cloud services contract — PT Astra International', id: 'Kontrak layanan cloud baru 3 tahun — PT Astra International', zh: '与PT Astra International签订的新3年期云服务合同' },
   'No other material subsequent events identified': { en: 'No other material subsequent events identified', id: 'Tidak ada peristiwa material lain yang teridentifikasi setelah tanggal pelaporan', zh: '未发现其他重大期后事项' },
 
+  // ─── FinancialStatementsContent hub — LPE (Changes in Equity) summary tab ───
+  'Changes in Equity': { en: 'Changes in Equity', id: 'Perubahan Ekuitas', zh: '权益变动' },
+  'Laporan Perubahan Ekuitas': { en: 'Statement of Changes in Equity', id: 'Laporan Perubahan Ekuitas', zh: '权益变动表' },
+  'Net Movement': { en: 'Net Movement', id: 'Pergerakan Bersih', zh: '净变动' },
+  'Periode: Januari – Agustus 2026 · Ringkasan per komponen ekuitas': {
+    en: 'Period: January – August 2026 · Summary by equity component',
+    id: 'Periode: Januari – Agustus 2026 · Ringkasan per komponen ekuitas',
+    zh: '期间：2026年1月–8月 · 按权益组成汇总',
+  },
+  'Detail per transaksi (kontribusi modal, dividen, laba berjalan, penyesuaian OCI) tersedia di halaman lengkap.': {
+    en: 'Transaction-level detail (capital contributions, dividends, current profit, OCI adjustments) is available on the full page.',
+    id: 'Detail per transaksi (kontribusi modal, dividen, laba berjalan, penyesuaian OCI) tersedia di halaman lengkap.',
+    zh: '交易级明细（资本投入、股息、本期利润、OCI调整）可在完整页面查看。',
+  },
+  'View Full Statement': { en: 'View Full Statement', id: 'Lihat Laporan Lengkap', zh: '查看完整报表' },
+
+  // ─── FinancialStatementsContent hub — CALK (Notes) summary tab ───
+  'Notes': { en: 'Notes', id: 'Catatan', zh: '附注' },
+  'Catatan atas Laporan Keuangan': { en: 'Notes to Financial Statements', id: 'Catatan atas Laporan Keuangan', zh: '财务报表附注' },
+  'Total Notes': { en: 'Total Notes', id: 'Total Catatan', zh: '附注总数' },
+  'Policy Notes': { en: 'Policy Notes', id: 'Catatan Kebijakan', zh: '政策说明数' },
+  'Disclosures': { en: 'Disclosures', id: 'Pengungkapan', zh: '披露数' },
+  'Supporting Schedules': { en: 'Supporting Schedules', id: 'Skedul Pendukung', zh: '支持性明细表数' },
+  'Key Disclosures': { en: 'Key Disclosures', id: 'Pengungkapan Utama', zh: '关键披露' },
+  'Catatan yang paling relevan untuk periode berjalan': {
+    en: 'Notes most relevant to the current period',
+    id: 'Catatan yang paling relevan untuk periode berjalan',
+    zh: '与本期最相关的附注',
+  },
+  'Disusun berdasarkan PSAK, biaya historis, mata uang penyajian USD.': {
+    en: 'Prepared under PSAK, historical cost basis, USD presentation currency.',
+    id: 'Disusun berdasarkan PSAK, biaya historis, mata uang penyajian USD.',
+    zh: '按PSAK准则、历史成本基础编制，列报货币为美元。',
+  },
+  'Komitmen sewa operasi Jakarta, Surabaya, Bali — tidak ada kontinjensi material.': {
+    en: 'Operating lease commitments in Jakarta, Surabaya, Bali — no material contingencies.',
+    id: 'Komitmen sewa operasi Jakarta, Surabaya, Bali — tidak ada kontinjensi material.',
+    zh: '雅加达、泗水、巴厘岛的经营租赁承诺 — 无重大或有事项。',
+  },
+  'Dividen final disetujui & kontrak cloud 3 tahun baru setelah tanggal neraca.': {
+    en: 'Final dividend approved & new 3-year cloud contract after the balance sheet date.',
+    id: 'Dividen final disetujui & kontrak cloud 3 tahun baru setelah tanggal neraca.',
+    zh: '资产负债表日后批准末期股息并签订新的3年期云服务合同。',
+  },
+  'Periode: Januari – Agustus 2026 · Daftar ringkas 16 catatan': {
+    en: 'Period: January – August 2026 · Condensed index of 16 notes',
+    id: 'Periode: Januari – Agustus 2026 · Daftar ringkas 16 catatan',
+    zh: '期间：2026年1月–8月 · 16项附注简要索引',
+  },
+  'Kebijakan akuntansi lengkap, tabel rincian, dan rekonsiliasi tersedia di halaman lengkap.': {
+    en: 'Full accounting policies, detailed tables, and reconciliations are available on the full page.',
+    id: 'Kebijakan akuntansi lengkap, tabel rincian, dan rekonsiliasi tersedia di halaman lengkap.',
+    zh: '完整的会计政策、明细表及调节表可在完整页面查看。',
+  },
+  'View Full Notes': { en: 'View Full Notes', id: 'Lihat Catatan Lengkap', zh: '查看完整附注' },
+
   // ─── AIInsightsPanel (shared) ───
   'AI Insights': { en: 'AI Insights', id: 'Wawasan AI', zh: 'AI洞察' },
   'AI Generated': { en: 'AI Generated', id: 'Dihasilkan AI', zh: 'AI生成' },
@@ -1108,6 +1164,27 @@ const translations: Dict = {
   'Warning': { en: 'Warning', id: 'Peringatan', zh: '警告' },
   'Info': { en: 'Info', id: 'Info', zh: '信息' },
   'Analyze': { en: 'Analyze', id: 'Analisis', zh: '分析' },
+
+  // ─── OverviewCharts: Budget & Previous Year comparison modes ───
+  'Aktual vs Anggaran': { en: 'Actual vs Budget', id: 'Aktual vs Anggaran', zh: '实际与预算对比' },
+  'Pendapatan: Tahun Ini vs Tahun Lalu': { en: 'Revenue: This Year vs Last Year', id: 'Pendapatan: Tahun Ini vs Tahun Lalu', zh: '收入：今年与去年对比' },
+  'bulan': { en: 'months', id: 'bulan', zh: '个月' },
+  'vs anggaran': { en: 'vs budget', id: 'vs anggaran', zh: '与预算对比' },
+  'vs tahun lalu': { en: 'vs last year', id: 'vs tahun lalu', zh: '与去年对比' },
+  'Tahun Ini': { en: 'This Year', id: 'Tahun Ini', zh: '今年' },
+  'Tahun Lalu': { en: 'Last Year', id: 'Tahun Lalu', zh: '去年' },
+  'Memuat data tahun lalu...': { en: 'Loading last year data...', id: 'Memuat data tahun lalu...', zh: '正在加载去年数据...' },
+  'Memuat data tahun lalu': { en: 'Loading last year data', id: 'Memuat data tahun lalu', zh: '正在加载去年数据' },
+  'Menampilkan nilai Anggaran (diprorata YTD) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual': {
+    en: 'Showing Budget (YTD prorated) vs Actual on the 4 P&L cards — other cards remain Actual',
+    id: 'Menampilkan nilai Anggaran (diprorata YTD) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual',
+    zh: '4张损益表卡片显示预算（按年初至今比例）与实际值对比 — 其他卡片仍显示实际值',
+  },
+  'Menampilkan nilai Tahun Lalu (periode sama) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual': {
+    en: 'Showing Last Year (same period) vs Actual on the 4 P&L cards — other cards remain Actual',
+    id: 'Menampilkan nilai Tahun Lalu (periode sama) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual',
+    zh: '4张损益表卡片显示去年同期与实际值对比 — 其他卡片仍显示实际值',
+  },
 };
 
 export function translate(text: string, lang: LanguageCode): string {

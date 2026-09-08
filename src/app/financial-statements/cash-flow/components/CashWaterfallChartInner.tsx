@@ -1,62 +1,66 @@
 'use client';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-const SAMPLE_DATA = [
-  { period: 'Mar 2026', payable: 76 },
-  { period: 'Apr 2026', payable: 70 },
-  { period: 'May 2026', payable: 80 },
-  { period: 'Jun 2026', payable: 90 },
-  { period: 'Jul 2026', payable: 91 },
-  { period: 'Aug 2026', payable: 94 },
-];
-
-const AXIS_WIDTH = 40;
-const AXIS_OVERLAY_WIDTH = AXIS_WIDTH; // margin.left BarChart di sini = 0
+const AXIS_WIDTH = 56;
+const AXIS_OVERLAY_WIDTH = AXIS_WIDTH + 5; // + margin.left dari BarChart
 const SPRING_DURATION_MS = 380;
 const easeOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-const CustomTooltip = ({
+export interface CFWaterfallEntry {
+  name: string;
+  value: number;
+  type: 'total' | 'increase' | 'decrease';
+  color: string;
+  base: number;
+  bar: number;
+}
+
+function CustomTooltip({
   active,
   payload,
-  label,
+  fx,
   dragPreview,
 }: {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string; payload: { __index: number } }>;
-  label?: string;
+  payload?: { payload: CFWaterfallEntry & { __index: number } }[];
+  fx: (v: number) => string;
   dragPreview?: { index: number; value: number } | null;
-}) => {
-  if (!active || !payload?.length) return null;
+}) {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const isDragged = !!dragPreview && dragPreview.index === d.__index;
+  const value = isDragged ? dragPreview!.value : d.bar;
+  const signed = d.type === 'decrease' ? -value : value;
   return (
-    <div className="bg-card border border-border rounded-xl p-3 shadow-elevated">
-      <p className="text-xs font-semibold text-foreground mb-2">{label}</p>
-      {payload.map((p, i) => {
-        const isDragged = !!dragPreview && dragPreview.index === p.payload?.__index;
-        const value = isDragged ? dragPreview!.value : p.value;
-        return (
-          <div key={`ppn-tt-${i}`} className="flex justify-between gap-4 mb-1">
-            <span className="text-xs text-muted-foreground capitalize">{p.name}</span>
-            <span className="text-xs font-semibold tabular-nums" style={{ color: p.color }}>
-              {isDragged ? 'est. · ' : ''}Rp {Math.round(value)}Jt
-            </span>
-          </div>
-        );
-      })}
+    <div className="bg-white border border-slate-200 rounded-xl shadow-lg p-3 min-w-[150px]">
+      <p className="text-xs font-bold text-slate-800 mb-1.5">{d.name}</p>
+      <span className="text-[11px] font-semibold text-slate-800">
+        {isDragged ? 'est. · ' : ''}
+        {fx(signed)}
+      </span>
     </div>
   );
-};
+}
 
-export default function PPNChartInner({ data }: { data?: { period: string; payable: number }[] }) {
-  const baseData = data && data.length > 0 ? data : SAMPLE_DATA;
+export default function CashWaterfallChartInner({
+  data,
+  fx,
+}: {
+  data: CFWaterfallEntry[];
+  fx: (v: number) => string;
+}) {
+  const { t } = useLanguage();
 
-  // ── Zoom skala harga (drag vertikal di sumbu Y) — pola sama seperti chart lain ──
-  const baseMax = useMemo(() => Math.max(1, ...baseData.map((d) => d.payable)) * 1.15, [baseData]);
+  // ── Zoom skala harga (drag vertikal di sumbu Y) — pola sama seperti chart
+  // Financial Position / PL Waterfall. ──
+  const baseMax = useMemo(() => Math.max(1, ...data.map((d) => d.base + d.bar)) * 1.15, [data]);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
-  const { ticks: yTicks } = useMemo(() => getNiceTicksFromZero(baseMax / priceZoom, 4), [baseMax, priceZoom]);
+  const { ticks: yTicks } = useMemo(() => getNiceTicksFromZero(baseMax / priceZoom, 5), [baseMax, priceZoom]);
   const yDomain = useMemo<[number, number]>(() => [0, baseMax / priceZoom], [baseMax, priceZoom]);
   const yDomainRef = useRef(yDomain);
   yDomainRef.current = yDomain;
@@ -81,9 +85,11 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
   };
   const resetZoom = () => setPriceZoom(1);
 
-  // ── Drag badan bar (preview realtime, spring-back saat dilepas) — anchor
-  // di 0, tarik ATAS = nilai makin besar, tarik BAWAH = makin kecil. Ini
-  // cuma preview visual, tidak mengubah data asli (`data` prop). ──
+  // ── Drag badan bar (preview realtime, spring-back saat dilepas) — pola
+  // sama seperti PL Waterfall (profit-loss/page.tsx). 'total'/'increase':
+  // anchor BAWAH tetap, tarik ATAS = magnitude makin besar. 'decrease'
+  // (Investing/Financing CF): anchor ATAS tetap (base+bar), tarik BAWAH =
+  // magnitude makin besar (dibalik). ──
   const [dragPreview, setDragPreview] = useState<{ index: number; value: number } | null>(null);
   const dragStateRef = useRef<{
     index: number; startValue: number; startClientY: number; currentValue: number; pxPerUnit: number;
@@ -120,25 +126,26 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     animRef.current = requestAnimationFrame(step);
   }, []);
 
-  // Reset drag + zoom kalau data berubah (mis. ganti periode/perusahaan).
   useEffect(() => {
     stopSpring();
     dragStateRef.current = null;
     setDragPreview(null);
-  }, [baseData]);
+    setPriceZoom(1);
+  }, [data]);
 
   useEffect(() => stopSpring, []);
 
   const handleBarPointerDown = useCallback(
-    (index: number, startValue: number, barHeight: number) => (e: React.PointerEvent) => {
+    (index: number, startValue: number, barHeight: number, invertDrag: boolean) => (e: React.PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
       stopSpring();
       const magnitude = Math.abs(startValue) || 1;
       let pxPerUnit = -barHeight / magnitude;
+      if (invertDrag) pxPerUnit = -pxPerUnit;
       if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
         const [, dMax] = yDomainRef.current;
-        pxPerUnit = -140 / (dMax || 1);
+        pxPerUnit = -180 / (dMax || 1);
       }
       dragStateRef.current = { index, startValue, startClientY: e.clientY, currentValue: startValue, pxPerUnit };
       setDragPreview({ index, value: startValue });
@@ -170,29 +177,35 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     };
   }, [springBack]);
 
-  const chartData = useMemo(() => {
-    return baseData.map((d, i) => ({
-      ...d,
-      __index: i,
-      payable: dragPreview && dragPreview.index === i ? dragPreview.value : d.payable,
-    }));
-  }, [baseData, dragPreview]);
+  const displayData = useMemo(() => {
+    if (!dragPreview) return data;
+    return data.map((d, i) => {
+      if (i !== dragPreview.index) return d;
+      if (d.type === 'decrease') {
+        const anchorTop = d.base + d.bar;
+        return { ...d, base: anchorTop - dragPreview.value, bar: dragPreview.value };
+      }
+      return { ...d, bar: dragPreview.value };
+    });
+  }, [data, dragPreview]);
 
   // Custom bar shape: seluruh badan bar bisa digenggam & ditarik, plus area
-  // transparan tambahan di atas/bawah supaya gampang ditarik walau bar-nya pendek.
+  // transparan tambahan di atas/bawah supaya gampang ditarik walau bar
+  // pendek (pola sama seperti renderWaterfallBar di profit-loss/page.tsx).
   const renderBar = (props: any) => {
     const { x, y, width, height, index, payload } = props;
     if (x == null || y == null) return null;
+    const invertDrag = payload.type === 'decrease';
     const isDraggingThis = dragPreview?.index === index;
     const h = Math.abs(height);
     const rectY = height < 0 ? y + height : y;
-    const dragHandlers = handleBarPointerDown(index, payload.payable, height);
+    const dragHandlers = handleBarPointerDown(index, payload.bar, height, invertDrag);
     return (
       <g>
         <rect
           x={x} y={rectY} width={width} height={h}
-          fill="var(--warning)" fillOpacity={0.85} rx={3} ry={3}
-          stroke={isDraggingThis ? 'var(--warning)' : 'none'}
+          fill={payload.color} rx={4} ry={4}
+          stroke={isDraggingThis ? payload.color : 'none'}
           strokeWidth={isDraggingThis ? 1.5 : 0}
           style={{ cursor: 'ns-resize' }}
           onPointerDown={dragHandlers}
@@ -203,31 +216,34 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
     );
   };
 
+  const chartData = useMemo(() => displayData.map((d, i) => ({ ...d, __index: i })), [displayData]);
+
   return (
     <div className="relative">
-      <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }} barSize={20}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="period" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
           <YAxis
-            tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(v) => `${v}Jt`}
+            tickFormatter={(v) => fx(v).replace(/^(Rp|S?\$)\s?/, '')}
             width={AXIS_WIDTH}
             ticks={yTicks}
             domain={yDomain}
             allowDataOverflow
           />
-          <Tooltip content={<CustomTooltip dragPreview={dragPreview} />} cursor={false} />
-          <Bar dataKey="payable" name="net payable" shape={renderBar as any} isAnimationActive={false} />
+          <Tooltip content={<CustomTooltip fx={fx} dragPreview={dragPreview} />} cursor={false} />
+          <Bar dataKey="base" stackId="a" fill="transparent" isAnimationActive={false} />
+          <Bar dataKey="bar" stackId="a" shape={renderBar as any} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
       {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
       <div
         onMouseDown={handleAxisMouseDown}
         onDoubleClick={resetZoom}
-        title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+        title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
         className="absolute top-0 left-0 h-full cursor-ns-resize"
         style={{ width: AXIS_OVERLAY_WIDTH }}
       />

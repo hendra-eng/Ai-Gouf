@@ -801,10 +801,18 @@ def api_buat_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_c
 def api_kpi_bento_dashboard(
     client_id: int,
     tahun: Optional[int] = None,
+    cabang: Optional[str] = None,
     user: dict = Depends(auth.get_current_user),
 ):
     """Angka 8 kartu KPIBentoGrid.tsx, dihitung real-time dari jurnal
-    terposting + COA client tahun berjalan (atau `tahun` kalau diisi)."""
+    terposting + COA client tahun berjalan (atau `tahun` kalau diisi).
+
+    [BARU - filter Cabang Financial Overview] `cabang` opsional (mis.
+    "Jakarta"/"Surabaya", cocok dgn dropdown OverviewContent.tsx) --
+    kalau diisi, jurnal disaring dulu lewat
+    lapkeu.filter_jurnal_per_cabang() berdasarkan tag Coa.cabang per akun
+    SEBELUM dihitung ke 8 kartu. Kosong/None/"All Branches" = tidak
+    difilter (semua cabang digabung, perilaku lama)."""
     tahun_dipakai = tahun or date.today().year
     jurnal = dbc.ambil_jurnal_terposting(
         client_id,
@@ -813,6 +821,7 @@ def api_kpi_bento_dashboard(
         hanya_terposting=False,
     )
     coa = dbc.ambil_coa_client(client_id)
+    jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
     hasil = lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
     return hasil
 

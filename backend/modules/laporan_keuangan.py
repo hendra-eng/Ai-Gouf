@@ -2097,6 +2097,42 @@ def _akun_liabilitas_tidak_terklasifikasi(per_bulan_saldo: List[Dict[str, Dict[s
     return sorted(ditemukan.values(), key=lambda a: a["no_akun"])
 
 
+def filter_jurnal_per_cabang(
+    jurnal: List[Dict[str, Any]], coa: List[Dict[str, Any]], cabang: Optional[str],
+) -> List[Dict[str, Any]]:
+    """
+    [BARU - filter Cabang Financial Overview] Saring baris `jurnal` supaya
+    hanya menyisakan baris yang menyentuh akun COA bertag `cabang` yang
+    diminta (lihat kolom Coa.cabang di db_client.py).
+
+    - `cabang` None/"" ATAU "All Branches" -> tidak difilter, kembalikan
+      `jurnal` apa adanya (sama seperti sebelum fitur ini ada).
+    - Baris jurnal disertakan kalau akun DEBET **atau** akun KREDIT-nya
+      bertag `cabang` yang diminta -- satu transaksi sering menyeberang
+      akun umum/HO (mis. Kas Pusat) dan akun spesifik cabang, jadi dicek
+      dua sisi supaya tidak diam-diam hilang dari salah satu cabang.
+    - Akun yang BELUM ditag cabang (Coa.cabang kosong) dianggap milik
+      SEMUA cabang -- supaya angka tidak tiba-tiba "hilang" sebelum COA
+      selesai ditandai per cabang.
+    """
+    if not cabang or cabang == "All Branches":
+        return jurnal
+
+    cabang_per_akun = {
+        str(a.get("no_akun")): (a.get("cabang") or None)
+        for a in (coa or [])
+    }
+
+    def _akun_cocok(no_akun) -> bool:
+        tag = cabang_per_akun.get(str(no_akun))
+        return tag is None or tag == cabang
+
+    return [
+        j for j in jurnal
+        if _akun_cocok(j.get("no_akun_debet")) or _akun_cocok(j.get("no_akun_kredit"))
+    ]
+
+
 def _kartu_kpi_bento(label: str, per_bulan: List[float], satuan: str = "rupiah",
                       per_bulan_margin_basis: Optional[List[float]] = None) -> Dict[str, Any]:
     """

@@ -41,6 +41,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { listenClientDataChanged } from '@/lib/dataSync';
 import {
   PL_CORE as MOCK_PL_CORE,
   MARGINS as MOCK_MARGINS,
@@ -277,6 +278,37 @@ export function useProfitLossData(): ProfitLossData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
+  }, [activeClientId]);
+
+  // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
+  // client yang sedang aktif -- BEDA dari effect mount di atas (yang GET
+  // laporan CACHED biar hemat), di sini SENGAJA generateLaporanBulanan()
+  // (POST, force hitung ulang dari jurnal+COA terbaru & timpa snapshot
+  // lama) karena kita SUDAH TAHU datanya baru saja berubah, jadi snapshot
+  // cache lama pasti basi. generateLaporanBulanan() MENIMPA snapshot yang
+  // sama (bukan bikin histori baru), jadi aman dipanggil berkali-kali.
+  useEffect(() => {
+    return listenClientDataChanged((changedClientId) => {
+      if (!activeClientId || changedClientId !== activeClientId) return;
+      const requestId = ++requestIdRef.current;
+      const tahun = new Date().getFullYear();
+      (async () => {
+        try {
+          const [coaRes, laporanRes] = await Promise.all([
+            ambilCoaClient(activeClientId).catch(() => ({ coa: [] })),
+            generateLaporanBulanan(activeClientId, tahun),
+          ]);
+          if (requestIdRef.current !== requestId) return;
+          const hasil = (laporanRes as any)?.hasil;
+          const coa = (coaRes as any)?.coa || [];
+          setComputed(hitungDataProfitLoss(hasil, coa, tahun));
+        } catch {
+          // Regenerate gagal (mis. user login tidak punya level Supervisor+)
+          // -- biarkan data lama tetap tampil drpd halaman jadi kosong.
+        }
+      })();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeClientId]);
 
   if (computed) {

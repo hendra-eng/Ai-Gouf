@@ -4,23 +4,33 @@ import { toast } from 'sonner';
 import PLStatement from './PLStatement';
 import BalanceSheetStatement from './BalanceSheetStatement';
 import CashFlowStatement from './CashFlowStatement';
+import LPEStatement from './LPEStatement';
+import CALKStatement from './CALKStatement';
 import { Download, Printer, FileText } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
+import { COMPANY } from '@/lib/financialData';
 
 const tabs = [
   { id: 'tab-pl', label: 'Profit & Loss', short: 'P&L' },
   { id: 'tab-bs', label: 'Balance Sheet', short: 'B/S' },
   { id: 'tab-cf', label: 'Cash Flow', short: 'C/F' },
+  { id: 'tab-lpe', label: 'Changes in Equity', short: 'LPE' },
+  { id: 'tab-calk', label: 'Notes', short: 'CALK' },
 ];
 
 const tabNames: Record<string, string> = {
   'tab-pl': 'Profit & Loss Statement',
   'tab-bs': 'Balance Sheet',
   'tab-cf': 'Cash Flow Statement',
+  'tab-lpe': 'Statement of Changes in Equity',
+  'tab-calk': 'Notes to Financial Statements',
 };
 
 export default function FinancialStatementsContent() {
   const { t } = useLanguage();
+  const { activeClientName } = useActiveClient();
+  const companyName = activeClientName || COMPANY.name;
   const [activeTab, setActiveTab] = useState('tab-pl');
 
   function handlePrint() {
@@ -29,7 +39,7 @@ export default function FinancialStatementsContent() {
   }
 
   function handleExportPdf() {
-    toast.success(t('PDF sedang dibuat'), { description: `${t(tabNames[activeTab])} · PT Nusantara Teknologi Indonesia` });
+    toast.success(t('PDF sedang dibuat'), { description: `${t(tabNames[activeTab])} · ${companyName}` });
   }
 
   function handleExportExcel() {
@@ -43,7 +53,7 @@ export default function FinancialStatementsContent() {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Financial Statements')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {t('PT Nusantara Teknologi Indonesia · Jan 2026 – Aug 2026')}
+            {companyName} · {t('Jan 2026 – Aug 2026')}
           </p>
           <div className="flex items-center gap-2 mt-2">
             <span className="badge-info">{t('PSAK Compliant')}</span>
@@ -67,7 +77,7 @@ export default function FinancialStatementsContent() {
         </div>
       </div>
       {/* Tab navigation */}
-      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit">
+      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto">
         {tabs?.map((tab) => (
           <button
             key={tab?.id}
@@ -88,6 +98,8 @@ export default function FinancialStatementsContent() {
         {activeTab === 'tab-pl' && <PLStatement />}
         {activeTab === 'tab-bs' && <BalanceSheetStatement />}
         {activeTab === 'tab-cf' && <CashFlowStatement />}
+        {activeTab === 'tab-lpe' && <LPEStatement />}
+        {activeTab === 'tab-calk' && <CALKStatement />}
       </div>
     </div>
   );

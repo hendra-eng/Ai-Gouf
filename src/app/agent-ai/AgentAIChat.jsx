@@ -6,14 +6,12 @@
 // project Vite yang lama). Logika komponen TIDAK diubah.
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import AgentSidebar from "./components/AgentSidebar";
 import ChatComposer from "./components/ChatComposer";
 import ChatBubble from "./components/ChatBubble";
 import ArtifactPanel from "./components/ArtifactPanel";
 import StatusIndicator from "./components/StatusIndicator";
 import ProcessingSteps from "./components/ProcessingSteps";
 import HasilTerpadu from "./components/HasilTerpadu";
-import TaxSettings from "./components/TaxSettings";
 import ChecklistPembelian from "./components/ChecklistPembelian";
 import DeteksiKesalahanResults from "./components/DeteksiKesalahanResults";
 import * as api from "./lib/api";
@@ -1085,22 +1083,6 @@ function AgentAIChatInner() {
 
   return (
     <div className="app-shell agent-ai-root">
-      <AgentSidebar
-        aiActive={statusAI.aiActive}
-        claudeActive={statusAI.claudeActive}
-        conversations={daftarPercakapan.map((c) => ({ ...c, aktif: c.id === activePercakapanId }))}
-        onSelectConversation={handlePilihPercakapan}
-        onNewConversation={handleObrolanBaru}
-        onDeleteConversation={handleHapusPercakapan}
-        extraTop={
-          <TaxSettings
-            npwp={npwp}
-            onNpwpChange={setNpwp}
-            tarifPpn={tarifPpn}
-            onTarifChange={setTarifPpn}
-          />
-        }
-      />
       <div className={`main-container ${isLanding ? "landing" : ""}`}>
         {isLanding && (
           <>

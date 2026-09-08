@@ -17,14 +17,18 @@
 // sama sekali, kedua chart fallback ke data contoh (sama seperti versi
 // sebelumnya) supaya halaman tidak pernah kosong.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import InteractiveAgingDonut, { AgingLivePreview } from './InteractiveAgingDonut';
+import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import InteractiveDonutChart, { DonutLivePreview as AgingLivePreview } from '@/components/shared/InteractiveDonutChart';
 import { useLanguage } from '@/lib/language';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import { useProfitLossData, fetchMonthlyPLForYear, type MonthlyPLRow } from '@/app/financial-statements/lib/useProfitLossData';
 import { useActiveClient } from '@/lib/activeClient';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import { invoicesFromTransactions, arAgingFromInvoices } from '@/app/transactions/lib/arBridge';
+import { BUDGET } from '@/lib/financialData';
+
+export type OverviewViewMode = 'Actual' | 'Budget' | 'Previous Year';
 
 const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -53,7 +57,7 @@ const SAMPLE_AGING = [
 ];
 const SAMPLE_AGING_TOTAL = SAMPLE_AGING.reduce((s, a) => s + a.value, 0);
 
-export default function OverviewCharts() {
+export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: OverviewViewMode }) {
   const [period, setPeriod] = useState<'6M' | 'YTD' | '12M' | '3Y'>('YTD');
   const [activeAging, setActiveAging] = useState<number | null>(null);
   const [livePreview, setLivePreview] = useState<AgingLivePreview[] | null>(null);
@@ -80,10 +84,11 @@ export default function OverviewCharts() {
 
   const yearsNeeded = useMemo(() => {
     if (plIsSample) return [];
+    if (viewMode === 'Previous Year') return [anchorYear - 1];
     if (period === '12M') return anchorAbs - 11 < anchorYear * 12 ? [anchorYear - 1] : [];
     if (period === '3Y') return [anchorYear - 1, anchorYear - 2];
     return [];
-  }, [plIsSample, period, anchorAbs, anchorYear]);
+  }, [plIsSample, viewMode, period, anchorAbs, anchorYear]);
 
   useEffect(() => {
     if (!activeClientId || plIsSample) return;
@@ -162,6 +167,77 @@ export default function OverviewCharts() {
   const isAgingSample = agingData === SAMPLE_AGING;
   const totalAgingJt = agingData.reduce((s, a) => s + a.value, 0);
 
+  // ── Mode "Anggaran": bandingkan Aktual (YTD, jumlah bulan yg sudah punya
+  // transaksi) vs Anggaran (BUDGET tahunan diprorata sesuai jumlah bulan
+  // yg sama), supaya perbandingannya apple-to-apple walau baru berjalan
+  // sebagian tahun. Kalau sample data, pakai jumlah bulan contoh (8/12). ──
+  const elapsedMonths = plIsSample ? SAMPLE_REVENUE.length : Math.max(1, MONTHLY_PL.length);
+  const budgetFraction = elapsedMonths / 12;
+
+  const actualYtdByField = useMemo(() => {
+    const source = plIsSample
+      ? SAMPLE_REVENUE.map((r) => {
+          // Data contoh: pecah 'expenses' jadi cogs/opEx/other secara proporsional
+          // supaya SEMUA kategori (bukan cuma Revenue & Net Profit) tampil di
+          // chart Aktual vs Anggaran waktu belum ada client aktif.
+          const cogs = r.expenses * 0.62;
+          const opEx = r.expenses * 0.3;
+          const grossProfit = r.revenue - cogs;
+          const ebitda = grossProfit - opEx;
+          return { revenue: r.revenue / 1e6, cogs: cogs / 1e6, grossProfit: grossProfit / 1e6, opEx: opEx / 1e6, ebitda: ebitda / 1e6, netProfit: r.netProfit / 1e6 };
+        })
+      : MONTHLY_PL;
+    return source.reduce(
+      (acc, r: any) => ({
+        revenue: acc.revenue + (r.revenue || 0),
+        cogs: acc.cogs + (r.cogs || 0),
+        grossProfit: acc.grossProfit + (r.grossProfit || 0),
+        opEx: acc.opEx + (r.opEx || 0),
+        ebitda: acc.ebitda + (r.ebitda || 0),
+        netProfit: acc.netProfit + (r.netProfit || 0),
+      }),
+      { revenue: 0, cogs: 0, grossProfit: 0, opEx: 0, ebitda: 0, netProfit: 0 }
+    );
+  }, [plIsSample, MONTHLY_PL]);
+
+  const budgetComparisonData = useMemo(() => {
+    const rows: { name: string; actual: number; budget: number }[] = [
+      { name: t('Revenue'), actual: actualYtdByField.revenue, budget: BUDGET.revenue * budgetFraction },
+      { name: t('COGS'), actual: actualYtdByField.cogs, budget: BUDGET.cogs * budgetFraction },
+      { name: t('Gross Profit'), actual: actualYtdByField.grossProfit, budget: BUDGET.grossProfit * budgetFraction },
+      { name: t('OpEx'), actual: actualYtdByField.opEx, budget: BUDGET.operatingExpenses * budgetFraction },
+      { name: t('EBITDA'), actual: actualYtdByField.ebitda, budget: BUDGET.ebitda * budgetFraction },
+      { name: t('Net Profit'), actual: actualYtdByField.netProfit, budget: BUDGET.netProfit * budgetFraction },
+    ];
+    return rows.map((r) => ({ ...r, actualRaw: r.actual * 1e6, budgetRaw: r.budget * 1e6 }));
+  }, [actualYtdByField, budgetFraction, t]);
+
+  // ── Mode "Tahun Sebelumnya": pendapatan bulanan tahun berjalan vs tahun
+  // lalu, sejajar per nama bulan, sepanjang bulan yg sudah punya transaksi
+  // tahun ini (atau data contoh Jan–Aug kalau belum ada client aktif). ──
+  const yoyData = useMemo(() => {
+    if (plIsSample || MONTHLY_PL.length === 0) {
+      return SAMPLE_REVENUE.map((r, i) => ({
+        month: r.month,
+        thisYear: r.revenue,
+        lastYear: Math.round(r.revenue * 0.88),
+        thisYearProfit: r.netProfit,
+        lastYearProfit: Math.round(r.netProfit * 0.86),
+      }));
+    }
+    const lastYearRows = priorYearsPL[anchorYear - 1] || [];
+    const lastYearByMonth: Record<string, MonthlyPLRow> = {};
+    lastYearRows.forEach((r) => { lastYearByMonth[r.month] = r; });
+    return MONTHLY_PL.map((r) => ({
+      month: r.month,
+      thisYear: r.revenue * 1e6,
+      lastYear: (lastYearByMonth[r.month]?.revenue || 0) * 1e6,
+      thisYearProfit: r.netProfit * 1e6,
+      lastYearProfit: (lastYearByMonth[r.month]?.netProfit || 0) * 1e6,
+    }));
+  }, [plIsSample, MONTHLY_PL, priorYearsPL, anchorYear]);
+  const isLoadingLastYear = viewMode === 'Previous Year' && !plIsSample && !(anchorYear - 1 in priorYearsPL);
+
   const fmt = (v: number) => formatMoney(v, currency);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y, kayak TradingView) ──
@@ -169,14 +245,252 @@ export default function OverviewCharts() {
   // priceZoom: 1 = normal. >1 = zoom in (rentang harga makin sempit, makin rinci).
   //            <1 = zoom out (rentang makin lebar).
   const baseMax = useMemo(() => {
+    if (viewMode === 'Previous Year') {
+      const maxVal = Math.max(0, ...yoyData.map((d: any) => Math.max(d.thisYear, d.lastYear)));
+      return maxVal * 1.08 || 1;
+    }
+    if (viewMode === 'Budget') {
+      const maxVal = Math.max(0, ...budgetComparisonData.map((d: any) => Math.max(d.actualRaw, d.budgetRaw)));
+      return maxVal * 1.08 || 1;
+    }
     const maxVal = Math.max(0, ...revenueData.map((d: any) => Math.max(d.revenue, d.expenses, d.netProfit)));
     return maxVal * 1.08 || 1;
-  }, [revenueData]);
+  }, [revenueData, yoyData, budgetComparisonData, viewMode]);
 
   const [priceZoom, setPriceZoom] = useState(1);
   const dragRef = React.useRef<{ startY: number; startZoom: number } | null>(null);
 
+  // Tick "nice" (angka bulat) untuk label sumbu — domain chart tetap kontinu
+  // (baseMax / priceZoom) supaya drag zoom tetap smooth, cuma label/gridline
+  // yang dihitung ke angka bulat terdekat.
+  const { ticks: yTicks } = useMemo(
+    () => getNiceTicksFromZero(baseMax / priceZoom, 6),
+    [baseMax, priceZoom]
+  );
   const yDomain = useMemo<[number, number]>(() => [0, baseMax / priceZoom], [baseMax, priceZoom]);
+
+  // ── Drag titik data (Revenue/Expenses/Net Profit) di bulan yang sedang
+  // di-hover, mirip fitur tarik di AR Aging Donut: tarik naik/turun untuk
+  // preview nilai (live), lepas -> "spring back" ke nilai aslinya.
+  // Kalibrasi piksel<->nilai diambil dari titik-titik lain yang SUDAH
+  // di-render (bukan konstanta tebakan), jadi otomatis akurat walau chart
+  // sedang di-zoom (priceZoom) atau lebar containernya berubah-ubah. ──
+  type LineKey = 'revenue' | 'expenses' | 'netProfit' | 'thisYear' | 'lastYear' | 'actualRaw' | 'budgetRaw';
+
+  const dotsRef = useRef<Record<LineKey, { value: number; cy: number }[]>>({
+    revenue: [],
+    expenses: [],
+    netProfit: [],
+    thisYear: [],
+    lastYear: [],
+    actualRaw: [],
+    budgetRaw: [],
+  });
+
+  const [dragPoint, setDragPoint] = useState<{ key: LineKey; index: number; liveValue: number } | null>(null);
+  const dragPointRef = useRef<{
+    key: LineKey;
+    index: number;
+    startValue: number;
+    startClientY: number;
+    liveValue: number;
+    pxPerUnit: number; // px per 1 satuan nilai (negatif: makin ke atas makin besar nilainya)
+  } | null>(null);
+  const pointAnimRef = useRef<number | null>(null);
+  const yDomainRef = useRef(yDomain);
+  yDomainRef.current = yDomain;
+
+  const stopPointSpring = () => {
+    if (pointAnimRef.current) cancelAnimationFrame(pointAnimRef.current);
+    pointAnimRef.current = null;
+  };
+
+  const easeOutQuintPoint = (t: number) => 1 - Math.pow(1 - t, 5);
+
+  const springBackPoint = () => {
+    const drag = dragPointRef.current;
+    if (!drag) return;
+    stopPointSpring();
+    const from = drag.liveValue;
+    const to = drag.startValue;
+    const duration = 380;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = easeOutQuintPoint(t);
+      const next = from + (to - from) * eased;
+      if (dragPointRef.current) {
+        dragPointRef.current = { ...dragPointRef.current, liveValue: next };
+        setDragPoint({ key: drag.key, index: drag.index, liveValue: next });
+      }
+      if (t < 1) {
+        pointAnimRef.current = requestAnimationFrame(step);
+      } else {
+        dragPointRef.current = null;
+        setDragPoint(null);
+        pointAnimRef.current = null;
+      }
+    };
+    pointAnimRef.current = requestAnimationFrame(step);
+  };
+
+  const handleDotPointerDown = (key: LineKey, index: number, startValue: number) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopPointSpring();
+
+    // Kalibrasi px-per-unit dari 2 titik lain (selain yang sedang ditarik) di
+    // garis yang sama -- linear, jadi titik mana saja bisa dipakai asal beda nilai.
+    const samples = dotsRef.current[key].filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    let pxPerUnit = -1;
+    if (samples.length >= 2) {
+      const a = samples[0];
+      const b = samples[samples.length - 1];
+      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
+    }
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
+      // fallback kalau kalibrasi gagal (mis. cuma 1 titik data): perkiraan kasar dari yDomain
+      const [dMin, dMax] = yDomainRef.current;
+      pxPerUnit = -226 / (dMax - dMin || 1);
+    }
+
+    dragPointRef.current = { key, index, startValue, startClientY: e.clientY, liveValue: startValue, pxPerUnit };
+    setDragPoint({ key, index, liveValue: startValue });
+  };
+
+  // Drag titik untuk bar chart (tab Budget) -- kalibrasi langsung dari tinggi
+  // bar yang di-render (barHeight px = startValue satuan, baseline di 0),
+  // jadi tidak perlu titik lain sebagai referensi seperti pada garis.
+  const handleBarPointerDown = (key: 'actualRaw' | 'budgetRaw', index: number, startValue: number, barHeight: number) => (
+    e: React.PointerEvent
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopPointSpring();
+    let pxPerUnit = startValue !== 0 ? -barHeight / startValue : -1;
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) pxPerUnit = -1;
+    dragPointRef.current = { key, index, startValue, startClientY: e.clientY, liveValue: startValue, pxPerUnit };
+    setDragPoint({ key, index, liveValue: startValue });
+  };
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const drag = dragPointRef.current;
+      if (!drag) return;
+      const deltaY = e.clientY - drag.startClientY;
+      const [, dMax] = yDomainRef.current;
+      const maxValue = dMax * 1.4;
+      const next = Math.max(0, Math.min(maxValue, drag.startValue + deltaY / drag.pxPerUnit));
+      dragPointRef.current = { ...drag, liveValue: next };
+      setDragPoint({ key: drag.key, index: drag.index, liveValue: next });
+    };
+    const handleUp = () => {
+      if (dragPointRef.current) springBackPoint();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, []);
+
+  // Reset drag kalau ganti periode/filter/tab (index bulan & kalibrasi piksel jadi tidak relevan lagi)
+  useEffect(() => {
+    stopPointSpring();
+    dragPointRef.current = null;
+    setDragPoint(null);
+    dotsRef.current = { revenue: [], expenses: [], netProfit: [], thisYear: [], lastYear: [], actualRaw: [], budgetRaw: [] };
+  }, [period, viewMode]);
+
+  // Data yang benar-benar dikirim ke chart: sama seperti revenueData, kecuali
+  // satu titik (bulan + garis) yang sedang ditarik/spring-back diganti nilai live-nya.
+  const chartData = useMemo(() => {
+    if (!dragPoint) return revenueData;
+    return revenueData.map((d: any, i: number) =>
+      i === dragPoint.index ? { ...d, [dragPoint.key]: dragPoint.liveValue } : d
+    );
+  }, [revenueData, dragPoint]);
+
+  const yoyChartData = useMemo(() => {
+    if (!dragPoint) return yoyData;
+    return yoyData.map((d: any, i: number) =>
+      i === dragPoint.index ? { ...d, [dragPoint.key]: dragPoint.liveValue } : d
+    );
+  }, [yoyData, dragPoint]);
+
+  const budgetChartData = useMemo(() => {
+    if (!dragPoint) return budgetComparisonData;
+    return budgetComparisonData.map((d: any, i: number) =>
+      i === dragPoint.index ? { ...d, [dragPoint.key]: dragPoint.liveValue } : d
+    );
+  }, [budgetComparisonData, dragPoint]);
+
+  // Bar custom shape (tab Budget): seluruh badan bar bisa digenggam & ditarik
+  // naik/turun (bukan cuma strip tipis di ujungnya) supaya terasa alami.
+  const renderInteractiveBar = (key: 'actualRaw' | 'budgetRaw', fillColor: string, fillOpacity: number = 1) => (props: any) => {
+    const { x, y, width, height, index, payload } = props;
+    if (x == null || y == null) return null;
+    const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
+    const h = Math.max(0, height);
+    return (
+      <g>
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={h}
+          fill={fillColor}
+          fillOpacity={fillOpacity}
+          rx={3}
+          ry={3}
+          stroke={isDraggingThis ? fillColor : 'none'}
+          strokeWidth={isDraggingThis ? 1.5 : 0}
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
+        />
+        {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek/kecil */}
+        <rect
+          x={x}
+          y={y - 10}
+          width={width}
+          height={10}
+          fill="transparent"
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
+        />
+      </g>
+    );
+  };
+
+  // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
+  // (cy) & nilai asli tiap titik ke dotsRef, dipakai buat kalibrasi drag.
+  const renderCalibrationDot = (key: LineKey) => (props: any) => {
+    const { cx, cy, index, payload } = props;
+    dotsRef.current[key][index] = { value: payload[key], cy };
+    return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+  };
+
+  const renderActiveDot = (key: LineKey, color: string) => (props: any) => {
+    const { cx, cy, index, value } = props;
+    if (cx == null || cy == null) return null;
+    const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
+    return (
+      <g key={`pt-${key}-${index}`}>
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 4} fill={color} stroke="#fff" strokeWidth={1.5} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={12}
+          fill="transparent"
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={handleDotPointerDown(key, index, value)}
+        />
+      </g>
+    );
+  };
 
   const handleAxisMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -215,36 +529,126 @@ export default function OverviewCharts() {
     );
   };
 
+  const BudgetTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const actual = payload.find((p: any) => p.dataKey === 'actualRaw')?.value || 0;
+    const budget = payload.find((p: any) => p.dataKey === 'budgetRaw')?.value || 0;
+    const variancePct = budget !== 0 ? ((actual - budget) / budget) * 100 : 0;
+    return (
+      <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs min-w-[180px]">
+        <p className="font-600 text-foreground mb-1.5">{label}</p>
+        {payload.map((p: any, i: number) => (
+          <div key={`btt-${i}`} className="flex items-center justify-between gap-3 py-0.5">
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.fill }} />
+              {p.name}
+            </span>
+            <span className="font-600 text-foreground">{formatMoney(p.value, currency)}</span>
+          </div>
+        ))}
+        <div className={`mt-1.5 pt-1.5 border-t border-border font-600 ${variancePct >= 0 ? 'text-positive' : 'text-negative'}`}>
+          {variancePct >= 0 ? '+' : ''}{variancePct.toFixed(1)}% {t('vs anggaran')}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 2xl:grid-cols-3 gap-4">
-      {/* Revenue Chart */}
+      {/* Revenue Chart / Budget Comparison / YoY Comparison — tergantung viewMode */}
       <div className="xl:col-span-2 bg-card border border-border rounded-lg p-5 shadow-card">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-md font-600 text-foreground">{t('Revenue vs Expenses vs Net Profit')}</h3>
+            <h3 className="text-md font-600 text-foreground">
+              {viewMode === 'Budget'
+                ? t('Aktual vs Anggaran')
+                : viewMode === 'Previous Year'
+                ? t('Pendapatan: Tahun Ini vs Tahun Lalu')
+                : t('Revenue vs Expenses vs Net Profit')}
+            </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {plIsSample
+              {viewMode === 'Budget'
+                ? `${companyName} · ${t('YTD')} (${elapsedMonths} ${t('bulan')})`
+                : viewMode === 'Previous Year'
+                ? `${companyName} · ${yoyData[0]?.month || ''}${yoyData.length > 1 ? ` – ${yoyData[yoyData.length - 1].month}` : ''}`
+                : plIsSample
                 ? `${companyName} · Jan–Aug 2026`
                 : `${companyName} · ${revenueData[0]?.month || ''}${revenueData.length > 1 ? ` – ${revenueData[revenueData.length - 1].month}` : ''}`}
             </p>
           </div>
-          <div className="flex gap-1">
-            {(['6M', 'YTD', '12M', '3Y'] as const).map((p) => (
-              <button
-                key={`period-${p}`}
-                onClick={() => setPeriod(p)}
-                className={`text-xs px-2.5 py-1 rounded-md font-500 transition-colors ${
-                  period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          {viewMode === 'Actual' && (
+            <div className="flex gap-1">
+              {(['6M', 'YTD', '12M', '3Y'] as const).map((p) => (
+                <button
+                  key={`period-${p}`}
+                  onClick={() => setPeriod(p)}
+                  className={`text-xs px-2.5 py-1 rounded-md font-500 transition-colors ${
+                    period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        {viewMode === 'Budget' && (
         <div className="relative">
           <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={revenueData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+            <BarChart data={budgetChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis
+                tickFormatter={fmt}
+                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                axisLine={false}
+                tickLine={false}
+                width={72}
+                ticks={yTicks}
+                domain={yDomain}
+                allowDataOverflow
+              />
+              <Tooltip content={<BudgetTooltip />} cursor={false} />
+              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
+              <Bar
+                dataKey="actualRaw"
+                name={t('Actual')}
+                fill="var(--primary)"
+                shape={renderInteractiveBar('actualRaw', 'var(--primary)') as any}
+                isAnimationActive={!dragPoint}
+              />
+              <Bar
+                dataKey="budgetRaw"
+                name={t('Budget')}
+                fill="var(--muted-foreground)"
+                fillOpacity={0.35}
+                shape={renderInteractiveBar('budgetRaw', 'var(--muted-foreground)', 0.35) as any}
+                isAnimationActive={!dragPoint}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+          {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+          <div
+            onMouseDown={handleAxisMouseDown}
+            onDoubleClick={resetZoom}
+            title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
+            className="absolute top-0 left-0 h-full cursor-ns-resize"
+            style={{ width: 72 }}
+          />
+        </div>
+        )}
+
+        {viewMode === 'Previous Year' && isLoadingLastYear && (
+          <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+            {t('Memuat data tahun lalu...')}
+          </div>
+        )}
+
+        {viewMode === 'Previous Year' && !isLoadingLastYear && (
+        <div className="relative">
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={yoyChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
               <YAxis
@@ -253,15 +657,33 @@ export default function OverviewCharts() {
                 axisLine={false}
                 tickLine={false}
                 width={72}
-                tickCount={8}
-                allowDecimals={false}
+                ticks={yTicks}
                 domain={yDomain}
                 allowDataOverflow
               />
-              <Tooltip content={<CustomTooltip />} />
-              <Line type="monotone" dataKey="revenue" name={t('Revenue')} stroke="var(--primary)" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="expenses" name={t('Expenses')} stroke="var(--danger)" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="netProfit" name={t('Net Profit')} stroke="var(--success)" strokeWidth={2} dot={false} strokeDasharray="4 2" />
+              <Tooltip content={<CustomTooltip />} cursor={false} />
+              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
+              <Line
+                type="monotone"
+                dataKey="thisYear"
+                name={t('Tahun Ini')}
+                stroke="var(--primary)"
+                strokeWidth={2}
+                dot={renderCalibrationDot('thisYear') as any}
+                activeDot={renderActiveDot('thisYear', 'var(--primary)') as any}
+                isAnimationActive={!dragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="lastYear"
+                name={t('Tahun Lalu')}
+                stroke="var(--muted-foreground)"
+                strokeWidth={2}
+                strokeDasharray="4 2"
+                dot={renderCalibrationDot('lastYear') as any}
+                activeDot={renderActiveDot('lastYear', 'var(--muted-foreground)') as any}
+                isAnimationActive={!dragPoint}
+              />
             </ComposedChart>
           </ResponsiveContainer>
           {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
@@ -273,6 +695,68 @@ export default function OverviewCharts() {
             style={{ width: 72 }}
           />
         </div>
+        )}
+
+        {viewMode === 'Actual' && (
+        <div className="relative">
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+              <YAxis
+                tickFormatter={fmt}
+                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                axisLine={false}
+                tickLine={false}
+                width={72}
+                ticks={yTicks}
+                domain={yDomain}
+                allowDataOverflow
+              />
+              <Tooltip content={<CustomTooltip />} cursor={false} />
+              <Line
+                type="monotone"
+                dataKey="revenue"
+                name={t('Revenue')}
+                stroke="var(--primary)"
+                strokeWidth={2}
+                dot={renderCalibrationDot('revenue') as any}
+                activeDot={renderActiveDot('revenue', 'var(--primary)') as any}
+                isAnimationActive={!dragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="expenses"
+                name={t('Expenses')}
+                stroke="var(--danger)"
+                strokeWidth={2}
+                dot={renderCalibrationDot('expenses') as any}
+                activeDot={renderActiveDot('expenses', 'var(--danger)') as any}
+                isAnimationActive={!dragPoint}
+              />
+              <Line
+                type="monotone"
+                dataKey="netProfit"
+                name={t('Net Profit')}
+                stroke="var(--success)"
+                strokeWidth={2}
+                strokeDasharray="4 2"
+                dot={renderCalibrationDot('netProfit') as any}
+                activeDot={renderActiveDot('netProfit', 'var(--success)') as any}
+                isAnimationActive={!dragPoint}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+          {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+          <div
+            onMouseDown={handleAxisMouseDown}
+            onDoubleClick={resetZoom}
+            title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
+            className="absolute top-0 left-0 h-full cursor-ns-resize"
+            style={{ width: 72 }}
+          />
+        </div>
+        )}
       </div>
 
       {/* AR Aging Donut */}
@@ -285,7 +769,7 @@ export default function OverviewCharts() {
               : fx(`Total AR: ${formatMoney(totalAgingJt * 1e6, currency)} outstanding`)}
           </p>
         </div>
-        <InteractiveAgingDonut
+        <InteractiveDonutChart
           data={agingData}
           activeIndex={activeAging}
           onActiveChange={setActiveAging}

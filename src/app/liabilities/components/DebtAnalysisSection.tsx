@@ -1,8 +1,14 @@
 'use client';
-import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useCurrency, formatMoney } from '@/lib/currency';
+import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import type { DebtMetrics, LiabilityObligation, MaturityBucket } from '../lib/liabilitiesBridge';
+
+// Spring-back setelah drag bar dilepas — pola & durasi sama persis dengan
+// PLWaterfallChart.tsx / Financial Overview, biar terasa konsisten se-app.
+const DEBT_SPRING_DURATION_MS = 420;
+const debtEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 // Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
 const SAMPLE_MATURITY: MaturityBucket[] = [
@@ -40,6 +46,179 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
   const maturityData = isSampleData ? SAMPLE_MATURITY : maturityBuckets;
   const m = isSampleData ? SAMPLE_METRICS : metrics;
   const hasAnyDebt = maturityData.some((b) => b.amount > 0);
+
+  // ── Fitur 1: Drag-zoom skala sumbu Y (harga) — pola sama persis dengan
+  // Financial Overview (OverviewCharts.tsx) & P&L Waterfall. Tarik naik/turun
+  // di area label sumbu Y buat zoom in/out skala, double-click buat reset. ──
+  const maturityBaseMax = useMemo(
+    () => Math.max(0, ...maturityData.map((d) => d.amount)) * 1.15 || 1,
+    [maturityData]
+  );
+  const [priceZoom, setPriceZoom] = useState(1);
+  const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+  const { ticks: yTicks } = useMemo(
+    () => getNiceTicksFromZero(maturityBaseMax / priceZoom, 5),
+    [maturityBaseMax, priceZoom]
+  );
+  const yDomain = useMemo<[number, number]>(
+    () => [0, maturityBaseMax / priceZoom],
+    [maturityBaseMax, priceZoom]
+  );
+
+  const handleAxisMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    zoomDragRef.current = { startY: e.clientY, startZoom: priceZoom };
+    const onMove = (ev: MouseEvent) => {
+      if (!zoomDragRef.current) return;
+      const deltaY = zoomDragRef.current.startY - ev.clientY; // drag ke atas = zoom in
+      const factor = Math.exp(deltaY / 150);
+      const next = Math.min(6, Math.max(0.25, zoomDragRef.current.startZoom * factor));
+      setPriceZoom(next);
+    };
+    const onUp = () => {
+      zoomDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+  const resetZoom = () => setPriceZoom(1);
+
+  // ── Fitur 2: Drag badan bar (preview realtime, spring-back saat dilepas) —
+  // pola sama persis dengan renderWaterfallBar di profit-loss/page.tsx. Beda
+  // dengan waterfall, bar di sini tidak stacked & selalu positif (anchor di
+  // bawah/nol), jadi arahnya satu: tarik ATAS = nilai makin besar. ──
+  const [barDrag, setBarDrag] = useState<{ index: number; liveValue: number } | null>(null);
+  const barDragRef = useRef<{
+    index: number; startValue: number; startClientY: number; liveValue: number; pxPerUnit: number;
+  } | null>(null);
+  const barAnimRef = useRef<number | null>(null);
+  // true kalau pointer sudah bergerak (dianggap "drag") — dipakai supaya
+  // klik biasa (tanpa gerak) tidak ikut kepicu sebagai drag.
+  const barJustDraggedRef = useRef(false);
+
+  const stopBarSpring = () => {
+    if (barAnimRef.current) cancelAnimationFrame(barAnimRef.current);
+    barAnimRef.current = null;
+  };
+
+  const barSpringBack = useCallback(() => {
+    const drag = barDragRef.current;
+    if (!drag) return;
+    stopBarSpring();
+    const from = drag.liveValue;
+    const to = drag.startValue;
+    const { index } = drag;
+    const start = performance.now();
+    const step = (now: number) => {
+      const elapsed = Math.min(1, (now - start) / DEBT_SPRING_DURATION_MS);
+      const eased = debtEaseOutQuint(elapsed);
+      const next = from + (to - from) * eased;
+      if (barDragRef.current) barDragRef.current.liveValue = next;
+      setBarDrag({ index, liveValue: next });
+      if (elapsed < 1) {
+        barAnimRef.current = requestAnimationFrame(step);
+      } else {
+        barDragRef.current = null;
+        barAnimRef.current = null;
+        setBarDrag(null);
+      }
+    };
+    barAnimRef.current = requestAnimationFrame(step);
+  }, []);
+
+  // Data yang benar-benar dikirim ke chart: sama seperti maturityData,
+  // kecuali satu bar yang sedang ditarik/spring-back diganti nilai live-nya.
+  // Data asli (maturityData / props) TIDAK pernah dimutasi — ini cuma
+  // override tampilan sementara, sama seperti waterfallDisplayBars.
+  const maturityDisplayData = useMemo(() => {
+    if (!barDrag) return maturityData;
+    return maturityData.map((d, i) => (i === barDrag.index ? { ...d, amount: barDrag.liveValue } : d));
+  }, [maturityData, barDrag]);
+
+  // Reset drag & zoom kalau data berubah (mis. ganti client aktif) — index
+  // bar & kalibrasi piksel jadi tidak relevan lagi.
+  useEffect(() => {
+    stopBarSpring();
+    barDragRef.current = null;
+    setBarDrag(null);
+    setPriceZoom(1);
+  }, [maturityData]);
+
+  const handleBarPointerDown = (index: number, startValue: number, barHeight: number) => (
+    e: React.PointerEvent
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stopBarSpring();
+    barJustDraggedRef.current = false;
+    let pxPerUnit = startValue !== 0 ? -barHeight / startValue : -1;
+    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) pxPerUnit = -1;
+    barDragRef.current = { index, startValue, startClientY: e.clientY, liveValue: startValue, pxPerUnit };
+    setBarDrag({ index, liveValue: startValue });
+  };
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      const drag = barDragRef.current;
+      if (!drag) return;
+      const deltaY = e.clientY - drag.startClientY;
+      if (Math.abs(deltaY) > 3) barJustDraggedRef.current = true;
+      const maxValue = (maturityBaseMax / priceZoom) * 1.4;
+      const next = Math.max(0, Math.min(maxValue, drag.startValue + deltaY / drag.pxPerUnit));
+      drag.liveValue = next;
+      setBarDrag({ index: drag.index, liveValue: next });
+    };
+    const handleUp = () => {
+      if (barDragRef.current) barSpringBack();
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [barSpringBack, maturityBaseMax, priceZoom]);
+
+  // Custom bar shape: seluruh badan bar bisa digenggam & ditarik (bukan cuma
+  // titik), plus overlay transparan di atas bar biar area genggam tetap besar
+  // walau bar-nya pendek — persis pola renderWaterfallBar.
+  const renderDraggableBar = (props: any) => {
+    const { x, y, width, height, index, payload } = props;
+    if (x == null || y == null) return null;
+    const isDraggingThis = barDrag?.index === index;
+    const dragHandlers = handleBarPointerDown(index, payload.amount, height);
+    return (
+      <g>
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={payload.color}
+          rx={3}
+          ry={3}
+          stroke={isDraggingThis ? payload.color : 'none'}
+          strokeWidth={isDraggingThis ? 1.5 : 0}
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={dragHandlers}
+        />
+        {/* Perluas area genggam ke atas, biar mudah ditarik walau bar-nya pendek/kecil */}
+        <rect
+          x={x}
+          y={y - 10}
+          width={width}
+          height={10}
+          fill="transparent"
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={dragHandlers}
+        />
+      </g>
+    );
+  };
 
   const debtMetrics = [
     { label: 'Total Debt', value: rp(m.totalDebt), sub: 'Short + Long-term' },
@@ -101,22 +280,43 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
             <div className="text-[12px] text-muted-foreground">No outstanding liability obligations found for this client yet.</div>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={maturityData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}M`} />
-              <Tooltip
-                contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}
-                formatter={(v: number) => [fx(`Rp ${v.toLocaleString('id-ID')}M`), 'Obligations']}
-              />
-              <Bar dataKey="amount" radius={[3, 3, 0, 0]} name="Obligations">
-                {maturityData.map((entry, i) => (
-                  <Cell key={`maturity-cell-${i}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="relative">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={maturityDisplayData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={v => `${v}M`}
+                  width={56}
+                  ticks={yTicks}
+                  domain={yDomain}
+                  allowDataOverflow
+                />
+                <Tooltip
+                  contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}
+                  formatter={(v: number) => [fx(`Rp ${v.toLocaleString('id-ID')}M`), 'Obligations']}
+                  cursor={false}
+                />
+                <Bar
+                  dataKey="amount"
+                  name="Obligations"
+                  shape={renderDraggableBar as any}
+                  isAnimationActive={!barDrag}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+            {/* Overlay drag: tarik naik/turun di atas label sumbu Y buat zoom in/out skala harga */}
+            <div
+              onMouseDown={handleAxisMouseDown}
+              onDoubleClick={resetZoom}
+              title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+              className="absolute top-0 left-0 h-full cursor-ns-resize"
+              style={{ width: 56 }}
+            />
+          </div>
         )}
       </div>
 
