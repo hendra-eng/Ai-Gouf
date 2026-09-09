@@ -73,7 +73,8 @@ function legFromRow(
   side: 'debet' | 'kredit',
 ): Transaction {
   const isDebet = side === 'debet';
-  const accountCode = (isDebet ? row.no_akun_debet : row.no_akun_kredit) || '—';
+  const rawAccountCode = isDebet ? row.no_akun_debet : row.no_akun_kredit;
+  const accountCode = rawAccountCode ? String(rawAccountCode) : '—';
   const accountName = (isDebet ? row.nama_akun_debet : row.nama_akun_kredit) || '—';
   const amount = safeAmount(isDebet ? row.jml_debet : row.jml_kredit);
   const reference = row.no_dokumen || row.lawan_transaksi || `JE-${row.id}`;

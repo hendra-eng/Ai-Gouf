@@ -58,6 +58,10 @@ from .logging_config import get_module_logger
 # TIDAK perlu diubah satu-satu, cukup titik definisinya yang pindah.
 from .claude_client import ambil_client as _ambil_client
 from .claude_client import panggil_dengan_retry as _panggil_dengan_retry
+# [BARU -- FIX BUG "'ThinkingBlock' object has no attribute 'text'"] Ganti
+# semua `response.content[0].text` di file ini (asumsi index tetap, keliru
+# kalau ada ThinkingBlock sebelum TextBlock) dengan helper aman ini.
+from .claude_client import ambil_teks_dari_response as _ambil_teks_dari_response
 
 logger = get_module_logger("ai_file_reader")
 
@@ -494,7 +498,7 @@ def _tanya_teks_ke_provider(prompt: str) -> str:
                     system=SYSTEM_PROMPT_FILE_READER,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                return response.content[0].text
+                return _ambil_teks_dari_response(response)
             else:  # "openai_compatible" -- Groq
                 # [BARU] API OpenAI-compatible (Groq) TIDAK punya parameter
                 # `system` terpisah seperti Anthropic -- system prompt
@@ -538,7 +542,7 @@ def kirim_file_teks_ke_ai(path_file: str | Path, pertanyaan: str, model: str = M
         system=SYSTEM_PROMPT_FILE_READER,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text
+    return _ambil_teks_dari_response(response)
 
 
 # ============================================================
@@ -581,7 +585,7 @@ def kirim_gambar_ke_ai(path_gambar: str | Path, pertanyaan: str, model: str = MO
             ],
         }],
     )
-    return response.content[0].text
+    return _ambil_teks_dari_response(response)
 
 
 # ============================================================
@@ -611,7 +615,7 @@ def kirim_pdf_ke_ai(path_pdf: str | Path, pertanyaan: str, model: str = MODEL_DE
             ],
         }],
     )
-    return response.content[0].text
+    return _ambil_teks_dari_response(response)
 
 
 # ============================================================
@@ -1566,7 +1570,7 @@ def kirim_file_ke_ai(
         system=SYSTEM_PROMPT_FILE_READER,
         messages=[{"role": "user", "content": content}],
     )
-    return response.content[0].text
+    return _ambil_teks_dari_response(response)
 
 
 def kirim_file_ke_ai_stream(content: Any, model: str = MODEL_DEFAULT):
@@ -1909,7 +1913,7 @@ def kirim_banyak_file_ke_ai(
         system=SYSTEM_PROMPT_FILE_READER,
         messages=[{"role": "user", "content": content_blocks}],
     )
-    return response.content[0].text
+    return _ambil_teks_dari_response(response)
 
 
 # ============================================================

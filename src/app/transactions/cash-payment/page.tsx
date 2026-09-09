@@ -6,7 +6,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -60,12 +60,17 @@ export default function CashPaymentPage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  const totalPayment = paymentTx.reduce((s, t) => s + txAmount(t), 0);
-  const txCount = paymentTx.length;
+  // [DIUBAH] Sama seperti Sales/Expense — dikelompokkan per NOMOR JURNAL
+  // (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki
+  // jurnal (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun
+  // Hutang/Pajak saat kewajiban dilunasi — keduanya sama-sama masuk
+  // paymentTx) tidak terhitung dua kali. Lihat groupAnalytics.ts untuk detail.
+  const totalPayment = uniqueJournalTotal(paymentTx);
+  const txCount = uniqueJournalCount(paymentTx);
   const avgTxValue = txCount > 0 ? totalPayment / txCount : 0;
-  const unpostedCount = paymentTx.filter(t => t.status === 'Unposted').length;
-  const taxCount = paymentTx.filter(t => t.category === 'Tax').length;
-  const apCount = paymentTx.filter(t => t.category === 'AP Payment').length;
+  const unpostedCount = countJournalsByStatus(paymentTx, 'Unposted');
+  const taxCount = countJournalsByCategory(paymentTx, ['Tax']);
+  const apCount = countJournalsByCategory(paymentTx, ['AP Payment']);
 
   const trend = useMemo(() => monthlyTrendFor(paymentTx), [paymentTx]);
   const byCategory = useMemo(() => categoryBreakdown(paymentTx).slice(0, 6), [paymentTx]);

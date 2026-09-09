@@ -6,7 +6,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, txAmount, uniqueJournalCount, monthlyTrendFor, categoryBreakdown, CHART_COLORS } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -60,10 +60,22 @@ export default function CashReservePage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
+  // [TIDAK DIUBAH] inflow/outflow/netMovement sengaja TETAP dijumlah per
+  // BARIS (bukan per jeId seperti Sales/Expense/Cash Payment). Beda dengan
+  // "Total Sales/Expense" yang rawan dobel karena 1 nilai ekonomi dicatat di
+  // 2 kaki jurnal (Kas & Pendapatan/Beban), di sini SETIAP baris kas/bank
+  // ADALAH satu pergerakan fisik kas yang nyata sendiri-sendiri (mis. transfer
+  // antar-bank = 1 jeId tapi 2 baris Kas & Bank yang berbeda: satu keluar dari
+  // Bank A, satu masuk ke Bank B — keduanya harus tetap terhitung terpisah,
+  // kalau di-dedup per jeId salah satu pergerakannya akan hilang).
   const inflow = reserveTx.reduce((s, t) => s + t.debit, 0); // masuk ke Kas & Bank
   const outflow = reserveTx.reduce((s, t) => s + t.credit, 0); // keluar dari Kas & Bank
   const netMovement = inflow - outflow;
-  const txCount = reserveTx.length;
+  // [DIUBAH] "Jumlah Transaksi" beda konsep dari inflow/outflow di atas — ini
+  // menghitung jumlah TRANSAKSI (jeId unik), konsisten dengan kartu yang sama
+  // di Sales/Expense/Cash Payment/Other, supaya 1 transfer antar-bank (1
+  // jeId, 2 baris) dihitung sebagai 1 transaksi, bukan 2.
+  const txCount = uniqueJournalCount(reserveTx);
   const latestBalance = useMemo(() => {
     const sorted = [...reserveTx].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return sorted[0]?.saldoAkhir ?? 0;

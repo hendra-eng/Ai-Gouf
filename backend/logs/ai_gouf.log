@@ -1,170 +1,110 @@
-2026-09-08 07:42:36 - AI_Gouf - INFO - ============================================================
-2026-09-08 07:42:36 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 07:42:36 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 07:42:36 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 07:42:36 - AI_Gouf - INFO - Started at: 2026-09-08 07:42:36
-2026-09-08 07:42:36 - AI_Gouf - INFO - ============================================================
-2026-09-08 07:42:41 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 07:43:16 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 08:17:09 - AI_Gouf - INFO - ============================================================
-2026-09-08 08:17:09 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 08:17:09 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 08:17:09 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 08:17:09 - AI_Gouf - INFO - Started at: 2026-09-08 08:17:09
-2026-09-08 08:17:09 - AI_Gouf - INFO - ============================================================
-2026-09-08 08:17:19 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 08:17:23 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 09:08:35 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:08:35 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:08:35 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:08:35 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:08:35 - AI_Gouf - INFO - Started at: 2026-09-08 09:08:35
-2026-09-08 09:08:35 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:08:37 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 09:08:52 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 09:10:06 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 09:24:11 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:24:11 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:24:11 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:24:11 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:24:11 - AI_Gouf - INFO - Started at: 2026-09-08 09:24:11
-2026-09-08 09:24:11 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:24:12 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 09:24:33 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 09:28:25 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:28:25 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:28:25 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:28:25 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:28:25 - AI_Gouf - INFO - Started at: 2026-09-08 09:28:25
-2026-09-08 09:28:25 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:28:26 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 09:37:01 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:37:01 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:37:01 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:37:01 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:37:01 - AI_Gouf - INFO - Started at: 2026-09-08 09:37:01
-2026-09-08 09:37:01 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:37:02 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 09:46:06 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:46:06 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:46:06 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:46:06 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:46:06 - AI_Gouf - INFO - Started at: 2026-09-08 09:46:06
-2026-09-08 09:46:06 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:46:07 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 09:58:33 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:58:33 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 09:58:33 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 09:58:33 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 09:58:33 - AI_Gouf - INFO - Started at: 2026-09-08 09:58:33
-2026-09-08 09:58:33 - AI_Gouf - INFO - ============================================================
-2026-09-08 09:58:34 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 10:05:30 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:05:30 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 10:05:30 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 10:05:30 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 10:05:30 - AI_Gouf - INFO - Started at: 2026-09-08 10:05:30
-2026-09-08 10:05:30 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:05:32 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 10:05:48 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 10:28:50 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:28:50 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 10:28:50 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 10:28:50 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 10:28:50 - AI_Gouf - INFO - Started at: 2026-09-08 10:28:50
-2026-09-08 10:28:50 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:28:51 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 10:34:37 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:34:37 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 10:34:37 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 10:34:37 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 10:34:37 - AI_Gouf - INFO - Started at: 2026-09-08 10:34:37
-2026-09-08 10:34:37 - AI_Gouf - INFO - ============================================================
-2026-09-08 10:34:39 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 12:10:49 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:10:49 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 12:10:49 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 12:10:49 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 12:10:49 - AI_Gouf - INFO - Started at: 2026-09-08 12:10:49
-2026-09-08 12:10:49 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:10:52 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 12:11:04 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 12:23:14 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:23:14 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 12:23:14 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 12:23:14 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 12:23:14 - AI_Gouf - INFO - Started at: 2026-09-08 12:23:14
-2026-09-08 12:23:14 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:23:16 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 12:30:20 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:30:20 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 12:30:20 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 12:30:20 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 12:30:20 - AI_Gouf - INFO - Started at: 2026-09-08 12:30:20
-2026-09-08 12:30:20 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:30:22 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 12:54:45 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:54:45 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 12:54:45 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 12:54:45 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 12:54:45 - AI_Gouf - INFO - Started at: 2026-09-08 12:54:45
-2026-09-08 12:54:45 - AI_Gouf - INFO - ============================================================
-2026-09-08 12:54:50 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 13:04:47 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:04:47 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 13:04:47 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 13:04:47 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 13:04:47 - AI_Gouf - INFO - Started at: 2026-09-08 13:04:47
-2026-09-08 13:04:47 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:04:56 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 13:09:33 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:09:33 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 13:09:33 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 13:09:33 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 13:09:33 - AI_Gouf - INFO - Started at: 2026-09-08 13:09:33
-2026-09-08 13:09:33 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:09:34 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 13:33:54 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:33:54 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 13:33:54 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 13:33:54 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 13:33:54 - AI_Gouf - INFO - Started at: 2026-09-08 13:33:54
-2026-09-08 13:33:54 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:33:55 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 13:40:57 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:40:57 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 13:40:57 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 13:40:57 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 13:40:57 - AI_Gouf - INFO - Started at: 2026-09-08 13:40:57
-2026-09-08 13:40:57 - AI_Gouf - INFO - ============================================================
-2026-09-08 13:40:58 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 14:07:12 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:07:12 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 14:07:12 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 14:07:12 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 14:07:12 - AI_Gouf - INFO - Started at: 2026-09-08 14:07:12
-2026-09-08 14:07:12 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:07:13 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 14:13:51 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 14:15:12 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-08 14:35:50 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:35:50 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 14:35:50 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 14:35:50 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 14:35:50 - AI_Gouf - INFO - Started at: 2026-09-08 14:35:50
-2026-09-08 14:35:50 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:35:52 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 14:37:21 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:37:21 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 14:37:21 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 14:37:21 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 14:37:21 - AI_Gouf - INFO - Started at: 2026-09-08 14:37:21
-2026-09-08 14:37:21 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:37:22 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-08 14:43:48 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:43:48 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-08 14:43:48 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-08 14:43:48 - AI_Gouf - INFO - Log level: INFO
-2026-09-08 14:43:48 - AI_Gouf - INFO - Started at: 2026-09-08 14:43:48
-2026-09-08 14:43:48 - AI_Gouf - INFO - ============================================================
-2026-09-08 14:43:49 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 00:03:09 - AI_Gouf - INFO - ============================================================
+2026-09-09 00:03:09 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 00:03:09 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 00:03:09 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 00:03:09 - AI_Gouf - INFO - Started at: 2026-09-09 00:03:09
+2026-09-09 00:03:09 - AI_Gouf - INFO - ============================================================
+2026-09-09 00:03:12 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 00:03:18 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 00:40:26 - AI_Gouf - INFO - ============================================================
+2026-09-09 00:40:26 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 00:40:26 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 00:40:26 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 00:40:26 - AI_Gouf - INFO - Started at: 2026-09-09 00:40:26
+2026-09-09 00:40:26 - AI_Gouf - INFO - ============================================================
+2026-09-09 00:40:29 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 01:20:30 - AI_Gouf - INFO - ============================================================
+2026-09-09 01:20:30 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 01:20:30 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 01:20:30 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 01:20:30 - AI_Gouf - INFO - Started at: 2026-09-09 01:20:30
+2026-09-09 01:20:30 - AI_Gouf - INFO - ============================================================
+2026-09-09 01:20:39 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 04:09:28 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:09:28 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 04:09:28 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 04:09:28 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 04:09:28 - AI_Gouf - INFO - Started at: 2026-09-09 04:09:28
+2026-09-09 04:09:28 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:09:30 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 04:09:34 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 04:27:51 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:27:51 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 04:27:51 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 04:27:51 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 04:27:51 - AI_Gouf - INFO - Started at: 2026-09-09 04:27:51
+2026-09-09 04:27:51 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:27:58 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 04:29:06 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:29:06 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 04:29:06 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 04:29:06 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 04:29:06 - AI_Gouf - INFO - Started at: 2026-09-09 04:29:06
+2026-09-09 04:29:06 - AI_Gouf - INFO - ============================================================
+2026-09-09 04:29:11 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 04:29:16 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 08:19:44 - AI_Gouf - INFO - ============================================================
+2026-09-09 08:19:44 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 08:19:44 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 08:19:44 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 08:19:44 - AI_Gouf - INFO - Started at: 2026-09-09 08:19:44
+2026-09-09 08:19:44 - AI_Gouf - INFO - ============================================================
+2026-09-09 08:19:47 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 08:19:51 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 10:05:37 - AI_Gouf - INFO - ============================================================
+2026-09-09 10:05:37 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 10:05:37 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 10:05:37 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 10:05:37 - AI_Gouf - INFO - Started at: 2026-09-09 10:05:37
+2026-09-09 10:05:37 - AI_Gouf - INFO - ============================================================
+2026-09-09 10:05:49 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 13:02:50 - AI_Gouf - INFO - ============================================================
+2026-09-09 13:02:50 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 13:02:50 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 13:02:50 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 13:02:50 - AI_Gouf - INFO - Started at: 2026-09-09 13:02:50
+2026-09-09 13:02:50 - AI_Gouf - INFO - ============================================================
+2026-09-09 13:02:56 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 13:32:04 - AI_Gouf - INFO - ============================================================
+2026-09-09 13:32:04 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 13:32:04 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 13:32:04 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 13:32:04 - AI_Gouf - INFO - Started at: 2026-09-09 13:32:04
+2026-09-09 13:32:04 - AI_Gouf - INFO - ============================================================
+2026-09-09 13:32:08 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 13:33:00 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 14:48:53 - AI_Gouf - INFO - ============================================================
+2026-09-09 14:48:53 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 14:48:53 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 14:48:53 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 14:48:53 - AI_Gouf - INFO - Started at: 2026-09-09 14:48:53
+2026-09-09 14:48:53 - AI_Gouf - INFO - ============================================================
+2026-09-09 14:48:55 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 14:49:39 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 15:36:58 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 15:38:50 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 15:40:05 - AI_Gouf - INFO - ============================================================
+2026-09-09 15:40:05 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 15:40:05 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 15:40:05 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 15:40:05 - AI_Gouf - INFO - Started at: 2026-09-09 15:40:05
+2026-09-09 15:40:05 - AI_Gouf - INFO - ============================================================
+2026-09-09 15:40:06 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 15:40:20 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 15:40:23 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 15:42:42 - AI_Gouf.claude_client - WARNING - ⚠️ Gagal mencatat audit trail panggilan Claude: cannot import name 'catat_aktivitas' from 'modules.audit_activity' (C:\Users\Lenovo\OneDrive\Documents\AI buat Gouf Consulting\Dashboard\backend\modules\audit_activity.py)
+2026-09-09 15:42:42 - AI_Gouf.claude_client - WARNING - ⚠️ Claude gagal (teks bebas): 'ThinkingBlock' object has no attribute 'text'
+2026-09-09 15:42:42 - AI_Gouf.claude_client - INFO - ↪️ Fallback ke Groq (openai/gpt-oss-120b) untuk teks bebas (modul: ekstraksi_rekening_koran_ai)...
+2026-09-09 15:42:55 - AI_Gouf.claude_client - ERROR - ❌ Fallback Groq juga gagal (teks bebas): Error code: 413 - {'error': {'message': 'Request too large for model `openai/gpt-oss-120b` in organization `org_01m0h41kp4eq4aynz9h129tyr6` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Requested 43631, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}} (Claude sebelumnya gagal: 'ThinkingBlock' object has no attribute 'text')
+2026-09-09 15:42:55 - AI_Gouf.claude_client - WARNING - ⚠️ Gagal mencatat audit trail panggilan Claude: cannot import name 'catat_aktivitas' from 'modules.audit_activity' (C:\Users\Lenovo\OneDrive\Documents\AI buat Gouf Consulting\Dashboard\backend\modules\audit_activity.py)
+2026-09-09 16:12:14 - AI_Gouf - INFO - ============================================================
+2026-09-09 16:12:14 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-09 16:12:14 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-09 16:12:14 - AI_Gouf - INFO - Log level: INFO
+2026-09-09 16:12:14 - AI_Gouf - INFO - Started at: 2026-09-09 16:12:14
+2026-09-09 16:12:14 - AI_Gouf - INFO - ============================================================
+2026-09-09 16:12:16 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-09 16:13:49 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 16:13:50 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-09 16:14:50 - AI_Gouf.claude_client - WARNING - ⚠️ Gagal mencatat audit trail panggilan Claude: cannot import name 'catat_aktivitas' from 'modules.audit_activity' (C:\Users\Lenovo\OneDrive\Documents\AI buat Gouf Consulting\Dashboard\backend\modules\audit_activity.py)
+2026-09-09 16:16:15 - AI_Gouf.claude_client - WARNING - ⚠️ Gagal mencatat audit trail panggilan Claude: cannot import name 'catat_aktivitas' from 'modules.audit_activity' (C:\Users\Lenovo\OneDrive\Documents\AI buat Gouf Consulting\Dashboard\backend\modules\audit_activity.py)

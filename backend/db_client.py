@@ -2938,9 +2938,239 @@ def _kode_bank_dari_nama_lokal(nama_bank: str) -> str:
     bank di accounting_export.py diubah, logika ini WAJIB diubah juga supaya
     voucher yang di-mint di sini (saat draft dibuat) tetap konsisten dengan
     prefix yang dipakai saat export (mis. "BRI-0726-1").
+
+    KETERBATASAN (didokumentasikan, bukan bug baru): ambil KATA TERAKHIR
+    saja. Bekerja baik untuk "BANK BRI" -> "BRI", tapi salah untuk nama
+    sheet/bank yang tidak mengikuti pola itu, mis. "Rekening Utama Kantor"
+    -> "KANTOR" (bukan nama bank sama sekali). Lihat
+    _deteksi_kode_bank_robust() di bawah -- dipakai duluan oleh
+    beri_nomor_voucher_draf_jurnal(), fungsi INI cuma jadi fallback
+    TERAKHIR kalau deteksi robust & Claude sama-sama tidak bisa memutuskan.
     """
     kata = str(nama_bank).strip().upper().split()
     return kata[-1] if kata else "BANK"
+
+
+# [BARU] Daftar bank umum Indonesia untuk deteksi kode bank yang lebih
+# andal daripada _kode_bank_dari_nama_lokal() (yang cuma ambil kata
+# terakhir). Urutan tidak penting -- dicocokkan sebagai substring ke nama
+# bank/sheet apa adanya (huruf besar semua). Tambah entri baru di sini
+# kalau ada bank lain yang sering muncul di rekening koran client.
+_DAFTAR_BANK_DIKENAL = [
+    "BCA", "MANDIRI", "BNI", "BRI", "CIMB", "PERMATA", "BTN", "BSI",
+    "DANAMON", "PANIN", "OCBC", "MAYBANK", "UOB", "BUKOPIN", "MEGA",
+    "SINARMAS", "COMMONWEALTH", "HSBC", "STANDARD CHARTERED", "CITIBANK",
+    "DBS", "ARTHA GRAHA", "JAGO", "SEABANK", "NEO COMMERCE", "ALLO",
+]
+
+
+def _deteksi_kode_bank_robust(nama_bank: Optional[str]) -> Optional[str]:
+    """
+    [BARU] Coba cocokkan nama_bank (nama sheet/bank mentah dari file yang
+    diupload) ke _DAFTAR_BANK_DIKENAL lewat substring match (mis. "Bank
+    BCA Cabang Sudirman" -> "BCA", "PT XYZ - Rek. Mandiri" -> "MANDIRI").
+    Ini yang dicoba PERTAMA sebelum _kode_bank_dari_nama_lokal() (ambil
+    kata terakhir) -- jauh lebih tahan terhadap format nama sheet yang
+    bervariasi.
+
+    Return None kalau tidak ada satu pun nama bank dikenal yang cocok --
+    caller (beri_nomor_voucher_draf_jurnal) akan lanjut coba Claude
+    (kalau pakai_ai=True), baru kalau itu juga gagal jatuh ke
+    _kode_bank_dari_nama_lokal() sebagai upaya terakhir.
+    """
+    n = str(nama_bank or "").strip().upper()
+    if not n:
+        return None
+    for kandidat in _DAFTAR_BANK_DIKENAL:
+        if kandidat in n:
+            return kandidat
+    return None
+
+
+_SYSTEM_PROMPT_DETEKSI_BANK = (
+    "Kamu membantu sistem akuntansi mengenali kode bank singkat dari nama "
+    "sheet/label rekening koran yang tidak baku. Balas HANYA dengan kode "
+    "bank singkat huruf besar tanpa spasi (contoh: BCA, MANDIRI, BNI, BRI, "
+    "CIMB), tanpa penjelasan apa pun. Kalau teks yang diberikan sama "
+    "sekali tidak mengandung petunjuk nama bank (mis. cuma nama cabang, "
+    "nama file, atau nama kantor), balas persis dengan kata "
+    "TIDAK_DIKETAHUI."
+)
+
+
+def _deteksi_kode_bank_dengan_claude(nama_bank: str, keterangan_contoh: Optional[str], client_id: Optional[int]) -> Optional[str]:
+    """
+    [BARU] Fallback Claude -- HANYA dipanggil kalau _deteksi_kode_bank_robust()
+    gagal (nama bank tidak cocok ke daftar dikenal). Pakai
+    modules.claude_client.panggil_claude_teks() (Claude API ASLI --
+    BUKAN panggil_claude_terstruktur() yang sejak refactor lain sekarang
+    selalu ke Groq, lihat catatan di claude_client.py). Import dilakukan
+    DI DALAM fungsi (bukan di top-level file) supaya tidak menambah
+    dependency wajib modules/ di db_client.py untuk kode yang tidak
+    memanggil fallback ini sama sekali (mis. saat ANTHROPIC_API_KEY
+    belum di-set/tidak dipakai).
+
+    Return kode bank (string) kalau Claude yakin, atau None kalau Claude
+    bilang TIDAK_DIKETAHUI / panggilan API gagal (exception APA PUN
+    ditelan di sini -- pemanggil harus tetap dapat nomor voucher walau
+    Claude down, lihat beri_nomor_voucher_draf_jurnal()).
+    """
+    try:
+        from modules.claude_client import panggil_claude_teks, ClaudeError
+    except Exception:
+        return None
+
+    prompt = f'Nama sheet/label rekening koran: "{nama_bank}"'
+    if keterangan_contoh:
+        prompt += f'\nContoh keterangan transaksi di sheet ini: "{keterangan_contoh}"'
+
+    try:
+        jawaban = panggil_claude_teks(
+            prompt,
+            modul_pemanggil="db_client_deteksi_kode_bank_voucher",
+            client_id=str(client_id) if client_id is not None else None,
+            system_prompt=_SYSTEM_PROMPT_DETEKSI_BANK,
+            max_tokens=20,
+        )
+    except ClaudeError as e:
+        print(f"[voucher] Claude gagal deteksi kode bank untuk '{nama_bank}': {e}")
+        return None
+    except Exception as e:
+        print(f"[voucher] Error tak terduga saat deteksi kode bank via Claude: {e}")
+        return None
+
+    kode = jawaban.strip().upper().split()[0] if jawaban and jawaban.strip() else ""
+    # Validasi ringan: kode bank wajar itu pendek & cuma huruf/angka --
+    # tolak kalau Claude malah balas kalimat penuh (harusnya tidak terjadi
+    # krn system prompt sudah tegas, tapi jangan percaya buta ke output AI).
+    if not kode or kode == "TIDAK_DIKETAHUI" or len(kode) > 15 or not kode.replace("_", "").isalnum():
+        return None
+    return kode
+
+
+def beri_nomor_voucher_draf_jurnal(
+    client_id: int,
+    draf_jurnal: List[Dict[str, Any]],
+    jenis_dokumen: str,
+    pakai_ai: bool = False,
+) -> List[str]:
+    """
+    [BARU] Beri nomor voucher PERMANEN (dari counter database yang sama
+    dengan tarik_draf_jurnal_ke_posting()) ke tiap baris draf_jurnal,
+    TANPA menyimpan baris itu ke tabel jurnal_posting -- dipakai oleh
+    /api/proses-file (main.py::_proses_dan_simpan_satu_file) supaya
+    halaman Transaksi dapat voucher permanen & tidak tabrakan/reset tiap
+    sesi browser, TANPA ikut mengaktifkan kembali seluruh pipeline
+    posting/audit/dedup yang sengaja dilepas saat Supabase dihapus.
+
+    Dipanggil juga oleh tarik_draf_jurnal_ke_posting() di bawah (jalur
+    Agent AI / konfirmasi batch) supaya logika penomoran SATU sumber,
+    tidak dobel ditulis di dua tempat.
+
+    Urutan deteksi kode bank per baris (baru -> lama):
+      1. _deteksi_kode_bank_robust() -- cocokkan ke daftar bank dikenal.
+      2. Kalau gagal & pakai_ai=True -- tanya Claude API
+         (_deteksi_kode_bank_dengan_claude()).
+      3. Kalau Claude juga gagal/tidak dipakai -- fallback lama
+         _kode_bank_dari_nama_lokal() (ambil kata terakhir), SUPAYA
+         baris tetap dapat voucher (tidak pernah gagal total gara-gara
+         nama bank ambigu) -- tapi baris ini ditandai di `catatan`
+         untuk direview manual.
+
+    Mutasi `draf_jurnal` IN-PLACE: menambah/menimpa key "voucher" dan
+    "periode_voucher" di tiap baris yang lolos filter (baris tanpa
+    no_akun_debet/no_akun_kredit dilewati, sama seperti filter di
+    tarik_draf_jurnal_ke_posting -- baris itu memang tidak akan pernah
+    disimpan, jadi jangan buang nomor voucher untuknya). Baris yang perlu
+    direview manual (kode bank hasil tebakan kasar) dapat tambahan teks
+    di `catatan`.
+
+    Berlaku untuk jenis_dokumen == "rekening_koran" (semua baris dapat
+    voucher lewat deteksi kode bank -- lihat blok di bawah) DAN
+    "jurnal_penjualan_kasir" (HANYA baris yang no_invoice-nya kosong di
+    PDF sumber -- lihat blok kedua setelah loop rekening_koran; baris
+    yang sudah punya no_invoice asli TIDAK disentuh, karena nomor asli
+    dari dokumen kasir/POS itu sendiri sudah dipakai sebagai voucher oleh
+    frontend, lihat drafJurnalPenjualanToTransactions() di
+    ImportRekeningKoranModal.tsx). Jenis dokumen lain dibiarkan tidak
+    tersentuh sama sekali.
+
+    Return: list pesan peringatan (baris yang kode banknya cuma hasil
+    tebakan kasar) -- kosong kalau semua baris berhasil dikenali dengan
+    pasti.
+    """
+    peringatan: List[str] = []
+    if not draf_jurnal or jenis_dokumen not in ("rekening_koran", "jurnal_penjualan_kasir"):
+        return peringatan
+
+    # [BARU] Jalur jurnal_penjualan_kasir: TIDAK butuh deteksi bank sama
+    # sekali (bukan mutasi rekening) -- cukup isi voucher pengganti utk
+    # baris yang no_invoice-nya kosong di PDF, pakai counter permanen yang
+    # sama (VoucherCounter) supaya nomornya tidak berubah kalau file yang
+    # sama diupload ulang. Prefix tetap "PJK" (Penjualan Kasir) utk semua
+    # baris jenis ini -- tidak ada konsep "bank" di sini.
+    if jenis_dokumen == "jurnal_penjualan_kasir":
+        kelompok_pjk: Dict[str, List[int]] = {}
+        for i, baris in enumerate(draf_jurnal):
+            if baris.get("no_invoice"):
+                continue  # sudah ada nomor asli dari PDF, jangan ditimpa
+            periode = _periode_voucher_dari_tanggal(baris.get("tanggal"))
+            kelompok_pjk.setdefault(periode, []).append(i)
+
+        for periode, idx_list in kelompok_pjk.items():
+            blok = ambil_blok_nomor_voucher(client_id, "PJK", periode, len(idx_list))
+            for i, nomor in zip(idx_list, blok):
+                draf_jurnal[i]["voucher"] = f"PJK-{periode}-{nomor}"
+                draf_jurnal[i]["periode_voucher"] = periode
+        return peringatan
+
+    kelompok: Dict[tuple, List[int]] = {}
+    kode_bank_per_baris: Dict[int, str] = {}
+
+    for i, baris in enumerate(draf_jurnal):
+        no_debet = str(baris.get("no_akun_debet") or "")
+        no_kredit = str(baris.get("no_akun_kredit") or "")
+        if not no_debet or not no_kredit:
+            continue
+
+        nama_bank_mentah = baris.get("bank") or "BANK"
+        kode_bank = _deteksi_kode_bank_robust(nama_bank_mentah)
+        if kode_bank is None and pakai_ai:
+            kode_bank = _deteksi_kode_bank_dengan_claude(
+                nama_bank_mentah, baris.get("keterangan"), client_id,
+            )
+        if kode_bank is None:
+            kode_bank = _kode_bank_dari_nama_lokal(nama_bank_mentah)
+            pesan = (
+                f'Baris {baris.get("baris", i + 1)}: kode bank "{kode_bank}" '
+                f'dari label "{nama_bank_mentah}" hasil tebakan kasar (bukan '
+                f'dari daftar bank dikenal maupun Claude) -- mohon cek nomor '
+                f'voucher baris ini secara manual.'
+            )
+            peringatan.append(pesan)
+            catatan_lama = baris.get("catatan")
+            baris["catatan"] = (catatan_lama + " | " if catatan_lama else "") + (
+                "Kode bank pada nomor voucher hasil tebakan otomatis — mohon dicek."
+            )
+
+        kode_bank_per_baris[i] = kode_bank
+        periode = _periode_voucher_dari_tanggal(baris.get("tanggal"))
+        kelompok.setdefault((kode_bank, periode), []).append(i)
+
+    for (kode_bank, periode), idx_list in kelompok.items():
+        blok = ambil_blok_nomor_voucher(client_id, kode_bank, periode, len(idx_list))
+        for i, nomor in zip(idx_list, blok):
+            draf_jurnal[i]["voucher"] = f"{kode_bank}-{periode}-{nomor}"
+            draf_jurnal[i]["periode_voucher"] = periode
+            # [BARU] Simpan kode bank YANG BENAR-BENAR DIPAKAI untuk mint
+            # voucher ini (bisa beda dari _kode_bank_dari_nama_lokal() kalau
+            # deteksi robust/Claude di atas pilih kode lain) -- supaya
+            # pemanggil (mis. kolom JurnalPosting.kode_bank di
+            # tarik_draf_jurnal_ke_posting) tidak perlu menebak ulang dan
+            # berisiko tidak konsisten dengan prefix voucher yang sudah jadi.
+            draf_jurnal[i]["kode_bank_voucher"] = kode_bank
+
+    return peringatan
 
 
 def _periode_voucher_dari_tanggal(tanggal_str, default_bulan: int = None, default_tahun: int = None) -> str:
@@ -3289,27 +3519,20 @@ def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: s
     try:
         pakai_voucher = (jenis_dokumen == "rekening_koran")
 
-        voucher_per_baris: List[Optional[str]] = [None] * len(draf_jurnal)
-        periode_per_baris: List[Optional[str]] = [None] * len(draf_jurnal)
-
-        if pakai_voucher:
-            # --- Tahap 1: kelompokkan index baris per (kode_bank, periode) ---
-            kelompok: Dict[tuple, List[int]] = {}
-            for i, baris in enumerate(draf_jurnal):
-                no_debet = str(baris.get("no_akun_debet") or "")
-                no_kredit = str(baris.get("no_akun_kredit") or "")
-                if not no_debet or not no_kredit:
-                    continue  # sama seperti filter di bawah -- baris kosong tidak akan disimpan, jangan buang nomor voucher untuknya
-                kode_bank = _kode_bank_dari_nama_lokal(baris.get("bank") or "BANK")
-                periode = _periode_voucher_dari_tanggal(baris.get("tanggal"))
-                kelompok.setdefault((kode_bank, periode), []).append(i)
-
-            # --- Tahap 2: reservasi blok nomor sekaligus per kelompok ---
-            for (kode_bank, periode), idx_list in kelompok.items():
-                blok = ambil_blok_nomor_voucher(client_id, kode_bank, periode, len(idx_list))
-                for i, nomor in zip(idx_list, blok):
-                    voucher_per_baris[i] = f"{kode_bank}-{periode}-{nomor}"
-                    periode_per_baris[i] = periode
+        # [DIUBAH] Tahap 1+2 (deteksi kode bank + reservasi blok nomor)
+        # dipindah ke beri_nomor_voucher_draf_jurnal() -- SATU sumber
+        # logika, dipakai bersama oleh jalur ini (Agent AI/konfirmasi
+        # batch) DAN oleh /api/proses-file (lihat main.py). pakai_ai
+        # sengaja False di sini (perilaku lama, tidak berubah) --
+        # nyalakan lewat parameter baru kalau nanti jalur ini juga mau
+        # dibantu Claude untuk baris kode bank yang ambigu.
+        beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, jenis_dokumen, pakai_ai=False)
+        voucher_per_baris: List[Optional[str]] = [
+            (baris.get("voucher") if pakai_voucher else None) for baris in draf_jurnal
+        ]
+        periode_per_baris: List[Optional[str]] = [
+            (baris.get("periode_voucher") if pakai_voucher else None) for baris in draf_jurnal
+        ]
 
         session = SessionLocal()
         # [FIX -- POINT 4] Sebelumnya session.add() dipanggil per baris di
@@ -3354,7 +3577,12 @@ def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: s
                 voucher=voucher_per_baris[i],
                 periode_voucher=periode_per_baris[i],
                 baris_asal=baris.get("baris"),
-                kode_bank=(_kode_bank_dari_nama_lokal(baris.get("bank") or "BANK") if pakai_voucher else None),
+                # [DIUBAH] Baca kode_bank yang BENAR-BENAR dipakai untuk mint
+                # voucher (diisi beri_nomor_voucher_draf_jurnal() di atas),
+                # bukan menebak ulang dengan _kode_bank_dari_nama_lokal() --
+                # dulu keduanya selalu sama karena cuma ada 1 metode deteksi,
+                # sekarang bisa beda kalau deteksi robust/Claude pilih kode lain.
+                kode_bank=(baris.get("kode_bank_voucher") if pakai_voucher else None),
                 transaction_hash=hash_baris,
             ))
             count += 1

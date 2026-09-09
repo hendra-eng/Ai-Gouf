@@ -6,7 +6,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsWhere, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -61,11 +61,20 @@ export default function OtherTransactionsPage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  const totalOther = otherTx.reduce((s, t) => s + txAmount(t), 0);
-  const txCount = otherTx.length;
+  // [DIUBAH] Sama seperti Sales/Expense/Cash Payment — dikelompokkan per
+  // NOMOR JURNAL (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi
+  // dengan 2 kaki jurnal tidak terhitung dua kali. Lihat groupAnalytics.ts.
+  const totalOther = uniqueJournalTotal(otherTx);
+  const txCount = uniqueJournalCount(otherTx);
   const avgTxValue = txCount > 0 ? totalOther / txCount : 0;
-  const unpostedCount = otherTx.filter(t => t.status === 'Unposted').length;
-  const needsReview = otherTx.filter(t => !!t.notes).length;
+  const unpostedCount = countJournalsByStatus(otherTx, 'Unposted');
+  // [DIUBAH] "Perlu Ditinjau" — catatan (`notes`) biasanya cuma terisi di
+  // kaki jurnal yang bermasalah (mis. anomali), bukan di kedua kaki
+  // sekaligus, jadi predicate mengecek SELURUH baris dalam 1 jeId (bukan
+  // cuma baris pertama) supaya transaksi yang notes-nya ada di salah satu
+  // kaki saja tetap kehitung, dan tidak dihitung dua kali kalau kebetulan
+  // kedua kaki sama-sama punya notes.
+  const needsReview = countJournalsWhere(otherTx, (rows) => rows.some((r) => !!r.notes));
 
   const trend = useMemo(() => monthlyTrendFor(otherTx), [otherTx]);
   const byCategory = useMemo(() => categoryBreakdown(otherTx).slice(0, 6), [otherTx]);

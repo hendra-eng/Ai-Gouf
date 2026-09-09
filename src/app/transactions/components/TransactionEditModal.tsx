@@ -92,7 +92,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div
         className="bg-card border border-border rounded-xl shadow-card-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden fade-in flex flex-col"
         onClick={(e) => e.stopPropagation()}

@@ -26,7 +26,13 @@ interface TransactionsFilterBarProps {
 // [DIUBAH] Tambah 'Unposted' — status default hasil import rekening koran.
 const typeOptions = ['all', 'debit', 'credit', 'journal'];
 const statusOptions = ['all', 'Unposted', 'Posted', 'Draft', 'Reconciled', 'Voided'];
-const categoryOptions = ['all', 'Revenue', 'Payroll', 'Software', 'Rent', 'Tax', 'Marketing', 'Travel', 'CapEx', 'AP Payment', 'Utilities', 'Financing'];
+// [DIUBAH] Tambah 'Lainnya' — sejak CapEx punya arti bisnis sendiri (grup Cash
+// Payment), baris hasil import yang tidak terklasifikasi otomatis diberi
+// category: 'Lainnya' (lihat classifyAccountNameToCategory di
+// transactionData.ts), bukan lagi "dipinjamkan" ke CapEx. Tanpa opsi ini,
+// baris-baris ambigu tsb tidak bisa difilter langsung lewat dropdown kategori
+// untuk ditinjau — cuma bisa dilihat campur-baur di halaman Other.
+const categoryOptions = ['all', 'Revenue', 'Payroll', 'Software', 'Rent', 'Tax', 'Marketing', 'Travel', 'CapEx', 'AP Payment', 'Utilities', 'Financing', 'Lainnya'];
 
 const typeLabels: Record<string, string> = { all: 'Semua Tipe', debit: 'Debit', credit: 'Credit', journal: 'Jurnal' };
 const statusLabels: Record<string, string> = { all: 'Semua Status', Unposted: 'Unposted', Posted: 'Posted', Draft: 'Draft', Reconciled: 'Reconciled', Voided: 'Voided' };

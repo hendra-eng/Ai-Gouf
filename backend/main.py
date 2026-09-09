@@ -344,14 +344,12 @@ def health():
         # sementara, lihat _konfigurasi_provider_chat() di akuntansi_ai.py),
         # endpoint ini salah lapor ai_aktif=False padahal chat tetap jalan.
         "ai_aktif": bool(ak._konfigurasi_provider_chat()),
-        # [DIUBAH -- KATEGORISASI KHUSUS GROQ] Sebelumnya key ini bernama
-        # "claude_aktif" karena kategorisasi (dipakai kertas_kerja/
-        # kategorikan_dengan_ai, dst) tadinya lewat Claude dulu baru fallback
-        # Groq. Sekarang _konfigurasi_provider_kategorisasi() di
-        # akuntansi_ai.py HANYA berisi Groq (Claude & DeepSeek sudah tidak
-        # dipakai sama sekali di jalur kategorisasi), jadi key-nya diganti
-        # nama supaya tidak menyesatkan. Nilainya true kalau
-        # GROQ_API_KEY_KATEGORISASI atau GROQ_API_KEY terisi.
+        # [DIUBAH -- KATEGORISASI SEPENUHNYA CLAUDE OPUS] Sempat lewat Groq
+        # sepenuhnya (Claude & DeepSeek tidak dipakai sama sekali), sekarang
+        # dibalik lagi: _konfigurasi_provider_kategorisasi() di akuntansi_ai.py
+        # HANYA berisi Claude (model Opus, lihat ambil_model_kategorisasi_claude()),
+        # Groq & DeepSeek sudah tidak dipakai sama sekali di jalur kategorisasi.
+        # Nilainya true kalau ANTHROPIC_API_KEY terisi.
         "kategorisasi_aktif": bool(ak._konfigurasi_provider_kategorisasi()),
         "database_aktif": dbc.cek_koneksi(),  # [FIX v4] cek cepat Supabase konek atau tidak
     }
@@ -1805,16 +1803,24 @@ def _proses_dan_simpan_satu_file(
     (_proses_semua_jenis, murni CPU/AI, tidak pernah menyentuh database)
     lalu hasilnya langsung dikembalikan apa adanya ke caller.
 
-    client_id/conv_id/esb_account_id/konfirmasi_duplikat/user SENGAJA
-    TIDAK dipakai lagi di sini (parameter tetap dipertahankan supaya
-    signature & pemanggil di /api/proses-file, /api/proses-file-batch,
-    dst tidak perlu ikut diubah) -- konsekuensinya, TIDAK ADA LAGI hasil
-    yang otomatis tersimpan/riwayat/audit log/draf jurnal masuk ke
+    conv_id/esb_account_id/konfirmasi_duplikat/user SENGAJA TIDAK dipakai
+    lagi di sini (parameter tetap dipertahankan supaya signature &
+    pemanggil di /api/proses-file, /api/proses-file-batch, dst tidak
+    perlu ikut diubah) -- konsekuensinya, TIDAK ADA LAGI hasil yang
+    otomatis tersimpan/riwayat/audit log/draf jurnal masuk ke
     posting/reminder SPT/pertanyaan klarifikasi/alert anomali dari proses
     upload ini. Kalau nanti perlu simpan hasil ke database lagi, itu
     harus jadi endpoint terpisah yang eksplisit dipanggil BELAKANGAN
     (bukan otomatis nempel di sini), supaya upload file tetap cepat &
     tidak tergantung database sama sekali.
+
+    [DIUBAH] client_id KINI DIPAKAI LAGI, tapi SEMPIT: kalau diisi, dipakai
+    HANYA untuk mint nomor voucher permanen ke baris draf_jurnal hasil
+    rekening_koran (lihat dbc.beri_nomor_voucher_draf_jurnal() di bawah,
+    menyentuh tabel VoucherCounter yang independen dari jurnal_posting) --
+    BUKAN untuk menyimpan/posting/audit apa pun lainnya, jadi paragraf di
+    atas (TIDAK ADA LAGI hasil tersimpan dst.) tetap berlaku untuk selain
+    nomor voucher itu sendiri.
     """
     import time as _time_debug  # [DEBUG SEMENTARA] hapus setelah selesai profiling
     _t0 = _time_debug.perf_counter()
@@ -1832,10 +1838,32 @@ def _proses_dan_simpan_satu_file(
 
     hasil_json = _bersihkan_untuk_json(hasil_semua)
 
+    # [BARU] Beri nomor voucher PERMANEN (dari counter database, lihat
+    # db_client.beri_nomor_voucher_draf_jurnal/ambil_blok_nomor_voucher) ke
+    # baris draf_jurnal hasil rekening_koran (semua baris) & jurnal_penjualan_kasir
+    # (hanya baris yang no_invoice-nya kosong di PDF) -- HANYA kalau client_id
+    # diisi (upload tanpa client aktif tidak tersimpan ke mana pun, jadi
+    # tidak ada dasar untuk nomor voucher permanen; frontend akan pakai
+    # nomor sementara sendiri untuk kasus itu, lihat ImportRekeningKoranModal.tsx).
+    # SENGAJA TIDAK memanggil tarik_draf_jurnal_ke_posting() di sini --
+    # itu akan mengaktifkan kembali seluruh pipeline posting/audit/dedup
+    # yang sengaja dilepas saat Supabase dihapus (lihat docstring fungsi
+    # ini). Cuma counter voucher (VoucherCounter, tabel terpisah &
+    # independen dari jurnal_posting) yang disentuh di sini.
+    peringatan_voucher: list = []
+    if client_id is not None:
+        for kode, hasil in hasil_json.items():
+            draf_jurnal = hasil.get("draf_jurnal") if isinstance(hasil, dict) else None
+            if draf_jurnal:
+                peringatan_voucher.extend(
+                    dbc.beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, kode, pakai_ai=pakai_ai)
+                )
+
     return {
         "nama_file": nama_file,
         "hasil": hasil_json,
         "tidak_terdeteksi": False,
+        "peringatan_voucher": peringatan_voucher or None,
     }
 
 

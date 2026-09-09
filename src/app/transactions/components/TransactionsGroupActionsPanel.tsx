@@ -107,7 +107,7 @@ export default function TransactionsGroupActionsPanel({ group, groupLabel, defau
           !tx.description.toLowerCase().includes(q) &&
           !tx.party.toLowerCase().includes(q) &&
           !tx.reference.toLowerCase().includes(q) &&
-          !tx.accountCode.toLowerCase().includes(q)
+          !String(tx.accountCode ?? '').toLowerCase().includes(q)
         ) return false;
       }
       if (filters.type !== 'all' && tx.type !== filters.type) return false;

@@ -6,7 +6,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, formatDate } from '../lib/groupAnalytics';
+import { formatIDR, txAmount, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, formatDate } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -73,11 +73,30 @@ export default function SalesPage() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   // ── KPI (dihitung langsung dari salesTx, bukan angka statis) ──
-  const grossSales = salesTx.reduce((s, t) => s + txAmount(t), 0);
-  const txCount = salesTx.length;
+  // [DIUBAH] Total Sales sebelumnya menjumlah txAmount() (debit+kredit) tiap
+  // BARIS transaksi. Masalahnya: satu transaksi penjualan sering dicatat
+  // sebagai 2 baris kaki jurnal dengan jeId yang sama (mis. sisi Kas & Bank
+  // saat uang masuk, DAN sisi akun Pendapatan saat pendapatan diakui) —
+  // keduanya sama-sama category 'Revenue' sehingga sama-sama masuk salesTx,
+  // dan kalau dijumlah per baris nilainya kehitung 2x lipat. uniqueJournalTotal()
+  // mengelompokkan per jeId dulu sebelum dijumlah, jadi tiap transaksi
+  // ekonomi hanya dihitung sekali. Lihat groupAnalytics.ts untuk detail.
+  const grossSales = uniqueJournalTotal(salesTx);
+  // [DIUBAH] Sebelumnya txCount = salesTx.length (jumlah BARIS). Sekarang
+  // dihitung per jeId unik (uniqueJournalCount), konsisten dengan grossSales
+  // di atas — supaya "Rata-rata / Transaksi" (grossSales ÷ txCount) tetap
+  // benar (bukan Total Sales yang sudah per-jurnal dibagi jumlah baris yang
+  // masih dobel).
+  const txCount = uniqueJournalCount(salesTx);
   const avgTxValue = txCount > 0 ? grossSales / txCount : 0;
-  const unpostedCount = salesTx.filter(t => t.status === 'Unposted').length;
-  const reconciledCount = salesTx.filter(t => t.status === 'Reconciled').length;
+  // [DIUBAH] unpostedCount & reconciledCount sebelumnya menghitung BARIS
+  // (salesTx.filter(...).length) — basisnya jadi tidak nyambung dengan
+  // txCount yang sekarang sudah per-jurnal. countJournalsByStatus() ikut
+  // mengelompokkan per jeId dulu, jadi satu transaksi dengan 2 kaki jurnal
+  // (mis. Kas + Pendapatan yang sama-sama 'Posted') tetap dihitung sebagai
+  // SATU transaksi Posted, bukan 2.
+  const unpostedCount = countJournalsByStatus(salesTx, 'Unposted');
+  const reconciledCount = countJournalsByStatus(salesTx, 'Reconciled');
   const reconciledPct = txCount > 0 ? (reconciledCount / txCount) * 100 : 0;
 
   const trend = useMemo(() => monthlyTrendFor(salesTx), [salesTx]);

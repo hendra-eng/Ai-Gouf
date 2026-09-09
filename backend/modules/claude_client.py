@@ -51,6 +51,33 @@ logger = get_module_logger("claude_client")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL_DEFAULT = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5")
 
+
+# [BARU -- FIX BUG "'ThinkingBlock' object has no attribute 'text'"]
+# Sebelumnya SEMUA pemanggil di sini & di ai_file_reader.py/akuntansi_ai.py
+# ambil teks jawaban Claude dengan langsung `response.content[0].text` --
+# asumsi block PERTAMA di response.content pasti berupa TextBlock. Asumsi
+# itu keliru kalau modelnya menyisipkan ThinkingBlock (atau block non-teks
+# lain) SEBELUM TextBlock -- content[0] jadi ThinkingBlock yang TIDAK
+# punya atribut .text, dan seluruh pemanggilan gagal dgn AttributeError
+# (baru ketahuan di produksi lewat pesan error mentah yang tembus ke user,
+# lihat kasus "Fallback ekstraksi AI juga gagal: ... 'ThinkingBlock' object
+# has no attribute 'text'"). Perbaikannya: JANGAN asumsikan index tetap --
+# cari block TEKS PERTAMA di antara semua content block, apa pun urutan &
+# jenis block lain yang menyertainya.
+def ambil_teks_dari_response(response: anthropic.types.Message) -> str:
+    """Ambil teks jawaban dari Message Claude dengan aman -- cari block
+    pertama yang type-nya 'text' (skip ThinkingBlock/block lain kalau
+    ada), bukan asumsi content[0] selalu TextBlock. Raise ClaudeError
+    kalau tidak ada satu pun block teks (mis. respons kosong/aneh)."""
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    raise ClaudeError(
+        "Respons Claude tidak berisi teks apa pun (kemungkinan cuma "
+        f"thinking block atau tool-use) -- tipe block yang diterima: "
+        f"{[getattr(b, 'type', type(b).__name__) for b in response.content]}"
+    )
+
 # [DIUBAH -- GROQ SEPENUHNYA, CLAUDE DIHAPUS DARI JALUR INI] Sebelumnya
 # panggil_claude_terstruktur() coba Claude dulu, fallback otomatis ke Groq
 # kalau gagal. Sekarang jalur Claude di fungsi itu DIHAPUS TOTAL --
@@ -400,7 +427,7 @@ def panggil_claude_teks(
     try:
         resp = panggil_dengan_retry(**kwargs)
         _catat_audit(modul_pemanggil, client_id, "teks_bebas", berhasil=True)
-        return resp.content[0].text
+        return ambil_teks_dari_response(resp)
     except Exception as error_claude:
         logger.warning(f"⚠️ Claude gagal (teks bebas): {error_claude}")
 

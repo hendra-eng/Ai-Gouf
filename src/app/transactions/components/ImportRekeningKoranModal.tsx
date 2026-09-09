@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Upload, X, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Transaction, kodeBankDariNama, buatVoucherNo, classifyByAccountName, GROUP_LABELS } from './transactionData';
+import { Transaction, kodeBankDariNama, buatVoucherNo, classifyJournalPairCategory } from './transactionData';
 import { useCurrency } from '@/lib/currency';
 import { useActiveClient } from '@/lib/activeClient';
 
@@ -58,6 +58,31 @@ interface DrafJurnalRow {
   // transaksi asli dari PDF (mis. "KSR-0065719-26"), dipakai sbg voucherNo
   // & reference/party pada drafJurnalPenjualanToTransactions() di bawah.
   no_invoice?: string | null;
+  // [BARU] Salah satu dari 11 kategori resmi (Revenue, Payroll, Software,
+  // dst — lihat akuntansi_ai.py::kategorikan_dengan_ai), ditentukan AI dari
+  // KESELURUHAN konteks transaksi (keterangan+arah+nominal+akun), BUKAN cuma
+  // tebak dari nama akun. Hanya terisi untuk baris yang lewat AI — null
+  // untuk baris yang resolve dari pola historis/kata kunci COA (lihat
+  // proses_dataframe di backend); baris itu fallback ke
+  // classifyJournalPairCategory di bawah, sama seperti sebelumnya.
+  kategori?: string | null;
+  // [BARU] Nomor voucher PERMANEN dari counter database (lihat
+  // db_client.py::beri_nomor_voucher_draf_jurnal/ambil_blok_nomor_voucher)
+  // -- HANYA terisi kalau upload ini dikirim dengan client_id (client aktif
+  // dipilih di header, lihat handleFile di bawah). Kalau backend berhasil
+  // memberi nomor ini, PAKAI LANGSUNG (jangan hitung ulang voucherNo sendiri
+  // di frontend) -- supaya nomor konsisten/tidak tabrakan dengan upload lain
+  // untuk client+bank+bulan yang sama. Null kalau tidak ada client aktif
+  // saat upload -- drafJurnalToTransactions() di bawah fallback ke
+  // buatVoucherNo() lokal seperti sebelumnya untuk kasus itu.
+  //
+  // [BARU] Untuk jenis_dokumen 'jurnal_penjualan_kasir', field ini HANYA
+  // terisi kalau no_invoice di atas KOSONG di PDF sumber (backend isi
+  // voucher pengganti format "PJK-MMYY-urutan" dari counter permanen yang
+  // sama) -- baris yang no_invoice-nya sudah ada TIDAK dapat nilai di sini
+  // sama sekali, karena nomor asli dari PDF itu sendiri yang dipakai.
+  // Lihat drafJurnalPenjualanToTransactions() di bawah.
+  voucher?: string | null;
 }
 
 interface RekeningKoranHasil {
@@ -127,25 +152,36 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
     const catatanReview = row.catatan
       || (belumTerkategori ? 'Belum terkategori otomatis — cek kembali akun sebelum diposting.' : undefined);
 
-    const kodeBank = kodeBankDariNama(row.bank);
-    const mmdd = (row.tanggal || '').slice(5, 10).replace('-', '');
-    const urutanKey = `${kodeBank}|${mmdd}`;
-    const urutan = (urutanPerHariBank.get(urutanKey) || 0) + 1;
-    urutanPerHariBank.set(urutanKey, urutan);
-    const voucherNo = buatVoucherNo(kodeBank, row.tanggal || '', urutan);
+    // [DIUBAH] Kalau backend sudah kirim nomor voucher PERMANEN (row.voucher
+    // -- lihat interface DrafJurnalRow di atas), pakai itu langsung. Nomor
+    // sementara ala <KodeBank>-<MMDD>-<urutan> di bawah cuma jadi fallback
+    // untuk upload TANPA client aktif (backend tidak mint apa pun untuk
+    // kasus itu, lihat main.py::_proses_dan_simpan_satu_file) — supaya modal
+    // ini tetap bisa dipakai untuk preview cepat tanpa client dipilih.
+    let voucherNo = row.voucher || '';
+    if (!voucherNo) {
+      const kodeBank = kodeBankDariNama(row.bank);
+      const mmdd = (row.tanggal || '').slice(5, 10).replace('-', '');
+      const urutanKey = `${kodeBank}|${mmdd}`;
+      const urutan = (urutanPerHariBank.get(urutanKey) || 0) + 1;
+      urutanPerHariBank.set(urutanKey, urutan);
+      voucherNo = buatVoucherNo(kodeBank, row.tanggal || '', urutan);
+    }
 
     saldoBerjalan += dampakSaldoKas(row);
 
-    // [DIUBAH] Sebelumnya category selalu diisi teks statis
-    // 'Import Rekening Koran' untuk kedua leg (debet & kredit) sekaligus lewat
-    // `base`, jadi kolom "Kategori" di halaman Transaksi tidak pernah
-    // menunjukkan Sales/Expense/dst untuk baris hasil import. Sekarang tiap
-    // leg diklasifikasi SENDIRI-SENDIRI dari nama akunnya masing-masing
-    // (classifyByAccountName), lalu dipetakan ke salah satu dari 5 label
-    // grup yang sama dipakai sub halaman Transaksi (GROUP_LABELS) — jadi
-    // category tidak lagi lewat `base` bersama, tapi dihitung per leg.
-    const categoryDebet = GROUP_LABELS[classifyByAccountName(row.nama_akun_debet)];
-    const categoryKredit = GROUP_LABELS[classifyByAccountName(row.nama_akun_kredit)];
+    // [DIUBAH] Sebelumnya category diisi salah satu dari 5 LABEL GRUP
+    // (Sales/Expense/Cash Payment/Cash Reserve/Other lewat GROUP_LABELS),
+    // yang tidak cocok dengan 11 kategori resmi di dropdown filter halaman
+    // Transaksi (Revenue, Payroll, Software, dst) — makanya baris hasil
+    // import selalu tampil "Other" dan tidak bisa difilter. Sekarang AI
+    // (kategorikan_dengan_ai) sudah menentukan field `kategori` langsung
+    // dari konteks penuh transaksi — kalau backend mengirimnya, pakai
+    // LANGSUNG itu. Baris yang tidak lewat AI (resolve dari pola historis
+    // atau kata kunci COA di backend, row.kategori kosong) tetap fallback ke
+    // classifyJournalPairCategory (logika kata kunci nama akun) seperti
+    // sebelumnya — tidak dihapus, cuma jadi cadangan.
+    const category = row.kategori || classifyJournalPairCategory(row.nama_akun_debet, row.nama_akun_kredit);
 
     const base = {
       date: row.tanggal || '',
@@ -166,22 +202,22 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
     };
     out.push({
       id: `${jeId}-D`,
-      accountCode: row.no_akun_debet || '-',
+      accountCode: row.no_akun_debet ? String(row.no_akun_debet) : '-',
       accountName: row.nama_akun_debet || 'Belum Terkategori',
       debit: row.jml_debet || 0,
       credit: 0,
       type: 'debit',
-      category: categoryDebet,
+      category,
       ...base,
     });
     out.push({
       id: `${jeId}-K`,
-      accountCode: row.no_akun_kredit || '-',
+      accountCode: row.no_akun_kredit ? String(row.no_akun_kredit) : '-',
       accountName: row.nama_akun_kredit || 'Belum Terkategori',
       debit: 0,
       credit: row.jml_kredit || 0,
       type: 'credit',
-      category: categoryKredit,
+      category,
       ...base,
     });
   });
@@ -196,6 +232,16 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
 // running balance yg berarti). voucherNo pakai no_invoice ASLI dari PDF
 // (mis. "KSR-0065719-26") supaya gampang ditelusuri balik ke dokumen
 // sumbernya, bukan format "<KodeBank>-<MMDD>-<urutan>" ala rekening koran.
+//
+// [BARU] Kalau no_invoice KOSONG (PDF tidak mencantumkan no transaksi),
+// prioritas berikutnya row.voucher -- nomor pengganti PERMANEN format
+// "PJK-MMYY-urutan" yang backend isi dari counter database (lihat
+// db_client.py::beri_nomor_voucher_draf_jurnal), jadi tetap konsisten
+// walau file yang sama diupload ulang. Fallback terakhir baru
+// PJ-IMPORT-{batchTag}-{baris} yang cuma dipakai kalau upload ini
+// dikirim TANPA client aktif (client_id null -- lihat komentar di tipe
+// DrafJurnalRow.voucher di atas), karena backend tidak sempat sentuh
+// draf_jurnal sama sekali dalam kasus itu.
 function drafJurnalPenjualanToTransactions(rows: DrafJurnalRow[], batchTag: string): Transaction[] {
   const out: Transaction[] = [];
 
@@ -204,10 +250,15 @@ function drafJurnalPenjualanToTransactions(rows: DrafJurnalRow[], batchTag: stri
     const belumTerkategori = (row.sumber_kategori || '').includes('Belum Terkategori');
     const catatanReview = row.catatan
       || (belumTerkategori ? 'Belum terkategori otomatis — cek kembali akun sebelum diposting.' : undefined);
-    const voucherNo = row.no_invoice || `PJ-IMPORT-${batchTag}-${row.baris}`;
+    const voucherNo = row.no_invoice || row.voucher || `PJ-IMPORT-${batchTag}-${row.baris}`;
 
-    const categoryDebet = GROUP_LABELS[classifyByAccountName(row.nama_akun_debet)];
-    const categoryKredit = GROUP_LABELS[classifyByAccountName(row.nama_akun_kredit)];
+    // [UPDATE -- JALUR B SELESAI] proses_file_jurnal_penjualan_kasir kini
+    // ikut mengirim row.kategori (hampir selalu "Revenue" -- lihat
+    // kategorikan_penjualan_dengan_ai) untuk baris yang lewat AI. Baris yang
+    // resolve dari pola historis/aturan standar penjualan tetap null dari
+    // backend, jadi fallback ke classifyJournalPairCategory tetap dipakai
+    // sebagai cadangan, sama seperti jalur rekening koran.
+    const category = row.kategori || classifyJournalPairCategory(row.nama_akun_debet, row.nama_akun_kredit);
 
     const base = {
       date: row.tanggal || '',
@@ -227,22 +278,22 @@ function drafJurnalPenjualanToTransactions(rows: DrafJurnalRow[], batchTag: stri
     };
     out.push({
       id: `${jeId}-D`,
-      accountCode: row.no_akun_debet || '-',
+      accountCode: row.no_akun_debet ? String(row.no_akun_debet) : '-',
       accountName: row.nama_akun_debet || 'Belum Terkategori',
       debit: row.jml_debet || 0,
       credit: 0,
       type: 'debit',
-      category: categoryDebet,
+      category,
       ...base,
     });
     out.push({
       id: `${jeId}-K`,
-      accountCode: row.no_akun_kredit || '-',
+      accountCode: row.no_akun_kredit ? String(row.no_akun_kredit) : '-',
       accountName: row.nama_akun_kredit || 'Belum Terkategori',
       debit: 0,
       credit: row.jml_kredit || 0,
       type: 'credit',
-      category: categoryKredit,
+      category,
       ...base,
     });
   });
@@ -281,6 +332,12 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
   const [fileName, setFileName] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [hasil, setHasil] = useState<RekeningKoranHasil | null>(null);
+  // [BARU] Daftar baris yang kode banknya cuma hasil tebakan otomatis
+  // (bukan dari daftar bank dikenal maupun Claude) — lihat
+  // main.py::_proses_dan_simpan_satu_file & db_client.py::
+  // beri_nomor_voucher_draf_jurnal. Kosong kalau tidak ada client aktif
+  // saat upload (backend tidak mint voucher sama sekali untuk kasus itu).
+  const [peringatanVoucher, setPeringatanVoucher] = useState<string[]>([]);
   const [batchTag] = useState(() => Date.now().toString(36));
   // Default OFF -- kategorisasi cukup dari pola historis + kata kunci COA,
   // tanpa memanggil API AI pihak ketiga sama sekali. Baris yang tidak
@@ -341,10 +398,19 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
       // RekeningKoranHasil di atas.
       const rk: RekeningKoranHasil | undefined = data?.hasil?.[jenisSumber];
       if (!rk || !rk.draf_jurnal || rk.draf_jurnal.length === 0) {
-        throw new Error('Tidak ada baris transaksi yang berhasil dibaca dari file ini.');
+        // [BARU] Sebelumnya pesan generik ini membuang alasan spesifik
+        // kenapa file gagal dibaca (mis. header tidak dikenali, atau
+        // fallback ekstraksi AI juga gagal — lihat sheet_dilewati dari
+        // backend, ak.proses_file_rekening_koran) — sekarang ditampilkan
+        // supaya user tahu apa yang perlu diperbaiki, bukan cuma "gagal".
+        const alasan = Array.isArray(rk?.sheet_dilewati) && rk.sheet_dilewati.length > 0
+          ? rk.sheet_dilewati.join(' ')
+          : 'Tidak ada baris transaksi yang berhasil dibaca dari file ini.';
+        throw new Error(alasan);
       }
 
       setHasil(rk);
+      setPeringatanVoucher(Array.isArray(data?.peringatan_voucher) ? data.peringatan_voucher : []);
       setStep('preview');
     } catch (e: any) {
       setErrorMsg(e?.message || 'Gagal memproses file. Coba lagi.');
@@ -384,7 +450,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
         className="bg-card border border-border rounded-xl shadow-card-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden fade-in flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -510,7 +576,15 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   <p className="text-2xs text-muted-foreground mt-0.5">
                     Kalau dimatikan (default), kategorisasi hanya dari pola historis &amp; kata kunci COA —
                     tanpa API key, tanpa panggilan ke server AI pihak ketiga. Baris yang tidak cocok akan
-                    ditandai "Belum Terkategori" untuk direview manual.
+                    ditandai "Belum Terkategori" untuk direview manual. Toggle ini juga dipakai untuk
+                    bantuan Claude mengenali kode bank pada nomor voucher kalau nama sheet/banknya tidak
+                    baku — kalau dimatikan, kode bank yang ambigu akan ditebak dari kata terakhir saja
+                    dan ditandai untuk dicek manual.
+                  </p>
+                  <p className="text-2xs text-muted-foreground mt-1">
+                    [BARU] Toggle ini juga menyalakan fallback pembacaan file lewat AI kalau rekening
+                    koran gagal dikenali otomatis (format/istilah kolom bank tsb tidak baku) — nyalakan
+                    ini kalau file dari bank lain gagal dimuat.
                   </p>
                 </div>
               </label>
@@ -616,6 +690,23 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                     {hasil.ringkasan.jumlah_perlu_review} baris belum terkategori otomatis — akun yang dipilih
                     sistem perlu <span className="font-600">dicek manual</span> sebelum baris ini diposting.
                   </p>
+                </div>
+              )}
+
+              {/* [BARU] Baris yang KODE BANK-nya (dipakai untuk prefix nomor
+                  voucher) cuma hasil tebakan kasar — bukan dari daftar bank
+                  dikenal maupun Claude. Nomor voucher tetap dibuat (tidak
+                  pernah gagal total), tapi prefix-nya perlu dicek manual. */}
+              {peringatanVoucher.length > 0 && (
+                <div className="flex items-start gap-2 bg-warning-subtle border border-warning/20 rounded-lg p-3">
+                  <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-foreground">
+                    <p>
+                      {peringatanVoucher.length} baris punya kode bank di nomor voucher yang cuma{' '}
+                      <span className="font-600">hasil tebakan otomatis</span> (nama bank/sheet tidak
+                      dikenali) — cek kembali nomor voucher baris tersebut setelah import.
+                    </p>
+                  </div>
                 </div>
               )}
 

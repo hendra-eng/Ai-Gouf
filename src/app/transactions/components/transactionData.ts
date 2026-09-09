@@ -81,8 +81,27 @@ export const CATEGORY_TO_GROUP: Record<string, TransactionGroup> = {
   Utilities: 'expense',
   Tax: 'cash_payment',
   'AP Payment': 'cash_payment',
+  CapEx: 'cash_payment',
   Financing: 'cash_reserve',
-  CapEx: 'other',
+  // [DIUBAH] 'Lainnya' — kategori fallback resmi untuk baris hasil import
+  // yang nama akunnya tidak cocok kata kunci manapun (lihat
+  // classifyAccountNameToCategory di bawah). Sebelumnya baris seperti ini
+  // "dipinjamkan" ke kategori CapEx supaya mendarat di grup 'other', tapi
+  // sekarang CapEx sudah punya arti bisnis sendiri (grup 'cash_payment'),
+  // jadi butuh kategori fallback terpisah yang tetap mengarah ke 'other'
+  // supaya baris ambigu tetap terlihat di halaman Other untuk ditinjau,
+  // bukan ikut nyasar ke Cash Payment seolah-olah itu pembayaran CapEx.
+  Lainnya: 'other',
+  // [BARU] 5 label grup ini bisa dipilih langsung sebagai kategori manual di
+  // TransactionEditModal.tsx (KNOWN_CATEGORIES) — sebelumnya tidak terdaftar
+  // di sini sama sekali, jadi kalau dipilih malah jatuh ke fallback tebakan
+  // classifyByAccountName(accountName), bukan ke grup yang namanya sendiri.
+  // Dipetakan langsung supaya konsisten: pilih "Sales" ya pasti masuk Sales.
+  Sales: 'sales',
+  Expense: 'expense',
+  'Cash Payment': 'cash_payment',
+  'Cash Reserve': 'cash_reserve',
+  Other: 'other',
 };
 
 // [BARU] Fallback KHUSUS untuk baris hasil "Import Rekening Koran" — baris
@@ -106,6 +125,69 @@ export function classifyByAccountName(accountName: string | undefined | null): T
 // tampil di sub halaman manapun, baik data statis maupun hasil import.
 export function getTransactionGroup(tx: Transaction): TransactionGroup {
   return CATEGORY_TO_GROUP[tx.category] || classifyByAccountName(tx.accountName);
+}
+
+// ─── KATEGORISASI GRANULAR HASIL IMPORT ────────────────────────────────────
+// [DIUBAH] Sebelumnya baris hasil import (rekening koran / PDF penjualan
+// kasir) diberi field `category` berupa salah satu dari 5 LABEL GRUP
+// (Sales/Expense/Cash Payment/Cash Reserve/Other — lewat GROUP_LABELS), jadi
+// kolom "Kategori" di tabel & dropdown filter di TransactionsFilterBar (yang
+// isinya cuma 11 kategori resmi: Revenue, Payroll, Software, dst) tidak
+// pernah cocok untuk data hasil import — makanya semua baris import tampil
+// "Other" dan tidak bisa difilter. Fungsi-fungsi di bawah mengklasifikasi
+// LANGSUNG ke salah satu dari 11 kategori resmi tsb, bukan ke label grup.
+// getTransactionGroup() di atas tetap bisa memetakan kategori resmi ini ke
+// grup sub halaman lewat CATEGORY_TO_GROUP seperti sebelumnya — tidak ada
+// yang berubah dari sisi pengelompokan 5 sub halaman.
+function namaAkunAdalahKasBank(nama: string | null | undefined): boolean {
+  const n = (nama || '').toLowerCase();
+  return n.includes('kas') || n.includes('bank');
+}
+
+// Klasifikasi SATU nama akun (bukan Kas/Bank) ke salah satu dari 11 kategori
+// resmi (+ fallback 'Lainnya'). Fallback terakhir (nama akun tidak dikenali /
+// generic "Beban ..." tanpa kata kunci lebih spesifik) jatuh ke 'Lainnya' —
+// satu-satunya kategori yang memetakan ke grup 'other' (lihat
+// CATEGORY_TO_GROUP), jadi baris ambigu mendarat di halaman Other untuk
+// ditinjau, BUKAN ikut nebeng ke kategori CapEx seperti sebelumnya (CapEx
+// sekarang punya arti bisnis sendiri di grup Cash Payment, jadi tidak boleh
+// lagi dipakai sebagai keranjang sampah). Baris seperti ini sudah otomatis
+// ditandai "Belum terkategori otomatis — cek kembali" oleh
+// drafJurnalToTransactions, jadi tetap butuh review manual oleh user apa pun
+// kategori tebakannya.
+function classifyAccountNameToCategory(accountName: string | null | undefined): string {
+  const n = (accountName || '').toLowerCase();
+  if (n.includes('pendapatan') || n.includes('piutang') || n.includes('penjualan')) return 'Revenue';
+  if (n.includes('pajak') || n.includes('ppn') || n.includes('pph') || n.includes('pbb')) return 'Tax';
+  if (n.includes('hutang usaha') || n.includes('hutang dagang') || n.includes('utang usaha') || n.includes('utang dagang')) return 'AP Payment';
+  if (n.includes('gaji') || n.includes('honor') || n.includes('tunjangan') || n.includes('thr') || n.includes('upah')) return 'Payroll';
+  if (n.includes('software') || n.includes('lisensi') || n.includes('license') || n.includes('langganan') || n.includes('subscription') || n.includes('saas')) return 'Software';
+  if (n.includes('sewa')) return 'Rent';
+  if (n.includes('marketing') || n.includes('iklan') || n.includes('promosi')) return 'Marketing';
+  if (n.includes('perjalanan') || n.includes('dinas') || n.includes('tiket') || n.includes('akomodasi')) return 'Travel';
+  if (n.includes('listrik') || n.includes('air') || n.includes('internet') || n.includes('telekomunikasi') || n.includes('telepon') || n.includes('utilitas') || n.includes('pln') || n.includes('pdam')) return 'Utilities';
+  if (n.includes('aset tetap') || n.includes('peralatan') || n.includes('mesin') || n.includes('kendaraan') || n.includes('gedung') || n.includes('inventaris')) return 'CapEx';
+  if (n.includes('deposito') || n.includes('pinjaman') || n.includes('modal') || n.includes('obligasi') || n.includes('giro') || n.includes('tabungan')) return 'Financing';
+  return 'Lainnya';
+}
+
+// Klasifikasi SEPASANG kaki jurnal (debet + kredit) sekaligus ke SATU
+// kategori resmi yang sama untuk kedua kaki — meniru pola yang sudah dipakai
+// data statis di ALL_TRANSACTIONS (mis. tx-001/tx-002 sama-sama 'Revenue'
+// walau salah satu kakinya akun Kas & Bank). Kalau salah satu kaki adalah
+// akun Kas/Bank, kategori diambil dari kaki LAWANNYA (akun bisnisnya, bukan
+// akun kasnya) — supaya mis. penerimaan pembayaran invoice tetap muncul
+// sebagai 'Revenue', bukan ikut kategori Kas/Bank yang tidak spesifik.
+export function classifyJournalPairCategory(
+  namaAkunDebet: string | null | undefined,
+  namaAkunKredit: string | null | undefined
+): string {
+  const debetKasBank = namaAkunAdalahKasBank(namaAkunDebet);
+  const kreditKasBank = namaAkunAdalahKasBank(namaAkunKredit);
+  if (debetKasBank && !kreditKasBank) return classifyAccountNameToCategory(namaAkunKredit);
+  if (kreditKasBank && !debetKasBank) return classifyAccountNameToCategory(namaAkunDebet);
+  if (debetKasBank && kreditKasBank) return 'Financing'; // transfer antar akun kas/bank
+  return classifyAccountNameToCategory(namaAkunDebet);
 }
 
 export const GROUP_LABELS: Record<TransactionGroup, string> = {

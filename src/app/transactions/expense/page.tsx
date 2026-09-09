@@ -7,7 +7,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction, PAYMENT_STATUS_VARIANT } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, txAmount, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
 import { expenseOutstanding, expenseBillStatus } from '../lib/apBridge';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
@@ -65,11 +65,17 @@ export default function ExpensePage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  const totalExpense = expenseTx.reduce((s, t) => s + txAmount(t), 0);
-  const txCount = expenseTx.length;
+  // [DIUBAH] Sama seperti Sales — dikelompokkan per NOMOR JURNAL (jeId)
+  // dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki jurnal
+  // (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun Beban saat beban
+  // diakui — keduanya sama-sama masuk expenseTx) tidak terhitung dua kali.
+  // Lihat groupAnalytics.ts untuk detail (uniqueJournalTotal/uniqueJournalCount/
+  // countJournalsByStatus/countJournalsByCategory).
+  const totalExpense = uniqueJournalTotal(expenseTx);
+  const txCount = uniqueJournalCount(expenseTx);
   const avgTxValue = txCount > 0 ? totalExpense / txCount : 0;
-  const unpostedCount = expenseTx.filter(t => t.status === 'Unposted').length;
-  const recurringLike = expenseTx.filter(t => ['Payroll', 'Rent', 'Software', 'Utilities'].includes(t.category)).length;
+  const unpostedCount = countJournalsByStatus(expenseTx, 'Unposted');
+  const recurringLike = countJournalsByCategory(expenseTx, ['Payroll', 'Rent', 'Software', 'Utilities']);
 
   // [BARU] Nilai yang belum dibayar ke vendor di antara transaksi Expense —
   // inilah angka yang "mengalir" ke halaman Account Payable (lihat apBridge.ts).

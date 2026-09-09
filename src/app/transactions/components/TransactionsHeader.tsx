@@ -2,12 +2,16 @@
 import React, { useState } from 'react';
 import { Download, Upload, Plus, Trash2, Archive, Calendar, ChevronDown, Check, FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { useActiveClient } from '@/lib/activeClient';
+import { COMPANY } from '@/lib/financialData';
 
 interface TransactionsHeaderProps {
   totalCount: number;
   selectedCount: number;
   onImportClick: () => void;
   onExportJournalPdf: () => void;
+  onExportExcel: () => void;
+  onNewJournalClick: () => void;
   selectedYear: number | 'all';
   onYearChange: (year: number | 'all') => void;
   yearOptions: (number | 'all')[];
@@ -18,14 +22,19 @@ export default function TransactionsHeader({
   selectedCount,
   onImportClick,
   onExportJournalPdf,
+  onExportExcel,
+  onNewJournalClick,
   selectedYear,
   onYearChange,
   yearOptions,
 }: TransactionsHeaderProps) {
   const [yearMenuOpen, setYearMenuOpen] = useState(false);
+  const { activeClientName } = useActiveClient();
+  const companyName = activeClientName || COMPANY.name;
 
   const handleExport = () => {
-    toast.success('Export dimulai', { description: `${totalCount} transaksi akan diunduh sebagai Excel` });
+    onExportExcel();
+    toast.success('Export berhasil', { description: `${totalCount} transaksi diunduh sebagai Excel` });
   };
 
   const handleExportPdf = () => {
@@ -42,7 +51,7 @@ export default function TransactionsHeader({
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">Transaksi</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Jurnal entri dan transaksi keuangan — PT Nusantara Teknologi Indonesia
+          Jurnal entri dan transaksi keuangan — {companyName}
         </p>
         <div className="flex items-center gap-2 mt-2">
           <span className="badge-info">{totalCount.toLocaleString('id-ID')} transaksi</span>
@@ -120,7 +129,7 @@ export default function TransactionsHeader({
           Download Jurnal (PDF)
         </button>
         <button
-          onClick={() => toast.info('Form jurnal baru', { description: 'Buka form untuk membuat jurnal entri baru' })}
+          onClick={onNewJournalClick}
           className="btn-primary text-xs py-1.5 gap-1.5"
         >
           <Plus size={13} />

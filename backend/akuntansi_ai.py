@@ -1147,6 +1147,400 @@ def parse_sheet_bank(ws, nama_bank: str) -> pd.DataFrame:
     return df
 
 
+# ============================================================
+# [BARU] FALLBACK EKSTRAKSI REKENING KORAN LEWAT AI (Claude/Groq)
+# ============================================================
+# Dipanggil HANYA kalau parse_sheet_bank (deteksi kata "KETERANGAN"/"SALDO"
+# di header, lihat _cari_header_row) GAGAL total di SEMUA sheet file yang
+# diupload sebagai rekening_koran -- lihat pemanggilnya di
+# proses_file_rekening_koran(). Tujuannya: bank/format export yang istilah
+# headernya tidak baku (bukan pakai kata persis "KETERANGAN"/"SALDO"/dst,
+# atau baris header-nya di luar 15 baris pertama, atau struktur tabelnya
+# tidak rapi) TETAP bisa diproses, tanpa perlu menambah keyword baru
+# manual satu-satu tiap kali ada bank/format baru.
+#
+# Kolom hasilnya SENGAJA dibuat identik dgn output parse_sheet_bank() di
+# atas (no, bank, tanggal, keterangan, mutasi_debet, mutasi_kredit, saldo,
+# dst, kolom jurnal debet/kredit selalu kosong) supaya df hasil fallback
+# ini bisa langsung masuk ke pipeline proses_dataframe() (pola historis ->
+# kata kunci COA -> AI kategorisasi) yang SAMA PERSIS, tidak perlu logic
+# terpisah di proses_file_rekening_koran().
+
+_KOLOM_HASIL_REKENING_KORAN = [
+    "no", "bank", "tanggal", "keterangan", "mutasi_debet", "mutasi_kredit",
+    "saldo", "supplier_cust", "voucher", "no_transaksi",
+    "no_akun_debet", "nama_akun_debet", "jml_debet",
+    "no_akun_kredit", "nama_akun_kredit", "jml_kredit",
+]
+
+# Maks karakter teks mentah (hasil ekstraksi PDF/dump Excel) yang dikirim
+# ke AI -- dijaga jangan terlalu besar (biaya token + risiko output
+# terpotong di sisi model, lihat catatan max_tokens di
+# _panggil_ai_ekstrak_rekening_koran). ~120rb karakter setara kira-kira
+# rekening koran 1 tahun penuh utk 1 bank pada kebanyakan kasus nyata --
+# kalau file lebih besar dari ini, dipotong & user diberi peringatan jelas
+# supaya split per-bulan/per-bank kalau hasil ekstraksi ternyata tidak
+# lengkap.
+_MAKS_KARAKTER_TEKS_EKSTRAKSI_AI = 120_000
+
+_SYSTEM_PROMPT_EKSTRAKSI_REKENING_KORAN = (
+    "Kamu adalah asisten akuntan yang membaca REKENING KORAN BANK (mutasi "
+    "rekening/bank statement) dari berbagai bank, dalam format apa pun "
+    "(istilah kolom bisa beda-beda tiap bank -- 'Keterangan'/'Uraian'/"
+    "'Description', 'Saldo'/'Balance', dst). Tugasmu HANYA membaca & "
+    "menyalin ulang data yang SUDAH ADA di teks yang diberikan menjadi "
+    "baris-baris transaksi terstruktur -- JANGAN mengarang, menghitung "
+    "ulang, atau menebak angka/tanggal yang tidak jelas terbaca; kalau "
+    "sebuah nilai memang tidak ada atau tidak terbaca, kembalikan null "
+    "untuk field itu, JANGAN mengisi 0 atau tebakan. Kalau teks yang "
+    "diberikan BUKAN rekening koran bank sama sekali (mis. ternyata "
+    "invoice, slip gaji, laporan lain), set adalah_rekening_koran=false "
+    "dan jelaskan alasannya secara singkat -- JANGAN memaksakan membuat "
+    "baris transaksi dari data yang tidak sesuai."
+)
+
+_TOOL_EKSTRAKSI_REKENING_KORAN = {
+    "name": "kirim_hasil_ekstraksi_rekening_koran",
+    "description": "Kirim hasil ekstraksi baris mutasi rekening koran dari teks yang diberikan.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "adalah_rekening_koran": {
+                "type": "boolean",
+                "description": "true kalau teks ini memang berisi mutasi rekening koran bank.",
+            },
+            "alasan_bukan_rekening_koran": {
+                "type": "string",
+                "description": "Diisi HANYA kalau adalah_rekening_koran=false -- jelaskan singkat ini dokumen apa.",
+            },
+            "nama_bank_terdeteksi": {
+                "type": ["string", "null"],
+                "description": "Nama bank kalau tertulis/terlihat di teks (mis. 'BCA', 'Mandiri'), null kalau tidak jelas.",
+            },
+            "transaksi": {
+                "type": "array",
+                "description": "Setiap baris mutasi, URUT sesuai urutan tanggal/baris di dokumen asli.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tanggal": {"type": ["string", "null"], "description": "Format YYYY-MM-DD, null kalau tidak terbaca."},
+                        "keterangan": {"type": ["string", "null"]},
+                        "mutasi_debet": {"type": ["number", "null"], "description": "Nominal keluar/debet di baris ini, null kalau tidak ada."},
+                        "mutasi_kredit": {"type": ["number", "null"], "description": "Nominal masuk/kredit di baris ini, null kalau tidak ada."},
+                        "saldo": {"type": ["number", "null"], "description": "Saldo berjalan setelah baris ini, null kalau tidak ada kolom saldo."},
+                    },
+                    "required": ["tanggal", "keterangan", "mutasi_debet", "mutasi_kredit", "saldo"],
+                },
+            },
+        },
+        "required": ["adalah_rekening_koran", "transaksi"],
+    },
+}
+
+
+def _potong_teks_untuk_ai(teks: str, nama_file: str) -> tuple[str, bool]:
+    """Potong teks mentah supaya tidak melebihi _MAKS_KARAKTER_TEKS_EKSTRAKSI_AI.
+    Balik (teks_final, dipotong: bool) -- `dipotong` dipakai pemanggil utk
+    menambah peringatan eksplisit ke user (lihat proses_file_rekening_koran)."""
+    if len(teks) <= _MAKS_KARAKTER_TEKS_EKSTRAKSI_AI:
+        return teks, False
+    return teks[:_MAKS_KARAKTER_TEKS_EKSTRAKSI_AI], True
+
+
+def _ekstrak_teks_pdf_penuh_untuk_ai(isi_bytes: bytes, nama_file: str) -> str:
+    """[BARU] Ekstraksi teks PENUH (semua halaman, tanpa sampel/potongan) dari
+    PDF pakai pdfplumber -- versi lokal & sederhana khusus fallback ekstraksi
+    AI di modul ini (BUKAN reuse ai_file_reader._ekstrak_teks_pdf_penuh yang
+    private/internal ke modul lain), supaya tidak bergantung pada fungsi
+    underscore-prefixed di modul lain yang bisa berubah sewaktu-waktu tanpa
+    kompatibilitas terjamin ke sini."""
+    import pdfplumber
+
+    bagian: list[str] = []
+    with pdfplumber.open(io.BytesIO(isi_bytes)) as pdf:
+        for pageno, page in enumerate(pdf.pages, start=1):
+            teks_halaman = page.extract_text() or ""
+            if teks_halaman.strip():
+                bagian.append(f"\n=== Halaman {pageno} ===\n{teks_halaman}")
+    return "\n".join(bagian)
+
+
+def _dump_teks_penuh_xlsx_untuk_ai(isi_bytes: bytes, nama_file: str) -> str:
+    """[BARU] Dump SEMUA baris semua sheet .xlsx/.xlsm jadi teks polos, TANPA
+    batas sampel 30-baris/sheet ala ai_file_reader._ekstrak_body_xlsx (fungsi
+    itu memang untuk RINGKASAN preview, bukan utk ekstraksi data lengkap --
+    rekening koran 1 bulan saja biasanya sudah lebih dari 30 baris, jadi
+    kalau dipakai di sini transaksi di luar 30 baris pertama akan hilang
+    total dari hasil ekstraksi AI). Dibungkus _potong_teks_untuk_ai() oleh
+    pemanggil kalau hasilnya tetap kepanjangan."""
+    wb = openpyxl.load_workbook(io.BytesIO(isi_bytes), read_only=True, data_only=True)
+    bagian: list[str] = []
+    for nama_sheet in wb.sheetnames:
+        if "coa" in nama_sheet.strip().lower():
+            continue  # sheet COA bukan bagian dari mutasi rekening koran
+        ws = wb[nama_sheet]
+        bagian.append(f"\n=== Sheet '{nama_sheet}' ===")
+        for baris in ws.iter_rows(values_only=True):
+            if all(v is None for v in baris):
+                continue
+            bagian.append(" | ".join("" if v is None else str(v) for v in baris))
+    wb.close()
+    return "\n".join(bagian)
+
+
+_FOLDER_CACHE_EKSTRAKSI_RK_AI = Path(__file__).parent / "cache_ekstraksi_rk_ai"
+
+
+def _hash_isi_bytes(isi_bytes: bytes) -> str:
+    return hashlib.sha256(isi_bytes).hexdigest()
+
+
+def _path_cache_ekstraksi_rk_ai(hash_isi: str) -> Path:
+    _FOLDER_CACHE_EKSTRAKSI_RK_AI.mkdir(exist_ok=True)
+    return _FOLDER_CACHE_EKSTRAKSI_RK_AI / f"{hash_isi}.json"
+
+
+def _muat_cache_ekstraksi_rk_ai(hash_isi: str) -> Optional[dict]:
+    """[BARU -- HEMAT BIAYA] Cache disk hasil ekstraksi AI, keyed dari hash
+    ISI FILE (byte-per-byte, bukan nama file) -- supaya upload ULANG file
+    yang SAMA PERSIS (retry karena error jaringan, testing berkali-kali,
+    dst) TIDAK memanggil API berbayar lagi. Permanen sampai dibersihkan
+    manual (pola sama dgn _FOLDER_CACHE_PDF di ai_file_reader.py) --
+    cocok karena isi rekening koran yang sudah final tidak akan berubah."""
+    path = _path_cache_ekstraksi_rk_ai(hash_isi)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None  # cache rusak/korup -> dianggap cache-miss, jangan sampai crash
+
+
+def _simpan_cache_ekstraksi_rk_ai(hash_isi: str, hasil: dict) -> None:
+    path = _path_cache_ekstraksi_rk_ai(hash_isi)
+    try:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(hasil, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except Exception as e:  # noqa: BLE001
+        print(f"[PERINGATAN] Gagal simpan cache ekstraksi AI rekening koran ({path.name}): {e}")
+
+
+def _minta_json_ekstraksi_dari_groq(prompt: str, system_prompt: str, max_tokens: int) -> Optional[str]:
+    """[BARU -- TIER 1, HEMAT BIAYA] Coba Groq (GROQ_API_KEY_KATEGORISASI
+    atau GROQ_API_KEY) DULU sebelum Claude -- Groq jauh lebih murah/cepat
+    utk kerja "baca & salin ulang jadi JSON" seperti ini (bukan reasoning
+    berat), konsisten dgn keputusan yang sama utk kategorisasi jurnal
+    (lihat catatan _konfigurasi_provider_kategorisasi: Groq/DeepSeek dulu,
+    Claude belakangan). Balikin None (BUKAN raise) kalau key kosong atau
+    panggilan gagal apa pun alasannya -- pemanggil akan lanjut ke tier
+    Claude, jangan sampai kegagalan Groq menghentikan proses total."""
+    api_key = os.environ.get("GROQ_API_KEY_KATEGORISASI") or os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return None
+    try:
+        import openai
+        client = openai.OpenAI(
+            api_key=api_key, base_url="https://api.groq.com/openai/v1",
+            timeout=120.0, max_retries=0,
+        )
+        resp = client.chat.completions.create(
+            model=os.environ.get("GROQ_MODEL_KATEGORISASI", "openai/gpt-oss-120b"),
+            max_tokens=max_tokens,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return resp.choices[0].message.content
+    except Exception as e:  # noqa: BLE001
+        print(f"[PERINGATAN] Fallback ekstraksi rekening koran via Groq gagal ({e}) -- coba Claude.")
+        return None
+
+
+def _panggil_ai_ekstrak_rekening_koran(isi_bytes: bytes, nama_file: str) -> pd.DataFrame:
+    """
+    [BARU] Fallback terakhir kalau parser rule-based (parse_sheet_bank, cari
+    kata "KETERANGAN"+"SALDO" di header) gagal mengenali file sebagai
+    rekening koran SAMA SEKALI. Alih-alih menyerah, kirim ISI MENTAH file
+    (teks penuh PDF, atau dump semua sel Excel) ke AI dan minta ia membaca
+    & menyusun ulang baris transaksinya sendiri, TANPA bergantung pada kata
+    kunci header baku.
+
+    [BIAYA -- PENTING] Ekstraksi 1 file lewat Claude Sonnet bisa +-Rp6rb
+    (~USD 0.40) kalau filenya besar (banyak halaman/baris) -- signifikan
+    kalau dipakai puluhan kali. Jadi SEKARANG 3 lapis:
+    1. CACHE disk per hash isi file -- upload ulang file yang SAMA PERSIS
+       tidak pernah bayar 2x (lihat _muat_cache_ekstraksi_rk_ai), TERMASUK
+       kalau hasilnya "bukan rekening koran"/"tidak ada transaksi valid"
+       -- file yang memang gagal dibaca AI dan diupload ulang tanpa
+       diubah TIDAK akan memanggil API lagi, cuma langsung balikin
+       kesimpulan gagal yang sama dari cache (lihat blok cache di bawah).
+    2. TIER PROVIDER: coba Groq dulu (nyaris gratis, cukup akurat utk kerja
+       'baca & salin ulang' begini) -- Claude (Haiku, BUKAN Sonnet, jauh
+       lebih murah) HANYA dipakai kalau Groq gagal/key kosong.
+    3. Kegagalan TEKNIS (network/API error, respons AI terpotong) TIDAK
+       dicache -- itu beda dgn kesimpulan AI ttg isi file, jadi harus
+       tetap boleh dicoba ulang.
+
+    Raise FormatTidakDikenali kalau:
+    - ekstensi file tidak didukung jalur ini (baru dukung .pdf/.xlsx/.xlsm/.csv),
+    - AI sendiri menyimpulkan ini BUKAN rekening koran (adalah_rekening_koran=false),
+    - tidak ada satu pun baris transaksi valid yang berhasil diekstrak,
+    - pemanggilan AI gagal total (Groq maupun Claude).
+
+    Return DataFrame dgn skema identik parse_sheet_bank() (lihat
+    _KOLOM_HASIL_REKENING_KORAN) -- kolom jurnal debet/kredit dibiarkan
+    kosong, tetap lewat proses_dataframe() seperti biasa utk kategorisasi.
+    df.attrs["diekstrak_via_ai"] = True ditempel supaya pemanggil bisa
+    menambahkan peringatan eksplisit ke user (data ini hasil bacaan AI,
+    BUKAN parser baku -- tetap perlu direview).
+    """
+    hash_isi = _hash_isi_bytes(isi_bytes)
+    hasil = _muat_cache_ekstraksi_rk_ai(hash_isi)
+    dari_cache = hasil is not None
+
+    if hasil is None:
+        from modules.claude_client import ClaudeError, panggil_claude_teks
+
+        ekstensi = os.path.splitext(nama_file)[1].lower()
+
+        if ekstensi == ".pdf":
+            teks_mentah = _ekstrak_teks_pdf_penuh_untuk_ai(isi_bytes, nama_file)
+        elif ekstensi in (".xlsx", ".xlsm"):
+            teks_mentah = _dump_teks_penuh_xlsx_untuk_ai(isi_bytes, nama_file)
+        elif ekstensi == ".csv":
+            try:
+                teks_mentah = isi_bytes.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                teks_mentah = isi_bytes.decode("latin-1")
+        else:
+            raise FormatTidakDikenali(
+                f"'{nama_file}' tidak dikenali sebagai rekening koran, dan fallback ekstraksi AI "
+                f"belum mendukung ekstensi '{ekstensi}' (baru: .pdf, .xlsx, .xlsm, .csv)."
+            )
+
+        if not teks_mentah.strip():
+            raise FormatTidakDikenali(f"'{nama_file}' tidak berisi teks yang bisa dibaca (kosong/hasil scan gambar).")
+
+        teks_mentah, dipotong = _potong_teks_untuk_ai(teks_mentah, nama_file)
+
+        prompt = (
+            f"Berikut isi file '{nama_file}' (hasil ekstraksi teks mentah dari dokumen asli):\n\n"
+            f"{teks_mentah}\n\n"
+            "Baca teks di atas dan tentukan apakah ini rekening koran bank. Kalau ya, susun SEMUA baris "
+            "mutasi/transaksi yang ada menjadi daftar terstruktur. Jawab HANYA dalam format JSON yang valid "
+            "(tanpa markdown code fence, tanpa teks tambahan apa pun sebelum/sesudahnya), mengikuti skema "
+            f"berikut PERSIS:\n{json.dumps(_TOOL_EKSTRAKSI_REKENING_KORAN['input_schema'], ensure_ascii=False, indent=2)}"
+        )
+
+        provider_dipakai = None
+        respons_teks = _minta_json_ekstraksi_dari_groq(
+            prompt, _SYSTEM_PROMPT_EKSTRAKSI_REKENING_KORAN, max_tokens=16000,
+        )
+        if respons_teks is not None:
+            provider_dipakai = "Groq (gratis)"
+
+        if respons_teks is None:
+            # Tier 2 -- Claude Haiku (BUKAN Sonnet/Opus) -- jauh lebih murah,
+            # tetap cukup akurat utk kerja "salin ulang jadi JSON terstruktur"
+            # (bukan analisis/reasoning berat yang butuh model besar).
+            try:
+                respons_teks = panggil_claude_teks(
+                    prompt,
+                    modul_pemanggil="ekstraksi_rekening_koran_ai",
+                    system_prompt=_SYSTEM_PROMPT_EKSTRAKSI_REKENING_KORAN,
+                    max_tokens=16000,
+                    model="claude-haiku-4-5-20251001",
+                )
+                provider_dipakai = "Claude Haiku (berbayar, biaya jauh lebih rendah dari Sonnet)"
+            except ClaudeError as e:
+                raise FormatTidakDikenali(
+                    f"'{nama_file}' tidak dikenali oleh parser standar, dan fallback ekstraksi AI juga gagal "
+                    f"dipanggil (Groq maupun Claude): {e}. Cek GROQ_API_KEY/ANTHROPIC_API_KEY di backend."
+                ) from e
+
+        respons_bersih = re.sub(r"^```(json)?|```$", "", respons_teks.strip(), flags=re.MULTILINE).strip()
+        try:
+            hasil = json.loads(respons_bersih)
+        except json.JSONDecodeError as e:
+            raise FormatTidakDikenali(
+                f"'{nama_file}': fallback AI ({provider_dipakai}) membalas dalam format yang tidak bisa "
+                f"dibaca (kemungkinan jawaban terpotong karena file terlalu besar -- coba split file per "
+                f"bulan/per bank). Detail: {e}"
+            ) from e
+
+        hasil["_provider_dipakai"] = provider_dipakai
+        hasil["_dipotong"] = dipotong
+        # [DIUBAH -- HEMAT BIAYA] Sebelumnya HANYA hasil sukses (rekening
+        # koran & ada transaksinya) yang dicache -- kesimpulan "bukan
+        # rekening koran" / "tidak ada transaksi valid" TIDAK dicache,
+        # dengan alasan supaya user yang perbaiki file (nama sama, isi
+        # beda dikit) tidak nyangkut ke hasil lama. Tapi alasan itu sudah
+        # otomatis aman lewat HASH ISI FILE (isi beda -> hash beda ->
+        # cache-miss dengan sendirinya), jadi tidak cache hasil gagal
+        # cuma bikin user bayar API BERULANG KALI tiap upload ulang file
+        # yang SAMA PERSIS yang memang gagal dibaca AI (mis. testing,
+        # atau retry manual di UI) -- ini penyebab biaya membengkak.
+        # Sekarang: cache SEMUA jawaban valid dari AI (apa pun
+        # kesimpulannya), asal itu memang jawaban JSON yang berhasil
+        # di-parse -- BUKAN kegagalan teknis (network/API error, respons
+        # terpotong) yang sifatnya sementara & memang harus tetap dicoba
+        # ulang setiap kali (lihat exception di atas, tidak lewat sini).
+        _simpan_cache_ekstraksi_rk_ai(hash_isi, hasil)
+
+    if not hasil.get("adalah_rekening_koran", False):
+        raise FormatTidakDikenali(
+            f"'{nama_file}' dibaca AI dan disimpulkan BUKAN rekening koran: "
+            f"{hasil.get('alasan_bukan_rekening_koran') or 'tidak ada penjelasan dari AI.'}"
+        )
+
+    daftar_transaksi = hasil.get("transaksi") or []
+    if not daftar_transaksi:
+        raise FormatTidakDikenali(
+            f"'{nama_file}' dibaca AI sebagai rekening koran, tapi tidak ada satu pun baris "
+            "transaksi yang berhasil diekstrak."
+        )
+
+    nama_bank = hasil.get("nama_bank_terdeteksi") or os.path.splitext(os.path.basename(nama_file))[0]
+
+    rows = []
+    for i, t in enumerate(daftar_transaksi):
+        rows.append({
+            "no": i + 1,
+            "bank": nama_bank,
+            "tanggal": t.get("tanggal"),
+            "keterangan": t.get("keterangan"),
+            "mutasi_debet": t.get("mutasi_debet") or 0,
+            "mutasi_kredit": t.get("mutasi_kredit") or 0,
+            "saldo": t.get("saldo"),
+            "supplier_cust": None,
+            "voucher": None,
+            "no_transaksi": None,
+            "no_akun_debet": None, "nama_akun_debet": None, "jml_debet": None,
+            "no_akun_kredit": None, "nama_akun_kredit": None, "jml_kredit": None,
+        })
+
+    df = pd.DataFrame(rows, columns=_KOLOM_HASIL_REKENING_KORAN)
+    df["tanggal"] = pd.to_datetime(df["tanggal"], errors="coerce").dt.date
+
+    sumber_label = "cache (tidak ada panggilan AI baru, tidak ada biaya)" if dari_cache else hasil.get("_provider_dipakai", "AI")
+    peringatan_ai = [
+        f"Sheet/file '{nama_file}' tidak dikenali format bakunya oleh parser standar -- "
+        f"{len(df)} baris transaksi berhasil dibaca lewat fallback AI ({sumber_label}), bukan parser baku. "
+        "Mohon periksa kembali hasilnya sebelum dikonfirmasi, terutama nominal & tanggal."
+    ]
+    if hasil.get("_dipotong"):
+        peringatan_ai.append(
+            f"'{nama_file}' terlalu besar untuk dibaca AI sekaligus -- hanya sebagian awal file yang "
+            "diproses. Kalau ada transaksi yang hilang, coba upload per bulan/per bank secara terpisah."
+        )
+    df.attrs["diekstrak_via_ai"] = True
+    df.attrs["peringatan_ekstraksi_ai"] = peringatan_ai
+    return df
+
+
 def _siapkan_daftar_sheet(file_like, nama_file: str) -> tuple[list[tuple[str, object]], pd.DataFrame]:
     """
     Deteksi format file dari ekstensi lalu kembalikan (daftar_sheet, df_coa) dalam
@@ -2586,72 +2980,44 @@ def ambil_api_key_claude():
     return os.environ.get("ANTHROPIC_API_KEY")
 
 
-# [BARU -- KEY GROQ TERPISAH UTK KATEGORISASI] Supaya rate limit chat
-# (tanya_ai/tanya_ai_stream, dipanggil tiap user mengetik) & rate limit
-# kategorisasi (kategorikan_dengan_ai/kategorikan_penjualan_dengan_ai,
-# dipanggil per file diproses) TIDAK REBUTAN satu sama lain saat dua-duanya
-# kebetulan jalan bersamaan, sekarang bisa pakai API key Groq YANG BEDA
-# khusus kategorisasi -- diisi lewat env var GROQ_API_KEY_KATEGORISASI.
+# [DIUBAH -- KATEGORISASI SEPENUHNYA CLAUDE OPUS, GROQ DIHILANGKAN]
+# Sebelumnya kategorisasi jurnal (Jalur A: kategorikan_dengan_ai) lewat
+# Groq (GROQ_API_KEY_KATEGORISASI / GROQ_API_KEY, model gpt-oss-120b).
+# Sekarang diganti SEPENUHNYA ke Claude model Opus -- Groq TIDAK dipakai
+# lagi sama sekali di jalur kategorisasi jurnal ini (DeepSeek juga tetap
+# tidak dipakai, dari awal khusus chat di _konfigurasi_provider_chat()).
+# Tidak ada fallback ke provider lain kalau ANTHROPIC_API_KEY kosong --
+# list akan kosong & _panggil_kategorisasi_dengan_fallback() otomatis
+# menandai semua baris sbg "Belum Terkategori - perlu review manual".
 #
-# Kalau env var ini KOSONG (belum diisi), otomatis FALLBACK ke
-# GROQ_API_KEY yang sama dgn chat (lihat ambil_api_key_groq()) -- jadi
-# kode ini TETAP JALAN tanpa perlu bikin key kedua dulu (opsional, bukan
-# wajib), cuma kalau mau benar-benar pisah rate limit, tinggal isi env
-# var baru ini dgn key Groq akun/project kedua tanpa ubah kode sama sekali.
-def ambil_api_key_groq_kategorisasi():
-    return os.environ.get("GROQ_API_KEY_KATEGORISASI") or ambil_api_key_groq()
-
-
-# [BARU -- FALLBACK GROQ SEMENTARA UTK KATEGORISASI] Sama seperti Groq jadi
-# fallback DeepSeek di _konfigurasi_provider_chat(), Groq sekarang JUGA bisa
-# jadi fallback Claude khusus utk tugas kategorisasi jurnal -- dipakai kalau
-# ANTHROPIC_API_KEY belum aktif (mis. kartu kredit blm ada utk billing
-# Anthropic). Begitu ANTHROPIC_API_KEY diisi, urutan prioritas otomatis
-# balik pakai Claude lagi TANPA ubah kode sama sekali -- lihat
-# _konfigurasi_provider_kategorisasi() di bawah.
-#
-# Model Groq utk kategorisasi SENGAJA DIBEDAKAN dari model Groq utk chat
-# ("openai/gpt-oss-20b" di _konfigurasi_provider_chat(), dioptimalkan utk
-# latensi rendah krn di-stream langsung ke user sambil mengetik). Kategorisasi
-# jurnal TIDAK di-stream ke user (jalan di background per file), dan butuh
-# akurasi lebih tinggi (nomor akun harus presisi, bukan sekadar ngobrol) --
-# jadi dipakai model Groq yang lebih besar/reasoning lebih kuat.
-# "openai/gpt-oss-120b" berstatus PRODUCTION di Groq (bukan preview) per
-# Agustus 2026 -- lihat catatan riwayat model di _konfigurasi_provider_chat().
-# Bisa dioverride lewat env var GROQ_MODEL_KATEGORISASI tanpa ubah kode kalau
-# nanti ada model Groq lain yang lebih cocok.
-def ambil_model_kategorisasi_groq() -> str:
-    return os.environ.get("GROQ_MODEL_KATEGORISASI", "openai/gpt-oss-120b")
+# Model bisa dioverride lewat env var CLAUDE_MODEL_KATEGORISASI tanpa
+# ubah kode (mis. kalau nanti mau turun ke claude-sonnet-5 buat hemat biaya).
+def ambil_model_kategorisasi_claude() -> str:
+    return os.environ.get("CLAUDE_MODEL_KATEGORISASI", "claude-opus-5")
 
 
 def _konfigurasi_provider_kategorisasi() -> list[dict]:
     """Balikin LIST provider utk tugas kategorisasi jurnal (dipakai
     kategorikan_dengan_ai & kategorikan_penjualan_dengan_ai).
 
-    [DIUBAH -- KATEGORISASI KHUSUS GROQ] Sebelumnya Claude jadi provider
-    utama (fallback ke Groq kalau ANTHROPIC_API_KEY kosong). Sekarang
-    kategorisasi jurnal SENGAJA HANYA lewat Groq -- Claude & DeepSeek TIDAK
-    dipakai sama sekali di jalur ini (DeepSeek memang dari awal khusus utk
-    chat/tanya-jawab di _konfigurasi_provider_chat(), bukan kategorisasi).
-    List kosong kalau GROQ_API_KEY_KATEGORISASI / GROQ_API_KEY belum diisi.
+    [DIUBAH -- KATEGORISASI SEPENUHNYA CLAUDE OPUS] Groq dihapus total dari
+    jalur ini. Kategorisasi jurnal sekarang HANYA lewat Claude (model Opus,
+    lihat ambil_model_kategorisasi_claude()) -- DeepSeek & Groq TIDAK
+    dipakai sama sekali di jalur ini. List kosong kalau ANTHROPIC_API_KEY
+    belum diisi.
 
     Field "tipe" membedakan SDK/endpoint yang harus dipakai pemanggil:
-    - "openai_compatible": lewat SDK openai, client.chat.completions.create
-      dgn base_url custom (lihat _proses_satu_chunk_ai) -- dipakai utk Groq
-      (& provider OpenAI-compatible lain di masa depan kalau perlu).
+    - "anthropic": lewat SDK anthropic, client.messages.create (lihat
+      _panggil_ai_batch_json_claude / claude_client.py).
     """
     daftar = []
-    groq_key = ambil_api_key_groq_kategorisasi()
-    if groq_key:
+    claude_key = ambil_api_key_claude()
+    if claude_key:
         daftar.append({
-            "tipe": "openai_compatible",
-            "api_key": groq_key,
-            "base_url": "https://api.groq.com/openai/v1",
-            "model": ambil_model_kategorisasi_groq(),
-            "nama": "Groq",
-            # reasoning_effort lebih tinggi drpd model chat ("low") krn di
-            # sini akurasi lebih penting drpd latensi (tidak di-stream ke user).
-            "extra_params": {"reasoning_effort": "medium"},
+            "tipe": "anthropic",
+            "api_key": claude_key,
+            "model": ambil_model_kategorisasi_claude(),
+            "nama": "Claude",
         })
     return daftar
 
@@ -2909,7 +3275,7 @@ def _proses_satu_chunk_ai_claude(
                 temperature=0,
                 messages=messages,
             )
-            teks = response.content[0].text.strip()
+            teks = ambil_teks_dari_response(response).strip()
             teks = re.sub(r"^```(json)?|```$", "", teks, flags=re.MULTILINE).strip()
             if not teks.endswith("]"):
                 raise ValueError("Respons JSON dari AI tampak terpotong (tidak diakhiri ']').")
@@ -2995,6 +3361,10 @@ def _panggil_ai_batch_json_claude(items: list, api_key: str, buat_prompt, model:
     # di sini juga menangani jalur Groq, beda tanggung jawab dari retry
     # single-provider di claude_client.py).
     from .claude_client import ambil_client
+    # [BARU -- FIX BUG "'ThinkingBlock' object has no attribute 'text'"]
+    # sama seperti di claude_client.py/ai_file_reader.py -- jangan asumsikan
+    # response.content[0] selalu TextBlock.
+    from .claude_client import ambil_teks_dari_response
     client = ambil_client(timeout=timeout_detik, max_retries=0)
     hasil_total = {}
     log_kegagalan = []
@@ -3137,6 +3507,15 @@ def _apply_ai_results_to_dataframe(
         df.at[idx, "confidence_ai"] = confidence
         df.at[idx, "alasan_ai"] = item.get("alasan")
         
+        # [BARU -- KATEGORISASI 11 KATEGORI RESMI] Ditulis di sini (SEBELUM
+        # pengecekan nd/nk None di bawah) supaya baris yang AI tandai tidak
+        # yakin (akun null, lihat instruksi di kategorikan_dengan_ai) TETAP
+        # kebagian kolom "kategori" -- AI diinstruksikan tetap mengisi ini
+        # (boleh "Lainnya") walau akunnya null, jadi tidak boleh ikut ke-skip
+        # oleh `continue` di blok nd/nk None di bawah.
+        if item.get("kategori"):
+            df.at[idx, "kategori"] = item["kategori"]
+        
         if is_penjualan:
             nd = None
             nk = item.get("no_akun_kredit_penjualan") or item.get("no_akun_kredit") or item.get("no_akun_debet")
@@ -3168,21 +3547,15 @@ def _apply_ai_results_to_dataframe(
         if item.get("supplier_cust"):
             df.at[idx, "supplier_cust"] = item["supplier_cust"]
         
-        # [FIX -- LABEL SALAH] Sebelumnya selalu ditulis "AI (DeepSeek)", lalu
-        # setelah pemisahan tugas Claude/DeepSeek diubah jadi hardcode
-        # "AI (Claude)" karena SATU-SATUNYA pemanggil fungsi ini
-        # (kategorikan_dengan_ai & kategorikan_penjualan_dengan_ai) SELALU
-        # lewat _panggil_ai_batch_json_claude() saat itu.
-        #
-        # [DIUBAH -- KATEGORISASI KHUSUS GROQ] Sejak _konfigurasi_provider_
-        # kategorisasi() diubah hanya berisi Groq, provider yang menjawab
-        # item kategorisasi SELALU Groq. Nama provider SEBENARNYA tetap
-        # dibawa lewat item["_sumber_provider"] (ditempel oleh
+        # [KATEGORISASI KHUSUS CLAUDE] _konfigurasi_provider_kategorisasi()
+        # hanya mendaftarkan Claude, jadi provider yang menjawab item
+        # kategorisasi SELALU Claude. Nama provider SEBENARNYA tetap dibawa
+        # lewat item["_sumber_provider"] (ditempel oleh
         # _panggil_kategorisasi_dengan_fallback) supaya audit trail
         # sumber_kategori tetap akurat kalau di masa depan ada provider
-        # lain ditambahkan lagi; fallback ke "Groq" kalau field itu entah
+        # lain ditambahkan lagi; fallback ke "Claude" kalau field itu entah
         # kenapa tidak ada (mis. dipanggil dari jalur lama).
-        nama_provider = item.get("_sumber_provider") or "Groq"
+        nama_provider = item.get("_sumber_provider") or "Claude"
         if urutan_confidence.get(confidence, 0) < ambang_nilai:
             df.at[idx, "sumber_kategori"] = f"AI ({nama_provider}) - confidence {confidence or 'tidak diketahui'}, perlu review"
         else:
@@ -3200,8 +3573,8 @@ def _panggil_kategorisasi_dengan_fallback(
     Dispatcher umum utk tugas kategorisasi (dipakai kategorikan_dengan_ai &
     kategorikan_penjualan_dengan_ai): coba provider dari
     _konfigurasi_provider_kategorisasi() SATU PER SATU sesuai urutan
-    prioritas (sekarang HANYA Groq -- lihat docstring fungsi itu; struktur
-    list tetap dipertahankan kalau nanti perlu tambah provider lain lagi).
+    prioritas (sekarang HANYA Claude Opus -- lihat docstring fungsi itu;
+    struktur list tetap dipertahankan kalau nanti perlu tambah provider lain lagi).
     Item yang SUDAH terjawab oleh provider sebelumnya TIDAK
     dikirim ulang ke provider berikutnya -- HANYA item yang masih belum
     terjawab (baik krn provider itu gagal total, mis. key salah/saldo
@@ -3213,13 +3586,13 @@ def _panggil_kategorisasi_dengan_fallback(
     di proses_dataframe/proses_dataframe_penjualan).
 
     Tiap item hasil ditandai item["_sumber_provider"] = nama provider yang
-    benar-benar menjawabnya (sekarang selalu "Groq"), dipakai
+    benar-benar menjawabnya (sekarang selalu "Claude"), dipakai
     _apply_ai_results_to_dataframe supaya kolom sumber_kategori di GL/Excel
     selalu akurat.
 
-    Kalau TIDAK ADA provider sama sekali (GROQ_API_KEY_KATEGORISASI &
-    GROQ_API_KEY dua-duanya kosong), balik pesan error yang jelas --
-    pemanggil akan menandai semua item sbg perlu review manual, bukan crash.
+    Kalau TIDAK ADA provider sama sekali (ANTHROPIC_API_KEY kosong), balik
+    pesan error yang jelas -- pemanggil akan menandai semua item sbg perlu
+    review manual, bukan crash.
     """
     if not items:
         return {}, []
@@ -3227,7 +3600,7 @@ def _panggil_kategorisasi_dengan_fallback(
     if not daftar_provider:
         return {}, [{
             "idx_terdampak": [b["idx"] for b in items],
-            "alasan": "Tidak ada API key kategorisasi aktif (GROQ_API_KEY_KATEGORISASI / GROQ_API_KEY).",
+            "alasan": "Tidak ada API key kategorisasi aktif (ANTHROPIC_API_KEY belum di-set).",
         }]
 
     hasil_total: dict = {}
@@ -3245,7 +3618,7 @@ def _panggil_kategorisasi_dengan_fallback(
                     token_dasar=token_dasar, max_percobaan=max_percobaan,
                     timeout_detik=timeout_detik, prompt_statis=prompt_statis,
                 )
-            else:  # "openai_compatible" -- Groq (atau provider OpenAI-compatible lain di masa depan)
+            else:  # "openai_compatible" -- provider OpenAI-compatible (tidak dipakai lagi saat ini, disiapkan kalau perlu di masa depan)
                 hasil_chunk, log_chunk = _panggil_ai_batch_json(
                     item_tersisa, konfig["api_key"], buat_prompt, model=konfig["model"],
                     ukuran_chunk=ukuran_chunk, token_per_item=token_per_item,
@@ -3356,15 +3729,35 @@ Field WAJIB per transaksi:
   "rendah" kalau kamu menerka berdasarkan pola umum saja, bukan bukti eksplisit di keterangan.
 - "alasan": 1 kalimat singkat kenapa kamu memilih pasangan akun ini (untuk audit trail
   akuntan, bukan untuk pembaca umum).
+- "kategori": WAJIB diisi salah satu dari 11 kategori resmi berikut (persis salah satu string
+  ini, case-sensitive), dipilih berdasarkan KESELURUHAN konteks transaksi (keterangan + arah +
+  nominal + pasangan akun debet/kredit yang kamu pilih sendiri di atas) -- BUKAN cuma tebak dari
+  nama akun:
+  - "Revenue": penerimaan dari penjualan/jasa/piutang usaha pelanggan
+  - "Payroll": gaji, honor, tunjangan, THR, upah karyawan
+  - "Software": lisensi software, subscription/SaaS
+  - "Rent": sewa kantor/gedung/tempat usaha
+  - "Marketing": iklan, promosi, kegiatan marketing
+  - "Travel": perjalanan dinas, tiket, akomodasi
+  - "Utilities": listrik, air, internet, telepon, PLN, PDAM
+  - "Tax": pembayaran pajak (PPN, PPh, PBB, dst)
+  - "AP Payment": pembayaran hutang usaha/dagang ke vendor/supplier
+  - "CapEx": pembelian aset tetap (peralatan, mesin, kendaraan, gedung, inventaris)
+  - "Financing": transfer antar rekening bank milik sendiri, deposito, pinjaman, modal, obligasi
+  Kalau transaksinya benar-benar tidak cocok satu pun dari 11 kategori di atas, isi "kategori"
+  dengan "Lainnya" -- jangan memaksakan salah satu dari 11 kategori resmi kalau memang tidak
+  cocok.
 - Kalau untuk satu transaksi kamu betul-betul tidak yakin/ambigu akun mana yang paling tepat
   (bukan sekadar sulit), isi no_akun_debet dan no_akun_kredit dengan null apa adanya, dan
   confidence "rendah" -- JANGAN menebak asal supaya tetap terisi. Baris seperti ini akan
   ditandai untuk direview manual oleh akuntan, itu lebih aman daripada jurnal yang salah.
+  Field "kategori" tetap wajib diisi (boleh "Lainnya") walau akunnya null.
 
 Jawab HANYA dalam format JSON array yang valid, tanpa teks tambahan, tanpa markdown code fence,
 dengan format:
 [{{"nomor": 1, "no_akun_debet": 11200003, "no_akun_kredit": 11300003, "supplier_cust": "nama atau null",
-  "confidence": "tinggi", "alasan": "Keterangan eksplisit menyebut pembayaran listrik PLN"}}]
+  "confidence": "tinggi", "alasan": "Keterangan eksplisit menyebut pembayaran listrik PLN",
+  "kategori": "Utilities"}}]
 """
 
     def _buat_prompt(chunk):
@@ -3375,16 +3768,16 @@ dengan format:
         return f"""Daftar transaksi (nomor. [arah, nominal] keterangan) yang perlu kamu kategorikan:
 {daftar_transaksi_str}"""
 
-    # [BARU -- FALLBACK GROQ SEMENTARA] Sebelumnya langsung
-    # _panggil_ai_batch_json_claude() (hardcode Claude, `api_key` param
-    # fungsi ini WAJIB terisi ANTHROPIC_API_KEY). Sekarang lewat dispatcher
-    # yang otomatis coba Claude dulu (kalau ANTHROPIC_API_KEY ada), fallback
-    # ke Groq (kalau tidak) -- lihat _konfigurasi_provider_kategorisasi().
+    # [KATEGORISASI CLAUDE-ONLY] Dipanggil lewat dispatcher
+    # _panggil_kategorisasi_dengan_fallback(), yang hanya berisi Claude
+    # (lihat _konfigurasi_provider_kategorisasi()) -- selalu memakai
+    # _panggil_ai_batch_json_claude() dengan model dari
+    # ambil_model_kategorisasi_claude() (default "claude-opus-5").
     # Parameter `api_key` di signature fungsi ini SUDAH TIDAK DIPAKAI LAGI
-    # secara langsung (dibaca ulang dari env oleh dispatcher), tapi
-    # signature-nya TETAP DIPERTAHANKAN apa adanya supaya semua pemanggil
-    # yang sudah ada (proses_dataframe, dll -- yang mengoper
-    # ambil_api_key_claude()) tidak perlu diubah sama sekali.
+    # secara langsung (dibaca ulang dari env lewat ambil_api_key_claude()
+    # oleh dispatcher), tapi signature-nya TETAP DIPERTAHANKAN apa adanya
+    # supaya semua pemanggil yang sudah ada (proses_dataframe, dll -- yang
+    # mengoper ambil_api_key_claude()) tidak perlu diubah sama sekali.
     return _panggil_kategorisasi_dengan_fallback(
         baris_belum_jelas, _buat_prompt, prompt_statis=_buat_bagian_statis(),
     )
@@ -3439,6 +3832,14 @@ def proses_dataframe(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pola,
     df["confidence_ai"] = None
     df["alasan_ai"] = None
     df["catatan_ai"] = None
+    # [BARU -- KATEGORISASI 11 KATEGORI RESMI] Kolom "kategori" (Revenue,
+    # Payroll, Software, dst -- lihat instruksi di kategorikan_dengan_ai)
+    # diisi AI di tahap 3 (_apply_ai_results_to_dataframe). Baris yang
+    # resolve dari pola historis (tahap 1) atau kata kunci COA (tahap 2)
+    # SENGAJA dibiarkan None di sini -- tidak lewat AI sama sekali, jadi
+    # frontend yang mengisi lewat fallback classifyJournalPairCategory
+    # (lihat ImportRekeningKoranModal.tsx).
+    df["kategori"] = None
     for _kol in ("no_akun_debet", "nama_akun_debet", "no_akun_kredit", "nama_akun_kredit", "jml_debet", "jml_kredit"):
         if _kol not in df.columns:
             df[_kol] = pd.Series([None] * len(df), dtype="object", index=df.index)
@@ -10070,10 +10471,28 @@ berdasarkan Chart of Accounts (COA) perusahaan ini:
 - Kalau betul-betul tidak yakin, isi no_akun_kredit_penjualan dengan null.
 - "confidence": "tinggi" | "sedang" | "rendah"
 - "alasan": 1 kalimat singkat.
+- "kategori": WAJIB diisi salah satu dari 11 kategori resmi berikut (persis salah satu string
+  ini, case-sensitive). Transaksi di sini pada dasarnya adalah penjualan, jadi HAMPIR SELALU
+  "Revenue" -- pilih kategori lain HANYA kalau keterangan/customer secara eksplisit menunjukkan
+  transaksi ini sebenarnya bukan pendapatan penjualan biasa (mis. jelas-jelas pengembalian dana/
+  refund, atau piutang yang diselesaikan sebagai pembayaran hutang):
+  - "Revenue": penerimaan dari penjualan/jasa/piutang usaha pelanggan (DEFAULT untuk laporan ini)
+  - "Payroll": gaji, honor, tunjangan, THR, upah karyawan
+  - "Software": lisensi software, subscription/SaaS
+  - "Rent": sewa kantor/gedung/tempat usaha
+  - "Marketing": iklan, promosi, kegiatan marketing
+  - "Travel": perjalanan dinas, tiket, akomodasi
+  - "Utilities": listrik, air, internet, telepon, PLN, PDAM
+  - "Tax": pembayaran pajak (PPN, PPh, PBB, dst)
+  - "AP Payment": pembayaran hutang usaha/dagang ke vendor/supplier
+  - "CapEx": pembelian aset tetap (peralatan, mesin, kendaraan, gedung, inventaris)
+  - "Financing": transfer antar rekening bank milik sendiri, deposito, pinjaman, modal, obligasi
+  Kalau benar-benar tidak cocok satu pun (termasuk tidak cocok "Revenue"), isi "kategori" dengan
+  "Lainnya". Field ini WAJIB diisi walau no_akun_kredit_penjualan null.
 
 Jawab HANYA dalam format JSON array:
 [{{"nomor": 1, "no_akun_kredit_penjualan": 41100001, "confidence": "tinggi",
-  "alasan": "Nama produk cocok persis dengan akun Penjualan Jasa Konsultasi"}}]
+  "alasan": "Nama produk cocok persis dengan akun Penjualan Jasa Konsultasi", "kategori": "Revenue"}}]
 """
 
     def _buat_prompt(chunk):
@@ -10085,13 +10504,13 @@ Jawab HANYA dalam format JSON array:
         return f"""Daftar transaksi:
 {daftar_transaksi_str}"""
 
-    # [BARU -- FALLBACK GROQ SEMENTARA + PROMPT CACHING] Sama seperti
-    # kategorikan_dengan_ai() di atas -- lewat dispatcher yang otomatis
-    # coba Claude dulu, fallback Groq kalau ANTHROPIC_API_KEY belum aktif,
-    # dan sekarang juga meneruskan prompt_statis supaya COA & instruksi
-    # (biasanya bagian terbesar dari prompt) di-cache lewat cache_control,
-    # bukan dikirim ulang penuh tiap chunk. Param `api_key` dipertahankan
-    # di signature demi kompatibilitas pemanggil lama, tidak dipakai langsung.
+    # [KATEGORISASI CLAUDE-ONLY + PROMPT CACHING] Sama seperti
+    # kategorikan_dengan_ai() di atas -- lewat dispatcher yang hanya berisi
+    # Claude (_konfigurasi_provider_kategorisasi()), dan meneruskan
+    # prompt_statis supaya COA & instruksi (biasanya bagian terbesar dari
+    # prompt) di-cache lewat cache_control, bukan dikirim ulang penuh tiap
+    # chunk. Param `api_key` dipertahankan di signature demi kompatibilitas
+    # pemanggil lama, tidak dipakai langsung.
     return _panggil_kategorisasi_dengan_fallback(
         baris_belum_jelas, _buat_prompt, prompt_statis=_buat_bagian_statis_penjualan(),
     )
@@ -10110,6 +10529,15 @@ def proses_dataframe_penjualan(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pol
     df["confidence_ai"] = None
     df["alasan_ai"] = None
     df["catatan_ai"] = None
+    # [BARU -- KATEGORISASI 11 KATEGORI RESMI, JALUR B] Sama pola dengan
+    # proses_dataframe() (rekening koran): kolom "kategori" (Revenue,
+    # Payroll, dst) diisi HANYA untuk baris yang lewat AI
+    # (kategorikan_penjualan_dengan_ai, lihat tahap 3 di bawah) lewat
+    # _apply_ai_results_to_dataframe yang sudah generic. Baris yang
+    # resolve dari pola historis/aturan standar penjualan/data asli
+    # dibiarkan None -- frontend yang isi via fallback
+    # classifyJournalPairCategory (lihat ImportRekeningKoranModal.tsx).
+    df["kategori"] = None
     for _kol in ("no_akun_debet", "nama_akun_debet", "no_akun_kredit", "nama_akun_kredit", "jml_debet", "jml_kredit"):
         if _kol not in df.columns:
             df[_kol] = pd.Series([None] * len(df), dtype="object", index=df.index)
@@ -10231,7 +10659,7 @@ def proses_dataframe_penjualan(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pol
     # yakin untuk semua baris (baris tetap jatuh ke label generik di
     # bagian "sisanya" di bawah, SAMA seperti kalau AI di-skip sejak
     # awal). Memanggil AI di kondisi ini cuma menghabiskan waktu
-    # (network round-trip ke Groq/Claude, ratusan chunk utk file besar)
+    # (network round-trip ke Claude, ratusan chunk utk file besar)
     # TANPA mengubah hasil akhir sama sekali -- jadi di-skip langsung
     # kalau df_coa kosong. ambigu TIDAK diubah/dikosongkan di sini
     # supaya loop "sisanya" di bawah tetap mengisi label generik
@@ -10653,10 +11081,10 @@ def proses_file_rekening_koran(
     """
     "Jurnal Koran" -- mutasi rekening koran/bank (multi-sheet, multi-bank)
     di-jurnal-kan otomatis: pola historis milik client -> kata kunci COA ->
-    AI (DeepSeek, kalau DEEPSEEK_API_KEY aktif) -> sisanya ditandai "Belum
-    Terkategori" utk direview manual. Pola yang berhasil dipelajari (baris
-    yang jurnalnya sudah lengkap di file asal) otomatis disimpan lagi
-    supaya dipakai ulang di upload bulan berikutnya.
+    AI (Claude, model claude-opus-5 lewat ANTHROPIC_API_KEY) -> sisanya
+    ditandai "Belum Terkategori" utk direview manual. Pola yang berhasil
+    dipelajari (baris yang jurnalnya sudah lengkap di file asal) otomatis
+    disimpan lagi supaya dipakai ulang di upload bulan berikutnya.
     """
     nama_file = nama_file or getattr(file_like, "name", "") or ""
     df_bank, _df_jual, _df_nilai, _df_piutang, df_coa, peringatan = muat_workbook(file_like, nama_file)
@@ -10680,10 +11108,40 @@ def proses_file_rekening_koran(
     daftar_coa = df_coa.to_dict("records") if df_coa is not None and not df_coa.empty else []
 
     if df_bank is None or df_bank.empty:
-        return {
-            "df": pd.DataFrame(), "ringkasan": {}, "masalah": [], "draf_jurnal": [],
-            "sheet_dilewati": peringatan, "coa": daftar_coa, "ringkasan_footer": ringkasan_footer,
-        }
+        # [BARU] FALLBACK EKSTRAKSI AI -- parser rule-based (parse_sheet_bank,
+        # cari kata "KETERANGAN"/"SALDO" di header) gagal mengenali SEMUA
+        # sheet file ini sbg rekening koran. Sebelum menyerah total, coba
+        # satu kali lagi lewat AI (lihat _panggil_ai_ekstrak_rekening_koran)
+        # yang membaca isi mentah file tanpa bergantung pada kata kunci
+        # header baku -- berguna utk bank/format export yang istilah
+        # kolomnya tidak standar. HANYA dicoba kalau pakai_ai=True (user
+        # menyalakan toggle "pakai AI" di layar upload) supaya user yang
+        # mematikannya tetap dapat perilaku lama (gagal cepat, tanpa
+        # panggilan API tambahan/biaya token).
+        if pakai_ai:
+            try:
+                if hasattr(file_like, "seek"):
+                    file_like.seek(0)
+                isi_bytes_mentah = file_like.read() if hasattr(file_like, "read") else None
+                if hasattr(file_like, "seek"):
+                    file_like.seek(0)
+                if isi_bytes_mentah:
+                    df_bank = _panggil_ai_ekstrak_rekening_koran(isi_bytes_mentah, nama_file)
+                    peringatan = list(peringatan) + list(df_bank.attrs.get("peringatan_ekstraksi_ai") or [])
+            except FormatTidakDikenali as e:
+                peringatan = list(peringatan) + [f"Fallback ekstraksi AI juga gagal: {e}"]
+
+        if df_bank is None or df_bank.empty:
+            if not pakai_ai:
+                peringatan = list(peringatan) + [
+                    "Tidak ada sheet yang dikenali sebagai rekening koran oleh parser standar. "
+                    "Nyalakan opsi 'Pakai AI' saat upload supaya sistem mencoba membaca file ini "
+                    "lewat AI (berguna kalau formatnya tidak baku/bukan dari bank yang sudah dikenal)."
+                ]
+            return {
+                "df": pd.DataFrame(), "ringkasan": {}, "masalah": [], "draf_jurnal": [],
+                "sheet_dilewati": peringatan, "coa": daftar_coa, "ringkasan_footer": ringkasan_footer,
+            }
 
     path_pola = _path_pola("pola_bank", client_id)
     pola = muat_pola(path_pola)
@@ -10726,6 +11184,11 @@ def proses_file_rekening_koran(
             "mutasi_kredit": row.get("mutasi_kredit"),
             "sumber_kategori": row.get("sumber_kategori"),
             "catatan": row.get("catatan_ai"),
+            # [BARU -- KATEGORISASI 11 KATEGORI RESMI] Terisi HANYA untuk
+            # baris yang lewat AI (kategorikan_dengan_ai) -- None untuk baris
+            # yang resolve dari pola historis/kata kunci COA, frontend
+            # fallback ke classifyJournalPairCategory untuk baris itu.
+            "kategori": row.get("kategori"),
         }
         for i, row in df_hasil.iterrows()
     ]
@@ -11349,6 +11812,13 @@ def proses_file_jurnal_penjualan_kasir(
             "sumber_kategori": row.get("sumber_kategori"),
             "catatan": row.get("catatan_ai"),
             "no_invoice": row.get("no_invoice"),
+            # [BARU -- JALUR B] Salah satu dari 11 kategori resmi kalau baris
+            # ini lewat AI (kategorikan_penjualan_dengan_ai); None untuk baris
+            # yang resolve dari pola historis/aturan standar penjualan --
+            # frontend fallback ke classifyJournalPairCategory, sama seperti
+            # jalur rekening_koran (lihat DrafJurnalRow di
+            # ImportRekeningKoranModal.tsx).
+            "kategori": row.get("kategori"),
         }
         for i, row in df_hasil.iterrows()
     ]

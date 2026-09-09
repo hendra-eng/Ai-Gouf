@@ -8,7 +8,10 @@ import TransactionEditModal from './TransactionEditModal';
 import ImportRekeningKoranModal from './ImportRekeningKoranModal';
 import { Transaction } from './transactionData';
 import { exportJournalToPdf } from './exportJournalPdf';
+import { exportTransactionsToExcel } from './exportTransactionsExcel';
 import { useTransactions } from '../context/TransactionsContext';
+import { useActiveClient } from '@/lib/activeClient';
+import { COMPANY } from '@/lib/financialData';
 
 // [BARU] Rentang tahun yang bisa dipilih pada periode Transaksi: opsi "all"
 // paling atas (menampilkan seluruh periode yang pernah diimpor pengguna),
@@ -20,13 +23,46 @@ const YEAR_OPTIONS: (number | 'all')[] = [
   ...Array.from({ length: CURRENT_YEAR - MIN_YEAR + 1 }, (_, i) => CURRENT_YEAR - i),
 ];
 
+// [BARU] Transaksi kosong sebagai titik awal form "+ Jurnal Baru" di halaman
+// Transaksi utama — sama polanya dengan blankTransaction() di
+// TransactionsGroupActionsPanel.tsx (dipakai 5 sub halaman), bedanya di sini
+// tidak ada kategori default karena jurnal baru dari halaman utama bisa masuk
+// kelompok apa saja (dipilih sendiri oleh user di form).
+function blankTransaction(): Transaction {
+  const today = new Date().toISOString().slice(0, 10);
+  const tag = Date.now().toString(36).toUpperCase();
+  return {
+    id: `tx-manual-${tag}`,
+    date: today,
+    txId: `TXN-MANUAL-${tag}`,
+    accountCode: '',
+    accountName: '',
+    description: '',
+    debit: 0,
+    credit: 0,
+    reference: '',
+    party: '',
+    category: '',
+    type: 'debit',
+    status: 'Unposted',
+    jeId: `JE-MANUAL-${tag}`,
+    voucherNo: `JV-${today.slice(5, 7)}${today.slice(8, 10)}-M`,
+    saldoAkhir: 0,
+    cek: false,
+  };
+}
+
 export default function TransactionsContent() {
   // [DIUBAH] Data transaksi sekarang datang dari TransactionsContext (lihat
   // layout.tsx), bukan state lokal lagi — supaya 5 sub halaman (Sales,
   // Expense, Cash Payment, Cash Reserve, Other) melihat data yang sama
   // persis, termasuk hasil import rekening koran & edit dari halaman ini.
-  const { transactions, unpostedCount, saveEdit, postAllUnposted, importTransactions } = useTransactions();
+  const { transactions, unpostedCount, saveEdit, postAllUnposted, importTransactions, addTransaction } = useTransactions();
+  const { activeClientName } = useActiveClient();
+  const companyName = activeClientName || COMPANY.name;
   const [showImportModal, setShowImportModal] = useState(false);
+  // [BARU] Kontrol modal "+ Jurnal Baru" di halaman Transaksi utama.
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [search, setSearch] = useState('');
   // [BARU] Tahun periode Transaksi (Jan–Des). Default ke tahun dengan data
   // terbaru yang tersedia, supaya tabel tidak kosong saat halaman dibuka.
@@ -75,7 +111,7 @@ export default function TransactionsContent() {
           !tx.description.toLowerCase().includes(q) &&
           !tx.party.toLowerCase().includes(q) &&
           !tx.reference.toLowerCase().includes(q) &&
-          !tx.accountCode.toLowerCase().includes(q)
+          !String(tx.accountCode ?? '').toLowerCase().includes(q)
         ) return false;
       }
       if (filters.type !== 'all' && tx.type !== filters.type) return false;
@@ -123,7 +159,13 @@ export default function TransactionsContent() {
   // [BARU] Unduh seluruh data transaksi (tidak terikat filter tahun/pencarian
   // yang sedang aktif) sebagai PDF Jurnal Umum.
   const handleExportJournalPdf = () => {
-    exportJournalToPdf(transactions);
+    exportJournalToPdf(transactions, companyName);
+  };
+
+  // [BARU] Unduh transaksi yang sedang tampil (sudah kena filter tahun,
+  // pencarian, tipe/status/kategori yang aktif) sebagai file Excel (.xlsx).
+  const handleExportExcel = () => {
+    exportTransactionsToExcel(filtered);
   };
 
   // [DIUBAH] Logika posting-semua, simpan-edit, dan import sekarang hidup di
@@ -146,6 +188,12 @@ export default function TransactionsContent() {
     setPage(1);
   };
 
+  // [BARU] Simpan jurnal baru yang dibuat manual lewat tombol "Jurnal Baru".
+  const handleSaveNew = (tx: Transaction) => {
+    addTransaction(tx);
+    setShowCreateModal(false);
+  };
+
   return (
     <div className="space-y-5 fade-in">
       <TransactionsHeader
@@ -153,6 +201,8 @@ export default function TransactionsContent() {
         selectedCount={selectedIds.size}
         onImportClick={() => setShowImportModal(true)}
         onExportJournalPdf={handleExportJournalPdf}
+        onExportExcel={handleExportExcel}
+        onNewJournalClick={() => setShowCreateModal(true)}
         selectedYear={selectedYear}
         onYearChange={handleYearChange}
         yearOptions={YEAR_OPTIONS}
@@ -203,6 +253,15 @@ export default function TransactionsContent() {
         <ImportRekeningKoranModal
           onClose={() => setShowImportModal(false)}
           onImported={handleImported}
+        />
+      )}
+
+      {showCreateModal && (
+        <TransactionEditModal
+          isNew
+          transaction={blankTransaction()}
+          onClose={() => setShowCreateModal(false)}
+          onSave={handleSaveNew}
         />
       )}
     </div>
