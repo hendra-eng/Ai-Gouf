@@ -1,0 +1,84 @@
+2026-09-12 00:00:51 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 00:00:57 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-12 00:01:00 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 01:15:32 - AI_Gouf - INFO - ============================================================
+2026-09-12 01:15:32 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 01:15:32 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 01:15:32 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 01:15:32 - AI_Gouf - INFO - Started at: 2026-09-12 01:15:32
+2026-09-12 01:15:32 - AI_Gouf - INFO - ============================================================
+2026-09-12 01:15:35 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 01:15:50 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-12 01:16:26 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 2: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 01:16:30 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 2: 2063 baris overlap
+2026-09-12 01:25:57 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 01:26:00 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 07:29:13 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:29:13 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 07:29:13 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 07:29:13 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 07:29:13 - AI_Gouf - INFO - Started at: 2026-09-12 07:29:13
+2026-09-12 07:29:13 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:29:17 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 07:29:37 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-12 07:30:05 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 07:30:11 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 07:48:55 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:48:55 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 07:48:55 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 07:48:55 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 07:48:55 - AI_Gouf - INFO - Started at: 2026-09-12 07:48:55
+2026-09-12 07:48:55 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:50:38 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:50:38 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 07:50:38 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 07:50:38 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 07:50:38 - AI_Gouf - INFO - Started at: 2026-09-12 07:50:38
+2026-09-12 07:50:38 - AI_Gouf - INFO - ============================================================
+2026-09-12 07:50:41 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 07:51:50 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 07:52:00 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 07:52:53 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
+2026-09-12 08:07:28 - AI_Gouf - INFO - ============================================================
+2026-09-12 08:07:28 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 08:07:28 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 08:07:28 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 08:07:28 - AI_Gouf - INFO - Started at: 2026-09-12 08:07:28
+2026-09-12 08:07:28 - AI_Gouf - INFO - ============================================================
+2026-09-12 08:07:37 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 08:09:57 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 08:10:02 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 08:15:38 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 08:15:43 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 21:37:54 - AI_Gouf - INFO - ============================================================
+2026-09-12 21:37:54 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 21:37:54 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 21:37:54 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 21:37:54 - AI_Gouf - INFO - Started at: 2026-09-12 21:37:54
+2026-09-12 21:37:54 - AI_Gouf - INFO - ============================================================
+2026-09-12 21:38:03 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 22:06:22 - AI_Gouf - INFO - ============================================================
+2026-09-12 22:06:22 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 22:06:22 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 22:06:22 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 22:06:22 - AI_Gouf - INFO - Started at: 2026-09-12 22:06:22
+2026-09-12 22:06:22 - AI_Gouf - INFO - ============================================================
+2026-09-12 22:06:26 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 23:01:16 - AI_Gouf - INFO - ============================================================
+2026-09-12 23:01:16 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 23:01:16 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 23:01:16 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 23:01:16 - AI_Gouf - INFO - Started at: 2026-09-12 23:01:16
+2026-09-12 23:01:16 - AI_Gouf - INFO - ============================================================
+2026-09-12 23:01:20 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 23:08:35 - AI_Gouf - INFO - ============================================================
+2026-09-12 23:08:35 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-12 23:08:35 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-12 23:08:35 - AI_Gouf - INFO - Log level: INFO
+2026-09-12 23:08:35 - AI_Gouf - INFO - Started at: 2026-09-12 23:08:35
+2026-09-12 23:08:35 - AI_Gouf - INFO - ============================================================
+2026-09-12 23:08:48 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-12 23:09:45 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 23:09:58 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap
+2026-09-12 23:14:18 - AI_Gouf.dedup_transaksi - WARNING - 🔁 File identik terdeteksi utk client 1: 1._SAU_Rekening_Koran_All_Bank_202607UPDATED.xlsx
+2026-09-12 23:14:23 - AI_Gouf.dedup_transaksi - WARNING - ⚠️ Indikasi FILE_IDENTIK utk client 1: 2063 baris overlap

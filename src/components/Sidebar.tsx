@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, ArrowUpCircle, MoreHorizontal, Shield, RefreshCcw, NotebookText } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
+import { useLanguage } from '@/lib/language';
 
 
 interface SidebarProps {
@@ -50,9 +51,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         id: 'nav-transactions', label: 'Transactions', icon: ArrowLeftRight, href: '/transactions', badge: '248',
         children: [
           { id: 'nav-tx-sales', label: 'Sales', icon: ShoppingCart, href: '/transactions/sales' },
-          { id: 'nav-tx-expense', label: 'Expense', icon: CreditCard, href: '/transactions/expense' },
+          { id: 'nav-tx-purchase', label: 'Purchase', icon: CreditCard, href: '/transactions/purchase' },
           { id: 'nav-tx-cash-payment', label: 'Cash Payment', icon: ArrowUpCircle, href: '/transactions/cash-payment' },
-          { id: 'nav-tx-cash-reserve', label: 'Cash Reserve', icon: Shield, href: '/transactions/cash-reserve' },
+          { id: 'nav-tx-cash-receipt', label: 'Cash Receipt', icon: Shield, href: '/transactions/cash-receipt' },
           { id: 'nav-tx-other', label: 'Other', icon: MoreHorizontal, href: '/transactions/other' },
         ],
       },
@@ -105,6 +106,7 @@ function getBadgeClasses(variant?: string) {
 
 export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileOpen, onMobileClose }: SidebarProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const goToSettings = () => router.push('/settings');
@@ -173,7 +175,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
               className="flex-1 flex items-center gap-3 px-3 py-2 min-w-0"
             >
               <Icon size={18} className="flex-shrink-0" />
-              <span className="flex-1 text-left truncate">{item.label}</span>
+              <span className="flex-1 text-left truncate">{t(item.label)}</span>
               {item.badge && (
                 <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
                   {item.badge}
@@ -187,7 +189,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
                 toggleExpand(item.id);
               }}
               className="px-2.5 py-2 flex-shrink-0 text-current"
-              aria-label={isExpanded ? 'Collapse submenu' : 'Expand submenu'}
+              aria-label={isExpanded ? t('Collapse submenu') : t('Expand submenu')}
             >
               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
@@ -213,7 +215,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             <Icon size={18} />
           </Link>
           <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 bg-foreground text-background text-xs font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
-            {item.label}
+            {t(item.label)}
           </div>
         </div>
       );
@@ -228,7 +230,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         } ${depth > 0 ? 'text-xs' : ''}`}
       >
         <Icon size={depth > 0 ? 15 : 18} className="flex-shrink-0" />
-        <span className="flex-1 truncate">{item.label}</span>
+        <span className="flex-1 truncate">{t(item.label)}</span>
         {item.badge && (
           <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
             {item.badge}
@@ -246,7 +248,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             <AppLogo size={32} />
             <div>
               <span className="font-bold text-sm text-foreground tracking-tight">Gouf Consulting</span>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">Accounting</p>
+              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">{t('Accounting')}</p>
             </div>
           </div>
         )}
@@ -255,7 +257,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           <button
             onClick={onToggle}
             className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Collapse sidebar"
+            aria-label={t('Collapse sidebar')}
           >
             <ChevronLeft size={16} />
           </button>
@@ -266,7 +268,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         <button
           onClick={onToggle}
           className="flex items-center justify-center w-8 h-8 mx-auto mt-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Expand sidebar"
+          aria-label={t('Expand sidebar')}
         >
           <ChevronRight size={16} />
         </button>
@@ -277,7 +279,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           <div key={`group-${group.label}`}>
             {!collapsed && (
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 mb-1.5">
-                {group.label}
+                {t(group.label)}
               </p>
             )}
             <div className="space-y-0.5">
@@ -299,7 +301,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-foreground truncate">Rizky Wardana</p>
-                <p className="text-xs text-muted-foreground truncate">Finance Manager</p>
+                <p className="text-xs text-muted-foreground truncate">{t('Finance Manager')}</p>
               </div>
             </div>
             <div className="flex gap-1">
@@ -308,14 +310,14 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
                 className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 <Settings size={14} />
-                <span>Settings</span>
+                <span>{t('Settings')}</span>
               </button>
               <button
                 onClick={handleLogout}
                 className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-negative-subtle hover:text-negative transition-colors"
               >
                 <LogOut size={14} />
-                <span>Logout</span>
+                <span>{t('Logout')}</span>
               </button>
             </div>
           </>
@@ -324,10 +326,10 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="text-xs font-bold text-primary">RW</span>
             </div>
-            <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors" aria-label="Settings">
+            <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors" aria-label={t('Settings')}>
               <Settings size={16} />
             </button>
-            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-negative-subtle text-muted-foreground hover:text-negative transition-colors" aria-label="Logout">
+            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-negative-subtle text-muted-foreground hover:text-negative transition-colors" aria-label={t('Logout')}>
               <LogOut size={16} />
             </button>
           </>
@@ -364,7 +366,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           {navGroups.map((group) => (
             <div key={`mobile-group-${group.label}`}>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 mb-1.5">
-                {group.label}
+                {t(group.label)}
               </p>
               <div className="space-y-0.5">
                 {group.items.map((item) => {
@@ -380,7 +382,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
                       }`}
                     >
                       <Icon size={18} className="flex-shrink-0" />
-                      <span className="flex-1 truncate">{item.label}</span>
+                      <span className="flex-1 truncate">{t(item.label)}</span>
                       {item.badge && (
                         <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${getBadgeClasses(item.badgeVariant)}`}>
                           {item.badge}

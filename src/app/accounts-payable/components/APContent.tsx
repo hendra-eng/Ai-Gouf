@@ -15,7 +15,7 @@ import { useCurrency } from '@/lib/currency';
 // ikut berubah (re-render) karena sama-sama membaca context yang sama.
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import {
-  AP_REFERENCE_DATE,
+  getApReferenceDate,
   billsFromTransactions,
   vendorsFromBills,
   apKpisFromBills,
@@ -23,8 +23,8 @@ import {
   apTrendFromBills,
   sparklineFromTrend,
   paymentForecastFromBills,
-  markExpenseTxPaid,
-  rescheduleExpenseTx,
+  markPurchaseTxPaid,
+  reschedulePurchaseTx,
 } from '@/app/transactions/lib/apBridge';
 
 const APCharts = dynamic(() => import('./APCharts'), { ssr: false });
@@ -49,14 +49,14 @@ export default function APContent() {
   const markBillPaid = (bill: Bill) => {
     const tx = transactions.find((t) => t.id === bill.id);
     if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
-    saveEdit(markExpenseTxPaid(tx));
+    saveEdit(markPurchaseTxPaid(tx));
     toast.success(`${bill.number} ditandai Lunas`, { description: `Status pembayaran ikut berubah di halaman Expense.` });
   };
 
   const scheduleBillPayment = (bill: Bill, newDueDate: string) => {
     const tx = transactions.find((t) => t.id === bill.id);
     if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
-    saveEdit(rescheduleExpenseTx(tx, newDueDate));
+    saveEdit(reschedulePurchaseTx(tx, newDueDate));
     toast.success(`Jatuh tempo ${bill.number} dijadwalkan ulang`, { description: `Tanggal baru: ${newDueDate}` });
   };
 
@@ -147,7 +147,9 @@ export default function APContent() {
           <div className="flex items-center gap-3 mt-1.5">
             <span className="badge-info">Tersinkron dari Transaksi → Expense</span>
             <span className="badge-neutral">{bills.length} tagihan · {vendors.length} vendor</span>
-            <span className="text-xs text-muted-foreground">Per {AP_REFERENCE_DATE}</span>
+            <span className="text-xs text-muted-foreground">
+              Per {new Date(getApReferenceDate()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

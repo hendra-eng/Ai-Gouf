@@ -14,7 +14,7 @@
 // tidak dibatasi ke kelompok "Expense" saja -- SEMUA leg transaksi yang
 // accountCode-nya cocok dengan salah satu akun LIABILITAS di neraca (dari
 // useLiabilitiesData().liabilityAccounts) diikutkan, apapun kelompok
-// (Sales/Expense/Cash Payment/Cash Reserve/Other) asalnya.
+// (Sales/Expense/Cash Payment/Cash Receipt/Other) asalnya.
 //
 // Keterbatasan yang disengaja (best-effort, konsisten dgn komentar di
 // useLiabilitiesData.ts):

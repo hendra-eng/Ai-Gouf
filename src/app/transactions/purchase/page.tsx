@@ -7,8 +7,8 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction, PAYMENT_STATUS_VARIANT } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
-import { expenseOutstanding, expenseBillStatus } from '../lib/apBridge';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
+import { purchaseOutstanding, purchaseBillStatus } from '../lib/apBridge';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -16,17 +16,17 @@ import { ArrowUpRight } from 'lucide-react';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales / Financial
 // Overview / Balance Sheet): width YAxis (65) + margin.left AreaChart (10). ──
-const EXPENSE_AXIS_WIDTH = 65;
-const EXPENSE_AXIS_OVERLAY_WIDTH = EXPENSE_AXIS_WIDTH + 10;
-const EXPENSE_SPRING_MS = 380;
-const expenseEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
+const PURCHASE_AXIS_WIDTH = 65;
+const PURCHASE_AXIS_OVERLAY_WIDTH = PURCHASE_AXIS_WIDTH + 10;
+const PURCHASE_SPRING_MS = 380;
+const purchaseEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-interface ExpenseDragPreview {
+interface PurchaseDragPreview {
   index: number;
   value: number;
 }
 
-function ExpenseTrendTooltip({
+function PurchaseTrendTooltip({
   active,
   payload,
   label,
@@ -35,7 +35,7 @@ function ExpenseTrendTooltip({
   active?: boolean;
   payload?: { value: number; name: string; color: string; payload: { month: string } }[];
   label?: string;
-  dragPreview?: ExpenseDragPreview | null;
+  dragPreview?: PurchaseDragPreview | null;
 }) {
   if (!active || !payload || !payload.length) return null;
   const entry = payload[0];
@@ -57,133 +57,143 @@ const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' 
 };
 
 // [BARU] Sama seperti Sales — turunan langsung dari transaksi kelompok
-// 'expense' (akun Beban, kategori Payroll/Software/Rent/Marketing/Travel/
-// Utilities) di halaman Transaksi, lewat getByGroup('expense').
-export default function ExpensePage() {
+// 'purchase' (akun Beban, kategori Payroll/Software/Rent/Marketing/Travel/
+// Utilities) di halaman Transaksi, lewat getByGroup('purchase').
+export default function PurchasePage() {
   const { getByGroup } = useTransactions();
-  const expenseTx = useMemo(() => getByGroup('expense'), [getByGroup]);
+  const purchaseTx = useMemo(() => getByGroup('purchase'), [getByGroup]);
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   // [DIUBAH] Sama seperti Sales — dikelompokkan per NOMOR JURNAL (jeId)
   // dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki jurnal
   // (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun Beban saat beban
-  // diakui — keduanya sama-sama masuk expenseTx) tidak terhitung dua kali.
+  // diakui — keduanya sama-sama masuk purchaseTx) tidak terhitung dua kali.
   // Lihat groupAnalytics.ts untuk detail (uniqueJournalTotal/uniqueJournalCount/
   // countJournalsByStatus/countJournalsByCategory).
-  const totalExpense = uniqueJournalTotal(expenseTx);
-  const txCount = uniqueJournalCount(expenseTx);
-  const avgTxValue = txCount > 0 ? totalExpense / txCount : 0;
-  const unpostedCount = countJournalsByStatus(expenseTx, 'Unposted');
-  const recurringLike = countJournalsByCategory(expenseTx, ['Payroll', 'Rent', 'Software', 'Utilities']);
+  const totalPurchase = uniqueJournalTotal(purchaseTx);
+  const txCount = uniqueJournalCount(purchaseTx);
+  const avgTxValue = txCount > 0 ? totalPurchase / txCount : 0;
+  const unpostedCount = countJournalsByStatus(purchaseTx, 'Unposted');
+  const recurringLike = countJournalsByCategory(purchaseTx, ['Payroll', 'Rent', 'Software', 'Utilities']);
+  // [BARU] Sama seperti Sales — transaksi 'Draft' (pending approval) sengaja
+  // dikeluarkan dari totalPurchase/txCount lewat groupByJournalRealized(),
+  // nilainya ditampilkan terpisah supaya tidak hilang begitu saja.
+  const draftCount = countJournalsByStatus(purchaseTx, 'Draft');
+  const draftTotal = draftJournalTotal(purchaseTx);
 
-  // [BARU] Nilai yang belum dibayar ke vendor di antara transaksi Expense —
+  // [BARU] Peringatan integritas data — sama seperti Sales. Lihat
+  // transactionsMissingJeId() di groupAnalytics.ts.
+  const missingJeIdCount = useMemo(() => transactionsMissingJeId(purchaseTx).length, [purchaseTx]);
+  const unbalanced = useMemo(() => unbalancedJournals(purchaseTx), [purchaseTx]);
+
+  // [BARU] Nilai yang belum dibayar ke vendor di antara transaksi Purchase —
   // inilah angka yang "mengalir" ke halaman Account Payable (lihat apBridge.ts).
-  const outstandingToAP = useMemo(() => expenseTx.reduce((s, t) => s + expenseOutstanding(t), 0), [expenseTx]);
+  const outstandingToAP = useMemo(() => purchaseTx.reduce((s, t) => s + purchaseOutstanding(t), 0), [purchaseTx]);
   const overdueToAPCount = useMemo(
-    () => expenseTx.filter((t) => expenseOutstanding(t) > 0 && expenseBillStatus(t) === 'Overdue').length,
-    [expenseTx]
+    () => purchaseTx.filter((t) => purchaseOutstanding(t) > 0 && purchaseBillStatus(t) === 'Overdue').length,
+    [purchaseTx]
   );
 
-  const trend = useMemo(() => monthlyTrendFor(expenseTx), [expenseTx]);
-  const byCategory = useMemo(() => categoryBreakdown(expenseTx).slice(0, 6), [expenseTx]);
-  const topVendors = useMemo(() => topParties(expenseTx, 5), [expenseTx]);
+  const trend = useMemo(() => monthlyTrendFor(purchaseTx), [purchaseTx]);
+  const byCategory = useMemo(() => categoryBreakdown(purchaseTx).slice(0, 6), [purchaseTx]);
+  const topVendors = useMemo(() => topParties(purchaseTx, 5), [purchaseTx]);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
   // Sales / Financial Overview / Balance Sheet. ──
-  const expenseBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
-  const [expensePriceZoom, setExpensePriceZoom] = useState(1);
-  const expenseZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+  const purchaseBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
+  const [purchasePriceZoom, setPurchasePriceZoom] = useState(1);
+  const purchaseZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
-  const { ticks: expenseYTicks } = useMemo(
-    () => getNiceTicksFromZero(expenseBaseMax / expensePriceZoom, 5),
-    [expenseBaseMax, expensePriceZoom]
+  const { ticks: purchaseYTicks } = useMemo(
+    () => getNiceTicksFromZero(purchaseBaseMax / purchasePriceZoom, 5),
+    [purchaseBaseMax, purchasePriceZoom]
   );
-  const expenseYDomain = useMemo<[number, number]>(
-    () => [0, expenseBaseMax / expensePriceZoom],
-    [expenseBaseMax, expensePriceZoom]
+  const purchaseYDomain = useMemo<[number, number]>(
+    () => [0, purchaseBaseMax / purchasePriceZoom],
+    [purchaseBaseMax, purchasePriceZoom]
   );
-  const expenseYDomainRef = useRef(expenseYDomain);
-  expenseYDomainRef.current = expenseYDomain;
+  const purchaseYDomainRef = useRef(purchaseYDomain);
+  purchaseYDomainRef.current = purchaseYDomain;
 
-  const handleExpenseAxisMouseDown = (e: React.MouseEvent) => {
+  const handlePurchaseAxisMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    expenseZoomDragRef.current = { startY: e.clientY, startZoom: expensePriceZoom };
+    purchaseZoomDragRef.current = { startY: e.clientY, startZoom: purchasePriceZoom };
     const onMove = (ev: MouseEvent) => {
-      if (!expenseZoomDragRef.current) return;
-      const deltaY = expenseZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
+      if (!purchaseZoomDragRef.current) return;
+      const deltaY = purchaseZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
       const factor = Math.exp(deltaY / 150);
-      const next = Math.min(6, Math.max(0.25, expenseZoomDragRef.current.startZoom * factor));
-      setExpensePriceZoom(next);
+      const next = Math.min(6, Math.max(0.25, purchaseZoomDragRef.current.startZoom * factor));
+      setPurchasePriceZoom(next);
     };
     const onUp = () => {
-      expenseZoomDragRef.current = null;
+      purchaseZoomDragRef.current = null;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
-  const resetExpenseZoom = () => setExpensePriceZoom(1);
+  const resetPurchaseZoom = () => setPurchasePriceZoom(1);
 
   // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
   // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
-  const expenseDotsRef = useRef<{ value: number; cy: number }[]>([]);
-  const [expenseDragPreview, setExpenseDragPreview] = useState<ExpenseDragPreview | null>(null);
-  const expenseDragStateRef = useRef<{
+  const purchaseDotsRef = useRef<{ value: number; cy: number }[]>([]);
+  const [purchaseDragPreview, setPurchaseDragPreview] = useState<PurchaseDragPreview | null>(null);
+  const purchaseDragStateRef = useRef<{
     index: number;
     originalValue: number;
     currentValue: number;
     startClientY: number;
     pxPerUnit: number;
   } | null>(null);
-  const expenseAnimRef = useRef<number | null>(null);
+  const purchaseAnimRef = useRef<number | null>(null);
 
-  const stopExpenseSpring = () => {
-    if (expenseAnimRef.current) cancelAnimationFrame(expenseAnimRef.current);
-    expenseAnimRef.current = null;
+  const stopPurchaseSpring = () => {
+    if (purchaseAnimRef.current) cancelAnimationFrame(purchaseAnimRef.current);
+    purchaseAnimRef.current = null;
   };
 
   useEffect(() => {
-    stopExpenseSpring();
-    expenseDragStateRef.current = null;
-    setExpenseDragPreview(null);
-    expenseDotsRef.current = [];
+    stopPurchaseSpring();
+    purchaseDragStateRef.current = null;
+    setPurchaseDragPreview(null);
+    purchaseDotsRef.current = [];
   }, [trend]);
 
-  useEffect(() => stopExpenseSpring, []);
+  useEffect(() => stopPurchaseSpring, []);
 
-  const springBackExpense = useCallback(() => {
-    const drag = expenseDragStateRef.current;
+  const springBackPurchase = useCallback(() => {
+    const drag = purchaseDragStateRef.current;
     if (!drag) return;
-    stopExpenseSpring();
+    stopPurchaseSpring();
     const from = drag.currentValue;
     const target = drag.originalValue;
     const { index } = drag;
     const start = performance.now();
     const step = (now: number) => {
-      const elapsed = Math.min(1, (now - start) / EXPENSE_SPRING_MS);
-      const eased = expenseEaseOutQuint(elapsed);
+      const elapsed = Math.min(1, (now - start) / PURCHASE_SPRING_MS);
+      const eased = purchaseEaseOutQuint(elapsed);
       const next = from + (target - from) * eased;
-      if (expenseDragStateRef.current) expenseDragStateRef.current.currentValue = next;
-      setExpenseDragPreview({ index, value: next });
+      if (purchaseDragStateRef.current) purchaseDragStateRef.current.currentValue = next;
+      setPurchaseDragPreview({ index, value: next });
       if (elapsed < 1) {
-        expenseAnimRef.current = requestAnimationFrame(step);
+        purchaseAnimRef.current = requestAnimationFrame(step);
       } else {
-        expenseDragStateRef.current = null;
-        expenseAnimRef.current = null;
-        setExpenseDragPreview(null);
+        purchaseDragStateRef.current = null;
+        purchaseAnimRef.current = null;
+        setPurchaseDragPreview(null);
       }
     };
-    expenseAnimRef.current = requestAnimationFrame(step);
+    purchaseAnimRef.current = requestAnimationFrame(step);
   }, []);
 
-  const handleExpenseDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
+  const handlePurchaseDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
     e.preventDefault();
     e.stopPropagation();
-    stopExpenseSpring();
+    stopPurchaseSpring();
 
-    const samples = expenseDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    const samples = purchaseDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
     let pxPerUnit = -1;
     if (samples.length >= 2) {
       const a = samples[0];
@@ -191,33 +201,33 @@ export default function ExpensePage() {
       if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
     }
     if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
-      const [dMin, dMax] = expenseYDomainRef.current;
+      const [dMin, dMax] = purchaseYDomainRef.current;
       pxPerUnit = -160 / (dMax - dMin || 1);
     }
 
-    expenseDragStateRef.current = {
+    purchaseDragStateRef.current = {
       index,
       originalValue,
       currentValue: originalValue,
       startClientY: e.clientY,
       pxPerUnit,
     };
-    setExpenseDragPreview({ index, value: originalValue });
+    setPurchaseDragPreview({ index, value: originalValue });
   }, []);
 
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
-      const drag = expenseDragStateRef.current;
+      const drag = purchaseDragStateRef.current;
       if (!drag) return;
       const deltaY = e.clientY - drag.startClientY;
-      const [, dMax] = expenseYDomainRef.current;
+      const [, dMax] = purchaseYDomainRef.current;
       const maxValue = dMax * 1.4;
       const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
       drag.currentValue = value;
-      setExpenseDragPreview({ index: drag.index, value });
+      setPurchaseDragPreview({ index: drag.index, value });
     };
     const handleUp = () => {
-      if (expenseDragStateRef.current) springBackExpense();
+      if (purchaseDragStateRef.current) springBackPurchase();
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
@@ -227,27 +237,27 @@ export default function ExpensePage() {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, [springBackExpense]);
+  }, [springBackPurchase]);
 
-  const expenseDisplayTrend = useMemo(() => {
-    if (!expenseDragPreview) return trend;
-    return trend.map((d, i) => (i === expenseDragPreview.index ? { ...d, total: expenseDragPreview.value } : d));
-  }, [trend, expenseDragPreview]);
+  const purchaseDisplayTrend = useMemo(() => {
+    if (!purchaseDragPreview) return trend;
+    return trend.map((d, i) => (i === purchaseDragPreview.index ? { ...d, total: purchaseDragPreview.value } : d));
+  }, [trend, purchaseDragPreview]);
 
   // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
-  const renderExpenseCalibrationDot = (props: any) => {
+  const renderPurchaseCalibrationDot = (props: any) => {
     const { cx, cy, index, payload } = props;
-    expenseDotsRef.current[index] = { value: payload.total, cy };
-    return <circle key={`expense-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+    purchaseDotsRef.current[index] = { value: payload.total, cy };
+    return <circle key={`purchase-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
   };
 
   // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
-  const renderExpenseActiveDot = (props: any) => {
+  const renderPurchaseActiveDot = (props: any) => {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
-    const isDraggingThis = expenseDragPreview?.index === index;
+    const isDraggingThis = purchaseDragPreview?.index === index;
     return (
-      <g key={`expense-pt-${index}`}>
+      <g key={`purchase-pt-${index}`}>
         <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#f97316" stroke="#fff" strokeWidth={1.5} />
         <circle
           cx={cx}
@@ -255,7 +265,7 @@ export default function ExpensePage() {
           r={12}
           fill="transparent"
           style={{ cursor: 'ns-resize', touchAction: 'none' }}
-          onPointerDown={(e) => handleExpenseDotPointerDown(e, index, payload.total)}
+          onPointerDown={(e) => handlePurchaseDotPointerDown(e, index, payload.total)}
         />
       </g>
     );
@@ -293,12 +303,33 @@ export default function ExpensePage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Expense</h1>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">Purchase</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Transaksi beban operasional — diambil otomatis dari halaman Transaksi</p>
       </div>
 
+      {missingJeIdCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {missingJeIdCount} baris transaksi Purchase tidak memiliki nomor jurnal (jeId). KPI di bawah tetap
+            dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {unbalanced.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {unbalanced.length} jurnal Purchase tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
+            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Purchase tetap dihitung dari sisi yang lebih
+            besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
       {/* [BARU] Banner penghubung ke Account Payable — setiap transaksi
-          Expense yang Status Pembayarannya belum "Lunas" otomatis muncul
+          Purchase yang Status Pembayarannya belum "Lunas" otomatis muncul
           sebagai tagihan (bill) di halaman Account Payable. */}
       <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 px-5 py-3.5">
         <div className="flex items-center gap-3">
@@ -324,8 +355,25 @@ export default function ExpensePage() {
         </Link>
       </div>
 
+      {draftCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {draftCount} transaksi Purchase senilai {formatIDR(draftTotal, true)} masih berstatus Draft (menunggu
+            approval) — belum termasuk dalam Total Purchase di bawah sampai disetujui.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Expense" value={totalExpense} icon="CreditCardIcon" iconColor="text-orange-600" iconBg="bg-orange-50" />
+        <KpiCard
+          title="Total Purchase"
+          value={totalPurchase}
+          icon="CreditCardIcon"
+          iconColor="text-orange-600"
+          iconBg="bg-orange-50"
+          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
+        />
         <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
         <KpiCard title="Belum Diposting" value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />
@@ -335,17 +383,17 @@ export default function ExpensePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
-            <h2 className="text-sm font-bold text-foreground">Tren Expense Bulanan</h2>
+            <h2 className="text-sm font-bold text-foreground">Tren Purchase Bulanan</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Berdasarkan transaksi yang tercatat di halaman Transaksi</p>
           </div>
           {trend.every(t => t.total === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Expense untuk ditampilkan.</p>
+            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Purchase untuk ditampilkan.</p>
           ) : (
             <div className="relative">
               <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={expenseDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                <AreaChart data={purchaseDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="gradExpenseMain" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id="gradPurchaseMain" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
                       <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
                     </linearGradient>
@@ -357,39 +405,39 @@ export default function ExpensePage() {
                     tick={{ fontSize: 10, fill: '#94a3b8' }}
                     axisLine={false}
                     tickLine={false}
-                    width={EXPENSE_AXIS_WIDTH}
-                    ticks={expenseYTicks}
-                    domain={expenseYDomain}
+                    width={PURCHASE_AXIS_WIDTH}
+                    ticks={purchaseYTicks}
+                    domain={purchaseYDomain}
                     allowDataOverflow
                   />
-                  <Tooltip content={<ExpenseTrendTooltip dragPreview={expenseDragPreview} />} cursor={false} />
+                  <Tooltip content={<PurchaseTrendTooltip dragPreview={purchaseDragPreview} />} cursor={false} />
                   <Area
                     type="monotone"
                     dataKey="total"
-                    name="Expense"
+                    name="Purchase"
                     stroke="#f97316"
                     strokeWidth={2.5}
-                    fill="url(#gradExpenseMain)"
-                    dot={renderExpenseCalibrationDot as any}
-                    activeDot={renderExpenseActiveDot as any}
-                    isAnimationActive={!expenseDragPreview}
+                    fill="url(#gradPurchaseMain)"
+                    dot={renderPurchaseCalibrationDot as any}
+                    activeDot={renderPurchaseActiveDot as any}
+                    isAnimationActive={!purchaseDragPreview}
                   />
                 </AreaChart>
               </ResponsiveContainer>
               {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
               <div
-                onMouseDown={handleExpenseAxisMouseDown}
-                onDoubleClick={resetExpenseZoom}
+                onMouseDown={handlePurchaseAxisMouseDown}
+                onDoubleClick={resetPurchaseZoom}
                 title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
                 className="absolute top-0 left-0 h-full cursor-ns-resize"
-                style={{ width: EXPENSE_AXIS_OVERLAY_WIDTH }}
+                style={{ width: PURCHASE_AXIS_OVERLAY_WIDTH }}
               />
             </div>
           )}
         </div>
 
         <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">Expense per Kategori</h2>
+          <h2 className="text-sm font-bold text-foreground mb-1">Purchase per Kategori</h2>
           <p className="text-xs text-muted-foreground mb-3">Breakdown beban</p>
           {byCategory.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
@@ -443,16 +491,16 @@ export default function ExpensePage() {
         )}
       </div>
 
-      {/* Aksi & Upload Data + Tabel Transaksi Expense — digabung jadi 1 kolom,
+      {/* Aksi & Upload Data + Tabel Transaksi Purchase — digabung jadi 1 kolom,
           aksi & filter di atas tabel. */}
       <TransactionsGroupPanel
-        group="expense"
-        groupLabel="Expense"
+        group="purchase"
+        groupLabel="Purchase"
         defaultCategory="Software"
         columns={columns}
         onRowClick={setSelectedTx}
-        // [BARU] Tombol Import di halaman Expense sekarang MENGGANTI (bukan
-        // menambah) seluruh transaksi Expense dengan hasil upload PDF
+        // [BARU] Tombol Import di halaman Purchase sekarang MENGGANTI (bukan
+        // menambah) seluruh transaksi Purchase dengan hasil upload PDF
         // "Data Penjualan Detail" (kasir/POS) — kelompok transaksi lain
         // (Sales, Cash Payment, dll) tidak ikut terhapus. Excel/rekening
         // koran belum didukung di mode ini, hanya PDF.

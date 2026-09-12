@@ -76,6 +76,7 @@ interface ProfitLossData {
 }
 
 const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
 
 type EmberBeban = 'cogs' | 'da' | 'interest' | 'tax' | 'opex';
 
@@ -320,20 +321,39 @@ export function useProfitLossData(): ProfitLossData {
       PL_CORE: computed.PL_CORE,
       MARGINS: computed.MARGINS,
       MONTHLY_PL: computed.MONTHLY_PL,
-      REVENUE_BY_CATEGORY: computed.REVENUE_BY_CATEGORY.length ? computed.REVENUE_BY_CATEGORY : MOCK_REVENUE_BY_CATEGORY,
-      EXPENSE_BREAKDOWN: computed.EXPENSE_BREAKDOWN.length ? computed.EXPENSE_BREAKDOWN : MOCK_EXPENSE_BREAKDOWN,
+      REVENUE_BY_CATEGORY: computed.REVENUE_BY_CATEGORY.length ? computed.REVENUE_BY_CATEGORY : (DEMO_MODE ? MOCK_REVENUE_BY_CATEGORY : []),
+      EXPENSE_BREAKDOWN: computed.EXPENSE_BREAKDOWN.length ? computed.EXPENSE_BREAKDOWN : (DEMO_MODE ? MOCK_EXPENSE_BREAKDOWN : []),
     };
   }
 
+  if (DEMO_MODE) {
+    return {
+      loading,
+      isSampleData: true,
+      companyName: COMPANY.name,
+      periodLabel: COMPANY.period,
+      PL_CORE: MOCK_PL_CORE,
+      MARGINS: MOCK_MARGINS,
+      MONTHLY_PL: MOCK_MONTHLY_PL,
+      REVENUE_BY_CATEGORY: MOCK_REVENUE_BY_CATEGORY,
+      EXPENSE_BREAKDOWN: MOCK_EXPENSE_BREAKDOWN,
+    };
+  }
+
+  const ZERO_PL: PLCoreValues = {
+    revenue: 0, cogs: 0, grossProfit: 0, operatingExpenses: 0, ebitda: 0,
+    da: 0, ebit: 0, interestExpense: 0, ebt: 0, incomeTax: 0, netProfit: 0,
+  };
+  const ZERO_MARGINS: MarginValues = { grossMargin: 0, ebitdaMargin: 0, ebitMargin: 0, netMargin: 0 };
   return {
     loading,
-    isSampleData: true,
-    companyName: COMPANY.name,
-    periodLabel: COMPANY.period,
-    PL_CORE: MOCK_PL_CORE,
-    MARGINS: MOCK_MARGINS,
-    MONTHLY_PL: MOCK_MONTHLY_PL,
-    REVENUE_BY_CATEGORY: MOCK_REVENUE_BY_CATEGORY,
-    EXPENSE_BREAKDOWN: MOCK_EXPENSE_BREAKDOWN,
+    isSampleData: false,
+    companyName: activeClientName || 'No client selected',
+    periodLabel: `No posted data — ${new Date().getFullYear()}`,
+    PL_CORE: ZERO_PL,
+    MARGINS: ZERO_MARGINS,
+    MONTHLY_PL: [],
+    REVENUE_BY_CATEGORY: [],
+    EXPENSE_BREAKDOWN: [],
   };
 }

@@ -9,7 +9,7 @@ import { ActiveClientProvider } from '@/lib/activeClient';
 // [BARU] Provider transaksi dinaikkan ke sini (dari sebelumnya hanya di
 // src/app/transactions/layout.tsx) supaya halaman DI LUAR /transactions —
 // terutama Account Payable — bisa ikut baca data transaksi yang sama lewat
-// useTransactions(). Ini prasyarat wajib untuk menghubungkan halaman Expense
+// useTransactions(). Ini prasyarat wajib untuk menghubungkan halaman Purchase
 // ke halaman Account Payable, karena keduanya harus berbagi satu instance
 // state yang sama, bukan dua context terpisah.
 import { TransactionsProvider } from '@/app/transactions/context/TransactionsContext';

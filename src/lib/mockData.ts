@@ -117,6 +117,11 @@ export interface Bill {
   priority: CollectionPriority;
   paymentMethod: string;
   approvalStatus: string;
+  // [BARU — dipakai vendorsFromBills/mostCommonCategoryLabel di apBridge.ts
+  // untuk menentukan kategori Vendor dari kategori transaksi Expense
+  // sumbernya, bukan string statis]. Opsional supaya data contoh `bills`
+  // di bawah (yang tidak berasal dari transaksi asli) tidak wajib diisi.
+  category?: string;
 }
 
 export const bills: Bill[] = [

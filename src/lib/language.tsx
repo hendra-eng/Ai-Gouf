@@ -1185,6 +1185,40 @@ const translations: Dict = {
     id: 'Menampilkan nilai Tahun Lalu (periode sama) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual',
     zh: '4张损益表卡片显示去年同期与实际值对比 — 其他卡片仍显示实际值',
   },
+
+  // ─── Sidebar: group labels ───
+  'Financial': { en: 'Financial', id: 'Keuangan', zh: '财务' },
+  'Assets & Equity': { en: 'Assets & Equity', id: 'Aset & Ekuitas', zh: '资产与权益' },
+  'Planning': { en: 'Planning', id: 'Perencanaan', zh: '规划' },
+  'Intelligence': { en: 'Intelligence', id: 'Kecerdasan', zh: '智能分析' },
+  'Management': { en: 'Management', id: 'Manajemen', zh: '管理' },
+
+  // ─── Sidebar: nav item labels ───
+  'Overview': { en: 'Overview', id: 'Ringkasan', zh: '概览' },
+  'Agent AI': { en: 'Agent AI', id: 'Agent AI', zh: 'AI 代理' },
+  'Transactions': { en: 'Transactions', id: 'Transaksi', zh: '交易' },
+  'Sales': { en: 'Sales', id: 'Penjualan', zh: '销售' },
+  'Purchase': { en: 'Purchase', id: 'Pembelian', zh: '采购' },
+  'Cash Payment': { en: 'Cash Payment', id: 'Pembayaran Kas', zh: '现金支付' },
+  'Cash Receipt': { en: 'Cash Receipt', id: 'Penerimaan Kas', zh: '现金收款' },
+  'Budget & Forecast': { en: 'Budget & Forecast', id: 'Anggaran & Perkiraan', zh: '预算与预测' },
+  'Tax & Compliance': { en: 'Tax & Compliance', id: 'Pajak & Kepatuhan', zh: '税务与合规' },
+  'Financial Analytics': { en: 'Financial Analytics', id: 'Analitik Keuangan', zh: '财务分析' },
+  'AI Financial Analyst': { en: 'AI Financial Analyst', id: 'Analis Keuangan AI', zh: 'AI 财务分析师' },
+  'Audit': { en: 'Audit', id: 'Audit', zh: '审计' },
+  'Reports': { en: 'Reports', id: 'Laporan', zh: '报告' },
+  'Clients': { en: 'Clients', id: 'Klien', zh: '客户' },
+  'Documents': { en: 'Documents', id: 'Dokumen', zh: '文档' },
+
+  // ─── Sidebar: footer & aria labels ───
+  'Finance Manager': { en: 'Finance Manager', id: 'Manajer Keuangan', zh: '财务经理' },
+  'Settings': { en: 'Settings', id: 'Pengaturan', zh: '设置' },
+  'Logout': { en: 'Logout', id: 'Keluar', zh: '退出登录' },
+  'Accounting': { en: 'Accounting', id: 'Akuntansi', zh: '会计' },
+  'Collapse sidebar': { en: 'Collapse sidebar', id: 'Ciutkan sidebar', zh: '收起侧边栏' },
+  'Expand sidebar': { en: 'Expand sidebar', id: 'Perluas sidebar', zh: '展开侧边栏' },
+  'Collapse submenu': { en: 'Collapse submenu', id: 'Ciutkan submenu', zh: '收起子菜单' },
+  'Expand submenu': { en: 'Expand submenu', id: 'Perluas submenu', zh: '展开子菜单' },
 };
 
 export function translate(text: string, lang: LanguageCode): string {

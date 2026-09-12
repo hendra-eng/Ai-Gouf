@@ -15,7 +15,7 @@ import { billsFromTransactions, vendorsFromBills, apKpisFromBills } from '@/app/
 // tanpa perlu pindah ke halaman Transaksi. Pakai modal yang sama persis
 // dengan yang dipakai halaman Transaksi & 5 sub halamannya, mode "append"
 // supaya data yang sudah ada di seluruh dashboard TIDAK terhapus — hasil
-// import hanya ditambahkan (sama seperti pola di TransactionsGroupActionsPanel).
+// import hanya ditambahkan (sama seperti pola di TransactionsGroupPanel).
 import ImportRekeningKoranModal from '@/app/transactions/components/ImportRekeningKoranModal';
 import type { Transaction } from '@/app/transactions/components/transactionData';
 // [BARU] KPI grid sekarang REAL: KPIBentoGrid.tsx sudah lengkap ambil data
@@ -38,7 +38,7 @@ function toCsvValue(v: string | number): string {
 
 // [BARU] Export tombol "Export" di header Financial Overview sekarang
 // benar-benar mengunduh file, bukan cuma toast — mengikuti pola
-// exportGroupToCsv() di TransactionsGroupActionsPanel.tsx (project ini belum
+// exportGroupToCsv() di TransactionsGroupPanel.tsx (project ini belum
 // pakai library xlsx apa pun, jadi format CSV dipilih: bisa langsung dibuka
 // di Excel/Google Sheets tanpa dependency tambahan). Isinya seluruh
 // transaksi yang sedang jadi sumber data dashboard ini (sama seperti yang
@@ -79,7 +79,7 @@ export default function OverviewContent() {
   // [BARU] State modal import di Financial Overview. Toast konfirmasi sudah
   // ditampilkan oleh ImportRekeningKoranModal sendiri (lihat handleConfirm
   // di dalamnya) -- tidak perlu toast tambahan di sini, sama seperti pola
-  // handleImported() di TransactionsContent.tsx & TransactionsGroupActionsPanel.tsx.
+  // handleImported() di TransactionsContent.tsx & TransactionsGroupPanel.tsx.
   const [showImportModal, setShowImportModal] = useState(false);
   const handleImported = (newTx: Transaction[]) => {
     addTransactions(newTx);

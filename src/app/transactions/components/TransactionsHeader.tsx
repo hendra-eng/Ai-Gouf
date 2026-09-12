@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { Download, Upload, Plus, Trash2, Archive, Calendar, ChevronDown, Check, FileText } from 'lucide-react';
+import { Download, Upload, Plus, Trash2, Archive, Calendar, ChevronDown, Check, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useActiveClient } from '@/lib/activeClient';
 import { COMPANY } from '@/lib/financialData';
@@ -11,10 +11,18 @@ interface TransactionsHeaderProps {
   onImportClick: () => void;
   onExportJournalPdf: () => void;
   onExportExcel: () => void;
+  // [BARU] true selagi file Excel sedang disiapkan di background (lihat
+  // effect di TransactionsContent.tsx) — dipakai untuk tampilkan indikator
+  // kecil di sebelah tombol Export, supaya user tahu file belum tentu
+  // 100% "siap instan" kalau baru saja import/ganti filter.
+  isPreparingExcelExport?: boolean;
   onNewJournalClick: () => void;
   selectedYear: number | 'all';
   onYearChange: (year: number | 'all') => void;
   yearOptions: (number | 'all')[];
+  // [FIX - audit #2] Handler nyata dari TransactionsContent (memanggil context), bukan lagi toast lokal.
+  onBulkDelete: () => void;
+  onBulkArchive: () => void;
 }
 
 export default function TransactionsHeader({
@@ -23,10 +31,13 @@ export default function TransactionsHeader({
   onImportClick,
   onExportJournalPdf,
   onExportExcel,
+  isPreparingExcelExport = false,
   onNewJournalClick,
   selectedYear,
   onYearChange,
   yearOptions,
+  onBulkDelete,
+  onBulkArchive,
 }: TransactionsHeaderProps) {
   const [yearMenuOpen, setYearMenuOpen] = useState(false);
   const { activeClientName } = useActiveClient();
@@ -43,7 +54,9 @@ export default function TransactionsHeader({
   };
 
   const handleBulkDelete = () => {
-    toast.error('Konfirmasi diperlukan', { description: `${selectedCount} transaksi akan dihapus secara permanen` });
+    if (window.confirm(`Hapus ${selectedCount} transaksi terpilih? Untuk baris yang sudah tersinkron ke server, jurnal akan ditandai ditolak (tidak masuk laporan keuangan).`)) {
+      onBulkDelete();
+    }
   };
 
   return (
@@ -101,7 +114,7 @@ export default function TransactionsHeader({
               Hapus ({selectedCount})
             </button>
             <button
-              onClick={() => toast.success(`${selectedCount} transaksi diarsipkan`)}
+              onClick={onBulkArchive}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted border border-border text-muted-foreground text-xs font-semibold hover:bg-border transition-colors"
             >
               <Archive size={13} />
@@ -116,9 +129,22 @@ export default function TransactionsHeader({
           <Upload size={13} />
           Import
         </button>
-        <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5">
-          <Download size={13} />
+        <button
+          onClick={handleExport}
+          className="btn-secondary text-xs py-1.5 gap-1.5 relative"
+          title={isPreparingExcelExport ? 'File Excel sedang disiapkan di background...' : 'Export transaksi yang sedang tampil sebagai Excel'}
+        >
+          {isPreparingExcelExport ? (
+            <Loader2 size={13} className="animate-spin text-muted-foreground" />
+          ) : (
+            <Download size={13} />
+          )}
           Export
+          {isPreparingExcelExport && (
+            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+              (menyiapkan...)
+            </span>
+          )}
         </button>
         <button
           onClick={handleExportPdf}

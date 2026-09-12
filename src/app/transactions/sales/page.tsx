@@ -6,7 +6,7 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, txAmount, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, formatDate } from '../lib/groupAnalytics';
+import { formatIDR, txAmount, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, formatDate, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -98,6 +98,27 @@ export default function SalesPage() {
   const unpostedCount = countJournalsByStatus(salesTx, 'Unposted');
   const reconciledCount = countJournalsByStatus(salesTx, 'Reconciled');
   const reconciledPct = txCount > 0 ? (reconciledCount / txCount) * 100 : 0;
+  // [BARU] Transaksi berstatus 'Draft' (pending approval Finance Manager,
+  // mis. tx-017) SENGAJA dikeluarkan dari grossSales/txCount di atas lewat
+  // groupByJournalRealized() (lihat groupAnalytics.ts) — belum disetujui
+  // secara bisnis, jadi belum dianggap penjualan riil. Nilainya ditampilkan
+  // terpisah di sini (bukan dihilangkan begitu saja) supaya user tetap tahu
+  // ada transaksi yang menggantung menunggu approval.
+  const draftCount = countJournalsByStatus(salesTx, 'Draft');
+  const draftTotal = draftJournalTotal(salesTx);
+
+  // [BARU] Peringatan integritas data: baris Sales yang tidak punya jeId
+  // sama sekali (lihat transactionsMissingJeId() di groupAnalytics.ts).
+  // Normalnya daftar ini selalu kosong — semua jalur pembuatan transaksi di
+  // app ini selalu mengisi jeId. Kalau muncul, KPI di atas (terutama Total
+  // Sales) hanya seakurat fallback `reference` yang dipakai groupByJournal();
+  // ditampilkan di sini supaya masalah data seperti ini kelihatan, bukan
+  // diam-diam mempengaruhi angka.
+  const missingJeIdCount = useMemo(() => transactionsMissingJeId(salesTx).length, [salesTx]);
+
+  // [BARU] Peringatan integritas data — jurnal (jeId) yang total debit &
+  // kreditnya tidak sama. Lihat unbalancedJournals() di groupAnalytics.ts.
+  const unbalanced = useMemo(() => unbalancedJournals(salesTx), [salesTx]);
 
   const trend = useMemo(() => monthlyTrendFor(salesTx), [salesTx]);
   const byCategory = useMemo(() => categoryBreakdown(salesTx).slice(0, 6), [salesTx]);
@@ -291,9 +312,58 @@ export default function SalesPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Transaksi penjualan & pendapatan — diambil otomatis dari halaman Transaksi</p>
       </div>
 
+      {/* [BARU] Peringatan integritas data — cuma tampil kalau ada baris
+          Sales tanpa jeId, yang berarti akurasi KPI di bawah (terutama
+          Total Sales) bergantung pada fallback pencocokan `reference`. */}
+      {missingJeIdCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {missingJeIdCount} baris transaksi Sales tidak memiliki nomor jurnal (jeId). KPI di bawah tetap dihitung
+            memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {/* [BARU] Peringatan integritas data — jurnal dengan 2+ baris yang
+          total debit & kreditnya tidak sama. journalAmount() tetap
+          mengambil sisi yang lebih besar (lihat groupAnalytics.ts), jadi
+          Total Sales tidak "hilang", tapi user perlu tahu ada jurnal salah
+          input. */}
+      {unbalanced.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {unbalanced.length} jurnal Sales tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
+            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Sales tetap dihitung dari sisi yang lebih
+            besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {/* [BARU] Peringatan: transaksi Draft (pending approval) sengaja
+          dikeluarkan dari Total Sales — lihat groupByJournalRealized() di
+          groupAnalytics.ts. */}
+      {draftCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {draftCount} transaksi Sales senilai {formatIDR(draftTotal, true)} masih berstatus Draft (menunggu
+            approval) — belum termasuk dalam Total Sales di bawah sampai disetujui.
+          </span>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Sales" value={grossSales} icon="ShoppingCartIcon" iconColor="text-teal-600" iconBg="bg-teal-50" />
+        <KpiCard
+          title="Total Sales"
+          value={grossSales}
+          icon="ShoppingCartIcon"
+          iconColor="text-teal-600"
+          iconBg="bg-teal-50"
+          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
+        />
         <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-orange-600" iconBg="bg-orange-50" />
         <KpiCard title="Belum Diposting" value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />

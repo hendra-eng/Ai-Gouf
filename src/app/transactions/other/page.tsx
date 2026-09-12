@@ -6,12 +6,12 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsWhere, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsWhere, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 
-// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Expense/dst). ──
+// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/dst). ──
 const OTHER_AXIS_WIDTH = 65;
 const OTHER_AXIS_OVERLAY_WIDTH = OTHER_AXIS_WIDTH + 10;
 const OTHER_SPRING_MS = 380;
@@ -61,13 +61,18 @@ export default function OtherTransactionsPage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  // [DIUBAH] Sama seperti Sales/Expense/Cash Payment — dikelompokkan per
+  // [DIUBAH] Sama seperti Sales/Purchase/Cash Payment — dikelompokkan per
   // NOMOR JURNAL (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi
   // dengan 2 kaki jurnal tidak terhitung dua kali. Lihat groupAnalytics.ts.
   const totalOther = uniqueJournalTotal(otherTx);
   const txCount = uniqueJournalCount(otherTx);
   const avgTxValue = txCount > 0 ? totalOther / txCount : 0;
   const unpostedCount = countJournalsByStatus(otherTx, 'Unposted');
+  // [BARU] Sama seperti Sales/Purchase/Cash Payment — transaksi 'Draft'
+  // sengaja dikeluarkan dari totalOther/txCount lewat groupByJournalRealized(),
+  // nilainya ditampilkan terpisah supaya tidak hilang begitu saja.
+  const draftCount = countJournalsByStatus(otherTx, 'Draft');
+  const draftTotal = draftJournalTotal(otherTx);
   // [DIUBAH] "Perlu Ditinjau" — catatan (`notes`) biasanya cuma terisi di
   // kaki jurnal yang bermasalah (mis. anomali), bukan di kedua kaki
   // sekaligus, jadi predicate mengecek SELURUH baris dalam 1 jeId (bukan
@@ -76,12 +81,17 @@ export default function OtherTransactionsPage() {
   // kedua kaki sama-sama punya notes.
   const needsReview = countJournalsWhere(otherTx, (rows) => rows.some((r) => !!r.notes));
 
+  // [BARU] Peringatan integritas data — sama seperti Sales/Purchase/Cash
+  // Payment/Cash Receipt. Lihat transactionsMissingJeId() di groupAnalytics.ts.
+  const missingJeIdCount = useMemo(() => transactionsMissingJeId(otherTx).length, [otherTx]);
+  const unbalanced = useMemo(() => unbalancedJournals(otherTx), [otherTx]);
+
   const trend = useMemo(() => monthlyTrendFor(otherTx), [otherTx]);
   const byCategory = useMemo(() => categoryBreakdown(otherTx).slice(0, 6), [otherTx]);
   const topParties5 = useMemo(() => topParties(otherTx, 5), [otherTx]);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
-  // Sales / Expense / Cash Payment / Cash Reserve / Financial Overview. ──
+  // Sales / Purchase / Cash Payment / Cash Receipt / Financial Overview. ──
   const otherBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
   const [otherPriceZoom, setOtherPriceZoom] = useState(1);
   const otherZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
@@ -271,8 +281,46 @@ export default function OtherTransactionsPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Transaksi lain-lain (CapEx & belum terkategori) — diambil otomatis dari halaman Transaksi</p>
       </div>
 
+      {missingJeIdCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {missingJeIdCount} baris transaksi Other tidak memiliki nomor jurnal (jeId). KPI di bawah tetap dihitung
+            memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {unbalanced.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {unbalanced.length} jurnal Other tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
+            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Other tetap dihitung dari sisi yang lebih
+            besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {draftCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {draftCount} transaksi Other senilai {formatIDR(draftTotal, true)} masih berstatus Draft (menunggu
+            approval) — belum termasuk dalam Total Other di bawah sampai disetujui.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Other" value={totalOther} icon="Squares2X2Icon" iconColor="text-slate-600" iconBg="bg-slate-100" />
+        <KpiCard
+          title="Total Other"
+          value={totalOther}
+          icon="Squares2X2Icon"
+          iconColor="text-slate-600"
+          iconBg="bg-slate-100"
+          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
+        />
         <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
         <KpiCard title="Belum Diposting" value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />

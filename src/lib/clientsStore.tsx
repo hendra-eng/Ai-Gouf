@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { type Client, type ClientStatus } from '@/lib/clientsMockData';
+import { ambilToken, hapusToken } from '@/app/agent-ai/lib/api';
 
 const CLIENTS_CHANGED_EVENT = 'gouf-clients-changed';
 
@@ -18,6 +19,21 @@ const CLIENTS_CHANGED_EVENT = 'gouf-clients-changed';
 // jadi path relatif "/api" biasanya cukup. NEXT_PUBLIC_API_BASE_URL bisa
 // dipakai untuk override kalau backend di-deploy di domain terpisah.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || {});
+  const token = ambilToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(input, { ...init, headers });
+  if (response.status === 401 && typeof window !== 'undefined') {
+    hapusToken();
+    if (window.location.pathname !== '/login') {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.assign(`/login?next=${next}`);
+    }
+  }
+  return response;
+}
 
 function notifyClientsChanged() {
   if (typeof window === 'undefined') return;
@@ -79,7 +95,7 @@ function petakanDariBackend(row: BackendClient): Client {
 
 /** Ambil semua client dari backend. */
 export async function getAllClients(): Promise<Client[]> {
-  const res = await fetch(`${API_BASE_URL}/api/client`);
+  const res = await authenticatedFetch(`${API_BASE_URL}/api/client`);
   if (!res.ok) {
     throw new Error(`Gagal mengambil daftar client (${res.status})`);
   }
@@ -104,7 +120,7 @@ export async function addClient(
   if (newClient.npwp) form.append('npwp', newClient.npwp);
   if (newClient.address) form.append('address', newClient.address);
 
-  const res = await fetch(`${API_BASE_URL}/api/client`, { method: 'POST', body: form });
+  const res = await authenticatedFetch(`${API_BASE_URL}/api/client`, { method: 'POST', body: form });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Gagal menambah client (${res.status})`);
@@ -127,7 +143,7 @@ export async function updateClient(
   clientId: string,
   updates: Pick<Client, 'industry' | 'status' | 'assignedAccountant' | 'contactName' | 'npwp' | 'address' | 'contactEmail' | 'contactPhone'>
 ): Promise<void> {
-  const profilRes = await fetch(`${API_BASE_URL}/api/client/${clientId}/profil`, {
+  const profilRes = await authenticatedFetch(`${API_BASE_URL}/api/client/${clientId}/profil`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -144,7 +160,7 @@ export async function updateClient(
     throw new Error(detail.detail || `Gagal mengubah profil client (${profilRes.status})`);
   }
 
-  const kontakRes = await fetch(`${API_BASE_URL}/api/client/${clientId}/kontak`, {
+  const kontakRes = await authenticatedFetch(`${API_BASE_URL}/api/client/${clientId}/kontak`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -163,7 +179,7 @@ export async function updateClient(
 /** Hapus client permanen dari backend. Dipakai menu titik-3 "Delete" di
  *  kartu client. */
 export async function deleteClient(clientId: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/client/${clientId}`, { method: 'DELETE' });
+  const res = await authenticatedFetch(`${API_BASE_URL}/api/client/${clientId}`, { method: 'DELETE' });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Gagal menghapus client (${res.status})`);

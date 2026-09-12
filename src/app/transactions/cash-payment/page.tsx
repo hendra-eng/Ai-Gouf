@@ -6,12 +6,12 @@ import TransactionDrawer from '../components/TransactionDrawer';
 import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
 import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS } from '../lib/groupAnalytics';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 
-// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Expense). ──
+// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase). ──
 const PAYMENT_AXIS_WIDTH = 65;
 const PAYMENT_AXIS_OVERLAY_WIDTH = PAYMENT_AXIS_WIDTH + 10;
 const PAYMENT_SPRING_MS = 380;
@@ -60,7 +60,7 @@ export default function CashPaymentPage() {
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  // [DIUBAH] Sama seperti Sales/Expense — dikelompokkan per NOMOR JURNAL
+  // [DIUBAH] Sama seperti Sales/Purchase — dikelompokkan per NOMOR JURNAL
   // (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki
   // jurnal (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun
   // Hutang/Pajak saat kewajiban dilunasi — keduanya sama-sama masuk
@@ -69,15 +69,25 @@ export default function CashPaymentPage() {
   const txCount = uniqueJournalCount(paymentTx);
   const avgTxValue = txCount > 0 ? totalPayment / txCount : 0;
   const unpostedCount = countJournalsByStatus(paymentTx, 'Unposted');
+  // [BARU] Sama seperti Sales/Purchase — transaksi 'Draft' sengaja dikeluarkan
+  // dari totalPayment/txCount lewat groupByJournalRealized(), nilainya
+  // ditampilkan terpisah supaya tidak hilang begitu saja.
+  const draftCount = countJournalsByStatus(paymentTx, 'Draft');
+  const draftTotal = draftJournalTotal(paymentTx);
   const taxCount = countJournalsByCategory(paymentTx, ['Tax']);
   const apCount = countJournalsByCategory(paymentTx, ['AP Payment']);
+
+  // [BARU] Peringatan integritas data — sama seperti Sales/Purchase. Lihat
+  // transactionsMissingJeId() di groupAnalytics.ts.
+  const missingJeIdCount = useMemo(() => transactionsMissingJeId(paymentTx).length, [paymentTx]);
+  const unbalanced = useMemo(() => unbalancedJournals(paymentTx), [paymentTx]);
 
   const trend = useMemo(() => monthlyTrendFor(paymentTx), [paymentTx]);
   const byCategory = useMemo(() => categoryBreakdown(paymentTx).slice(0, 6), [paymentTx]);
   const topPayees = useMemo(() => topParties(paymentTx, 5), [paymentTx]);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
-  // Sales / Expense / Financial Overview. ──
+  // Sales / Purchase / Financial Overview. ──
   const paymentBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
   const [paymentPriceZoom, setPaymentPriceZoom] = useState(1);
   const paymentZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
@@ -267,8 +277,46 @@ export default function CashPaymentPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Pembayaran hutang usaha & pajak — diambil otomatis dari halaman Transaksi</p>
       </div>
 
+      {missingJeIdCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {missingJeIdCount} baris transaksi Cash Payment tidak memiliki nomor jurnal (jeId). KPI di bawah tetap
+            dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {unbalanced.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {unbalanced.length} jurnal Cash Payment tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
+            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Cash Payment tetap dihitung dari sisi yang
+            lebih besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
+          </span>
+        </div>
+      )}
+
+      {draftCount > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Perhatian:</span>
+          <span>
+            {draftCount} transaksi Cash Payment senilai {formatIDR(draftTotal, true)} masih berstatus Draft
+            (menunggu approval) — belum termasuk dalam Total Cash Payment di bawah sampai disetujui.
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Cash Payment" value={totalPayment} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
+        <KpiCard
+          title="Total Cash Payment"
+          value={totalPayment}
+          icon="ArrowUpCircleIcon"
+          iconColor="text-rose-600"
+          iconBg="bg-rose-50"
+          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
+        />
         <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
         <KpiCard title="Pembayaran Pajak" value={String(taxCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />

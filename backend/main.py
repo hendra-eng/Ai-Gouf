@@ -71,6 +71,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -79,13 +80,13 @@ import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
 import akuntansi_ai as ak
 import db_client as dbc
 from modules import (
-    accounting_export, ai_analysis, auth, calk_aset_tetap, calk_export,
+    accounting_export, accounting_core, ai_analysis, auth, calk_aset_tetap, calk_export,
     cross_matching, dashboard, dedup_transaksi,
     deteksi_kesalahan_pembelian as dkp, history,
     laporan_keuangan as lapkeu, notifikasi,
@@ -144,6 +145,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _enforce_client_data_isolation(request: Request, call_next):
+    """Security boundary untuk seluruh route /api/client/{client_id}/...
+
+    Development tetap dapat memakai ALLOW_ANONYMOUS_DEV=true. Production
+    membutuhkan JWT dan, untuk role selain tahap_5, mapping user_client_access.
+    Ini dipasang sebagai middleware supaya endpoint lama maupun baru otomatis
+    mendapat perlindungan tanpa harus mengubah struktur setiap route.
+    """
+    path = request.url.path
+    if path.startswith("/api/client/"):
+        parts = [x for x in path.split("/") if x]
+        # /api/client/<id>/... => parts = [api, client, <id>, ...]
+        if len(parts) >= 3 and parts[2].isdigit():
+            client_id = int(parts[2])
+            user = auth.user_from_authorization_header(request.headers.get("Authorization"))
+            if user is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Login diperlukan untuk mengakses data client."},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            if not dbc.user_has_client_access(user.get("id"), client_id, user.get("role")):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "User tidak memiliki akses ke client ini."},
+                )
+    return await call_next(request)
+
 
 FOLDER_HASIL = Path(__file__).parent / "hasil_output"
 FOLDER_HASIL.mkdir(exist_ok=True)
@@ -232,6 +264,7 @@ def _startup_buat_tabel_db():
     # tabel yang sudah ada tidak akan diubah/dihapus.
     try:
         dbc.init_db()
+        accounting_core.ensure_seed_data()
     except Exception as e:  # noqa: BLE001
         print(f"[PERINGATAN] Gagal inisialisasi tabel database saat startup: {e}")
 
@@ -380,7 +413,17 @@ def api_daftar_client(
         GET /api/client?punya_esb=true   -> client yang sudah ada akun ESB
         GET /api/client?punya_esb=false  -> client yang belum ada akun ESB
     """
-    return {"clients": dbc.daftar_client(tipe, punya_esb=punya_esb)}
+    clients = dbc.daftar_client(tipe, punya_esb=punya_esb)
+    # tahap_5 adalah administrator lintas client. Role di bawahnya hanya
+    # boleh melihat client yang secara eksplisit diberikan melalui tabel
+    # user_client_access. Ini mencegah user menebak client_id atau melihat
+    # metadata semua client dari company switcher.
+    if user.get("role") != "tahap_5":
+        allowed_ids = {
+            int(x["client_id"]) for x in dbc.daftar_user_client_access(int(user.get("id") or 0))
+        }
+        clients = [c for c in clients if int(c.get("id") or 0) in allowed_ids]
+    return {"clients": clients}
 
 
 @app.post("/api/client")
@@ -410,6 +453,8 @@ def api_tambah_client(
     )
     if client_id is None:
         raise HTTPException(status_code=500, detail="Gagal menambah client.")
+    if user.get("role") != "tahap_5" and user.get("id") is not None:
+        dbc.set_user_client_access(int(user["id"]), int(client_id), active=True, access_role="owner")
     return {
         "id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe,
         "nomor_wa": nomor_wa, "email": email, "industry": industry, "status": status,
@@ -812,11 +857,11 @@ def api_kpi_bento_dashboard(
     SEBELUM dihitung ke 8 kartu. Kosong/None/"All Branches" = tidak
     difilter (semua cabang digabung, perilaku lama)."""
     tahun_dipakai = tahun or date.today().year
-    jurnal = dbc.ambil_jurnal_terposting(
+    # Accounting Core V2: Dashboard Actual hanya memakai journal lines POSTED.
+    jurnal = accounting_core.list_posted_lines(
         client_id,
         tanggal_mulai=f"{tahun_dipakai}-01-01",
         tanggal_akhir=f"{tahun_dipakai}-12-31",
-        hanya_terposting=False,
     )
     coa = dbc.ambil_coa_client(client_id)
     jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
@@ -1790,37 +1835,48 @@ def _proses_dan_simpan_satu_file(
     pakai_ai: bool = True,
 ) -> dict:
     """
-    [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini
-    (kalau client_id diisi) melakukan BELASAN panggilan dbc.xxx() --
-    log_audit, simpan_hasil/simpan_hasil_esb, ambil_hasil_client,
-    dedup_transaksi (catat_upload_batch, ambil_batch_aktif,
-    tandai_batch_diganti), tarik_draf_jurnal_ke_posting,
-    simpan_reminder_deadline_spt, buat_pertanyaan_klarifikasi,
-    buat_alert_anomali, simpan_evaluasi_pola -- SETIAP SATU adalah round-
-    trip jaringan ke database (lihat catatan di db_client.py & komentar
-    chat_stream() soal ini). Karena Supabase sudah dihapus, blok ini
-    SELURUHNYA dibuang: file PDF/Excel sekarang HANYA diparsing
-    (_proses_semua_jenis, murni CPU/AI, tidak pernah menyentuh database)
-    lalu hasilnya langsung dikembalikan apa adanya ke caller.
+    [RIWAYAT -- Supabase dihapus, sempat TANPA DATABASE] Untuk sementara
+    (lihat riwayat git), fungsi ini kalau client_id diisi TIDAK menyimpan
+    apa pun -- file cuma diparsing (_proses_semua_jenis) lalu hasilnya
+    dikembalikan apa adanya ke caller, tanpa satu pun tulisan ke database.
+    Itu menyebabkan TEMUAN AUDIT #1 (KRITIS): halaman Transaksi menampilkan
+    toast sukses setelah import, padahal tidak ada baris yang benar-benar
+    tersimpan -- begitu ada refetch berikutnya (termasuk yang dipicu oleh
+    import itu sendiri lewat loadFromBackend() di TransactionsContext.tsx),
+    seluruh hasil upload hilang tanpa peringatan.
 
-    conv_id/esb_account_id/konfirmasi_duplikat/user SENGAJA TIDAK dipakai
-    lagi di sini (parameter tetap dipertahankan supaya signature &
-    pemanggil di /api/proses-file, /api/proses-file-batch, dst tidak
-    perlu ikut diubah) -- konsekuensinya, TIDAK ADA LAGI hasil yang
-    otomatis tersimpan/riwayat/audit log/draf jurnal masuk ke
-    posting/reminder SPT/pertanyaan klarifikasi/alert anomali dari proses
-    upload ini. Kalau nanti perlu simpan hasil ke database lagi, itu
-    harus jadi endpoint terpisah yang eksplisit dipanggil BELAKANGAN
-    (bukan otomatis nempel di sini), supaya upload file tetap cepat &
-    tidak tergantung database sama sekali.
+    [FIX -- TEMUAN #1] Sekarang, kalau client_id diisi, fungsi ini
+    KEMBALI menyimpan hasil ke database -- persis logika "Menyimpan hasil
+    ke riwayat client" di /api/proses-file/stream (lihat
+    proses_file_stream() lebih bawah di file ini): dbc.simpan_hasil() /
+    simpan_hasil_esb() untuk tiap jenis dokumen yang terdeteksi, lalu
+    dbc.tarik_draf_jurnal_ke_posting() untuk jenis yang punya draf_jurnal
+    (rekening_koran, jurnal_penjualan_kasir, dst) supaya baris-barisnya
+    masuk ke antrean review akuntan (tabel jurnal_posting) -- lihat blok
+    di akhir fungsi ini, setelah voucher & dedup diproses.
 
-    [DIUBAH] client_id KINI DIPAKAI LAGI, tapi SEMPIT: kalau diisi, dipakai
-    HANYA untuk mint nomor voucher permanen ke baris draf_jurnal hasil
-    rekening_koran (lihat dbc.beri_nomor_voucher_draf_jurnal() di bawah,
-    menyentuh tabel VoucherCounter yang independen dari jurnal_posting) --
-    BUKAN untuk menyimpan/posting/audit apa pun lainnya, jadi paragraf di
-    atas (TIDAK ADA LAGI hasil tersimpan dst.) tetap berlaku untuk selain
-    nomor voucher itu sendiri.
+    SENGAJA TIDAK mengembalikan efek samping LAIN dari jalur /stream:
+    log_audit(auto_fix_data), simpan_reminder_deadline_spt,
+    buat_pertanyaan_klarifikasi, buat_alert_anomali, simpan_evaluasi_pola,
+    auto-generate laporan 18-sheet. Itu semua tetap TIDAK dipanggil di
+    sini -- kalau memang dibutuhkan juga di halaman Transaksi, itu
+    perbaikan terpisah menyusul, supaya perubahan untuk #1 ini tetap fokus
+    & mudah diverifikasi (satu perbaikan = data upload benar-benar
+    tersimpan & muncul kembali setelah refetch).
+
+    conv_id/esb_account_id/user KINI DIPAKAI LAGI (untuk penyimpanan di
+    atas) -- konfirmasi_duplikat masih belum dipakai di sini secara
+    langsung (guard duplikat yang jalan sekarang ada di blok dedup di
+    bawah, lewat dedup_transaksi.evaluasi_upload_rekening_koran(), bukan
+    parameter ini).
+
+    client_id juga tetap dipakai untuk mint nomor voucher permanen ke
+    baris draf_jurnal hasil rekening_koran/jurnal_penjualan_kasir (lihat
+    dbc.beri_nomor_voucher_draf_jurnal() di bawah, menyentuh tabel
+    VoucherCounter) SEBELUM baris itu disimpan ke jurnal_posting -- supaya
+    voucher yang ditampilkan di respons upload SAMA dengan voucher yang
+    akhirnya tersimpan (lihat parameter sudah_diberi_nomor di
+    dbc.tarik_draf_jurnal_ke_posting()).
     """
     import time as _time_debug  # [DEBUG SEMENTARA] hapus setelah selesai profiling
     _t0 = _time_debug.perf_counter()
@@ -1859,11 +1915,143 @@ def _proses_dan_simpan_satu_file(
                     dbc.beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, kode, pakai_ai=pakai_ai)
                 )
 
+    # [FIX - audit #12] Sebelumnya guard anti-duplikat (pisahkanTransaksiDuplikat
+    # di ImportRekeningKoranModal.tsx) MURNI mengecek di frontend, terhadap
+    # transaksi yang KEBETULAN sedang di-load di layar -- backend tidak pernah
+    # melakukan dedup-nya sendiri sama sekali. Sekarang backend juga
+    # mengevaluasi & MENCATAT tiap upload rekening_koran (kalau ada client
+    # aktif) lewat dedup_transaksi.evaluasi_upload_rekening_koran() +
+    # dbc.catat_upload_batch(), lalu menyertakan hasilnya (`deteksi_duplikat`)
+    # di response supaya frontend bisa tampilkan sinyal yang BENAR-BENAR
+    # tersimpan di server, bukan cuma tebakan dari state lokal yang bisa
+    # hilang begitu client di-switch/reload.
+    #
+    # CATATAN (terkait temuan #1): deteksi FILE_IDENTIK (hash SHA-256
+    # seluruh file, dicocokkan ke tabel UploadBatch yang independen dari
+    # jurnal_posting) sudah akurat sejak fix dedup #12. Deteksi
+    # REVISI_SEBAGIAN/DUPLIKAT_PENUH (fingerprint per baris, dicocokkan ke
+    # dbc.ambil_hash_transaksi_aktif() yang MEMBACA tabel jurnal_posting)
+    # dulu TIDAK bisa menangkap upload rekening_koran baru sebagai duplikat
+    # selama #1 belum diperbaiki -- jurnal_posting memang belum pernah
+    # diisi oleh /api/proses-file, jadi tidak ada apa pun di sana untuk
+    # dibandingkan. Evaluasi di atas (`evaluasi_upload_rekening_koran`)
+    # dipanggil SEBELUM blok penyimpanan di bawah (yang baru mengisi
+    # jurnal_posting untuk upload INI) -- jadi baris di upload yang sama
+    # tetap tidak akan saling terdeteksi duplikat satu sama lain (memang
+    # tidak masuk akal, karena belum ada yang lain untuk dibandingkan);
+    # yang sekarang benar adalah upload FILE BERIKUTNYA akan bisa
+    # mendeteksi baris dari upload ini sebagai duplikat, karena upload ini
+    # sudah benar-benar tersimpan ke jurnal_posting begitu #1 diperbaiki.
+    deteksi_duplikat: dict = {}
+    if client_id is not None:
+        file_hash = dedup_transaksi.hitung_file_hash(isi)
+        for kode, hasil in hasil_json.items():
+            if kode != "rekening_koran":
+                continue
+            draf_jurnal = hasil.get("draf_jurnal") if isinstance(hasil, dict) else None
+            if not draf_jurnal:
+                continue
+            evaluasi = dedup_transaksi.evaluasi_upload_rekening_koran(client_id, draf_jurnal, file_hash)
+            # Simpan riwayat batch SATU KALI PER KELOMPOK (kode_bank, periode)
+            # -- satu file rekening koran bisa berisi >1 bank/periode
+            # sekaligus (multi-sheet), jadi tidak bisa dicatat sebagai satu
+            # batch tunggal. Baris tiap kelompok diambil lewat
+            # kelompokkan_draf_jurnal() (fungsi pengelompokan YANG SAMA
+            # persis dipakai evaluasi_upload_rekening_koran() di atas, supaya
+            # isi draf_jurnal yang disimpan konsisten dengan status_deteksi
+            # kelompoknya).
+            kelompok_baris = dedup_transaksi.kelompokkan_draf_jurnal(draf_jurnal)
+            for k in evaluasi.kelompok:
+                baris_kelompok = kelompok_baris.get((k.kode_bank, k.periode), [])
+                # FILE_IDENTIK adalah sinyal GLOBAL (byte-for-byte match ke
+                # file lain) yang "menang" dibanding status per-kelompok
+                # (lihat evaluasi_upload_rekening_koran -- status_keseluruhan
+                # dipromosikan ke FILE_IDENTIK di luar loop per-kelompok,
+                # k.status individual TIDAK ikut berubah). Terapkan promosi
+                # yang sama di sini supaya batch yang dicatat konsisten
+                # dengan status_keseluruhan yang dikirim ke frontend.
+                status_efektif = (
+                    evaluasi.status_keseluruhan
+                    if evaluasi.status_keseluruhan == dedup_transaksi.STATUS_FILE_IDENTIK
+                    else k.status
+                )
+                dbc.catat_upload_batch(
+                    client_id=client_id,
+                    kode_bank=k.kode_bank,
+                    periode=k.periode,
+                    status="menunggu_konfirmasi" if status_efektif != dedup_transaksi.STATUS_BARU else "aktif",
+                    nama_file=nama_file,
+                    file_hash=file_hash,
+                    jumlah_baris_total=k.jumlah_baris_total,
+                    jumlah_baris_baru=k.jumlah_baris_baru,
+                    jumlah_baris_overlap=k.jumlah_baris_overlap,
+                    status_deteksi=status_efektif,
+                    draf_jurnal=baris_kelompok,
+                    diupload_oleh=user.get("username", "unknown") if isinstance(user, dict) else None,
+                )
+            hasil["draf_jurnal"] = dedup_transaksi.hapus_kolom_internal(draf_jurnal)
+            deteksi_duplikat[kode] = evaluasi.to_dict()
+
+    # [FIX -- TEMUAN #1 AUDIT: upload tidak tersimpan ke DB] Sebelumnya
+    # fungsi ini berhenti di sini -- hasil_json cuma dikembalikan ke
+    # caller, TIDAK PERNAH ditulis ke tabel manapun (lihat paragraf
+    # panjang di docstring fungsi ini soal "Supabase dihapus"). Modal
+    # import di halaman Transaksi (ImportRekeningKoranModal.tsx) &
+    # TransactionsContext.tsx (importTransactions/replaceGroup) sudah
+    # lebih dulu diperbaiki dengan ASUMSI upload ini benar-benar tersimpan
+    # permanen begitu ada client aktif (makanya keduanya memanggil
+    # loadFromBackend() setelah import) -- tapi asumsi itu sebelumnya
+    # SALAH, sehingga hasil upload lenyap tanpa peringatan begitu ada
+    # refetch berikutnya.
+    #
+    # Blok ini menyalin PERSIS bagian "Menyimpan hasil ke riwayat client"
+    # dari /api/proses-file/stream (proses_file_stream() di atas, satu-
+    # satunya jalur yang sebelumnya benar menyimpan) -- dbc.simpan_hasil()/
+    # simpan_hasil_esb() dulu (supaya ada baris `hasil` sebagai induk),
+    # baru dbc.tarik_draf_jurnal_ke_posting() kalau ada draf_jurnal, supaya
+    # baris-barisnya masuk ke antrean review akuntan (tabel jurnal_posting)
+    # -- inilah satu-satunya sumber data yang benar-benar dibaca kembali
+    # oleh loadFromBackend() (lewat GET jurnal-posting).
+    #
+    # SENGAJA HANYA menyalin bagian PENYIMPANAN-nya saja -- efek samping
+    # lain di jalur /stream (reminder deadline SPT, pertanyaan klarifikasi,
+    # deteksi anomali/pola mencurigakan, auto-generate laporan 18-sheet)
+    # TIDAK diikutkan di sini, supaya perubahan ini tetap fokus & risiko
+    # rendah untuk memperbaiki temuan #1 (data hilang tanpa peringatan).
+    # Kalau efek samping itu memang dibutuhkan juga di halaman Transaksi,
+    # itu perbaikan terpisah menyusul.
+    #
+    # `sudah_diberi_nomor=True` dikirim ke tarik_draf_jurnal_ke_posting()
+    # supaya TIDAK memint ulang nomor voucher -- baris di atas (blok
+    # "peringatan_voucher") sudah memintnya sekali dengan `pakai_ai` sesuai
+    # pilihan user; memint ulang di sini akan dobel-boroskan nomor dari
+    # VoucherCounter untuk voucher yang tidak pernah dipakai.
+    if client_id is not None:
+        conv_id_final = conv_id or datetime.now().isoformat()
+        for kode, hasil in hasil_json.items():
+            data_disimpan = dict(hasil)
+            data_disimpan["nama_file"] = nama_file
+
+            if esb_account_id is not None:
+                dbc.simpan_hasil_esb(client_id, esb_account_id, conv_id_final, kode, data_disimpan)
+                continue
+
+            dbc.simpan_hasil(client_id, conv_id_final, kode, data_disimpan)
+
+            draf_jurnal_final = data_disimpan.get("draf_jurnal") or []
+            if draf_jurnal_final:
+                hasil_tersimpan = dbc.ambil_hasil_client(client_id, jenis=kode, limit=1)
+                hasil_id = hasil_tersimpan[0]["id"] if hasil_tersimpan else None
+                dbc.tarik_draf_jurnal_ke_posting(
+                    client_id, hasil_id, kode, draf_jurnal_final, sudah_diberi_nomor=True,
+                )
+
     return {
         "nama_file": nama_file,
         "hasil": hasil_json,
         "tidak_terdeteksi": False,
         "peringatan_voucher": peringatan_voucher or None,
+        "deteksi_duplikat": deteksi_duplikat or None,
     }
 
 
@@ -2117,13 +2305,11 @@ def _auto_generate_laporan_18_sheet(
     on_progress: Optional[Callable[..., None]] = None,
 ) -> List[dict]:
     """
-    [BARU] Dipakai bersama oleh proses_file_batch() (upload banyak file)
-    dan proses_file_stream() (upload 1 file dari chat) supaya begitu file
-    dikirim, laporan 18-sheet LANGSUNG keluar tanpa akuntan harus koreksi
-    atau posting jurnal draft satu-satu dulu (_bangun_export_18_sheet
-    sudah jalan dgn hanya_terposting=False -- baris yang akunnya masih
-    perlu dikoreksi tetap ditandai lewat kolom "Status Validasi" di sheet
-    GL, BUKAN dengan menahan laporan).
+    Dipakai bersama oleh proses_file_batch() dan proses_file_stream().
+    Accounting Core V2 tetap dapat memicu proses export otomatis, tetapi
+    angka Actual dalam 18-sheet hanya berasal dari jurnal POSTED. Jika upload
+    baru masih DRAFT, user perlu review/posting terlebih dahulu agar angka
+    tersebut masuk ke laporan resmi.
 
     [UBAH] Sebelumnya diblokir kalau COA kosong. Sekarang dipakai aturan
     "minimal N dari 7 jenis dokumen" (lihat _cek_kelengkapan_dokumen_
@@ -4814,6 +5000,186 @@ def api_hapus_akun_coa(client_id: int, akun_id: int, user: dict = Depends(auth.g
     return {"berhasil": True}
 
 
+
+# ============================================================
+# ACCOUNTING CORE V2 — multi-line journal, taxonomy & account role
+# ============================================================
+
+class StandardMappingRequest(BaseModel):
+    standard_code: str
+
+
+class CompanyAccountRoleRequest(BaseModel):
+    coa_id: int
+
+
+class NativeJournalLineRequest(BaseModel):
+    account_code: str
+    account_name: Optional[str] = None
+    # Decimal menjaga presisi nominal sejak payload API, lalu disimpan ke
+    # SQL NUMERIC(24,2) di JournalLine.
+    debit: Decimal = Decimal("0.00")
+    credit: Decimal = Decimal("0.00")
+    description: Optional[str] = None
+    partner_name: Optional[str] = None
+    tax_code: Optional[str] = None
+    branch: Optional[str] = None
+    department: Optional[str] = None
+    cost_center: Optional[str] = None
+    project: Optional[str] = None
+    reconciliation_no: Optional[str] = None
+    account_role: Optional[str] = None
+
+
+class NativeJournalEntryRequest(BaseModel):
+    source_module: str = "GENERAL_JOURNAL"
+    posting_date: str
+    description: str
+    source_transaction_id: Optional[str] = None
+    reference: Optional[str] = None
+    currency: str = "IDR"
+    status: str = "DRAFT"
+    lines: List[NativeJournalLineRequest]
+
+
+@app.get("/api/accounting/standard-accounts")
+def api_standard_accounts(user: dict = Depends(auth.get_current_user)):
+    session = dbc.SessionLocal()
+    try:
+        rows = session.query(dbc.StandardAccount).filter(dbc.StandardAccount.active.is_(True)).order_by(dbc.StandardAccount.standard_code).all()
+        return {"standard_accounts": [
+            {
+                "id": r.id, "standard_code": r.standard_code, "standard_name": r.standard_name,
+                "account_class": r.account_class, "account_subtype": r.account_subtype,
+                "normal_balance": r.normal_balance, "fs_statement": r.fs_statement,
+                "fs_group": r.fs_group, "fs_line": r.fs_line,
+            } for r in rows
+        ]}
+    finally:
+        session.close()
+
+
+@app.get("/api/accounting/account-roles")
+def api_account_roles(user: dict = Depends(auth.get_current_user)):
+    session = dbc.SessionLocal()
+    try:
+        rows = session.query(dbc.AccountRole).filter(dbc.AccountRole.active.is_(True)).order_by(dbc.AccountRole.role_code).all()
+        return {"account_roles": [
+            {"id": r.id, "role_code": r.role_code, "role_name": r.role_name, "description": r.description}
+            for r in rows
+        ]}
+    finally:
+        session.close()
+
+
+@app.get("/api/client/{client_id}/accounting/mapping-health")
+def api_accounting_mapping_health(client_id: int, user: dict = Depends(auth.require_level(3))):
+    return accounting_core.mapping_health(client_id)
+
+
+@app.put("/api/client/{client_id}/accounting/coa/{coa_id}/standard-mapping")
+def api_set_standard_mapping(
+    client_id: int, coa_id: int, req: StandardMappingRequest,
+    user: dict = Depends(auth.require_level(4)),
+):
+    try:
+        result = accounting_core.set_coa_mapping(client_id, coa_id, req.standard_code, user.get("username", "unknown"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    dbc.log_audit(client_id, user.get("username", "unknown"), "set_standard_mapping", result)
+    return {"berhasil": True, "mapping": result}
+
+
+@app.put("/api/client/{client_id}/accounting/account-role/{role_code}")
+def api_set_company_account_role(
+    client_id: int, role_code: str, req: CompanyAccountRoleRequest,
+    user: dict = Depends(auth.require_level(4)),
+):
+    try:
+        result = accounting_core.set_company_account_role(client_id, role_code.upper(), req.coa_id, user.get("username", "unknown"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    dbc.log_audit(client_id, user.get("username", "unknown"), "set_company_account_role", result)
+    return {"berhasil": True, "mapping": result}
+
+
+@app.get("/api/client/{client_id}/journal-entries")
+def api_list_journal_entries(
+    client_id: int,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+    user: dict = Depends(auth.require_level(3)),
+):
+    """Endpoint baru untuk UI. Legacy jurnal_posting disinkronkan otomatis.
+
+    status kosong/None = semua; DRAFT/POSTED/REJECTED = filter status.
+    """
+    return {"journal_entries": accounting_core.list_journal_entries(client_id, status=status, limit=limit)}
+
+
+@app.post("/api/client/{client_id}/journal-entries")
+def api_create_native_journal_entry(
+    client_id: int, req: NativeJournalEntryRequest,
+    user: dict = Depends(auth.require_level(3)),
+):
+    try:
+        entry = accounting_core.create_journal_entry(
+            client_id,
+            source_module=req.source_module,
+            posting_date=req.posting_date,
+            description=req.description,
+            lines=[x.model_dump() for x in req.lines],
+            created_by=user.get("username", "unknown"),
+            status=req.status,
+            source_transaction_id=req.source_transaction_id,
+            reference=req.reference,
+            currency=req.currency,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    dbc.log_audit(client_id, user.get("username", "unknown"), "create_journal_entry", {"journal_entry_id": entry["id"]})
+    return {"berhasil": True, "journal_entry": entry}
+
+
+@app.post("/api/client/{client_id}/journal-entries/{journal_entry_id}/post")
+def api_post_native_journal_entry(
+    client_id: int, journal_entry_id: int,
+    user: dict = Depends(auth.require_level(3)),
+):
+    try:
+        entry = accounting_core.post_journal_entry(client_id, journal_entry_id, user.get("username", "unknown"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    dbc.log_audit(client_id, user.get("username", "unknown"), "post_journal_entry", {"journal_entry_id": journal_entry_id})
+    return {"berhasil": True, "journal_entry": entry}
+
+
+@app.get("/api/client/{client_id}/general-ledger")
+def api_general_ledger_core(
+    client_id: int,
+    tanggal_mulai: Optional[str] = None,
+    tanggal_akhir: Optional[str] = None,
+    user: dict = Depends(auth.require_level(3)),
+):
+    return {"lines": accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)}
+
+
+class UserClientAccessRequest(BaseModel):
+    user_id: int
+    active: bool = True
+    access_role: Optional[str] = None
+
+
+@app.post("/api/client/{client_id}/access")
+def api_set_client_access(
+    client_id: int, req: UserClientAccessRequest,
+    user: dict = Depends(auth.require_roles(["tahap_5"])),
+):
+    if not dbc.set_user_client_access(req.user_id, client_id, active=req.active, access_role=req.access_role):
+        raise HTTPException(status_code=500, detail="Gagal memperbarui akses user-client.")
+    return {"berhasil": True, "client_id": client_id, "user_id": req.user_id, "active": req.active}
+
+
 # ============================================================
 # [BARU] REVIEW & POSTING JURNAL (draf placeholder -> siap laporan)
 # ============================================================
@@ -4822,15 +5188,28 @@ def api_hapus_akun_coa(client_id: int, akun_id: int, user: dict = Depends(auth.g
 def api_daftar_jurnal_posting(
     client_id: int,
     status: Optional[str] = "draft",
+    # [FIX -- baris hilang setelah import besar] Sebelumnya endpoint ini
+    # TIDAK meneruskan parameter limit sama sekali ke dbc.daftar_jurnal_posting(),
+    # jadi selalu terkunci ke default lama (500 baris backend = 1.000 baris
+    # di tabel Transaksi, karena tiap baris dipecah jadi 2 leg debet+kredit)
+    # -- import rekening koran ribuan/puluhan ribu baris jadi kepotong
+    # diam-diam tanpa peringatan apa pun. Default sekarang None -- lihat
+    # docstring dbc.daftar_jurnal_posting(): artinya BENAR-BENAR TANPA
+    # BATAS, bukan cuma angka besar yang bisa kelampaui lagi nanti. Override
+    # eksplisit lewat ?limit= tetap didukung untuk kasus lain (mis. preview
+    # ringan) yang memang sengaja mau baris terbatas.
+    limit: Optional[int] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
     Daftar baris jurnal yang perlu direview/diposting (default status=draft).
     Pakai ?status=terposting atau ?status=ditolak untuk lihat histori,
     atau ?status= (kosong) untuk semua status.
+    ?limit= opsional -- kosongkan untuk mengambil SEMUA baris (default),
+    isi dengan angka untuk membatasi jumlah baris yang diambil.
     """
     status_final = status if status else None
-    return {"jurnal": dbc.daftar_jurnal_posting(client_id, status=status_final)}
+    return {"jurnal": dbc.daftar_jurnal_posting(client_id, status=status_final, limit=limit)}
 
 
 class KonfirmasiPostingRequest(BaseModel):
@@ -4917,6 +5296,206 @@ def api_tolak_posting(
     return {"berhasil": True}
 
 
+# [BARU - persist edit/posting halaman Transaksi frontend] Status ala
+# frontend (Transaction['status'] di transactionData.ts) -> salah satu
+# dari 3 nilai sah backend (lihat db_client.STATUS_JURNAL_VALID). 'Draft'
+# TIDAK dipetakan ke sini secara sengaja -- backend tidak punya status
+# "draft pending approval" yang beda dari "draft belum diposting", jadi
+# 'Draft' dari frontend (kalau memang dikirim) diperlakukan sama seperti
+# 'Unposted': tetap 'draft' di backend. Nilai yang tidak dikenal (typo dsb)
+# ditolak 400 lewat _map_status_frontend_ke_backend, bukan diam-diam
+# dijadikan draft, supaya kesalahan ketik/kirim tidak lolos tanpa disadari.
+_STATUS_FRONTEND_KE_BACKEND = {
+    "Unposted": "draft",
+    "Draft": "draft",
+    "Posted": "terposting",
+    "Reconciled": "terposting",
+    "Voided": "ditolak",
+}
+
+
+def _map_status_frontend_ke_backend(status_frontend: Optional[str]) -> Optional[str]:
+    if status_frontend is None:
+        return None
+    hasil = _STATUS_FRONTEND_KE_BACKEND.get(status_frontend)
+    if hasil is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Status '{status_frontend}' tidak dikenal. Nilai sah: {list(_STATUS_FRONTEND_KE_BACKEND.keys())}",
+        )
+    return hasil
+
+
+class UpdateJurnalPostingRequest(BaseModel):
+    """[BARU] Body PATCH edit satu baris jurnal -- lihat api_update_jurnal_posting().
+    Semua field opsional; hanya field yang DIKIRIM (bukan None secara default
+    Pydantic exclude_unset) yang benar-benar diubah di database, lihat
+    dbc.update_jurnal_posting()."""
+    tanggal: Optional[str] = None
+    keterangan: Optional[str] = None
+    lawan_transaksi: Optional[str] = None
+    no_dokumen: Optional[str] = None
+    project_unit: Optional[str] = None
+    jatuh_tempo: Optional[str] = None
+    no_akun_debet: Optional[str] = None
+    nama_akun_debet: Optional[str] = None
+    jml_debet: Optional[float] = None
+    no_akun_kredit: Optional[str] = None
+    nama_akun_kredit: Optional[str] = None
+    jml_kredit: Optional[float] = None
+    # Status ala frontend (Unposted/Posted/Draft/Reconciled/Voided) --
+    # diterjemahkan ke nilai backend lewat _map_status_frontend_ke_backend()
+    # sebelum disimpan, supaya frontend tidak perlu tahu representasi
+    # internal backend sama sekali.
+    status: Optional[str] = None
+    payment_status: Optional[str] = None
+    paid_amount: Optional[float] = None
+
+
+@app.patch("/api/client/{client_id}/jurnal-posting/{posting_id}")
+def api_update_jurnal_posting(
+    client_id: int, posting_id: int, req: UpdateJurnalPostingRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """
+    [BARU] Edit satu baris jurnal yang sudah ada -- dipakai halaman
+    Transaksi (TransactionEditModal, tombol "Simpan Perubahan") supaya
+    hasil edit BENAR-BENAR tersimpan ke database. Sebelumnya endpoint ini
+    tidak ada sama sekali; edit di UI cuma mengubah state React lokal
+    (hilang saat refresh/pindah client lalu kembali).
+
+    Beda dari /konfirmasi (di atas): endpoint itu SELALU memposting baris
+    (status jadi 'terposting'). Endpoint ini murni menyimpan perubahan isi
+    baris -- status ikut berubah HANYA kalau field `status` dikirim di body.
+
+    req.model_dump(exclude_unset=True) dipakai (bukan exclude_none) supaya
+    field yang memang dikirim dengan nilai null (mis. user mengosongkan
+    catatan) tetap dianggap "field ini mau diubah jadi kosong", beda dari
+    field yang sama sekali tidak dikirim (dibiarkan apa adanya).
+    """
+    fields = req.model_dump(exclude_unset=True)
+    if "status" in fields:
+        fields["status"] = _map_status_frontend_ke_backend(fields["status"])
+
+    try:
+        hasil = dbc.update_jurnal_posting(posting_id, client_id, user.get("username", "unknown"), **fields)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Baris jurnal tidak ditemukan untuk client ini.")
+
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"),
+        aksi="edit_jurnal", detail={"posting_id": posting_id, **fields},
+    )
+    return {"berhasil": True, "jurnal": hasil}
+
+
+class BuatJurnalManualRequest(BaseModel):
+    """[BARU] Body POST buat jurnal manual baru -- lihat api_buat_jurnal_manual().
+    Baik sisi debet maupun kredit WAJIB diisi (jurnal double-entry lengkap,
+    bukan satu kaki saja) -- konsisten dengan constraint NOT NULL kolom
+    no_akun_debet/no_akun_kredit di database."""
+    tanggal: str
+    keterangan: str
+    no_akun_debet: str
+    nama_akun_debet: Optional[str] = None
+    jml_debet: float
+    no_akun_kredit: str
+    nama_akun_kredit: Optional[str] = None
+    jml_kredit: float
+    lawan_transaksi: Optional[str] = None
+    no_dokumen: Optional[str] = None
+    # [FIX - audit #8, diperluas] Sebelumnya field ini tidak ada sama sekali
+    # di model ini -- walau kolom project_unit sudah ada di JurnalPosting
+    # dan sudah dipakai jalur edit (UpdateJurnalPostingRequest di atas),
+    # jalur "+ Jurnal Baru" tidak punya cara mengirimkannya sama sekali,
+    # jadi Catatan yang diisi user saat membuat jurnal baru selalu hilang
+    # (tidak pernah tersimpan, bahkan sebelum sampai ke database).
+    project_unit: Optional[str] = None
+    jatuh_tempo: Optional[str] = None
+    status: str = "Unposted"  # ala frontend, diterjemahkan sebelum disimpan
+    payment_status: Optional[str] = None
+    paid_amount: Optional[float] = None
+
+
+@app.post("/api/client/{client_id}/jurnal-posting/manual")
+def api_buat_jurnal_manual(
+    client_id: int, req: BuatJurnalManualRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """
+    [BARU] Buat baris jurnal BARU secara manual -- dipakai tombol
+    "+ Jurnal Baru" di halaman Transaksi & 5 sub halamannya. Sebelumnya
+    tombol ini cuma menambah baris ke state React lokal (hilang saat
+    refresh) -- sekarang tersimpan permanen ke database.
+
+    Jurnal HARUS balance (total debet == total kredit) -- ditolak 400 kalau
+    tidak, supaya tidak ada jurnal timpang yang lolos ke buku besar lewat
+    jalur manual ini (beda dari baris hasil import yang boleh sementara
+    "Belum Terkategori" tapi tetap sepasang debet=kredit).
+    """
+    if round(req.jml_debet, 2) != round(req.jml_kredit, 2):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Jurnal tidak balance: Debet Rp{req.jml_debet:,.0f} vs Kredit Rp{req.jml_kredit:,.0f}.",
+        )
+    if req.jml_debet <= 0:
+        raise HTTPException(status_code=400, detail="Nominal jurnal harus lebih besar dari 0.")
+
+    status_backend = _map_status_frontend_ke_backend(req.status) or "draft"
+
+    posting_id = dbc.buat_jurnal_manual(
+        client_id=client_id, user=user.get("username", "unknown"),
+        tanggal=req.tanggal, keterangan=req.keterangan,
+        no_akun_debet=req.no_akun_debet, nama_akun_debet=req.nama_akun_debet, jml_debet=req.jml_debet,
+        no_akun_kredit=req.no_akun_kredit, nama_akun_kredit=req.nama_akun_kredit, jml_kredit=req.jml_kredit,
+        lawan_transaksi=req.lawan_transaksi, no_dokumen=req.no_dokumen, project_unit=req.project_unit,
+        jatuh_tempo=req.jatuh_tempo,
+        status=status_backend, payment_status=req.payment_status, paid_amount=req.paid_amount,
+    )
+    if posting_id is None:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan jurnal baru.")
+
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"),
+        aksi="buat_jurnal_manual", detail={"posting_id": posting_id, "keterangan": req.keterangan},
+    )
+    return {"berhasil": True, "posting_id": posting_id}
+
+
+class PostingMassalByIdsRequest(BaseModel):
+    posting_ids: List[int]
+
+
+@app.post("/api/client/{client_id}/jurnal-posting/posting-massal-by-ids")
+def api_posting_massal_by_ids(
+    client_id: int, req: PostingMassalByIdsRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """
+    [BARU] Posting banyak baris 'draft' sekaligus jadi 'terposting', dipilih
+    lewat daftar posting_id eksplisit -- dipakai tombol "Posting Semua" di
+    halaman Transaksi utama (semua baris Unposted yang sedang tampil,
+    lintas hasil_id) dan versi per-kelompok di 5 sub halaman (Sales/
+    Expense/dll -- daftar id dibatasi ke kelompok itu saja oleh frontend
+    sebelum dikirim). Beda dari /hasil/{hasil_id}/konfirmasi-semua yang
+    sudah ada (itu untuk SATU file upload saja).
+
+    Baris dengan akun masih placeholder tetap dilewati (sama seperti
+    endpoint konfirmasi-semua yang sudah ada) -- lihat
+    dbc.konfirmasi_posting_by_ids().
+    """
+    hasil = dbc.konfirmasi_posting_by_ids(client_id, req.posting_ids, user.get("username", "unknown"))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"),
+        aksi="posting_massal_by_ids",
+        detail={"jumlah_diminta": len(req.posting_ids), **hasil},
+    )
+    return {"berhasil": True, **hasil}
+
+
 # ============================================================
 # [BARU] 5 LAPORAN KEUANGAN STANDAR
 # ============================================================
@@ -4941,17 +5520,14 @@ def api_generate_laporan_keuangan(
     snapshot baru (histori tidak ditimpa -- generate ulang untuk periode
     yang sama akan membuat snapshot baru).
 
-    [BARU] hanya_terposting=False -- endpoint ini TIDAK LAGI mewajibkan
-    akuntan mengonfirmasi-posting jurnal draft satu-satu dulu sebelum
-    laporan bisa dibuat (pola yang sama dgn export-18-sheet). Baris draft
-    (termasuk yang akunnya masih placeholder) ikut apa adanya; status per
-    akun ditandai lewat field "keterangan_perlu_dikoreksi" yang sekarang
-    disertakan tiap baris Neraca/Laba Rugi/Perubahan Ekuitas (lihat
-    hitung_saldo_per_akun() di laporan_keuangan.py) -- bukan lewat gate
-    status database seperti sebelumnya.
+    [ACCOUNTING CORE V2] Laporan Actual hanya memakai journal lines dari
+    JournalEntry berstatus POSTED. Draft tetap dapat direview di halaman
+    transaksi, tetapi tidak memengaruhi laporan resmi.
     """
     coa = dbc.ambil_coa_client(client_id)
-    jurnal = dbc.ambil_jurnal_terposting(client_id, req.tanggal_mulai, req.tanggal_akhir, hanya_terposting=False)
+    # Laporan resmi hanya berasal dari JournalEntry POSTED. Draft tetap
+    # tersedia di halaman review/transaksi, tetapi tidak memengaruhi Actual.
+    jurnal = accounting_core.list_posted_lines(client_id, req.tanggal_mulai, req.tanggal_akhir)
 
     hasil = lapkeu.generate_5_laporan_keuangan(
         jurnal, coa, req.periode,
@@ -5088,9 +5664,7 @@ def api_generate_pph_badan(
         # supaya user tidak perlu tahu harus generate laporan-keuangan
         # dgn periode tahunan secara manual dulu sebelum bisa hitung PPh.
         coa = dbc.ambil_coa_client(client_id)
-        # [BARU] hanya_terposting=False -- lihat catatan yang sama di
-        # laporan-keuangan/generate di atas.
-        jurnal = dbc.ambil_jurnal_terposting(client_id, tanggal_mulai, tanggal_akhir, hanya_terposting=False)
+        jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
         if not jurnal:
             raise HTTPException(
                 404,
@@ -5393,7 +5967,7 @@ def _ambil_atau_generate_laporan_keuangan(
         )
 
     coa = dbc.ambil_coa_client(client_id)
-    jurnal = dbc.ambil_jurnal_terposting(client_id, tanggal_mulai, tanggal_akhir, hanya_terposting=False)
+    jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
     if not jurnal:
         raise HTTPException(
             404,
@@ -5718,14 +6292,12 @@ def api_generate_laporan_bulanan(
     Generate Trial Balance, Laba Rugi, dan Balance Sheet bulanan
     Jan-Des dalam SATU tabel per laporan (12 kolom bulan).
 
-    [BARU] hanya_terposting=False -- lihat catatan yang sama di
-    laporan-keuangan/generate di atas.
+    [ACCOUNTING CORE V2] Laporan bulanan hanya memakai POSTED journal lines.
     """
-    jurnal = dbc.ambil_jurnal_terposting(
+    jurnal = accounting_core.list_posted_lines(
         client_id,
         tanggal_mulai=f"{req.tahun}-01-01",
         tanggal_akhir=f"{req.tahun}-12-31",
-        hanya_terposting=False,
     )
 
     if not jurnal:
@@ -6185,18 +6757,13 @@ def _susun_data_export_18_sheet(
     coa = dbc.ambil_coa_client(client_id)
     _lapor("coa", "Membaca Chart of Account (COA)", "done")
 
-    # [BARU] hanya_terposting=False -- endpoint ini TIDAK LAGI mewajibkan
-    # akuntan mengonfirmasi-posting jurnal draft satu-satu dulu sebelum
-    # laporan 18-sheet bisa dibuat. Baris draft (termasuk yang akunnya
-    # masih placeholder) ikut apa adanya; status per baris ditandai lewat
-    # kolom "Status Validasi" di sheet GL <tahun> (lihat
-    # modules/accounting_export.py) -- bukan lewat gate status database
-    # seperti sebelumnya. 3 endpoint lain (laporan-keuangan/generate,
-    # pph-badan/generate, laporan-bulanan/generate) SENGAJA TIDAK diubah
-    # -- tetap hanya_terposting=True (default) supaya laporan resmi yang
-    # sudah disimpan/dikonfirmasi manual di halaman lain tidak terpengaruh.
+    # [ACCOUNTING CORE V2] Export 18-sheet mengikuti sumber Actual yang sama
+    # dengan Dashboard dan Financial Statements: hanya POSTED journal lines.
     _lapor("jurnal", "Mengambil jurnal transaksi tahun berjalan", "processing")
-    jurnal = dbc.ambil_jurnal_terposting(client_id, tanggal_mulai, tanggal_akhir, hanya_terposting=False)
+    # Export 18-sheet memakai ledger resmi POSTED untuk seluruh angka Actual.
+    # Draft tetap tersedia di transaction/review queue dan tidak boleh
+    # membuat snapshot laporan resmi secara diam-diam.
+    jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
     _lapor("jurnal", "Mengambil jurnal transaksi tahun berjalan", "done")
 
     # -- 1. Laporan keuangan (Neraca/Laba Rugi/Perubahan Ekuitas) setahun penuh --

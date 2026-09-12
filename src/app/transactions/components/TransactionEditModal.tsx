@@ -6,14 +6,40 @@ import { Transaction, getTransactionGroup, PAYMENT_STATUS_OPTIONS } from './tran
 interface Props {
   transaction: Transaction;
   onClose: () => void;
-  // Dipanggil dengan versi Transaction yang sudah diedit — parent (TransactionsContent)
-  // yang bertanggung jawab menimpa entri lama di state `transactions`.
-  onSave: (updated: Transaction) => void;
-  // [BARU] true saat modal dipakai untuk tombol "+ Jurnal Baru" di panel aksi
-  // jurnal 5 sub halaman — hanya mengubah judul/label tombol, `transaction`
-  // tetap wajib diisi (berupa template kosong) supaya form tidak perlu logic
-  // terpisah untuk state kosong.
+  // [DIUBAH — persist ke backend] Mode edit (isNew=false): dipanggil dengan
+  // SATU Transaction (leg yang diedit) — parent yang menimpa entri lama di
+  // state `transactions` DAN mengirim PATCH ke backend lewat sibling-nya
+  // (lihat TransactionsContext.saveEdit/jurnalBridge.buildUpdatePayloadFromPair).
+  // [DIUBAH — sinkron otomatis kaki pasangan] Kalau nominal (Debit/Kredit)
+  // baris ini diubah dan pasangannya (siblingTransaction) diketahui, mode
+  // edit JUGA bisa memanggil onSave dengan ARRAY 2 Transaction: [leg yang
+  // diedit, leg pasangan yang nominalnya sudah ikut disesuaikan] — supaya
+  // jurnal tidak pernah tersimpan dalam keadaan tidak balance. Array 2 di
+  // mode edit ini beda dari array mode isNew: parent membedakannya lewat
+  // apakah id kedua Transaction itu sama dengan transaction.id yang sedang
+  // diedit (lihat handleSaveEdit di TransactionsContent.tsx).
+  //
+  // Mode baru (isNew=true): dipanggil dengan ARRAY berisi TEPAT 2 Transaction
+  // (leg debet + leg kredit) — backend jurnal_posting SELALU menyimpan kedua
+  // sisi sekaligus dalam satu baris (no_akun_debet & no_akun_kredit sama-sama
+  // NOT NULL), jadi jurnal baru wajib double-entry lengkap sejak dibuat, tidak
+  // bisa cuma satu kaki seperti sebelumnya (baris satu-kaki dulu memang bisa
+  // dibuat di UI tapi TIDAK PERNAH benar-benar tersimpan ke server).
+  onSave: (result: Transaction | Transaction[]) => void;
+  // [BARU] true saat modal dipakai untuk tombol "+ Jurnal Baru" di halaman
+  // Transaksi utama / panel aksi jurnal 5 sub halaman — mengubah judul/label
+  // tombol DAN bentuk form (lihat komentar onSave di atas). `transaction`
+  // tetap wajib diisi (berupa template kosong) supaya field bersama
+  // (tanggal/deskripsi/kategori/dll) tidak perlu logic terpisah untuk state
+  // kosong.
   isNew?: boolean;
+  // [BARU — fix sinkron kaki pasangan] Leg lain (jeId sama, id beda) milik
+  // jurnal yang sama dengan `transaction`, kalau ada — dicari parent dari
+  // seluruh daftar transaksi (TransactionsContext) sebelum modal dibuka.
+  // Dipakai mode edit untuk mendeteksi & otomatis menyesuaikan nominal
+  // pasangannya kalau nominal baris ini diubah. null/undefined kalau
+  // baris ini memang tidak punya pasangan (mis. data lama satu-kaki).
+  siblingTransaction?: Transaction | null;
 }
 
 // Kategori yang sudah dikenal sistem (dipakai untuk dropdown, tapi tetap boleh
@@ -21,11 +47,40 @@ interface Props {
 const KNOWN_CATEGORIES = [
   'Revenue', 'Payroll', 'Software', 'Rent', 'Tax', 'Marketing', 'Travel',
   'CapEx', 'AP Payment', 'Utilities', 'Financing',
-  // [DIUBAH] 'Import Rekening Koran' diganti 5 label grup ini — sekarang
-  // baris hasil import sudah otomatis diberi salah satu kategori ini
-  // (lihat classifyByAccountName di transactionData.ts), jadi opsi manualnya
-  // pun disamakan ke sini.
-  'Sales', 'Expense', 'Cash Payment', 'Cash Reserve', 'Other',
+  // [DIPERBAIKI] 'Lainnya' tadinya tidak ada di daftar ini, padahal itu
+  // kategori fallback yang SUNGGUH-SUNGGUH dipakai backend/jalur import
+  // sekarang (lihat classifyAccountNameToCategory & classifyJournalPairCategory
+  // di transactionData.ts -- baris yang nama akunnya tidak cocok kata kunci
+  // manapun diberi category: 'Lainnya', bukan salah satu dari 11 kategori di
+  // atas). categoryOptions di TransactionsFilterBar.tsx sudah menyertakan
+  // 'Lainnya' sebagai opsi filter; dropdown di sini disamakan supaya
+  // konsisten -- sebelum fix ini, transaksi berkategori 'Lainnya' selalu
+  // jatuh ke mode "Kategori lain..." (input bebas) saat dibuka di modal
+  // edit, padahal itu bukan kategori custom/tidak dikenal.
+  'Lainnya',
+  // [DIUBAH] Sebelumnya komentar di sini bilang baris hasil import "sekarang
+  // diberi salah satu dari 5 label grup ini (lihat classifyByAccountName)" --
+  // itu sudah tidak akurat. Jalur import (drafJurnalToTransactions di
+  // ImportRekeningKoranModal.tsx) & jurnalBridge.ts backend SEKARANG
+  // sama-sama pakai classifyJournalPairCategory(), yang menghasilkan salah
+  // satu dari 11 kategori resmi di atas atau 'Lainnya' -- BUKAN 5 label grup
+  // ini. classifyByAccountName() sendiri sekarang cuma dipakai sebagai
+  // fallback TERAKHIR di getTransactionGroup() (lihat transactionData.ts),
+  // bukan lagi sumber category baris hasil import.
+  //
+  // 5 label ini TETAP dipertahankan di daftar (bukan dihapus) karena masih
+  // pilihan manual yang valid & benar-benar berfungsi: CATEGORY_TO_GROUP
+  // (transactionData.ts) memetakan tiap label ini langsung ke grup sub
+  // halamannya sendiri (mis. pilih 'Sales' -> pasti masuk grup 'sales'),
+  // jadi cocok dipakai user yang mau menandai jurnal manual langsung ke satu
+  // dari 5 sub halaman tanpa peduli kategori akuntansi rincinya. Yang perlu
+  // diketahui: opsi ini TIDAK muncul di dropdown filter Kategori halaman
+  // Transaksi utama (categoryOptions di TransactionsFilterBar.tsx cuma
+  // berisi 11 kategori resmi + 'Lainnya', tidak termasuk 5 label ini) --
+  // transaksi yang ditandai salah satu dari 5 label ini tetap bisa dicari
+  // lewat 5 sub halaman (Sales/Expense/dll), hanya saja tidak lewat filter
+  // Kategori di halaman utama.
+  'Sales', 'Purchase', 'Cash Payment', 'Cash Receipt', 'Other',
 ];
 
 const typeOptions: Transaction['type'][] = ['debit', 'credit', 'journal'];
@@ -57,7 +112,7 @@ function normalisasiTransaksi(tx: Transaction): Transaction {
   };
 }
 
-export default function TransactionEditModal({ transaction, onClose, onSave, isNew = false }: Props) {
+export default function TransactionEditModal({ transaction, onClose, onSave, isNew = false, siblingTransaction = null }: Props) {
   const [form, setForm] = useState<Transaction>(() => normalisasiTransaksi(transaction));
   // Kalau kategori transaksi belum ada di daftar dikenal, tampilkan sebagai
   // input bebas dari awal (bukan dropdown) supaya nilainya tidak "hilang".
@@ -65,22 +120,63 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
     !KNOWN_CATEGORIES.includes(transaction.category ?? '')
   );
 
+  // [BARU — mode isNew] Dua sisi akun jurnal baru. Nominal SENGAJA satu
+  // field saja (bukan Debit & Kredit terpisah seperti mode edit) karena
+  // jurnal double-entry yang balance selalu punya nominal yang sama persis
+  // di kedua sisi — memisahkannya jadi 2 input cuma membuka celah salah
+  // ketik jadi tidak balance. `form.debit` dipakai sbg penyimpan nilai
+  // nominal bersama ini (form.credit tidak dipakai sama sekali di mode ini).
+  const [debetCode, setDebetCode] = useState('');
+  const [debetName, setDebetName] = useState('');
+  const [kreditCode, setKreditCode] = useState('');
+  const [kreditName, setKreditName] = useState('');
+
   const setField = <K extends keyof Transaction>(key: K, value: Transaction[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const isBalanced = form.debit === 0 || form.credit === 0 || form.debit === form.credit;
   const bothZero = form.debit === 0 && form.credit === 0;
   const bothFilled = form.debit > 0 && form.credit > 0;
 
+  // [DIUBAH — fix cek balance dgn pasangan jurnal] Perbandingan LAMA di sini
+  // ("form.debit === form.credit") tidak pernah bisa kena kalau bothFilled
+  // sudah dilarang (satu baris cuma boleh isi Debit ATAU Kredit) — jadi
+  // banner peringatannya dulu TIDAK PERNAH tampil sama sekali, walau
+  // nominal baris ini sudah beda jauh dari pasangannya. Perbandingan yang
+  // benar adalah nominal baris ini vs nominal SIBLING (leg lain, jeId
+  // sama) — itu yang menentukan jurnal double-entry-nya tetap balance atau
+  // tidak, bukan debit vs kredit dalam satu baris yang sama.
+  const thisAmount = form.debit || form.credit || 0;
+  const siblingAmount = siblingTransaction ? (siblingTransaction.debit || siblingTransaction.credit || 0) : null;
+  const amountChanged = thisAmount !== (transaction.debit || transaction.credit || 0);
+  const unbalancedWithSibling = !isNew && amountChanged && siblingTransaction != null && thisAmount !== siblingAmount;
+  // Nominal diubah tapi tidak ada data pasangan sama sekali (mis. baris
+  // lama satu-kaki) — tidak ada yang bisa disesuaikan otomatis, jadi tetap
+  // ingatkan user untuk cek manual seperti perilaku lama.
+  const amountChangedNoSibling = !isNew && amountChanged && siblingTransaction == null;
+
   const errors: string[] = [];
-  if (!String(form.accountCode || '').trim()) errors.push('Kode akun wajib diisi.');
-  if (!String(form.accountName || '').trim() || form.accountName === 'Belum Terkategori') {
-    errors.push('Nama akun masih "Belum Terkategori" — pilih akun yang sesuai.');
+  if (isNew) {
+    // [BARU] Jurnal baru WAJIB double-entry lengkap (dua akun + satu
+    // nominal) sejak awal — lihat komentar onSave di Props di atas soal
+    // kenapa backend mengharuskan ini.
+    if (!debetCode.trim()) errors.push('Kode akun sisi Debet wajib diisi.');
+    if (!debetName.trim()) errors.push('Nama akun sisi Debet wajib diisi.');
+    if (!kreditCode.trim()) errors.push('Kode akun sisi Kredit wajib diisi.');
+    if (!kreditName.trim()) errors.push('Nama akun sisi Kredit wajib diisi.');
+    if (debetCode.trim() && kreditCode.trim() && debetCode.trim() === kreditCode.trim()) {
+      errors.push('Akun Debet dan Kredit tidak boleh sama.');
+    }
+    if (!form.debit || form.debit <= 0) errors.push('Nominal wajib diisi, lebih besar dari 0.');
+  } else {
+    if (!String(form.accountCode || '').trim()) errors.push('Kode akun wajib diisi.');
+    if (!String(form.accountName || '').trim() || form.accountName === 'Belum Terkategori') {
+      errors.push('Nama akun masih "Belum Terkategori" — pilih akun yang sesuai.');
+    }
+    if (bothZero) errors.push('Isi salah satu nominal Debit atau Kredit.');
+    if (bothFilled) errors.push('Baris ini hanya boleh punya salah satu: Debit ATAU Kredit, tidak keduanya.');
   }
   if (!String(form.description || '').trim()) errors.push('Deskripsi wajib diisi.');
-  if (bothZero) errors.push('Isi salah satu nominal Debit atau Kredit.');
-  if (bothFilled) errors.push('Baris ini hanya boleh punya salah satu: Debit ATAU Kredit, tidak keduanya.');
   if (!form.date) errors.push('Tanggal wajib diisi.');
 
   const canSave = errors.length === 0;
@@ -88,6 +184,70 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSave) return;
+
+    if (isNew) {
+      // [BARU] Susun sepasang leg (debet + kredit) berbagi jeId/voucherNo
+      // yang sama, meniru pola drafJurnalToTransactions() di
+      // ImportRekeningKoranModal.tsx — supaya jurnal manual berperilaku
+      // sama persis dgn hasil import di seluruh app (getTransactionGroup,
+      // groupAnalytics, apBridge/arBridge, dll).
+      const nominal = form.debit || 0;
+      const base = {
+        date: form.date,
+        jeId: form.jeId,
+        voucherNo: form.voucherNo,
+        description: form.description,
+        reference: form.reference,
+        party: form.party,
+        category: form.category,
+        status: form.status,
+        notes: form.notes,
+        saldoAkhir: 0,
+        cek: false,
+        paymentStatus: form.paymentStatus,
+        dueDate: form.dueDate,
+        paidAmount: form.paidAmount,
+      };
+      const debetTx: Transaction = {
+        ...base,
+        id: `${form.jeId}-D`,
+        txId: `${form.txId}-D`,
+        accountCode: debetCode.trim(),
+        accountName: debetName.trim(),
+        debit: nominal,
+        credit: 0,
+        type: 'debit',
+      };
+      const kreditTx: Transaction = {
+        ...base,
+        id: `${form.jeId}-K`,
+        txId: `${form.txId}-K`,
+        accountCode: kreditCode.trim(),
+        accountName: kreditName.trim(),
+        debit: 0,
+        credit: nominal,
+        type: 'credit',
+      };
+      onSave([debetTx, kreditTx]);
+      return;
+    }
+
+    // [DIUBAH — sinkron otomatis kaki pasangan] Nominal baris ini berubah
+    // dan pasangannya (jeId sama) diketahui -> kirim SEPASANG Transaction
+    // (baris ini + pasangan yang nominalnya sudah disesuaikan) supaya
+    // parent (TransactionsContent.handleSaveEdit -> TransactionsContext.
+    // saveEdit) menyimpan & mem-PATCH keduanya sekaligus, dan jurnal tidak
+    // pernah berakhir dalam keadaan tidak balance di backend maupun layar.
+    if (unbalancedWithSibling && siblingTransaction) {
+      const updatedSibling: Transaction = {
+        ...siblingTransaction,
+        debit: siblingTransaction.debit > 0 ? thisAmount : 0,
+        credit: siblingTransaction.credit > 0 ? thisAmount : 0,
+      };
+      onSave([form, updatedSibling]);
+      return;
+    }
+
     onSave(form);
   };
 
@@ -123,44 +283,99 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
                 required
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Tipe</label>
-              <select
-                value={form.type}
-                onChange={(e) => setField('type', e.target.value as Transaction['type'])}
-                className="input-base text-sm cursor-pointer"
-              >
-                {typeOptions.map((t) => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-                ))}
-              </select>
-            </div>
+            {/* [BARU] "Tipe" (debit/credit/journal) hanya relevan untuk edit
+                satu leg yang sudah ada — jurnal baru selalu dua leg
+                (debet+kredit) sekaligus, tipe tiap leg otomatis ditentukan,
+                tidak perlu dipilih manual. */}
+            {!isNew && (
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Tipe</label>
+                <select
+                  value={form.type}
+                  onChange={(e) => setField('type', e.target.value as Transaction['type'])}
+                  className="input-base text-sm cursor-pointer"
+                >
+                  {typeOptions.map((t) => (
+                    <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
-              <input
-                type="text"
-                value={form.accountCode}
-                onChange={(e) => setField('accountCode', e.target.value)}
-                placeholder="mis. 1101"
-                className="input-base text-sm font-mono"
-                required
-              />
+          {isNew ? (
+            // [BARU] Mode jurnal baru: dua sisi akun sekaligus (double-entry
+            // lengkap wajib sejak dibuat — lihat komentar onSave di Props).
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <p className="text-xs font-700 text-foreground">Sisi Debet</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
+                    <input
+                      type="text" value={debetCode} onChange={(e) => setDebetCode(e.target.value)}
+                      placeholder="mis. 5401" className="input-base text-sm font-mono" required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Nama Akun</label>
+                    <input
+                      type="text" value={debetName} onChange={(e) => setDebetName(e.target.value)}
+                      placeholder="mis. Beban Sewa Kantor" className="input-base text-sm" required
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <p className="text-xs font-700 text-foreground">Sisi Kredit</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
+                    <input
+                      type="text" value={kreditCode} onChange={(e) => setKreditCode(e.target.value)}
+                      placeholder="mis. 1101" className="input-base text-sm font-mono" required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Nama Akun</label>
+                    <input
+                      type="text" value={kreditName} onChange={(e) => setKreditName(e.target.value)}
+                      placeholder="mis. Kas & Bank — BCA" className="input-base text-sm" required
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Nama Akun</label>
-              <input
-                type="text"
-                value={form.accountName}
-                onChange={(e) => setField('accountName', e.target.value)}
-                placeholder="mis. Kas & Bank — BCA"
-                className="input-base text-sm"
-                required
-              />
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
+                <input
+                  type="text"
+                  value={form.accountCode}
+                  onChange={(e) => setField('accountCode', e.target.value)}
+                  placeholder="mis. 1101"
+                  className="input-base text-sm font-mono"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Nama Akun</label>
+                <input
+                  type="text"
+                  value={form.accountName}
+                  onChange={(e) => setField('accountName', e.target.value)}
+                  placeholder="mis. Kas & Bank — BCA"
+                  className="input-base text-sm"
+                  required
+                />
+              </div>
             </div>
-          </div>
+          )}
+          {/* [BARU] Field di bawah ini (Deskripsi, Nominal, Referensi/Pihak,
+              Kategori/Status, pembayaran vendor) dipakai bersama oleh mode
+              edit maupun mode "+ Jurnal Baru" — lihat komentar onSave di
+              Props soal kenapa `transaction` dipakai sbg template kosong. */}
 
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Deskripsi</label>
@@ -173,9 +388,13 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {isNew ? (
+            // [BARU] Satu input nominal saja — dipakai sbg jumlah kedua sisi
+            // (debet=kredit, lihat handleSubmit) supaya tidak ada celah salah
+            // ketik bikin jurnal baru tidak balance (lihat komentar
+            // debetCode/debetName state di atas).
             <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Debit (Rp)</label>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Nominal (Rp)</label>
               <input
                 type="number"
                 min={0}
@@ -183,20 +402,35 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
                 onChange={(e) => setField('debit', toNumberInput(e.target.value))}
                 placeholder="0"
                 className="input-base text-sm font-mono"
+                required
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kredit (Rp)</label>
-              <input
-                type="number"
-                min={0}
-                value={form.credit || ''}
-                onChange={(e) => setField('credit', toNumberInput(e.target.value))}
-                placeholder="0"
-                className="input-base text-sm font-mono"
-              />
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Debit (Rp)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.debit || ''}
+                  onChange={(e) => setField('debit', toNumberInput(e.target.value))}
+                  placeholder="0"
+                  className="input-base text-sm font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kredit (Rp)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={form.credit || ''}
+                  onChange={(e) => setField('credit', toNumberInput(e.target.value))}
+                  placeholder="0"
+                  className="input-base text-sm font-mono"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -272,7 +506,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
           {/* [BARU] Field pembayaran ke vendor — hanya tampil untuk transaksi
               kelompok Expense, karena field inilah yang menghubungkan baris
               ini ke halaman Account Payable (lihat apBridge.ts). */}
-          {getTransactionGroup(form) === 'expense' && (
+          {getTransactionGroup(form) === 'purchase' && (
             <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4 space-y-4">
               <p className="text-xs font-semibold text-primary">Status Pembayaran ke Vendor (Account Payable)</p>
               <div className="grid grid-cols-2 gap-4">
@@ -338,12 +572,24 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
             />
           </div>
 
-          {!isBalanced && !bothZero && !bothFilled && (
+          {unbalancedWithSibling && (
             <div className="flex items-start gap-2 bg-warning-subtle border border-warning/20 rounded-lg p-3">
               <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
               <p className="text-xs text-foreground">
-                Debit dan Kredit baris ini tidak sama besar — pastikan pasangan jurnalnya
-                (baris debet/kredit lain dengan Jurnal Entri yang sama) sudah disesuaikan juga.
+                Nominal baris ini berubah jadi tidak sama dengan pasangan jurnalnya
+                ({siblingTransaction?.accountName || 'baris lain'}, Rp {siblingAmount?.toLocaleString('id-ID')}).
+                Kalau disimpan, nominal pasangan itu akan ikut disesuaikan otomatis jadi Rp{' '}
+                {thisAmount.toLocaleString('id-ID')} supaya jurnal tetap balance.
+              </p>
+            </div>
+          )}
+
+          {amountChangedNoSibling && (
+            <div className="flex items-start gap-2 bg-warning-subtle border border-warning/20 rounded-lg p-3">
+              <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-foreground">
+                Nominal baris ini diubah, tapi pasangan jurnalnya (baris debet/kredit lain dengan Jurnal
+                Entri yang sama) tidak ditemukan — pastikan disesuaikan manual sendiri kalau ada.
               </p>
             </div>
           )}

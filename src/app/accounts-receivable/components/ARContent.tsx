@@ -16,7 +16,7 @@ import { useCurrency } from '@/lib/currency';
 // APContent.tsx (Expense -> Account Payable).
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import {
-  AR_REFERENCE_DATE,
+  getArReferenceDate,
   invoicesFromTransactions,
   customersFromInvoices,
   arKpisFromInvoices,
@@ -132,7 +132,9 @@ export default function ARContent() {
           <div className="flex items-center gap-3 mt-1.5">
             <span className="badge-info">Tersinkron dari Transaksi → Sales</span>
             <span className="badge-neutral">{invoices.length} invoice · {customers.length} customer</span>
-            <span className="text-xs text-muted-foreground">Per {AR_REFERENCE_DATE}</span>
+            <span className="text-xs text-muted-foreground">
+              Per {new Date(getArReferenceDate()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

@@ -81,6 +81,15 @@ def _angka(v) -> float:
         return 0.0
     return f
 
+
+def _is_flat_journal_line(baris: Dict[str, Any]) -> bool:
+    """Accounting Core V2 mengirim satu dict per journal line (account_code/debit/credit).
+    Legacy mengirim satu dict berisi pasangan no_akun_debet/no_akun_kredit.
+    Modul laporan menerima KEDUANYA agar migrasi tidak memutus fitur lama.
+    """
+    return bool(baris.get("account_code")) and ("debit" in baris or "credit" in baris)
+
+
 # Kategori dengan saldo normal DEBET vs KREDIT -- dipakai kalau
 # normal_saldo tidak diisi eksplisit di COA.
 _NORMAL_SALDO_DEFAULT = {
@@ -128,6 +137,12 @@ def peta_akun_dari_coa(coa: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             # fungsi tsb). Additive juga -- tidak mengubah key lain,
             # aman utk semua pemanggil peta_akun_dari_coa() yang sudah ada.
             "saldo_awal": _angka(akun.get("saldo_awal")),
+            "standard_account_code": akun.get("standard_account_code"),
+            "standard_account_name": akun.get("standard_account_name"),
+            "fs_statement": akun.get("fs_statement"),
+            "fs_group": akun.get("fs_group"),
+            "fs_line": akun.get("fs_line"),
+            "account_roles": akun.get("account_roles") or [],
         }
     return peta
 
@@ -197,9 +212,24 @@ def hitung_saldo_per_akun(jurnal: List[Dict[str, Any]], coa: List[Dict[str, Any]
             _entri(no_akun)
 
     for baris in jurnal or []:
+        if _is_flat_journal_line(baris):
+            no_akun = str(baris.get("account_code") or "").strip()
+            if not no_akun:
+                continue
+            debit = _angka(baris.get("debit"))
+            credit = _angka(baris.get("credit"))
+            entri = _entri(no_akun, baris.get("account_name"))
+            entri["total_debet"] += debit
+            entri["total_kredit"] += credit
+            if "/" in no_akun:
+                entri["jumlah_baris_placeholder"] += 1
+                entri["nominal_placeholder"] += max(debit, credit)
+            continue
+
+        # Compatibility: format legacy jurnal_posting (satu row = dua kaki).
         no_debet = str(baris.get("no_akun_debet") or "").strip()
         no_kredit = str(baris.get("no_akun_kredit") or "").strip()
-        jml_debet = _angka(baris.get("jml_debet"))  # [FIX] NaN-safe, lihat _angka()
+        jml_debet = _angka(baris.get("jml_debet"))
         jml_kredit = _angka(baris.get("jml_kredit")) or jml_debet
 
         if no_debet:
@@ -413,40 +443,80 @@ def susun_arus_kas_sederhana(jurnal: List[Dict[str, Any]], peta_coa: Dict[str, D
     rincian = defaultdict(list)
     perlu_review = []
 
-    for baris in jurnal or []:
-        no_debet = str(baris.get("no_akun_debet") or "").strip()
-        no_kredit = str(baris.get("no_akun_kredit") or "").strip()
-        info_debet = peta_coa.get(no_debet, {})
-        info_kredit = peta_coa.get(no_kredit, {})
-        jml_debet = _angka(baris.get("jml_debet"))  # [FIX] NaN-safe, lihat _angka()
-        jml_kredit = _angka(baris.get("jml_kredit")) or jml_debet
+    # Accounting Core V2: group flat journal lines per journal_entry_id agar
+    # arus kas tetap bisa melihat akun lawan pada jurnal multi-line.
+    flat_rows = [b for b in (jurnal or []) if _is_flat_journal_line(b)]
+    if flat_rows and len(flat_rows) == len(jurnal or []):
+        groups: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
+        for line in flat_rows:
+            groups[line.get("journal_entry_id") or line.get("journal_no") or id(line)].append(line)
 
-        debet_kas = _akun_kas(info_debet)
-        kredit_kas = _akun_kas(info_kredit)
+        for lines in groups.values():
+            non_cash = []
+            cash_lines = []
+            for line in lines:
+                info = peta_coa.get(str(line.get("account_code") or ""), {})
+                (cash_lines if _akun_kas(info) else non_cash).append((line, info))
+            if not cash_lines:
+                continue
+            # Transfer antar kas/bank tidak mengubah arus kas neto.
+            if not non_cash:
+                continue
+            # Untuk jurnal multi-line, counterpart terbesar dipakai sebagai
+            # dasar klasifikasi aktivitas; nilai kas sendiri tetap exact.
+            counterpart_line, counterpart_info = max(
+                non_cash, key=lambda pair: max(_angka(pair[0].get("debit")), _angka(pair[0].get("credit")))
+            )
+            aktivitas_ = _klasifikasi_arus_kas(
+                counterpart_info.get("kategori"), counterpart_info.get("sub_kategori")
+            )
+            for cash_line, _cash_info in cash_lines:
+                debit = _angka(cash_line.get("debit"))
+                credit = _angka(cash_line.get("credit"))
+                net = debit - credit
+                if abs(net) < 0.000001:
+                    continue
+                aktivitas[aktivitas_] += net
+                rincian[aktivitas_].append({
+                    "tanggal": cash_line.get("tanggal"),
+                    "keterangan": cash_line.get("keterangan"),
+                    "arah": "masuk" if net > 0 else "keluar",
+                    "nominal": abs(net),
+                    "akun_lawan": counterpart_line.get("account_code"),
+                })
+            if counterpart_info.get("kategori") is None:
+                perlu_review.extend([x[0] for x in cash_lines])
+    else:
+        # Compatibility format legacy.
+        for baris in jurnal or []:
+            no_debet = str(baris.get("no_akun_debet") or "").strip()
+            no_kredit = str(baris.get("no_akun_kredit") or "").strip()
+            info_debet = peta_coa.get(no_debet, {})
+            info_kredit = peta_coa.get(no_kredit, {})
+            jml_debet = _angka(baris.get("jml_debet"))
+            jml_kredit = _angka(baris.get("jml_kredit")) or jml_debet
 
-        if debet_kas and not kredit_kas:
-            # Kas MASUK (debet kas), lawan di kredit menentukan aktivitas
-            aktivitas_ = _klasifikasi_arus_kas(info_kredit.get("kategori"), info_kredit.get("sub_kategori"))
-            aktivitas[aktivitas_] += jml_debet
-            rincian[aktivitas_].append({
-                "tanggal": baris.get("tanggal"), "keterangan": baris.get("keterangan"),
-                "arah": "masuk", "nominal": jml_debet, "akun_lawan": no_kredit,
-            })
-            if info_kredit.get("kategori") is None:
-                perlu_review.append(baris)
-        elif kredit_kas and not debet_kas:
-            # Kas KELUAR (kredit kas), lawan di debet menentukan aktivitas
-            aktivitas_ = _klasifikasi_arus_kas(info_debet.get("kategori"), info_debet.get("sub_kategori"))
-            aktivitas[aktivitas_] -= jml_kredit
-            rincian[aktivitas_].append({
-                "tanggal": baris.get("tanggal"), "keterangan": baris.get("keterangan"),
-                "arah": "keluar", "nominal": jml_kredit, "akun_lawan": no_debet,
-            })
-            if info_debet.get("kategori") is None:
-                perlu_review.append(baris)
-        # kalau debet_kas dan kredit_kas dua-duanya True/False -> transfer
-        # antar kas/bank atau tidak melibatkan kas -> tidak memengaruhi
-        # arus kas neto, dilewati (benar secara akuntansi).
+            debet_kas = _akun_kas(info_debet)
+            kredit_kas = _akun_kas(info_kredit)
+
+            if debet_kas and not kredit_kas:
+                aktivitas_ = _klasifikasi_arus_kas(info_kredit.get("kategori"), info_kredit.get("sub_kategori"))
+                aktivitas[aktivitas_] += jml_debet
+                rincian[aktivitas_].append({
+                    "tanggal": baris.get("tanggal"), "keterangan": baris.get("keterangan"),
+                    "arah": "masuk", "nominal": jml_debet, "akun_lawan": no_kredit,
+                })
+                if info_kredit.get("kategori") is None:
+                    perlu_review.append(baris)
+            elif kredit_kas and not debet_kas:
+                aktivitas_ = _klasifikasi_arus_kas(info_debet.get("kategori"), info_debet.get("sub_kategori"))
+                aktivitas[aktivitas_] -= jml_kredit
+                rincian[aktivitas_].append({
+                    "tanggal": baris.get("tanggal"), "keterangan": baris.get("keterangan"),
+                    "arah": "keluar", "nominal": jml_kredit, "akun_lawan": no_debet,
+                })
+                if info_debet.get("kategori") is None:
+                    perlu_review.append(baris)
 
     total_arus_kas_bersih = sum(aktivitas.values())
 
@@ -2127,10 +2197,18 @@ def filter_jurnal_per_cabang(
         tag = cabang_per_akun.get(str(no_akun))
         return tag is None or tag == cabang
 
-    return [
-        j for j in jurnal
-        if _akun_cocok(j.get("no_akun_debet")) or _akun_cocok(j.get("no_akun_kredit"))
-    ]
+    hasil = []
+    for j in jurnal:
+        if _is_flat_journal_line(j):
+            # Segment per journal-line adalah sumber yang lebih tepat daripada
+            # tag cabang pada COA. Kalau belum diisi, fallback ke COA agar
+            # kompatibel dengan data lama.
+            branch = j.get("branch")
+            if branch is None or branch == "" or branch == cabang or _akun_cocok(j.get("account_code")):
+                hasil.append(j)
+        elif _akun_cocok(j.get("no_akun_debet")) or _akun_cocok(j.get("no_akun_kredit")):
+            hasil.append(j)
+    return hasil
 
 
 def _kartu_kpi_bento(label: str, per_bulan: List[float], satuan: str = "rupiah",

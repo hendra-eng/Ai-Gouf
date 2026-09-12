@@ -12228,7 +12228,7 @@ Peran utamamu ADA DUA, dan keduanya sama pentingnya:
   - Sales (`/transactions/sales`)
   - Expense (`/transactions/expense`)
   - Cash Payment (`/transactions/cash-payment`)
-  - Cash Reserve (`/transactions/cash-reserve`)
+  - Cash Receipt (`/transactions/cash-receipt`)
   - Other (`/transactions/other`)
 - Accounts Receivable (`/accounts-receivable`) -- daftar invoice/piutang
   pelanggan, aging piutang, panel detail invoice & customer.
@@ -12326,7 +12326,7 @@ Tabel routing 15 jenis dokumen -> halaman tujuan:
 8. **Slip Gaji Karyawan** -> dijurnal (beban gaji, PPh 21, BPJS) ->
    **Transactions**, **Tax & Compliance** (PPh 21).
 9. **Bukti Kas Masuk/Keluar** -> dijurnal -> **Transactions** (tab Cash
-   Payment/Cash Reserve).
+   Payment/Cash Receipt).
 10. **Kartu Stok/Persediaan** -> TIDAK menghasilkan jurnal -- tersimpan
     sebagai mutasi stok per barang (belum ada halaman viewer khusus).
 11. **Daftar Aset Tetap & Penyusutan** -> dijurnal (penyusutan) ->

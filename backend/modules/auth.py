@@ -58,36 +58,43 @@ from .logging_config import get_module_logger
 logger = get_module_logger("auth")
 
 # ============================================================
-# [BARU -- login dihilangkan untuk halaman Agent AI di Dashboard]
+# SECURITY MODE
 # ============================================================
-# Dipakai get_current_user() saat tidak ada header Authorization sama
-# sekali (lihat catatan lengkap di get_current_user di bawah). role
-# "tahap_5" = level tertinggi (Partner/Direktur, akses penuh) supaya
-# TIDAK ada endpoint yang tiba-tiba menolak (403) gara-gara level
-# kurang, sama seperti sebelumnya wajib login sebagai user level
-# tertinggi. Ganti "role" di sini ke "tahap_3" dst kalau suatu saat mau
-# membatasi akses default ini.
+# Development boleh memakai anonymous bypass supaya workflow lokal yang sudah
+# ada tidak rusak. Production SECARA DEFAULT wajib JWT dan tidak pernah
+# memberikan role tahap_5 hanya karena header Authorization kosong.
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV in {"production", "prod"}
+ALLOW_ANONYMOUS_DEV = (
+    os.environ.get("ALLOW_ANONYMOUS_DEV", "true" if not IS_PRODUCTION else "false")
+    .strip().lower() in {"1", "true", "yes", "on"}
+)
+ALLOW_FALLBACK_ADMIN = (
+    os.environ.get("ALLOW_FALLBACK_ADMIN", "true" if not IS_PRODUCTION else "false")
+    .strip().lower() in {"1", "true", "yes", "on"}
+)
+
 DEFAULT_USER_TANPA_LOGIN: Dict[str, Any] = {
-    "username": "dashboard",
+    "username": "dashboard-dev",
     "role": "tahap_5",
-    "nama": "Dashboard",
-    "id": None,
+    "nama": "Dashboard Development",
+    "id": 0,
 }
 
 # ============================================================
 # KONFIGURASI JWT
 # ============================================================
-# PENTING: SECRET_KEY WAJIB diganti lewat environment variable di
-# production (jangan pakai nilai default di bawah). Simpan di file .env:
-#   JWT_SECRET_KEY=<string acak panjang, mis. hasil `openssl rand -hex 32`>
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "ganti-ini-di-env-JWT_SECRET_KEY-jangan-dipakai-di-production")
 ALGORITMA = "HS256"
 TOKEN_KADALUARSA_JAM = int(os.environ.get("JWT_EXPIRE_HOURS", "12"))
 
 if SECRET_KEY.startswith("ganti-ini"):
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "JWT_SECRET_KEY wajib di-set dengan nilai acak yang kuat pada APP_ENV=production."
+        )
     logger.warning(
-        "⚠️ JWT_SECRET_KEY belum di-set lewat environment variable -- "
-        "memakai nilai default yang TIDAK aman untuk production."
+        "JWT_SECRET_KEY belum di-set; nilai default hanya diizinkan untuk development."
     )
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -207,8 +214,8 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
         logger.warning(f"❌ Login gagal (database): {username}")
         return None
 
-    if username == _FALLBACK_USERNAME and password == _FALLBACK_PASSWORD:
-        logger.warning(f"⚠️ Login berhasil lewat akun fallback (database tidak aktif): {username}")
+    if ALLOW_FALLBACK_ADMIN and username == _FALLBACK_USERNAME and password == _FALLBACK_PASSWORD:
+        logger.warning(f"Login fallback development dipakai (database tidak aktif): {username}")
         return dict(_FALLBACK_USER)
 
     logger.warning(f"❌ Login gagal (fallback, database tidak aktif): {username}")
@@ -275,25 +282,23 @@ def get_current_user(
     Dependency FastAPI: ambil & validasi token dari header
     `Authorization: Bearer <token>`.
 
-    [UBAH -- login dihilangkan] Sebelumnya melempar 401 kalau tidak ada
-    token sama sekali -- itu mengasumsikan ada halaman Login terpisah di
-    frontend yang memanggil POST /api/login dulu untuk dapat token.
-    Halaman Agent AI yang di-porting ke Dashboard TIDAK punya halaman
-    Login (dashboard-nya sendiri sudah punya sistem login sendiri di
-    level lain, terpisah dari backend ini) -- jadi frontend sekarang
-    TIDAK PERNAH mengirim header Authorization sama sekali.
-
-    Supaya semua endpoint yang tadinya di-guard Depends(get_current_user)/
-    Depends(require_level(...)) tetap bisa dipanggil TANPA harus mengubah
-    satu-satu endpoint itu, sekarang: kalau tidak ada token sama sekali,
-    kembalikan user default (akses penuh, tahap_5) alih-alih menolak.
-    Kalau SUATU SAAT ada token yang benar-benar dikirim (mis. kalau nanti
-    Dashboard mau menyambungkan identitas user aslinya ke sini), token
-    itu tetap divalidasi seperti biasa -- fungsi ini cuma berhenti
-    MEWAJIBKAN token, bukan berhenti memvalidasinya.
+    Security mode:
+    - Development dapat mengaktifkan ALLOW_ANONYMOUS_DEV=true untuk
+      mempertahankan workflow demo/local yang lama. User bypass ini hanya
+      ada di development.
+    - Production (APP_ENV=production) default-nya WAJIB Bearer JWT. Request
+      tanpa token mendapat 401 dan tidak pernah otomatis memperoleh tahap_5.
+    - Frontend production memakai halaman /login -> POST /api/login, lalu
+      mengirim token pada setiap request API.
     """
     if credentials is None:
-        return DEFAULT_USER_TANPA_LOGIN.copy()
+        if ALLOW_ANONYMOUS_DEV:
+            return DEFAULT_USER_TANPA_LOGIN.copy()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization Bearer token wajib untuk environment production.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user = decode_token(credentials.credentials)
     if user is None:
@@ -345,3 +350,16 @@ def require_roles(roles: List[str]):
         return user
 
     return _dependency
+
+def user_from_authorization_header(header_value: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Helper untuk middleware client-isolation. Tidak melempar exception."""
+    if not header_value:
+        return DEFAULT_USER_TANPA_LOGIN.copy() if ALLOW_ANONYMOUS_DEV else None
+    prefix = "Bearer "
+    if not header_value.startswith(prefix):
+        return None
+    return decode_token(header_value[len(prefix):].strip())
+
+
+def production_auth_required() -> bool:
+    return not ALLOW_ANONYMOUS_DEV

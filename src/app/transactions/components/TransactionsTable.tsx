@@ -5,7 +5,6 @@ import { Transaction } from './transactionData';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { ArrowLeftRight } from 'lucide-react';
-import { toast } from 'sonner';
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -29,6 +28,15 @@ interface TransactionsTableProps {
   // [BARU] Dipanggil saat tombol Edit (ikon pensil) di baris ditekan —
   // membuka TransactionEditModal lewat parent (TransactionsContent).
   onEditClick: (tx: Transaction) => void;
+  // [FIX - audit #2] Bulk & per-baris actions — sebelumnya cuma toast, sekarang beneran memanggil context.
+  onBulkDelete: (ids: string[]) => void;
+  onBulkArchive: (ids: string[]) => void;
+  onBulkExport: (ids: string[]) => void;
+  onDeleteRow: (id: string) => void;
+  // [FIX - audit #7] Toggle centang "Cek" (rekonsiliasi manual).
+  onToggleCek: (id: string) => void;
+  // [FIX - audit #6] Reset filter dari kondisi tabel kosong.
+  onResetFilters: () => void;
 }
 
 function formatAmount(v: number) {
@@ -70,9 +78,9 @@ const categoryColors: Record<string, string> = {
   // classifyByAccountName/GROUP_LABELS di transactionData.ts) — dipetakan ke
   // warna yang selaras dengan kategori sejenis di atas.
   Sales: 'badge-positive',
-  Expense: 'badge-neutral',
+  Purchase: 'badge-neutral',
   'Cash Payment': 'badge-warning',
-  'Cash Reserve': 'badge-info',
+  'Cash Receipt': 'badge-info',
   Other: 'badge-neutral',
 };
 
@@ -91,6 +99,7 @@ export default function TransactionsTable({
   page, pageSize, totalPages, onPageChange, onPageSizeChange,
   onRowClick,
   onEditClick,
+  onBulkDelete, onBulkArchive, onBulkExport, onDeleteRow, onToggleCek, onResetFilters,
 }: TransactionsTableProps) {
   const allSelected = transactions.length > 0 && transactions.every((t) => selectedIds.has(t.id));
   const someSelected = transactions.some((t) => selectedIds.has(t.id)) && !allSelected;
@@ -113,25 +122,29 @@ export default function TransactionsTable({
 
   return (
     <div className="card-elevated-md rounded-xl overflow-hidden">
-      {/* Bulk action bar */}
+      {/* Bulk action bar — [FIX - audit #2] sekarang beneran memanggil context, tidak cuma toast */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 px-5 py-3 bg-primary/5 border-b border-primary/20 fade-in">
           <span className="text-sm font-semibold text-primary">{selectedIds.size} dipilih</span>
           <div className="h-4 w-px bg-border" />
           <button
-            onClick={() => toast.success(`${selectedIds.size} transaksi diarsip`)}
+            onClick={() => onBulkArchive(Array.from(selectedIds))}
             className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Arsip
           </button>
           <button
-            onClick={() => toast.error(`${selectedIds.size} transaksi dihapus`)}
+            onClick={() => {
+              if (window.confirm(`Hapus ${selectedIds.size} transaksi terpilih? Untuk baris yang sudah tersinkron ke server, jurnal akan ditandai ditolak (tidak masuk laporan keuangan).`)) {
+                onBulkDelete(Array.from(selectedIds));
+              }
+            }}
             className="text-xs font-semibold text-negative hover:text-negative/80 transition-colors"
           >
             Hapus
           </button>
           <button
-            onClick={() => toast.info(`Export ${selectedIds.size} transaksi`)}
+            onClick={() => onBulkExport(Array.from(selectedIds))}
             className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
           >
             Export Pilihan
@@ -191,7 +204,7 @@ export default function TransactionsTable({
                       icon={ArrowLeftRight}
                       title="Tidak ada transaksi ditemukan"
                       description="Tidak ada transaksi yang cocok dengan filter yang dipilih. Coba ubah filter atau kata kunci pencarian."
-                      action={{ label: 'Reset Filter', onClick: () => {} }}
+                      action={{ label: 'Reset Filter', onClick: onResetFilters }}
                     />
                   )}
                 </td>
@@ -265,12 +278,18 @@ export default function TransactionsTable({
                     <td className="px-4 py-3 whitespace-nowrap">
                       <StatusBadge variant={statusVariant[tx.status] || 'neutral'} label={tx.status} dot />
                     </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                      {tx.cek ? (
-                        <Check size={14} className="text-positive inline-block" />
-                      ) : (
-                        <span className="text-xs text-muted-foreground/40">—</span>
-                      )}
+                    <td className="px-4 py-3 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onToggleCek(tx.id)}
+                        className="inline-flex items-center justify-center w-5 h-5 rounded border border-border hover:border-primary transition-colors"
+                        aria-label={tx.cek ? 'Batalkan tanda cek rekonsiliasi' : 'Tandai sudah dicek/direkonsiliasi'}
+                      >
+                        {tx.cek ? (
+                          <Check size={13} className="text-positive" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground/40">—</span>
+                        )}
+                      </button>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -300,7 +319,11 @@ export default function TransactionsTable({
                         </div>
                         <div className="relative group/btn">
                           <button
-                            onClick={() => toast.error(`Hapus ${tx.txId}?`, { description: 'Tindakan ini tidak dapat dibatalkan' })}
+                            onClick={() => {
+                              if (window.confirm(`Hapus transaksi ${tx.txId}? Untuk baris yang sudah tersinkron ke server, jurnal akan ditandai ditolak (tidak masuk laporan keuangan).`)) {
+                                onDeleteRow(tx.id);
+                              }
+                            }}
                             className="p-1.5 rounded-lg hover:bg-negative-subtle text-muted-foreground hover:text-negative transition-colors"
                             aria-label="Hapus transaksi — tidak dapat dibatalkan"
                           >

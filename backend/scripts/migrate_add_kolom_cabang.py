@@ -24,7 +24,7 @@ import sys
 
 from sqlalchemy import inspect, text
 
-from modules.db_client import engine
+from db_client import engine
 
 
 KOLOM_BARU = [

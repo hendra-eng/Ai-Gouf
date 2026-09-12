@@ -15,7 +15,7 @@ import pandas as pd
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime,
     Text, Float, Boolean, ForeignKey, ForeignKeyConstraint, text, UniqueConstraint, Index,
-    func,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
+    Numeric, Date, func,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -379,8 +379,157 @@ class JurnalPosting(Base):
     diposting_oleh = Column(String(100), nullable=True)
     diposting_at = Column(DateTime, nullable=True)
     dibuat_at = Column(DateTime, default=datetime.now)
+    # [BARU - persist edit/posting halaman Transaksi frontend] Sebelumnya
+    # status pembayaran ke vendor (field paymentStatus/dueDate/paidAmount di
+    # Transaction frontend, lihat src/app/transactions/components/
+    # transactionData.ts) TIDAK PERNAH tersimpan ke database sama sekali --
+    # murni state React lokal di halaman Transaksi/Expense, hilang begitu
+    # halaman di-refresh. jatuh_tempo di atas sudah ada (dipetakan ke
+    # dueDate), tapi payment_status & paid_amount belum ada kolomnya sampai
+    # sekarang. Lihat scripts/migrate_add_kolom_payment_status.py untuk
+    # ALTER TABLE pada database yang sudah ada.
+    payment_status = Column(String(20), nullable=True)  # 'Belum Dibayar'/'Sebagian Dibayar'/'Lunas', NULL = belum pernah diisi
+    paid_amount = Column(Float, nullable=True)
 
     client = relationship("Client")
+
+
+
+# ============================================================
+# ACCOUNTING CORE V2 — additive, tidak mengganti tabel legacy
+# ============================================================
+
+class StandardAccount(Base):
+    """Taxonomy akun universal sistem. Nomor/nama akun client tetap di tabel Coa."""
+    __tablename__ = "standard_accounts"
+
+    id = Column(Integer, primary_key=True)
+    standard_code = Column(String(100), unique=True, nullable=False, index=True)
+    standard_name = Column(String(200), nullable=False)
+    account_class = Column(String(30), nullable=False)  # ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN
+    account_subtype = Column(String(100), nullable=True)
+    normal_balance = Column(String(10), nullable=True)
+    fs_statement = Column(String(30), nullable=True)  # BALANCE_SHEET / PROFIT_LOSS
+    fs_group = Column(String(100), nullable=True)
+    fs_line = Column(String(150), nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class AccountRole(Base):
+    """Semantic role yang dipakai posting engine, bukan nomor akun hard-coded."""
+    __tablename__ = "account_roles"
+
+    id = Column(Integer, primary_key=True)
+    role_code = Column(String(80), unique=True, nullable=False, index=True)
+    role_name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CoaStandardMapping(Base):
+    """Mapping COA asli client ke StandardAccount."""
+    __tablename__ = "coa_standard_mapping"
+    __table_args__ = (
+        UniqueConstraint("client_id", "coa_id", name="uq_coa_standard_mapping_client_coa"),
+        Index("idx_coa_standard_mapping_client", "client_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=False)
+    standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
+    mapped_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CompanyAccountRole(Base):
+    """Mapping AccountRole universal ke akun aktual masing-masing company/client."""
+    __tablename__ = "company_account_roles"
+    __table_args__ = (
+        UniqueConstraint("client_id", "role_id", name="uq_company_account_role"),
+        Index("idx_company_account_roles_client", "client_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    role_id = Column(Integer, ForeignKey("account_roles.id"), nullable=False)
+    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
+    assigned_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class JournalEntry(Base):
+    """Header jurnal resmi. Satu entry dapat memiliki banyak JournalLine."""
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        UniqueConstraint("client_id", "journal_no", name="uq_journal_entry_client_no"),
+        UniqueConstraint("client_id", "legacy_posting_id", name="uq_journal_entry_legacy_posting"),
+        Index("idx_journal_entry_client_status_date", "client_id", "status", "posting_date"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    journal_no = Column(String(80), nullable=False)
+    source_module = Column(String(50), nullable=False, default="GENERAL_JOURNAL")
+    source_transaction_id = Column(String(100), nullable=True)
+    legacy_posting_id = Column(Integer, ForeignKey("jurnal_posting.id"), nullable=True)
+    document_date = Column(Date, nullable=True)
+    posting_date = Column(Date, nullable=True)
+    description = Column(Text, nullable=True)
+    reference = Column(String(150), nullable=True)
+    status = Column(String(20), nullable=False, default="DRAFT")
+    currency = Column(String(10), nullable=False, default="IDR")
+    exchange_rate = Column(Numeric(20, 6), nullable=False, default=1)
+    created_by = Column(String(100), nullable=True)
+    approved_by = Column(String(100), nullable=True)
+    posted_by = Column(String(100), nullable=True)
+    posted_at = Column(DateTime, nullable=True)
+    reversed_from_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class JournalLine(Base):
+    """Baris debit/kredit resmi. Nilai uang memakai NUMERIC, bukan Float."""
+    __tablename__ = "journal_lines"
+    __table_args__ = (
+        UniqueConstraint("journal_entry_id", "line_no", name="uq_journal_line_entry_no"),
+        Index("idx_journal_line_client_account", "client_id", "account_code"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(200), nullable=True)
+    standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=True)
+    standard_account_code = Column(String(100), nullable=True)
+    account_role = Column(String(80), nullable=True)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0)
+    credit = Column(Numeric(24, 2), nullable=False, default=0)
+    partner_name = Column(String(200), nullable=True)
+    tax_code = Column(String(50), nullable=True)
+    branch = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True)
+    cost_center = Column(String(100), nullable=True)
+    project = Column(String(100), nullable=True)
+    reconciliation_no = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class RiwayatSaldoBulanan(Base):
@@ -593,6 +742,23 @@ class User(Base):
     aktif = Column(Boolean, default=True)
     dibuat_at = Column(DateTime, default=datetime.now)
     diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+
+class UserClientAccess(Base):
+    """Pembatasan client per user. tahap_5 dapat full access; role lain wajib mapping di production."""
+    __tablename__ = "user_client_access"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_id", name="uq_user_client_access"),
+        Index("idx_user_client_access_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    access_role = Column(String(50), nullable=True)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 # [BARU] Riwayat percakapan chat, mirip sidebar "Chat History" di
@@ -2642,20 +2808,51 @@ def ambil_coa_client(client_id: int, hanya_aktif: bool = True) -> List[Dict[str,
         query = session.query(Coa).filter(Coa.client_id == client_id)
         if hanya_aktif:
             query = query.filter(Coa.aktif.is_(True))
-        hasil = [
-            {
+        akun_rows = query.order_by(Coa.no_akun).all()
+
+        # [ACCOUNTING CORE V2] Enrich COA dengan standard taxonomy + account roles.
+        # Additive: pemanggil lama yang hanya membaca field lama tetap aman.
+        mappings = session.query(CoaStandardMapping, StandardAccount).join(
+            StandardAccount, CoaStandardMapping.standard_account_id == StandardAccount.id
+        ).filter(
+            CoaStandardMapping.client_id == client_id,
+            CoaStandardMapping.active.is_(True),
+        ).all()
+        mapping_by_coa = {m.coa_id: std for m, std in mappings}
+
+        roles = session.query(CompanyAccountRole, AccountRole).join(
+            AccountRole, CompanyAccountRole.role_id == AccountRole.id
+        ).filter(
+            CompanyAccountRole.client_id == client_id,
+            CompanyAccountRole.active.is_(True),
+            AccountRole.active.is_(True),
+        ).all()
+        roles_by_coa: Dict[int, List[str]] = {}
+        for car, role in roles:
+            roles_by_coa.setdefault(car.coa_id, []).append(role.role_code)
+
+        hasil = []
+        for a in akun_rows:
+            std = mapping_by_coa.get(a.id)
+            hasil.append({
                 "id": a.id, "no_akun": a.no_akun, "nama_akun": a.nama_akun,
-                "kategori": a.kategori, "sub_kategori": a.sub_kategori,
-                "normal_saldo": a.normal_saldo, "saldo_awal": a.saldo_awal,
-                "segment": a.segment, "arus_kas": a.arus_kas,  # [BARU]
-                "keterangan": a.keterangan,  # [BARU]
-                "lawan_transaksi_saldo_awal": a.lawan_transaksi_saldo_awal,  # [BARU]
-                "project_unit_saldo_awal": a.project_unit_saldo_awal,  # [BARU]
-                "cabang": a.cabang,  # [BARU - filter Cabang Financial Overview]
+                "kategori": (std.account_class if std else a.kategori),
+                "sub_kategori": (std.account_subtype if std and std.account_subtype else a.sub_kategori),
+                "normal_saldo": (std.normal_balance if std and std.normal_balance else a.normal_saldo),
+                "saldo_awal": a.saldo_awal,
+                "segment": a.segment, "arus_kas": a.arus_kas,
+                "keterangan": a.keterangan,
+                "lawan_transaksi_saldo_awal": a.lawan_transaksi_saldo_awal,
+                "project_unit_saldo_awal": a.project_unit_saldo_awal,
+                "cabang": a.cabang,
                 "aktif": a.aktif,
-            }
-            for a in query.order_by(Coa.no_akun).all()
-        ]
+                "standard_account_code": std.standard_code if std else None,
+                "standard_account_name": std.standard_name if std else None,
+                "fs_statement": std.fs_statement if std else None,
+                "fs_group": std.fs_group if std else None,
+                "fs_line": std.fs_line if std else None,
+                "account_roles": sorted(roles_by_coa.get(a.id, [])),
+            })
         return hasil
     except Exception as e:
         session.rollback()
@@ -3489,12 +3686,26 @@ def _upload_batch_ke_dict(b: "UploadBatch", sertakan_draf_jurnal: bool = False) 
 
 
 def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: str,
-                                  draf_jurnal: List[Dict[str, Any]]) -> int:
+                                  draf_jurnal: List[Dict[str, Any]],
+                                  sudah_diberi_nomor: bool = False) -> int:
     """
     Salin baris-baris draf_jurnal (dari hasil proses_file_xxx) ke antrean
     jurnal_posting berstatus 'draft', supaya muncul di layar review
     akuntan. Dipanggil otomatis oleh main.py setiap kali /api/proses-file
     menyimpan hasil yang mengandung draf_jurnal.
+
+    [BARU -- fix temuan #1] `sudah_diberi_nomor`: kalau True, LEWATI
+    panggilan beri_nomor_voucher_draf_jurnal() di bawah -- dipakai oleh
+    _proses_dan_simpan_satu_file() (main.py) yang SUDAH memint nomor
+    voucher untuk draf_jurnal ini sebelumnya (lewat pemanggilan terpisah,
+    dengan `pakai_ai` sesuai pilihan user di request upload). Tanpa flag
+    ini, baris yang sama akan diberi nomor voucher DUA KALI (sekali oleh
+    pemanggil, sekali lagi di sini) -- membuang nomor dari counter
+    permanen (VoucherCounter) untuk voucher yang tidak pernah dipakai, dan
+    voucher yang akhirnya tersimpan ke jurnal_posting jadi voucher
+    generasi KEDUA, bukan yang sudah ditampilkan ke user di respons
+    upload. Default tetap False supaya pemanggil lama (jalur Agent AI/
+    konfirmasi batch di /api/proses-file/stream) tidak berubah perilaku.
 
     "sumber_placeholder" ditandai True kalau no_akun_debet ATAU
     no_akun_kredit-nya masih mengandung "/" (pola penanda placeholder yang
@@ -3526,7 +3737,12 @@ def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: s
         # sengaja False di sini (perilaku lama, tidak berubah) --
         # nyalakan lewat parameter baru kalau nanti jalur ini juga mau
         # dibantu Claude untuk baris kode bank yang ambigu.
-        beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, jenis_dokumen, pakai_ai=False)
+        # [FIX -- temuan #1] Kalau sudah_diberi_nomor=True, pemanggil
+        # (_proses_dan_simpan_satu_file di main.py) SUDAH memint voucher
+        # untuk draf_jurnal ini -- lihat docstring parameter di atas.
+        # Lewati supaya tidak dobel mint.
+        if not sudah_diberi_nomor:
+            beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, jenis_dokumen, pakai_ai=False)
         voucher_per_baris: List[Optional[str]] = [
             (baris.get("voucher") if pakai_voucher else None) for baris in draf_jurnal
         ]
@@ -3600,14 +3816,30 @@ def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: s
 
 
 def daftar_jurnal_posting(client_id: int, status: Optional[str] = "draft",
-                           limit: int = 500) -> List[Dict[str, Any]]:
-    """Ambil baris jurnal_posting client (default: yang masih 'draft', perlu direview)."""
+                           limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Ambil baris jurnal_posting client (default: yang masih 'draft', perlu direview).
+
+    [FIX -- baris hilang diam-diam saat import besar] Sebelumnya `limit`
+    punya default tetap (500, lalu sempat dinaikkan ke 20000) -- angka
+    berapa pun yang dipilih akan KEMBALI memotong data secara diam-diam
+    begitu jumlah baris client tumbuh melewatinya (mis. import rekening
+    koran multi-tahun, puluhan ribu baris). Sekarang default None berarti
+    BENAR-BENAR TANPA BATAS -- `.limit()` SQLAlchemy cuma dipanggil kalau
+    pemanggil eksplisit memberi angka (mis. untuk keperluan preview
+    ringan/paginasi di tempat lain yang memang sengaja mau baris terbatas).
+    Halaman Transaksi (lewat GET /api/client/{id}/jurnal-posting di
+    main.py) TIDAK mengirim limit sama sekali -- jadi selalu ambil semua
+    baris, berapa pun banyaknya.
+    """
     session = SessionLocal()
     try:
         query = session.query(JurnalPosting).filter(JurnalPosting.client_id == client_id)
         if status:
             query = query.filter(JurnalPosting.status == status)
-        query = query.order_by(JurnalPosting.dibuat_at.desc()).limit(limit)
+        query = query.order_by(JurnalPosting.dibuat_at.desc())
+        if limit is not None and limit > 0:
+            query = query.limit(limit)
         hasil = [
             {
                 "id": j.id, "hasil_id": j.hasil_id, "jenis_dokumen": j.jenis_dokumen,
@@ -3623,6 +3855,9 @@ def daftar_jurnal_posting(client_id: int, status: Optional[str] = "draft",
                 "jml_kredit": j.jml_kredit,
                 "status": j.status, "sumber_placeholder": j.sumber_placeholder,
                 "voucher": j.voucher, "periode_voucher": j.periode_voucher,
+                # [BARU] lihat komentar kolom payment_status/paid_amount di
+                # model JurnalPosting di atas.
+                "payment_status": j.payment_status, "paid_amount": j.paid_amount,
                 "diposting_oleh": j.diposting_oleh,
                 "diposting_at": j.diposting_at.isoformat() if j.diposting_at else None,
                 "dibuat_at": j.dibuat_at.isoformat() if j.dibuat_at else None,
@@ -3636,6 +3871,280 @@ def daftar_jurnal_posting(client_id: int, status: Optional[str] = "draft",
         return []
     finally:
         session.close()
+
+
+def ambil_jurnal_posting_by_id(posting_id: int, client_id: int) -> Optional[Dict[str, Any]]:
+    """[BARU] Ambil SATU baris jurnal_posting milik client tertentu --
+    dipakai endpoint edit (PATCH) untuk validasi kepemilikan (posting_id ini
+    benar milik client_id ini) sebelum mengubah apa pun, dan untuk
+    mengembalikan bentuk terbaru baris itu ke frontend setelah diedit."""
+    session = SessionLocal()
+    try:
+        j = session.query(JurnalPosting).filter(
+            JurnalPosting.id == posting_id, JurnalPosting.client_id == client_id
+        ).first()
+        if j is None:
+            return None
+        return {
+            "id": j.id, "hasil_id": j.hasil_id, "jenis_dokumen": j.jenis_dokumen,
+            "tanggal": j.tanggal, "keterangan": j.keterangan,
+            "lawan_transaksi": j.lawan_transaksi, "no_dokumen": j.no_dokumen,
+            "project_unit": j.project_unit, "jatuh_tempo": j.jatuh_tempo,
+            "no_akun_debet": j.no_akun_debet, "nama_akun_debet": j.nama_akun_debet,
+            "jml_debet": j.jml_debet,
+            "no_akun_kredit": j.no_akun_kredit, "nama_akun_kredit": j.nama_akun_kredit,
+            "jml_kredit": j.jml_kredit,
+            "status": j.status, "sumber_placeholder": j.sumber_placeholder,
+            "voucher": j.voucher, "periode_voucher": j.periode_voucher,
+            "payment_status": j.payment_status, "paid_amount": j.paid_amount,
+            "diposting_oleh": j.diposting_oleh,
+            "diposting_at": j.diposting_at.isoformat() if j.diposting_at else None,
+            "dibuat_at": j.dibuat_at.isoformat() if j.dibuat_at else None,
+        }
+    except Exception as e:
+        session.rollback()
+        print(f"Error ambil jurnal posting by id: {e}")
+        return None
+    finally:
+        session.close()
+
+
+# Nilai status jurnal_posting yang sah -- dijaga di satu tempat supaya
+# update_jurnal_posting() & endpoint PATCH di main.py konsisten menolak
+# nilai lain (mis. typo atau status lama 'Unposted'/'Reconciled'/'Voided'
+# ala frontend yang TIDAK ADA representasinya di backend, lihat catatan di
+# jurnalBridge.ts::STATUS_MAP).
+STATUS_JURNAL_VALID = {"draft", "terposting", "ditolak"}
+
+
+def update_jurnal_posting(posting_id: int, client_id: int, user: str, **fields) -> Optional[Dict[str, Any]]:
+    """
+    [BARU] Edit SATU baris jurnal_posting yang SUDAH ADA -- dipakai halaman
+    Transaksi (TransactionEditModal, tombol "Simpan Perubahan") supaya
+    hasil edit BENAR-BENAR tersimpan ke database, bukan cuma state React
+    lokal seperti sebelumnya.
+
+    Beda dari konfirmasi_posting_jurnal(): fungsi itu SELALU memaksa
+    status jadi 'terposting' (dipakai jalur "Posting" khusus). Fungsi ini
+    murni MENGUBAH ISI baris (tanggal/akun/nominal/dst) TANPA memaksa status
+    berubah -- status ikut diubah HANYA kalau eksplisit diberikan lewat
+    fields['status'], dan hanya menerima 3 nilai sah backend (lihat
+    STATUS_JURNAL_VALID) -- endpoint di main.py yang menerjemahkan status
+    ala frontend (Unposted/Posted/Draft/Reconciled/Voided) ke salah satu
+    dari 3 nilai ini sebelum sampai sini.
+
+    Hanya field yang ADA di `fields` (kunci disertakan) yang diubah --
+    beda dari konfirmasi_posting_jurnal yang skip nilai falsy (0/""/None
+    semua dilewati). Di sini None secara eksplisit BERARTI "kosongkan
+    kolom ini", supaya user bisa menghapus isi field opsional (mis.
+    catatan/lawan_transaksi) lewat form edit -- makanya dipakai **fields
+    + 'in fields' check, bukan cek truthy seperti konfirmasi_posting_jurnal.
+
+    Return: dict baris terbaru (lihat ambil_jurnal_posting_by_id) kalau
+    berhasil, None kalau baris tidak ditemukan/bukan milik client_id ini.
+    """
+    KOLOM_BOLEH_DIUBAH = {
+        "tanggal", "keterangan", "lawan_transaksi", "no_dokumen", "project_unit",
+        "jatuh_tempo", "no_akun_debet", "nama_akun_debet", "jml_debet",
+        "no_akun_kredit", "nama_akun_kredit", "jml_kredit",
+        "payment_status", "paid_amount",
+    }
+    session = SessionLocal()
+    try:
+        j = session.query(JurnalPosting).filter(
+            JurnalPosting.id == posting_id, JurnalPosting.client_id == client_id
+        ).first()
+        if j is None:
+            return None
+
+        for kolom in KOLOM_BOLEH_DIUBAH:
+            if kolom in fields:
+                setattr(j, kolom, fields[kolom])
+
+        if "status" in fields and fields["status"] is not None:
+            status_baru = fields["status"]
+            if status_baru not in STATUS_JURNAL_VALID:
+                raise ValueError(f"Status '{status_baru}' tidak dikenal backend.")
+            j.status = status_baru
+            if status_baru == "terposting":
+                j.diposting_oleh = user
+                j.diposting_at = datetime.now()
+
+        # akun debet/kredit tidak boleh kosong sama sekali (constraint NOT
+        # NULL di model) -- kalau field ini eksplisit diisi string kosong
+        # lewat form edit, tolak di sini supaya pesan errornya jelas
+        # (bukan IntegrityError mentah dari SQLAlchemy).
+        if not j.no_akun_debet or not j.no_akun_kredit:
+            raise ValueError("Kode akun debet dan kredit tidak boleh kosong.")
+
+        j.sumber_placeholder = ("/" in j.no_akun_debet) or ("/" in j.no_akun_kredit)
+
+        session.commit()
+        session.refresh(j)
+        hasil = {
+            "id": j.id, "hasil_id": j.hasil_id, "jenis_dokumen": j.jenis_dokumen,
+            "tanggal": j.tanggal, "keterangan": j.keterangan,
+            "lawan_transaksi": j.lawan_transaksi, "no_dokumen": j.no_dokumen,
+            "project_unit": j.project_unit, "jatuh_tempo": j.jatuh_tempo,
+            "no_akun_debet": j.no_akun_debet, "nama_akun_debet": j.nama_akun_debet,
+            "jml_debet": j.jml_debet,
+            "no_akun_kredit": j.no_akun_kredit, "nama_akun_kredit": j.nama_akun_kredit,
+            "jml_kredit": j.jml_kredit,
+            "status": j.status, "sumber_placeholder": j.sumber_placeholder,
+            "voucher": j.voucher, "periode_voucher": j.periode_voucher,
+            "payment_status": j.payment_status, "paid_amount": j.paid_amount,
+            "diposting_oleh": j.diposting_oleh,
+            "diposting_at": j.diposting_at.isoformat() if j.diposting_at else None,
+            "dibuat_at": j.dibuat_at.isoformat() if j.dibuat_at else None,
+        }
+        return hasil
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error update jurnal posting: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def buat_jurnal_manual(
+    client_id: int, user: str, tanggal: str, keterangan: str,
+    no_akun_debet: str, nama_akun_debet: Optional[str],
+    jml_debet: float,
+    no_akun_kredit: str, nama_akun_kredit: Optional[str],
+    jml_kredit: float,
+    lawan_transaksi: Optional[str] = None, no_dokumen: Optional[str] = None,
+    project_unit: Optional[str] = None,
+    jatuh_tempo: Optional[str] = None, status: str = "draft",
+    payment_status: Optional[str] = None, paid_amount: Optional[float] = None,
+) -> Optional[int]:
+    """
+    [BARU] Buat baris jurnal_posting BARU secara manual -- dipakai tombol
+    "+ Jurnal Baru" di halaman Transaksi & 5 sub halamannya. Sebelumnya
+    tombol ini cuma menambah satu baris ke state React lokal (hilang saat
+    refresh) -- sekarang benar-benar tersimpan ke database lewat fungsi ini.
+
+    hasil_id sengaja NULL (jurnal manual tidak berasal dari file upload
+    manapun) dan jenis_dokumen diisi 'manual' supaya baris ini bisa
+    dibedakan dari hasil upload di riwayat/audit.
+
+    Baris dengan no_akun_debet/no_akun_kredit sama-sama wajib diisi
+    (constraint NOT NULL di model) -- endpoint di main.py yang menegakkan
+    validasi "jurnal harus double-entry lengkap" (dua akun + nominal sama
+    besar) sebelum memanggil fungsi ini; fungsi ini murni menyimpan.
+
+    Return: id baris baru kalau berhasil, None kalau gagal.
+    """
+    session = SessionLocal()
+    try:
+        j = JurnalPosting(
+            client_id=client_id,
+            hasil_id=None,
+            jenis_dokumen="manual",
+            tanggal=tanggal,
+            keterangan=keterangan,
+            lawan_transaksi=lawan_transaksi,
+            no_dokumen=no_dokumen,
+            project_unit=project_unit,
+            jatuh_tempo=jatuh_tempo,
+            no_akun_debet=no_akun_debet,
+            nama_akun_debet=nama_akun_debet,
+            jml_debet=jml_debet,
+            no_akun_kredit=no_akun_kredit,
+            nama_akun_kredit=nama_akun_kredit,
+            jml_kredit=jml_kredit,
+            status=status if status in STATUS_JURNAL_VALID else "draft",
+            sumber_placeholder=("/" in no_akun_debet) or ("/" in no_akun_kredit),
+            payment_status=payment_status,
+            paid_amount=paid_amount,
+            dibuat_at=datetime.now(),
+        )
+        if j.status == "terposting":
+            j.diposting_oleh = user
+            j.diposting_at = datetime.now()
+        session.add(j)
+        session.commit()
+        session.refresh(j)
+        return j.id
+    except Exception as e:
+        session.rollback()
+        print(f"Error buat jurnal manual: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def konfirmasi_posting_by_ids(client_id: int, posting_ids: List[int], user: str) -> Dict[str, int]:
+    """
+    [BARU] Sama tujuannya dengan konfirmasi_posting_massal() (posting
+    banyak baris 'draft' sekaligus jadi 'terposting'), tapi dipilih lewat
+    DAFTAR posting_id eksplisit, bukan satu hasil_id. Dibutuhkan karena
+    tombol "Posting Semua" di halaman Transaksi (dan versi per-kelompok di
+    5 sub halaman) beroperasi atas baris-baris yang sedang tampil di layar
+    (bisa berasal dari BANYAK hasil_id berbeda -- gabungan beberapa kali
+    upload -- atau dibatasi ke satu kelompok Sales/Expense/dll, sesuatu
+    yang backend tidak punya konsepnya sama sekali), bukan "semua draft
+    milik satu file upload" seperti konfirmasi_posting_massal().
+
+    Baris placeholder (sumber_placeholder=True) tetap dilewati sama seperti
+    konfirmasi_posting_massal() -- alasan sama: akun lawannya belum pasti,
+    tidak boleh ikut diposting otomatis.
+
+    [FIX -- posting massal gagal diam-diam untuk data sangat besar]
+    Sebelumnya SEMUA posting_ids dimasukkan ke SATU query `id.in_(...)`.
+    SQLite (dan beberapa database lain) punya batas jumlah parameter per
+    query (SQLITE_MAX_VARIABLE_NUMBER, umumnya ~999) -- begitu user
+    mengimpor & posting puluhan ribu baris sekaligus (mis. tombol
+    "Posting Semua" dipakai atas seluruh tabel Transaksi), query ini akan
+    gagal total dengan `too many SQL variables`, ketangkap oleh except di
+    bawah, dan mengembalikan diposting=0 tanpa penjelasan ke frontend --
+    persis pola silent-failure yang sama dengan temuan limit 500 di
+    daftar_jurnal_posting(). Sekarang posting_ids diproses per KELOMPOK
+    kecil (_UKURAN_BATCH_IN id sekaligus) supaya tidak pernah menyentuh
+    batas itu, berapa pun banyaknya baris yang mau diposting sekaligus.
+
+    Return: {"diposting": ..., "dilewati_placeholder": ..., "tidak_ditemukan": ...}
+    """
+    if not posting_ids:
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+
+    _UKURAN_BATCH_IN = 500  # jauh di bawah batas SQLite (~999) supaya aman di semua konfigurasi
+    session = SessionLocal()
+    try:
+        ditemukan_ids: set = set()
+        diposting = 0
+        dilewati = 0
+        sekarang = datetime.now()
+
+        for awal in range(0, len(posting_ids), _UKURAN_BATCH_IN):
+            kelompok_id = posting_ids[awal:awal + _UKURAN_BATCH_IN]
+            rows = session.query(JurnalPosting).filter(
+                JurnalPosting.client_id == client_id,
+                JurnalPosting.id.in_(kelompok_id),
+                JurnalPosting.status == "draft",
+            ).all()
+            for j in rows:
+                ditemukan_ids.add(j.id)
+                if j.sumber_placeholder:
+                    dilewati += 1
+                    continue
+                j.status = "terposting"
+                j.diposting_oleh = user
+                j.diposting_at = sekarang
+                diposting += 1
+
+        tidak_ditemukan = len(set(posting_ids) - ditemukan_ids)
+        session.commit()
+        return {"diposting": diposting, "dilewati_placeholder": dilewati, "tidak_ditemukan": tidak_ditemukan}
+    except Exception as e:
+        session.rollback()
+        print(f"Error konfirmasi posting by ids: {e}")
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+    finally:
+        session.close()
+
 
 
 def konfirmasi_posting_jurnal(posting_id: int, user: str,
@@ -4192,5 +4701,71 @@ def ambil_riwayat_saldo_bulanan_akun_tren(
         session.rollback()
         print(f"Error ambil riwayat saldo bulanan tren: {e}")
         return {}
+    finally:
+        session.close()
+
+# ============================================================
+# ACCOUNTING CORE / SECURITY HELPERS
+# ============================================================
+
+def user_has_client_access(user_id: Optional[int], client_id: int, role: Optional[str] = None) -> bool:
+    """Return True jika user boleh mengakses client. tahap_5 = superuser.
+
+    Untuk role selain tahap_5, production harus memiliki baris aktif di
+    user_client_access. Development anonymous user (id=0, tahap_5) tetap bisa
+    bekerja ketika ALLOW_ANONYMOUS_DEV aktif di modules/auth.py.
+    """
+    if role == "tahap_5":
+        return True
+    if not user_id:
+        return False
+    session = SessionLocal()
+    try:
+        row = session.query(UserClientAccess).filter(
+            UserClientAccess.user_id == int(user_id),
+            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.active.is_(True),
+        ).first()
+        return row is not None
+    except Exception:
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
+
+def set_user_client_access(user_id: int, client_id: int, active: bool = True,
+                           access_role: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        row = session.query(UserClientAccess).filter(
+            UserClientAccess.user_id == user_id,
+            UserClientAccess.client_id == client_id,
+        ).first()
+        if row is None:
+            row = UserClientAccess(user_id=user_id, client_id=client_id, active=active, access_role=access_role)
+            session.add(row)
+        else:
+            row.active = active
+            row.access_role = access_role or row.access_role
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
+
+def daftar_user_client_access(user_id: int) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        rows = session.query(UserClientAccess, Client).join(
+            Client, UserClientAccess.client_id == Client.id
+        ).filter(UserClientAccess.user_id == user_id, UserClientAccess.active.is_(True)).all()
+        return [
+            {"client_id": access.client_id, "client_name": client.nama, "access_role": access.access_role}
+            for access, client in rows
+        ]
     finally:
         session.close()

@@ -73,6 +73,19 @@ function buatKartuMock(): KartuKpiBackend[] {
   }));
 }
 
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
+
+function buatKartuKosong(): KartuKpiBackend[] {
+  return Object.keys(MOCK_SPARKLINES).map((label) => ({
+    label,
+    nilai: 0,
+    satuan: 'rupiah',
+    perubahan_persen: 0,
+    margin_persen: null,
+    sparkline: Array(8).fill(0),
+  }));
+}
+
 // Konfigurasi tampilan per kartu (id, tujuan klik, arah status, hero).
 // "arahBaik": 'naik' -> makin tinggi makin bagus (positif = hijau).
 //             'turun' -> makin rendah makin bagus (positif = merah/warning).
@@ -123,7 +136,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
 
   const [kartu, setKartu] = useState<KartuKpiBackend[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isSampleData, setIsSampleData] = useState(true);
+  const [isSampleData, setIsSampleData] = useState(DEMO_MODE);
   const requestIdRef = useRef(0);
 
   // ── Data P&L (dipakai utk mode Anggaran & Tahun Sebelumnya pada 4 kartu
@@ -188,8 +201,8 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
 
   useEffect(() => {
     if (!activeClientId) {
-      setKartu(buatKartuMock());
-      setIsSampleData(true);
+      setKartu(DEMO_MODE ? buatKartuMock() : buatKartuKosong());
+      setIsSampleData(DEMO_MODE);
       setLoading(false);
       return;
     }
@@ -200,10 +213,10 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
         if (requestIdRef.current !== requestId) return; // sudah usang
         const ada_data = (res?.kartu || []).some((k) => Math.abs(k.nilai) > 0.01);
         if (!res?.kartu?.length || !ada_data) {
-          // Client aktif belum punya jurnal/COA yang menghasilkan angka apa pun --
-          // tampilkan data contoh drpd grid kosong semua (sama seperti TransactionsContext).
-          setKartu(buatKartuMock());
-          setIsSampleData(true);
+          // Production tidak boleh mengganti data kosong dengan angka contoh.
+          // Demo/development tetap mempertahankan mock untuk kebutuhan presentasi.
+          setKartu(DEMO_MODE ? buatKartuMock() : buatKartuKosong());
+          setIsSampleData(DEMO_MODE);
         } else {
           setKartu(res.kartu);
           setIsSampleData(false);
@@ -211,8 +224,8 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
       })
       .catch(() => {
         if (requestIdRef.current !== requestId) return;
-        setKartu(buatKartuMock());
-        setIsSampleData(true);
+        setKartu(DEMO_MODE ? buatKartuMock() : buatKartuKosong());
+        setIsSampleData(DEMO_MODE);
       })
       .finally(() => {
         if (requestIdRef.current === requestId) setLoading(false);
@@ -231,7 +244,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
     );
   }
 
-  const dataKartu = kartu || buatKartuMock();
+  const dataKartu = kartu || (DEMO_MODE ? buatKartuMock() : buatKartuKosong());
   const perLabel: Record<string, KartuKpiBackend> = {};
   dataKartu.forEach((k) => { perLabel[k.label] = k; });
 

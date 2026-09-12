@@ -59,6 +59,7 @@ interface BalanceSheetData {
 }
 
 const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
 
 function klasifikasiAset(subKategori: string | null | undefined, namaAkun: string | null | undefined): 'current' | 'nonCurrent' {
   const teks = `${subKategori || ''} ${namaAkun || ''}`.toLowerCase();
@@ -256,67 +257,86 @@ export function useBalanceSheetData(): BalanceSheetData {
     };
   }
 
-  // Fallback: data contoh (financialData.tsx) -- dibentuk ulang jadi
-  // struktur BSSection yang sama supaya komponen tidak perlu tahu bedanya.
-  const mk = MOCK_BS_CORE;
+
+
+  if (DEMO_MODE) {
+    const mk = MOCK_BS_CORE;
+    return {
+      loading,
+      isSampleData: true,
+      companyName: COMPANY.name,
+      periodLabel: `As of Aug 31, ${new Date().getFullYear()}`,
+      totalAssets: mk.totalAssets, prevTotalAssets: 5820,
+      totalLiabilities: mk.totalLiabilities, prevTotalLiabilities: 2380,
+      totalEquity: mk.totalEquity, prevTotalEquity: 3440,
+      currentAssets: {
+        label: 'Current Assets', total: mk.cash + mk.accountsReceivable + mk.inventory + mk.prepaidExpenses + mk.otherCurrentAssets, prevTotal: 4040,
+        items: [
+          { name: 'Cash & Bank', current: mk.cash, prev: 2480, href: '/assets' },
+          { name: 'Accounts Receivable', current: mk.accountsReceivable, prev: 1080, href: '/accounts-receivable' },
+          { name: 'Inventory', current: mk.inventory, prev: 320, href: '/assets' },
+          { name: 'Prepaid Expenses', current: mk.prepaidExpenses, prev: 100, href: '/assets' },
+          { name: 'Other Current Assets', current: mk.otherCurrentAssets, prev: 60, href: '/assets' },
+        ],
+      },
+      nonCurrentAssets: {
+        label: 'Non-Current Assets', total: mk.property + mk.equipment + mk.vehicles + mk.computerEquipment + mk.intangibleAssets + mk.otherNonCurrentAssets, prevTotal: 1780,
+        items: [
+          { name: 'Property', current: mk.property, prev: 820, href: '/assets' },
+          { name: 'Equipment', current: mk.equipment, prev: 580, href: '/assets' },
+          { name: 'Vehicles', current: mk.vehicles, prev: 180, href: '/assets' },
+          { name: 'Computer Equipment', current: mk.computerEquipment, prev: 180, href: '/assets' },
+          { name: 'Intangible Assets', current: mk.intangibleAssets, prev: 130, href: '/assets' },
+          { name: 'Other Non-Current Assets', current: mk.otherNonCurrentAssets, prev: 50, href: '/assets' },
+        ],
+      },
+      currentLiabilities: {
+        label: 'Current Liabilities', total: mk.accountsPayable + mk.taxPayable + mk.accruedExpenses + mk.payrollLiabilities + mk.shortTermDebt + mk.otherCurrentLiabilities, prevTotal: 2100,
+        items: [
+          { name: 'Accounts Payable', current: mk.accountsPayable, prev: 920, href: '/accounts-payable' },
+          { name: 'Tax Payable', current: mk.taxPayable, prev: 210, href: '/liabilities' },
+          { name: 'Accrued Expenses', current: mk.accruedExpenses, prev: 280, href: '/liabilities' },
+          { name: 'Payroll Liabilities', current: mk.payrollLiabilities, prev: 200, href: '/liabilities' },
+          { name: 'Short-Term Debt', current: mk.shortTermDebt, prev: 380, href: '/liabilities' },
+          { name: 'Other Current Liabilities', current: mk.otherCurrentLiabilities, prev: 110, href: '/liabilities' },
+        ],
+      },
+      nonCurrentLiabilities: {
+        label: 'Non-Current Liabilities', total: mk.longTermDebt + mk.leaseLiabilities + mk.otherLongTermLiabilities, prevTotal: 280,
+        items: [
+          { name: 'Long-Term Debt', current: mk.longTermDebt, prev: 200, href: '/liabilities' },
+          { name: 'Lease Liabilities', current: mk.leaseLiabilities, prev: 80, href: '/liabilities' },
+          { name: 'Other Long-Term Liabilities', current: mk.otherLongTermLiabilities, prev: 30, href: '/liabilities' },
+        ],
+      },
+      equity: {
+        label: "Shareholders' Equity", total: mk.totalEquity, prevTotal: 3440,
+        items: [
+          { name: 'Paid-in Capital', current: mk.paidInCapital, prev: 1500, href: '/equity' },
+          { name: 'Additional Paid-in Capital', current: mk.additionalPaidInCapital, prev: 500, href: '/equity' },
+          { name: 'Retained Earnings', current: mk.retainedEarnings, prev: 440, href: '/equity' },
+          { name: 'Current Year Profit', current: mk.currentYearProfit, prev: 1600, href: '/equity' },
+          { name: 'Other Equity', current: mk.otherEquity, prev: 0, href: '/equity' },
+        ],
+      },
+      BS_MONTHLY_TREND: MOCK_BS_MONTHLY_TREND,
+    };
+  }
+
   return {
     loading,
-    isSampleData: true,
-    companyName: COMPANY.name,
-    periodLabel: `As of Aug 31, ${new Date().getFullYear()}`,
-    totalAssets: mk.totalAssets, prevTotalAssets: 5820,
-    totalLiabilities: mk.totalLiabilities, prevTotalLiabilities: 2380,
-    totalEquity: mk.totalEquity, prevTotalEquity: 3440,
-    currentAssets: {
-      label: 'Current Assets', total: mk.cash + mk.accountsReceivable + mk.inventory + mk.prepaidExpenses + mk.otherCurrentAssets, prevTotal: 4040,
-      items: [
-        { name: 'Cash & Bank', current: mk.cash, prev: 2480, href: '/assets' },
-        { name: 'Accounts Receivable', current: mk.accountsReceivable, prev: 1080, href: '/accounts-receivable' },
-        { name: 'Inventory', current: mk.inventory, prev: 320, href: '/assets' },
-        { name: 'Prepaid Expenses', current: mk.prepaidExpenses, prev: 100, href: '/assets' },
-        { name: 'Other Current Assets', current: mk.otherCurrentAssets, prev: 60, href: '/assets' },
-      ],
-    },
-    nonCurrentAssets: {
-      label: 'Non-Current Assets', total: mk.property + mk.equipment + mk.vehicles + mk.computerEquipment + mk.intangibleAssets + mk.otherNonCurrentAssets, prevTotal: 1780,
-      items: [
-        { name: 'Property', current: mk.property, prev: 820, href: '/assets' },
-        { name: 'Equipment', current: mk.equipment, prev: 580, href: '/assets' },
-        { name: 'Vehicles', current: mk.vehicles, prev: 180, href: '/assets' },
-        { name: 'Computer Equipment', current: mk.computerEquipment, prev: 180, href: '/assets' },
-        { name: 'Intangible Assets', current: mk.intangibleAssets, prev: 130, href: '/assets' },
-        { name: 'Other Non-Current Assets', current: mk.otherNonCurrentAssets, prev: 50, href: '/assets' },
-      ],
-    },
-    currentLiabilities: {
-      label: 'Current Liabilities', total: mk.accountsPayable + mk.taxPayable + mk.accruedExpenses + mk.payrollLiabilities + mk.shortTermDebt + mk.otherCurrentLiabilities, prevTotal: 2100,
-      items: [
-        { name: 'Accounts Payable', current: mk.accountsPayable, prev: 920, href: '/accounts-payable' },
-        { name: 'Tax Payable', current: mk.taxPayable, prev: 210, href: '/liabilities' },
-        { name: 'Accrued Expenses', current: mk.accruedExpenses, prev: 280, href: '/liabilities' },
-        { name: 'Payroll Liabilities', current: mk.payrollLiabilities, prev: 200, href: '/liabilities' },
-        { name: 'Short-Term Debt', current: mk.shortTermDebt, prev: 380, href: '/liabilities' },
-        { name: 'Other Current Liabilities', current: mk.otherCurrentLiabilities, prev: 110, href: '/liabilities' },
-      ],
-    },
-    nonCurrentLiabilities: {
-      label: 'Non-Current Liabilities', total: mk.longTermDebt + mk.leaseLiabilities + mk.otherLongTermLiabilities, prevTotal: 280,
-      items: [
-        { name: 'Long-Term Debt', current: mk.longTermDebt, prev: 200, href: '/liabilities' },
-        { name: 'Lease Liabilities', current: mk.leaseLiabilities, prev: 80, href: '/liabilities' },
-        { name: 'Other Long-Term Liabilities', current: mk.otherLongTermLiabilities, prev: 30, href: '/liabilities' },
-      ],
-    },
-    equity: {
-      label: "Shareholders' Equity", total: mk.totalEquity, prevTotal: 3440,
-      items: [
-        { name: 'Paid-in Capital', current: mk.paidInCapital, prev: 1500, href: '/equity' },
-        { name: 'Additional Paid-in Capital', current: mk.additionalPaidInCapital, prev: 500, href: '/equity' },
-        { name: 'Retained Earnings', current: mk.retainedEarnings, prev: 440, href: '/equity' },
-        { name: 'Current Year Profit', current: mk.currentYearProfit, prev: 1600, href: '/equity' },
-        { name: 'Other Equity', current: mk.otherEquity, prev: 0, href: '/equity' },
-      ],
-    },
-    BS_MONTHLY_TREND: MOCK_BS_MONTHLY_TREND,
+    isSampleData: false,
+    companyName: activeClientName || 'No client selected',
+    periodLabel: `No posted data — ${new Date().getFullYear()}`,
+    totalAssets: 0, prevTotalAssets: 0,
+    totalLiabilities: 0, prevTotalLiabilities: 0,
+    totalEquity: 0, prevTotalEquity: 0,
+    currentAssets: seksiKosong('Current Assets'),
+    nonCurrentAssets: seksiKosong('Non-Current Assets'),
+    currentLiabilities: seksiKosong('Current Liabilities'),
+    nonCurrentLiabilities: seksiKosong('Non-Current Liabilities'),
+    equity: seksiKosong("Shareholders' Equity"),
+    BS_MONTHLY_TREND: [],
   };
+
 }

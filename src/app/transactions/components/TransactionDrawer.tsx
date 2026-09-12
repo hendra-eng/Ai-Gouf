@@ -1,11 +1,17 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { X, ExternalLink, Copy, CheckCircle, AlertTriangle, FileText, Clock, ArrowUpRight } from 'lucide-react';
+import { X, ExternalLink, Copy, CheckCircle, AlertTriangle, FileText, Clock, ArrowUpRight, Loader2 } from 'lucide-react';
 import { Transaction, getTransactionGroup, PAYMENT_STATUS_VARIANT } from './transactionData';
-import { expenseOutstanding, expenseBillStatus, expenseDaysOverdue } from '../lib/apBridge';
+import { purchaseOutstanding, purchaseBillStatus, purchaseDaysOverdue } from '../lib/apBridge';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { toast } from 'sonner';
+import { useTransactions } from '../context/TransactionsContext';
+import { useActiveClient } from '@/lib/activeClient';
+import { COMPANY } from '@/lib/financialData';
+import { useTransactionAuditTrail } from '../lib/auditTrailBridge';
+import { exportJournalToPdf } from './exportJournalPdf';
+import TransactionEditModal from './TransactionEditModal';
 
 interface TransactionDrawerProps {
   transaction: Transaction;
@@ -28,24 +34,57 @@ const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' 
   Voided: 'negative',
 };
 
-// Backend integration point: replace with /api/transactions/:id/audit-trail
-const mockAuditTrail = [
-  { id: 'audit-001', user: 'Rizky Wardana', action: 'Posted', time: '25 Aug 2026, 08:14 WIB', detail: 'Jurnal diposting ke buku besar' },
-  { id: 'audit-002', user: 'Siti Rahayu', action: 'Created', time: '25 Aug 2026, 07:52 WIB', detail: 'Jurnal dibuat dari invoice' },
-];
+// [FIX - audit #3] mock lama dihapus — lihat lib/auditTrailBridge.ts untuk riwayat asli.
 
 export default function TransactionDrawer({ transaction: tx, onClose }: TransactionDrawerProps) {
+  const { transactions, saveEdit } = useTransactions();
+  const { activeClientName } = useActiveClient();
+  const [showJournalEditor, setShowJournalEditor] = useState(false);
+  const auditTrail = useTransactionAuditTrail(tx.jeId);
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
+  // [FIX - audit #4] Cari leg pasangan jurnal ASLI lewat jeId yang sama
+  // (pola yang sama persis dipakai TransactionsContent.tsx untuk
+  // siblingTransaction saat edit), bukan akun/nama yang dikarang.
+  const siblingTx = useMemo(
+    () => transactions.find((t) => t.jeId === tx.jeId && t.id !== tx.id) || null,
+    [transactions, tx.jeId, tx.id]
+  );
+
   const hasAnomaly = tx.notes?.includes('Anomali') || tx.notes?.includes('anomali');
   const isBalanced = tx.debit === tx.credit || (tx.debit > 0 && tx.credit === 0) || (tx.credit > 0 && tx.debit === 0);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} disalin`));
+  };
+
+  // [FIX - audit #5] "Cetak Voucher" sekarang benar-benar membuat PDF (pakai
+  // fungsi export jurnal yang sudah ada), dilingkupi ke 1 pasangan leg ini
+  // saja alih-alih hanya toast.success() kosong.
+  const handlePrintVoucher = () => {
+    const legs = [tx, siblingTx].filter((t): t is Transaction => t !== null);
+    exportJournalToPdf(legs, activeClientName || COMPANY.name);
+    toast.success('Voucher jurnal diunduh sebagai PDF');
+  };
+
+  // [FIX - audit #5] "Buka Jurnal" sekarang membuka modal edit jurnal yang
+  // sungguhan (form yang sama dipakai halaman Transaksi utama), bukan cuma
+  // toast.info() kosong.
+  const handleOpenJournal = () => setShowJournalEditor(true);
+
+  const handleSaveJournal = (updated: Transaction | Transaction[]) => {
+    if (Array.isArray(updated)) {
+      const [edited, syncedSibling] = updated;
+      saveEdit(edited, syncedSibling);
+    } else {
+      saveEdit(updated);
+    }
+    setShowJournalEditor(false);
   };
 
   return (
@@ -129,7 +168,7 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
             {/* [BARU] Status pembayaran ke vendor — hanya untuk transaksi
                 kelompok Expense, sekaligus jadi pratinjau bagaimana baris ini
                 muncul di halaman Account Payable. */}
-            {getTransactionGroup(tx) === 'expense' && (
+            {getTransactionGroup(tx) === 'purchase' && (
               <div className="card-elevated rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status Pembayaran ke Vendor (AP)</p>
@@ -142,13 +181,13 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                   </div>
                   <div>
                     <p className="text-[10px] text-muted-foreground">Sisa Belum Dibayar</p>
-                    <p className={`text-xs font-semibold ${expenseOutstanding(tx) > 0 ? 'text-negative' : 'text-positive'}`}>
-                      {formatAmount(expenseOutstanding(tx))}
+                    <p className={`text-xs font-semibold ${purchaseOutstanding(tx) > 0 ? 'text-negative' : 'text-positive'}`}>
+                      {formatAmount(purchaseOutstanding(tx))}
                     </p>
                   </div>
                 </div>
-                {expenseOutstanding(tx) > 0 && expenseBillStatus(tx) === 'Overdue' && (
-                  <p className="text-2xs text-negative">Sudah terlambat {expenseDaysOverdue(tx)} hari dari jatuh tempo.</p>
+                {purchaseOutstanding(tx) > 0 && purchaseBillStatus(tx) === 'Overdue' && (
+                  <p className="text-2xs text-negative">Sudah terlambat {purchaseDaysOverdue(tx)} hari dari jatuh tempo.</p>
                 )}
                 <Link
                   href="/accounts-payable"
@@ -194,14 +233,14 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                       </span>
                     </td>
                   </tr>
-                  {/* Counter entry */}
+                  {/* Counter entry — [FIX - audit #4] pakai leg pasangan ASLI (siblingTx, dicari lewat jeId), bukan akun dikarang */}
                   <tr className="border-b border-border/50 bg-muted/20">
                     <td className="px-4 py-2.5">
                       <p className="text-xs font-semibold text-foreground">
-                        {tx.debit > 0 ? '2101' : '1101'}
+                        {siblingTx ? siblingTx.accountCode : '—'}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        {tx.debit > 0 ? 'Kas & Bank (contra)' : 'Pendapatan / Kewajiban (contra)'}
+                        {siblingTx ? siblingTx.accountName : 'Pasangan jurnal tidak ditemukan'}
                       </p>
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -243,25 +282,44 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
               </div>
             )}
 
-            {/* Audit trail */}
+            {/* Audit trail — [FIX - audit #3] riwayat ASLI dari /api/client/{id}/audit-log, difilter per posting_id transaksi ini */}
             <div className="card-elevated rounded-xl p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Audit Trail</p>
-              <div className="space-y-3">
-                {mockAuditTrail.map((entry) => (
-                  <div key={entry.id} className="flex items-start gap-3">
-                    <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Clock size={12} className="text-muted-foreground" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-foreground">{entry.user}</span>
-                        <span className="text-[10px] text-muted-foreground">{entry.time}</span>
+              {!auditTrail.hasPostingId ? (
+                <p className="text-xs text-muted-foreground">
+                  Riwayat perubahan hanya tersedia untuk transaksi yang sudah tersinkron dari server.
+                </p>
+              ) : auditTrail.loading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 size={13} className="animate-spin" />
+                  Memuat riwayat...
+                </div>
+              ) : auditTrail.error ? (
+                <p className="text-xs text-muted-foreground">
+                  Riwayat tidak dapat dimuat saat ini ({auditTrail.error}).
+                </p>
+              ) : auditTrail.entries.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Belum ada riwayat perubahan tercatat untuk transaksi ini.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {auditTrail.entries.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Clock size={12} className="text-muted-foreground" />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{entry.action}: {entry.detail}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-foreground">{entry.user}</span>
+                          <span className="text-[10px] text-muted-foreground">{entry.time}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{entry.action}: {entry.detail}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -269,14 +327,14 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
         {/* Footer actions */}
         <div className="flex items-center gap-2 p-4 border-t border-border bg-muted/20 flex-shrink-0">
           <button
-            onClick={() => toast.success(`Voucher untuk ${tx.id} sedang dicetak`)}
+            onClick={handlePrintVoucher}
             className="btn-secondary flex-1 text-xs py-2 gap-1.5"
           >
             <FileText size={13} />
             Cetak Voucher
           </button>
           <button
-            onClick={() => toast.info(`Membuka jurnal untuk ${tx.id}`)}
+            onClick={handleOpenJournal}
             className="btn-secondary flex-1 text-xs py-2 gap-1.5"
           >
             <ExternalLink size={13} />
@@ -290,6 +348,16 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
           </button>
         </div>
       </div>
+
+      {/* [FIX - audit #5] "Buka Jurnal" -> modal edit jurnal sungguhan, dipasangkan ke saveEdit() context */}
+      {showJournalEditor && (
+        <TransactionEditModal
+          transaction={tx}
+          siblingTransaction={siblingTx}
+          onClose={() => setShowJournalEditor(false)}
+          onSave={handleSaveJournal}
+        />
+      )}
     </>
   );
 }

@@ -17,7 +17,14 @@
 import { Transaction, getTransactionGroup } from '../components/transactionData';
 import type { Customer, Invoice, ARStatus, RiskLevel } from '@/lib/mockData';
 
-export const AR_REFERENCE_DATE = '2026-08-28';
+// [DIUBAH — tanggal acuan tidak lagi hardcode] Sama seperti
+// getApReferenceDate() di apBridge.ts — dihitung ulang dari tanggal hari ini
+// setiap kali dipanggil, dipakai sbg default parameter `refDate` di seluruh
+// fungsi bawah supaya Overdue/Due Soon/aging piutang otomatis akurat tiap
+// hari tanpa perlu diubah manual.
+export function getArReferenceDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function daysBetween(fromISO: string, toISO: string): number {
   const from = new Date(fromISO).getTime();
@@ -97,13 +104,13 @@ function invoiceOutstanding(rows: Transaction[]): number {
   return Math.max(0, amount - invoicePaidAmount(rows, amount));
 }
 
-function invoiceDaysOverdue(rows: Transaction[], dueDate: string, refDate: string = AR_REFERENCE_DATE): number {
+function invoiceDaysOverdue(rows: Transaction[], dueDate: string, refDate: string = getArReferenceDate()): number {
   if (invoiceOutstanding(rows) <= 0) return 0;
   const diff = daysBetween(dueDate, refDate);
   return diff > 0 ? diff : 0;
 }
 
-function invoiceStatus(rows: Transaction[], dueDate: string, refDate: string = AR_REFERENCE_DATE): ARStatus {
+function invoiceStatus(rows: Transaction[], dueDate: string, refDate: string = getArReferenceDate()): ARStatus {
   const amount = invoiceAmount(rows);
   const outstanding = invoiceOutstanding(rows);
   if (outstanding <= 0) return 'Paid';
@@ -123,7 +130,7 @@ function invoicePriority(status: ARStatus, daysOverdue: number): Invoice['priori
 }
 
 /** Satu group invoice Sales -> satu baris Invoice di Account Receivable. */
-function invoiceFromGroup(group: InvoiceGroup, refDate: string = AR_REFERENCE_DATE): Invoice {
+function invoiceFromGroup(group: InvoiceGroup, refDate: string = getArReferenceDate()): Invoice {
   const { rows, key } = group;
   const first = rows[0];
   const date = rows.reduce((min, tx) => (tx.date < min ? tx.date : min), first.date);
@@ -154,7 +161,7 @@ function invoiceFromGroup(group: InvoiceGroup, refDate: string = AR_REFERENCE_DA
 }
 
 /** Ubah SEMUA transaksi Sales jadi daftar Invoice. Pengganti `invoices` mock lama. */
-export function invoicesFromTransactions(transactions: Transaction[], refDate: string = AR_REFERENCE_DATE): Invoice[] {
+export function invoicesFromTransactions(transactions: Transaction[], refDate: string = getArReferenceDate()): Invoice[] {
   return groupSalesByInvoice(transactions)
     .map((g) => invoiceFromGroup(g, refDate))
     .sort((a, b) => (a.dueDate < b.dueDate ? 1 : -1));
@@ -273,29 +280,50 @@ export function arAgingFromInvoices(invoices: Invoice[]) {
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Tren bulanan New Invoices vs Collections — dihitung dari invoiceDate transaksi Sales yang sesungguhnya. */
+/**
+ * Tren bulanan New Invoices vs Collections — dihitung dari invoiceDate
+ * transaksi Sales yang sesungguhnya.
+ *
+ * [FIX - audit #10] Sama seperti apTrendFromBills() di apBridge.ts —
+ * sebelumnya dikelompokkan & diurutkan HANYA pakai `d.getMonth()` (0-11),
+ * tanpa tahun, jadi data lintas tahun (mis. invoice Nov 2025 & Feb 2026)
+ * ditumpuk ke bucket bulan yang sama & urut kronologisnya salah (Feb
+ * dianggap "lebih awal" dari Nov). Sekarang pakai index absolut
+ * `year * 12 + month` (pola sama dgn monthlyTrendFor() di groupAnalytics.ts
+ * & revenueData di OverviewCharts.tsx). Label bulan dapat akhiran "'YY"
+ * HANYA kalau rentang datanya benar-benar mencakup >1 tahun, supaya
+ * tampilan kasus umum (data 1 tahun) tidak berubah.
+ */
 export function arTrendFromInvoices(invoices: Invoice[]) {
-  const byMonth = new Map<number, { newInvoices: number; collections: number }>();
+  const byAbsIdx = new Map<number, { year: number; month: number; newInvoices: number; collections: number }>();
   invoices.forEach((inv) => {
     const d = new Date(inv.invoiceDate);
     if (isNaN(d.getTime())) return;
-    const m = d.getMonth();
-    const entry = byMonth.get(m) || { newInvoices: 0, collections: 0 };
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const absIdx = year * 12 + month;
+    const entry = byAbsIdx.get(absIdx) || { year, month, newInvoices: 0, collections: 0 };
     entry.newInvoices += inv.amount;
     entry.collections += inv.paid;
-    byMonth.set(m, entry);
+    byAbsIdx.set(absIdx, entry);
   });
 
-  let openingAR = 0;
-  const monthsWithData = Array.from(byMonth.keys()).sort((a, b) => a - b);
-  const firstMonth = monthsWithData[0] ?? new Date().getMonth();
-  const lastMonth = monthsWithData[monthsWithData.length - 1] ?? new Date().getMonth();
+  const sortedIdx = Array.from(byAbsIdx.keys()).sort((a, b) => a - b);
+  const now = new Date();
+  const nowAbsIdx = now.getFullYear() * 12 + now.getMonth();
+  const firstAbsIdx = sortedIdx[0] ?? nowAbsIdx;
+  const lastAbsIdx = sortedIdx[sortedIdx.length - 1] ?? nowAbsIdx;
+  const spansMultipleYears = Math.floor(firstAbsIdx / 12) !== Math.floor(lastAbsIdx / 12);
 
+  let openingAR = 0;
   const rows: { month: string; openingAR: number; newInvoices: number; collections: number; closingAR: number }[] = [];
-  for (let m = firstMonth; m <= lastMonth; m++) {
-    const entry = byMonth.get(m) || { newInvoices: 0, collections: 0 };
+  for (let absIdx = firstAbsIdx; absIdx <= lastAbsIdx; absIdx++) {
+    const year = Math.floor(absIdx / 12);
+    const month = absIdx - year * 12;
+    const entry = byAbsIdx.get(absIdx) || { year, month, newInvoices: 0, collections: 0 };
     const closingAR = Math.max(0, openingAR + entry.newInvoices - entry.collections);
-    rows.push({ month: MONTH_LABELS[m], openingAR, newInvoices: entry.newInvoices, collections: entry.collections, closingAR });
+    const label = spansMultipleYears ? `${MONTH_LABELS[month]} '${String(year).slice(-2)}` : MONTH_LABELS[month];
+    rows.push({ month: label, openingAR, newInvoices: entry.newInvoices, collections: entry.collections, closingAR });
     openingAR = closingAR;
   }
   return rows;
@@ -316,7 +344,7 @@ export interface CollectionForecastBucket {
 }
 
 /** Perkiraan penagihan ke depan (7/14/30/60 hari), dihitung dari dueDate invoice terbuka. */
-export function collectionForecastFromInvoices(invoices: Invoice[], refDate: string = AR_REFERENCE_DATE): CollectionForecastBucket[] {
+export function collectionForecastFromInvoices(invoices: Invoice[], refDate: string = getArReferenceDate()): CollectionForecastBucket[] {
   const unpaid = invoices.filter((i) => i.outstanding > 0);
   // Probabilitas ditagih dibuat menurun terhadap horizon waktu & makin
   // rendah kalau sudah overdue -- heuristik sederhana, BUKAN model statistik

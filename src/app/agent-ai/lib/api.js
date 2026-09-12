@@ -14,14 +14,58 @@
 // backend di-deploy di domain lain sepenuhnya, tapi default-nya kosong.)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
+const TOKEN_STORAGE_KEY = "gouf_auth_token";
 let _token = null;
 
+function tokenTersimpan() {
+  if (_token) return _token;
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (stored) _token = stored;
+  return _token;
+}
+
 export function simpanToken(token) {
-  _token = token;
+  _token = token || null;
+  if (typeof window !== "undefined") {
+    if (_token) window.localStorage.setItem(TOKEN_STORAGE_KEY, _token);
+    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
 }
 
 export function ambilToken() {
-  return _token;
+  return tokenTersimpan();
+}
+
+export function hapusToken() {
+  simpanToken(null);
+}
+
+export async function login(username, password) {
+  const form = new FormData();
+  form.append("username", username);
+  form.append("password", password);
+  const res = await fetch(`${API_BASE_URL}/api/login`, { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Login gagal (${res.status})`);
+  }
+  const data = await res.json();
+  simpanToken(data.token);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem("gouf_auth_user", JSON.stringify({
+      username: data.username, role: data.role, nama: data.nama,
+    }));
+  }
+  return data;
+}
+
+export function logout() {
+  hapusToken();
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem("gouf_auth_user");
+    window.location.assign("/login");
+  }
 }
 
 // [BARU] Cek status provider AI (DeepSeek/Groq utk chat, Claude/Groq utk
@@ -53,14 +97,22 @@ async function request(path, options = {}) {
   // request tetap dikirim apa adanya tanpa header itu. Backend
   // (modules/auth.py::get_current_user) sudah disesuaikan untuk
   // meloloskan request tanpa header Authorization ini.
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   // options.signal (AbortSignal) diteruskan apa adanya lewat spread ...options
   // -- lihat prosesFileBatch() untuk pemakaian dari tombol "Stop".
   const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
+    if (res.status === 401 && typeof window !== "undefined") {
+      hapusToken();
+      if (window.location.pathname !== "/login") {
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.assign(`/login?next=${next}`);
+      }
+    }
     throw new Error(detail.detail || `Request gagal (${res.status})`);
   }
   return res.json();
@@ -141,8 +193,9 @@ export async function prosesFile(file, jenisDokumen /* optional */, clientId /* 
  */
 export async function* prosesFileStream(file, jenisDokumen /* optional */, clientId /* optional */) {
   const headers = {};
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const formData = new FormData();
@@ -303,8 +356,9 @@ export async function prosesFileBatch(files, clientId, jenisDokumen /* optional 
  */
 export async function* prosesFileBatchStream(files, clientId, jenisDokumen /* optional */, konfirmasiDuplikat = false, signal = undefined, pakaiAi = false, autoGenerateLaporan = false) {
   const headers = {};
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const formData = new FormData();
@@ -420,8 +474,9 @@ export function urlUnduhHasil(namaFile) {
  */
 export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined) {
   const headers = { "Content-Type": "application/json" };
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
@@ -531,22 +586,6 @@ export async function pesanPercakapan(percakapanId) {
 
 export async function hapusPercakapan(percakapanId) {
   return request(`/api/percakapan/${percakapanId}`, { method: "DELETE" });
-}
-
-// ------------------------------------------------------------
-// Auth
-// ------------------------------------------------------------
-export async function login(username, password) {
-  const formData = new FormData();
-  formData.append("username", username);
-  formData.append("password", password);
-  const data = await request("/api/login", { method: "POST", body: formData });
-  simpanToken(data.token);
-  return data;
-}
-
-export function logout() {
-  simpanToken(null);
 }
 
 // ------------------------------------------------------------
@@ -1043,11 +1082,38 @@ export async function downloadCalk(clientId, calkId, format = "pdf") {
 
 /**
  * @param {number|string} clientId
- * @param {string} status -- "draft" (default, "perlu posting") | "terposting" | "ditolak"
+ * @param {string} status -- "draft" (default, "perlu posting") | "terposting" | "ditolak" | "" (semua status)
  */
+export async function daftarJournalEntries(clientId, status = "") {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const qs = params.toString();
+  return request(`/api/client/${clientId}/journal-entries${qs ? `?${qs}` : ""}`);
+}
+
 export async function daftarJurnalPosting(clientId, status = "draft") {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  return request(`/api/client/${clientId}/jurnal-posting${query}`);
+  // [DIPERBAIKI] Sebelumnya: `const query = status ? \`?status=...\` : "";`
+  // -- kalau `status` string kosong ('', dipakai TransactionsContext.tsx/
+  // useAuditTrail.ts/clientActivityBridge.ts untuk maksud "semua status"),
+  // kondisi itu falsy sehingga query string TIDAK disertakan sama sekali
+  // (bukan "?status=" kosong). Request yang terkirim jadi
+  // `/api/client/{id}/jurnal-posting` tanpa parameter `status` apa pun --
+  // padahal endpoint itu (lihat api_daftar_jurnal_posting di main.py)
+  // punya default `status: Optional[str] = "draft"` di FastAPI, yang HANYA
+  // dipakai kalau parameter memang tidak ada di URL. Akibatnya: pemanggilan
+  // yang bermaksud "ambil semua status (draft+terposting+ditolak)" diam-
+  // diam kembali jadi "draft saja" -- transaksi yang sudah diposting/
+  // ditolak tidak pernah ikut kebaca lagi setelah refetch dari backend.
+  //
+  // Fix: SELALU sertakan query string `?status=`, apa pun isinya (termasuk
+  // kosong) -- persis kontrak yang didokumentasikan endpoint ini sendiri
+  // ("...atau ?status= (kosong) untuk semua status"). `encodeURIComponent('')`
+  // menghasilkan string kosong, jadi status='' tetap menghasilkan
+  // `?status=` (parameter ADA di URL, nilainya kosong) -- FastAPI
+  // membaca ini sebagai status="" (bukan memakai default "draft"), lalu
+  // `status_final = status if status else None` di main.py menerjemahkannya
+  // jadi None -> semua status, sesuai maksud pemanggil.
+  return request(`/api/client/${clientId}/jurnal-posting?status=${encodeURIComponent(status)}`);
 }
 
 export async function konfirmasiPosting(clientId, postingId, opsi = {}) {
@@ -1085,6 +1151,61 @@ export async function tolakPosting(clientId, postingId, alasan) {
 export async function konfirmasiPostingMassal(clientId, hasilId) {
   return request(`/api/client/${clientId}/jurnal-posting/hasil/${hasilId}/konfirmasi-semua`, {
     method: "POST",
+  });
+}
+
+// [BARU - persist edit/posting halaman Transaksi frontend] 3 fungsi di
+// bawah membungkus 3 endpoint baru di main.py (PATCH edit satu baris,
+// POST buat jurnal manual, POST posting massal lewat daftar id eksplisit)
+// -- dipakai src/app/transactions/context/TransactionsContext.tsx supaya
+// edit/posting/jurnal-baru di halaman Transaksi BENAR-BENAR tersimpan ke
+// database, bukan cuma state React lokal seperti sebelumnya.
+
+/**
+ * Edit satu baris jurnal yang sudah ada. `perubahan` hanya boleh berisi
+ * field yang MAU diubah (lihat UpdateJurnalPostingRequest di main.py) --
+ * field yang tidak disertakan di objek ini TIDAK disentuh di database.
+ * @param {number|string} clientId
+ * @param {number} postingId
+ * @param {Record<string, unknown>} perubahan
+ */
+export async function updateJurnalPosting(clientId, postingId, perubahan) {
+  return request(`/api/client/${clientId}/jurnal-posting/${postingId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(perubahan),
+  });
+}
+
+/**
+ * Buat baris jurnal baru secara manual (dua kaki debet+kredit sekaligus,
+ * harus balance -- lihat api_buat_jurnal_manual() di main.py).
+ * @param {number|string} clientId
+ * @param {Record<string, unknown>} jurnalBaru
+ * @returns {Promise<{berhasil: boolean, posting_id: number}>}
+ */
+export async function buatJurnalManual(clientId, jurnalBaru) {
+  return request(`/api/client/${clientId}/jurnal-posting/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(jurnalBaru),
+  });
+}
+
+/**
+ * Posting banyak baris 'draft' sekaligus jadi 'terposting', dipilih lewat
+ * daftar posting_id eksplisit (bukan satu hasil_id seperti
+ * konfirmasiPostingMassal() di atas) -- dipakai tombol "Posting Semua" di
+ * halaman Transaksi & versi per-kelompok di 5 sub halamannya.
+ * @param {number|string} clientId
+ * @param {number[]} postingIds
+ * @returns {Promise<{berhasil: boolean, diposting: number, dilewati_placeholder: number, tidak_ditemukan: number}>}
+ */
+export async function postingMassalByIds(clientId, postingIds) {
+  return request(`/api/client/${clientId}/jurnal-posting/posting-massal-by-ids`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ posting_ids: postingIds }),
   });
 }
 
@@ -1284,8 +1405,9 @@ export async function hapusAkunCoa(clientId, akunId) {
  */
 export async function* generateKertasKerjaStream(files, clientId, tahun /* optional */) {
   const headers = {};
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const formData = new FormData();
@@ -1428,8 +1550,9 @@ export async function aiBacaBanyakFile(files, pertanyaan) {
 // @returns {AsyncGenerator<string>} potongan teks jawaban, satu per satu
 export async function* aiBacaFileStream(file, pertanyaan) {
   const headers = {};
-  if (_token) {
-    headers["Authorization"] = `Bearer ${_token}`;
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const formData = new FormData();

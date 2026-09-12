@@ -2,9 +2,13 @@
 import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Upload, X, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Transaction, kodeBankDariNama, buatVoucherNo, classifyJournalPairCategory } from './transactionData';
+import { Transaction, kodeBankDariNama, buatVoucherNo, classifyJournalPairCategory, pisahkanTransaksiDuplikat } from './transactionData';
 import { useCurrency } from '@/lib/currency';
 import { useActiveClient } from '@/lib/activeClient';
+// [BARU] Guard duplikat (Opsi A) perlu tahu transaksi APA SAJA yang sudah
+// ada di halaman ini saat ini (state React lokal TransactionsContext) untuk
+// dibandingkan terhadap hasil import baru -- lihat pisahkanTransaksiDuplikat.
+import { useTransactions } from '../context/TransactionsContext';
 
 interface Props {
   onClose: () => void;
@@ -12,7 +16,7 @@ interface Props {
   onImported: (transactions: Transaction[]) => void;
   // [BARU] 'replace' (default, dipakai halaman Transaksi utama) mengganti
   // SELURUH tabel transaksi dengan hasil import. 'append' (dipakai panel aksi
-  // jurnal di 5 sub halaman: Sales/Expense/Cash Payment/Cash Reserve/Other)
+  // jurnal di 5 sub halaman: Sales/Expense/Cash Payment/Cash Receipt/Other)
   // MENAMBAHKAN hasil import ke transaksi yang sudah ada tanpa menghapus apa
   // pun — dipakai untuk upload data pembelian/penjualan langsung dari sub
   // halaman terkait. 'replace-group' [BARU] MENGGANTI transaksi milik
@@ -96,9 +100,67 @@ interface RekeningKoranHasil {
   };
   draf_jurnal: DrafJurnalRow[];
   sheet_dilewati: string[];
+  // [BARU - fix saldo awal] Saldo resmi dari blok footer PDF ("SALDO AWAL"/
+  // "MUTASI CR"/"MUTASI DB"/"SALDO AKHIR"), dikirim backend HANYA untuk PDF
+  // yang lewat jalur fallback ekstraksi posisi-kata (lihat
+  // akuntansi_ai.py::proses_file_rekening_koran -> ringkasan_footer, dan
+  // _ekstrak_baris_posisi_pdf yang mengisi ringkasan_footer_fallback per
+  // sheet). Key-nya nama sheet PDF -- objek kosong {} kalau file ini tidak
+  // lewat jalur fallback itu (mis. Excel, atau PDF yang parser standarnya
+  // berhasil), yang berarti tidak ada saldo awal resmi untuk diambil di
+  // sini dan saldoAwalDariFooter() di bawah akan balik ke 0 seperti
+  // perilaku lama.
+  ringkasan_footer?: Record<string, {
+    saldo_awal?: number | null;
+    mutasi_cr?: number | null;
+    mutasi_db?: number | null;
+    saldo_akhir?: number | null;
+    cr_count?: number | null;
+    db_count?: number | null;
+  }>;
 }
 
-type Step = 'upload' | 'processing' | 'preview' | 'error';
+// [BARU - fix #9 audit: Saldo Akhir hasil import PDF salah] Sebelumnya
+// pemanggil drafJurnalToTransactions() selalu mengirim literal 0 sebagai
+// saldoAwal, walau backend sudah mengekstrak saldo awal ASLI dari footer
+// PDF (lihat field ringkasan_footer di atas) -- akibatnya kolom "Saldo
+// Akhir" pada transaksi hasil import salah (offset dari saldo bank
+// sesungguhnya), kecuali kebetulan saldo awal periode itu memang Rp 0.
+//
+// ringkasan_footer dikelompokkan PER SHEET oleh backend, tapi
+// drafJurnalToTransactions() menghitung SATU saldo berjalan untuk seluruh
+// batch (asumsi lama: satu import = satu rekening/bank) -- jadi di sini
+// cukup ambil saldo_awal dari sheet PERTAMA yang benar-benar punya nilai.
+// Kalau tidak ada sama sekali (dict kosong -- jalur Excel/parser standar
+// yang tidak melalui fallback posisi-kata), balik ke 0 seperti sebelumnya.
+function saldoAwalDariFooter(footer: RekeningKoranHasil['ringkasan_footer']): number {
+  if (!footer) return 0;
+  for (const info of Object.values(footer)) {
+    if (typeof info?.saldo_awal === 'number' && !Number.isNaN(info.saldo_awal)) {
+      return info.saldo_awal;
+    }
+  }
+  return 0;
+}
+
+// [BARU] 'konfirmasi-duplikat' -- lihat handleConfirm(): dipicu kalau
+// pisahkanTransaksiDuplikat() menemukan entri jurnal yang signature-nya sudah
+// ada di transaksi yang KEBETULAN sedang tampil (guard ringan, murni
+// state lokal), DAN/ATAU kalau deteksiBackend (state, lihat handleFile)
+// menandai perlu_konfirmasi.
+//
+// [FIX - audit #12] deteksiBackend sekarang benar-benar diisi dari server --
+// backend/main.py::_proses_dan_simpan_satu_file memanggil
+// dedup_transaksi.evaluasi_upload_rekening_koran() + dbc.catat_upload_batch()
+// utk tiap upload rekening_koran (kalau ada client aktif), jadi tidak lagi
+// "tidak pernah ke-trigger" seperti catatan lama di sini. CATATAN JUJUR: lapis
+// fingerprint-per-baris (REVISI_SEBAGIAN/DUPLIKAT_PENUH) baru akurat penuh
+// setelah upload rekening koran benar-benar tersimpan ke jurnal_posting --
+// lihat temuan #1 di laporan audit, yang sampai saat ini belum diperbaiki.
+// Lapis FILE_IDENTIK (hash SHA-256 seluruh file, dicocokkan ke tabel
+// UploadBatch yang independen dari jurnal_posting) sudah akurat sejak fix
+// ini, tidak tergantung #1.
+type Step = 'upload' | 'processing' | 'preview' | 'konfirmasi-duplikat' | 'error';
 
 // Deteksi apakah nama akun ini akun Kas/Bank (bukan akun lawan seperti beban,
 // pendapatan, hutang, dll). Dipakai HANYA sebagai fallback kalau backend
@@ -171,7 +233,7 @@ function drafJurnalToTransactions(rows: DrafJurnalRow[], batchTag: string, saldo
     saldoBerjalan += dampakSaldoKas(row);
 
     // [DIUBAH] Sebelumnya category diisi salah satu dari 5 LABEL GRUP
-    // (Sales/Expense/Cash Payment/Cash Reserve/Other lewat GROUP_LABELS),
+    // (Sales/Expense/Cash Payment/Cash Receipt/Other lewat GROUP_LABELS),
     // yang tidak cocok dengan 11 kategori resmi di dropdown filter halaman
     // Transaksi (Revenue, Payroll, Software, dst) — makanya baris hasil
     // import selalu tampil "Other" dan tidak bisa difilter. Sekarang AI
@@ -338,6 +400,19 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
   // beri_nomor_voucher_draf_jurnal. Kosong kalau tidak ada client aktif
   // saat upload (backend tidak mint voucher sama sekali untuk kasus itu).
   const [peringatanVoucher, setPeringatanVoucher] = useState<string[]>([]);
+  // [FIX - audit #12] Sinyal duplikat yang BENAR-BENAR dievaluasi & dicatat
+  // di server (lihat backend/main.py::_proses_dan_simpan_satu_file ->
+  // dedup_transaksi.evaluasi_upload_rekening_koran + dbc.catat_upload_batch),
+  // beda dari pisahkanTransaksiDuplikat() di bawah yang murni membandingkan
+  // ke transaksi yang KEBETULAN sedang tampil di layar ini. Cuma terisi
+  // untuk jenisSumber 'rekening_koran' (lihat backend, di-scope sengaja ke
+  // situ dulu). null kalau tidak ada client aktif saat upload (tidak ada
+  // dasar utk cek server sama sekali).
+  const [deteksiBackend, setDeteksiBackend] = useState<{
+    status_keseluruhan: string;
+    perlu_konfirmasi: boolean;
+    pesan: string;
+  } | null>(null);
   const [batchTag] = useState(() => Date.now().toString(36));
   // Default OFF -- kategorisasi cukup dari pola historis + kata kunci COA,
   // tanpa memanggil API AI pihak ketiga sama sekali. Baris yang tidak
@@ -361,6 +436,24 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
   const [jenisSumber, setJenisSumber] = useState<'rekening_koran' | 'jurnal_penjualan_kasir'>(
     mode === 'replace-group' ? 'jurnal_penjualan_kasir' : 'rekening_koran'
   );
+  // [BARU] Akses transaksi yang sedang tampil di halaman ini (state React
+  // lokal TransactionsContext) -- jadi basis perbandingan signature di
+  // pisahkanTransaksiDuplikat(). Guard ini SENGAJA cuma dicek untuk mode
+  // 'append'/'replace-group' -- mode 'replace' sudah eksplisit menghapus
+  // seluruh tabel lama, jadi peringatan duplikat di situ cuma noise.
+  const { transactions: transaksiSaatIni } = useTransactions();
+  // [BARU] Menyimpan txs hasil konversi + hasil pisahkanTransaksiDuplikat()
+  // selagi menunggu user memilih di step 'konfirmasi-duplikat'.
+  const [pendingImport, setPendingImport] = useState<{
+    semua: Transaction[];
+    entriBaru: Transaction[];
+    jumlahDuplikat: number;
+    // [FIX - audit #12] Diisi kalau step ini dipicu (juga/hanya) oleh
+    // sinyal server (deteksiBackend), supaya pesannya bisa ditampilkan
+    // apa adanya -- beda dari jumlahDuplikat di atas yang murni hasil
+    // hitungan lokal (pisahkanTransaksiDuplikat).
+    pesanBackend: string | null;
+  } | null>(null);
 
   const handleFile = async (file: File) => {
     setFileName(file.name);
@@ -411,6 +504,10 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
 
       setHasil(rk);
       setPeringatanVoucher(Array.isArray(data?.peringatan_voucher) ? data.peringatan_voucher : []);
+      // [FIX - audit #12] Ambil sinyal dedup server-side untuk jenisSumber
+      // yang sedang diupload (backend cuma mengisi kunci 'rekening_koran'
+      // saat ini, lihat catatan di main.py) -- null kalau tidak ada.
+      setDeteksiBackend(data?.deteksi_duplikat?.[jenisSumber] ?? null);
       setStep('preview');
     } catch (e: any) {
       setErrorMsg(e?.message || 'Gagal memproses file. Coba lagi.');
@@ -424,6 +521,28 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
     if (file) handleFile(file);
   };
 
+  // [BARU] Commit final ke TransactionsContext lewat onImported() -- dipanggil
+  // langsung dari handleConfirm() kalau tidak ada indikasi duplikat sama
+  // sekali, ATAU dari step 'konfirmasi-duplikat' setelah user memilih salah
+  // satu dari 3 opsi (lanjutkan semua / hanya yang baru / batalkan).
+  const commitImport = (txsUntukDiimpor: Transaction[], jumlahBarisAsli: number) => {
+    onImported(txsUntukDiimpor);
+    if (mode === 'append') {
+      toast.success('Transaksi berhasil ditambahkan', {
+        description: `${jumlahBarisAsli} baris mutasi (${txsUntukDiimpor.length} entri jurnal) dari ${fileName} ditambahkan ke transaksi${groupLabel ? ` ${groupLabel}` : ''} yang sudah ada`,
+      });
+    } else if (mode === 'replace-group') {
+      toast.success(`Transaksi ${groupLabel} diganti dengan hasil import`, {
+        description: `${jumlahBarisAsli} baris (${txsUntukDiimpor.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi ${groupLabel} sebelumnya — kelompok lain tidak berubah`,
+      });
+    } else {
+      toast.success('Tabel transaksi diganti dengan hasil import', {
+        description: `${jumlahBarisAsli} baris mutasi (${txsUntukDiimpor.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi sebelumnya`,
+      });
+    }
+    onClose();
+  };
+
   const handleConfirm = () => {
     if (!hasil) return;
     // [DIUBAH] Konverter dipilih sesuai jenisSumber -- rekening koran perlu
@@ -431,22 +550,48 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
     // (lihat drafJurnalPenjualanToTransactions di atas).
     const txs = jenisSumber === 'jurnal_penjualan_kasir'
       ? drafJurnalPenjualanToTransactions(hasil.draf_jurnal, batchTag)
-      : drafJurnalToTransactions(hasil.draf_jurnal, batchTag, 0);
-    onImported(txs);
-    if (mode === 'append') {
-      toast.success('Transaksi berhasil ditambahkan', {
-        description: `${hasil.ringkasan.jumlah_transaksi} baris mutasi (${txs.length} entri jurnal) dari ${fileName} ditambahkan ke transaksi${groupLabel ? ` ${groupLabel}` : ''} yang sudah ada`,
-      });
-    } else if (mode === 'replace-group') {
-      toast.success(`Transaksi ${groupLabel} diganti dengan hasil import`, {
-        description: `${hasil.ringkasan.jumlah_transaksi} baris (${txs.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi ${groupLabel} sebelumnya — kelompok lain tidak berubah`,
-      });
-    } else {
-      toast.success('Tabel transaksi diganti dengan hasil import', {
-        description: `${hasil.ringkasan.jumlah_transaksi} baris mutasi (${txs.length} entri jurnal) dari ${fileName} menggantikan seluruh transaksi sebelumnya`,
-      });
+      : drafJurnalToTransactions(hasil.draf_jurnal, batchTag, saldoAwalDariFooter(hasil.ringkasan_footer));
+
+    // [BARU -- GUARD DUPLIKAT, RENCANA A2 OPSI A] Sebelum addTransactions()/
+    // replaceGroup() dieksekusi (lewat onImported -> TransactionsContext),
+    // cek dulu apakah entri jurnal hasil import ini kemungkinan sudah pernah
+    // ada di transaksi yang sedang tampil. Guard ringan, murni frontend,
+    // tidak menyentuh backend/DB sama sekali -- kalau ada indikasi duplikat,
+    // tampilkan step konfirmasi supaya user yang putuskan, bukan diam-diam
+    // ditambahkan/di-skip.
+    // [FIX - audit #12] Sinyal server (deteksiBackend) SELALU dicek, tidak
+    // cuma di mode !== 'replace' seperti guard lokal di bawah -- guard lokal
+    // sengaja dilewati utk mode 'replace' krn tabel lama memang mau dihapus
+    // total, tapi sinyal server tetap relevan di situ: server bisa tahu
+    // "file ini sama/hampir sama dengan upload sebelumnya" walau tabel yang
+    // sedang tampil di layar sudah diganti/di-reload sejak saat itu (guard
+    // lokal tidak akan pernah menangkap kasus ini krn cuma bandingkan ke
+    // transaksi yang KEBETULAN sedang tampil sekarang).
+    const backendPerluKonfirmasi = deteksiBackend?.perlu_konfirmasi ?? false;
+
+    if (mode !== 'replace') {
+      const { entriBaru, jumlahKemungkinanDuplikat } = pisahkanTransaksiDuplikat(txs, transaksiSaatIni);
+      if (jumlahKemungkinanDuplikat > 0 || backendPerluKonfirmasi) {
+        setPendingImport({
+          semua: txs,
+          entriBaru,
+          jumlahDuplikat: jumlahKemungkinanDuplikat,
+          pesanBackend: backendPerluKonfirmasi ? deteksiBackend!.pesan : null,
+        });
+        setStep('konfirmasi-duplikat');
+        return;
+      }
+    } else if (backendPerluKonfirmasi) {
+      // Mode 'replace': tidak ada guard lokal (lihat komentar di atas), tapi
+      // sinyal server tetap ditampilkan -- "Hanya Baris Baru" tidak relevan
+      // di mode ini (replace selalu ambil txs apa adanya), jadi entriBaru
+      // dikosongkan supaya tombol itu otomatis nonaktif di step konfirmasi.
+      setPendingImport({ semua: txs, entriBaru: [], jumlahDuplikat: 0, pesanBackend: deteksiBackend!.pesan });
+      setStep('konfirmasi-duplikat');
+      return;
     }
-    onClose();
+
+    commitImport(txs, hasil.ringkasan.jumlah_transaksi);
   };
 
   return (
@@ -607,6 +752,62 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
               <button onClick={() => setStep('upload')} className="btn-secondary text-xs py-1.5 px-3 mt-2">
                 Coba File Lain
               </button>
+            </div>
+          )}
+
+          {step === 'konfirmasi-duplikat' && hasil && pendingImport && (
+            <div className="py-6 flex flex-col items-center text-center gap-3">
+              <AlertTriangle size={28} className="text-warning" />
+              <div>
+                <p className="text-sm font-600 text-foreground">
+                  {pendingImport.jumlahDuplikat > 0
+                    ? `${pendingImport.jumlahDuplikat} dari ${hasil.draf_jurnal.length} transaksi tampak sudah pernah diimpor`
+                    : 'Server mendeteksi kemungkinan file ini sudah pernah diupload'}
+                </p>
+                {/* [FIX - audit #12] Pesan dari server (dedup_transaksi.py, dicek
+                    terhadap riwayat upload & jurnal tersimpan) -- lebih bisa
+                    diandalkan daripada perbandingan lokal di bawah karena tidak
+                    tergantung transaksi apa yang KEBETULAN sedang tampil di layar. */}
+                {pendingImport.pesanBackend && (
+                  <p className="text-xs text-foreground bg-warning-subtle border border-warning/20 rounded-lg p-2 mt-2 max-w-sm text-left">
+                    {pendingImport.pesanBackend}
+                  </p>
+                )}
+                {pendingImport.jumlahDuplikat > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                    Tanggal, akun, nominal, dan keterangannya cocok dengan transaksi yang sudah ada di halaman ini
+                    saat ini. Ini bisa berarti file <span className="font-600">{fileName}</span> ini pernah
+                    diimpor sebelumnya, atau kebetulan ada transaksi mirip. Silakan pilih:
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 w-full max-w-sm mt-2">
+                <button
+                  onClick={() => commitImport(pendingImport.semua, hasil.ringkasan.jumlah_transaksi)}
+                  className="btn-secondary text-sm py-2 px-4 w-full"
+                >
+                  Lanjutkan Semua ({hasil.draf_jurnal.length} transaksi)
+                </button>
+                <button
+                  onClick={() => commitImport(pendingImport.entriBaru, pendingImport.entriBaru.length)}
+                  disabled={pendingImport.entriBaru.length === 0}
+                  className="btn-primary text-sm py-2 px-4 w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {/* [FIX - audit #12] Sebelumnya dihitung dari
+                      `hasil.draf_jurnal.length - jumlahDuplikat`, yang keliru
+                      kalau step ini dipicu HANYA oleh sinyal server (jumlahDuplikat
+                      lokal = 0 tapi entriBaru juga sengaja dikosongkan di mode
+                      'replace' -- lihat handleConfirm) -- pakai entriBaru.length
+                      langsung supaya selalu akurat. */}
+                  Hanya Baris Baru ({pendingImport.entriBaru.length} transaksi)
+                </button>
+                <button
+                  onClick={() => { setPendingImport(null); setStep('preview'); }}
+                  className="text-sm font-500 text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                >
+                  Batal, kembali ke pratinjau
+                </button>
+              </div>
             </div>
           )}
 

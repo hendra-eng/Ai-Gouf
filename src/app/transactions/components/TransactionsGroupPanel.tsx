@@ -84,7 +84,7 @@ function blankTransaction(defaultCategory: string, group: TransactionGroup): Tra
     // [BARU] Default field pembayaran ke vendor — hanya relevan untuk
     // kelompok Expense (yang otomatis terhubung ke Account Payable), jatuh
     // tempo default Net 30 dari tanggal transaksi.
-    ...(group === 'expense'
+    ...(group === 'purchase'
       ? { paymentStatus: 'Belum Dibayar' as const, dueDate: tambahHariISO(today, 30), paidAmount: 0 }
       : {}),
   };
@@ -202,8 +202,10 @@ export default function TransactionsGroupPanel({
     setShowImportModal(false);
   };
 
-  const handleSaveNew = (tx: Transaction) => {
-    addTransaction(tx);
+  // [DIUBAH — persist ke backend] TransactionEditModal mode isNew mengirim
+  // sepasang leg (debet+kredit) lewat onSave — lihat TransactionEditModal.tsx.
+  const handleSaveNew = (txs: Transaction | Transaction[]) => {
+    addTransaction(Array.isArray(txs) ? txs : [txs]);
     setShowCreateModal(false);
   };
 

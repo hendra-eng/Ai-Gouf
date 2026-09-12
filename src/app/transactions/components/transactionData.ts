@@ -28,6 +28,11 @@ export interface Transaction {
   // Tanda centang rekonsiliasi manual (kolom CEK) — independen dari field
   // `status`, dipakai saat user mencocokkan baris ini manual dengan rekening koran.
   cek: boolean;
+  // [FIX - audit #2] Tanda arsip lokal (lihat archiveTransactions di
+  // TransactionsContext.tsx) — backend jurnal_posting tidak punya konsep
+  // arsip sama sekali, jadi field ini murni state sesi, tidak pernah
+  // dikirim ke server. undefined/false = tampil normal di tabel.
+  archived?: boolean;
   // [BARU] ─── FIELD PENGHUBUNG KE ACCOUNTS PAYABLE ─────────────────────────
   // Field-field di bawah ini SENGAJA terpisah dari `status` (status posting
   // jurnal: Unposted/Posted/Draft/dst). `status` menjawab "sudah tercatat di
@@ -44,6 +49,13 @@ export interface Transaction {
   dueDate?: string;
   /** Nominal yang sudah dibayarkan ke vendor sejauh ini (relevan saat paymentStatus 'Sebagian Dibayar'). */
   paidAmount?: number;
+  // [ACCOUNTING CORE V2] Metadata dari backend. UI tidak perlu menebak
+  // arti akun dari nama/nomor jika backend sudah mengirim semantic data.
+  sourceModule?: string;
+  standardAccountCode?: string;
+  accountRole?: string;
+  coreJournalEntryId?: number;
+  coreJournalLineId?: number;
 }
 
 export type PaymentStatus = NonNullable<Transaction['paymentStatus']>;
@@ -60,7 +72,7 @@ export const PAYMENT_STATUS_VARIANT: Record<PaymentStatus, 'positive' | 'info' |
 
 // ─── PENGELOMPOKAN KE 5 SUB HALAMAN TRANSAKSI ──────────────────────────────
 // [BARU] Setiap baris transaksi di halaman Transaksi utama dikelompokkan ke
-// salah satu dari 5 sub halaman (Sales, Expense, Cash Payment, Cash Reserve,
+// salah satu dari 5 sub halaman (Sales, Expense, Cash Payment, Cash Receipt,
 // Other) berdasarkan field `category`, bukan accountCode/accountName.
 // Alasannya: `category` sudah berupa daftar nilai yang tetap/terbatas
 // (Revenue, Payroll, Software, dst — lihat categoryColors di
@@ -69,20 +81,20 @@ export const PAYMENT_STATUS_VARIANT: Record<PaymentStatus, 'positive' | 'info' |
 // tidak cukup andal sendirian di sini karena satu digit awal (mis. "1xxx")
 // bisa berarti Kas & Bank, Piutang, ATAU Aset Tetap sekaligus — tiga makna
 // bisnis yang berbeda kelompok.
-export type TransactionGroup = 'sales' | 'expense' | 'cash_payment' | 'cash_reserve' | 'other';
+export type TransactionGroup = 'sales' | 'purchase' | 'cash_payment' | 'cash_receipt' | 'other';
 
 export const CATEGORY_TO_GROUP: Record<string, TransactionGroup> = {
   Revenue: 'sales',
-  Payroll: 'expense',
-  Software: 'expense',
-  Rent: 'expense',
-  Marketing: 'expense',
-  Travel: 'expense',
-  Utilities: 'expense',
+  Payroll: 'purchase',
+  Software: 'purchase',
+  Rent: 'purchase',
+  Marketing: 'purchase',
+  Travel: 'purchase',
+  Utilities: 'purchase',
   Tax: 'cash_payment',
   'AP Payment': 'cash_payment',
   CapEx: 'cash_payment',
-  Financing: 'cash_reserve',
+  Financing: 'cash_receipt',
   // [DIUBAH] 'Lainnya' — kategori fallback resmi untuk baris hasil import
   // yang nama akunnya tidak cocok kata kunci manapun (lihat
   // classifyAccountNameToCategory di bawah). Sebelumnya baris seperti ini
@@ -98,9 +110,9 @@ export const CATEGORY_TO_GROUP: Record<string, TransactionGroup> = {
   // classifyByAccountName(accountName), bukan ke grup yang namanya sendiri.
   // Dipetakan langsung supaya konsisten: pilih "Sales" ya pasti masuk Sales.
   Sales: 'sales',
-  Expense: 'expense',
+  Purchase: 'purchase',
   'Cash Payment': 'cash_payment',
-  'Cash Reserve': 'cash_reserve',
+  'Cash Receipt': 'cash_receipt',
   Other: 'other',
 };
 
@@ -114,9 +126,9 @@ export const CATEGORY_TO_GROUP: Record<string, TransactionGroup> = {
 export function classifyByAccountName(accountName: string | undefined | null): TransactionGroup {
   const n = (accountName || '').toLowerCase();
   if (n.includes('pendapatan') || n.includes('piutang')) return 'sales';
-  if (n.includes('beban')) return 'expense';
+  if (n.includes('beban')) return 'purchase';
   if (n.includes('pajak') || n.includes('ppn') || n.includes('pph') || n.includes('hutang usaha') || n.includes('hutang dagang')) return 'cash_payment';
-  if (n.includes('kas & bank') || n.includes('kas dan bank') || n.includes('deposito') || n.includes('giro') || n.includes('tabungan')) return 'cash_reserve';
+  if (n.includes('kas & bank') || n.includes('kas dan bank') || n.includes('deposito') || n.includes('giro') || n.includes('tabungan')) return 'cash_receipt';
   return 'other';
 }
 
@@ -124,13 +136,21 @@ export function classifyByAccountName(accountName: string | undefined | null): T
 // fallback nama akun, supaya tidak ada transaksi yang "hilang" / tidak
 // tampil di sub halaman manapun, baik data statis maupun hasil import.
 export function getTransactionGroup(tx: Transaction): TransactionGroup {
+  // Accounting Core menjadi sumber klasifikasi utama. Nama akun hanya fallback
+  // untuk data legacy/import yang belum mempunyai source_module.
+  const source = (tx.sourceModule || '').toUpperCase();
+  if (source === 'SALES') return 'sales';
+  if (source === 'PURCHASE') return 'purchase';
+  if (source === 'CASH_PAYMENT') return 'cash_payment';
+  if (source === 'CASH_RECEIPT') return 'cash_receipt';
+  if (source === 'GENERAL_JOURNAL') return 'other';
   return CATEGORY_TO_GROUP[tx.category] || classifyByAccountName(tx.accountName);
 }
 
 // ─── KATEGORISASI GRANULAR HASIL IMPORT ────────────────────────────────────
 // [DIUBAH] Sebelumnya baris hasil import (rekening koran / PDF penjualan
 // kasir) diberi field `category` berupa salah satu dari 5 LABEL GRUP
-// (Sales/Expense/Cash Payment/Cash Reserve/Other — lewat GROUP_LABELS), jadi
+// (Sales/Expense/Cash Payment/Cash Receipt/Other — lewat GROUP_LABELS), jadi
 // kolom "Kategori" di tabel & dropdown filter di TransactionsFilterBar (yang
 // isinya cuma 11 kategori resmi: Revenue, Payroll, Software, dst) tidak
 // pernah cocok untuk data hasil import — makanya semua baris import tampil
@@ -192,9 +212,9 @@ export function classifyJournalPairCategory(
 
 export const GROUP_LABELS: Record<TransactionGroup, string> = {
   sales: 'Sales',
-  expense: 'Expense',
+  purchase: 'Purchase',
   cash_payment: 'Cash Payment',
-  cash_reserve: 'Cash Reserve',
+  cash_receipt: 'Cash Receipt',
   other: 'Other',
 };
 
@@ -261,4 +281,82 @@ export function tambahHariISO(tanggalISO: string, jumlahHari: number): string {
   if (isNaN(d.getTime())) return tanggalISO;
   d.setDate(d.getDate() + jumlahHari);
   return d.toISOString().slice(0, 10);
+}
+
+// ─── GUARD DUPLIKAT IMPORT (frontend-only, lihat ImportRekeningKoranModal) ──
+// [BARU] Deteksi "kelihatannya sudah pernah diimpor" untuk baris hasil
+// import rekening koran / jurnal penjualan kasir SEBELUM ditambahkan ke
+// TransactionsContext lewat addTransactions()/replaceGroup().
+//
+// SENGAJA TIDAK pakai txId atau reference sebagai kunci pembanding:
+// - txId selalu baru per sesi import (format TXN-IMPORT-<batchTag>-<baris>,
+//   batchTag dari Date.now()) -- upload file yang SAMA dua kali tetap
+//   menghasilkan txId yang berbeda, jadi tidak akan pernah "bentrok".
+// - reference untuk rekening koran diisi NAMA BANK (mis. "BCA"), sama di
+//   SEMUA baris satu file -- kalau dipakai literal, hampir semua baris akan
+//   selalu "bentrok" walau isinya beda tanggal/nominal (noise, bukan deteksi
+//   yang berguna). Untuk jurnal_penjualan_kasir reference memang unik
+//   (no_invoice), tapi supaya satu logika berlaku konsisten untuk kedua
+//   jenis sumber, dipakai signature berbasis ISI transaksi di bawah ini --
+//   prinsipnya sama seperti fingerprint di backend (modules/dedup_transaksi.py:
+//   tanggal+bank+keterangan+nominal+saldo), hanya dihitung di level pasangan
+//   debet-kredit (per jeId), bukan per baris Transaction mentah -- karena tiap
+//   baris sumber (draf_jurnal) menghasilkan 2 baris Transaction (kaki debet +
+//   kaki kredit) yang berbagi jeId yang sama.
+function normalisasiKeterangan(s: string | undefined): string {
+  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/** Signature satu ENTRI JURNAL (sepasang baris debet+kredit berbagi jeId yang sama). */
+export function signatureEntriJurnal(entriSejeId: Transaction[]): string {
+  const debet = entriSejeId.find((e) => e.debit > 0);
+  const kredit = entriSejeId.find((e) => e.credit > 0);
+  const tanggal = entriSejeId[0]?.date || '';
+  const keterangan = normalisasiKeterangan(entriSejeId[0]?.description);
+  const nominal = debet?.debit || kredit?.credit || 0;
+  return `${tanggal}|${debet?.accountCode || '-'}|${kredit?.accountCode || '-'}|${nominal}|${keterangan}`;
+}
+
+/** Kelompokkan baris Transaction flat jadi Map<jeId, baris-baris miliknya>. */
+function kelompokkanPerJeId(rows: Transaction[]): Map<string, Transaction[]> {
+  const map = new Map<string, Transaction[]>();
+  for (const row of rows) {
+    const arr = map.get(row.jeId) || [];
+    arr.push(row);
+    map.set(row.jeId, arr);
+  }
+  return map;
+}
+
+export interface HasilPisahDuplikat {
+  /** Baris (flat, sudah termasuk kaki debet+kredit) yang jeId-nya TIDAK ditemukan mirip di `existing`. */
+  entriBaru: Transaction[];
+  /** Jumlah ENTRI JURNAL (bukan baris flat) yang terdeteksi kemungkinan sudah pernah diimpor. */
+  jumlahKemungkinanDuplikat: number;
+}
+
+/**
+ * Bandingkan `rowsBaru` (hasil konversi draf_jurnal, akan masuk lewat
+ * addTransactions/replaceGroup) terhadap `existing` (transaksi yang sudah
+ * ada di TransactionsContext saat ini) berdasarkan signatureEntriJurnal().
+ * TIDAK memutuskan apa pun sendiri (sama prinsipnya dengan dedup_transaksi.py
+ * di backend) -- cuma memisahkan mana yang kemungkinan duplikat, keputusan
+ * akhir tetap di tangan user lewat modal konfirmasi.
+ */
+export function pisahkanTransaksiDuplikat(rowsBaru: Transaction[], existing: Transaction[]): HasilPisahDuplikat {
+  const signatureLama = new Set<string>();
+  for (const entri of kelompokkanPerJeId(existing).values()) {
+    signatureLama.add(signatureEntriJurnal(entri));
+  }
+
+  const entriBaru: Transaction[] = [];
+  let jumlahKemungkinanDuplikat = 0;
+  for (const [, entri] of kelompokkanPerJeId(rowsBaru)) {
+    if (signatureLama.has(signatureEntriJurnal(entri))) {
+      jumlahKemungkinanDuplikat += 1;
+    } else {
+      entriBaru.push(...entri);
+    }
+  }
+  return { entriBaru, jumlahKemungkinanDuplikat };
 }
