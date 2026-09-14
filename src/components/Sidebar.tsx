@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, ArrowUpCircle, MoreHorizontal, Shield, RefreshCcw, NotebookText } from 'lucide-react';
+import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
 
@@ -52,8 +52,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
         children: [
           { id: 'nav-tx-sales', label: 'Sales', icon: ShoppingCart, href: '/transactions/sales' },
           { id: 'nav-tx-purchase', label: 'Purchase', icon: CreditCard, href: '/transactions/purchase' },
-          { id: 'nav-tx-cash-payment', label: 'Cash Payment', icon: ArrowUpCircle, href: '/transactions/cash-payment' },
-          { id: 'nav-tx-cash-receipt', label: 'Cash Receipt', icon: Shield, href: '/transactions/cash-receipt' },
+          { id: 'nav-tx-journal-entry', label: 'Journal Entry', icon: BookOpen, href: '/transactions/journal-entry' },
+          { id: 'nav-tx-bank-cash', label: 'Cash & Bank', icon: Landmark, href: '/transactions/bank-cash' },
           { id: 'nav-tx-other', label: 'Other', icon: MoreHorizontal, href: '/transactions/other' },
         ],
       },

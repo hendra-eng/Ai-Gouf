@@ -1,513 +1,420 @@
 'use client';
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import Link from 'next/link';
+import React, { useState, useMemo } from 'react';
+import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
+import { purchaseTransactions, purchaseExceptions, purchaseOverviewKPIs, vendors } from '@/data/purchaseData';
+import {
+  ExclamationTriangleIcon,
+  ArrowTrendingUpIcon,
+  BuildingStorefrontIcon,
+} from '@heroicons/react/24/outline';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import Icon from '@/components/ui/AppIcon';
 import KpiCard from '@/components/shared/KpiCard';
-import TransactionDrawer from '../components/TransactionDrawer';
-import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
-import { Transaction, PAYMENT_STATUS_VARIANT } from '../components/transactionData';
-import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
-import { purchaseOutstanding, purchaseBillStatus } from '../lib/apBridge';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getNiceTicksFromZero } from '@/lib/chartTicks';
-import StatusBadge from '@/components/ui/StatusBadge';
-import { ArrowUpRight } from 'lucide-react';
 
-// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales / Financial
-// Overview / Balance Sheet): width YAxis (65) + margin.left AreaChart (10). ──
-const PURCHASE_AXIS_WIDTH = 65;
-const PURCHASE_AXIS_OVERLAY_WIDTH = PURCHASE_AXIS_WIDTH + 10;
-const PURCHASE_SPRING_MS = 380;
-const purchaseEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-interface PurchaseDragPreview {
-  index: number;
-  value: number;
-}
+const fmt = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const fmtFull = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
-function PurchaseTrendTooltip({
-  active,
-  payload,
-  label,
-  dragPreview,
-}: {
-  active?: boolean;
-  payload?: { value: number; name: string; color: string; payload: { month: string } }[];
-  label?: string;
-  dragPreview?: PurchaseDragPreview | null;
-}) {
-  if (!active || !payload || !payload.length) return null;
-  const entry = payload[0];
-  const isDragged = !!dragPreview;
-  const value = isDragged ? dragPreview!.value : entry.value;
-  return (
-    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
-      <p className="font-semibold text-slate-800 mb-1">{label}</p>
-      <p className="text-orange-600">
-        {entry.name}: {isDragged ? 'Estimasi · ' : ''}
-        {formatIDR(value)}
-      </p>
-    </div>
-  );
-}
+const monthlyTrend = [
+  { month: 'Apr', amount: 312000, count: 8 },
+  { month: 'May', amount: 428000, count: 11 },
+  { month: 'Jun', amount: 389000, count: 9 },
+  { month: 'Jul', amount: 501000, count: 13 },
+  { month: 'Aug', amount: 465000, count: 12 },
+  { month: 'Sep', amount: 543862, count: 12 },
+];
 
-const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
+const categoryData = [
+  { name: 'IT Equipment', value: 241840 },
+  { name: 'Raw Materials', value: 158962 },
+  { name: 'Professional Services', value: 71120 },
+  { name: 'Logistics', value: 31976 },
+  { name: 'Marketing', value: 39200 },
+  { name: 'Office Supplies', value: 55549 },
+  { name: 'Maintenance', value: 13888 },
+];
+
+const COLORS = ['#1E40AF', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
+
+const statusDist = [
+  { name: 'Posted', value: 6, color: '#15803D' },
+  { name: 'Approved', value: 2, color: '#0369A1' },
+  { name: 'Pending Review', value: 2, color: '#D97706' },
+  { name: 'Exception', value: 1, color: '#C2410C' },
+  { name: 'Cancelled', value: 1, color: '#64748B' },
+];
+
+const paymentStatusDist = [
+  { name: 'Unpaid', value: 4, color: '#DC2626' },
+  { name: 'Paid', value: 5, color: '#15803D' },
+  { name: 'Partially Paid', value: 1, color: '#D97706' },
+  { name: 'Overdue', value: 1, color: '#C2410C' },
+  { name: 'On Hold', value: 1, color: '#64748B' },
+];
+
+// Top vendors by spend
+const topVendors = vendors
+  .map(v => ({
+    ...v,
+    totalSpend: purchaseTransactions.filter(p => p.vendorId === v.id).reduce((s, p) => s + p.total, 0),
+    txCount: purchaseTransactions.filter(p => p.vendorId === v.id).length,
+  }))
+  .filter(v => v.totalSpend > 0)
+  .sort((a, b) => b.totalSpend - a.totalSpend)
+  .slice(0, 6);
+
+const recentActivity = purchaseTransactions
+  .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
+  .slice(0, 6);
+
+const statusColors: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-700',
+  pending_review: 'bg-amber-100 text-amber-700',
+  approved: 'bg-blue-100 text-blue-700',
+  pending_posting: 'bg-cyan-100 text-cyan-700',
+  posted: 'bg-green-100 text-green-700',
+  rejected: 'bg-red-100 text-red-700',
+  exception: 'bg-orange-100 text-orange-700',
+  cancelled: 'bg-slate-100 text-slate-500',
 };
 
-// [BARU] Sama seperti Sales — turunan langsung dari transaksi kelompok
-// 'purchase' (akun Beban, kategori Payroll/Software/Rent/Marketing/Travel/
-// Utilities) di halaman Transaksi, lewat getByGroup('purchase').
-export default function PurchasePage() {
-  const { getByGroup } = useTransactions();
-  const purchaseTx = useMemo(() => getByGroup('purchase'), [getByGroup]);
+const statusLabels: Record<string, string> = {
+  draft: 'Draft',
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  pending_posting: 'Pending Posting',
+  posted: 'Posted',
+  rejected: 'Rejected',
+  exception: 'Exception',
+  cancelled: 'Cancelled',
+};
 
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+export default function PurchaseOverviewPage() {
+  const kpis = purchaseOverviewKPIs;
 
-  // [DIUBAH] Sama seperti Sales — dikelompokkan per NOMOR JURNAL (jeId)
-  // dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki jurnal
-  // (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun Beban saat beban
-  // diakui — keduanya sama-sama masuk purchaseTx) tidak terhitung dua kali.
-  // Lihat groupAnalytics.ts untuk detail (uniqueJournalTotal/uniqueJournalCount/
-  // countJournalsByStatus/countJournalsByCategory).
-  const totalPurchase = uniqueJournalTotal(purchaseTx);
-  const txCount = uniqueJournalCount(purchaseTx);
-  const avgTxValue = txCount > 0 ? totalPurchase / txCount : 0;
-  const unpostedCount = countJournalsByStatus(purchaseTx, 'Unposted');
-  const recurringLike = countJournalsByCategory(purchaseTx, ['Payroll', 'Rent', 'Software', 'Utilities']);
-  // [BARU] Sama seperti Sales — transaksi 'Draft' (pending approval) sengaja
-  // dikeluarkan dari totalPurchase/txCount lewat groupByJournalRealized(),
-  // nilainya ditampilkan terpisah supaya tidak hilang begitu saja.
-  const draftCount = countJournalsByStatus(purchaseTx, 'Draft');
-  const draftTotal = draftJournalTotal(purchaseTx);
-
-  // [BARU] Peringatan integritas data — sama seperti Sales. Lihat
-  // transactionsMissingJeId() di groupAnalytics.ts.
-  const missingJeIdCount = useMemo(() => transactionsMissingJeId(purchaseTx).length, [purchaseTx]);
-  const unbalanced = useMemo(() => unbalancedJournals(purchaseTx), [purchaseTx]);
-
-  // [BARU] Nilai yang belum dibayar ke vendor di antara transaksi Purchase —
-  // inilah angka yang "mengalir" ke halaman Account Payable (lihat apBridge.ts).
-  const outstandingToAP = useMemo(() => purchaseTx.reduce((s, t) => s + purchaseOutstanding(t), 0), [purchaseTx]);
-  const overdueToAPCount = useMemo(
-    () => purchaseTx.filter((t) => purchaseOutstanding(t) > 0 && purchaseBillStatus(t) === 'Overdue').length,
-    [purchaseTx]
-  );
-
-  const trend = useMemo(() => monthlyTrendFor(purchaseTx), [purchaseTx]);
-  const byCategory = useMemo(() => categoryBreakdown(purchaseTx).slice(0, 6), [purchaseTx]);
-  const topVendors = useMemo(() => topParties(purchaseTx, 5), [purchaseTx]);
-
-  // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
-  // Sales / Financial Overview / Balance Sheet. ──
-  const purchaseBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
-  const [purchasePriceZoom, setPurchasePriceZoom] = useState(1);
-  const purchaseZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
-
-  const { ticks: purchaseYTicks } = useMemo(
-    () => getNiceTicksFromZero(purchaseBaseMax / purchasePriceZoom, 5),
-    [purchaseBaseMax, purchasePriceZoom]
-  );
-  const purchaseYDomain = useMemo<[number, number]>(
-    () => [0, purchaseBaseMax / purchasePriceZoom],
-    [purchaseBaseMax, purchasePriceZoom]
-  );
-  const purchaseYDomainRef = useRef(purchaseYDomain);
-  purchaseYDomainRef.current = purchaseYDomain;
-
-  const handlePurchaseAxisMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    purchaseZoomDragRef.current = { startY: e.clientY, startZoom: purchasePriceZoom };
-    const onMove = (ev: MouseEvent) => {
-      if (!purchaseZoomDragRef.current) return;
-      const deltaY = purchaseZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
-      const factor = Math.exp(deltaY / 150);
-      const next = Math.min(6, Math.max(0.25, purchaseZoomDragRef.current.startZoom * factor));
-      setPurchasePriceZoom(next);
-    };
-    const onUp = () => {
-      purchaseZoomDragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-  const resetPurchaseZoom = () => setPurchasePriceZoom(1);
-
-  // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
-  // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
-  const purchaseDotsRef = useRef<{ value: number; cy: number }[]>([]);
-  const [purchaseDragPreview, setPurchaseDragPreview] = useState<PurchaseDragPreview | null>(null);
-  const purchaseDragStateRef = useRef<{
-    index: number;
-    originalValue: number;
-    currentValue: number;
-    startClientY: number;
-    pxPerUnit: number;
-  } | null>(null);
-  const purchaseAnimRef = useRef<number | null>(null);
-
-  const stopPurchaseSpring = () => {
-    if (purchaseAnimRef.current) cancelAnimationFrame(purchaseAnimRef.current);
-    purchaseAnimRef.current = null;
-  };
-
-  useEffect(() => {
-    stopPurchaseSpring();
-    purchaseDragStateRef.current = null;
-    setPurchaseDragPreview(null);
-    purchaseDotsRef.current = [];
-  }, [trend]);
-
-  useEffect(() => stopPurchaseSpring, []);
-
-  const springBackPurchase = useCallback(() => {
-    const drag = purchaseDragStateRef.current;
-    if (!drag) return;
-    stopPurchaseSpring();
-    const from = drag.currentValue;
-    const target = drag.originalValue;
-    const { index } = drag;
-    const start = performance.now();
-    const step = (now: number) => {
-      const elapsed = Math.min(1, (now - start) / PURCHASE_SPRING_MS);
-      const eased = purchaseEaseOutQuint(elapsed);
-      const next = from + (target - from) * eased;
-      if (purchaseDragStateRef.current) purchaseDragStateRef.current.currentValue = next;
-      setPurchaseDragPreview({ index, value: next });
-      if (elapsed < 1) {
-        purchaseAnimRef.current = requestAnimationFrame(step);
-      } else {
-        purchaseDragStateRef.current = null;
-        purchaseAnimRef.current = null;
-        setPurchaseDragPreview(null);
-      }
-    };
-    purchaseAnimRef.current = requestAnimationFrame(step);
-  }, []);
-
-  const handlePurchaseDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    stopPurchaseSpring();
-
-    const samples = purchaseDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
-    let pxPerUnit = -1;
-    if (samples.length >= 2) {
-      const a = samples[0];
-      const b = samples[samples.length - 1];
-      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
-    }
-    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
-      const [dMin, dMax] = purchaseYDomainRef.current;
-      pxPerUnit = -160 / (dMax - dMin || 1);
-    }
-
-    purchaseDragStateRef.current = {
-      index,
-      originalValue,
-      currentValue: originalValue,
-      startClientY: e.clientY,
-      pxPerUnit,
-    };
-    setPurchaseDragPreview({ index, value: originalValue });
-  }, []);
-
-  useEffect(() => {
-    const handleMove = (e: PointerEvent) => {
-      const drag = purchaseDragStateRef.current;
-      if (!drag) return;
-      const deltaY = e.clientY - drag.startClientY;
-      const [, dMax] = purchaseYDomainRef.current;
-      const maxValue = dMax * 1.4;
-      const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
-      drag.currentValue = value;
-      setPurchaseDragPreview({ index: drag.index, value });
-    };
-    const handleUp = () => {
-      if (purchaseDragStateRef.current) springBackPurchase();
-    };
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-    window.addEventListener('pointercancel', handleUp);
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-      window.removeEventListener('pointercancel', handleUp);
-    };
-  }, [springBackPurchase]);
-
-  const purchaseDisplayTrend = useMemo(() => {
-    if (!purchaseDragPreview) return trend;
-    return trend.map((d, i) => (i === purchaseDragPreview.index ? { ...d, total: purchaseDragPreview.value } : d));
-  }, [trend, purchaseDragPreview]);
-
-  // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
-  const renderPurchaseCalibrationDot = (props: any) => {
-    const { cx, cy, index, payload } = props;
-    purchaseDotsRef.current[index] = { value: payload.total, cy };
-    return <circle key={`purchase-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
-  };
-
-  // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
-  const renderPurchaseActiveDot = (props: any) => {
-    const { cx, cy, index, payload } = props;
-    if (cx == null || cy == null) return null;
-    const isDraggingThis = purchaseDragPreview?.index === index;
-    return (
-      <g key={`purchase-pt-${index}`}>
-        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#f97316" stroke="#fff" strokeWidth={1.5} />
-        <circle
-          cx={cx}
-          cy={cy}
-          r={12}
-          fill="transparent"
-          style={{ cursor: 'ns-resize', touchAction: 'none' }}
-          onPointerDown={(e) => handlePurchaseDotPointerDown(e, index, payload.total)}
-        />
-      </g>
-    );
-  };
-
-  const columns = [
-    { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'txId', label: 'TX ID', render: (r: Transaction) => <span className="font-mono text-xs text-teal-600">{r.txId}</span> },
-    { key: 'party', label: 'Vendor / Pihak', render: (r: Transaction) => <span className="font-medium text-xs">{r.party}</span> },
-    { key: 'description', label: 'Deskripsi', render: (r: Transaction) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description}</span> },
-    { key: 'category', label: 'Kategori', render: (r: Transaction) => <span className="badge badge-warning">{r.category}</span> },
-    { key: 'accountName', label: 'Akun', render: (r: Transaction) => <span className="text-xs text-muted-foreground">{r.accountName}</span> },
-    { key: 'debit', label: 'Debit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs font-semibold text-orange-700">{r.debit ? formatIDR(r.debit, true) : '—'}</span> },
-    { key: 'credit', label: 'Kredit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{r.credit ? formatIDR(r.credit, true) : '—'}</span> },
-    { key: 'status', label: 'Status', render: (r: Transaction) => <StatusBadge variant={statusVariant[r.status] || 'neutral'} label={r.status} dot /> },
-    // [BARU] Kolom penghubung ke Account Payable — status ini yang menentukan
-    // apakah baris ini muncul sebagai tagihan terbuka di halaman AP atau tidak.
+  const kpiCards = [
     {
-      key: 'paymentStatus',
-      label: 'Status Pembayaran (AP)',
-      render: (r: Transaction) => {
-        const ps = r.paymentStatus || 'Belum Dibayar';
-        return (
-          <div className="flex flex-col gap-0.5">
-            <StatusBadge variant={PAYMENT_STATUS_VARIANT[ps]} label={ps} dot />
-            {r.dueDate && ps !== 'Lunas' && (
-              <span className="text-2xs text-muted-foreground">Jatuh tempo {formatDate(r.dueDate)}</span>
-            )}
-          </div>
-        );
-      },
+      label: 'Total Purchases',
+      value: kpis.totalPurchases.toString(),
+      sub: 'All transactions',
+      icon: 'ShoppingBagIcon',
+      color: 'text-blue-700',
+      bg: 'bg-blue-50',
+      trend: '+3 this week',
+      up: true,
+    },
+    {
+      label: 'Purchase Amount',
+      value: fmt(kpis.totalAmount),
+      sub: 'Gross purchase value',
+      icon: 'CurrencyDollarIcon',
+      color: 'text-slate-700',
+      bg: 'bg-slate-50',
+      trend: '+16.7% vs last month',
+      up: true,
+    },
+    {
+      label: 'Outstanding AP',
+      value: fmt(kpis.totalAP),
+      sub: 'Accounts payable balance',
+      icon: 'BanknotesIcon',
+      color: 'text-red-700',
+      bg: 'bg-red-50',
+      trend: 'Unpaid & overdue',
+      up: false,
+    },
+    {
+      label: 'Pending Review',
+      value: kpis.pendingReview.toString(),
+      sub: 'Awaiting approval',
+      icon: 'ClockIcon',
+      color: 'text-amber-700',
+      bg: 'bg-amber-50',
+      trend: 'Action required',
+      up: false,
+    },
+    {
+      label: 'Posted',
+      value: kpis.posted.toString(),
+      sub: 'Finalized to GL',
+      icon: 'CheckCircleIcon',
+      color: 'text-green-700',
+      bg: 'bg-green-50',
+      trend: 'This period',
+      up: true,
+    },
+    {
+      label: 'Exceptions',
+      value: kpis.exceptions.toString(),
+      sub: 'Require attention',
+      icon: 'ExclamationTriangleIcon',
+      color: 'text-orange-700',
+      bg: 'bg-orange-50',
+      trend: `${purchaseExceptions.filter(e => e.status === 'Open').length} open`,
+      up: false,
+    },
+    {
+      label: 'Input Tax (VAT)',
+      value: fmt(kpis.totalTax),
+      sub: 'Recoverable input tax',
+      icon: 'ChartBarIcon',
+      color: 'text-purple-700',
+      bg: 'bg-purple-50',
+      trend: 'Avg 12% rate',
+      up: true,
+    },
+    {
+      label: 'Overdue Amount',
+      value: fmt(kpis.overdueAmount),
+      sub: 'Past payment due date',
+      icon: 'ExclamationTriangleIcon',
+      color: 'text-red-700',
+      bg: 'bg-red-50',
+      trend: 'Immediate action',
+      up: false,
     },
   ];
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Purchase</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Transaksi beban operasional — diambil otomatis dari halaman Transaksi</p>
-      </div>
+      <div className="space-y-6 fade-in">
+        <PurchaseTabs />
 
-      {missingJeIdCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {missingJeIdCount} baris transaksi Purchase tidak memiliki nomor jurnal (jeId). KPI di bawah tetap
-            dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
-          </span>
+        {/* KPI Grid — desain disamakan dengan shared KpiCard (dipakai di
+            Sales), data & isi tetap sama seperti sebelumnya. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {kpiCards.map((card) => (
+            <KpiCard
+              key={card.label}
+              title={card.label}
+              value={card.value}
+              subLabel={card.sub}
+              icon={card.icon}
+              iconColor={card.color}
+              iconBg={card.bg}
+              change={card.trend}
+              changePositive={card.up}
+            />
+          ))}
         </div>
-      )}
 
-      {unbalanced.length > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {unbalanced.length} jurnal Purchase tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
-            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Purchase tetap dihitung dari sisi yang lebih
-            besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
-          </span>
-        </div>
-      )}
-
-      {/* [BARU] Banner penghubung ke Account Payable — setiap transaksi
-          Purchase yang Status Pembayarannya belum "Lunas" otomatis muncul
-          sebagai tagihan (bill) di halaman Account Payable. */}
-      <div className="flex items-center justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 px-5 py-3.5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <ArrowUpRight size={16} className="text-primary" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-foreground">
-              {formatIDR(outstandingToAP, true)} belum dibayar ke vendor
-              {overdueToAPCount > 0 && <span className="text-danger"> — {overdueToAPCount} sudah jatuh tempo</span>}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Otomatis tersinkron ke halaman Account Payable berdasarkan kolom "Status Pembayaran (AP)" di tabel bawah.
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/accounts-payable"
-          className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-card border border-primary/30 hover:bg-primary/10 rounded-md px-3 py-2 transition-colors flex-shrink-0"
-        >
-          Lihat di Account Payable
-          <ArrowUpRight size={13} />
-        </Link>
-      </div>
-
-      {draftCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {draftCount} transaksi Purchase senilai {formatIDR(draftTotal, true)} masih berstatus Draft (menunggu
-            approval) — belum termasuk dalam Total Purchase di bawah sampai disetujui.
-          </span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard
-          title="Total Purchase"
-          value={totalPurchase}
-          icon="CreditCardIcon"
-          iconColor="text-orange-600"
-          iconBg="bg-orange-50"
-          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
-        />
-        <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
-        <KpiCard title="Belum Diposting" value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />
-        <KpiCard title="Beban Rutin" value={String(recurringLike)} icon="ArrowPathIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4">
-            <h2 className="text-sm font-bold text-foreground">Tren Purchase Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Berdasarkan transaksi yang tercatat di halaman Transaksi</p>
-          </div>
-          {trend.every(t => t.total === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Purchase untuk ditampilkan.</p>
-          ) : (
-            <div className="relative">
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={purchaseDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradPurchaseMain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tickFormatter={v => formatIDR(v, true)}
-                    tick={{ fontSize: 10, fill: '#94a3b8' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={PURCHASE_AXIS_WIDTH}
-                    ticks={purchaseYTicks}
-                    domain={purchaseYDomain}
-                    allowDataOverflow
-                  />
-                  <Tooltip content={<PurchaseTrendTooltip dragPreview={purchaseDragPreview} />} cursor={false} />
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    name="Purchase"
-                    stroke="#f97316"
-                    strokeWidth={2.5}
-                    fill="url(#gradPurchaseMain)"
-                    dot={renderPurchaseCalibrationDot as any}
-                    activeDot={renderPurchaseActiveDot as any}
-                    isAnimationActive={!purchaseDragPreview}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
-              <div
-                onMouseDown={handlePurchaseAxisMouseDown}
-                onDoubleClick={resetPurchaseZoom}
-                title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
-                className="absolute top-0 left-0 h-full cursor-ns-resize"
-                style={{ width: PURCHASE_AXIS_OVERLAY_WIDTH }}
-              />
+        {/* Charts Row 1 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Purchase Trend */}
+          <div className="je-card p-5 lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Purchase Volume Trend</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Monthly purchase amount (last 6 months)</p>
+              </div>
+              <ArrowTrendingUpIcon className="w-4 h-4 text-muted-foreground" />
             </div>
-          )}
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={monthlyTrend} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => [fmt(value), 'Amount']}
+                  contentStyle={{ fontSize: 12, borderRadius: 6, border: '1px solid #E2E8F0' }}
+                />
+                <Bar dataKey="amount" fill="#1E40AF" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Status Distribution */}
+          <div className="je-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Purchase Status</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Current distribution</p>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <PieChart>
+                <Pie data={statusDist} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>
+                  {statusDist.map((entry, index) => (
+                    <Cell key={index} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v: number, name: string) => [v, name]} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="space-y-1.5 mt-2">
+              {statusDist.map((item) => (
+                <div key={item.name} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-muted-foreground">{item.name}</span>
+                  </div>
+                  <span className="font-semibold text-foreground">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">Purchase per Kategori</h2>
-          <p className="text-xs text-muted-foreground mb-3">Breakdown beban</p>
-          {byCategory.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
-          ) : (
-            <div className="space-y-2.5">
-              {byCategory.map((cat, i) => {
-                const total = byCategory.reduce((s, c) => s + c.value, 0);
-                const pct = total > 0 ? (cat.value / total) * 100 : 0;
+        {/* Charts Row 2 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Category Breakdown */}
+          <div className="je-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Purchase by Category</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Spend distribution by category</p>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
+                <Tooltip formatter={(v: number) => [fmt(v), 'Amount']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
+                <Bar dataKey="value" fill="#0EA5E9" radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Payment Status */}
+          <div className="je-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Payment Status Overview</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">AP payment distribution</p>
+              </div>
+            </div>
+            <div className="space-y-3 mt-2">
+              {paymentStatusDist.map((item) => {
+                const pct = Math.round((item.value / 12) * 100);
                 return (
-                  <div key={cat.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name}</span>
-                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
+                  <div key={item.name}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                        <span className="text-foreground font-medium">{item.name}</span>
+                      </div>
+                      <span className="text-muted-foreground tabular-nums">{item.value} ({pct}%)</span>
                     </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <div className="w-full bg-muted rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: item.color }} />
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
+            <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-3">
+              <div className="bg-red-50 rounded-lg p-3">
+                <p className="text-xs text-red-600 font-medium">Overdue AP</p>
+                <p className="text-base font-bold text-red-700 tabular-nums mt-0.5">{fmt(kpis.overdueAmount)}</p>
+              </div>
+              <div className="bg-amber-50 rounded-lg p-3">
+                <p className="text-xs text-amber-600 font-medium">Outstanding AP</p>
+                <p className="text-base font-bold text-amber-700 tabular-nums mt-0.5">{fmt(kpis.totalAP)}</p>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="card-elevated-md rounded-xl p-5 mb-6">
-        <h2 className="text-sm font-bold text-foreground mb-1">Top Vendor / Pihak</h2>
-        <p className="text-xs text-muted-foreground mb-4">Berdasarkan kontribusi nominal beban</p>
-        {topVendors.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
-        ) : (
-          <div className="space-y-3">
-            {topVendors.map((c, i) => {
-              const max = topVendors[0].amount || 1;
-              return (
-                <div key={c.name} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-text-muted w-4">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
-                      <span className="text-xs font-semibold font-mono text-orange-600 ml-2">{formatIDR(c.amount, true)}</span>
+        {/* Top Vendors + Recent Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Top Vendors */}
+          <div className="je-card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <BuildingStorefrontIcon className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold text-foreground">Top Vendors by Spend</h3>
+            </div>
+            <div className="space-y-3">
+              {topVendors.map((vendor, idx) => {
+                const maxSpend = topVendors[0].totalSpend;
+                const pct = Math.round((vendor.totalSpend / maxSpend) * 100);
+                return (
+                  <div key={vendor.id}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                        <div>
+                          <p className="font-medium text-foreground">{vendor.name}</p>
+                          <p className="text-muted-foreground">{vendor.txCount} transaction{vendor.txCount !== 1 ? 's' : ''}</p>
+                        </div>
+                      </div>
+                      <span className="font-bold text-foreground tabular-nums">{fmt(vendor.totalSpend)}</span>
                     </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full bg-orange-400" style={{ width: `${(c.amount / max) * 100}%` }} />
+                    <div className="w-full bg-muted rounded-full h-1.5 ml-7">
+                      <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        )}
+
+          {/* Recent Activity */}
+          <div className="je-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground">Recent Purchase Activity</h3>
+              <span className="text-xs text-muted-foreground">Last 6 transactions</span>
+            </div>
+            <div className="space-y-3">
+              {recentActivity.map((tx) => (
+                <div key={tx.id} className="flex items-start gap-3 py-2 border-b border-border last:border-0">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-semibold text-primary">{tx.purchaseId}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${statusColors[tx.status]}`}>
+                        {statusLabels[tx.status]}
+                      </span>
+                    </div>
+                    <p className="text-xs text-foreground mt-0.5 truncate">{tx.vendor}</p>
+                    <p className="text-xs text-muted-foreground">{tx.purchaseDate} · {tx.category}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-bold tabular-nums text-foreground">{fmt(tx.total)}</p>
+                    <p className="text-xs text-muted-foreground">{tx.currency}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Exception Summary */}
+        <div className="je-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ExclamationTriangleIcon className="w-4 h-4 text-orange-500" />
+              <h3 className="text-sm font-semibold text-foreground">Exception Summary</h3>
+            </div>
+            <a href="/purchase/exceptions" className="text-xs text-primary hover:underline font-medium">View all exceptions →</a>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Exceptions', value: purchaseExceptions.length, color: 'text-slate-700', bg: 'bg-slate-50' },
+              { label: 'Open', value: purchaseExceptions.filter(e => e.status === 'Open').length, color: 'text-red-700', bg: 'bg-red-50' },
+              { label: 'Under Review', value: purchaseExceptions.filter(e => e.status === 'Under Review').length, color: 'text-amber-700', bg: 'bg-amber-50' },
+              { label: 'Resolved', value: purchaseExceptions.filter(e => e.status === 'Resolved').length, color: 'text-green-700', bg: 'bg-green-50' },
+            ].map(card => (
+              <div key={card.label} className={`${card.bg} rounded-lg p-3`}>
+                <p className={`text-2xl font-bold tabular-nums ${card.color}`}>{card.value}</p>
+                <p className="text-xs font-medium text-foreground mt-1">{card.label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 space-y-2">
+            {purchaseExceptions.filter(e => e.status === 'Open' || e.status === 'Under Review').slice(0, 3).map(exc => (
+              <div key={exc.id} className="flex items-center justify-between bg-muted/30 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${exc.severity === 'Critical' ? 'bg-red-500' : exc.severity === 'High' ? 'bg-orange-500' : 'bg-amber-400'}`} />
+                  <span className="text-xs font-medium text-foreground">{exc.purchaseId}</span>
+                  <span className="text-xs text-muted-foreground">— {exc.exceptionType}</span>
+                </div>
+                <span className={`text-xs font-semibold ${exc.severity === 'Critical' ? 'text-red-700' : exc.severity === 'High' ? 'text-orange-700' : 'text-amber-700'}`}>{exc.severity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-
-      {/* Aksi & Upload Data + Tabel Transaksi Purchase — digabung jadi 1 kolom,
-          aksi & filter di atas tabel. */}
-      <TransactionsGroupPanel
-        group="purchase"
-        groupLabel="Purchase"
-        defaultCategory="Software"
-        columns={columns}
-        onRowClick={setSelectedTx}
-        // [BARU] Tombol Import di halaman Purchase sekarang MENGGANTI (bukan
-        // menambah) seluruh transaksi Purchase dengan hasil upload PDF
-        // "Data Penjualan Detail" (kasir/POS) — kelompok transaksi lain
-        // (Sales, Cash Payment, dll) tidak ikut terhapus. Excel/rekening
-        // koran belum didukung di mode ini, hanya PDF.
-        importMode="replace-group"
-      />
-
-      {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
-    </div>
   );
 }
