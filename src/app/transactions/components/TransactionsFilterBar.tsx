@@ -21,6 +21,11 @@ interface TransactionsFilterBarProps {
   // tidak terikat filter aktif) & handler untuk men-posting semuanya sekaligus.
   unpostedCount: number;
   onPostAllUnposted: () => void;
+  // [BARU] Teks placeholder search — opsional, supaya tiap sub halaman
+  // (Sales, Expense, dst.) bisa pakai istilah sendiri (mis. "Invoice,
+  // Customer" di Sales) tanpa mengubah komponen bersama ini untuk halaman
+  // lain. Kalau tidak diisi, tetap pakai teks default lama.
+  searchPlaceholder?: string;
 }
 
 // [DIUBAH] Tambah 'Unposted' — status default hasil import rekening koran.
@@ -37,7 +42,7 @@ const categoryOptions = ['all', 'Revenue', 'Payroll', 'Software', 'Rent', 'Tax',
 const typeLabels: Record<string, string> = { all: 'Semua Tipe', debit: 'Debit', credit: 'Credit', journal: 'Jurnal' };
 const statusLabels: Record<string, string> = { all: 'Semua Status', Unposted: 'Unposted', Posted: 'Posted', Draft: 'Draft', Reconciled: 'Reconciled', Voided: 'Voided' };
 
-export default function TransactionsFilterBar({ search, onSearchChange, filters, onFiltersChange, unpostedCount, onPostAllUnposted }: TransactionsFilterBarProps) {
+export default function TransactionsFilterBar({ search, onSearchChange, filters, onFiltersChange, unpostedCount, onPostAllUnposted, searchPlaceholder }: TransactionsFilterBarProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handlePostAllClick = () => {
@@ -71,7 +76,7 @@ export default function TransactionsFilterBar({ search, onSearchChange, filters,
           <Search size={15} className="text-muted-foreground flex-shrink-0" />
           <input
             type="text"
-            placeholder="Cari TX ID, deskripsi, pihak, referensi..."
+            placeholder={searchPlaceholder || "Cari TX ID, deskripsi, pihak, referensi..."}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none flex-1"

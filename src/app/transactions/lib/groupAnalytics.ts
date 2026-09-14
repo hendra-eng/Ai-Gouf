@@ -418,13 +418,55 @@ export function monthlyTrendFor(transactions: Transaction[], year?: number): { m
 //
 // [DIUBAH] Sekarang lewat groupByJournalRealized() — jurnal 'Voided'/'Draft'
 // tidak ikut muncul/menambah nilai di breakdown kategori.
-export function categoryBreakdown(transactions: Transaction[]): { name: string; value: number }[] {
+export interface CategoryBreakdownOptions {
+  /**
+   * [BARU] Kalau diisi, kaki jurnal yang dianggap "representatif" untuk
+   * kategori HARUS accountCode-nya diawali prefix ini (mis. '4' untuk akun
+   * Pendapatan/Revenue). Dipakai khusus di halaman Sales — lihat pemakaian
+   * di SalesOverview.tsx — supaya "Sales per Kategori" hanya berisi akun
+   * Pendapatan yang benar (Consulting Revenue, Software Development
+   * Revenue, Maintenance Revenue, dst — akun kode 4xxx), TIDAK PERNAH akun
+   * neraca seperti "Kas & Bank" (1101) atau "Piutang Usaha" (1201) walau
+   * kebetulan nilainya paling besar di jurnal itu — akun-akun itu cuma sisi
+   * pasangan jurnal (kas masuk/piutang bertambah), bukan jenis pendapatan.
+   */
+  requireAccountCodePrefix?: string;
+  /**
+   * Label kategori untuk jurnal Sales yang TIDAK punya kaki akun 4xxx sama
+   * sekali (mis. baris hasil import yang belum berpasangan dengan baris
+   * pengakuan pendapatan) — supaya nilainya tetap kelihatan & bisa ditinjau,
+   * bukan diam-diam nyasar memakai nama akun kas/piutangnya. Wajib diisi
+   * kalau `requireAccountCodePrefix` diisi.
+   */
+  fallbackLabel?: string;
+}
+
+// [DIUBAH] Sekarang menerima `options` opsional (lihat CategoryBreakdownOptions
+// di atas). Tanpa options (dipakai Expense/Cash Payment/Cash Receipt/Other —
+// lihat page.tsx masing-masing), perilakunya PERSIS SAMA seperti sebelumnya:
+// cari kaki akun 4xxx dulu, fallback ke kaki bernilai terbesar kalau tidak
+// ada. Dengan `requireAccountCodePrefix` diisi (dipakai khusus Sales), fallback
+// TIDAK LAGI ke kaki terbesar — melainkan ke `fallbackLabel` yang eksplisit,
+// supaya akun neraca (Kas & Bank/Piutang Usaha) tidak pernah lolos jadi nama
+// kategori sales.
+export function categoryBreakdown(
+  transactions: Transaction[],
+  options?: CategoryBreakdownOptions
+): { name: string; value: number }[] {
   const byJournal = groupByJournalRealized(transactions);
   const byAccount = new Map<string, number>();
+  const prefix = options?.requireAccountCodePrefix;
   byJournal.forEach((rows) => {
-    const revenueLeg = rows.find((r) => String(r.accountCode ?? '').startsWith('4'));
-    const rep = revenueLeg || rows.reduce((a, b) => (txAmount(b) > txAmount(a) ? b : a));
-    byAccount.set(rep.accountName, (byAccount.get(rep.accountName) || 0) + journalAmount(rows));
+    let label: string;
+    if (prefix) {
+      const rep = rows.find((r) => String(r.accountCode ?? '').startsWith(prefix));
+      label = rep ? rep.accountName : (options?.fallbackLabel ?? 'Lainnya');
+    } else {
+      const revenueLeg = rows.find((r) => String(r.accountCode ?? '').startsWith('4'));
+      const rep = revenueLeg || rows.reduce((a, b) => (txAmount(b) > txAmount(a) ? b : a));
+      label = rep.accountName;
+    }
+    byAccount.set(label, (byAccount.get(label) || 0) + journalAmount(rows));
   });
   return Array.from(byAccount.entries())
     .map(([name, value]) => ({ name, value }))
@@ -454,6 +496,61 @@ export function topParties(transactions: Transaction[], limit = 5): { name: stri
     .map(([name, amount]) => ({ name, amount }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, limit);
+}
+
+/**
+ * [BARU] Total nilai jurnal yang sudah "lunas" — dipakai untuk KPI card
+ * "Total Dibayar" di halaman Sales/Expense/dst. Definisi "lunas" DISAMAKAN
+ * persis dengan kolom "Paid" di tabel transaksi (lihat columns di
+ * SalesOverview.tsx): status Posted atau Reconciled dianggap lunas, selain
+ * itu (Unposted) dianggap belum dibayar. Jurnal 'Voided'/'Draft' sudah
+ * dikecualikan lebih dulu lewat groupByJournalRealized(), konsisten dengan
+ * uniqueJournalTotal().
+ */
+export function paidJournalTotal(transactions: Transaction[]): number {
+  const byJournal = groupByJournalRealized(transactions);
+  let total = 0;
+  byJournal.forEach((rows) => {
+    const status = rows[0]?.status;
+    if (status === 'Posted' || status === 'Reconciled') {
+      total += journalAmount(rows);
+    }
+  });
+  return total;
+}
+
+export interface OverdueSummary {
+  count: number;
+  total: number;
+}
+
+/**
+ * [BARU] Ringkasan jurnal yang sudah lewat jatuh tempo TAPI belum lunas —
+ * dipakai untuk KPI card "Invoice Jatuh Tempo" di halaman Sales/Expense/dst.
+ * Jatuh tempo dihitung persis seperti kolom "Due Date" di tabel transaksi:
+ * tanggal transaksi + `dueDays` (default 14 hari, termin standar — lihat
+ * kolom `dueDate` di SalesOverview.tsx). Jurnal yang sudah lunas (status
+ * Posted/Reconciled, sama seperti paidJournalTotal() di atas) tidak pernah
+ * dihitung overdue walau tanggal jatuh temponya sudah lewat.
+ */
+export function overdueJournals(transactions: Transaction[], dueDays = 14, asOf: Date = new Date()): OverdueSummary {
+  const byJournal = groupByJournalRealized(transactions);
+  let count = 0;
+  let total = 0;
+  byJournal.forEach((rows) => {
+    const status = rows[0]?.status;
+    const lunas = status === 'Posted' || status === 'Reconciled';
+    if (lunas) return;
+    const txDate = new Date(rows[0]?.date);
+    if (isNaN(txDate.getTime())) return;
+    const dueDate = new Date(txDate);
+    dueDate.setDate(dueDate.getDate() + dueDays);
+    if (dueDate < asOf) {
+      count += 1;
+      total += journalAmount(rows);
+    }
+  });
+  return { count, total };
 }
 
 export const CHART_COLORS = ['#14b8a6', '#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4'];

@@ -58,6 +58,10 @@ interface Props {
   // sebagai `mode` ke ImportRekeningKoranModal, yang di 'replace-group'
   // juga otomatis mengunci ke upload PDF Jurnal Penjualan Kasir saja.
   importMode?: 'append' | 'replace-group';
+  // [BARU] Placeholder search kustom, diteruskan ke TransactionsFilterBar —
+  // opsional, biar sub halaman tertentu (mis. Sales) bisa pakai istilah
+  // sendiri tanpa mengubah default di halaman lain.
+  searchPlaceholder?: string;
 }
 
 function blankTransaction(defaultCategory: string, group: TransactionGroup): Transaction {
@@ -111,7 +115,7 @@ function exportGroupToCsv(transactions: Transaction[], groupLabel: string) {
 }
 
 export default function TransactionsGroupPanel({
-  group, groupLabel, defaultCategory, columns, onRowClick, importMode = 'append',
+  group, groupLabel, defaultCategory, columns, onRowClick, importMode = 'append', searchPlaceholder,
 }: Props) {
   const { getByGroup, addTransactions, replaceGroup, addTransaction, postAllUnpostedInGroup } = useTransactions();
   const groupTx = useMemo(() => getByGroup(group), [getByGroup, group]);
@@ -253,6 +257,7 @@ export default function TransactionsGroupPanel({
           onFiltersChange={(f) => { setFilters(f); setPage(1); }}
           unpostedCount={unpostedInGroup}
           onPostAllUnposted={handlePostAll}
+          searchPlaceholder={searchPlaceholder}
         />
         <p className="text-xs text-text-secondary">
           {filtered.length.toLocaleString('id-ID')} dari {groupTx.length.toLocaleString('id-ID')} transaksi {groupLabel} cocok dengan filter di atas.

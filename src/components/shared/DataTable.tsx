@@ -66,7 +66,7 @@ export default function DataTable<T extends { id: string }>({
                 className={`${col.headerClassName || ''} ${col.sortable && onSort ? 'cursor-pointer select-none hover:bg-slate-100' : ''}`}
                 onClick={col.sortable && onSort ? () => onSort(String(col.key)) : undefined}
               >
-                <div className="flex items-center gap-1">
+                <div className={`flex items-center gap-1 ${col.headerClassName?.includes('text-center') ? 'justify-center' : ''}`}>
                   {col.label}
                   {col.sortable && sortKey === String(col.key) && (
                     <Icon name={sortDir === 'asc' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={12} className="text-teal-500" />
