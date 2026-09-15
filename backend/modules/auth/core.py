@@ -1,6 +1,6 @@
 """
-modules/auth.py
-================
+modules/auth/core.py
+=====================
 Login & Role-Based Access Control (RBAC) untuk AI Gouf Consulting.
 
 VERSI FASTAPI -- ini penulisan ulang dari versi Streamlit lama.
@@ -50,10 +50,10 @@ except ImportError:
         "❌ Library PyJWT diperlukan. Jalankan: pip install pyjwt"
     )
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .logging_config import get_module_logger
+from ..logging_config import get_module_logger
 
 logger = get_module_logger("auth")
 
@@ -118,6 +118,82 @@ LEVELS: Dict[str, Dict[str, Any]] = {
 # Dipertahankan supaya kode lama yang memanggil `auth.ROLES` tetap jalan.
 ROLES = list(LEVELS.keys())
 
+# ============================================================
+# KONFIGURASI - ROLE PER-CLIENT (9 LEVEL) -- lihat RBAC.md
+# ============================================================
+# BEDA dari LEVELS di atas: LEVELS adalah role FIRM-WIDE milik user
+# (User.role, tahap_1..5), sedangkan ini adalah role PER CLIENT --
+# disimpan di UserClientAccess.access_role (lihat db_client.py), bukan
+# di User.role. Satu user (staf non-Partner) bisa punya access_role
+# BERBEDA di tiap client (mis. "client_lv_2" untuk client A karena
+# dialah yang bikin/pegang client itu, "client_lv_9" saja untuk client B).
+#
+# Kode yang DISIMPAN & DIVALIDASI adalah "client_lv_N" (kolom tengah di
+# RBAC.md) -- SAMA polanya dengan LEVELS di atas (mis. "tahap_1"
+# disimpan, "junior_associate" cuma nama deskriptif yang TIDAK pernah
+# dipakai sebagai value di kode mana pun). "key" di bawah cuma metadata
+# nama deskriptif itu (org_owner, director, dst), disimpan sekadar
+# referensi/dokumentasi, bukan yang divalidasi/disimpan ke DB.
+#
+# PENTING -- arah levelnya KEBALIKAN dari LEVELS: level 1 (client_lv_1
+# / "org_owner") PALING SENIOR/akses penuh ke client itu, level 9
+# (client_lv_9 / "viewer") PALING terbatas (cuma baca).
+# require_client_level(max_level) di bawah meloloskan user yang level
+# access_role-nya <= max_level, mis. max_level=5 -> client_lv_1 s/d
+# client_lv_5 (org_owner..supervisor) lolos, client_lv_6..9 ditolak.
+CLIENT_LEVELS: Dict[str, Dict[str, Any]] = {
+    "client_lv_1": {"level": 1, "key": "org_owner", "label": "Org Owner"},
+    "client_lv_2": {"level": 2, "key": "director", "label": "Director"},
+    "client_lv_3": {"level": 3, "key": "finance_mgr", "label": "Finance Manager"},
+    "client_lv_4": {"level": 4, "key": "accounting_mgr", "label": "Accounting Manager"},
+    "client_lv_5": {"level": 5, "key": "supervisor", "label": "Supervisor"},
+    "client_lv_6": {"level": 6, "key": "accounting_staff", "label": "Accounting Staff"},
+    "client_lv_7": {"level": 7, "key": "tax", "label": "Tax Staff"},
+    "client_lv_8": {"level": 8, "key": "auditor", "label": "Auditor"},
+    "client_lv_9": {"level": 9, "key": "viewer", "label": "Viewer"},
+}
+
+CLIENT_ROLE_CODES: List[str] = list(CLIENT_LEVELS.keys())
+
+
+def client_role_label(access_role: Optional[str]) -> str:
+    """Label tampilan utk access_role per-client (mis. 'client_lv_2' -> 'Director')."""
+    return CLIENT_LEVELS.get(access_role or "", {}).get("label", access_role or "-")
+
+
+def client_role_level(access_role: Optional[str]) -> Optional[int]:
+    """Nomor level access_role per-client (1=paling senior .. 9=paling
+    terbatas). None kalau kode tidak dikenal/kosong."""
+    entry = CLIENT_LEVELS.get(access_role or "")
+    return entry["level"] if entry else None
+
+
+def client_role_label_by_level(level: int) -> str:
+    """Kebalikan dari client_role_level() -- dipakai untuk pesan error yang
+    mudah dibaca (mis. "butuh minimal level 'Supervisor'")."""
+    for meta in CLIENT_LEVELS.values():
+        if meta["level"] == level:
+            return meta["label"]
+    return str(level)
+
+
+# ============================================================
+# SUPER ADMIN -- role tunggal DI ATAS tahap_5 (lihat RBAC.md)
+# ============================================================
+# Dipakai untuk pemilik platform, DI LUAR hierarki 5 tahap staf kantor
+# (mis. developer/owner aplikasi ini sendiri). Diberi level sentinel
+# sangat tinggi supaya OTOMATIS lolos semua require_level(N)/
+# role_level() check yang sudah ada di ~60 endpoint tanpa perlu
+# mengubah pemanggilnya satu-satu. require_roles() (exact-match, lihat
+# di bawah) SENGAJA tetap diberi pengecualian eksplisit yang sama.
+SUPER_ADMIN_ROLE = "super_admin"
+_SUPER_ADMIN_LEVEL = 999
+
+
+def is_super_admin(role: Optional[str]) -> bool:
+    return role == SUPER_ADMIN_ROLE
+
+
 # Akun fallback saat database tidak aktif -- HANYA dipakai kalau db_client
 # tidak bisa dihubungi. Ganti/matikan begitu database sungguhan sudah jalan.
 _FALLBACK_USERNAME = "admin"
@@ -132,11 +208,16 @@ _FALLBACK_USER = {
 
 def role_label(role: Optional[str]) -> str:
     """Ambil label tampilan (mis. 'Junior Staff') dari kode role (mis. 'tahap_1')."""
+    if role == SUPER_ADMIN_ROLE:
+        return "Super Admin"
     return LEVELS.get(role or "", {}).get("label", role or "-")
 
 
 def role_level(role: Optional[str]) -> int:
-    """Ambil nomor level (1-5) dari kode role. 0 kalau role tidak dikenal."""
+    """Ambil nomor level (1-5) dari kode role. super_admin selalu di atas
+    tahap_5 (lihat _SUPER_ADMIN_LEVEL). 0 kalau role tidak dikenal."""
+    if role == SUPER_ADMIN_ROLE:
+        return _SUPER_ADMIN_LEVEL
     return LEVELS.get(role or "", {}).get("level", 0)
 
 
@@ -342,6 +423,11 @@ def require_roles(roles: List[str]):
     """
 
     def _dependency(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        # super_admin ada DI LUAR daftar `roles` manapun (exact-match) tapi
+        # tetap harus lolos -- sama seperti bypass di role_level()/
+        # user_has_client_access() di bawah.
+        if is_super_admin(user.get("role")):
+            return user
         if user.get("role") not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -350,6 +436,54 @@ def require_roles(roles: List[str]):
         return user
 
     return _dependency
+
+
+def require_client_level(max_level: int):
+    """
+    Dependency factory: user harus lolos get_current_user DAN (kalau
+    bukan tahap_5/super_admin, yang selalu full akses) punya baris
+    UserClientAccess AKTIF di client ini dengan access_role yang
+    level-nya <= max_level -- lihat CLIENT_LEVELS (level 1 = org_owner
+    paling senior, level 9 = viewer paling terbatas).
+
+    WAJIB dipakai di endpoint yang path-nya punya path param
+    "client_id" (mis. "/api/client/{client_id}/..."), diambil dari
+    request.path_params supaya dependency ini generic untuk endpoint
+    mana pun tanpa perlu tahu urutan parameter fungsinya.
+
+    Contoh: Depends(require_client_level(5)) -> org_owner s/d
+    supervisor lolos, accounting_staff/tax/auditor/viewer ditolak (403).
+    """
+
+    def _dependency(
+        request: Request,
+        user: Dict[str, Any] = Depends(get_current_user),
+    ) -> Dict[str, Any]:
+        if role_level(user.get("role")) >= LEVELS["tahap_5"]["level"]:
+            return user  # tahap_5 & super_admin: full akses semua client
+
+        client_id_raw = request.path_params.get("client_id")
+        if client_id_raw is None:
+            raise HTTPException(
+                status_code=500,
+                detail="require_client_level() dipakai di endpoint tanpa path param client_id.",
+            )
+
+        import db_client as dbc
+        akses = dbc.get_user_client_access(user.get("id"), int(client_id_raw))
+        level = client_role_level(akses.get("access_role")) if akses else None
+        if level is None or level > max_level:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Fitur ini butuh access_role client minimal setara "
+                    f"'{client_role_label_by_level(max_level)}'."
+                ),
+            )
+        return user
+
+    return _dependency
+
 
 def user_from_authorization_header(header_value: Optional[str]) -> Optional[Dict[str, Any]]:
     """Helper untuk middleware client-isolation. Tidak melempar exception."""

@@ -11,6 +11,7 @@ import { searchPages } from '@/lib/searchIndex';
 import { useCurrency } from '@/lib/currency';
 import { LANGUAGES, useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
+import { useAuth, userInitials } from '@/lib/auth';
 
 interface TopbarProps {
   onMobileMenuToggle: () => void;
@@ -58,6 +59,8 @@ function getNotifIcon(type: string) {
 
 export default function Topbar({ onMobileMenuToggle, company, period }: TopbarProps) {
   const router = useRouter();
+  const { user, logout } = useAuth();
+  const displayName = user?.nama || user?.username || 'Pengguna';
 
   // "Switch Company" is driven by the global active-client context (see
   // src/lib/activeClient.tsx), which is the SAME client every other page in
@@ -124,10 +127,7 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
 
   const handleLogout = () => {
     setUserMenuOpen(false);
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('gouf_auth');
-    }
-    router.push('/');
+    logout();
   };
 
   return (
@@ -403,11 +403,11 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
           className="flex items-center gap-2 pl-1 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <span className="text-xs font-bold text-primary">RW</span>
+            <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
           </div>
           <div className="hidden xl:block">
-            <p className="text-sm font-semibold text-foreground leading-none">Rizky Wardana</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Finance Manager</p>
+            <p className="text-sm font-semibold text-foreground leading-none">{displayName}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{user?.role_label || '—'}</p>
           </div>
           <ChevronDown size={14} className={`text-muted-foreground hidden xl:block transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
         </div>

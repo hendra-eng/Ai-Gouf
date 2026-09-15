@@ -15,8 +15,9 @@ import pandas as pd
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime,
     Text, Float, Boolean, ForeignKey, ForeignKeyConstraint, text, UniqueConstraint, Index,
-    Numeric, Date, func,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
+    Numeric, Date, func, JSON,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
 )
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -732,17 +733,29 @@ class AuditLog(Base):
 
 
 class User(Base):
-    __tablename__ = "users"
+    """Menggantikan tabel `users` (lama) -- lihat root/ddl-table untuk DDL
+    aslinya. Primary key UUID (`id_user`, default gen_random_uuid() di
+    sisi Postgres), bukan lagi integer auto-increment. Tidak ada kolom
+    `aktif` boolean lagi -- dipakai pola soft-delete via `deleted_at`
+    (NULL = aktif, terisi = nonaktif/dihapus).
 
-    id = Column(Integer, primary_key=True)
+    Kolom `username`/`password_hash` SENGAJA ditambahkan ke DDL aslinya
+    (tidak ada di draft ddl-table pertama) -- tanpa itu tidak ada cara
+    tabel ini dipakai untuk login. Lihat migrations/xxx_management_users_auth.sql.
+    """
+    __tablename__ = "management_users"
+
+    id_user = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    nama_user = Column(String(255), nullable=False)
+    alamat_user = Column(String(255), nullable=True)
+    telp_user = Column(String(255), nullable=True)
     role = Column(String(50), nullable=False, default="tahap_1")
-    nama = Column(String(200), nullable=True)
-    aktif = Column(Boolean, default=True)
-    dibuat_at = Column(DateTime, default=datetime.now)
-    diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
+    access = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class UserClientAccess(Base):
@@ -754,7 +767,7 @@ class UserClientAccess(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
@@ -1546,15 +1559,29 @@ def get_audit_history(
     finally:
         session.close()
 
+def _user_ke_dict(user: "User") -> Dict[str, Any]:
+    """Bentuk dict balikan dipertahankan sama seperti sebelum pindah ke
+    management_users (id/nama/aktif), supaya modules/auth/*.py & pemanggil
+    lain tidak perlu ikut berubah. `id` sekarang UUID (str), bukan int."""
+    return {
+        "id": user.id_user,
+        "username": user.username,
+        "password_hash": user.password_hash,
+        "role": user.role,
+        "nama": user.nama_user,
+        "aktif": user.deleted_at is None,
+    }
+
+
 def create_user(username: str, password_hash: str, role: str, nama: Optional[str] = None) -> bool:
-    """Buat user baru."""
+    """Buat user baru. `nama_user` wajib diisi di DB -- fallback ke username kalau nama tidak dikirim."""
     session = SessionLocal()
     try:
         user = User(
             username=username,
             password_hash=password_hash,
             role=role,
-            nama=nama,
+            nama_user=nama or username,
         )
         session.add(user)
         session.commit()
@@ -1574,15 +1601,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
         user = session.query(User).filter(User.username == username).first()
         if not user:
             return None
-        result = {
-            "id": user.id,
-            "username": user.username,
-            "password_hash": user.password_hash,
-            "role": user.role,
-            "nama": user.nama,
-            "aktif": user.aktif,
-        }
-        return result
+        return _user_ke_dict(user)
     except Exception:
         session.rollback()
         return None
@@ -1595,17 +1614,7 @@ def list_users() -> List[Dict[str, Any]]:
     session = SessionLocal()
     try:
         users = session.query(User).all()
-        result = [
-            {
-                "id": u.id,
-                "username": u.username,
-                "role": u.role,
-                "nama": u.nama,
-                "aktif": u.aktif,
-            }
-            for u in users
-        ]
-        return result
+        return [_user_ke_dict(u) for u in users]
     except Exception:
         session.rollback()
         return []
@@ -1630,22 +1639,14 @@ def update_user_role(username: str, role: str) -> bool:
         session.close()
 
 
-def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
-    """Ambil user berdasarkan ID."""
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Ambil user berdasarkan ID (UUID string)."""
     session = SessionLocal()
     try:
-        user = session.query(User).filter(User.id == user_id).first()
+        user = session.query(User).filter(User.id_user == user_id).first()
         if not user:
             return None
-        result = {
-            "id": user.id,
-            "username": user.username,
-            "password_hash": user.password_hash,
-            "role": user.role,
-            "nama": user.nama,
-            "aktif": user.aktif,
-        }
-        return result
+        return _user_ke_dict(user)
     except Exception:
         session.rollback()
         return None
@@ -1672,13 +1673,17 @@ def update_user_password(username: str, password_hash_baru: str) -> bool:
 
 
 def set_user_aktif(username: str, aktif: bool) -> bool:
-    """Aktifkan/nonaktifkan user tanpa menghapus datanya (mis. saat karyawan resign)."""
+    """Aktifkan/nonaktifkan user tanpa menghapus datanya (mis. saat karyawan resign).
+
+    Diterjemahkan ke pola soft-delete management_users: aktif=True -> deleted_at
+    dikosongkan, aktif=False -> deleted_at diisi waktu sekarang.
+    """
     session = SessionLocal()
     try:
         user = session.query(User).filter(User.username == username).first()
         if not user:
             return False
-        user.aktif = aktif
+        user.deleted_at = None if aktif else datetime.now()
         session.commit()
         return True
     except Exception:
@@ -4708,21 +4713,26 @@ def ambil_riwayat_saldo_bulanan_akun_tren(
 # ACCOUNTING CORE / SECURITY HELPERS
 # ============================================================
 
-def user_has_client_access(user_id: Optional[int], client_id: int, role: Optional[str] = None) -> bool:
-    """Return True jika user boleh mengakses client. tahap_5 = superuser.
+def user_has_client_access(user_id: Optional[str], client_id: int, role: Optional[str] = None) -> bool:
+    """Return True jika user boleh mengakses client. tahap_5 & super_admin
+    (lihat RBAC.md) = superuser, selalu lolos ke SEMUA client.
 
-    Untuk role selain tahap_5, production harus memiliki baris aktif di
+    Untuk role selain itu, production harus memiliki baris aktif di
     user_client_access. Development anonymous user (id=0, tahap_5) tetap bisa
-    bekerja ketika ALLOW_ANONYMOUS_DEV aktif di modules/auth.py.
+    bekerja ketika ALLOW_ANONYMOUS_DEV aktif di modules/auth/core.py.
+
+    user_id sekarang UUID (str) -- id user dev anonymous (0) SENGAJA bukan
+    UUID valid, tapi tidak pernah dipakai untuk query di sini karena
+    role-nya selalu "tahap_5" (short-circuit di baris pertama di atas).
     """
-    if role == "tahap_5":
+    if role in ("tahap_5", "super_admin"):
         return True
     if not user_id:
         return False
     session = SessionLocal()
     try:
         row = session.query(UserClientAccess).filter(
-            UserClientAccess.user_id == int(user_id),
+            UserClientAccess.user_id == user_id,
             UserClientAccess.client_id == int(client_id),
             UserClientAccess.active.is_(True),
         ).first()
@@ -4734,7 +4744,7 @@ def user_has_client_access(user_id: Optional[int], client_id: int, role: Optiona
         session.close()
 
 
-def set_user_client_access(user_id: int, client_id: int, active: bool = True,
+def set_user_client_access(user_id: str, client_id: int, active: bool = True,
                            access_role: Optional[str] = None) -> bool:
     session = SessionLocal()
     try:
@@ -4757,7 +4767,58 @@ def set_user_client_access(user_id: int, client_id: int, active: bool = True,
         session.close()
 
 
-def daftar_user_client_access(user_id: int) -> List[Dict[str, Any]]:
+def get_user_client_access(user_id: Optional[str], client_id: int) -> Optional[Dict[str, Any]]:
+    """Baris akses AKTIF milik 1 user ke 1 client tertentu, atau None kalau
+    tidak ada -- dipakai modules/auth/core.py::require_client_level() untuk
+    baca access_role (org_owner..viewer, lihat RBAC.md) user ini di client
+    ini secara spesifik (beda dari user_has_client_access() yang cuma
+    balikin True/False tanpa peduli access_role-nya apa)."""
+    if not user_id:
+        return None
+    session = SessionLocal()
+    try:
+        row = session.query(UserClientAccess).filter(
+            UserClientAccess.user_id == user_id,
+            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.active.is_(True),
+        ).first()
+        if row is None:
+            return None
+        return {"access_role": row.access_role, "active": row.active}
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def daftar_akses_client(client_id: int) -> List[Dict[str, Any]]:
+    """Semua user (yang aksesnya masih aktif) yang punya akses ke 1 client
+    tertentu -- kebalikan dari daftar_user_client_access() (yang per-user,
+    dipakai company switcher). Dipakai GET /api/client/{client_id}/access
+    untuk menampilkan siapa saja yang sudah diberi akses & access_role apa."""
+    session = SessionLocal()
+    try:
+        rows = session.query(UserClientAccess, User).join(
+            User, UserClientAccess.user_id == User.id_user
+        ).filter(
+            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.active.is_(True),
+        ).all()
+        return [
+            {
+                "user_id": access.user_id,
+                "username": u.username,
+                "nama": u.nama_user,
+                "access_role": access.access_role,
+            }
+            for access, u in rows
+        ]
+    finally:
+        session.close()
+
+
+def daftar_user_client_access(user_id: str) -> List[Dict[str, Any]]:
     session = SessionLocal()
     try:
         rows = session.query(UserClientAccess, Client).join(
