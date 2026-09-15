@@ -79,9 +79,13 @@ import openpyxl
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import akuntansi_ai as ak
 import db_client as dbc
@@ -100,6 +104,8 @@ from modules.kertas_kerja_router import router as kertas_kerja_router  # [BARU] 
 from modules.tax_router import router as tax_router
 from modules.tax_case_router import router as tax_case_router
 from modules import tax_scheduler
+from modules.auth import v1 as auth_v1  # [BARU] Fitur Auth REST API standar: /api/v1/auth/...
+from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
 # [FIX v5] Konfirmasi eksplisit di terminal, database mana yang BENAR-BENAR
 # kepakai saat startup -- supaya "diam-diam jatuh ke sqlite lokal" tidak
@@ -114,7 +120,22 @@ else:
     _bagian_setelah_at = _db_url_terpakai.split("@")[-1] if "@" in _db_url_terpakai else "(format tidak dikenali)"
     print(f"[DB] Memakai Postgres/Supabase, host: {_bagian_setelah_at}")
 
-app = FastAPI(title="AI Gouf Consulting API")
+app = FastAPI(
+    title="AI Gouf Consulting API",
+    openapi_tags=[
+        {
+            "name": "auth-v1",
+            "description": (
+                "REST API standar untuk autentikasi (/api/v1/auth/...): "
+                "register (khusus Partner/Admin), login (dapat JWT), dan "
+                "profil user yang sedang login. Endpoint selain /login "
+                "wajib header `Authorization: Bearer <token>` -- klik "
+                "tombol Authorize di atas untuk mengisi token sekali, lalu "
+                "otomatis dipakai di semua percobaan endpoint di grup ini."
+            ),
+        },
+    ],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,6 +167,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# [BARU] Gerbang autentikasi JWT untuk grup REST API standar /api/v1/**
+# (fitur auth baru -- lihat modules/auth_v1.py). Endpoint LAMA (/api/login,
+# /api/client, /tax/..., dst) tidak disentuh middleware ini sama sekali,
+# tetap jalan seperti sebelumnya lewat Depends(auth.get_current_user)/
+# require_level masing-masing.
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth_v1.jwt_v1_middleware)
+
 
 @app.middleware("http")
 async def _enforce_client_data_isolation(request: Request, call_next):
@@ -175,6 +203,24 @@ async def _enforce_client_data_isolation(request: Request, call_next):
                     content={"detail": "User tidak memiliki akses ke client ini."},
                 )
     return await call_next(request)
+
+
+# [BARU] Normalisasi error ke amplop standar {status,message,data,errors}
+# TAPI HANYA untuk path /api/v1/... (fitur auth baru). Endpoint lama tetap
+# dapat bentuk error bawaan FastAPI seperti sebelumnya (frontend yang sudah
+# ada mem-parsing bentuk lama itu, mengubahnya di luar scope permintaan ini).
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler_v1(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/v1/"):
+        return _gagal_v1(message="Data yang dikirim tidak valid.", errors=exc.errors(), status_code=422)
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler_v1(request: Request, exc: StarletteHTTPException):
+    if request.url.path.startswith("/api/v1/"):
+        return _gagal_v1(message=str(exc.detail), status_code=exc.status_code)
+    return await http_exception_handler(request, exc)
 
 
 FOLDER_HASIL = Path(__file__).parent / "hasil_output"
@@ -253,6 +299,7 @@ def _simpan_cache_export_18_sheet(kunci: str, signature_saat_ini: str, hasil: An
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
+app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
 
 
 @app.on_event("startup")
@@ -414,13 +461,14 @@ def api_daftar_client(
         GET /api/client?punya_esb=false  -> client yang belum ada akun ESB
     """
     clients = dbc.daftar_client(tipe, punya_esb=punya_esb)
-    # tahap_5 adalah administrator lintas client. Role di bawahnya hanya
-    # boleh melihat client yang secara eksplisit diberikan melalui tabel
-    # user_client_access. Ini mencegah user menebak client_id atau melihat
-    # metadata semua client dari company switcher.
-    if user.get("role") != "tahap_5":
+    # tahap_5 & super_admin (lihat RBAC.md) adalah administrator lintas
+    # client. Role di bawahnya hanya boleh melihat client yang secara
+    # eksplisit diberikan melalui tabel user_client_access. Ini mencegah
+    # user menebak client_id atau melihat metadata semua client dari
+    # company switcher.
+    if user.get("role") not in ("tahap_5", "super_admin"):
         allowed_ids = {
-            int(x["client_id"]) for x in dbc.daftar_user_client_access(int(user.get("id") or 0))
+            int(x["client_id"]) for x in dbc.daftar_user_client_access(str(user.get("id") or ""))
         }
         clients = [c for c in clients if int(c.get("id") or 0) in allowed_ids]
     return {"clients": clients}
@@ -453,8 +501,11 @@ def api_tambah_client(
     )
     if client_id is None:
         raise HTTPException(status_code=500, detail="Gagal menambah client.")
-    if user.get("role") != "tahap_5" and user.get("id") is not None:
-        dbc.set_user_client_access(int(user["id"]), int(client_id), active=True, access_role="owner")
+    if user.get("role") not in ("tahap_5", "super_admin") and user.get("id") is not None:
+        # "client_lv_1" (org_owner) = level paling senior di CLIENT_LEVELS
+        # (lihat RBAC.md & modules/auth/core.py) -- staf yang bikin client
+        # ini otomatis jadi pemegang akses penuh KHUSUS untuk client tsb.
+        dbc.set_user_client_access(str(user["id"]), int(client_id), active=True, access_role="client_lv_1")
     return {
         "id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe,
         "nomor_wa": nomor_wa, "email": email, "industry": industry, "status": status,
@@ -5165,9 +5216,22 @@ def api_general_ledger_core(
 
 
 class UserClientAccessRequest(BaseModel):
-    user_id: int
+    user_id: str
     active: bool = True
     access_role: Optional[str] = None
+
+
+@app.get("/api/client/{client_id}/access")
+def api_daftar_client_access(
+    client_id: int,
+    user: dict = Depends(auth.require_roles(["tahap_5"])),
+):
+    """[BARU] Siapa saja yang punya akses ke client ini & access_role
+    (org_owner..viewer, lihat RBAC.md) apa -- simetris dengan POST di bawah."""
+    akses = dbc.daftar_akses_client(client_id)
+    for a in akses:
+        a["access_role_label"] = auth.client_role_label(a.get("access_role"))
+    return {"client_id": client_id, "akses": akses}
 
 
 @app.post("/api/client/{client_id}/access")
@@ -5175,9 +5239,17 @@ def api_set_client_access(
     client_id: int, req: UserClientAccessRequest,
     user: dict = Depends(auth.require_roles(["tahap_5"])),
 ):
+    if req.access_role is not None and req.access_role not in auth.CLIENT_ROLE_CODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"access_role tidak dikenal. Pilihan valid: {', '.join(auth.CLIENT_ROLE_CODES)}",
+        )
     if not dbc.set_user_client_access(req.user_id, client_id, active=req.active, access_role=req.access_role):
         raise HTTPException(status_code=500, detail="Gagal memperbarui akses user-client.")
-    return {"berhasil": True, "client_id": client_id, "user_id": req.user_id, "active": req.active}
+    return {
+        "berhasil": True, "client_id": client_id, "user_id": req.user_id,
+        "active": req.active, "access_role": req.access_role,
+    }
 
 
 # ============================================================
