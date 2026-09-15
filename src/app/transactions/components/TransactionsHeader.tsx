@@ -2,8 +2,6 @@
 import React, { useState } from 'react';
 import { Download, Upload, Plus, Trash2, Archive, Calendar, ChevronDown, Check, FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useActiveClient } from '@/lib/activeClient';
-import { COMPANY } from '@/lib/financialData';
 
 interface TransactionsHeaderProps {
   totalCount: number;
@@ -40,8 +38,6 @@ export default function TransactionsHeader({
   onBulkArchive,
 }: TransactionsHeaderProps) {
   const [yearMenuOpen, setYearMenuOpen] = useState(false);
-  const { activeClientName } = useActiveClient();
-  const companyName = activeClientName || COMPANY.name;
 
   const handleExport = () => {
     onExportExcel();
@@ -61,12 +57,13 @@ export default function TransactionsHeader({
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      {/* [DIUBAH] Judul "Transaksi" + deskripsi perusahaan dipindah ke luar —
+          sekarang dirender sekali di TransactionsContent.tsx, DI ATAS tab
+          bar (TransactionsMainTabs), supaya urutannya konsisten dengan
+          halaman Sales/Purchase/dst: Judul → Tab → Konten. Di sini cuma
+          sisa badge jumlah transaksi + filter tahun. */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Transaksi</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Jurnal entri dan transaksi keuangan — {companyName}
-        </p>
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2">
           <span className="badge-info">{totalCount.toLocaleString('id-ID')} transaksi</span>
 
           {/* Periode tahun — bisa ditekan untuk memilih tahun lain */}
