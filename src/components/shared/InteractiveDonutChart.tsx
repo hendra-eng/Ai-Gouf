@@ -42,6 +42,11 @@ interface Props {
    *  and should be formatted as-is instead of multiplied by 1e6. Default
    *  false, matching the AR Aging donut's convention. */
   rawValue?: boolean;
+  /** Custom formatter for the value shown in the center callout (e.g. a
+   *  plain count instead of a currency amount). Overrides `rawValue` /
+   *  the default money formatting when provided — use this for donuts
+   *  whose `value` isn't a monetary figure (e.g. a status count). */
+  formatValue?: (value: number) => string;
 }
 
 const CX = 120;
@@ -124,6 +129,7 @@ export default function InteractiveDonutChart({
   activeIndex: activeIndexProp,
   onLiveChange,
   rawValue = false,
+  formatValue,
 }: Props) {
   const { t } = useLanguage();
   const { currency } = useCurrency();
@@ -319,7 +325,7 @@ export default function InteractiveDonutChart({
         }
       : null;
 
-  const fmtValue = (v: number) => formatMoney(rawValue ? v : v * 1e6, currency);
+  const fmtValue = formatValue ?? ((v: number) => formatMoney(rawValue ? v : v * 1e6, currency));
 
   if (N === 0 || total <= 0) {
     return (
