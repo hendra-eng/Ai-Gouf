@@ -2,14 +2,15 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';
-import TransactionDrawer from '../components/TransactionDrawer';
-import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
-import { Transaction } from '../components/transactionData';
-import { useTransactions } from '../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
+import TransactionDrawer from '../../components/TransactionDrawer';
+import TransactionsGroupPanel from '../../components/TransactionsGroupPanel';
+import { Transaction } from '../../components/transactionData';
+import { useTransactions } from '../../context/TransactionsContext';
+import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
+import CashBankTabs from '../components/CashBankTabs';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase). ──
 const PAYMENT_AXIS_WIDTH = 65;
@@ -272,10 +273,7 @@ export default function CashPaymentPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Cash Payment</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Pembayaran hutang usaha & pajak — diambil otomatis dari halaman Transaksi</p>
-      </div>
+      <CashBankTabs />
 
       {missingJeIdCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">

@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 import TransactionsHeader from './TransactionsHeader';
 import TransactionsFilterBar from './TransactionsFilterBar';
 import TransactionsTable from './TransactionsTable';
+import TransactionsMainTabs, { TransactionsMainTabId } from './TransactionsMainTabs';
 import TransactionDrawer from './TransactionDrawer';
 import TransactionEditModal from './TransactionEditModal';
 import ImportRekeningKoranModal from './ImportRekeningKoranModal';
@@ -17,6 +18,14 @@ import { exportTransactionsToExcel, buildTransactionsExcelBlob, downloadBlob } f
 import { useTransactions } from '../context/TransactionsContext';
 import { useActiveClient } from '@/lib/activeClient';
 import { COMPANY } from '@/lib/financialData';
+// [DIUBAH] 5 tab baru (Sales/Purchase/Journal Entry/Cash & Bank/Other) sudah
+// ada isinya di folder ./tabs — sebelumnya cuma ditampilkan sebagai
+// TransactionsTabPlaceholder kosong. Sekarang dirender langsung di sini.
+import SalesTabContent from './tabs/sales/SalesTabContent';
+import PurchaseTabContent from './tabs/purchase/PurchaseTabContent';
+import JournalEntryTabContent from './tabs/journal-entry/JournalEntryTabContent';
+import CashBankTabContent from './tabs/cash-bank/CashBankTabContent';
+import OtherTabContent from './tabs/other/OtherTabContent';
 
 interface Filters {
   type: string;
@@ -75,6 +84,11 @@ export default function TransactionsContent() {
   } = useTransactions();
   const { activeClientId, activeClientName } = useActiveClient();
   const companyName = activeClientName || COMPANY.name;
+
+  // ─── Tab utama halaman /transactions (Transaksi / Sales / Purchase / dst) ───
+  // Set tab ini TERPISAH dari sub-halaman /transactions/sales dkk yang sudah
+  // punya isi — 5 tab selain "Transaksi" masih placeholder kosong.
+  const [activeMainTab, setActiveMainTab] = useState<TransactionsMainTabId>('transaksi');
 
   // ─── Baris yang terlihat (baris arsip disembunyikan dari tabel utama) ───
   const visibleTransactions = useMemo(() => transactions.filter((tx) => !tx.archived), [transactions]);
@@ -277,55 +291,76 @@ export default function TransactionsContent() {
         </div>
       )}
 
-      <TransactionsHeader
-        totalCount={totalFiltered}
-        selectedCount={selectedIds.size}
-        onImportClick={() => setShowImportModal(true)}
-        onExportJournalPdf={handleExportJournalPdf}
-        onExportExcel={handleExportExcel}
-        isPreparingExcelExport={isPreparingExcelExport}
-        onNewJournalClick={() => setShowNewModal(true)}
-        selectedYear={selectedYear}
-        onYearChange={setSelectedYear}
-        yearOptions={yearOptions}
-        onBulkDelete={() => handleBulkDelete(Array.from(selectedIds))}
-        onBulkArchive={() => handleBulkArchive(Array.from(selectedIds))}
-      />
+      {/* [DIUBAH] Urutan disamakan dengan halaman Sales/Purchase/dst:
+          Judul + deskripsi dulu, baru tab bar di bawahnya, baru konten. */}
+      <div>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">Transaksi</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Jurnal entri dan transaksi keuangan — {companyName}
+        </p>
+      </div>
 
-      <TransactionsFilterBar
-        search={search}
-        onSearchChange={setSearch}
-        filters={filters}
-        onFiltersChange={setFilters}
-        unpostedCount={unpostedCount}
-        onPostAllUnposted={postAllUnposted}
-      />
+      <TransactionsMainTabs activeTab={activeMainTab} onTabChange={setActiveMainTab} />
 
-      <TransactionsTable
-        transactions={paginated}
-        totalFiltered={totalFiltered}
-        selectedYear={selectedYear}
-        hasDataInSelectedYear={hasDataInSelectedYear}
-        sortField={sortField}
-        sortDir={sortDir}
-        onSort={handleSort}
-        selectedIds={selectedIds}
-        onSelectAll={handleSelectAll}
-        onSelectRow={handleSelectRow}
-        page={currentPage}
-        pageSize={pageSize}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        onPageSizeChange={setPageSize}
-        onRowClick={setDrawerTx}
-        onEditClick={setEditingTx}
-        onBulkDelete={handleBulkDelete}
-        onBulkArchive={handleBulkArchive}
-        onBulkExport={handleBulkExport}
-        onDeleteRow={handleDeleteRow}
-        onToggleCek={toggleCek}
-        onResetFilters={handleResetFilters}
-      />
+      {activeMainTab === 'sales' && <SalesTabContent />}
+      {activeMainTab === 'purchase' && <PurchaseTabContent />}
+      {activeMainTab === 'journal-entry' && <JournalEntryTabContent />}
+      {activeMainTab === 'cash-bank' && <CashBankTabContent />}
+      {activeMainTab === 'other' && <OtherTabContent />}
+
+      {activeMainTab === 'transaksi' && (
+        <>
+          <TransactionsHeader
+            totalCount={totalFiltered}
+            selectedCount={selectedIds.size}
+            onImportClick={() => setShowImportModal(true)}
+            onExportJournalPdf={handleExportJournalPdf}
+            onExportExcel={handleExportExcel}
+            isPreparingExcelExport={isPreparingExcelExport}
+            onNewJournalClick={() => setShowNewModal(true)}
+            selectedYear={selectedYear}
+            onYearChange={setSelectedYear}
+            yearOptions={yearOptions}
+            onBulkDelete={() => handleBulkDelete(Array.from(selectedIds))}
+            onBulkArchive={() => handleBulkArchive(Array.from(selectedIds))}
+          />
+
+          <TransactionsFilterBar
+            search={search}
+            onSearchChange={setSearch}
+            filters={filters}
+            onFiltersChange={setFilters}
+            unpostedCount={unpostedCount}
+            onPostAllUnposted={postAllUnposted}
+          />
+
+          <TransactionsTable
+            transactions={paginated}
+            totalFiltered={totalFiltered}
+            selectedYear={selectedYear}
+            hasDataInSelectedYear={hasDataInSelectedYear}
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={handleSort}
+            selectedIds={selectedIds}
+            onSelectAll={handleSelectAll}
+            onSelectRow={handleSelectRow}
+            page={currentPage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            onRowClick={setDrawerTx}
+            onEditClick={setEditingTx}
+            onBulkDelete={handleBulkDelete}
+            onBulkArchive={handleBulkArchive}
+            onBulkExport={handleBulkExport}
+            onDeleteRow={handleDeleteRow}
+            onToggleCek={toggleCek}
+            onResetFilters={handleResetFilters}
+          />
+        </>
+      )}
 
       {drawerTx && (
         <TransactionDrawer transaction={drawerTx} onClose={() => setDrawerTx(null)} />
