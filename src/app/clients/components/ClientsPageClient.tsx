@@ -89,6 +89,7 @@ function parseClientsCsv(text: string): Client[] {
     const joinDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     return {
       id: `client-imported-${Date.now()}-${i}`,
+      clientCode: '',
       companyName,
       industry: (industryIdx >= 0 && cols[industryIdx]) || 'General',
       status: 'Stable',
@@ -704,6 +705,7 @@ function AddClientModal({
   initialClient?: Client;
 }) {
   const isEditMode = !!initialClient;
+  const [clientCode, setClientCode] = useState(initialClient?.clientCode ?? '');
   const [companyName, setCompanyName] = useState(initialClient?.companyName ?? '');
   const [industry, setIndustry] = useState(initialClient?.industry ?? '');
   const [contactName, setContactName] = useState(initialClient?.contactName ?? '');
@@ -711,7 +713,6 @@ function AddClientModal({
   const [contactPhone, setContactPhone] = useState(initialClient?.contactPhone ?? '');
   const [npwp, setNpwp] = useState(initialClient?.npwp ?? '');
   const [address, setAddress] = useState(initialClient?.address ?? '');
-  const [assignedAccountant, setAssignedAccountant] = useState(initialClient?.assignedAccountant ?? '');
   const [status, setStatus] = useState<ClientStatus>(initialClient?.status ?? 'Stable');
   // [FIX] Sebelumnya tombol submit tidak pernah di-nonaktifkan selama
   // request ke backend masih berjalan -- klik ganda (double-click) yang
@@ -720,24 +721,25 @@ function AddClientModal({
   // mengunci form begitu submit pertama mulai.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isValid = companyName.trim() && industry.trim() && assignedAccountant.trim();
+  const isValid = companyName.trim() && industry.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isSubmitting) return; // [FIX] cegah submit ganda
     if (!isValid) {
-      toast.error('Lengkapi data wajib', { description: 'Nama perusahaan, industri, dan akuntan wajib diisi.' });
+      toast.error('Lengkapi data wajib', { description: 'Nama perusahaan dan industri wajib diisi.' });
       return;
     }
     setIsSubmitting(true);
     try {
       await onSubmit({
+        clientCode: clientCode.trim(),
         companyName: companyName.trim(),
         industry: industry.trim(),
         status,
         taxStatus: 'Pending',
         accountingStatus: 'Pending Review',
-        assignedAccountant: assignedAccountant.trim(),
+        assignedAccountant: initialClient?.assignedAccountant ?? '',
         contactName: contactName.trim(),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
@@ -760,18 +762,23 @@ function AddClientModal({
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div>
+              <label className="block text-xs font-medium text-foreground mb-1">Client Code</label>
+              <input
+                value={clientCode}
+                onChange={e => setClientCode(e.target.value)}
+                placeholder="CLT-0001"
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-foreground mb-1">Company Name *</label>
               <input
                 value={companyName}
                 onChange={e => setCompanyName(e.target.value)}
                 placeholder="PT Contoh Sejahtera"
-                disabled={isEditMode}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-muted/40 disabled:text-muted-foreground"
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-              {isEditMode && (
-                <p className="text-[10px] text-muted-foreground mt-1">Nama perusahaan tidak bisa diubah.</p>
-              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Industry *</label>
@@ -797,15 +804,6 @@ function AddClientModal({
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-foreground mb-1">Assigned Accountant *</label>
-              <input
-                value={assignedAccountant}
-                onChange={e => setAssignedAccountant(e.target.value)}
-                placeholder="Sari Dewi"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Contact Name</label>

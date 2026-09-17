@@ -16,8 +16,9 @@ from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime,
     Text, Float, Boolean, ForeignKey, ForeignKeyConstraint, text, UniqueConstraint, Index,
     Numeric, Date, func, JSON,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
+    Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -754,8 +755,338 @@ class User(Base):
     role = Column(String(50), nullable=False, default="tahap_1")
     access = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    updated_by = Column(PG_UUID(as_uuid=False), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    # [BARU] client_id -- lihat root/ddl-table. Dipakai untuk user yang
+    # scope-nya 1 client tertentu (mis. akun client_lv_N yang login
+    # langsung sebagai representasi klien), BEDA dari akses multi-client
+    # lewat tabel user_client_access. NULL = user internal (tahap_1..5,
+    # super_admin) yang tidak terikat 1 client.
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+
+
+class ManagementClient(Base):
+    """[BARU] Data profil klien (badan usaha, PIC, alamat, dst) -- DDL di
+    root/ddl-table, ditulis manual oleh user. Terpisah dari tabel `clients`
+    (lama, dipakai modul akuntansi/upload) -- `management_clients` dipakai
+    untuk sisi manajemen/administrasi klien (RBAC client_id, profil
+    perusahaan), belum disatukan dengan `clients` supaya tidak menyentuh
+    alur akuntansi yang sudah jalan.
+    """
+    __tablename__ = "management_clients"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_code = Column(String(50), nullable=True)
+    nama_client = Column(String(255), nullable=True)
+    tipe_badan_usaha = Column(String(255), nullable=True)
+    npwp = Column(String(20), nullable=True)
+    nomor_akta_nib = Column(String(255), nullable=True)
+    status_pkp = Column(Boolean, nullable=True)
+    klasifikasi_lapangan_usaha = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    no_telepon = Column(String(255), nullable=True)
+    no_handphone = Column(String(255), nullable=True)
+    nama_pic = Column(String(255), nullable=True)
+    jabatan_pic = Column(String(255), nullable=True)
+    alamat = Column(Text, nullable=True)
+    kota = Column(String(50), nullable=True)
+    provinsi = Column(String(50), nullable=True)
+    kode_pos = Column(String(255), nullable=True)
+    industry = Column(String(255), nullable=True)
+    tahun_buku_mulai = Column(String(10), nullable=True)
+    mata_uang_default = Column(String(10), nullable=True)
+    status = Column(String(10), nullable=True)
+    akuntan_penanggung_jawab = Column(PG_UUID(as_uuid=False), nullable=True)
+    tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementAuditTrail(Base):
+    """[BARU] Log aktivitas user manajemen (login, buka menu, dst) -- DDL
+    di root/ddl-table. Terpisah dari `audit_log` (lama, dipakai modul
+    akuntansi) -- tabel ini FK ke management_users, bukan ke clients.
+    """
+    __tablename__ = "management_audit_trails"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user", ondelete="CASCADE"), nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    ip = Column(String(255), nullable=True)
+    action = Column(String(255), nullable=True)
+    menu = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    updated_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+    user = relationship("User")
+
+
+# ============================================================
+# TRANSACTIONS > SALES -- DDL: root/ddl-table (bagian
+# "FITUR TRANSACTIONS > SALES"), lihat komentar panjang di sana untuk
+# alasan desain (kenapa 1 tabel invoice dipakai 3 tab sekaligus, kenapa
+# tidak ada tabel customer master, dst). client_id di SELURUH tabel di
+# bawah reference ke management_users(id_user) -- BUKAN management_clients
+# ataupun clients(id) lama -- karena akun client (client_lv_1..9, lihat
+# RBAC.md) direpresentasikan sebagai baris management_users itu sendiri.
+# ============================================================
+
+class SalesSourceFile(Base):
+    """File yang diupload di tab "Source Data" + hasil ekstraksi/mapping AI."""
+    __tablename__ = "financial_transaction_sales_source_files"
+    __table_args__ = (
+        Index("idx_sales_source_files_client", "client_id"),
+        Index("idx_sales_source_files_management_client", "management_client_id"),
+        Index("idx_sales_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    # [BARU] Klien (perusahaan) yang laporannya sedang diupload -- WAJIB
+    # diisi user lewat dropdown saat upload (lihat SALES_IMPORT_TEMPLATES.md
+    # di root). BEDA dari client_id di atas (management_users, akun yang
+    # login/upload) -- ini dipakai sebagai key pencocokan/pembuatan
+    # template di SalesImportTemplate.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    storage_path = Column(Text, nullable=True)
+    period_label = Column(String(50), nullable=True)
+    customer_hint = Column(String(255), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Diproses")
+    status_mapping = Column(String(20), nullable=False, default="Diproses")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    dpp_total = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn_total = Column(Numeric(24, 2), nullable=False, default=0)
+    grand_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    # [BARU] Template pola kolom yang dipakai/cocok untuk file ini (lihat
+    # SalesImportTemplate di bawah) -- NULL kalau belum ada template yang
+    # cocok, atau kalau file jenis ini (mis. PDF) belum didukung
+    # pembelajaran pola.
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesSourceRow(Base):
+    """Baris mentah per file (hasil parsing sebelum jadi invoice resmi)."""
+    __tablename__ = "financial_transaction_sales_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_sales_source_rows_file_row"),
+        Index("idx_sales_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    no_invoice = Column(String(100), nullable=True)
+    nama_customer = Column(String(255), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesInvoice(Base):
+    """Entitas inti: satu baris = satu invoice/transaksi penjualan. Dipakai
+    bersama oleh tab Sales Transaction, Journal Preview, dan Posted."""
+    __tablename__ = "financial_transaction_sales_invoices"
+    __table_args__ = (
+        UniqueConstraint("client_id", "invoice_no", name="uq_sales_invoices_client_no"),
+        Index("idx_sales_invoices_client_status", "client_id", "posting_status"),
+        Index("idx_sales_invoices_client_date", "client_id", "invoice_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_no = Column(String(100), nullable=False)
+    invoice_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
+    customer_name = Column(String(255), nullable=False)
+    customer_npwp = Column(String(30), nullable=True)
+    description = Column(Text, nullable=True)
+    transaction_type = Column(String(50), nullable=True)
+    project_name = Column(String(255), nullable=True)
+    sales_person = Column(String(255), nullable=True)
+    term_of_payment = Column(String(50), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    pph = Column(Numeric(24, 2), nullable=False, default=0)
+    gross_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    paid_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    outstanding_amount = Column(Numeric(24, 2), Computed("gross_amount - paid_amount", persisted=True))
+    tax_invoice_status = Column(String(30), nullable=False, default="Belum Terbit Faktur")
+    posting_status = Column(String(20), nullable=False, default="Draft")
+    reconcile_status = Column(String(20), nullable=False, default="Unreconciled")
+    journal_sync_status = Column(String(20), nullable=False, default="Pending")
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesAccountMapping(Base):
+    """Pemetaan akun (Piutang/Pendapatan/PPN/PPh) per invoice -- 1:1, tab
+    "Accounting Classification" di Journal Preview."""
+    __tablename__ = "financial_transaction_sales_account_mappings"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False, unique=True)
+    piutang_account_code = Column(String(50), nullable=False)
+    piutang_account_name = Column(String(200), nullable=True)
+    pendapatan_account_code = Column(String(50), nullable=False)
+    pendapatan_account_name = Column(String(200), nullable=True)
+    ppn_account_code = Column(String(50), nullable=True)
+    ppn_account_name = Column(String(200), nullable=True)
+    pph_account_code = Column(String(50), nullable=True)
+    pph_account_name = Column(String(200), nullable=True)
+    is_ai_suggested = Column(Boolean, nullable=False, default=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    mapped_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    mapped_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesException(Base):
+    """Antrean review tab "Exceptions" -- transaksi/baris sumber yang
+    perlu ditinjau manusia sebelum lanjut diposting."""
+    __tablename__ = "financial_transaction_sales_exceptions"
+    __table_args__ = (
+        Index("idx_sales_exceptions_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
+    exception_type = Column(String(100), nullable=False)
+    priority = Column(String(10), nullable=False, default="Medium")
+    status = Column(String(20), nullable=False, default="Open")
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    ai_suggestion = Column(Text, nullable=True)
+    source_snippet = Column(JSONB, nullable=True)
+    assigned_to = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesActivityLog(Base):
+    """Jejak aktivitas khusus modul Sales (mis. "Aktivitas Posting
+    Terbaru" di tab Posted) -- levelnya per-invoice/per-jurnal, beda dari
+    management_audit_trails yang levelnya per-user/menu."""
+    __tablename__ = "financial_transaction_sales_activity_log"
+    __table_args__ = (
+        Index("idx_sales_activity_log_invoice", "invoice_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    event_type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=False)
+    reference_no = Column(String(100), nullable=True)
+    performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesImportTemplate(Base):
+    """Pola kolom file laporan penjualan (CSV/Excel) yang sudah "dipelajari"
+    untuk 1 klien -- dipakai ulang otomatis (tanpa panggil AI lagi) begitu
+    file berikutnya dari klien+format yang sama diupload. Lihat
+    SALES_IMPORT_TEMPLATES.md di root untuk alur lengkapnya.
+
+    client_id di sini SENGAJA reference ke management_clients (BUKAN
+    management_users seperti tabel Sales lain) -- pola kolom laporan
+    adalah properti PERUSAHAAN klien itu sendiri, bukan akun yang
+    kebetulan login & upload.
+    """
+    __tablename__ = "financial_transaction_sales_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_sales_import_templates_signature"),
+        Index("idx_sales_import_templates_client", "client_id"),
+        Index("idx_sales_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
 class UserClientAccess(Base):
@@ -1707,13 +2038,580 @@ def delete_user(username: str) -> bool:
         session.rollback()
         print(f"Error delete user: {e}")
         return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# FUNGSI MANAGEMENT_CLIENTS -- profil klien (RBAC client_id, data
+# perusahaan). Lihat root/ddl-table & modules/management/clients_v1.py.
+# Kolom yang di-set SERVER SENDIRI (created_by/edited_by/created_at/
+# edited_at/deleted_at/deleted_by) SENGAJA tidak diterima dari payload
+# CRUD_FIELDS -- lihat clients_v1.py.
+# ============================================================
+
+CRUD_FIELDS_MANAGEMENT_CLIENT = [
+    "client_code", "nama_client", "tipe_badan_usaha", "npwp", "nomor_akta_nib",
+    "status_pkp", "klasifikasi_lapangan_usaha", "email", "no_telepon",
+    "no_handphone", "nama_pic", "jabatan_pic", "alamat", "kota", "provinsi",
+    "kode_pos", "industry", "tahun_buku_mulai", "mata_uang_default", "status",
+    "akuntan_penanggung_jawab", "tanggal_mulai_kerjasama",
+]
+
+
+def _management_client_ke_dict(mc: "ManagementClient") -> Dict[str, Any]:
+    data = {kolom: getattr(mc, kolom) for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT}
+    data.update({
+        "id": mc.id,
+        "created_at": mc.created_at,
+        "created_by": mc.created_by,
+        "edited_at": mc.edited_at,
+        "edited_by": mc.edited_by,
+        "aktif": mc.deleted_at is None,
+    })
+    return data
+
+
+def create_management_client(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Buat client baru. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
+    session = SessionLocal()
+    try:
+        mc = ManagementClient(
+            **{k: v for k, v in data.items() if k in CRUD_FIELDS_MANAGEMENT_CLIENT},
+            created_by=created_by,
+        )
+        session.add(mc)
+        session.flush()  # kirim INSERT & isi id/created_at (server_default) ke objek TANPA expire attribute lain (beda dari commit)
+        hasil = _management_client_ke_dict(mc)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create management_client: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def get_management_client_by_id(client_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    """Ambil 1 management_client berdasarkan id. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
+    session = SessionLocal()
+    try:
+        query = session.query(ManagementClient).filter(ManagementClient.id == client_id)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClient.deleted_at.is_(None))
+        mc = query.first()
+        return _management_client_ke_dict(mc) if mc else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def list_management_clients(termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    """Daftar semua management_client. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
+    session = SessionLocal()
+    try:
+        query = session.query(ManagementClient)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClient.deleted_at.is_(None))
+        return [_management_client_ke_dict(mc) for mc in query.order_by(ManagementClient.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def update_management_client(client_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Update sebagian/semua kolom management_client. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
+    session = SessionLocal()
+    try:
+        mc = session.query(ManagementClient).filter(
+            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        ).first()
+        if not mc:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT:
+                setattr(mc, kolom, nilai)
+        mc.edited_at = datetime.now()
+        mc.edited_by = updated_by
+        # Dibaca SEBELUM commit -- expire_on_commit bikin akses attribute
+        # SETELAH commit perlu reload dari DB, dan reload itu (session.refresh
+        # atau akses expired attribute) kena bug tipe UUID di beberapa dialect.
+        # Semua nilai di bawah sudah final di memory (tidak ada onupdate= di
+        # level DB untuk tabel ini), jadi aman dibaca sebelum commit.
+        hasil = _management_client_ke_dict(mc)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update management_client: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = None) -> bool:
+    """Nonaktifkan (soft-delete) management_client -- data tidak dihapus permanen."""
+    session = SessionLocal()
+    try:
+        mc = session.query(ManagementClient).filter(
+            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        ).first()
+        if not mc:
+            return False
+        mc.deleted_at = datetime.now()
+        mc.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete management_client: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# TRANSACTIONS > SALES -- CRUD (lihat model di atas & DDL root/ddl-table)
+# ============================================================
+# Ke-6 tabel Sales sengaja punya bentuk kolom audit yang SAMA persis
+# (id, created_at/created_by, edited_at/edited_by, deleted_at/deleted_by)
+# -- beda dengan management_users/management_audit_trails yang pakai
+# updated_at/updated_by. Daripada menulis ulang create/get/list/update/
+# soft-delete 6x (30 fungsi hampir identik), dipakai helper generic di
+# bawah (pola yang sama seperti _bulk_upsert() di atas), lalu tiap tabel
+# tetap punya fungsi bernama sendiri (dipanggil dari modules/transactions)
+# supaya pemanggil tidak perlu tahu soal model/fields secara langsung.
+
+def _sales_row_ke_dict(obj, fields: List[str]) -> Dict[str, Any]:
+    data = {kolom: getattr(obj, kolom) for kolom in fields}
+    data.update({
+        "id": obj.id,
+        "created_at": obj.created_at,
+        "created_by": obj.created_by,
+        "edited_at": obj.edited_at,
+        "edited_by": obj.edited_by,
+        "aktif": obj.deleted_at is None,
+    })
+    return data
+
+
+def _sales_crud_create(model, fields: List[str], data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = model(**{k: v for k, v in data.items() if k in fields}, created_by=created_by)
+        session.add(obj)
+        session.flush()  # kirim INSERT & isi id/created_at (server_default) tanpa expire attribute lain
+        hasil = _sales_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model).filter(model.id == row_id)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        obj = query.first()
+        return _sales_row_ke_dict(obj, fields) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model)
+        for kolom, nilai in (filters or {}).items():
+            if nilai is not None:
+                query = query.filter(getattr(model, kolom) == nilai)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        return [_sales_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def _sales_crud_update(model, fields: List[str], row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in fields:
+                setattr(obj, kolom, nilai)
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _sales_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_soft_delete(model, row_id: str, deleted_by: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return False
+        obj.deleted_at = datetime.now()
+        obj.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete {model.__tablename__}: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# --- 1) financial_transaction_sales_source_files ---
+
+CRUD_FIELDS_SALES_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "storage_path", "period_label",
+    "customer_hint", "rows_detected", "rows_valid", "rows_invalid",
+    "duplicate_count", "status_ekstraksi", "status_mapping", "confidence_score",
+    "dpp_total", "ppn_total", "grand_total", "extraction_duration_ms",
+    "ai_model_version", "mapping_rules", "template_id", "processed_by", "uploaded_at", "uploaded_by",
+]
+
+def create_sales_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, data, created_by)
+
+def get_sales_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_sales_source_files(client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, {"client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_sales_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesSourceFile, source_file_id, deleted_by)
+
+
+# --- 2) financial_transaction_sales_source_rows ---
+
+CRUD_FIELDS_SALES_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "no_invoice",
+    "nama_customer", "dpp", "ppn", "total", "is_valid", "validation_notes",
+    "is_duplicate_candidate",
+]
+
+def create_sales_source_row(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, data, created_by)
+
+def get_sales_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, termasuk_nonaktif)
+
+def list_sales_source_rows(source_file_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, {"source_file_id": source_file_id, "client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, data, updated_by)
+
+def soft_delete_sales_source_row(source_row_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesSourceRow, source_row_id, deleted_by)
+
+
+# --- 3) financial_transaction_sales_invoices ---
+
+CRUD_FIELDS_SALES_INVOICE = [
+    "client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
+    "customer_npwp", "description", "transaction_type", "project_name",
+    "sales_person", "term_of_payment", "dpp", "ppn", "pph", "gross_amount",
+    "paid_amount", "tax_invoice_status", "posting_status", "reconcile_status",
+    "journal_sync_status", "journal_entry_id", "source_row_id", "posted_at", "posted_by",
+]
+
+def _sales_invoice_ke_dict(obj: "SalesInvoice") -> Dict[str, Any]:
+    data = _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_INVOICE)
+    data["outstanding_amount"] = obj.outstanding_amount
+    return data
+
+def create_sales_invoice(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        invoice = SalesInvoice(
+            **{k: v for k, v in data.items() if k in CRUD_FIELDS_SALES_INVOICE},
+            created_by=created_by,
+        )
+        session.add(invoice)
+        session.commit()  # butuh commit (bukan sekadar flush) supaya outstanding_amount (GENERATED) ikut dihitung DB
+        session.refresh(invoice)
+        return _sales_invoice_ke_dict(invoice)
+    except Exception as e:
+        session.rollback()
+        print(f"Error create financial_transaction_sales_invoices: {e}")
+        return None
+    finally:
+        session.close()
+
+def get_sales_invoice_by_id(invoice_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(SalesInvoice).filter(SalesInvoice.id == invoice_id)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesInvoice.deleted_at.is_(None))
+        invoice = query.first()
+        return _sales_invoice_ke_dict(invoice) if invoice else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def get_sales_invoice_by_source_row_id(source_row_id: str) -> Optional[Dict[str, Any]]:
+    """Cek apakah 1 source_row SUDAH pernah "dinaikkan" jadi invoice --
+    dipakai endpoint promote-to-invoices (modules/transactions/
+    sales_import_v1.py) supaya idempoten (aman dipanggil ulang, tidak
+    membuat invoice dobel utk baris yang sama)."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesInvoice).filter(
+            SalesInvoice.source_row_id == source_row_id,
+            SalesInvoice.deleted_at.is_(None),
+        ).first()
+        return _sales_invoice_ke_dict(obj) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def get_sales_invoice_by_client_and_no(client_id: Optional[str], invoice_no: str) -> Optional[Dict[str, Any]]:
+    """Dipakai untuk pre-check UniqueConstraint(client_id, invoice_no) SEBELUM
+    insert, supaya endpoint bisa membalas 409 yang jelas (pola sama seperti
+    dbc.get_user_by_username() di POST /api/v1/auth/register), bukan
+    menunggu IntegrityError generik dari database."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesInvoice).filter(
+            SalesInvoice.client_id == client_id,
+            SalesInvoice.invoice_no == invoice_no,
+            SalesInvoice.deleted_at.is_(None),
+        ).first()
+        return _sales_invoice_ke_dict(obj) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def list_sales_invoices(client_id: Optional[str] = None, posting_status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(SalesInvoice)
+        if client_id is not None:
+            query = query.filter(SalesInvoice.client_id == client_id)
+        if posting_status is not None:
+            query = query.filter(SalesInvoice.posting_status == posting_status)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesInvoice.deleted_at.is_(None))
+        return [_sales_invoice_ke_dict(obj) for obj in query.order_by(SalesInvoice.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def update_sales_invoice(invoice_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        invoice = session.query(SalesInvoice).filter(
+            SalesInvoice.id == invoice_id, SalesInvoice.deleted_at.is_(None)
+        ).first()
+        if not invoice:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_SALES_INVOICE:
+                setattr(invoice, kolom, nilai)
+        invoice.edited_at = datetime.now()
+        invoice.edited_by = updated_by
+        session.commit()  # commit dulu (bukan flush) supaya outstanding_amount ikut dihitung ulang DB
+        session.refresh(invoice)
+        return _sales_invoice_ke_dict(invoice)
+    except Exception as e:
+        session.rollback()
+        print(f"Error update financial_transaction_sales_invoices: {e}")
+        return None
+    finally:
+        session.close()
+
+def soft_delete_sales_invoice(invoice_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesInvoice, invoice_id, deleted_by)
+
+
+# --- 4) financial_transaction_sales_account_mappings ---
+
+CRUD_FIELDS_SALES_ACCOUNT_MAPPING = [
+    "client_id", "invoice_id", "piutang_account_code", "piutang_account_name",
+    "pendapatan_account_code", "pendapatan_account_name", "ppn_account_code",
+    "ppn_account_name", "pph_account_code", "pph_account_name",
+    "is_ai_suggested", "ai_confidence", "mapped_by", "mapped_at",
+]
+
+def create_sales_account_mapping(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, data, created_by)
+
+def get_sales_account_mapping_by_id(mapping_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, mapping_id, termasuk_nonaktif)
+
+def get_sales_account_mapping_by_invoice(invoice_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    """Ambil mapping akun milik 1 invoice (relasinya 1:1, lihat UniqueConstraint invoice_id)."""
+    session = SessionLocal()
+    try:
+        query = session.query(SalesAccountMapping).filter(SalesAccountMapping.invoice_id == invoice_id)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesAccountMapping.deleted_at.is_(None))
+        obj = query.first()
+        return _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_ACCOUNT_MAPPING) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_sales_account_mappings(client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, {"client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_account_mapping(mapping_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, mapping_id, data, updated_by)
+
+def soft_delete_sales_account_mapping(mapping_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesAccountMapping, mapping_id, deleted_by)
+
+
+# --- 5) financial_transaction_sales_exceptions ---
+
+CRUD_FIELDS_SALES_EXCEPTION = [
+    "client_id", "invoice_id", "source_row_id", "exception_type", "priority",
+    "status", "ai_confidence", "ai_suggestion", "source_snippet",
+    "assigned_to", "resolved_at", "resolved_by",
+]
+
+def create_sales_exception(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesException, CRUD_FIELDS_SALES_EXCEPTION, data, created_by)
+
+def get_sales_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesException, CRUD_FIELDS_SALES_EXCEPTION, exception_id, termasuk_nonaktif)
+
+def list_sales_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesException, CRUD_FIELDS_SALES_EXCEPTION, {"client_id": client_id, "status": status}, termasuk_nonaktif)
+
+def update_sales_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesException, CRUD_FIELDS_SALES_EXCEPTION, exception_id, data, updated_by)
+
+def soft_delete_sales_exception(exception_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesException, exception_id, deleted_by)
+
+
+# --- 6) financial_transaction_sales_activity_log ---
+# Append-only (tidak ada update/soft-delete -- jejak aktivitas seharusnya
+# tidak diubah/dihapus setelah tercatat).
+
+CRUD_FIELDS_SALES_ACTIVITY_LOG = [
+    "client_id", "invoice_id", "event_type", "description", "reference_no", "performed_by",
+]
+
+def create_sales_activity_log(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, data, created_by)
+
+def get_sales_activity_log_by_id(log_id: str) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, log_id, termasuk_nonaktif=True)
+
+def list_sales_activity_logs(client_id: Optional[str] = None, invoice_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, {"client_id": client_id, "invoice_id": invoice_id}, termasuk_nonaktif=True)
+
+
+# --- 7) financial_transaction_sales_import_templates ---
+# Lihat SALES_IMPORT_TEMPLATES.md (root) untuk alur lengkapnya. client_id
+# di sini reference ke management_clients (BEDA dari 6 tabel Sales lain
+# yang reference ke management_users) -- lihat catatan di ORM model.
+
+CRUD_FIELDS_SALES_IMPORT_TEMPLATE = [
+    "client_id", "client_code", "file_type", "sheet_name",
+    "header_row_index", "data_start_row_index", "column_signature_hash",
+    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
+    "ai_confidence", "is_active",
+]
+
+def create_sales_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesImportTemplate, CRUD_FIELDS_SALES_IMPORT_TEMPLATE, data, created_by)
+
+def get_sales_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesImportTemplate, CRUD_FIELDS_SALES_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
+
+def list_sales_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    """Daftar template pola kolom -- dipakai untuk mencocokkan file baru
+    (lihat _cocokkan_template di modules/transactions/sales_import_v1.py)
+    dan untuk halaman kelola template (kalau dibangun nanti)."""
+    session = SessionLocal()
+    try:
+        query = session.query(SalesImportTemplate).filter(SalesImportTemplate.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(SalesImportTemplate.client_id == client_id)
+        if file_type is not None:
+            query = query.filter(SalesImportTemplate.file_type == file_type)
+        if hanya_aktif:
+            query = query.filter(SalesImportTemplate.is_active.is_(True))
+        return [_sales_row_ke_dict(obj, CRUD_FIELDS_SALES_IMPORT_TEMPLATE) for obj in query.order_by(SalesImportTemplate.usage_count.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def touch_sales_import_template_usage(template_id: str) -> bool:
+    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
+    kali template ini berhasil dipakai mencocokkan file baru."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesImportTemplate).filter(SalesImportTemplate.id == template_id).first()
+        if not obj:
+            return False
+        obj.usage_count = (obj.usage_count or 0) + 1
+        obj.last_used_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error touch usage sales_import_template: {e}")
+        return False
+    finally:
+        session.close()
 
 
 # ============================================================
 # FUNGSI TAMBAHAN CLIENT
 # ============================================================
-    finally:
-        session.close()
 
 def get_client_by_nama(nama: str) -> Optional[Dict[str, Any]]:
     """Cari client berdasarkan nama persis."""

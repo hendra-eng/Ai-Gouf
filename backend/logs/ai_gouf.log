@@ -1,131 +1,407 @@
-2026-09-15 03:35:00 - AI_Gouf - INFO - ============================================================
-2026-09-15 03:35:00 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 03:35:00 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 03:35:00 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 03:35:00 - AI_Gouf - INFO - Started at: 2026-09-15 03:35:00
-2026-09-15 03:35:00 - AI_Gouf - INFO - ============================================================
-2026-09-15 03:35:08 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 03:45:17 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-15 05:04:51 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:04:51 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:04:51 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:04:51 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:04:51 - AI_Gouf - INFO - Started at: 2026-09-15 05:04:51
-2026-09-15 05:04:51 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:05:00 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 05:10:47 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:10:47 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:10:47 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:10:47 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:10:47 - AI_Gouf - INFO - Started at: 2026-09-15 05:10:47
-2026-09-15 05:10:47 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:10:49 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 05:20:28 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:20:28 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:20:28 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:20:28 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:20:28 - AI_Gouf - INFO - Started at: 2026-09-15 05:20:28
-2026-09-15 05:20:28 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:20:31 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 05:34:28 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:34:28 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:34:28 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:34:28 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:34:28 - AI_Gouf - INFO - Started at: 2026-09-15 05:34:28
-2026-09-15 05:34:28 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:34:30 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 05:35:19 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-15 05:47:16 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:47:16 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:47:16 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:47:16 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:47:16 - AI_Gouf - INFO - Started at: 2026-09-15 05:47:16
-2026-09-15 05:47:16 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:47:18 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 05:53:41 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:53:41 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 05:53:41 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 05:53:41 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 05:53:41 - AI_Gouf - INFO - Started at: 2026-09-15 05:53:41
-2026-09-15 05:53:41 - AI_Gouf - INFO - ============================================================
-2026-09-15 05:53:46 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 06:02:59 - AI_Gouf - INFO - ============================================================
-2026-09-15 06:02:59 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 06:02:59 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 06:02:59 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 06:02:59 - AI_Gouf - INFO - Started at: 2026-09-15 06:02:59
-2026-09-15 06:02:59 - AI_Gouf - INFO - ============================================================
-2026-09-15 06:03:02 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 06:06:15 - AI_Gouf - INFO - ============================================================
-2026-09-15 06:06:15 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 06:06:15 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 06:06:15 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 06:06:15 - AI_Gouf - INFO - Started at: 2026-09-15 06:06:15
-2026-09-15 06:06:15 - AI_Gouf - INFO - ============================================================
-2026-09-15 06:06:17 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 07:55:20 - AI_Gouf - INFO - ============================================================
-2026-09-15 07:55:20 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 07:55:20 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 07:55:20 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 07:55:20 - AI_Gouf - INFO - Started at: 2026-09-15 07:55:20
-2026-09-15 07:55:20 - AI_Gouf - INFO - ============================================================
-2026-09-15 07:55:24 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 07:57:56 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-15 08:12:10 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-15 08:24:32 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:24:32 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 08:24:32 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 08:24:32 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 08:24:32 - AI_Gouf - INFO - Started at: 2026-09-15 08:24:32
-2026-09-15 08:24:32 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:24:35 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 08:31:17 - AI_Gouf.laporan_keuangan - INFO - 📊 KPI Bento dashboard dihitung: tahun=2026, bulan_sampai=9, revenue=0
-2026-09-15 08:38:30 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:38:30 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 08:38:30 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 08:38:30 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 08:38:30 - AI_Gouf - INFO - Started at: 2026-09-15 08:38:30
-2026-09-15 08:38:30 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:38:37 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 08:47:33 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:47:33 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 08:47:33 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 08:47:33 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 08:47:33 - AI_Gouf - INFO - Started at: 2026-09-15 08:47:33
-2026-09-15 08:47:33 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:47:36 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 08:57:03 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:57:03 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 08:57:03 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 08:57:03 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 08:57:03 - AI_Gouf - INFO - Started at: 2026-09-15 08:57:03
-2026-09-15 08:57:03 - AI_Gouf - INFO - ============================================================
-2026-09-15 08:57:06 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 09:26:47 - AI_Gouf - INFO - ============================================================
-2026-09-15 09:26:47 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 09:26:47 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 09:26:47 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 09:26:47 - AI_Gouf - INFO - Started at: 2026-09-15 09:26:47
-2026-09-15 09:26:47 - AI_Gouf - INFO - ============================================================
-2026-09-15 09:27:03 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 09:46:45 - AI_Gouf - INFO - ============================================================
-2026-09-15 09:46:45 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 09:46:45 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 09:46:45 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 09:46:45 - AI_Gouf - INFO - Started at: 2026-09-15 09:46:45
-2026-09-15 09:46:45 - AI_Gouf - INFO - ============================================================
-2026-09-15 09:46:53 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 11:03:25 - AI_Gouf - INFO - ============================================================
-2026-09-15 11:03:25 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 11:03:25 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 11:03:25 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 11:03:25 - AI_Gouf - INFO - Started at: 2026-09-15 11:03:25
-2026-09-15 11:03:25 - AI_Gouf - INFO - ============================================================
-2026-09-15 11:03:28 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
-2026-09-15 11:06:19 - AI_Gouf - INFO - ============================================================
-2026-09-15 11:06:19 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
-2026-09-15 11:06:19 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
-2026-09-15 11:06:19 - AI_Gouf - INFO - Log level: INFO
-2026-09-15 11:06:19 - AI_Gouf - INFO - Started at: 2026-09-15 11:06:19
-2026-09-15 11:06:19 - AI_Gouf - INFO - ============================================================
-2026-09-15 11:06:23 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 08:53:23 - AI_Gouf - INFO - ============================================================
+2026-09-17 08:53:23 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 08:53:23 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 08:53:23 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 08:53:23 - AI_Gouf - INFO - Started at: 2026-09-17 08:53:23
+2026-09-17 08:53:23 - AI_Gouf - INFO - ============================================================
+2026-09-17 08:53:39 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 08:54:24 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): admin
+2026-09-17 08:54:34 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): admin
+2026-09-17 09:13:09 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:09 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:13:09 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:13:09 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:13:09 - AI_Gouf - INFO - Started at: 2026-09-17 09:13:09
+2026-09-17 09:13:09 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:17 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 09:13:24 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:24 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:13:24 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:13:24 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:13:24 - AI_Gouf - INFO - Started at: 2026-09-17 09:13:24
+2026-09-17 09:13:24 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:31 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 09:13:34 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:34 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:13:34 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:13:34 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:13:34 - AI_Gouf - INFO - Started at: 2026-09-17 09:13:34
+2026-09-17 09:13:34 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:13:38 - AI_Gouf.auth - WARNING - JWT_SECRET_KEY belum di-set; nilai default hanya diizinkan untuk development.
+2026-09-17 09:36:43 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:36:43 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:36:43 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:36:43 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:36:43 - AI_Gouf - INFO - Started at: 2026-09-17 09:36:43
+2026-09-17 09:36:43 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:36:52 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 09:44:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:44:00 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:44:00 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:44:00 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:44:00 - AI_Gouf - INFO - Started at: 2026-09-17 09:44:00
+2026-09-17 09:44:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:44:07 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 09:47:59 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:47:59 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:47:59 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:47:59 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:47:59 - AI_Gouf - INFO - Started at: 2026-09-17 09:47:59
+2026-09-17 09:47:59 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:48:10 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 09:51:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:51:08 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 09:51:08 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 09:51:08 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 09:51:08 - AI_Gouf - INFO - Started at: 2026-09-17 09:51:08
+2026-09-17 09:51:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 09:51:23 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 13:11:36 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:11:36 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:11:36 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:11:36 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:11:36 - AI_Gouf - INFO - Started at: 2026-09-17 13:11:36
+2026-09-17 13:11:36 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:11:55 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:11:55 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:11:55 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:11:55 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:11:55 - AI_Gouf - INFO - Started at: 2026-09-17 13:11:55
+2026-09-17 13:11:55 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:18 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:18 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:12:18 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:12:18 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:12:18 - AI_Gouf - INFO - Started at: 2026-09-17 13:12:18
+2026-09-17 13:12:18 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:38 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:38 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:12:38 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:12:38 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:12:38 - AI_Gouf - INFO - Started at: 2026-09-17 13:12:38
+2026-09-17 13:12:38 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:12:57 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:12:57 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:12:57 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:12:57 - AI_Gouf - INFO - Started at: 2026-09-17 13:12:57
+2026-09-17 13:12:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:13:20 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:13:20 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:13:20 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:13:20 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:13:20 - AI_Gouf - INFO - Started at: 2026-09-17 13:13:20
+2026-09-17 13:13:20 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:13:41 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:13:41 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:13:41 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:13:41 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:13:41 - AI_Gouf - INFO - Started at: 2026-09-17 13:13:41
+2026-09-17 13:13:41 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:14:01 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:14:01 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:14:01 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:14:01 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:14:01 - AI_Gouf - INFO - Started at: 2026-09-17 13:14:01
+2026-09-17 13:14:01 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:14:09 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 13:14:49 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:14:49 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:14:49 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:14:49 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:14:49 - AI_Gouf - INFO - Started at: 2026-09-17 13:14:49
+2026-09-17 13:14:49 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:15:03 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): _test_sales_api_qa
+2026-09-17 13:17:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:17:11 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:17:11 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:17:11 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:17:11 - AI_Gouf - INFO - Started at: 2026-09-17 13:17:11
+2026-09-17 13:17:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:17:19 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 13:18:04 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:18:04 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:18:04 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:18:04 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:18:04 - AI_Gouf - INFO - Started at: 2026-09-17 13:18:04
+2026-09-17 13:18:04 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:18:11 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 13:59:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:59:54 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 13:59:54 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 13:59:54 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 13:59:54 - AI_Gouf - INFO - Started at: 2026-09-17 13:59:54
+2026-09-17 13:59:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 13:59:59 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 14:00:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:00:08 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:00:08 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:00:08 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:00:08 - AI_Gouf - INFO - Started at: 2026-09-17 14:00:08
+2026-09-17 14:00:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:00:20 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): _test_sales_ui_qa
+2026-09-17 14:17:17 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:17:17 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:17:17 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:17:17 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:17:17 - AI_Gouf - INFO - Started at: 2026-09-17 14:17:17
+2026-09-17 14:17:17 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:17:21 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 14:22:33 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:22:33 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:22:33 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:22:33 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:22:33 - AI_Gouf - INFO - Started at: 2026-09-17 14:22:33
+2026-09-17 14:22:33 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:22:37 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 14:32:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:32:11 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:32:11 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:32:11 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:32:11 - AI_Gouf - INFO - Started at: 2026-09-17 14:32:11
+2026-09-17 14:32:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:32:15 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 14:37:37 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:37:37 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:37:37 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:37:37 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:37:37 - AI_Gouf - INFO - Started at: 2026-09-17 14:37:37
+2026-09-17 14:37:37 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:37:41 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 14:40:19 - AI_Gouf.auth - WARNING - ❌ Login gagal (database): admin
+2026-09-17 14:47:05 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:47:05 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 14:47:05 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 14:47:05 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 14:47:05 - AI_Gouf - INFO - Started at: 2026-09-17 14:47:05
+2026-09-17 14:47:05 - AI_Gouf - INFO - ============================================================
+2026-09-17 14:47:09 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 16:58:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 16:58:57 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 16:58:57 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 16:58:57 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 16:58:57 - AI_Gouf - INFO - Started at: 2026-09-17 16:58:57
+2026-09-17 16:58:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 16:59:01 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 16:59:07 - AI_Gouf - INFO - ============================================================
+2026-09-17 16:59:07 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 16:59:07 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 16:59:07 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 16:59:07 - AI_Gouf - INFO - Started at: 2026-09-17 16:59:07
+2026-09-17 16:59:07 - AI_Gouf - INFO - ============================================================
+2026-09-17 16:59:10 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:00:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:00:00 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:00:00 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:00:00 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:00:00 - AI_Gouf - INFO - Started at: 2026-09-17 17:00:00
+2026-09-17 17:00:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:00:04 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:01:09 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:09 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:01:09 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:01:09 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:01:09 - AI_Gouf - INFO - Started at: 2026-09-17 17:01:09
+2026-09-17 17:01:09 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:13 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:01:17 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:17 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:01:17 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:01:17 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:01:17 - AI_Gouf - INFO - Started at: 2026-09-17 17:01:17
+2026-09-17 17:01:17 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:26 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:01:30 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:30 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:01:30 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:01:30 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:01:30 - AI_Gouf - INFO - Started at: 2026-09-17 17:01:30
+2026-09-17 17:01:30 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:35 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:01:41 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:41 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:01:41 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:01:41 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:01:41 - AI_Gouf - INFO - Started at: 2026-09-17 17:01:41
+2026-09-17 17:01:41 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:01:46 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:02:35 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:02:35 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:02:35 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:02:35 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:02:35 - AI_Gouf - INFO - Started at: 2026-09-17 17:02:35
+2026-09-17 17:02:35 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:03:03 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:03:03 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:03:03 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:03:03 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:03:03 - AI_Gouf - INFO - Started at: 2026-09-17 17:03:03
+2026-09-17 17:03:03 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:03:08 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 17:03:28 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:03:28 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 17:03:28 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 17:03:28 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 17:03:28 - AI_Gouf - INFO - Started at: 2026-09-17 17:03:28
+2026-09-17 17:03:28 - AI_Gouf - INFO - ============================================================
+2026-09-17 17:03:42 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): _test_migration_qa
+2026-09-17 20:00:46 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:00:46 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:00:46 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:00:46 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:00:46 - AI_Gouf - INFO - Started at: 2026-09-17 20:00:46
+2026-09-17 20:00:46 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:00:59 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:07:32 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:07:32 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:07:32 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:07:32 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:07:32 - AI_Gouf - INFO - Started at: 2026-09-17 20:07:32
+2026-09-17 20:07:32 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:07:38 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:07:42 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:07:42 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:07:42 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:07:42 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:07:42 - AI_Gouf - INFO - Started at: 2026-09-17 20:07:42
+2026-09-17 20:07:42 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:07:48 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:08:56 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:08:56 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:08:56 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:08:56 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:08:56 - AI_Gouf - INFO - Started at: 2026-09-17 20:08:56
+2026-09-17 20:08:56 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:09:00 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:09:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:09:08 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:09:08 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:09:08 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:09:08 - AI_Gouf - INFO - Started at: 2026-09-17 20:09:08
+2026-09-17 20:09:08 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:09:14 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:10:01 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:10:01 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:10:01 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:10:01 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:10:01 - AI_Gouf - INFO - Started at: 2026-09-17 20:10:01
+2026-09-17 20:10:01 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:10:10 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:16:36 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:16:36 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:16:36 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:16:36 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:16:36 - AI_Gouf - INFO - Started at: 2026-09-17 20:16:36
+2026-09-17 20:16:36 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:16:43 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:21:14 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:21:14 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:21:14 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:21:14 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:21:14 - AI_Gouf - INFO - Started at: 2026-09-17 20:21:14
+2026-09-17 20:21:14 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:21:19 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:22:47 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:22:47 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:22:47 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:22:47 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:22:47 - AI_Gouf - INFO - Started at: 2026-09-17 20:22:47
+2026-09-17 20:22:47 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:22:53 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:23:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:00 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:23:00 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:23:00 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:23:00 - AI_Gouf - INFO - Started at: 2026-09-17 20:23:00
+2026-09-17 20:23:00 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:05 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:23:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:11 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:23:11 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:23:11 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:23:11 - AI_Gouf - INFO - Started at: 2026-09-17 20:23:11
+2026-09-17 20:23:11 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:17 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:23:29 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:29 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:23:29 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:23:29 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:23:29 - AI_Gouf - INFO - Started at: 2026-09-17 20:23:29
+2026-09-17 20:23:29 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:46 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:23:46 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:23:46 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:23:46 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:23:46 - AI_Gouf - INFO - Started at: 2026-09-17 20:23:46
+2026-09-17 20:23:46 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:24:22 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:24:22 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:24:22 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:24:22 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:24:22 - AI_Gouf - INFO - Started at: 2026-09-17 20:24:22
+2026-09-17 20:24:22 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:24:27 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:25:03 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:25:03 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:25:03 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:25:03 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:25:03 - AI_Gouf - INFO - Started at: 2026-09-17 20:25:03
+2026-09-17 20:25:03 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:25:16 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): _test_upload_qa
+2026-09-17 20:32:43 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:32:43 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:32:43 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:32:43 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:32:43 - AI_Gouf - INFO - Started at: 2026-09-17 20:32:43
+2026-09-17 20:32:43 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:32:50 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:43:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:43:57 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:43:57 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:43:57 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:43:57 - AI_Gouf - INFO - Started at: 2026-09-17 20:43:57
+2026-09-17 20:43:57 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:44:03 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:56:47 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:56:47 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:56:47 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:56:47 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:56:47 - AI_Gouf - INFO - Started at: 2026-09-17 20:56:47
+2026-09-17 20:56:47 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:56:53 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 20:58:06 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:58:06 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 20:58:06 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 20:58:06 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 20:58:06 - AI_Gouf - INFO - Started at: 2026-09-17 20:58:06
+2026-09-17 20:58:06 - AI_Gouf - INFO - ============================================================
+2026-09-17 20:58:36 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): _test_promote_qa
+2026-09-17 21:13:21 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:13:21 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 21:13:21 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 21:13:21 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 21:13:21 - AI_Gouf - INFO - Started at: 2026-09-17 21:13:21
+2026-09-17 21:13:21 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:13:26 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 21:14:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:14:54 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 21:14:54 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 21:14:54 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 21:14:54 - AI_Gouf - INFO - Started at: 2026-09-17 21:14:54
+2026-09-17 21:14:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:14:59 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 21:15:23 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:15:23 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 21:15:23 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 21:15:23 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 21:15:23 - AI_Gouf - INFO - Started at: 2026-09-17 21:15:23
+2026-09-17 21:15:23 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:15:27 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 21:17:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:17:54 - AI_Gouf - INFO - AI Gouf Consulting v1.0.0 - Logging initialized
+2026-09-17 21:17:54 - AI_Gouf - INFO - Log file: logs\ai_gouf.log
+2026-09-17 21:17:54 - AI_Gouf - INFO - Log level: INFO
+2026-09-17 21:17:54 - AI_Gouf - INFO - Started at: 2026-09-17 21:17:54
+2026-09-17 21:17:54 - AI_Gouf - INFO - ============================================================
+2026-09-17 21:18:00 - AI_Gouf.cache_cleanup - INFO - 🧹 Job pembersihan cache ekstraksi terdaftar, jalan tiap hari jam 03:00.
+2026-09-17 21:20:06 - AI_Gouf.auth - INFO - ✅ Login berhasil (database): admin

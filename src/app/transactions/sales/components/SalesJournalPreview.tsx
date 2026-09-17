@@ -1,33 +1,37 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, X, Eye } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useAuth } from '@/lib/auth';
+import {
+  useSalesInvoices, updateSalesInvoice, upsertSalesAccountMapping,
+  getSalesAccountMappingByInvoice, createSalesActivityLog,
+  type BackendSalesInvoice, type BackendSalesAccountMapping,
+} from '@/lib/salesStore';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
-type InvoiceStatus = 'Diproses' | 'Siap Posting' | 'Diposting';
+type UiStatus = 'Diproses' | 'Siap Posting' | 'Diposting';
 
-interface Invoice {
-  id: string;
-  customer: string;
-  date: string;
-  amount: number;
-  status: InvoiceStatus;
+function keUiStatus(posting_status: string): UiStatus {
+  if (posting_status === 'Posted' || posting_status === 'Partial' || posting_status === 'Paid') return 'Diposting';
+  if (posting_status === 'Approved') return 'Siap Posting';
+  return 'Diproses';
 }
 
-const INITIAL_INVOICES: Invoice[] = [
-  { id: 'INV-2024-0185', customer: 'PT Maju Bersama', date: '14 Nov 2024', amount: 620000000, status: 'Diproses' },
-  { id: 'INV-2024-0184', customer: 'PT Solusi Digital', date: '14 Nov 2024', amount: 480000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0183', customer: 'PT Nusantara Teknologi', date: '12 Nov 2024', amount: 350000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0182', customer: 'CV Kreatif Indonesia', date: '10 Nov 2024', amount: 287500000, status: 'Diproses' },
-  { id: 'INV-2024-0181', customer: 'PT Global Solusi', date: '08 Nov 2024', amount: 225000000, status: 'Diposting' },
-  { id: 'INV-2024-0180', customer: 'PT Sejahtera Abadi', date: '06 Nov 2024', amount: 150000000, status: 'Diposting' },
-  { id: 'INV-2024-0179', customer: 'PT Inovasi Mandiri', date: '02 Nov 2024', amount: 175000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0178', customer: 'CV Mitra Usaha', date: '01 Nov 2024', amount: 98000000, status: 'Diproses' },
-];
+function formatTanggal(iso: string): string {
+  try {
+    const d = new Date(iso + 'T00:00:00');
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
+  } catch {
+    return '-';
+  }
+}
 
-const STATUS_BADGE: Record<InvoiceStatus, string> = {
+const STATUS_BADGE: Record<UiStatus, string> = {
   'Diproses': 'bg-blue-100 text-blue-700',
   'Siap Posting': 'bg-emerald-100 text-emerald-700',
   'Diposting': 'bg-gray-100 text-gray-600',
@@ -42,8 +46,7 @@ const STEPS = [
   { n: 6, label: 'Approve/Post', sub: 'Persetujuan' },
 ];
 
-// Step yang sudah tercapai berdasarkan status invoice saat ini.
-const stepForStatus = (status: InvoiceStatus) => {
+const stepForStatus = (status: UiStatus) => {
   if (status === 'Diposting') return 6;
   if (status === 'Siap Posting') return 5;
   return 4;
@@ -83,6 +86,10 @@ const DEFAULT_MAPPING: Mapping = {
   pph: null,
 };
 
+function mappingDariBackend(m: BackendSalesAccountMapping): Mapping {
+  return { piutang: m.piutang_account_code, pendapatan: m.pendapatan_account_code, ppn: m.ppn_account_code || PPN_ACCOUNTS[0].code, pph: m.pph_account_code };
+}
+
 const findAccount = (list: { code: string | null; name: string }[], code: string | null) =>
   list.find(a => a.code === code) ?? list[0];
 
@@ -90,10 +97,17 @@ const ITEMS_PER_PAGE = 5;
 
 export default function SalesJournalPreview() {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
 
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
+  // Journal Preview cuma menampilkan invoice yang BELUM final "Paid"
+  // (masih dalam proses klasifikasi/posting) -- invoice yang sudah lunas
+  // penuh ada di tab Posted.
+  const { invoices: backendInvoices, loading, refresh } = useSalesInvoices(clientId);
+  const invoices = useMemo(() => backendInvoices.filter(i => i.posting_status !== 'Paid'), [backendInvoices]);
+
   const [mappings, setMappings] = useState<Record<string, Mapping>>({});
-  const [selectedId, setSelectedId] = useState(INITIAL_INVOICES[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -101,11 +115,16 @@ export default function SalesJournalPreview() {
   const [showDocPreview, setShowDocPreview] = useState(false);
   const [isEditingMapping, setIsEditingMapping] = useState(false);
   const [draftMapping, setDraftMapping] = useState<Mapping>(DEFAULT_MAPPING);
+  const [savingMapping, setSavingMapping] = useState(false);
+
+  useEffect(() => {
+    if (!selectedId && invoices.length > 0) setSelectedId(invoices[0].id);
+  }, [invoices, selectedId]);
 
   const filteredInvoices = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return invoices;
-    return invoices.filter(inv => inv.id.toLowerCase().includes(q) || inv.customer.toLowerCase().includes(q));
+    return invoices.filter(inv => inv.invoice_no.toLowerCase().includes(q) || inv.customer_name.toLowerCase().includes(q));
   }, [invoices, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / ITEMS_PER_PAGE));
@@ -113,12 +132,31 @@ export default function SalesJournalPreview() {
   const pageStart = (safePage - 1) * ITEMS_PER_PAGE;
   const pagedInvoices = filteredInvoices.slice(pageStart, pageStart + ITEMS_PER_PAGE);
 
-  const selectedInvoice = invoices.find(inv => inv.id === selectedId) ?? invoices[0];
+  const selectedInvoice: BackendSalesInvoice | null = invoices.find(inv => inv.id === selectedId) ?? invoices[0] ?? null;
+
+  // Muat mapping akun (kalau sudah pernah disimpan) begitu invoice yang dipilih berganti.
+  useEffect(() => {
+    if (!selectedInvoice) return;
+    if (mappings[selectedInvoice.id]) return;
+    getSalesAccountMappingByInvoice(selectedInvoice.id)
+      .then(m => { if (m) setMappings(prev => ({ ...prev, [selectedInvoice.id]: mappingDariBackend(m) })); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInvoice?.id]);
+
+  if (!selectedInvoice) {
+    return (
+      <div className="card p-8 text-center text-xs text-muted-foreground">
+        {loading ? t('Memuat...') : t('Belum ada invoice penjualan untuk diproses ke jurnal.')}
+      </div>
+    );
+  }
+
+  const uiStatus = keUiStatus(selectedInvoice.posting_status);
   const mapping = mappings[selectedInvoice.id] ?? DEFAULT_MAPPING;
 
-  // Angka jurnal dihitung ulang dari nominal invoice yang sedang dipilih (bukan statis lagi).
-  const dpp = Math.round(selectedInvoice.amount / 1.11);
-  const ppn = selectedInvoice.amount - dpp;
+  const dpp = selectedInvoice.dpp || Math.round(selectedInvoice.gross_amount / 1.11);
+  const ppn = selectedInvoice.ppn || (selectedInvoice.gross_amount - dpp);
 
   const piutangAcc = findAccount(PIUTANG_ACCOUNTS, mapping.piutang);
   const pendapatanAcc = findAccount(PENDAPATAN_ACCOUNTS, mapping.pendapatan);
@@ -126,15 +164,15 @@ export default function SalesJournalPreview() {
   const pphAcc = findAccount(PPH_ACCOUNTS, mapping.pph);
 
   const journalLines = [
-    { no: 1, code: piutangAcc.code as string, name: piutangAcc.name, debit: selectedInvoice.amount, credit: 0 },
+    { no: 1, code: piutangAcc.code as string, name: piutangAcc.name, debit: selectedInvoice.gross_amount, credit: 0 },
     { no: 2, code: pendapatanAcc.code as string, name: pendapatanAcc.name, debit: 0, credit: dpp },
     { no: 3, code: ppnAcc.code as string, name: ppnAcc.name, debit: 0, credit: ppn },
   ];
 
-  const activeStep = stepForStatus(selectedInvoice.status);
-  const isPosted = selectedInvoice.status === 'Diposting';
+  const activeStep = stepForStatus(uiStatus);
+  const isPosted = uiStatus === 'Diposting';
 
-  const handleSelectInvoice = (inv: Invoice) => {
+  const handleSelectInvoice = (inv: BackendSalesInvoice) => {
     setSelectedId(inv.id);
     setIsEditingMapping(false);
   };
@@ -144,43 +182,81 @@ export default function SalesJournalPreview() {
     setCurrentPage(1);
   };
 
-  const goToPage = (p: number) => {
-    setCurrentPage(Math.min(Math.max(1, p), totalPages));
-  };
+  const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const startEditMapping = () => {
     setDraftMapping(mapping);
     setIsEditingMapping(true);
   };
 
-  const cancelEditMapping = () => {
-    setIsEditingMapping(false);
+  const cancelEditMapping = () => setIsEditingMapping(false);
+
+  const saveEditMapping = async () => {
+    setSavingMapping(true);
+    try {
+      const piutang = findAccount(PIUTANG_ACCOUNTS, draftMapping.piutang);
+      const pendapatan = findAccount(PENDAPATAN_ACCOUNTS, draftMapping.pendapatan);
+      const ppnA = findAccount(PPN_ACCOUNTS, draftMapping.ppn);
+      const pphA = findAccount(PPH_ACCOUNTS, draftMapping.pph);
+      await upsertSalesAccountMapping(selectedInvoice.id, clientId, {
+        piutang_account_code: piutang.code as string,
+        piutang_account_name: piutang.name,
+        pendapatan_account_code: pendapatan.code as string,
+        pendapatan_account_name: pendapatan.name,
+        ppn_account_code: ppnA.code,
+        ppn_account_name: ppnA.name,
+        pph_account_code: pphA.code,
+        pph_account_name: pphA.name,
+        is_ai_suggested: false,
+        mapped_by: clientId ?? undefined,
+      });
+      setMappings(prev => ({ ...prev, [selectedInvoice.id]: draftMapping }));
+      setIsEditingMapping(false);
+      toast.success(t('Mapping akun disimpan'), { description: selectedInvoice.invoice_no });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menyimpan mapping'));
+    } finally {
+      setSavingMapping(false);
+    }
   };
 
-  const saveEditMapping = () => {
-    setMappings(prev => ({ ...prev, [selectedInvoice.id]: draftMapping }));
-    setIsEditingMapping(false);
+  const handleApprove = async () => {
+    if (uiStatus !== 'Diproses') return;
+    try {
+      await updateSalesInvoice(selectedInvoice.id, { posting_status: 'Approved' });
+      toast.success(t('Klasifikasi akun disetujui'), { description: selectedInvoice.invoice_no });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menyetujui'));
+    }
   };
 
-  const updateInvoiceStatus = (id: string, status: InvoiceStatus) => {
-    setInvoices(prev => prev.map(inv => (inv.id === id ? { ...inv, status } : inv)));
-  };
-
-  const handleApprove = () => {
-    if (selectedInvoice.status !== 'Diproses') return;
-    updateInvoiceStatus(selectedInvoice.id, 'Siap Posting');
-  };
-
-  const handlePostJournal = () => {
-    if (selectedInvoice.status !== 'Siap Posting') return;
-    updateInvoiceStatus(selectedInvoice.id, 'Diposting');
-    setIsEditingMapping(false);
+  const handlePostJournal = async () => {
+    if (uiStatus !== 'Siap Posting') return;
+    try {
+      await updateSalesInvoice(selectedInvoice.id, {
+        posting_status: 'Posted',
+        posted_at: new Date().toISOString(),
+        posted_by: clientId ?? undefined,
+      });
+      await createSalesActivityLog({
+        client_id: clientId ?? undefined,
+        invoice_id: selectedInvoice.id,
+        event_type: 'JOURNAL_SYNC',
+        description: 'Jurnal berhasil disinkronkan ke General Ledger',
+        reference_no: selectedInvoice.invoice_no,
+        performed_by: user?.nama || user?.username || 'System',
+      }).catch(() => {});
+      setIsEditingMapping(false);
+      toast.success(t('Jurnal berhasil diposting'), { description: selectedInvoice.invoice_no });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal memposting jurnal'));
+    }
   };
 
   const footerMessage =
-    selectedInvoice.status === 'Diposting'
+    uiStatus === 'Diposting'
       ? t('Jurnal ini sudah diposting ke buku besar.')
-      : selectedInvoice.status === 'Siap Posting'
+      : uiStatus === 'Siap Posting'
       ? t('Jurnal ini siap untuk diposting. Silakan periksa kembali hasil klasifikasi akun dan pastikan sudah sesuai sebelum diposting ke buku besar.')
       : t('Jurnal masih diproses. Setujui klasifikasi akun terlebih dahulu sebelum bisa diposting.');
 
@@ -203,32 +279,35 @@ export default function SalesJournalPreview() {
         </div>
         <div className="overflow-y-auto max-h-[600px] scrollbar-thin">
           {pagedInvoices.length === 0 && (
-            <div className="p-4 text-center text-xs text-muted-foreground">{t('Tidak ada invoice yang cocok.')}</div>
+            <div className="p-4 text-center text-xs text-muted-foreground">{loading ? t('Memuat...') : t('Tidak ada invoice yang cocok.')}</div>
           )}
-          {pagedInvoices.map(inv => (
-            <div
-              key={inv.id}
-              onClick={() => handleSelectInvoice(inv)}
-              className={`p-3 border-b border-border/50 cursor-pointer transition-colors ${selectedInvoice.id === inv.id ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/30'}`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
-                    <span className="text-[9px] font-bold text-blue-600">INV</span>
+          {pagedInvoices.map(inv => {
+            const s = keUiStatus(inv.posting_status);
+            return (
+              <div
+                key={inv.id}
+                onClick={() => handleSelectInvoice(inv)}
+                className={`p-3 border-b border-border/50 cursor-pointer transition-colors ${selectedInvoice.id === inv.id ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-muted/30'}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
+                      <span className="text-[9px] font-bold text-blue-600">INV</span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">{inv.invoice_no}</p>
+                      <p className="text-[11px] text-muted-foreground">{inv.customer_name}</p>
+                      <p className="text-[11px] text-muted-foreground">{formatTanggal(inv.invoice_date)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-foreground">{inv.id}</p>
-                    <p className="text-[11px] text-muted-foreground">{inv.customer}</p>
-                    <p className="text-[11px] text-muted-foreground">{inv.date}</p>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs font-semibold text-foreground">{formatIDR(inv.gross_amount)}</p>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_BADGE[s]}`}>{t(s)}</span>
                   </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xs font-semibold text-foreground">{formatIDR(inv.amount)}</p>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_BADGE[inv.status]}`}>{t(inv.status)}</span>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
           <span>
@@ -270,7 +349,7 @@ export default function SalesJournalPreview() {
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-foreground">{t('Detail Journal Preview')}</h3>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[selectedInvoice.status]}`}>{t(selectedInvoice.status)}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[uiStatus]}`}>{t(uiStatus)}</span>
           </div>
           <p className="text-xs text-muted-foreground">{t('Lihat bagaimana transaksi penjualan diubah menjadi jurnal akuntansi')}</p>
 
@@ -302,15 +381,13 @@ export default function SalesJournalPreview() {
               {t('Source Document')}
             </h4>
             <div className="bg-muted/30 rounded-lg p-3 mb-3 flex items-center gap-3">
-              <div className="w-10 h-12 bg-white border border-border rounded flex items-center justify-center text-[9px] text-muted-foreground">PDF</div>
+              <div className="w-10 h-12 bg-white border border-border rounded flex items-center justify-center text-[9px] text-muted-foreground">INV</div>
               <div className="text-xs space-y-1">
                 {[
-                  ['Nama File', `${selectedInvoice.id}.pdf`],
-                  ['No. Invoice', selectedInvoice.id],
-                  ['Pelanggan', selectedInvoice.customer],
-                  ['Tanggal Invoice', selectedInvoice.date],
-                  ['Total Invoice', formatIDR(selectedInvoice.amount)],
-                  ['Tanggal Upload', '14 Nov 2024, 09:17'],
+                  ['No. Invoice', selectedInvoice.invoice_no],
+                  ['Pelanggan', selectedInvoice.customer_name],
+                  ['Tanggal Invoice', formatTanggal(selectedInvoice.invoice_date)],
+                  ['Total Invoice', formatIDR(selectedInvoice.gross_amount)],
                 ].map(([k, v]) => (
                   <div key={k} className="flex gap-2">
                     <span className="text-muted-foreground w-24 flex-shrink-0">{t(k)}</span>
@@ -335,14 +412,13 @@ export default function SalesJournalPreview() {
             </h4>
             <div className="space-y-2 text-xs">
               {[
-                ['No. Invoice', selectedInvoice.id],
-                ['Pelanggan', selectedInvoice.customer],
-                ['Tipe Transaksi', <span key="t" className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t('Penjualan Jasa')}</span>],
-                ['Status Pajak', <span key="s" className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t('Dikenakan PPN')}</span>],
+                ['No. Invoice', selectedInvoice.invoice_no],
+                ['Pelanggan', selectedInvoice.customer_name],
+                ['Tipe Transaksi', <span key="t" className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t(selectedInvoice.transaction_type || 'Penjualan Jasa')}</span>],
+                ['Status Pajak', <span key="s" className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t(selectedInvoice.tax_invoice_status)}</span>],
                 ['Total DPP', formatIDR(dpp)],
                 ['PPN (11%)', formatIDR(ppn)],
-                ['Total Invoice', formatIDR(selectedInvoice.amount)],
-                ['Confidence Score', <div key="c" className="flex items-center gap-2"><span className="text-emerald-600 font-bold">98%</span><div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: '98%' }} /></div></div>],
+                ['Total Invoice', formatIDR(selectedInvoice.gross_amount)],
               ].map(([k, v]) => (
                 <div key={String(k)} className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground flex-shrink-0">{t(k as string)}</span>
@@ -405,9 +481,10 @@ export default function SalesJournalPreview() {
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={saveEditMapping}
-                    className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+                    disabled={savingMapping}
+                    className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                   >
-                    {t('Simpan')}
+                    {savingMapping ? t('Menyimpan...') : t('Simpan')}
                   </button>
                   <button
                     onClick={cancelEditMapping}
@@ -441,7 +518,7 @@ export default function SalesJournalPreview() {
                 ['Dasar Pengenaan Pajak (DPP)', formatIDR(dpp)],
                 ['Tarif PPN', '11%'],
                 ['PPN Keluaran', formatIDR(ppn)],
-                ['Total Termasuk PPN', formatIDR(selectedInvoice.amount)],
+                ['Total Termasuk PPN', formatIDR(selectedInvoice.gross_amount)],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between">
                   <span className="text-muted-foreground">{t(k)}</span>
@@ -480,8 +557,8 @@ export default function SalesJournalPreview() {
                   ))}
                   <tr className="bg-muted/30 font-semibold">
                     <td colSpan={3} className="py-1.5 px-2 text-xs">{t('Total')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.amount.toLocaleString('id-ID')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.amount.toLocaleString('id-ID')}</td>
+                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.gross_amount.toLocaleString('id-ID')}</td>
+                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.gross_amount.toLocaleString('id-ID')}</td>
                   </tr>
                 </tbody>
               </table>
@@ -505,14 +582,14 @@ export default function SalesJournalPreview() {
             </button>
             <button
               onClick={handleApprove}
-              disabled={selectedInvoice.status !== 'Diproses'}
+              disabled={uiStatus !== 'Diproses'}
               className="px-3 py-1.5 border border-emerald-500 text-emerald-600 rounded-lg text-xs font-medium hover:bg-emerald-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             >
               <CheckCircle size={12} /> {t('Approve')}
             </button>
             <button
               onClick={handlePostJournal}
-              disabled={selectedInvoice.status !== 'Siap Posting'}
+              disabled={uiStatus !== 'Siap Posting'}
               className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary"
             >
               📋 {t('Post Journal')}
@@ -526,18 +603,18 @@ export default function SalesJournalPreview() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowDocPreview(false)}>
           <div className="bg-card rounded-xl shadow-xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">{selectedInvoice.id}.pdf</h3>
+              <h3 className="text-sm font-semibold text-foreground">{selectedInvoice.invoice_no}</h3>
               <button onClick={() => setShowDocPreview(false)} className="p-1 hover:bg-muted rounded">
                 <X size={16} />
               </button>
             </div>
             <div className="bg-muted/30 rounded-lg h-64 flex items-center justify-center text-xs text-muted-foreground border border-border">
-              {t('Pratinjau dokumen belum tersedia untuk data contoh ini.')}
+              {t('Pratinjau dokumen sumber belum tersedia (belum ada file yang tertaut ke invoice ini).')}
             </div>
             <div className="text-xs space-y-1 mt-3">
-              <div className="flex justify-between"><span className="text-muted-foreground">{t('Pelanggan')}</span><span className="font-medium text-foreground">{selectedInvoice.customer}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">{t('Tanggal')}</span><span className="font-medium text-foreground">{selectedInvoice.date}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">{t('Total')}</span><span className="font-medium text-foreground">{formatIDR(selectedInvoice.amount)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('Pelanggan')}</span><span className="font-medium text-foreground">{selectedInvoice.customer_name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('Tanggal')}</span><span className="font-medium text-foreground">{formatTanggal(selectedInvoice.invoice_date)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">{t('Total')}</span><span className="font-medium text-foreground">{formatIDR(selectedInvoice.gross_amount)}</span></div>
             </div>
           </div>
         </div>

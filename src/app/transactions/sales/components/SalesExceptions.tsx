@@ -1,46 +1,21 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight,
   X, Edit, CheckCircle, MoreHorizontal, Eye, Calendar,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
-import KpiCard from '@/components/shared/KpiCard';
-
-const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
+import { useAuth } from '@/lib/auth';
+import {
+  useSalesExceptions, updateSalesException, useSalesInvoices,
+  formatTanggalSingkat, type BackendSalesException,
+} from '@/lib/salesStore';
 
 type Priority = 'High' | 'Medium' | 'Low';
 type ExceptionStatus = 'Open' | 'In Review' | 'Resolved';
 
-interface ExceptionItem {
-  id: string;
-  date: string; // "14 Nov 2024"
-  customer: string;
-  type: string;
-  aiConf: number;
-  assignedTo: string | null;
-  status: ExceptionStatus;
-  priority: Priority;
-}
-
-const EXCEPTIONS: ExceptionItem[] = [
-  { id: 'INV-2024-0185', date: '14 Nov 2024', customer: 'PT Maju Bersama', type: 'Tax status unclear', aiConf: 32, assignedTo: 'Dewi Lestari', status: 'Open', priority: 'High' },
-  { id: 'INV-2024-0181', date: '14 Nov 2024', customer: 'PT Solusi Digital', type: 'Duplicate invoice', aiConf: 28, assignedTo: 'Budi Santoso', status: 'In Review', priority: 'High' },
-  { id: 'INV-2024-0176', date: '13 Nov 2024', customer: 'PT Nusantara Teknologi', type: 'Customer not mapped', aiConf: 45, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0172', date: '12 Nov 2024', customer: 'CV Kreatif Indonesia', type: 'Amount mismatch', aiConf: 38, assignedTo: 'Sari Dewi', status: 'In Review', priority: 'High' },
-  { id: 'INV-2024-0170', date: '12 Nov 2024', customer: 'PT Global Solusi', type: 'Missing due date', aiConf: 52, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0168', date: '11 Nov 2024', customer: 'PT Anugerah Jaya', type: 'Unbalanced journal', aiConf: 68, assignedTo: 'Rizky Pratama', status: 'Open', priority: 'Low' },
-  { id: 'INV-2024-0165', date: '10 Nov 2024', customer: 'PT Solusi Digital', type: 'Tax status unclear', aiConf: 56, assignedTo: null, status: 'In Review', priority: 'Medium' },
-  { id: 'INV-2024-0162', date: '09 Nov 2024', customer: 'PT Maju Bersama', type: 'Customer not mapped', aiConf: 72, assignedTo: 'Maya Putri', status: 'Resolved', priority: 'Low' },
-  { id: 'INV-2024-0159', date: '08 Nov 2024', customer: 'CV Kreatif Indonesia', type: 'Duplicate invoice', aiConf: 49, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0156', date: '07 Nov 2024', customer: 'PT Nusantara Teknologi', type: 'Amount mismatch', aiConf: 65, assignedTo: 'Dewi Lestari', status: 'Resolved', priority: 'Low' },
-];
-
-const EXCEPTION_TYPES = Array.from(new Set(EXCEPTIONS.map(e => e.type)));
-const CUSTOMERS = Array.from(new Set(EXCEPTIONS.map(e => e.customer)));
-const TEAM_MEMBERS = Array.from(new Set(EXCEPTIONS.map(e => e.assignedTo).filter((v): v is string => !!v)));
 const PAGE_SIZE = 10;
 
 const PRIORITY_STYLE: Record<Priority, string> = {
@@ -55,20 +30,14 @@ const STATUS_STYLE: Record<ExceptionStatus, string> = {
   Resolved: 'bg-emerald-100 text-emerald-700',
 };
 
-const MONTH_MAP: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, may: 4, jun: 5, jul: 6,
-  agu: 7, agt: 7, aug: 7, sep: 8, okt: 9, oct: 9, nov: 10, des: 11, dec: 11,
-};
-
-function parseDisplayDate(str: string): Date {
-  const [day, mon, year] = str.split(' ');
-  const monthIdx = MONTH_MAP[mon.toLowerCase().slice(0, 3)] ?? 0;
-  return new Date(Number(year), monthIdx, Number(day));
-}
-
 export default function SalesExceptions() {
   const { t } = useLanguage();
-  const [exceptions, setExceptions] = useState<ExceptionItem[]>(EXCEPTIONS);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+
+  const { exceptions: backendExceptions, loading, error, refresh } = useSalesExceptions(clientId);
+  const { invoices } = useSalesInvoices(clientId);
+  const invoiceById = useMemo(() => new Map(invoices.map(i => [i.id, i])), [invoices]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -76,47 +45,57 @@ export default function SalesExceptions() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [customerFilter, setCustomerFilter] = useState('all');
   const [assignedFilter, setAssignedFilter] = useState('all');
-  const [dateStart, setDateStart] = useState('2024-01-01');
-  const [dateEnd, setDateEnd] = useState('2024-12-31');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Selection / detail
-  const [selectedId, setSelectedId] = useState<string | null>(EXCEPTIONS[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState('source');
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set([EXCEPTIONS[0].id]));
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Edit form (drawer)
   const [isEditing, setIsEditing] = useState(false);
   const [editType, setEditType] = useState('');
-  const [editAssigned, setEditAssigned] = useState('');
+  const [editAssignToMe, setEditAssignToMe] = useState(false);
   const [editStatus, setEditStatus] = useState<ExceptionStatus>('Open');
+  const [saving, setSaving] = useState(false);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
+  const decorate = (e: BackendSalesException) => {
+    const inv = e.invoice_id ? invoiceById.get(e.invoice_id) : undefined;
+    return {
+      ...e,
+      displayId: inv?.invoice_no || e.id.slice(0, 8),
+      customer: inv?.customer_name || '-',
+      date: formatTanggalSingkat(e.created_at),
+    };
+  };
+  const exceptions = useMemo(() => backendExceptions.map(decorate), [backendExceptions, invoiceById]);
 
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  const EXCEPTION_TYPES = useMemo(() => Array.from(new Set(exceptions.map(e => e.exception_type))), [exceptions]);
+  const CUSTOMERS = useMemo(() => Array.from(new Set(exceptions.map(e => e.customer).filter(c => c !== '-'))), [exceptions]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const start = dateStart ? new Date(dateStart) : null;
     const end = dateEnd ? new Date(dateEnd + 'T23:59:59') : null;
     return exceptions.filter(e => {
-      if (q && !(e.id.toLowerCase().includes(q) || e.customer.toLowerCase().includes(q) || e.type.toLowerCase().includes(q))) return false;
+      if (q && !(e.displayId.toLowerCase().includes(q) || e.customer.toLowerCase().includes(q) || e.exception_type.toLowerCase().includes(q))) return false;
       if (severity !== 'all' && e.priority !== severity) return false;
-      if (typeFilter !== 'all' && e.type !== typeFilter) return false;
+      if (typeFilter !== 'all' && e.exception_type !== typeFilter) return false;
       if (customerFilter !== 'all' && e.customer !== customerFilter) return false;
-      if (assignedFilter !== 'all') {
-        if (assignedFilter === 'unassigned' ? !!e.assignedTo : e.assignedTo !== assignedFilter) return false;
-      }
-      const d = parseDisplayDate(e.date);
+      if (assignedFilter === 'unassigned' && e.assigned_to) return false;
+      if (assignedFilter === 'me' && e.assigned_to !== clientId) return false;
+      const d = new Date(e.created_at);
       if (start && d < start) return false;
       if (end && d > end) return false;
       return true;
     });
-  }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd]);
+  }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd, clientId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const [currentPage, setCurrentPage] = useState(1);
   const pageSafe = Math.min(currentPage, totalPages);
   const paginated = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
   const selected = exceptions.find(e => e.id === selectedId) || null;
@@ -125,7 +104,7 @@ export default function SalesExceptions() {
 
   const resetFilters = () => {
     setSearch(''); setSeverity('all'); setTypeFilter('all'); setCustomerFilter('all');
-    setAssignedFilter('all'); setDateStart('2024-01-01'); setDateEnd('2024-12-31');
+    setAssignedFilter('all'); setDateStart(''); setDateEnd('');
     setCurrentPage(1); setShowDatePicker(false);
   };
 
@@ -141,86 +120,98 @@ export default function SalesExceptions() {
   const toggleSelectAllOnPage = () => {
     setSelectedRows(prev => {
       const next = new Set(prev);
-      if (allOnPageSelected) {
-        paginated.forEach(e => next.delete(e.id));
-      } else {
-        paginated.forEach(e => next.add(e.id));
-      }
+      if (allOnPageSelected) paginated.forEach(e => next.delete(e.id));
+      else paginated.forEach(e => next.add(e.id));
       return next;
     });
   };
 
-  const openDetail = (e: ExceptionItem) => {
+  const openDetail = (e: { id: string }) => {
     setSelectedId(e.id);
     setDrawerTab('source');
     setIsEditing(false);
     setOpenMenuId(null);
   };
 
-  const updateException = (id: string, patch: Partial<ExceptionItem>) => {
-    setExceptions(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
-  };
-
   const startEdit = () => {
     if (!selected) return;
-    setEditType(selected.type);
-    setEditAssigned(selected.assignedTo || '');
-    setEditStatus(selected.status);
+    setEditType(selected.exception_type);
+    setEditAssignToMe(selected.assigned_to === clientId);
+    setEditStatus(selected.status as ExceptionStatus);
     setIsEditing(true);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!selected) return;
-    updateException(selected.id, {
-      type: editType,
-      assignedTo: editAssigned || null,
-      status: editStatus,
-    });
-    setIsEditing(false);
-    toast.success(t('Perubahan disimpan'), { description: selected.id });
+    setSaving(true);
+    try {
+      await updateSalesException(selected.id, {
+        exception_type: editType,
+        assigned_to: editAssignToMe ? (clientId ?? undefined) : null,
+        status: editStatus,
+        resolved_at: editStatus === 'Resolved' ? new Date().toISOString() : undefined,
+        resolved_by: editStatus === 'Resolved' ? (clientId ?? undefined) : undefined,
+      });
+      setIsEditing(false);
+      toast.success(t('Perubahan disimpan'), { description: selected.displayId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menyimpan perubahan'));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const acceptSuggestion = (id: string) => {
+  const acceptSuggestion = async (id: string) => {
     const target = exceptions.find(e => e.id === id);
     if (!target) return;
-    updateException(id, { status: target.status === 'Open' ? 'In Review' : target.status });
-    toast.success(t('Saran AI diterapkan'), { description: id });
+    try {
+      await updateSalesException(id, { status: target.status === 'Open' ? 'In Review' : target.status });
+      toast.success(t('Saran AI diterapkan'), { description: target.displayId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menerapkan saran'));
+    }
     setOpenMenuId(null);
   };
 
-  const resolveException = (id: string) => {
-    updateException(id, { status: 'Resolved' });
-    toast.success(t('Exception ditandai selesai'), { description: id });
+  const resolveException = async (id: string) => {
+    const target = exceptions.find(e => e.id === id);
+    try {
+      await updateSalesException(id, { status: 'Resolved', resolved_at: new Date().toISOString(), resolved_by: clientId ?? undefined });
+      toast.success(t('Exception ditandai selesai'), { description: target?.displayId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menandai selesai'));
+    }
     setOpenMenuId(null);
   };
 
   const viewOriginalFile = () => {
     toast.info(t('File asli belum tersedia'), {
-      description: t('Data ini masih data contoh dan belum terhubung ke file sumber asli.'),
+      description: t('Exception ini belum tertaut ke source row/file asli.'),
     });
   };
 
   return (
     <div className="space-y-4">
-      {/* KPI Cards */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={refresh} className="underline font-medium">{t('Coba lagi')}</button>
+        </div>
+      )}
+
+      {/* KPI Cards -- pakai div biasa (bukan KpiCard) supaya konsisten dgn revisi sebelumnya */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {[
-          { label: 'Total Exceptions', value: String(exceptions.length), change: 26.3, icon: 'ExclamationTriangleIcon', iconColor: 'text-amber-600', iconBg: 'bg-amber-50' },
-          { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length), change: 50.0, icon: 'ExclamationCircleIcon', iconColor: 'text-red-600', iconBg: 'bg-red-50' },
-          { label: 'Missing Tax Info', value: String(exceptions.filter(e => e.type === 'Tax status unclear').length), change: -12.5, icon: 'DocumentTextIcon', iconColor: 'text-orange-600', iconBg: 'bg-orange-50' },
-          { label: 'Low Confidence', value: String(exceptions.filter(e => e.aiConf < 40).length), change: 20.0, icon: 'CpuChipIcon', iconColor: 'text-purple-600', iconBg: 'bg-purple-50' },
-          { label: 'Duplicate Invoice', value: String(exceptions.filter(e => e.type === 'Duplicate invoice').length), change: -28.6, icon: 'DocumentDuplicateIcon', iconColor: 'text-blue-600', iconBg: 'bg-blue-50' },
+          { label: 'Total Exceptions', value: String(exceptions.length) },
+          { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length) },
+          { label: 'Missing Tax Info', value: String(exceptions.filter(e => e.exception_type === 'Tax status unclear').length) },
+          { label: 'Low Confidence', value: String(exceptions.filter(e => (e.ai_confidence ?? 0) < 40).length) },
+          { label: 'Duplicate Invoice', value: String(exceptions.filter(e => e.exception_type === 'Duplicate invoice').length) },
         ].map(k => (
-          <KpiCard
-            key={k.label}
-            title={t(k.label)}
-            value={k.value}
-            change={k.change}
-            changeLabel={t('vs periode sebelumnya')}
-            icon={k.icon}
-            iconColor={k.iconColor}
-            iconBg={k.iconBg}
-          />
+          <div key={k.label} className="card p-4">
+            <p className="text-xs text-muted-foreground">{t(k.label)}</p>
+            <p className="text-xl font-bold text-foreground mt-1">{k.value}</p>
+          </div>
         ))}
       </div>
 
@@ -278,9 +269,8 @@ export default function SalesExceptions() {
             >
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-foreground">
-                {new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                {' – '}
-                {new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {dateStart ? new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : t('Semua')}
+                {dateEnd ? ` – ${new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
               </span>
             </button>
             {showDatePicker && (
@@ -310,9 +300,7 @@ export default function SalesExceptions() {
           >
             <option value="all">{t('Semua (Assigned To)')}</option>
             <option value="unassigned">{t('Belum Ditugaskan')}</option>
-            {TEAM_MEMBERS.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
+            <option value="me">{t('Ditugaskan ke Saya')}</option>
           </select>
 
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
@@ -339,7 +327,7 @@ export default function SalesExceptions() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 && (
+                {!loading && paginated.length === 0 && (
                   <tr>
                     <td colSpan={9} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada exception yang cocok dengan filter.')}</td>
                   </tr>
@@ -354,20 +342,20 @@ export default function SalesExceptions() {
                       <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-border" />
                     </td>
                     <td className="py-2.5 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority]}`}>{t(e.priority)}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(e.priority)}</span>
                     </td>
                     <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
-                    <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{e.id}</td>
+                    <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
                     <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
-                    <td className="py-2.5 px-2 text-muted-foreground">{t(e.type)}</td>
+                    <td className="py-2.5 px-2 text-muted-foreground">{t(e.exception_type)}</td>
                     <td className="py-2.5 px-2">
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-semibold ${e.aiConf < 40 ? 'text-red-600' : e.aiConf < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.aiConf}%</span>
+                        <span className={`font-semibold ${(e.ai_confidence ?? 0) < 40 ? 'text-red-600' : (e.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence ?? 0}%</span>
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assignedTo || '—'}</td>
+                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === clientId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
                     <td className="py-2.5 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status]}`}>{t(e.status)}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
                     </td>
                     <td className="py-2.5 px-2 relative" onClick={ev => ev.stopPropagation()}>
                       <button
@@ -377,7 +365,7 @@ export default function SalesExceptions() {
                         <MoreHorizontal size={14} />
                       </button>
                       {openMenuId === e.id && (
-                        <div ref={menuRef} className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
+                        <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
                           <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
                             <Eye size={12} /> {t('Lihat Detail')}
                           </button>
@@ -429,12 +417,12 @@ export default function SalesExceptions() {
               <button onClick={() => { setSelectedId(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
             </div>
             <div className="flex items-center justify-between">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority]}`}>🔴 {t(selected.priority)} {t('Priority')}</span>
-              <span className="text-xs text-muted-foreground">ID: {selected.id}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(selected.priority)} {t('Priority')}</span>
+              <span className="text-xs text-muted-foreground">ID: {selected.displayId}</span>
             </div>
             <div>
-              <h4 className="text-sm font-bold text-foreground">{t(selected.type)}</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('Status pajak pelanggan tidak dapat dipastikan dari data sumber.')}</p>
+              <h4 className="text-sm font-bold text-foreground">{t(selected.exception_type)}</h4>
+              {selected.ai_suggestion && <p className="text-xs text-muted-foreground mt-0.5">{selected.ai_suggestion}</p>}
             </div>
 
             {!isEditing && (
@@ -442,11 +430,9 @@ export default function SalesExceptions() {
                 {[
                   ['Tanggal', selected.date],
                   ['Customer', selected.customer],
-                  ['Transaction ID', selected.id],
-                  ['No. Invoice (Source)', 'SI-001238'],
-                  ['Amount', formatIDR(620000000)],
-                  ['AI Confidence', <span key="c" className={`font-bold ${selected.aiConf < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.aiConf}%</span>],
-                  ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status]}`}>{t(selected.status)}</span>],
+                  ['Transaction ID', selected.displayId],
+                  ['AI Confidence', <span key="c" className={`font-bold ${(selected.ai_confidence ?? 0) < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence ?? 0}%</span>],
+                  ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(selected.status)}</span>],
                 ].map(([k, v]) => (
                   <div key={String(k)} className="flex justify-between">
                     <span className="text-muted-foreground">{t(k as string)}</span>
@@ -460,17 +446,12 @@ export default function SalesExceptions() {
               <div className="space-y-2 text-xs">
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Exception Type')}</label>
-                  <select value={editType} onChange={ev => setEditType(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                    {EXCEPTION_TYPES.map(type => <option key={type} value={type}>{t(type)}</option>)}
-                  </select>
+                  <input value={editType} onChange={ev => setEditType(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
                 </div>
-                <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Assigned To')}</label>
-                  <select value={editAssigned} onChange={ev => setEditAssigned(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                    <option value="">{t('Belum Ditugaskan')}</option>
-                    {TEAM_MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
+                <label className="flex items-center gap-2 text-xs text-foreground">
+                  <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-border" />
+                  {t('Tugaskan ke saya')}
+                </label>
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Status')}</label>
                   <select value={editStatus} onChange={ev => setEditStatus(ev.target.value as ExceptionStatus)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
@@ -481,7 +462,7 @@ export default function SalesExceptions() {
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-                  <button onClick={saveEdit} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors">{t('Simpan')}</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
                 </div>
               </div>
             )}
@@ -503,23 +484,25 @@ export default function SalesExceptions() {
                       <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('Lihat File Asli ↗')}</button>
                     </div>
                     <div className="bg-muted/40 rounded-lg p-3 font-mono text-[11px] text-foreground space-y-0.5">
-                      <p>{t('Invoice No')} : SI-001238</p>
-                      <p>{t('Date')}       : 14/11/2024</p>
-                      <p>{t('Customer')}   : PT Maju Bersama</p>
-                      <p>{t('Amount')}     : Rp 620.000.000</p>
-                      <p>{t('Notes')}      : {t('Penjualan software')}</p>
+                      {selected.source_snippet ? (
+                        Object.entries(selected.source_snippet).map(([k, v]) => (
+                          <p key={k}>{k}: {String(v)}</p>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">{t('Belum ada cuplikan data sumber untuk exception ini.')}</p>
+                      )}
                     </div>
                   </div>
                 )}
                 {drawerTab === 'ai' && (
                   <div className="text-xs text-muted-foreground space-y-2">
                     <p className="font-semibold text-foreground">{t('Saran AI')}</p>
-                    <p>{t('Berdasarkan analisis, transaksi ini kemungkinan besar adalah Penjualan Jasa dengan PPN 11%. Disarankan untuk memverifikasi NPWP pelanggan.')}</p>
+                    <p>{selected.ai_suggestion || t('Belum ada saran AI untuk exception ini.')}</p>
                   </div>
                 )}
                 {drawerTab === 'history' && (
                   <div className="text-xs text-muted-foreground">
-                    <p>{t('Belum ada riwayat perubahan.')}</p>
+                    <p>{selected.resolved_at ? `${t('Diselesaikan pada')} ${formatTanggalSingkat(selected.resolved_at)}` : t('Belum ada riwayat perubahan.')}</p>
                   </div>
                 )}
 

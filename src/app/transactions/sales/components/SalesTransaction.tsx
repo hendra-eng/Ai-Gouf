@@ -7,15 +7,26 @@ import {
   Calendar, CheckCircle, Send, Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useAuth } from '@/lib/auth';
 import KpiCard from '@/components/shared/KpiCard';
+import {
+  useSalesInvoices, createSalesInvoice, updateSalesInvoice, deleteSalesInvoice,
+  createSalesActivityLog, type BackendSalesInvoice,
+} from '@/lib/salesStore';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 type TrxStatus = 'Draft' | 'Review' | 'Approved' | 'Posted' | 'Partial' | 'Paid';
 
+// Bentuk baris tabel di UI ini -- dipetakan dari BackendSalesInvoice
+// (backend/modules/transactions/sales_v1.py). `id` di sini tetap
+// invoice_no (yang tampil di tabel/URL), `uuid` menyimpan id asli
+// (primary key UUID) yang dipakai untuk panggilan PUT/DELETE ke backend.
 interface TrxItem {
-  id: string;
-  date: string; // "02 Jan 2024"
+  uuid: string;
+  id: string; // invoice_no
+  date: string; // tampilan "02 Jan 2024"
+  dateISO: string;
   customer: string;
   desc: string;
   dpp: number;
@@ -25,6 +36,7 @@ interface TrxItem {
   paid: number;
   outstanding: number;
   dueDate: string;
+  dueDateISO: string;
   type: string;
   journal: string;
   status: TrxStatus;
@@ -32,18 +44,39 @@ interface TrxItem {
   taxStatus: string;
 }
 
-const TRANSACTIONS: TrxItem[] = [
-  { id: 'INV-2024-0001', date: '02 Jan 2024', customer: 'PT Maju Bersama', desc: 'Penjualan barang elektronik', dpp: 50000000, ppn: 5500000, pph: 500000, gross: 55000000, paid: 55000000, outstanding: 0, dueDate: '16 Jan 2024', type: 'Penjualan Barang', journal: 'JR-2401-001', status: 'Paid', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0002', date: '05 Jan 2024', customer: 'PT Solusi Digital', desc: 'Implementasi software', dpp: 120000000, ppn: 13200000, pph: 1200000, gross: 132000000, paid: 66000000, outstanding: 66000000, dueDate: '04 Feb 2024', type: 'Penjualan Jasa', journal: 'JR-2401-002', status: 'Partial', project: 'PJT-002 - Implementasi ERP', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0003', date: '08 Jan 2024', customer: 'PT Nusantara Teknologi', desc: 'Lisensi tahunan', dpp: 75000000, ppn: 8250000, pph: 750000, gross: 82500000, paid: 0, outstanding: 82500000, dueDate: '22 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-003', status: 'Draft', project: 'PJT-003 - Lisensi Software', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0004', date: '10 Jan 2024', customer: 'CV Kreatif Indonesia', desc: 'Konsultasi manajemen', dpp: 40000000, ppn: 4400000, pph: 400000, gross: 44000000, paid: 44000000, outstanding: 0, dueDate: '24 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-003', status: 'Posted', project: 'PJT-004 - Konsultasi', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0005', date: '12 Jan 2024', customer: 'PT Global Solusi', desc: 'Perangkat keras IT', dpp: 200000000, ppn: 22000000, pph: 2000000, gross: 220000000, paid: 0, outstanding: 220000000, dueDate: '11 Feb 2024', type: 'Penjualan Barang', journal: 'JR-2401-004', status: 'Review', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0006', date: '15 Jan 2024', customer: 'PT Aneka Sarana', desc: 'Maintenance bulanan', dpp: 35000000, ppn: 3850000, pph: 350000, gross: 38500000, paid: 38500000, outstanding: 0, dueDate: '29 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-004', status: 'Posted', project: 'PJT-005 - Maintenance', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0007', date: '18 Jan 2024', customer: 'PT Citra Abadi', desc: 'Penjualan spare part', dpp: 90000000, ppn: 9900000, pph: 900000, gross: 99000000, paid: 49950000, outstanding: 49050000, dueDate: '01 Feb 2024', type: 'Penjualan Barang', journal: 'JR-2401-005', status: 'Approved', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0008', date: '22 Jan 2024', customer: 'PT Sentosa Makmur', desc: 'Jasa instalasi', dpp: 60000000, ppn: 6600000, pph: 600000, gross: 66000000, paid: 0, outstanding: 66000000, dueDate: '21 Feb 2024', type: 'Penjualan Jasa', journal: '', status: 'Draft', project: 'PJT-006 - Instalasi', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0009', date: '25 Jan 2024', customer: 'CV Prima Karya', desc: 'Pembuatan sistem', dpp: 110000000, ppn: 12100000, pph: 1100000, gross: 121000000, paid: 121000000, outstanding: 0, dueDate: '08 Feb 2024', type: 'Penjualan Jasa', journal: 'JR-2401-005', status: 'Paid', project: 'PJT-002 - Implementasi ERP', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0010', date: '28 Jan 2024', customer: 'PT Berkah Sejahtera', desc: 'Training pengguna', dpp: 25000000, ppn: 2750000, pph: 250000, gross: 27500000, paid: 0, outstanding: 27500000, dueDate: '27 Feb 2024', type: 'Penjualan Jasa', journal: '', status: 'Review', project: 'PJT-004 - Konsultasi', taxStatus: 'Belum Terbit Faktur' },
-];
+function petakanDariBackend(inv: BackendSalesInvoice): TrxItem {
+  return {
+    uuid: inv.id,
+    id: inv.invoice_no,
+    date: formatTanggal(inv.invoice_date),
+    dateISO: inv.invoice_date,
+    customer: inv.customer_name,
+    desc: inv.description || '',
+    dpp: inv.dpp,
+    ppn: inv.ppn,
+    pph: inv.pph,
+    gross: inv.gross_amount,
+    paid: inv.paid_amount,
+    outstanding: inv.outstanding_amount,
+    dueDate: inv.due_date ? formatTanggal(inv.due_date) : '-',
+    dueDateISO: inv.due_date || '',
+    type: inv.transaction_type || '-',
+    journal: inv.journal_entry_id != null ? String(inv.journal_entry_id) : '',
+    status: (inv.posting_status as TrxStatus) || 'Draft',
+    project: inv.project_name || '-',
+    taxStatus: inv.tax_invoice_status,
+  };
+}
+
+function formatTanggal(iso: string): string {
+  try {
+    const d = new Date(iso + 'T00:00:00');
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
+  } catch {
+    return '-';
+  }
+}
 
 const STATUS_STYLE: Record<string, string> = {
   Paid: 'bg-emerald-100 text-emerald-700',
@@ -54,39 +87,25 @@ const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-purple-100 text-purple-700',
 };
 
-const CUSTOMERS = Array.from(new Set(TRANSACTIONS.map(r => r.customer)));
-const PROJECTS = Array.from(new Set(TRANSACTIONS.map(r => r.project)));
-const TAX_STATUSES = Array.from(new Set(TRANSACTIONS.map(r => r.taxStatus)));
-const POSTING_STATUSES = Array.from(new Set(TRANSACTIONS.map(r => r.status)));
-const TYPES = Array.from(new Set(TRANSACTIONS.map(r => r.type)));
-
-const MONTH_MAP: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, mei: 4, may: 4, jun: 5, jul: 6,
-  agu: 7, agt: 7, aug: 7, sep: 8, okt: 9, oct: 9, nov: 10, des: 11, dec: 11,
-};
-function parseDisplayDate(str: string): Date {
-  const [day, mon, year] = str.split(' ');
-  return new Date(Number(year), MONTH_MAP[mon.toLowerCase().slice(0, 3)] ?? 0, Number(day));
-}
-function toDisplayDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
-}
+const TRANSACTION_TYPES = ['Penjualan Barang', 'Penjualan Jasa'];
+const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 'Partial', 'Paid'];
 
 const emptyForm = {
   date: new Date().toISOString().slice(0, 10),
   customer: '',
   desc: '',
   dpp: '',
-  type: TYPES[0],
-  project: PROJECTS[0],
+  type: TRANSACTION_TYPES[0],
+  project: '',
   dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
 };
 
 export default function SalesTransaction() {
   const { t } = useLanguage();
-  const [transactions, setTransactions] = useState<TrxItem[]>(TRANSACTIONS);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(clientId);
+  const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -94,12 +113,16 @@ export default function SalesTransaction() {
   const [taxStatusFilter, setTaxStatusFilter] = useState('all');
   const [postingStatusFilter, setPostingStatusFilter] = useState('all');
   const [projectFilter, setProjectFilter] = useState('all');
-  const [dateStart, setDateStart] = useState('2024-01-01');
-  const [dateEnd, setDateEnd] = useState('2024-12-31');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  const CUSTOMERS = useMemo(() => Array.from(new Set(transactions.map(r => r.customer))), [transactions]);
+  const PROJECTS = useMemo(() => Array.from(new Set(transactions.map(r => r.project).filter(p => p !== '-'))), [transactions]);
+  const TAX_STATUSES = useMemo(() => Array.from(new Set(transactions.map(r => r.taxStatus))), [transactions]);
+
   // Table selection / drawer
-  const [selectedId, setSelectedId] = useState<string | null>(TRANSACTIONS[0].id);
+  const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState('detail');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -107,6 +130,7 @@ export default function SalesTransaction() {
   // Edit drawer
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ customer: '', desc: '', dpp: 0, project: '', dueDate: '' });
+  const [saving, setSaving] = useState(false);
 
   // Add transaction modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -130,9 +154,9 @@ export default function SalesTransaction() {
       if (taxStatusFilter !== 'all' && r.taxStatus !== taxStatusFilter) return false;
       if (postingStatusFilter !== 'all' && r.status !== postingStatusFilter) return false;
       if (projectFilter !== 'all' && r.project !== projectFilter) return false;
-      const d = parseDisplayDate(r.date);
-      if (start && d < start) return false;
-      if (end && d > end) return false;
+      const d = r.dateISO ? new Date(r.dateISO) : null;
+      if (start && d && d < start) return false;
+      if (end && d && d > end) return false;
       return true;
     });
   }, [transactions, search, customerFilter, taxStatusFilter, postingStatusFilter, projectFilter, dateStart, dateEnd]);
@@ -140,13 +164,13 @@ export default function SalesTransaction() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
   const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
-  const selectedTrx = transactions.find(r => r.id === selectedId) || null;
+  const selectedTrx = transactions.find(r => r.uuid === selectedUuid) || null;
 
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const resetFilters = () => {
     setSearch(''); setCustomerFilter('all'); setTaxStatusFilter('all'); setPostingStatusFilter('all');
-    setProjectFilter('all'); setDateStart('2024-01-01'); setDateEnd('2024-12-31');
+    setProjectFilter('all'); setDateStart(''); setDateEnd('');
     setCurrentPage(1); setShowDatePicker(false);
   };
 
@@ -157,67 +181,103 @@ export default function SalesTransaction() {
       return next;
     });
   };
-  const allOnPageSelected = paginated.length > 0 && paginated.every(r => selectedRows.has(r.id));
+  const allOnPageSelected = paginated.length > 0 && paginated.every(r => selectedRows.has(r.uuid));
   const toggleSelectAllOnPage = () => {
     setSelectedRows(prev => {
       const next = new Set(prev);
-      if (allOnPageSelected) paginated.forEach(r => next.delete(r.id));
-      else paginated.forEach(r => next.add(r.id));
+      if (allOnPageSelected) paginated.forEach(r => next.delete(r.uuid));
+      else paginated.forEach(r => next.add(r.uuid));
       return next;
     });
   };
 
   const openDetail = (row: TrxItem) => {
-    setSelectedId(row.id);
+    setSelectedUuid(row.uuid);
     setDrawerTab('detail');
     setIsEditing(false);
     setOpenMenuId(null);
   };
 
-  const updateTrx = (id: string, patch: Partial<TrxItem>) => {
-    setTransactions(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
-  };
-
   const startEdit = (row?: TrxItem) => {
     const target = row || selectedTrx;
     if (!target) return;
-    setEditForm({ customer: target.customer, desc: target.desc, dpp: target.dpp, project: target.project, dueDate: target.dueDate });
+    setEditForm({ customer: target.customer, desc: target.desc, dpp: target.dpp, project: target.project === '-' ? '' : target.project, dueDate: target.dueDateISO });
     setIsEditing(true);
   };
-  const saveEdit = () => {
+
+  const saveEdit = async () => {
     if (!selectedTrx) return;
     const dpp = Number(editForm.dpp) || 0;
     const ppn = Math.round(dpp * 0.11);
     const pph = Math.round(dpp * 0.01);
     const gross = dpp + ppn - pph;
-    updateTrx(selectedTrx.id, { customer: editForm.customer, desc: editForm.desc, dpp, ppn, pph, gross, project: editForm.project, dueDate: editForm.dueDate });
-    setIsEditing(false);
-    toast.success(t('Perubahan disimpan'), { description: selectedTrx.id });
+    setSaving(true);
+    try {
+      await updateSalesInvoice(selectedTrx.uuid, {
+        customer_name: editForm.customer,
+        description: editForm.desc,
+        dpp, ppn, pph,
+        gross_amount: gross,
+        project_name: editForm.project || undefined,
+        due_date: editForm.dueDate || undefined,
+      });
+      setIsEditing(false);
+      toast.success(t('Perubahan disimpan'), { description: selectedTrx.id });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menyimpan perubahan'));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const approveTrx = (id: string) => {
-    updateTrx(id, { status: 'Approved' });
-    toast.success(t('Transaksi disetujui'), { description: id });
+  const approveTrx = async (uuid: string, invoiceNo: string) => {
+    try {
+      await updateSalesInvoice(uuid, { posting_status: 'Approved' });
+      toast.success(t('Transaksi disetujui'), { description: invoiceNo });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menyetujui transaksi'));
+    }
     setOpenMenuId(null);
   };
-  const postTrx = (id: string) => {
-    const row = transactions.find(r => r.id === id);
-    updateTrx(id, { status: 'Posted', journal: row?.journal || `JR-${Date.now().toString().slice(-6)}` });
-    toast.success(t('Transaksi diposting ke jurnal'), { description: id });
+
+  const postTrx = async (uuid: string, invoiceNo: string) => {
+    try {
+      await updateSalesInvoice(uuid, {
+        posting_status: 'Posted',
+        posted_at: new Date().toISOString(),
+        posted_by: clientId ?? undefined,
+      });
+      await createSalesActivityLog({
+        client_id: clientId ?? undefined,
+        invoice_id: uuid,
+        event_type: 'POSTING',
+        description: 'Berhasil memposting faktur penjualan',
+        reference_no: invoiceNo,
+        performed_by: user?.nama || user?.username || 'System',
+      }).catch(() => {});
+      toast.success(t('Transaksi diposting ke jurnal'), { description: invoiceNo });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal memposting transaksi'));
+    }
     setOpenMenuId(null);
   };
-  const deleteTrx = (id: string) => {
-    setTransactions(prev => prev.filter(r => r.id !== id));
-    if (selectedId === id) setSelectedId(null);
+
+  const deleteTrx = async (uuid: string, invoiceNo: string) => {
+    try {
+      await deleteSalesInvoice(uuid);
+      if (selectedUuid === uuid) setSelectedUuid(null);
+      toast.success(t('Transaksi dihapus'), { description: invoiceNo });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menghapus transaksi'));
+    }
     setOpenMenuId(null);
-    toast.success(t('Transaksi dihapus'), { description: id });
   };
 
   const handleExport = () => {
     const headers = ['Tanggal', 'Invoice', 'Customer', 'Deskripsi', 'DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Tipe', 'Jurnal', 'Status'];
     const rows = filtered.map(r => [r.date, r.id, r.customer, r.desc, r.dpp, r.ppn, r.pph, r.gross, r.paid, r.outstanding, r.dueDate, r.type, r.journal, r.status]);
     const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -227,40 +287,54 @@ export default function SalesTransaction() {
     toast.success(t('Export berhasil'), { description: `${filtered.length} ${t('baris diunduh sebagai CSV.')}` });
   };
 
-  const submitAddTransaction = () => {
+  const submitAddTransaction = async () => {
     if (!addForm.customer.trim() || !addForm.desc.trim() || !addForm.dpp) {
       toast.error(t('Lengkapi Customer, Deskripsi, dan DPP terlebih dahulu.'));
+      return;
+    }
+    if (!clientId) {
+      toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
       return;
     }
     const dpp = Number(addForm.dpp) || 0;
     const ppn = Math.round(dpp * 0.11);
     const pph = Math.round(dpp * 0.01);
     const gross = dpp + ppn - pph;
-    const nextNum = transactions.length + 1;
-    const newTrx: TrxItem = {
-      id: `INV-2024-${String(nextNum).padStart(4, '0')}`,
-      date: toDisplayDate(addForm.date),
-      customer: addForm.customer.trim(),
-      desc: addForm.desc.trim(),
-      dpp, ppn, pph, gross,
-      paid: 0,
-      outstanding: gross,
-      dueDate: toDisplayDate(addForm.dueDate),
-      type: addForm.type,
-      journal: '',
-      status: 'Draft',
-      project: addForm.project,
-      taxStatus: 'Belum Terbit Faktur',
-    };
-    setTransactions(prev => [newTrx, ...prev]);
-    setShowAddModal(false);
-    setAddForm(emptyForm);
-    setCurrentPage(1);
-    toast.success(t('Transaksi ditambahkan'), { description: newTrx.id });
+    const invoiceNo = `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+    try {
+      await createSalesInvoice({
+        client_id: clientId,
+        invoice_no: invoiceNo,
+        invoice_date: addForm.date,
+        due_date: addForm.dueDate,
+        customer_name: addForm.customer.trim(),
+        description: addForm.desc.trim(),
+        transaction_type: addForm.type,
+        project_name: addForm.project || undefined,
+        dpp, ppn, pph,
+        gross_amount: gross,
+        paid_amount: 0,
+        tax_invoice_status: 'Belum Terbit Faktur',
+        posting_status: 'Draft',
+      });
+      setShowAddModal(false);
+      setAddForm(emptyForm);
+      setCurrentPage(1);
+      toast.success(t('Transaksi ditambahkan'), { description: invoiceNo });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menambah transaksi'));
+    }
   };
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={refresh} className="underline font-medium">{t('Coba lagi')}</button>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -289,9 +363,8 @@ export default function SalesTransaction() {
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
               <span className="font-medium text-foreground">
-                {new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
-                {' – '}
-                {new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {dateStart ? new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : t('Semua')}
+                {dateEnd ? ` – ${new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
               </span>
             </button>
             {showDatePicker && (
@@ -373,7 +446,9 @@ export default function SalesTransaction() {
             <div>
               <h3 className="text-sm font-semibold text-foreground">{t('Daftar Transaksi Penjualan')}</h3>
               <p className="text-xs text-muted-foreground">
-                {filtered.length === 0
+                {loading
+                  ? t('Memuat...')
+                  : filtered.length === 0
                   ? t('Menampilkan 0 dari 0 transaksi')
                   : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('transaksi')}`}
               </p>
@@ -400,17 +475,17 @@ export default function SalesTransaction() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 && (
+                {!loading && paginated.length === 0 && (
                   <tr><td colSpan={15} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td></tr>
                 )}
                 {paginated.map(row => (
                   <tr
-                    key={row.id}
+                    key={row.uuid}
                     onClick={() => openDetail(row)}
-                    className={`border-b border-border/50 cursor-pointer transition-colors text-xs ${selectedTrx?.id === row.id ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                    className={`border-b border-border/50 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
                   >
                     <td className="py-2 px-3">
-                      <input type="checkbox" checked={selectedRows.has(row.id)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.id)} className="rounded border-border" />
+                      <input type="checkbox" checked={selectedRows.has(row.uuid)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.uuid)} className="rounded border-border" />
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.date}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-primary font-medium">{row.id}</td>
@@ -429,10 +504,10 @@ export default function SalesTransaction() {
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[row.status] || 'bg-muted text-muted-foreground'}`}>{t(row.status)}</span>
                     </td>
                     <td className="py-2 px-2 relative" onClick={ev => ev.stopPropagation()}>
-                      <button onClick={() => setOpenMenuId(prev => (prev === row.id ? null : row.id))} className="p-1 hover:bg-muted rounded">
+                      <button onClick={() => setOpenMenuId(prev => (prev === row.uuid ? null : row.uuid))} className="p-1 hover:bg-muted rounded">
                         <MoreHorizontal size={13} className="text-muted-foreground" />
                       </button>
-                      {openMenuId === row.id && (
+                      {openMenuId === row.uuid && (
                         <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
                           <button onClick={() => openDetail(row)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
                             <Eye size={12} /> {t('Lihat')}
@@ -441,16 +516,16 @@ export default function SalesTransaction() {
                             <Edit size={12} /> {t('Edit')}
                           </button>
                           {row.status === 'Review' && (
-                            <button onClick={() => approveTrx(row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-purple-600 hover:bg-purple-50 rounded-md">
+                            <button onClick={() => approveTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-purple-600 hover:bg-purple-50 rounded-md">
                               <CheckCircle size={12} /> {t('Approve')}
                             </button>
                           )}
                           {row.status !== 'Posted' && (
-                            <button onClick={() => postTrx(row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md">
+                            <button onClick={() => postTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md">
                               <Send size={12} /> {t('Post')}
                             </button>
                           )}
-                          <button onClick={() => deleteTrx(row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-md">
+                          <button onClick={() => deleteTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-md">
                             <Trash2 size={12} /> {t('Hapus')}
                           </button>
                         </div>
@@ -489,7 +564,7 @@ export default function SalesTransaction() {
                 <span className="text-sm font-bold text-foreground">{selectedTrx.id}</span>
                 <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selectedTrx.status]}`}>{t(selectedTrx.status)}</span>
               </div>
-              <button onClick={() => { setSelectedId(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
+              <button onClick={() => { setSelectedUuid(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
             </div>
             <p className="text-xs text-muted-foreground">{selectedTrx.desc}</p>
             <p className="text-xs text-muted-foreground">{selectedTrx.date}</p>
@@ -511,11 +586,8 @@ export default function SalesTransaction() {
               <div className="space-y-2 text-xs">
                 {[
                   ['Customer', selectedTrx.customer],
-                  ['NPWP', '01.234.567.8-901.000'],
                   ['Tipe Transaksi', t(selectedTrx.type)],
                   ['Project', selectedTrx.project],
-                  ['Sales Person', 'Budi Santoso'],
-                  ['Term of Payment', 'Net 14'],
                   ['Due Date', selectedTrx.dueDate],
                   ['Status Pajak', t(selectedTrx.taxStatus)],
                 ].map(([k, v]) => (
@@ -566,13 +638,11 @@ export default function SalesTransaction() {
                 </div>
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Project')}</label>
-                  <select value={editForm.project} onChange={ev => setEditForm(f => ({ ...f, project: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                    {PROJECTS.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
+                  <input value={editForm.project} onChange={ev => setEditForm(f => ({ ...f, project: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-                  <button onClick={saveEdit} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors">{t('Simpan')}</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
                 </div>
               </div>
             )}
@@ -580,7 +650,7 @@ export default function SalesTransaction() {
             {!isEditing && (
               <>
                 <div className="flex gap-2 pt-2 border-t border-border">
-                  <button onClick={() => { setDrawerTab('detail'); toast.info(t('Menampilkan detail transaksi')); }} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
+                  <button onClick={() => { setDrawerTab('detail'); }} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
                     <Eye size={12} /> {t('Lihat')}
                   </button>
                   <button onClick={() => startEdit()} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
@@ -589,14 +659,14 @@ export default function SalesTransaction() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => approveTrx(selectedTrx.id)}
+                    onClick={() => approveTrx(selectedTrx.uuid, selectedTrx.id)}
                     disabled={selectedTrx.status !== 'Review'}
                     className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {t('Approve')}
                   </button>
                   <button
-                    onClick={() => postTrx(selectedTrx.id)}
+                    onClick={() => postTrx(selectedTrx.uuid, selectedTrx.id)}
                     disabled={selectedTrx.status === 'Posted'}
                     className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -638,7 +708,7 @@ export default function SalesTransaction() {
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Tipe Transaksi')}</label>
                   <select value={addForm.type} onChange={ev => setAddForm(f => ({ ...f, type: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                    {TYPES.map(ty => <option key={ty} value={ty}>{t(ty)}</option>)}
+                    {TRANSACTION_TYPES.map(ty => <option key={ty} value={ty}>{t(ty)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -648,9 +718,7 @@ export default function SalesTransaction() {
               </div>
               <div>
                 <label className="text-[11px] text-muted-foreground">{t('Project')}</label>
-                <select value={addForm.project} onChange={ev => setAddForm(f => ({ ...f, project: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                  {PROJECTS.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <input value={addForm.project} onChange={ev => setAddForm(f => ({ ...f, project: ev.target.value }))} placeholder={t('Nama project (opsional)')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
               </div>
             </div>
             <div className="flex gap-2 pt-2 border-t border-border">

@@ -8,7 +8,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface SessionUser {
-  id: number;
+  // [FIX] Sebelumnya diketik `number` -- tapi backend (GET /api/v1/auth/me)
+  // membalas id_user milik management_users, yaitu UUID string (lihat
+  // db_client.py::User.id_user), bukan integer. Salesstore.tsx memakai
+  // field ini langsung sebagai client_id (FK ke management_users.id_user),
+  // jadi tipe di sini WAJIB cocok dengan nilai runtime aslinya.
+  id: string;
   username: string;
   role: string;
   role_label: string;
