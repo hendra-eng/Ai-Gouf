@@ -9,6 +9,8 @@ import SalesJournalPreview from './SalesJournalPreview';
 import SalesExceptions from './SalesExceptions';
 import SalesPosted from './SalesPosted';
 import { useLanguage } from '@/lib/language';
+import { useAuth } from '@/lib/auth';
+import { useSalesExceptions } from '@/lib/salesStore';
 
 const TABS: { key: string; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -21,7 +23,14 @@ const TABS: { key: string; label: string }[] = [
 
 export default function SalesClient() {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
+  // (Open/In Review), dari data asli (financial_transaction_sales_
+  // exceptions), bukan lagi angka statis "24".
+  const { exceptions } = useSalesExceptions(user?.id ?? null);
+  const openExceptionCount = exceptions.filter(e => e.status !== 'Resolved').length;
 
   return (
     <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
@@ -60,8 +69,8 @@ export default function SalesClient() {
             }`}
           >
             {t(tab?.label)}
-            {tab?.key === 'exceptions' && (
-              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-red-100 text-red-600 rounded-full">24</span>
+            {tab?.key === 'exceptions' && openExceptionCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-red-100 text-red-600 rounded-full">{openExceptionCount}</span>
             )}
           </button>
         ))}

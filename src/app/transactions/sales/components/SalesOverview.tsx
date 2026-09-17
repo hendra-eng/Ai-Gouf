@@ -67,8 +67,19 @@ const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' 
 // Posted) — komponen ini jadi isi tab "Overview"-nya.
 export default function SalesOverview() {
   const { t } = useLanguage();
-  const { getByGroup } = useTransactions();
-  const salesTx = useMemo(() => getByGroup('sales'), [getByGroup]);
+  const { getByGroup, isSampleData } = useTransactions();
+  // [FIX] TransactionsContext jatuh ke ALL_TRANSACTIONS (data contoh statis
+  // di transactionData.ts) begitu fetch jurnal client aktif ke backend LAMA
+  // gagal/kosong -- termasuk SELALU gagal untuk client manapun sekarang,
+  // karena activeClientId sudah UUID (management_clients) sedangkan endpoint
+  // lama (GET /api/client/{id}/jurnal-posting) masih mengharapkan integer
+  // (lihat catatan di clientsStore.tsx & TransactionsContext.tsx::
+  // loadFromBackend). Tab Overview ini TIDAK boleh menampilkan data contoh
+  // itu seolah-olah data Sales sungguhan -- treat sebagai kosong saja kalau
+  // isSampleData true, supaya tidak membingungkan (angka KPI ada padahal
+  // tabel Sales Transaction/Posted yang sudah terhubung ke backend baru
+  // masih benar-benar kosong).
+  const salesTx = useMemo(() => (isSampleData ? [] : getByGroup('sales')), [getByGroup, isSampleData]);
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
@@ -578,15 +589,28 @@ export default function SalesOverview() {
       {/* Aksi & Upload Data + Tabel Transaksi Sales — digabung jadi 1 kolom,
           aksi & filter di atas tabel. searchPlaceholder disesuaikan dengan
           istilah kolom Sales yang baru (Invoice/Customer), khusus halaman
-          ini saja — halaman Expense/Purchase/dst tetap pakai teks default. */}
-      <TransactionsGroupPanel
-        group="sales"
-        groupLabel={t('Sales')}
-        defaultCategory="Revenue"
-        columns={columns}
-        onRowClick={setSelectedTx}
-        searchPlaceholder={t('Cari Invoice, deskripsi, customer, no. jurnal...')}
-      />
+          ini saja — halaman Expense/Purchase/dst tetap pakai teks default.
+          [FIX] TransactionsGroupPanel baca group='sales' LANGSUNG dari
+          TransactionsContext (bukan dari salesTx di atas) -- kalau tidak
+          ikut disembunyikan saat isSampleData, tabel ini tetap menampilkan
+          baris ALL_TRANSACTIONS (data contoh) walau KPI di atas sudah benar
+          kosong, jadi tetap membingungkan. Komponennya sendiri TIDAK diubah
+          (dipakai bareng oleh Expense/Purchase/Cash Payment/Cash Receipt/
+          Other) -- cukup tidak dirender di sini saat data contoh. */}
+      {isSampleData ? (
+        <div className="card-elevated-md rounded-xl p-8 text-center text-xs text-muted-foreground">
+          {t('Belum ada transaksi Sales untuk client ini.')}
+        </div>
+      ) : (
+        <TransactionsGroupPanel
+          group="sales"
+          groupLabel={t('Sales')}
+          defaultCategory="Revenue"
+          columns={columns}
+          onRowClick={setSelectedTx}
+          searchPlaceholder={t('Cari Invoice, deskripsi, customer, no. jurnal...')}
+        />
+      )}
 
       {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
     </div>

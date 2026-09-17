@@ -26,6 +26,7 @@ export interface ClientHealthScore {
 
 export interface Client {
   id: string;
+  clientCode: string;
   companyName: string;
   industry: string;
   status: ClientStatus;

@@ -18,8 +18,12 @@ CREATE TABLE public.management_users (
 	"role" varchar(50) NOT NULL,
 	"access" json NULL,
 	created_at timestamptz DEFAULT now() NOT NULL,
+	created_by uuid,
 	updated_at timestamptz DEFAULT now() NOT NULL,
+	updated_by uuid,
 	deleted_at timestamptz NULL,
+	deleted_by uuid,
+	client_id uuid,
 	CONSTRAINT management_users_pkey PRIMARY KEY (id_user),
 	CONSTRAINT management_users_username_key UNIQUE (username)
 );
@@ -38,8 +42,328 @@ CREATE TABLE public.management_audit_trails (
 	"action" varchar(255) NULL,
 	menu varchar(255) NULL,
 	created_at timestamptz DEFAULT now() NOT NULL,
+	created_by uuid,
 	updated_at timestamptz DEFAULT now() NOT NULL,
+	updated_by uuid,
 	deleted_at timestamptz NULL,
+	deleted_by uuid,
 	CONSTRAINT management_audit_trails_pkey PRIMARY KEY (id),
 	CONSTRAINT fk_audit_trails_user FOREIGN KEY (id_user) REFERENCES public.management_users(id_user) ON DELETE CASCADE
 );
+
+CREATE TABLE management_clients (
+    id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_code                 VARCHAR(50),
+    nama_client                 VARCHAR(255),
+    tipe_badan_usaha            VARCHAR(255),
+    npwp                        VARCHAR(20),
+    nomor_akta_nib              VARCHAR(255),
+    status_pkp                  BOOLEAN,
+    klasifikasi_lapangan_usaha  VARCHAR(255),
+    email                       VARCHAR(255),
+    no_telepon                  VARCHAR(255),
+    no_handphone                VARCHAR(255),
+    nama_pic                    VARCHAR(255),
+    jabatan_pic                 VARCHAR(255),
+    alamat                      TEXT,
+    kota                        VARCHAR(50),
+    provinsi                    VARCHAR(50),
+    kode_pos                    VARCHAR(255),
+    industry                    VARCHAR(255),
+    tahun_buku_mulai            VARCHAR(10),
+    mata_uang_default           VARCHAR(10),
+    status                      VARCHAR(10),
+    akuntan_penanggung_jawab    UUID,
+    tanggal_mulai_kerjasama     TIMESTAMP,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+-- ============================================================
+-- FITUR SALES > IMPORT TEMPLATE (belajar pola kolom file laporan sekali,
+-- dipakai ulang otomatis untuk file berikutnya -- lihat SALES_IMPORT_
+-- TEMPLATES.md di root utk alur lengkapnya)
+-- ============================================================
+-- [BARU] client_id di tabel INI SENGAJA reference ke management_clients
+-- (BUKAN management_users seperti 6 tabel Sales di bawah) -- pola kolom
+-- laporan adalah properti PERUSAHAAN klien itu sendiri (mis. "Laporan
+-- Penjualan PT Maju Bersama selalu format Excel begini"), bukan properti
+-- akun yang kebetulan login & upload. client_code disalin (denormalized)
+-- dari management_clients.client_code saat template dibuat, dipakai
+-- sebagai key pencarian tambahan sesuai permintaan -- supaya lookup tetap
+-- valid & cepat tanpa join, dan tidak ikut berubah kalau client_code di
+-- management_clients diedit belakangan (template lama tetap merujuk ke
+-- kode yang berlaku waktu itu).
+CREATE TABLE financial_transaction_sales_import_templates (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID NOT NULL REFERENCES management_clients(id),
+    client_code             VARCHAR(50) NOT NULL,                  -- salinan management_clients.client_code saat dibuat -- key pencarian tambahan
+    file_type               VARCHAR(20) NOT NULL,                  -- Excel/CSV/PDF/TXT -- pola kolom beda per format, jadi bagian dari key pencocokan
+    sheet_name              VARCHAR(255),                          -- khusus Excel: nama sheet tempat tabel data ditemukan (NULL utk CSV/TXT)
+    header_row_index        INTEGER NOT NULL DEFAULT 1,            -- baris ke berapa (1-based) berisi header kolom -- sebagian laporan punya baris judul/logo di atas header asli
+    data_start_row_index    INTEGER NOT NULL DEFAULT 2,            -- baris ke berapa data mulai (biasanya header_row_index + 1)
+    column_signature_hash   VARCHAR(64) NOT NULL,                  -- SHA-256 dari header kolom yang sudah dinormalisasi (lowercase, trim, urutan asli dipertahankan) -- dicocokkan ke file baru TANPA panggil AI lagi kalau sudah pernah dipelajari
+    header_columns          JSONB NOT NULL,                        -- daftar nama kolom ASLI apa adanya (array of string) -- ditampilkan ke user & buat audit/debug, bukan yang dipakai mencocokkan (itu tugas column_signature_hash)
+    mapping_rules           JSONB NOT NULL,                        -- {field_key: nama_kolom_sumber} -- field_key sama dgn MAPPING_FIELDS di SalesSourceData.tsx (tanggal/invoice/customer/dpp/ppn/total)
+    detected_by             VARCHAR(20) NOT NULL DEFAULT 'ai',     -- 'ai' (hasil inferensi AI saat pola ini pertama ditemukan) / 'manual' (dibuat atau dikoreksi manual lewat modal Mapping Rules)
+    ai_model_version        VARCHAR(50),                           -- versi model AI yang dipakai saat pertama belajar pola ini (mis. "Gouf AI v2.1"), NULL kalau detected_by='manual'
+    ai_confidence           NUMERIC(5,2),                          -- 0-100, confidence AI saat pertama belajar pola ini
+    is_active               BOOLEAN NOT NULL DEFAULT true,         -- nonaktifkan template yang ternyata salah tanpa menghapus riwayatnya (soft-disable, beda dari deleted_at di bawah)
+    usage_count             INTEGER NOT NULL DEFAULT 0,            -- berapa kali template ini dipakai ulang (naik tiap ada file baru yang cocok signature-nya)
+    last_used_at            TIMESTAMPTZ,                           -- kapan terakhir dipakai -- dicari via financial_transaction_sales_source_files.template_id, TIDAK didenormalisasi jadi FK balik ke sana (hindari referensi melingkar antar 2 tabel)
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by              UUID,
+    edited_at               TIMESTAMPTZ,
+    edited_by               UUID,
+    deleted_at              TIMESTAMPTZ,
+    deleted_by              UUID,
+    CONSTRAINT uq_sales_import_templates_signature UNIQUE (client_id, file_type, column_signature_hash)
+);
+
+CREATE INDEX idx_sales_import_templates_client ON financial_transaction_sales_import_templates(client_id);
+CREATE INDEX idx_sales_import_templates_client_code ON financial_transaction_sales_import_templates(client_code);
+
+-- ============================================================
+-- FITUR TRANSACTIONS > SALES (frontend: src/app/transactions/sales/*)
+-- ============================================================
+-- 6 tabel di bawah menampung SELURUH data yang sekarang masih mock/local
+-- state di 6 tab halaman Sales (Overview, Source Data, Sales Transaction,
+-- Journal Preview, Exceptions, Posted). [DIUBAH MANUAL OLEH USER]
+-- client_id memakai UUID -> management_users(id_user), BUKAN clients(id)
+-- (integer) ataupun management_clients(id) -- di skema ini akun client
+-- (client_lv_1..9, lihat RBAC.md) direpresentasikan sebagai baris di
+-- management_users, jadi "pemilik" data Sales ini adalah id_user milik
+-- akun client tsb, bukan tabel klien terpisah.
+--
+-- [FIX] Semua kolom *_id yang me-reference PK UUID tabel Sales lain di
+-- bawah (source_file_id, source_row_id, invoice_id pada
+-- account_mappings/exceptions) sebelumnya sempat tertulis INTEGER --
+-- tipe kolom FK wajib sama persis dengan tipe PK yang direferensikan di
+-- Postgres, jadi sudah dibetulkan jadi UUID (kalau tidak, CREATE TABLE
+-- akan gagal / FK tidak pernah valid). journal_entry_id TETAP INTEGER
+-- karena journal_entries.id (Accounting Core V2) memang integer.
+--
+-- Entitas intinya SATU: `financial_transaction_sales_invoices` (satu baris
+-- = satu invoice/transaksi penjualan). Tab Sales Transaction, Journal
+-- Preview, dan Posted di frontend semuanya menampilkan invoice YANG SAMA
+-- ini, cuma beda kolom yang ditonjolkan & filter status -- makanya
+-- sengaja tidak dibuat 3 tabel terpisah untuk 3 tab itu (hindari data
+-- terduplikasi/tidak sinkron antar tab).
+--
+-- Baris jurnal debit/kredit resminya TETAP di `journal_entries` +
+-- `journal_lines` (Accounting Core V2, lihat ACCOUNTING_CORE_V2.md) --
+-- tabel Sales di sini TIDAK menyimpan ulang baris jurnal, cuma menyimpan
+-- `journal_entry_id` sebagai pointer begitu invoice diposting, plus
+-- `financial_transaction_sales_account_mappings` yang menyimpan KEPUTUSAN
+-- pemetaan akun (Piutang/Pendapatan/PPN/PPh) sebelum jurnal itu dibuat --
+-- sama perannya dengan company_account_roles tapi granularitasnya per
+-- invoice (hasil AI + koreksi manusia), bukan per akun permanen.
+--
+-- Tidak ada tabel customer/produk master terpisah -- UI saat ini
+-- (SalesTransaction.tsx dst) memang belum punya layar kelola master
+-- customer/produk sendiri (nama customer input teks bebas / dropdown
+-- yang isinya ditarik dari invoice yang sudah ada), jadi customer_name
+-- disimpan langsung di invoices (denormalized) apa adanya sesuai UI
+-- sekarang -- tabel customer master bisa ditambah belakangan kalau
+-- fitur itu benar-benar dibangun.
+--
+-- CATATAN taksonomi status: 3 mock dataset di frontend (SalesTransaction,
+-- SalesJournalPreview, SalesPosted) masing-masing pakai istilah status
+-- yang beda (Draft/Review/Approved/Posted/Partial/Paid vs
+-- Diproses/Siap Posting/Diposting vs Posted+payStatus/reconcile/
+-- journalStatus terpisah) karena belum disatukan di level UI. Kolom
+-- `posting_status` di bawah memakai taksonomi SalesTransaction (paling
+-- lengkap sebagai state machine invoice), sedangkan `reconcile_status`
+-- & `journal_sync_status` menampung 2 dimensi status TERPISAH yang
+-- dipakai tab Posted (Reconciled/Unreconciled, Synced/Pending) --
+-- `journal_sync_status` juga sejalan dengan pola dua-struktur-jurnal di
+-- ACCOUNTING_CORE_V2.md (draft lokal -> disinkronkan ke journal_entries).
+
+-- 1) Registri file yang diupload di tab "Source Data", plus hasil
+--    ekstraksi/mapping AI (ringkasan per file -- lihat SOURCE_FILES &
+--    AI Extraction Summary di SalesSourceData.tsx).
+CREATE TABLE financial_transaction_sales_source_files (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    management_client_id   UUID NOT NULL REFERENCES management_clients(id), -- [BARU] klien (perusahaan) yang laporannya sedang diupload -- WAJIB dipilih user lewat dropdown saat upload (lihat SALES_IMPORT_TEMPLATES.md), dipakai sebagai bagian key pencocokan/pembuatan template di financial_transaction_sales_import_templates. BEDA dari client_id di atas (management_users, akun yang login/upload) -- satu akun bisa upload laporan untuk klien manapun yang dia punya akses.
+    file_name               VARCHAR(255) NOT NULL,
+    file_type               VARCHAR(20),                            -- Excel/CSV/PDF/TXT (lihat detectFileType())
+    storage_path            TEXT,                                   -- lokasi file tersimpan; NULL kalau storage belum disambungkan
+    period_label            VARCHAR(50),                            -- mis. "Des 2024", "Okt - Des 2024"
+    customer_hint           VARCHAR(255),                           -- customer dominan di file ini (deteksi awal, sebelum dipecah per baris)
+    rows_detected           INTEGER NOT NULL DEFAULT 0,
+    rows_valid              INTEGER NOT NULL DEFAULT 0,
+    rows_invalid            INTEGER NOT NULL DEFAULT 0,
+    duplicate_count         INTEGER NOT NULL DEFAULT 0,
+    status_ekstraksi        VARCHAR(20) NOT NULL DEFAULT 'Diproses', -- Diproses/Berhasil/Butuh Review/Gagal
+    status_mapping          VARCHAR(20) NOT NULL DEFAULT 'Diproses', -- Diproses/Berhasil/Butuh Review/Gagal (independen dari status_ekstraksi)
+    confidence_score        NUMERIC(5,2),                           -- 0-100
+    dpp_total               NUMERIC(24,2) NOT NULL DEFAULT 0,
+    ppn_total               NUMERIC(24,2) NOT NULL DEFAULT 0,
+    grand_total             NUMERIC(24,2) NOT NULL DEFAULT 0,
+    extraction_duration_ms  INTEGER,
+    ai_model_version        VARCHAR(50),                            -- mis. "Gouf AI v2.1"
+    mapping_rules           JSONB,                                  -- {field_key: nama_kolom_sumber}, lihat MAPPING_FIELDS di SalesSourceData.tsx -- disalin dari template_id yang cocok (kalau ada) saat ekstraksi, TETAP boleh beda dari template-nya kalau user koreksi manual khusus file ini
+    template_id             UUID REFERENCES financial_transaction_sales_import_templates(id), -- [BARU] template pola kolom yang dipakai/cocok untuk file ini (lihat financial_transaction_sales_import_templates di atas) -- NULL kalau belum ada template yang cocok (baru dibuat/dipelajari saat file ini diproses) atau kalau file jenis ini (mis. PDF) belum didukung pembelajaran pola
+    processed_by            VARCHAR(255),
+    uploaded_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    uploaded_by             UUID REFERENCES management_users(id_user),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+CREATE INDEX idx_sales_source_files_client ON financial_transaction_sales_source_files(client_id);
+CREATE INDEX idx_sales_source_files_management_client ON financial_transaction_sales_source_files(management_client_id);
+CREATE INDEX idx_sales_source_files_template ON financial_transaction_sales_source_files(template_id);
+
+-- 2) Baris mentah per file (hasil parsing sebelum jadi invoice resmi --
+--    lihat PREVIEW_ROWS/tabel "File Preview" di SalesSourceData.tsx).
+--    Satu baris di sini bisa "naik" jadi 1 invoice lewat
+--    financial_transaction_sales_invoices.source_row_id.
+CREATE TABLE financial_transaction_sales_source_rows (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_file_id          UUID NOT NULL REFERENCES financial_transaction_sales_source_files(id) ON DELETE CASCADE,
+    client_id               UUID REFERENCES management_users(id_user),
+    row_no                  INTEGER NOT NULL,                       -- urutan baris di file asli (kolom "No" di preview)
+    tanggal                 DATE,
+    no_invoice              VARCHAR(100),
+    nama_customer           VARCHAR(255),
+    dpp                     NUMERIC(24,2) NOT NULL DEFAULT 0,
+    ppn                     NUMERIC(24,2) NOT NULL DEFAULT 0,
+    total                   NUMERIC(24,2) NOT NULL DEFAULT 0,
+    is_valid                BOOLEAN NOT NULL DEFAULT true,
+    validation_notes        TEXT,                                   -- alasan kalau is_valid = false (format tanggal salah, kolom kosong, dst)
+    is_duplicate_candidate  BOOLEAN NOT NULL DEFAULT false,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_sales_source_rows_file_row UNIQUE (source_file_id, row_no)
+);
+
+CREATE INDEX idx_sales_source_rows_file ON financial_transaction_sales_source_rows(source_file_id);
+
+-- 3) Entitas inti: satu baris = satu invoice/transaksi penjualan. Dipakai
+--    bersama oleh tab Sales Transaction, Journal Preview, dan Posted.
+CREATE TABLE financial_transaction_sales_invoices (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    invoice_no              VARCHAR(100) NOT NULL,                  -- mis. "INV-2024-0001"
+    invoice_date            DATE NOT NULL,
+    due_date                DATE,
+    customer_name           VARCHAR(255) NOT NULL,
+    customer_npwp           VARCHAR(30),
+    description             TEXT,
+    transaction_type        VARCHAR(50),                            -- "Penjualan Barang" / "Penjualan Jasa"
+    project_name            VARCHAR(255),                           -- mis. "PJT-002 - Implementasi ERP"
+    sales_person            VARCHAR(255),
+    term_of_payment         VARCHAR(50),                            -- mis. "Net 14"
+    dpp                     NUMERIC(24,2) NOT NULL DEFAULT 0,
+    ppn                     NUMERIC(24,2) NOT NULL DEFAULT 0,
+    pph                     NUMERIC(24,2) NOT NULL DEFAULT 0,
+    gross_amount            NUMERIC(24,2) NOT NULL DEFAULT 0,
+    paid_amount             NUMERIC(24,2) NOT NULL DEFAULT 0,
+    outstanding_amount      NUMERIC(24,2) GENERATED ALWAYS AS (gross_amount - paid_amount) STORED,
+    tax_invoice_status      VARCHAR(30) NOT NULL DEFAULT 'Belum Terbit Faktur', -- Belum Terbit Faktur / Sudah Terbit Faktur
+    posting_status          VARCHAR(20) NOT NULL DEFAULT 'Draft',   -- Draft/Review/Approved/Posted/Partial/Paid (lihat catatan taksonomi di atas)
+    reconcile_status        VARCHAR(20) NOT NULL DEFAULT 'Unreconciled', -- Reconciled/Unreconciled (tab Posted)
+    journal_sync_status     VARCHAR(20) NOT NULL DEFAULT 'Pending', -- Synced/Pending -- status sinkronisasi ke journal_entries/journal_lines
+    journal_entry_id        INTEGER REFERENCES journal_entries(id), -- diisi begitu jurnal native dibuat (Accounting Core V2)
+    source_row_id           UUID REFERENCES financial_transaction_sales_source_rows(id), -- NULL kalau input manual (bukan hasil import)
+    posted_at               TIMESTAMPTZ,
+    posted_by               UUID REFERENCES management_users(id_user),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_sales_invoices_client_no UNIQUE (client_id, invoice_no)
+);
+
+CREATE INDEX idx_sales_invoices_client_status ON financial_transaction_sales_invoices(client_id, posting_status);
+CREATE INDEX idx_sales_invoices_client_date ON financial_transaction_sales_invoices(client_id, invoice_date);
+
+-- 4) Pemetaan akun (Piutang/Pendapatan/PPN/PPh) per invoice -- isi tab
+--    "Accounting Classification" di Journal Preview, disimpan 1:1 per
+--    invoice supaya bisa diedit ulang sebelum diposting.
+CREATE TABLE financial_transaction_sales_account_mappings (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    invoice_id              UUID NOT NULL UNIQUE REFERENCES financial_transaction_sales_invoices(id) ON DELETE CASCADE,
+    piutang_account_code    VARCHAR(50) NOT NULL,
+    piutang_account_name    VARCHAR(200),
+    pendapatan_account_code VARCHAR(50) NOT NULL,
+    pendapatan_account_name VARCHAR(200),
+    ppn_account_code        VARCHAR(50),
+    ppn_account_name        VARCHAR(200),
+    pph_account_code        VARCHAR(50),                            -- NULL kalau tidak ada potongan PPh atas transaksi ini
+    pph_account_name        VARCHAR(200),
+    is_ai_suggested         BOOLEAN NOT NULL DEFAULT true,
+    ai_confidence           NUMERIC(5,2),
+    mapped_by               UUID REFERENCES management_users(id_user), -- NULL selama masih murni hasil deteksi AI, belum dikonfirmasi manusia
+    mapped_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+-- 5) Antrean review tab "Exceptions" -- transaksi/baris sumber yang perlu
+--    ditinjau manusia sebelum lanjut diposting.
+CREATE TABLE financial_transaction_sales_exceptions (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    invoice_id              UUID REFERENCES financial_transaction_sales_invoices(id),   -- NULL kalau exception masih di level source_row (belum jadi invoice)
+    source_row_id           UUID REFERENCES financial_transaction_sales_source_rows(id),
+    exception_type          VARCHAR(100) NOT NULL,                  -- "Tax status unclear", "Duplicate invoice", "Customer not mapped", dst
+    priority                VARCHAR(10) NOT NULL DEFAULT 'Medium',  -- High/Medium/Low
+    status                  VARCHAR(20) NOT NULL DEFAULT 'Open',    -- Open/In Review/Resolved
+    ai_confidence           NUMERIC(5,2),
+    ai_suggestion           TEXT,                                   -- saran perbaikan dari AI (tab "AI Suggestion" di drawer)
+    source_snippet          JSONB,                                  -- cuplikan data sumber mentah (Invoice No/Date/Customer/Amount/Notes)
+    assigned_to             UUID REFERENCES management_users(id_user),
+    resolved_at             TIMESTAMPTZ,
+    resolved_by             UUID REFERENCES management_users(id_user),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+CREATE INDEX idx_sales_exceptions_client_status ON financial_transaction_sales_exceptions(client_id, status);
+
+-- 6) Jejak aktivitas khusus modul Sales (mis. "Aktivitas Posting Terbaru"
+--    di tab Posted) -- terpisah dari management_audit_trails yang levelnya
+--    per-user/menu, ini levelnya per-invoice/per-jurnal.
+CREATE TABLE financial_transaction_sales_activity_log (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    invoice_id              UUID REFERENCES financial_transaction_sales_invoices(id),
+    event_type              VARCHAR(50) NOT NULL,                   -- mis. "POSTING", "JOURNAL_SYNC", "APPROVAL"
+    description             TEXT NOT NULL,                          -- mis. "Berhasil memposting faktur penjualan"
+    reference_no            VARCHAR(100),                           -- no. invoice atau no. jurnal yang jadi rujukan
+    performed_by            VARCHAR(255) NOT NULL,                  -- nama user, atau 'System' untuk proses otomatis (sync jurnal, dst)
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+CREATE INDEX idx_sales_activity_log_invoice ON financial_transaction_sales_activity_log(invoice_id);

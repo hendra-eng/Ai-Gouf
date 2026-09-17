@@ -60,6 +60,13 @@ PUBLIC_PATHS_V1 = {
     "/api/v1/auth/login",
 }
 
+# Nama cookie httpOnly tempat access_token disimpan oleh
+# src/app/api/session/login/route.ts (frontend) -- HARUS sama persis
+# dengan SESSION_COOKIE_NAME di src/lib/session.ts. Dipakai sebagai
+# fallback di jwt_v1_middleware kalau header Authorization tidak ada
+# (lihat docstring-nya).
+SESSION_COOKIE_NAME_FALLBACK = "gouf_session"
+
 
 # ============================================================
 # SKEMA REQUEST
@@ -95,10 +102,23 @@ async def jwt_v1_middleware(request: Request, call_next):
 
     Kalau path termasuk grup /api/v1/ dan BUKAN salah satu
     PUBLIC_PATHS_V1 (mis. login): wajib header
-    "Authorization: Bearer <token>" yang valid. Kalau tidak ada/tidak
-    valid, request langsung dibalas 401 dengan amplop standar TANPA
-    diteruskan ke endpoint -- handler endpoint tidak perlu cek token-nya
-    sendiri lagi.
+    "Authorization: Bearer <token>" yang valid, ATAU cookie httpOnly
+    "gouf_session" (lihat SESSION_COOKIE_NAME_FALLBACK di bawah). Kalau
+    tidak ada/tidak valid, request langsung dibalas 401 dengan amplop
+    standar TANPA diteruskan ke endpoint -- handler endpoint tidak perlu
+    cek token-nya sendiri lagi.
+
+    [BARU] Fallback cookie ditambahkan karena alur login dashboard
+    (src/app/api/session/login/route.ts di frontend) menyimpan access_token
+    di cookie httpOnly "gouf_session", BUKAN header Authorization --
+    sengaja begitu supaya token tidak bisa dibaca JS di browser (cegah
+    XSS). Cookie ini otomatis ikut terkirim ke backend lewat proxy
+    next.config.mjs (rewrites() meneruskan header Cookie apa adanya), jadi
+    di sisi backend cukup dibaca sebagai fallback -- tanpa ini, SEMUA
+    pemanggilan /api/v1/** langsung dari client component (fetch biasa,
+    bukan lewat route /api/session/*) akan selalu 401 walau user sudah
+    login, karena tidak ada cara bagi kode client-side untuk mengisi
+    header Authorization dari cookie httpOnly itu.
     """
     path = request.url.path
     if path.startswith("/api/v1/") and path not in PUBLIC_PATHS_V1:
@@ -106,6 +126,8 @@ async def jwt_v1_middleware(request: Request, call_next):
         token = None
         if header_value and header_value.startswith("Bearer "):
             token = header_value[len("Bearer "):].strip()
+        if not token:
+            token = request.cookies.get(SESSION_COOKIE_NAME_FALLBACK)
 
         user = auth.decode_token(token) if token else None
         if user is None:
