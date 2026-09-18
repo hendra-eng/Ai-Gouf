@@ -24,3 +24,4 @@ SQLAlchemy==2.0.52
 uvicorn==0.53.0
 anthropic==1.5.0
 python-multipart==0.0.32
+python-dotenv==1.0.1
