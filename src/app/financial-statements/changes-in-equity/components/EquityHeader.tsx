@@ -2,9 +2,11 @@
 import React from 'react';
 import { Printer, FileDown, Sheet, RefreshCw, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
 
 export default function EquityHeader() {
   const { t } = useLanguage();
+  const { activeClientName } = useActiveClient();
   return (
     <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       {/* Left */}
@@ -28,7 +30,7 @@ export default function EquityHeader() {
         <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
           <span className="text-primary font-semibold">{t('Jan 2026 – Aug 2026')}</span>
           <span className="text-muted-foreground/50">·</span>
-          <span className="text-muted-foreground font-medium">PT Nusantara Teknologi Indonesia</span>
+          <span className="text-muted-foreground font-medium">{activeClientName ?? t('No client selected')}</span>
           <span className="text-muted-foreground/50">·</span>
           <span className="text-muted-foreground">USD</span>
           <span className="text-muted-foreground/50">·</span>

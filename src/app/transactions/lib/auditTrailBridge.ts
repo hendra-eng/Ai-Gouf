@@ -78,14 +78,16 @@ export interface TransactionAuditTrail {
 
 /** Ambil riwayat perubahan ASLI untuk satu transaksi (dicocokkan lewat jeId -> posting_id). */
 export function useTransactionAuditTrail(jeId: string | undefined | null): TransactionAuditTrail {
-  const { activeClientId } = useActiveClient();
+  const { activeClientId, hydrated } = useActiveClient();
   const postingId = extractPostingId(jeId);
-  const [loading, setLoading] = useState(false);
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<AuditTrailEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (postingId === null || !activeClientId) {
       setEntries([]);
       setError(null);
@@ -120,7 +122,7 @@ export function useTransactionAuditTrail(jeId: string | undefined | null): Trans
         if (requestIdRef.current !== requestId) return;
         setLoading(false);
       });
-  }, [postingId, activeClientId]);
+  }, [hydrated, postingId, activeClientId]);
 
   return { loading, hasPostingId: postingId !== null, error, entries };
 }

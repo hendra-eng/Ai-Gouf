@@ -11,17 +11,17 @@ import { getNiceTicksFromZero, formatAxisValue } from '@/lib/chartTicks';
 //       'negative'           -> merah, drag ke BAWAH = potongan makin dalam (arah drag dibalik)
 //       'adjustable'         -> orange, bisa ditarik ATAS & BAWAH secara natural (tidak dibalik)
 const waterfallRaw = [
-  { name: 'Revenue', value: 8420, start: 0, end: 8420, type: 'total' },
-  { name: 'COGS', value: -4700, start: 3720, end: 8420, type: 'negative' },
-  { name: 'Gross Profit', value: 3720, start: 0, end: 3720, type: 'subtotal' },
-  { name: 'OpEx', value: -1180, start: 2540, end: 3720, type: 'adjustable' },
-  { name: 'EBITDA', value: 2540, start: 0, end: 2540, type: 'subtotal' },
-  { name: 'D&A', value: -210, start: 2330, end: 2540, type: 'adjustable' },
-  { name: 'EBIT', value: 2330, start: 0, end: 2330, type: 'subtotal' },
-  { name: 'Interest', value: -148, start: 2182, end: 2330, type: 'adjustable' },
-  { name: 'EBT', value: 2182, start: 0, end: 2182, type: 'subtotal' },
-  { name: 'Tax', value: -436, start: 1746, end: 2182, type: 'negative' },
-  { name: 'Net Profit', value: 1746, start: 0, end: 1746, type: 'total' },
+  { name: 'Revenue', value: 0, start: 0, end: 0, type: 'total' },
+  { name: 'COGS', value: 0, start: 0, end: 0, type: 'negative' },
+  { name: 'Gross Profit', value: 0, start: 0, end: 0, type: 'subtotal' },
+  { name: 'OpEx', value: 0, start: 0, end: 0, type: 'adjustable' },
+  { name: 'EBITDA', value: 0, start: 0, end: 0, type: 'subtotal' },
+  { name: 'D&A', value: 0, start: 0, end: 0, type: 'adjustable' },
+  { name: 'EBIT', value: 0, start: 0, end: 0, type: 'subtotal' },
+  { name: 'Interest', value: 0, start: 0, end: 0, type: 'adjustable' },
+  { name: 'EBT', value: 0, start: 0, end: 0, type: 'subtotal' },
+  { name: 'Tax', value: 0, start: 0, end: 0, type: 'negative' },
+  { name: 'Net Profit', value: 0, start: 0, end: 0, type: 'total' },
 ];
 
 // Build invisible base + visible bar for each item

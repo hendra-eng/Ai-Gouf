@@ -8,7 +8,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface SessionUser {
-  id: number;
+  id: string;
   username: string;
   role: string;
   role_label: string;

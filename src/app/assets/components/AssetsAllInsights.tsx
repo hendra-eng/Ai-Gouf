@@ -7,13 +7,9 @@ import { formatIDR } from '@/lib/financialData';
 import { useAssetsData } from '../lib/useAssetsData';
 import { useAssetRegisterData } from '../lib/assetRegisterBridge';
 
-// Data contoh -- HANYA dipakai kalau client aktif belum punya data neraca
-// DAN register aset tetap sama sekali (kedua sumber kosong).
-const SAMPLE_INSIGHTS = [
-  { title: 'Fixed Asset Growth', description: 'Fixed assets increased 18.4% compared with the previous period, driven primarily by the ERP software license acquisition in January 2026.', metric: '+Rp 290M · Jan–Aug 2026', severity: 'positive' as const },
-  { title: 'Depreciation Risk', description: '7 assets are approaching the end of their useful life within the next 24 months. Budget for replacements should be planned in Q4 2026.', metric: '7 assets · Rp 142M replacement est.', severity: 'warning' as const },
-  { title: 'Asset Concentration Risk', description: '62% of total fixed assets are concentrated in technology equipment and software. Consider diversifying or insuring these assets.', metric: '62% · Rp 1.15M in tech assets', severity: 'warning' as const },
-];
+// [UBAH] Data contoh dikosongkan -- HANYA dipakai kalau client aktif belum
+// punya data neraca DAN register aset tetap sama sekali (kedua sumber kosong).
+const SAMPLE_INSIGHTS: { title: string; description: string; metric: string; severity: 'positive' | 'warning' | 'critical' | 'info' }[] = [];
 
 export default function AssetsAIInsights() {
   const { fx } = useCurrency();

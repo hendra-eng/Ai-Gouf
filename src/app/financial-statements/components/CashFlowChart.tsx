@@ -9,14 +9,14 @@ import { getNiceSymmetricTicks, formatAxisValue } from '@/lib/chartTicks';
 
 // Backend integration point: replace with /api/statements/cash-flow/monthly
 const cfMonthly = [
-  { month: 'Jan', operating: 195, investing: -88, financing: -42 },
-  { month: 'Feb', operating: 218, investing: -120, financing: -28 },
-  { month: 'Mar', operating: 240, investing: -65, financing: -185 },
-  { month: 'Apr', operating: 225, investing: -95, financing: 120 },
-  { month: 'May', operating: 198, investing: -72, financing: -18 },
-  { month: 'Jun', operating: 262, investing: -110, financing: -22 },
-  { month: 'Jul', operating: 244, investing: -58, financing: -5 },
-  { month: 'Aug', operating: 218, investing: -47, financing: -5 },
+  { month: 'Jan', operating: 0, investing: 0, financing: 0 },
+  { month: 'Feb', operating: 0, investing: 0, financing: 0 },
+  { month: 'Mar', operating: 0, investing: 0, financing: 0 },
+  { month: 'Apr', operating: 0, investing: 0, financing: 0 },
+  { month: 'May', operating: 0, investing: 0, financing: 0 },
+  { month: 'Jun', operating: 0, investing: 0, financing: 0 },
+  { month: 'Jul', operating: 0, investing: 0, financing: 0 },
+  { month: 'Aug', operating: 0, investing: 0, financing: 0 },
 ];
 
 type CFKey = 'operating' | 'investing' | 'financing';

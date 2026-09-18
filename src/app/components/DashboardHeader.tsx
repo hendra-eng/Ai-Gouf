@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Download, RefreshCw } from 'lucide-react';
 import { CURRENCIES, CurrencyCode, useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
 
 const branches = ['All Branches', 'Jakarta HQ', 'Surabaya', 'Bandung', 'Medan'];
 const views = ['Actual', 'Budget', 'Previous Year'];
@@ -12,6 +13,7 @@ export default function DashboardHeader() {
   const [branch, setBranch] = useState('All Branches');
   const { currency, setCurrency } = useCurrency();
   const { t } = useLanguage();
+  const { activeClientName } = useActiveClient();
   const [view, setView] = useState('Actual');
 
   return (
@@ -19,7 +21,8 @@ export default function DashboardHeader() {
       <div>
         <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Financial Overview')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {t('Comprehensive financial performance and business health — PT Nusantara Teknologi Indonesia')}
+          {t('Comprehensive financial performance and business health')}
+          {activeClientName ? ` — ${activeClientName}` : ''}
         </p>
         <div className="flex items-center gap-2 mt-2">
           <span className="badge-info">Jan 2026 – Aug 2026</span>

@@ -298,7 +298,7 @@ export default function ARCharts({ agingData, trendData, customers, totalAR, ove
             </div>
           ))}
         </div>
-        <ARAgingChartInner data={agingData} fx={fx} />
+        <ARAgingChartInner data={agingData} fx={(v) => fx(formatRupiah(v, true))} />
       </div>
 
       {/* Customer Concentration */}

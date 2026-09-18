@@ -24,7 +24,7 @@ NO_AKUN_LIABILITY = "21200003"  # AP PAYMENT CLEARANCE
 NO_AKUN_ASSET = "11300999"      # AR PAYMENT CLEARANCE
 
 
-def fix_satu_client(client_id: int) -> bool:
+def fix_satu_client(client_id: str) -> bool:
     daftar = db_client.ambil_coa_client(client_id)
     if not daftar:
         print(f"-- Client {client_id}: COA kosong, dilewati.")

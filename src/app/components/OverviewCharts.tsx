@@ -37,23 +37,23 @@ const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 // ada jurnal & transaksi Sales sama sekali, supaya tampilan sama seperti
 // versi mock sebelumnya (tidak ada regresi saat demo tanpa data asli). ──
 const SAMPLE_REVENUE = [
-  { month: 'Jan', revenue: 950000000, expenses: 760000000, netProfit: 190000000 },
-  { month: 'Feb', revenue: 1020000000, expenses: 790000000, netProfit: 230000000 },
-  { month: 'Mar', revenue: 1080000000, expenses: 820000000, netProfit: 260000000 },
-  { month: 'Apr', revenue: 1050000000, expenses: 840000000, netProfit: 210000000 },
-  { month: 'May', revenue: 1120000000, expenses: 870000000, netProfit: 250000000 },
-  { month: 'Jun', revenue: 1090000000, expenses: 860000000, netProfit: 230000000 },
-  { month: 'Jul', revenue: 1150000000, expenses: 890000000, netProfit: 260000000 },
-  { month: 'Aug', revenue: 1160000000, expenses: 920000000, netProfit: 240000000 },
+  { month: 'Jan', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Feb', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Mar', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Apr', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'May', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Jun', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Jul', revenue: 0, expenses: 0, netProfit: 0 },
+  { month: 'Aug', revenue: 0, expenses: 0, netProfit: 0 },
 ];
 
 // Values are in Jt (Rp million) units — converted to raw IDR before display.
 const SAMPLE_AGING = [
-  { name: 'Current', value: 620, color: '#16A34A' },
-  { name: '1–30 Days', value: 215, color: '#2563EB' },
-  { name: '31–60 Days', value: 168, color: '#D97706' },
-  { name: '61–90 Days', value: 152, color: '#EA580C' },
-  { name: '90+ Days', value: 85, color: '#DC2626' },
+  { name: 'Current', value: 0, color: '#16A34A' },
+  { name: '1–30 Days', value: 0, color: '#2563EB' },
+  { name: '31–60 Days', value: 0, color: '#D97706' },
+  { name: '61–90 Days', value: 0, color: '#EA580C' },
+  { name: '90+ Days', value: 0, color: '#DC2626' },
 ];
 const SAMPLE_AGING_TOTAL = SAMPLE_AGING.reduce((s, a) => s + a.value, 0);
 
@@ -765,7 +765,7 @@ export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: Ove
           <h3 className="text-md font-600 text-foreground">{t('AR Aging Analysis')}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {isAgingSample
-              ? fx(t('Total AR: Rp 1,24M outstanding'))
+              ? fx(t('Total AR: Rp 0 outstanding'))
               : fx(`Total AR: ${formatMoney(totalAgingJt * 1e6, currency)} outstanding`)}
           </p>
         </div>
@@ -782,7 +782,7 @@ export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: Ove
             const displayPct = preview
               ? preview.pct
               : isAgingSample
-              ? (item.value / SAMPLE_AGING_TOTAL) * 100
+              ? (SAMPLE_AGING_TOTAL > 0 ? (item.value / SAMPLE_AGING_TOTAL) * 100 : 0)
               : item.percentage ?? 0;
             return (
               <div

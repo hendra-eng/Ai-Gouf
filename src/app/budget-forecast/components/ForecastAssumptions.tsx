@@ -22,20 +22,20 @@ export default function ForecastAssumptions() {
   // slider tetap lokal/interaktif karena memang alat simulasi, bukan data
   // yang tersimpan di backend.
   const ASSUMPTIONS: Assumption[] = useMemo(() => {
-    const revenueGrowth = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 12.8;
-    const cogsPct = PL_CORE.revenue !== 0 ? (PL_CORE.cogs / PL_CORE.revenue) * 100 : 54.6;
-    const opexGrowth = lines.operatingExpenses.budget !== 0 ? ((lines.operatingExpenses.forecast - lines.operatingExpenses.budget) / lines.operatingExpenses.budget) * 100 : 6.4;
-    const taxRate = PL_CORE.ebt !== 0 ? (PL_CORE.incomeTax / PL_CORE.ebt) * 100 : 22.0;
+    const revenueGrowth = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 0;
+    const cogsPct = PL_CORE.revenue !== 0 ? (PL_CORE.cogs / PL_CORE.revenue) * 100 : 0;
+    const opexGrowth = lines.operatingExpenses.budget !== 0 ? ((lines.operatingExpenses.forecast - lines.operatingExpenses.budget) / lines.operatingExpenses.budget) * 100 : 0;
+    const taxRate = PL_CORE.ebt !== 0 ? (PL_CORE.incomeTax / PL_CORE.ebt) * 100 : 0;
 
     return [
       { id: 'rev-growth', label: 'Revenue Growth', value: Math.round(revenueGrowth * 10) / 10, unit: '%', min: -20, max: 50, step: 0.5, description: 'YoY revenue growth rate' },
       { id: 'cogs-pct', label: 'COGS %', value: Math.round(cogsPct * 10) / 10, unit: '%', min: 30, max: 80, step: 0.5, description: 'COGS as % of Revenue' },
-      { id: 'payroll-growth', label: 'Payroll Growth', value: 8.2, unit: '%', min: 0, max: 30, step: 0.5, description: 'Annual payroll increase (not tracked separately from OpEx)' },
+      { id: 'payroll-growth', label: 'Payroll Growth', value: 0, unit: '%', min: 0, max: 30, step: 0.5, description: 'Annual payroll increase (not tracked separately from OpEx)' },
       { id: 'opex-growth', label: 'OpEx Growth', value: Math.round(opexGrowth * 10) / 10, unit: '%', min: -10, max: 30, step: 0.5, description: 'Operating expense growth' },
-      { id: 'collection-rate', label: 'Collection Rate', value: 94.2, unit: '%', min: 70, max: 100, step: 0.5, description: 'Customer payment rate' },
+      { id: 'collection-rate', label: 'Collection Rate', value: 0, unit: '%', min: 70, max: 100, step: 0.5, description: 'Customer payment rate' },
       { id: 'tax-rate', label: 'Tax Rate', value: Math.round(taxRate * 10) / 10, unit: '%', min: 15, max: 30, step: 0.5, description: 'Effective corporate tax rate' },
-      { id: 'capex', label: 'CapEx (Rp M)', value: 420, unit: 'M', min: 0, max: 2000, step: 10, description: 'Capital expenditure budget (not yet tracked in Assets module)' },
-      { id: 'interest-exp', label: 'Interest Expense', value: PL_CORE.interestExpense || 84, unit: 'M', min: 0, max: 500, step: 5, description: 'Annual interest expense (Rp M)' },
+      { id: 'capex', label: 'CapEx (Rp M)', value: 0, unit: 'M', min: 0, max: 2000, step: 10, description: 'Capital expenditure budget (not yet tracked in Assets module)' },
+      { id: 'interest-exp', label: 'Interest Expense', value: PL_CORE.interestExpense || 0, unit: 'M', min: 0, max: 500, step: 5, description: 'Annual interest expense (Rp M)' },
     ];
   }, [PL_CORE, lines]);
 

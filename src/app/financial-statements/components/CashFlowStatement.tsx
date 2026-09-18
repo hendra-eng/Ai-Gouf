@@ -16,41 +16,41 @@ const cfData = {
   operating: {
     label: 'Operating Activities',
     items: [
-      { label: 'Net Income', value: 1840 },
-      { label: 'Depreciation & Amortization', value: 210 },
-      { label: 'Perubahan Piutang Usaha', value: -142 },
-      { label: 'Perubahan Persediaan', value: -38 },
-      { label: 'Perubahan Hutang Usaha', value: 86 },
-      { label: 'Perubahan Kewajiban Akrual', value: 44 },
+      { label: 'Net Income', value: 0 },
+      { label: 'Depreciation & Amortization', value: 0 },
+      { label: 'Perubahan Piutang Usaha', value: 0 },
+      { label: 'Perubahan Persediaan', value: 0 },
+      { label: 'Perubahan Hutang Usaha', value: 0 },
+      { label: 'Perubahan Kewajiban Akrual', value: 0 },
     ],
-    total: 1800,
+    total: 0,
   },
   investing: {
     label: 'Investing Activities',
     items: [
-      { label: 'Pembelian Peralatan & Mesin', value: -380 },
-      { label: 'Pembelian Aset Tak Berwujud', value: -120 },
-      { label: 'Investasi Jangka Panjang', value: -200 },
-      { label: 'Penjualan Aset Tetap', value: 45 },
+      { label: 'Pembelian Peralatan & Mesin', value: 0 },
+      { label: 'Pembelian Aset Tak Berwujud', value: 0 },
+      { label: 'Investasi Jangka Panjang', value: 0 },
+      { label: 'Penjualan Aset Tetap', value: 0 },
     ],
-    total: -655,
+    total: 0,
   },
   financing: {
     label: 'Financing Activities',
     items: [
-      { label: 'Penerimaan Hutang Bank', value: 500 },
-      { label: 'Pembayaran Hutang Bank', value: -280 },
-      { label: 'Pembayaran Dividen', value: -320 },
-      { label: 'Pembayaran Sewa (Lease)', value: -85 },
+      { label: 'Penerimaan Hutang Bank', value: 0 },
+      { label: 'Pembayaran Hutang Bank', value: 0 },
+      { label: 'Pembayaran Dividen', value: 0 },
+      { label: 'Pembayaran Sewa (Lease)', value: 0 },
     ],
-    total: -185,
+    total: 0,
   },
-  beginning: 1996,
-  netChange: 960,
-  ending: 2956,
+  beginning: 0,
+  netChange: 0,
+  ending: 0,
 };
 
-const runwayMonths = 4.8;
+const runwayMonths = 0;
 
 interface CFSectionProps {
   section: typeof cfData.operating;
@@ -153,9 +153,9 @@ export default function CashFlowStatement() {
       <div className="flex items-start gap-3 p-4 rounded-xl bg-positive-subtle border border-positive/20">
         <TrendingUp size={18} className="text-positive flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-foreground">{t('Cash Runway: 4.8 Months')}</p>
+          <p className="text-sm font-semibold text-foreground">{t('Cash Runway: 0 Months')}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {fx(t('Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).'))}
+            {fx(t('Current cash of Rp 0 covers approximately 0 months of projected operating expenses (Rp 0/month avg).'))}
             {' '}{t('Operating cash flow is positive and improving. No immediate liquidity risk.')}
           </p>
         </div>

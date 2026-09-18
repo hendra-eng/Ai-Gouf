@@ -8,17 +8,9 @@ import EmptyState from '@/components/ui/EmptyState';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import type { EquityTxRow } from '../lib/equityBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_ROWS: EquityTxRow[] = [
-  { id: 'TXN-EQT-0901', date: '2026-08-26', txId: 'TXN-EQT-0901', account: 'Laba Ditahan', type: 'Profit Allocation', description: 'Alokasi laba bersih Agustus 2026', debit: 0, credit: 230_000_000, amount: 230_000_000, reference: 'JE-2026-0901', jeId: 'JE-2026-0901', variant: 'active' },
-  { id: 'TXN-EQT-0880', date: '2026-08-20', txId: 'TXN-EQT-0880', account: 'Surplus Revaluasi', type: 'Equity Adjustment', description: 'Revaluasi gedung kantor Jakarta', debit: 0, credit: 50_000_000, amount: 50_000_000, reference: 'REV-2026-0001', jeId: 'REV-2026-0001', variant: 'active' },
-  { id: 'TXN-EQT-0860', date: '2026-08-15', txId: 'TXN-EQT-0860', account: 'Pendapatan Komprehensif Lain', type: 'Retained Earnings Adjustment', description: 'OCI — perubahan nilai investasi Q2 2026', debit: 12_000_000, credit: 0, amount: -12_000_000, reference: 'JE-2026-0860', jeId: 'JE-2026-0860', variant: 'paid' },
-  { id: 'TXN-EQT-0820', date: '2026-08-01', txId: 'TXN-EQT-0820', account: 'Laba Ditahan', type: 'Profit Allocation', description: 'Alokasi laba bersih Juli 2026', debit: 0, credit: 260_000_000, amount: 260_000_000, reference: 'JE-2026-0820', jeId: 'JE-2026-0820', variant: 'active' },
-  { id: 'TXN-EQT-0780', date: '2026-07-15', txId: 'TXN-EQT-0780', account: 'Laba Ditahan', type: 'Profit Allocation', description: 'Alokasi laba bersih Juni 2026', debit: 0, credit: 245_000_000, amount: 245_000_000, reference: 'JE-2026-0780', jeId: 'JE-2026-0780', variant: 'active' },
-  { id: 'TXN-EQT-0650', date: '2026-03-15', txId: 'TXN-EQT-0650', account: 'Hutang Dividen', type: 'Dividend', description: 'Pembayaran dividen final FY2025 kepada pemegang saham', debit: 880_000_000, credit: 0, amount: -880_000_000, reference: 'DIV-2026-0001', jeId: 'DIV-2026-0001', variant: 'paid' },
-  { id: 'TXN-EQT-0600', date: '2026-02-01', txId: 'TXN-EQT-0600', account: 'Laba Ditahan', type: 'Profit Allocation', description: 'Alokasi laba bersih Januari 2026', debit: 0, credit: 180_000_000, amount: 180_000_000, reference: 'JE-2026-0600', jeId: 'JE-2026-0600', variant: 'active' },
-  { id: 'TXN-EQT-0550', date: '2026-01-31', txId: 'TXN-EQT-0550', account: 'Modal Disetor', type: 'Capital Injection', description: 'Peningkatan modal dari pemegang saham lama', debit: 0, credit: 0, amount: 0, reference: 'CAP-2026-0001', jeId: 'CAP-2026-0001', variant: 'neutral' },
-];
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 baris.
+const SAMPLE_ROWS: EquityTxRow[] = [];
 
 interface EquityTransactionsProps {
   isSampleData: boolean;

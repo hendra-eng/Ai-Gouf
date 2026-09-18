@@ -1,10 +1,10 @@
--- public.management_users definition
+-- app.management_users definition
 
 -- Drop table
 
--- DROP TABLE public.management_users;
+-- DROP TABLE app.management_users;
 
-CREATE TABLE public.management_users (
+CREATE TABLE app.management_users (
 	id_user uuid DEFAULT gen_random_uuid() NOT NULL,
 	-- [BARU] username/password_hash ditambah supaya tabel ini bisa dipakai
 	-- login (dipasang lewat backend/migrations/add_management_users_auth.py,
@@ -24,13 +24,13 @@ CREATE TABLE public.management_users (
 	CONSTRAINT management_users_username_key UNIQUE (username)
 );
 
--- public.management_audit_trails definition
+-- app.management_audit_trails definition
 
 -- Drop table
 
--- DROP TABLE public.management_audit_trails;
+-- DROP TABLE app.management_audit_trails;
 
-CREATE TABLE public.management_audit_trails (
+CREATE TABLE app.management_audit_trails (
 	id uuid DEFAULT gen_random_uuid() NOT NULL,
 	id_user uuid NOT NULL,
 	"timestamp" timestamp NOT NULL,
@@ -41,5 +41,5 @@ CREATE TABLE public.management_audit_trails (
 	updated_at timestamptz DEFAULT now() NOT NULL,
 	deleted_at timestamptz NULL,
 	CONSTRAINT management_audit_trails_pkey PRIMARY KEY (id),
-	CONSTRAINT fk_audit_trails_user FOREIGN KEY (id_user) REFERENCES public.management_users(id_user) ON DELETE CASCADE
+	CONSTRAINT fk_audit_trails_user FOREIGN KEY (id_user) REFERENCES app.management_users(id_user) ON DELETE CASCADE
 );

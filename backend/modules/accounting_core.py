@@ -150,7 +150,7 @@ def ensure_seed_data() -> None:
         session.close()
 
 
-def _account_metadata(session: Session, client_id: int, account_code: str) -> Dict[str, Any]:
+def _account_metadata(session: Session, client_id: str, account_code: str) -> Dict[str, Any]:
     coa = session.query(dbc.Coa).filter(
         dbc.Coa.client_id == client_id,
         dbc.Coa.no_akun == str(account_code),
@@ -184,7 +184,7 @@ def _account_metadata(session: Session, client_id: int, account_code: str) -> Di
     }
 
 
-def validate_lines(client_id: int, lines: Sequence[Dict[str, Any]], session: Optional[Session] = None) -> Dict[str, Any]:
+def validate_lines(client_id: str, lines: Sequence[Dict[str, Any]], session: Optional[Session] = None) -> Dict[str, Any]:
     own_session = session is None
     session = session or dbc.SessionLocal()
     try:
@@ -225,7 +225,7 @@ def validate_lines(client_id: int, lines: Sequence[Dict[str, Any]], session: Opt
             session.close()
 
 
-def sync_legacy_to_core(client_id: int, posting_ids: Optional[Iterable[int]] = None) -> int:
+def sync_legacy_to_core(client_id: str, posting_ids: Optional[Iterable[int]] = None) -> int:
     """Mirror jurnal_posting ke JournalEntry/JournalLine. Idempotent.
 
     Ini compatibility layer supaya struktur lama tetap berfungsi. Setiap kali
@@ -342,7 +342,7 @@ def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"]) -
     }
 
 
-def list_journal_entries(client_id: int, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+def list_journal_entries(client_id: str, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
     sync_legacy_to_core(client_id)
     session = dbc.SessionLocal()
     try:
@@ -365,7 +365,7 @@ def list_journal_entries(client_id: int, status: Optional[str] = None, limit: Op
         session.close()
 
 
-def list_posted_lines(client_id: int, tanggal_mulai: Optional[str] = None,
+def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
                       tanggal_akhir: Optional[str] = None) -> List[Dict[str, Any]]:
     """Flat journal lines untuk GL/TB/FS. Hanya POSTED."""
     sync_legacy_to_core(client_id)
@@ -415,7 +415,7 @@ def list_posted_lines(client_id: int, tanggal_mulai: Optional[str] = None,
         session.close()
 
 
-def create_journal_entry(client_id: int, *, source_module: str, posting_date: Any,
+def create_journal_entry(client_id: str, *, source_module: str, posting_date: Any,
                          description: str, lines: Sequence[Dict[str, Any]], created_by: str,
                          status: str = "DRAFT", source_transaction_id: Optional[str] = None,
                          reference: Optional[str] = None, currency: str = "IDR") -> Dict[str, Any]:
@@ -477,7 +477,7 @@ def create_journal_entry(client_id: int, *, source_module: str, posting_date: An
         session.close()
 
 
-def post_journal_entry(client_id: int, journal_entry_id: int, user: str) -> Dict[str, Any]:
+def post_journal_entry(client_id: str, journal_entry_id: int, user: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         entry = session.query(dbc.JournalEntry).filter(
@@ -509,7 +509,7 @@ def post_journal_entry(client_id: int, journal_entry_id: int, user: str) -> Dict
         session.close()
 
 
-def set_coa_mapping(client_id: int, coa_id: int, standard_code: str, user: str) -> Dict[str, Any]:
+def set_coa_mapping(client_id: str, coa_id: int, standard_code: str, user: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         coa = session.query(dbc.Coa).filter(dbc.Coa.id == coa_id, dbc.Coa.client_id == client_id).first()
@@ -540,7 +540,7 @@ def set_coa_mapping(client_id: int, coa_id: int, standard_code: str, user: str) 
         session.close()
 
 
-def set_company_account_role(client_id: int, role_code: str, coa_id: int, user: str) -> Dict[str, Any]:
+def set_company_account_role(client_id: str, role_code: str, coa_id: int, user: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         coa = session.query(dbc.Coa).filter(dbc.Coa.id == coa_id, dbc.Coa.client_id == client_id).first()
@@ -569,7 +569,7 @@ def set_company_account_role(client_id: int, role_code: str, coa_id: int, user: 
         session.close()
 
 
-def mapping_health(client_id: int) -> Dict[str, Any]:
+def mapping_health(client_id: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         coas = session.query(dbc.Coa).filter(dbc.Coa.client_id == client_id, dbc.Coa.aktif.is_(True)).all()

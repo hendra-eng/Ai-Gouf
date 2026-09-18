@@ -10,12 +10,12 @@ import { getNiceTicksFromZero, formatAxisValue } from '@/lib/chartTicks';
 
 // Backend integration point: replace with /api/statements/equity?company=&period=
 const bridgeRaw = [
-  { name: 'Opening\nEquity', value: 8420, start: 0, end: 8420, type: 'base' },
-  { name: 'Capital\nContributions', value: 750, start: 8420, end: 9170, type: 'positive' },
-  { name: 'Net\nProfit', value: 1840, start: 9170, end: 11010, type: 'positive' },
-  { name: 'Dividends', value: -420, start: 10590, end: 11010, type: 'negative' },
-  { name: 'Other\nAdjustments', value: -85, start: 10505, end: 10590, type: 'negative' },
-  { name: 'Closing\nEquity', value: 10505, start: 0, end: 10505, type: 'base' },
+  { name: 'Opening\nEquity', value: 0, start: 0, end: 0, type: 'base' },
+  { name: 'Capital\nContributions', value: 0, start: 0, end: 0, type: 'positive' },
+  { name: 'Net\nProfit', value: 0, start: 0, end: 0, type: 'positive' },
+  { name: 'Dividends', value: 0, start: 0, end: 0, type: 'negative' },
+  { name: 'Other\nAdjustments', value: 0, start: 0, end: 0, type: 'negative' },
+  { name: 'Closing\nEquity', value: 0, start: 0, end: 0, type: 'base' },
 ];
 
 // Build invisible base + visible bar for each item (sama pola dengan chart P&L / Cash Flow)

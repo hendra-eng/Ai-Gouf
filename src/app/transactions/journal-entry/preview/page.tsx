@@ -33,9 +33,23 @@ const statusLabels: Record<JEStatus, string> = {
 };
 
 export default function JournalPreviewPage() {
-  const [selectedId, setSelectedId] = useState(journalEntries[0].id);
+  const [selectedId, setSelectedId] = useState(journalEntries[0]?.id ?? null);
 
   const je = journalEntries.find(t => t.id === selectedId) || journalEntries[0];
+
+  if (!je) {
+    return (
+      <div className="space-y-6 fade-in">
+        <JournalEntryTabs activeTab="preview" />
+        <div className="je-card p-10 flex flex-col items-center justify-center text-center gap-2">
+          <DocumentTextIcon className="w-8 h-8 text-muted-foreground" />
+          <p className="text-sm font-semibold text-foreground">No journal entries yet</p>
+          <p className="text-xs text-muted-foreground">Once journal entries are posted, you'll be able to preview them here.</p>
+        </div>
+      </div>
+    );
+  }
+
   const totalDebit = je.lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = je.lines.reduce((s, l) => s + l.credit, 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;

@@ -3,9 +3,8 @@ import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
 
 const companies = [
-  'PT Nusantara Teknologi',
-  'PT Maju Bersama',
-  'CV Karya Digital',
+  'PT Nusantara Teknologi Indonesia',
+  'PT Maju Bersama Sentosa',
 ];
 
 const periods = [

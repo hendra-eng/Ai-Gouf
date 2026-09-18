@@ -154,8 +154,9 @@ function buildFromRaw(raw: any): Omit<AssetRegisterData, 'loading' | 'isSampleDa
 }
 
 export function useAssetRegisterData(): AssetRegisterData {
-  const { activeClientId } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [raw, setRaw] = useState<any | null>(null);
   const requestIdRef = useRef(0);
 
@@ -187,9 +188,10 @@ export function useAssetRegisterData(): AssetRegisterData {
   };
 
   useEffect(() => {
+    if (!hydrated) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   useEffect(() => {
     return listenClientDataChanged((changedClientId) => {

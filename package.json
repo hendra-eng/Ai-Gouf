@@ -1,5 +1,5 @@
 {
-  "name": "finovaai",
+  "name": "AppGouf",
   "version": "0.1.0",
   "private": true,
   "rocketCritical": {
@@ -42,6 +42,7 @@
     "dev": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:dev:frontend\" \"npm:dev:backend\"",
     "build": "next build",
     "start": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:start:frontend\" \"npm:start:backend\"",
+    "start:full": "npm run build && npm run start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",
@@ -57,16 +58,17 @@
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/forms": "^0.5.10",
     "@tailwindcss/typography": "^0.5.16",
+    "@tanstack/react-query": "^5.103.1",
+    "exceljs": "^4.4.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
-    "xlsx": "^0.18.5",
-    "exceljs": "^4.4.0",
     "lucide-react": "^1.7.0",
     "next": "15.5.18",
     "react": "19.0.3",
     "react-dom": "19.0.3",
     "recharts": "^2.15.2",
-    "sonner": "^1.7.4"
+    "sonner": "^1.7.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

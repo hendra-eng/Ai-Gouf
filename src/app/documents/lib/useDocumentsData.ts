@@ -174,12 +174,14 @@ export interface DocumentsData {
 }
 
 export function useDocumentsData(): DocumentsData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<FinancialDocument[] | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!activeClientId) {
       setDocs(null);
       setLoading(false);
@@ -201,7 +203,7 @@ export function useDocumentsData(): DocumentsData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId, activeClientName]);
+  }, [hydrated, activeClientId, activeClientName]);
 
   const adaDataReal = !!docs && docs.length > 0;
 

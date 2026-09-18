@@ -52,7 +52,6 @@ import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
 import {
   CF_CORE as MOCK_CF_CORE,
-  CF_MONTHLY as MOCK_CF_MONTHLY,
   COMPANY,
 } from '@/lib/financialData';
 
@@ -80,7 +79,6 @@ interface CashFlowData {
 }
 
 const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
 
 function bulatkanJuta(v: number | null | undefined): number {
   return Math.round(((v || 0) / 1_000_000) * 100) / 100;
@@ -308,12 +306,14 @@ function hitungDataArusKas(hasil: any, coa: any[], tahun: number) {
 }
 
 export function useCashFlowData(): CashFlowData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [computed, setComputed] = useState<ReturnType<typeof hitungDataArusKas> | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!activeClientId) {
       setComputed(null);
       setLoading(false);
@@ -340,7 +340,7 @@ export function useCashFlowData(): CashFlowData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   if (computed) {
     return {
@@ -354,42 +354,6 @@ export function useCashFlowData(): CashFlowData {
       INVESTING_ITEMS: computed.INVESTING_ITEMS,
       FINANCING_ITEMS: computed.FINANCING_ITEMS,
       RECENT_TRANSACTIONS: computed.RECENT_TRANSACTIONS,
-    };
-  }
-
-  // Sample fallback hanya untuk demo/development.
-  if (DEMO_MODE) {
-    return {
-      loading,
-      isSampleData: true,
-      companyName: COMPANY.name,
-      periodLabel: 'Jan 2026 – Aug 2026',
-      CF_CORE: MOCK_CF_CORE,
-      CF_MONTHLY: MOCK_CF_MONTHLY,
-      OPERATING_ITEMS: [
-        { name: 'Piutang Usaha', inflow: 0, outflow: 142, href: '/accounts-receivable' },
-        { name: 'Persediaan', inflow: 0, outflow: 38, href: '/transactions' },
-        { name: 'Hutang Usaha', inflow: 86, outflow: 0, href: '/accounts-payable' },
-        { name: 'Kewajiban Akrual', inflow: 44, outflow: 0, href: '/liabilities' },
-      ],
-      INVESTING_ITEMS: [
-        { name: 'Peralatan & Mesin', inflow: 0, outflow: 380, href: '/assets' },
-        { name: 'Aset Tak Berwujud', inflow: 0, outflow: 120, href: '/assets' },
-        { name: 'Investasi Jangka Panjang', inflow: 0, outflow: 200, href: '/assets' },
-        { name: 'Penjualan Aset Tetap', inflow: 45, outflow: 0, href: '/assets' },
-      ],
-      FINANCING_ITEMS: [
-        { name: 'Hutang Bank', inflow: 500, outflow: 280, href: '/liabilities' },
-        { name: 'Dividen', inflow: 0, outflow: 320, href: '/equity' },
-        { name: 'Sewa (Lease)', inflow: 0, outflow: 85, href: '/liabilities' },
-      ],
-      RECENT_TRANSACTIONS: [
-        { id: 'CF-2026-0001', date: '28 Aug 2026', type: 'Receipt', desc: 'Invoice payment — PT Mitra Solusi', account: 'Piutang Usaha', inflow: 185, outflow: 0, party: 'PT Mitra Solusi', status: 'Posted' },
-        { id: 'CF-2026-0002', date: '27 Aug 2026', type: 'Payment', desc: 'Vendor payment — ABC Supplier', account: 'Hutang Usaha', inflow: 0, outflow: 42, party: 'ABC Supplier', status: 'Posted' },
-        { id: 'CF-2026-0003', date: '27 Aug 2026', type: 'Payment', desc: 'Payroll — August 2026', account: 'Beban Gaji', inflow: 0, outflow: 124, party: 'Karyawan', status: 'Posted' },
-        { id: 'CF-2026-0004', date: '26 Aug 2026', type: 'Receipt', desc: 'Service revenue — PT Karya Digital', account: 'Pendapatan Jasa', inflow: 68, outflow: 0, party: 'PT Karya Digital', status: 'Posted' },
-        { id: 'CF-2026-0005', date: '26 Aug 2026', type: 'Payment', desc: 'Office rent — August 2026', account: 'Beban Sewa', inflow: 0, outflow: 22.5, party: 'Landlord', status: 'Posted' },
-      ],
     };
   }
 

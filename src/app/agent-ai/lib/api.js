@@ -615,6 +615,67 @@ export async function riwayatHasilClient(clientId) {
 }
 
 /**
+ * [BARU] Data mentah modul Purchase (vendor, purchase_transaction,
+ * purchase_line_items, source_data, purchase_journal_lines, exceptions)
+ * untuk satu client. Lihat main.py: GET /api/client/{client_id}/purchase,
+ * dipetakan ke tipe frontend oleh
+ * src/app/transactions/purchase/purchasebridge.ts.
+ */
+export async function purchaseDataClient(clientId) {
+  return request(`/api/client/${clientId}/purchase`);
+}
+
+/**
+ * [BARU] Ubah status satu transaksi Purchase -- dipakai tombol Submit for
+ * Review/Approve/Reject/Post to GL/Return for Correction di halaman
+ * Journal Preview. `purchaseRowId` adalah UUID baris (field `id` yang
+ * sudah dipetakan purchasebridge.ts), BUKAN kode `purchase_id` (mis.
+ * "PUR-2026-09-0001").
+ * @param {number|string} clientId
+ * @param {string} purchaseRowId
+ * @param {string} status
+ * @param {string} [alasan]
+ */
+export async function updatePurchaseStatus(clientId, purchaseRowId, status, alasan) {
+  return request(`/api/client/${clientId}/purchase/${purchaseRowId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, alasan }),
+  });
+}
+
+/**
+ * [BARU] Ubah status banyak transaksi Purchase sekaligus -- dipakai tombol
+ * "Bulk Approve" di halaman Transaction.
+ * @param {number|string} clientId
+ * @param {string[]} ids
+ * @param {string} targetStatus
+ * @param {string} [fromStatus] -- kalau diisi, baris yang statusnya bukan ini dilewati
+ */
+export async function bulkUpdatePurchaseStatus(clientId, ids, targetStatus, fromStatus) {
+  return request(`/api/client/${clientId}/purchase/bulk-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, target_status: targetStatus, from_status: fromStatus }),
+  });
+}
+
+/**
+ * [BARU] Ubah status satu exception Purchase -- dipakai tombol Start
+ * Review/Flag/Mark Resolved/Begin Correction/Ignore di halaman Exceptions.
+ * @param {number|string} clientId
+ * @param {string} exceptionId
+ * @param {string} exceptionStatus
+ */
+export async function updatePurchaseExceptionStatus(clientId, exceptionId, exceptionStatus) {
+  return request(`/api/client/${clientId}/purchase/exceptions/${exceptionId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exception_status: exceptionStatus }),
+  });
+}
+
+/**
  * [BARU] Audit trail (riwayat perubahan) -- siapa mengubah apa kapan,
  * mencakup auto-fix data, perubahan COA, jawaban klarifikasi, posting/
  * tolak jurnal, dan generate laporan keuangan. Lihat main.py:
@@ -1206,6 +1267,139 @@ export async function postingMassalByIds(clientId, postingIds) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ posting_ids: postingIds }),
+  });
+}
+
+// [BARU] Modul Bank & Cash -- tabel finance_transaction_bank_cash, dipakai
+// halaman Cash Payment/Cash Receipt (menggantikan sumber data lama yang
+// lewat jurnal-posting umum). 5 fungsi di bawah pola-nya identik dengan
+// daftarJurnalPosting/updateJurnalPosting/buatJurnalManual/
+// postingMassalByIds/tolakPosting di atas, cuma menunjuk endpoint
+// /bank-cash -- lihat bankCashBridge.ts untuk pemetaan ke Transaction.
+
+/**
+ * @param {number|string} clientId
+ * @param {string} status -- "" (default, semua status) | "draft" | "terposting" | "ditolak"
+ */
+export async function daftarBankCash(clientId, status = "") {
+  return request(`/api/client/${clientId}/bank-cash?status=${encodeURIComponent(status)}`);
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {number} bankCashId
+ * @param {Record<string, unknown>} perubahan
+ */
+export async function updateBankCash(clientId, bankCashId, perubahan) {
+  return request(`/api/client/${clientId}/bank-cash/${bankCashId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(perubahan),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {Record<string, unknown>} bankCashBaru -- wajib menyertakan jenis_dokumen: 'cash_payment' | 'cash_receipt'
+ * @returns {Promise<{berhasil: boolean, bank_cash_id: number}>}
+ */
+export async function buatBankCashManual(clientId, bankCashBaru) {
+  return request(`/api/client/${clientId}/bank-cash/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bankCashBaru),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {number[]} ids
+ */
+export async function postingMassalBankCashByIds(clientId, ids) {
+  return request(`/api/client/${clientId}/bank-cash/posting-massal-by-ids`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {number} bankCashId
+ * @param {string} [alasan]
+ */
+export async function tolakBankCash(clientId, bankCashId, alasan) {
+  return request(`/api/client/${clientId}/bank-cash/${bankCashId}/tolak`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alasan }),
+  });
+}
+
+// [BARU] Modul Other (jurnal lain-lain) -- tabel finance_transaction_other,
+// dipakai halaman Other (menggantikan sumber data lama yang lewat
+// jurnal-posting umum + tebakan kategori/nama akun). Pola identik 5 fungsi
+// Bank & Cash di atas, bedanya update/posting/tolak dipanggil dengan je_id
+// (string, mis. "OTH-a1b2c3d4") -- bukan id numerik -- karena satu entri
+// Other = dua baris (leg debet + leg kredit) yang dikelompokkan lewat
+// je_id yang sama. Lihat otherBridge.ts untuk pemetaan ke Transaction.
+
+/**
+ * @param {number|string} clientId
+ * @param {string} status -- "" (default, semua status) | "Unposted" | "Posted" | "Draft" | "Reconciled" | "Voided"
+ */
+export async function daftarFinanceOther(clientId, status = "") {
+  return request(`/api/client/${clientId}/finance-other?status=${encodeURIComponent(status)}`);
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string} jeId -- mis. "OTH-a1b2c3d4"
+ * @param {Record<string, unknown>} perubahan
+ */
+export async function updateFinanceOther(clientId, jeId, perubahan) {
+  return request(`/api/client/${clientId}/finance-other/${encodeURIComponent(jeId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(perubahan),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {Record<string, unknown>} entriBaru
+ * @returns {Promise<{berhasil: boolean, je_id: string}>}
+ */
+export async function buatFinanceOtherManual(clientId, entriBaru) {
+  return request(`/api/client/${clientId}/finance-other/manual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entriBaru),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string[]} jeIds
+ */
+export async function postingMassalFinanceOtherByJeIds(clientId, jeIds) {
+  return request(`/api/client/${clientId}/finance-other/posting-massal-by-je-ids`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ je_ids: jeIds }),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string} jeId
+ * @param {string} [alasan]
+ */
+export async function tolakFinanceOther(clientId, jeId, alasan) {
+  return request(`/api/client/${clientId}/finance-other/${encodeURIComponent(jeId)}/tolak`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alasan }),
   });
 }
 

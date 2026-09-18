@@ -15,47 +15,48 @@ const PLWaterfallChart = dynamic(() => import('./PLWaterfallChart'), {
 const plData = {
   revenue: {
     label: 'Total Revenue',
-    value: 8420,
+    value: 0,
     children: [
-      { label: 'Layanan Konsultasi IT', value: 4210, pct: 50.0 },
-      { label: 'Pengembangan Software', value: 2526, pct: 30.0 },
-      { label: 'Lisensi & Maintenance', value: 1262, pct: 15.0 },
-      { label: 'Pelatihan & Sertifikasi', value: 422, pct: 5.0 },
+      { label: 'Layanan Konsultasi IT', value: 0, pct: 0 },
+      { label: 'Pengembangan Software', value: 0, pct: 0 },
+      { label: 'Lisensi & Maintenance', value: 0, pct: 0 },
+      { label: 'Pelatihan & Sertifikasi', value: 0, pct: 0 },
     ],
   },
   cogs: {
     label: 'Cost of Goods Sold',
-    value: 4700,
+    value: 0,
     children: [
-      { label: 'Direct Labor', value: 2820, pct: 60.0 },
-      { label: 'Subcontractor', value: 940, pct: 20.0 },
-      { label: 'Infrastructure & Hosting', value: 658, pct: 14.0 },
-      { label: 'Software Licenses (COGS)', value: 282, pct: 6.0 },
+      { label: 'Direct Labor', value: 0, pct: 0 },
+      { label: 'Subcontractor', value: 0, pct: 0 },
+      { label: 'Infrastructure & Hosting', value: 0, pct: 0 },
+      { label: 'Software Licenses (COGS)', value: 0, pct: 0 },
     ],
   },
-  grossProfit: { label: 'Gross Profit', value: 3720 },
+  grossProfit: { label: 'Gross Profit', value: 0 },
   opex: {
     label: 'Operating Expenses',
-    value: 1180,
+    value: 0,
     children: [
-      { label: 'Gaji & Tunjangan (G&A)', value: 485, pct: 41.1 },
-      { label: 'Marketing & Promosi', value: 265, pct: 22.5 },
-      { label: 'Sewa Kantor', value: 190, pct: 16.1 },
-      { label: 'Software & Teknologi', value: 128, pct: 10.8 },
-      { label: 'Perjalanan Dinas', value: 72, pct: 6.1 },
-      { label: 'Lain-lain', value: 40, pct: 3.4 },
+      { label: 'Gaji & Tunjangan (G&A)', value: 0, pct: 0 },
+      { label: 'Marketing & Promosi', value: 0, pct: 0 },
+      { label: 'Sewa Kantor', value: 0, pct: 0 },
+      { label: 'Software & Teknologi', value: 0, pct: 0 },
+      { label: 'Perjalanan Dinas', value: 0, pct: 0 },
+      { label: 'Lain-lain', value: 0, pct: 0 },
     ],
   },
-  ebitda: { label: 'EBITDA', value: 2310 },
-  depreciation: { label: 'Depreciation & Amortization', value: 210 },
-  ebit: { label: 'EBIT (Operating Income)', value: 2330 },
-  interest: { label: 'Interest Expense', value: 148 },
-  ebt: { label: 'Earnings Before Tax', value: 2182 },
-  tax: { label: 'Income Tax (PPh Badan)', value: 436 },
-  netProfit: { label: 'Net Profit', value: 1840 },
+  ebitda: { label: 'EBITDA', value: 0 },
+  depreciation: { label: 'Depreciation & Amortization', value: 0 },
+  ebit: { label: 'EBIT (Operating Income)', value: 0 },
+  interest: { label: 'Interest Expense', value: 0 },
+  ebt: { label: 'Earnings Before Tax', value: 0 },
+  tax: { label: 'Income Tax (PPh Badan)', value: 0 },
+  netProfit: { label: 'Net Profit', value: 0 },
 };
 
 function formatPct(v: number, total: number) {
+  if (!total) return '0.0%';
   return `${((v / total) * 100).toFixed(1)}%`;
 }
 
@@ -155,7 +156,7 @@ export default function PLStatement() {
       {/* Waterfall chart */}
       <div className="card-elevated-md rounded-xl p-5">
         <h3 className="text-base font-bold text-foreground mb-1">{t('P&L Waterfall — Revenue to Net Profit')}</h3>
-        <p className="text-xs text-muted-foreground mb-4">{fx(t('How Rp 8.42M revenue becomes Rp 1.84M net profit'))}</p>
+        <p className="text-xs text-muted-foreground mb-4">{fx(t('How Rp 0 revenue becomes Rp 0 net profit'))}</p>
         <PLWaterfallChart />
       </div>
 
@@ -204,10 +205,10 @@ export default function PLStatement() {
         {/* Summary metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border border-t border-border">
           {[
-            { label: 'Gross Margin', value: `${((plData.grossProfit.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'EBITDA Margin', value: `${((plData.ebitda.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'Net Margin', value: `${((plData.netProfit.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'Tax Rate Effective', value: `${((plData.tax.value / plData.ebt.value) * 100).toFixed(1)}%`, positive: false },
+            { label: 'Gross Margin', value: formatPct(plData.grossProfit.value, rev), positive: true },
+            { label: 'EBITDA Margin', value: formatPct(plData.ebitda.value, rev), positive: true },
+            { label: 'Net Margin', value: formatPct(plData.netProfit.value, rev), positive: true },
+            { label: 'Tax Rate Effective', value: formatPct(plData.tax.value, plData.ebt.value), positive: false },
           ].map((m) => (
             <div key={`plsum-${m.label}`} className="bg-card px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t(m.label)}</p>

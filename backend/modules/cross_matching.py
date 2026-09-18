@@ -517,7 +517,7 @@ def cocokkan_slip_gaji_absensi(
 # ============================================================
 
 def jalankan_rekonsiliasi_lintas_dokumen(
-    client_id: int,
+    client_id: str,
     dbc_module,
     npwp_perusahaan: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -565,7 +565,7 @@ def jalankan_rekonsiliasi_lintas_dokumen(
 #
 # @app.get("/api/client/{client_id}/rekonsiliasi-lintas-dokumen")
 # def api_rekonsiliasi_lintas_dokumen(
-#     client_id: int,
+#     client_id: str,
 #     npwp_perusahaan: Optional[str] = None,
 #     user: dict = Depends(auth.get_current_user),
 # ):

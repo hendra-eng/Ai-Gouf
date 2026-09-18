@@ -40,89 +40,11 @@ interface AuditFinding {
 // -- diturunkan dari jurnal_posting asli, endpoint yang sama dipakai
 // halaman Transaksi).
 
-const auditStages = [
-  { id: 'planning', label: 'Planning', date: '1 Jun 2026', done: true },
-  { id: 'fieldwork', label: 'Fieldwork', date: '15 Jun 2026', done: true },
-  { id: 'testing', label: 'Testing', date: 'In Progress', done: false, current: true },
-  { id: 'review', label: 'Review', date: 'Pending', done: false },
-  { id: 'mgmt-response', label: 'Mgmt Response', date: 'Pending', done: false },
-  { id: 'finalization', label: 'Finalization', date: 'Pending', done: false },
-];
+const auditStages: { id: string; label: string; date: string; done: boolean; current?: boolean }[] = [];
 
-const findings: AuditFinding[] = [
-  {
-    id: 'AUD-001', area: 'Revenue Recognition', description: 'Revenue recorded before delivery confirmation received',
-    account: 'Revenue', amount: 45_000_000, risk: 'High', assignedTo: 'Budi S.', dueDate: '15 Sep 2026',
-    status: 'Open', likelihood: 4, impact: 4,
-    rootCause: 'Lack of automated delivery confirmation integration with billing system.',
-    recommendation: 'Implement automated delivery confirmation before revenue recognition.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-002', area: 'Accounts Receivable', description: 'AR aging >90 days not provisioned per policy',
-    account: 'Accounts Receivable', amount: 120_000_000, risk: 'Critical', assignedTo: 'Sari W.', dueDate: '10 Sep 2026',
-    status: 'Under Review', likelihood: 5, impact: 5,
-    rootCause: 'Provisioning policy not applied to overdue balances exceeding 90 days.',
-    recommendation: 'Create provision of Rp 120M and review credit policy for high-risk customers.',
-    managementResponse: 'Finance team is reviewing the aging schedule and will create provisions by Sep 10.',
-  },
-  {
-    id: 'AUD-003', area: 'Fixed Assets', description: 'Depreciation calculation error — wrong useful life applied',
-    account: 'Depreciation Expense', amount: 28_000_000, risk: 'Medium', assignedTo: 'Ahmad R.', dueDate: '20 Sep 2026',
-    status: 'Open', likelihood: 3, impact: 3,
-    rootCause: 'Asset register not updated with revised useful life estimates.',
-    recommendation: 'Recalculate depreciation using correct useful life and adjust journal entries.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-004', area: 'Cash & Bank', description: 'Unreconciled bank items outstanding >30 days',
-    account: 'Cash & Bank', amount: 15_000_000, risk: 'Low', assignedTo: 'Dewi P.', dueDate: '25 Sep 2026',
-    status: 'Resolved', likelihood: 2, impact: 2,
-    rootCause: 'Bank reconciliation process not performed on schedule.',
-    recommendation: 'Implement weekly bank reconciliation process.',
-    managementResponse: 'Bank reconciliation completed. All items cleared.',
-  },
-  {
-    id: 'AUD-005', area: 'Payroll', description: 'Overtime calculation discrepancy in August payroll',
-    account: 'Salaries Expense', amount: 8_000_000, risk: 'Medium', assignedTo: 'Budi S.', dueDate: '18 Sep 2026',
-    status: 'Management Response', likelihood: 3, impact: 2,
-    rootCause: 'Overtime rate formula error in payroll system.',
-    recommendation: 'Correct payroll system formula and reprocess affected employees.',
-    managementResponse: 'HR has identified the formula error. Correction will be applied in September payroll.',
-  },
-  {
-    id: 'AUD-006', area: 'Tax', description: 'VAT input credit not claimed for eligible purchases',
-    account: 'Tax Payable', amount: 32_000_000, risk: 'High', assignedTo: 'Sari W.', dueDate: '12 Sep 2026',
-    status: 'Open', likelihood: 4, impact: 3,
-    rootCause: 'Tax team not reviewing all purchase invoices for VAT credit eligibility.',
-    recommendation: 'Review all purchase invoices from Jan-Aug 2026 and claim eligible VAT credits.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-007', area: 'Inventory', description: 'Stock count variance between system and physical count',
-    account: 'Inventory', amount: 18_000_000, risk: 'Medium', assignedTo: 'Ahmad R.', dueDate: '22 Sep 2026',
-    status: 'Under Review', likelihood: 3, impact: 3,
-    rootCause: 'Inventory movement not recorded in real-time.',
-    recommendation: 'Implement real-time inventory tracking and conduct monthly cycle counts.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-008', area: 'Expenses', description: 'Unsupported expense claims without receipts',
-    account: 'Operating Expenses', amount: 12_000_000, risk: 'Low', assignedTo: 'Dewi P.', dueDate: '28 Sep 2026',
-    status: 'Open', likelihood: 2, impact: 2,
-    rootCause: 'Expense claim policy not enforced consistently.',
-    recommendation: 'Reject unsupported claims and strengthen expense approval process.',
-    managementResponse: '',
-  },
-];
+const findings: AuditFinding[] = [];
 
-const auditActivities = [
-  { id: 'a1', user: 'Budi S.', action: 'AUD-002 finding created — AR aging >90 days not provisioned', time: '10:30 AM', date: '28 Aug 2026', type: 'finding' },
-  { id: 'a2', user: 'Sari W.', action: 'Evidence uploaded for AUD-001 — delivery confirmation policy', time: '2:15 PM', date: '27 Aug 2026', type: 'evidence' },
-  { id: 'a3', user: 'Ahmad R.', action: 'Control test completed — Revenue recognition procedures', time: '9:00 AM', date: '26 Aug 2026', type: 'test' },
-  { id: 'a4', user: 'Dewi P.', action: 'AUD-004 resolved — Bank reconciliation completed', time: '4:45 PM', date: '25 Aug 2026', type: 'resolved' },
-  { id: 'a5', user: 'Budi S.', action: 'Management response submitted for AUD-005', time: '11:20 AM', date: '24 Aug 2026', type: 'response' },
-];
+const auditActivities: { id: string; user: string; action: string; time: string; date: string; type: string }[] = [];
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -410,12 +332,12 @@ export default function AuditPage() {
   });
 
   const kpis = [
-    { label: 'Audit Completion', value: '78%', color: '#1B4FD8', bg: '#EFF6FF', icon: '📊' },
-    { label: 'Open Findings', value: '12', color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
-    { label: 'High Risk', value: '3', color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
-    { label: 'Pending Evidence', value: '8', color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },
-    { label: 'Adjustments', value: 'Rp 142M', color: '#0284C7', bg: '#F0F9FF', icon: '💰' },
-    { label: 'Controls Tested', value: '84%', color: '#059669', bg: '#ECFDF5', icon: '✅' },
+    { label: 'Audit Completion', value: '0%', color: '#1B4FD8', bg: '#EFF6FF', icon: '📊' },
+    { label: 'Open Findings', value: '0', color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
+    { label: 'High Risk', value: '0', color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
+    { label: 'Pending Evidence', value: '0', color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },
+    { label: 'Adjustments', value: 'Rp 0', color: '#0284C7', bg: '#F0F9FF', icon: '💰' },
+    { label: 'Controls Tested', value: '0%', color: '#059669', bg: '#ECFDF5', icon: '✅' },
   ];
 
   return (

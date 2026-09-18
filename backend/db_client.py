@@ -8,12 +8,13 @@ Client database untuk menyimpan hasil analisis per client.
 import hashlib
 import json
 import os
+import uuid
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime,
+    create_engine, Column, Integer, BigInteger, String, DateTime,
     Text, Float, Boolean, ForeignKey, ForeignKeyConstraint, text, UniqueConstraint, Index,
     Numeric, Date, func, JSON,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
 )
@@ -123,28 +124,99 @@ def _bulk_upsert(session, model, rows: List[Dict[str, Any]], index_elements: Lis
 # ============================================================
 
 class Client(Base):
-    __tablename__ = "clients"
+    """
+    [DIUBAH] Tabel `clients` di Supabase ternyata sudah dibuat manual lebih
+    dulu dengan skema data legal perusahaan Indonesia (NIB, status PKP,
+    klasifikasi lapangan usaha/KLU, dst) -- BUKAN skema generik lama di
+    bawah. Supaya SEMUA fungsi lain di file ini (tambah_client,
+    daftar_client, ambil_client, dst) dan semua endpoint di main.py TETAP
+    JALAN TANPA DIUBAH, nama atribut Python di sini sengaja DIPERTAHANKAN
+    sama seperti sebelumnya (nama, nomor_wa, industry, dst) -- yang
+    berubah HANYA nama kolom fisik di database (argumen pertama Column()),
+    lewat fitur aliasing bawaan SQLAlchemy.
 
-    id = Column(Integer, primary_key=True)
-    nama = Column(String(200), nullable=False)
-    lokasi = Column(String(200), nullable=True)
-    tipe = Column(String(50), nullable=False, default="accounting")  # "accounting" atau "pajak"
-    # [BARU] Kontak client -- dipakai sistem reminder deadline SPT utk kirim
-    # notifikasi WA/email proaktif sebelum jatuh tempo. Nullable krn client
-    # lama belum tentu punya data ini (isi belakangan lewat endpoint kontak).
-    nomor_wa = Column(String(30), nullable=True)  # format internasional mis. 6281234567890
-    email = Column(String(200), nullable=True)
-    # [BARU] Kolom profil client yang dipakai halaman Clients di dashboard
-    # (sebelumnya cuma tersimpan di localStorage browser, sekarang dipetakan
-    # ke tabel clients di Supabase supaya permanen & sama di semua device).
-    industry = Column(String(100), nullable=True)
-    status = Column(String(30), nullable=True)  # 'Healthy' | 'Stable' | 'Attention Required' | 'Critical'
-    assigned_accountant = Column(String(200), nullable=True)
-    contact_name = Column(String(200), nullable=True)
-    npwp = Column(String(30), nullable=True)
-    address = Column(Text, nullable=True)
-    dibuat_at = Column(DateTime, default=datetime.now)
-    diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    Kolom `lokasi` (skema lama) dipetakan ke `kota` (skema baru) sebagai
+    padanan paling dekat -- kalau nanti butuh provinsi/kode_pos juga,
+    tambahkan atribut baru terpisah (lihat kolom tambahan di bawah).
+
+    Kolom `tipe` (skema lama -- dulu berarti jenis LAYANAN "accounting"
+    vs "pajak") SENGAJA TIDAK dipetakan ke `tipe_badan_usaha` (skema baru
+    -- berarti bentuk BADAN USAHA "PT"/"CV", konsep yang beda sama
+    sekali). Untuk sementara `tipe` tidak lagi tersimpan ke database
+    (nilainya cuma default di sisi Python) -- filter dbc.daftar_client(
+    tipe=...) jadi tidak actually memfilter apa pun sampai kolom ini
+    diputuskan mau diisi dari mana. Kalau nanti dibutuhkan lagi, tambah
+    kolom baru khusus (mis. `tipe_layanan`) di tabel `clients`.
+
+    Kolom `status` (skema lama -- berarti status KESEHATAN finansial
+    client: Healthy/Stable/Attention Required/Critical, dipakai badge
+    warna di halaman Clients) BEDA KONSEP dari `status` di skema baru
+    (berarti status AKTIF/tidak-nya kerjasama, nilainya "aktif"). Supaya
+    tidak saling menimpa, kolom fisik "status" TIDAK dipetakan ke atribut
+    `status` lama -- lihat `status_kerjasama` di bawah untuk versi barunya.
+    Atribut `status` (health) untuk sementara TIDAK tersimpan ke database
+    (selalu None / fallback "Stable" di frontend) sampai dihitung otomatis
+    dari data keuangan asli (health score), sesuai catatan yang sudah ada
+    di clientsStore.tsx.
+    """
+    # [DIUBAH -- migrasi ke management_clients] Tabel `clients` (PK integer)
+    # sudah digantikan total oleh `management_clients` (PK uuid), selaras
+    # dengan `management_users`. Nama atribut Python di sini DIPERTAHANKAN
+    # sama seperti sebelumnya (nama, nomor_wa, industry, dst) lewat
+    # aliasing kolom, supaya kode lain (tambah_client, daftar_client,
+    # endpoint main.py, dst) tetap jalan -- yang beda cuma nama tabel/
+    # kolom fisik dan tipe primary key (uuid, bukan integer lagi). Lihat
+    # migration_uuid_client_id.sql untuk migrasi datanya.
+    __tablename__ = "management_clients"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_code = Column(String(50), nullable=True)
+    nama = Column("nama_client", String(255), nullable=False)
+    lokasi = Column("kota", String(255), nullable=True)
+    # [DIUBAH] Tidak lagi kolom fisik di DB -- lihat docstring di atas.
+    tipe = "accounting"
+    nomor_wa = Column("no_handphone", String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    industry = Column(String(255), nullable=True)
+    # [DIUBAH] Health status (UI) TIDAK dipetakan ke kolom fisik "status"
+    # -- lihat docstring. Tetap ada sebagai atribut Python (selalu None)
+    # supaya kode lain yang baca client.status tidak error.
+    status = None
+    # [DIUBAH] akuntan_penanggung_jawab sekarang uuid, merujuk ke
+    # management_users.id_user (dulu varchar nama bebas).
+    assigned_accountant = Column("akuntan_penanggung_jawab", PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    contact_name = Column("nama_pic", String(255), nullable=True)
+    npwp = Column(String(20), nullable=True)
+    address = Column("alamat", Text, nullable=True)
+    dibuat_at = Column("created_at", DateTime(timezone=True), server_default=text("now()"), nullable=True)
+    diperbarui_at = Column("edited_at", DateTime(timezone=True), nullable=True)
+
+    # [BARU] Kolom tambahan yang sudah ada di tabel Supabase, belum
+    # dipakai UI lama tapi tersedia untuk ditampilkan belakangan.
+    nama_panggilan = None  # [DIHAPUS] tidak ada lagi di management_clients
+    tipe_badan_usaha = Column(String(255), nullable=True)
+    nomor_akta_nib = Column(String(255), nullable=True)
+    status_pkp = Column(Boolean, nullable=True)
+    klasifikasi_lapangan_usaha = Column(String(255), nullable=True)
+    no_telepon = Column(String(255), nullable=True)
+    jabatan_pic = Column(String(255), nullable=True)
+    provinsi = Column(String(255), nullable=True)
+    kode_pos = Column(String(255), nullable=True)
+    tahun_buku_mulai = Column(String(10), nullable=True)
+    mata_uang_default = Column(String(10), nullable=True)
+    # Status AKTIF/tidak-nya kerjasama (skema baru) -- beda dari health
+    # status "status" (lama) yang sengaja tidak dipetakan, lihat docstring.
+    status_kerjasama = Column("status", String(10), nullable=True)
+    tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
+    # [DIUBAH] created_by/edited_by/deleted_by sekarang uuid -> management_users
+    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    diperbarui_oleh = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    # [BARU] hanya dipakai sementara untuk backfill migrasi -- lihat
+    # migration_uuid_client_id.sql (old_client_id = id integer lama).
+    old_client_id = Column(Integer, nullable=True)
 
     hasil = relationship("Hasil", back_populates="client")
     # [BARU] Akun integrasi ESB (POS/kasir) milik client ini -- lihat
@@ -161,7 +233,7 @@ class EsbAccount(Base):
     __tablename__ = "esb_accounts"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     account_name = Column(String(200), nullable=False)
     esb_type = Column(String(50), nullable=True)
     api_base_url = Column(String(500), nullable=True)
@@ -192,7 +264,7 @@ class Hasil(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "bank", "jual", "penilaian", "piutang"
     conv_id = Column(String(50), nullable=True)
     data = Column(Text, nullable=True)  # JSON string
@@ -210,7 +282,7 @@ class HasilEsb(Base):
     __tablename__ = "hasil_esb"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     esb_account_id = Column(Integer, ForeignKey("esb_accounts.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "bank", "jual", "penilaian", "piutang"
     conv_id = Column(String(50), nullable=True)
@@ -234,9 +306,10 @@ class Coa(Base):
     Laba Rugi, dan di sisi Neraca yang mana. Divalidasi di modules/coa.py.
     """
     __tablename__ = "coa"
+    __table_args__ = {"schema": "app"}
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     no_akun = Column(String(50), nullable=False)
     nama_akun = Column(String(200), nullable=False)
     kategori = Column(String(20), nullable=True)   # ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN
@@ -316,7 +389,7 @@ class JurnalPosting(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=True)
     tanggal = Column(String(20), nullable=True)
@@ -440,8 +513,8 @@ class CoaStandardMapping(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
-    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    coa_id = Column(Integer, ForeignKey("app.coa.id"), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -460,9 +533,9 @@ class CompanyAccountRole(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("account_roles.id"), nullable=False)
-    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=False)
+    coa_id = Column(Integer, ForeignKey("app.coa.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
     effective_to = Column(Date, nullable=True)
@@ -481,7 +554,7 @@ class JournalEntry(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     journal_no = Column(String(80), nullable=False)
     source_module = Column(String(50), nullable=False, default="GENERAL_JOURNAL")
     source_transaction_id = Column(String(100), nullable=True)
@@ -508,13 +581,14 @@ class JournalLine(Base):
     __table_args__ = (
         UniqueConstraint("journal_entry_id", "line_no", name="uq_journal_line_entry_no"),
         Index("idx_journal_line_client_account", "client_id", "account_code"),
+        {"schema": "app"},
     )
 
     id = Column(Integer, primary_key=True)
     journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     line_no = Column(Integer, nullable=False)
-    coa_id = Column(Integer, ForeignKey("coa.id"), nullable=True)
+    coa_id = Column(Integer, ForeignKey("app.coa.id"), nullable=True)
     account_code = Column(String(50), nullable=False)
     account_name = Column(String(200), nullable=True)
     standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=True)
@@ -547,7 +621,7 @@ class RiwayatSaldoBulanan(Base):
     __tablename__ = "riwayat_saldo_bulanan"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     no_akun = Column(String(50), nullable=False)
     nama_akun = Column(String(200), nullable=False)
     kategori = Column(String(20), nullable=True)
@@ -598,7 +672,7 @@ class VoucherCounter(Base):
     __tablename__ = "voucher_counter"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     kode_bank = Column(String(20), nullable=False)   # mis. "BRI", "MANDIRI", "BCA"
     periode = Column(String(10), nullable=False)     # format "MMYY", mis. "0726"
     nomor_terakhir = Column(Integer, nullable=False, default=0)
@@ -668,7 +742,7 @@ class UploadBatch(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=False, default="rekening_koran")
     kode_bank = Column(String(20), nullable=False)
@@ -710,7 +784,7 @@ class LaporanKeuangan(Base):
     __tablename__ = "laporan_keuangan"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     periode = Column(String(20), nullable=False)  # mis. "2026-07"
     tanggal_mulai = Column(String(20), nullable=True)
     tanggal_akhir = Column(String(20), nullable=True)
@@ -722,14 +796,42 @@ class LaporanKeuangan(Base):
 
 
 class AuditLog(Base):
-    __tablename__ = "audit_log"
+    # [DIUBAH -- migrasi ke management_audit_trails] `audit_log` (lama)
+    # digantikan `management_audit_trails`. Struktur beda konsep (dulu
+    # per-client: client_id/aksi/detail; sekarang per-user: id_user/ip/
+    # action/menu) -- atas permintaan user, client_id DITAMBAHKAN ke
+    # management_audit_trails supaya tracking "aksi di client mana"
+    # tidak hilang. Nama atribut Python (user, aksi, detail, dibuat_at)
+    # dipertahankan lewat aliasing supaya kode lama yang memanggil
+    # catat_audit_log(...) tidak perlu diubah semua.
+    __tablename__ = "management_audit_trails"
+    __table_args__ = {"schema": "app"}
 
-    id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
-    user = Column(String(100), nullable=False)
-    aksi = Column(String(100), nullable=False)
-    detail = Column(Text, nullable=True)  # JSON string
-    dibuat_at = Column(DateTime, default=datetime.now)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
+    # [DIUBAH] "user" (dulu: nama/username string bebas) TIDAK PUNYA
+    # padanan kolom lagi -- management_audit_trails pakai id_user (uuid,
+    # FK ke management_users) sebagai identitas pelaku, bukan string
+    # nama bebas. Kode lama yang men-set audit.user = "<nama>" perlu
+    # diubah kirim id_user (uuid) langsung; atribut ini sengaja
+    # dikosongkan (bukan dialiaskan ke kolom lain) supaya tidak
+    # tersimpan salah tempat.
+    user = None
+    aksi = Column("action", String(255), nullable=True)
+    menu = Column(String(255), nullable=True)
+    ip = Column(String(255), nullable=True)
+    # [DIHAPUS] "detail" (JSON bebas) tidak ada kolom padanan di
+    # management_audit_trails -- untuk sementara TIDAK tersimpan ke DB
+    # (selalu None) sampai diputuskan mau disimpan di kolom mana.
+    detail = None
+    dibuat_at = Column("timestamp", DateTime, nullable=False, default=datetime.now)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
 
 
 class User(Base):
@@ -744,6 +846,11 @@ class User(Base):
     tabel ini dipakai untuk login. Lihat migrations/xxx_management_users_auth.sql.
     """
     __tablename__ = "management_users"
+    # [DIUBAH] Tabel dipindah dari schema public ke schema app (lihat
+    # move_management_tables_to_app_schema.sql) -- ditambahkan di sini
+    # supaya ORM ikut mencari/menyimpan ke app.management_users, bukan
+    # public.management_users lagi.
+    __table_args__ = {"schema": "app"}
 
     id_user = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     username = Column(String(100), unique=True, nullable=False)
@@ -751,11 +858,39 @@ class User(Base):
     nama_user = Column(String(255), nullable=False)
     alamat_user = Column(String(255), nullable=True)
     telp_user = Column(String(255), nullable=True)
-    role = Column(String(50), nullable=False, default="tahap_1")
+    # [DIUBAH] role sekarang INTEGER (1-5, dulu "tahap_N" varchar) --
+    # lihat helper role_int_ke_tahap()/role_tahap_ke_int() di bawah dan
+    # adapter di modules/auth/core.py yang tetap memakai string "tahap_N"
+    # supaya logic RBAC lama tidak perlu diubah semua.
+    role = Column(Integer, nullable=False, default=1)
     access = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+    # [BARU] kolom audit & relasi client tunggal, ditambahkan di migrasi
+    # management_users terbaru.
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
+
+
+def role_int_ke_tahap(role_int: int) -> str:
+    """Adapter: integer DB (1-5) -> string "tahap_N" yang dipakai LEVELS di
+    modules/auth/core.py. Dipanggil setiap kali User.role dibaca untuk JWT/RBAC."""
+    if role_int is None:
+        return "tahap_1"
+    return f"tahap_{int(role_int)}"
+
+
+def role_tahap_ke_int(role_tahap: str) -> int:
+    """Kebalikan role_int_ke_tahap() -- dipakai saat menyimpan role ke DB."""
+    if not role_tahap:
+        return 1
+    try:
+        return int(str(role_tahap).split("_")[-1])
+    except (ValueError, IndexError):
+        return 1
 
 
 class UserClientAccess(Base):
@@ -767,8 +902,8 @@ class UserClientAccess(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_users.id_user"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -782,7 +917,7 @@ class Percakapan(Base):
 
     id = Column(Integer, primary_key=True)
     username = Column(String(100), nullable=False)  # pemilik percakapan
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
     # [BARU] Kalau diisi, percakapan ini spesifik soal 1 akun ESB tertentu
     # (jalur terpisah dari percakapan umum soal client) -- lihat
     # daftar_percakapan(jalur=...) di bawah.
@@ -815,7 +950,7 @@ class HasilAnalisis(Base):
     __tablename__ = "hasil_analisis"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     # Isi kalau analisis ini spesifik 1 akun ESB, sama seperti pola di
     # tabel 'hasil' dan 'percakapan'. None -> analisis umum seluruh client.
     esb_account_id = Column(Integer, ForeignKey("esb_accounts.id"), nullable=True)
@@ -838,7 +973,7 @@ class PolaAugmentasi(Base):
     __tablename__ = "pola_augmentasi"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
     jenis = Column(String(50), nullable=True)  # "bank", "jual", dst -- jenis dokumen terkait
     data_asli = Column(Text, nullable=True)  # JSON: prediksi/kategori asli dari sistem
     koreksi = Column(Text, nullable=True)  # JSON: koreksi dari user
@@ -863,7 +998,7 @@ class PertanyaanKlarifikasi(Base):
     __tablename__ = "pertanyaan_klarifikasi"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     conv_id = Column(String(50), nullable=True)
     jenis = Column(String(50), nullable=False)  # "rekening_koran", "penjualan", dst
     baris_index = Column(Integer, nullable=True)  # index baris asli di df, utk update balik
@@ -891,7 +1026,7 @@ class AlertAnomali(Base):
     __tablename__ = "alert_anomali"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "rekening_koran", "penjualan", "spt_masa", dst
     tipe_alert = Column(String(50), nullable=False)  # "nominal_ekstrim" / "pola_mencurigakan" /
                                                       # "deadline_lapor_spt" / "deadline_setor_spt"
@@ -919,7 +1054,7 @@ class ReminderDeadlineSpt(Base):
     __tablename__ = "reminder_deadline_spt"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
     npwp = Column(String(30), nullable=True)
     kategori_spt = Column(String(50), nullable=True)  # kode dari KATEGORI_SPT
     jenis_spt_label = Column(String(200), nullable=True)  # label utk ditampilkan/dikirim
@@ -933,6 +1068,1205 @@ class ReminderDeadlineSpt(Base):
     diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     client = relationship("Client")
+
+
+# ============================================================
+# MODUL PURCHASE (BARU) -- tabel dibuat manual oleh user lewat Supabase
+# SQL Editor (purchase_tables.sql), BUKAN lewat init_db()/create_all() --
+# jadi model di bawah ini hanya MEMETAKAN tabel yang sudah ada (kolom
+# harus PERSIS sama dengan skema fisik di Supabase, dicek langsung via
+# information_schema.columns oleh user). PK-nya uuid (bukan Integer
+# serial seperti tabel lain di file ini), jadi pakai PG_UUID.
+#
+# CATATAN: tabel fisik awalnya bernama "journal_entries" (bentrok dengan
+# tabel resmi JournalEntry di atas, Accounting Core V2) -- sudah di-rename
+# manual oleh user jadi "purchase_journal_lines" sebelum model ini dibuat.
+# ============================================================
+
+class PurchaseVendor(Base):
+    """Vendor/supplier khusus modul Purchase."""
+    __tablename__ = "finance_transaction_purchase_vendor"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    name = Column(String(200), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PurchaseTransactionRow(Base):
+    """Header transaksi Purchase (satu invoice/tagihan vendor)."""
+    __tablename__ = "finance_transaction_purchase_transaction"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    purchase_id = Column(String(100), nullable=False)  # mis. "PUR-2026-09-0001"
+    vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("app.finance_transaction_purchase_vendor.id"), nullable=True)
+    invoice_no = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=True)
+    period = Column(String(50), nullable=True)
+    payment_terms = Column(String(100), nullable=True)
+    currency = Column(String(10), nullable=True)
+    source = Column(String(100), nullable=True)
+    purchase_date = Column(Date, nullable=True)
+    invoice_date = Column(Date, nullable=True)
+    posting_date = Column(Date, nullable=True)
+    due_date = Column(Date, nullable=True)
+    subtotal = Column(Numeric(24, 2), nullable=True)
+    discount = Column(Numeric(24, 2), nullable=True)
+    tax = Column(Numeric(24, 2), nullable=True)
+    total_payable = Column(Numeric(24, 2), nullable=True)
+    payment_status = Column(String(30), nullable=True)
+    status = Column(String(30), nullable=True)
+    prepared_by = Column(String(100), nullable=True)
+    approved_by = Column(String(100), nullable=True)
+    posted_by = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PurchaseLineItemRow(Base):
+    """Rincian barang/jasa per purchase_id (banyak baris per transaksi)."""
+    __tablename__ = "finance_transaction_purchase_line_items"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    purchase_id = Column(String(100), nullable=False)
+    item_code = Column(String(100), nullable=True)
+    item_name = Column(String(200), nullable=True)
+    qty = Column(Numeric(18, 2), nullable=True)
+    unit = Column(String(30), nullable=True)
+    unit_price = Column(Numeric(24, 2), nullable=True)
+    discount = Column(Numeric(24, 2), nullable=True)
+    tax_rate = Column(Numeric(6, 2), nullable=True)
+    tax_amount = Column(Numeric(24, 2), nullable=True)
+    subtotal = Column(Numeric(24, 2), nullable=True)
+    total = Column(Numeric(24, 2), nullable=True)
+    gl_account = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PurchaseSourceDataRow(Base):
+    """Dokumen sumber (PO/invoice/dsb) sebelum dipetakan jadi purchase_transaction."""
+    __tablename__ = "finance_transaction_purchase_source_data"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    source_id = Column(String(100), nullable=True)
+    type = Column(String(50), nullable=True)
+    vendor = Column(String(200), nullable=True)
+    date = Column(Date, nullable=True)
+    invoice_no = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    amount = Column(Numeric(24, 2), nullable=True)
+    tax = Column(Numeric(24, 2), nullable=True)
+    total = Column(Numeric(24, 2), nullable=True)
+    purchase_ref = Column(String(100), nullable=True)  # purchase_id yang sudah kepetakan, kalau ada
+    validation = Column(String(50), nullable=True)
+    status = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PurchaseJournalLineRow(Base):
+    """
+    Draf jurnal per purchase_id (satu baris = satu leg debit/kredit).
+    Nama tabel fisik "purchase_journal_lines" -- lihat catatan rename di
+    atas modul ini (sebelumnya salah dibuat sebagai "journal_entries").
+    """
+    __tablename__ = "finance_transaction_purchase_journal_lines"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    purchase_id = Column(String(100), nullable=False)
+    account_code = Column(String(50), nullable=True)
+    account_name = Column(String(200), nullable=True)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=True)
+    credit = Column(Numeric(24, 2), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PurchaseExceptionRow(Base):
+    """Exception/pengecualian per purchase_id (butuh review akuntan)."""
+    __tablename__ = "finance_transaction_purchase_exceptions"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    purchase_id = Column(String(100), nullable=True)
+    reason = Column(String(255), nullable=True)
+    severity = Column(String(30), nullable=True)
+    exception_status = Column(String(30), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+PURCHASE_STATUS_VALID = {
+    "draft", "pending_review", "approved", "pending_posting",
+    "posted", "rejected", "exception", "cancelled",
+}
+PURCHASE_EXCEPTION_STATUS_VALID = {
+    "Open", "Under Review", "Requires Correction", "Resolved", "Ignored",
+}
+
+
+def _purchase_transaction_ke_dict(t: "PurchaseTransactionRow") -> Dict[str, Any]:
+    return {
+        "id": str(t.id),
+        "purchase_id": t.purchase_id,
+        "status": t.status,
+        "payment_status": t.payment_status,
+        "approved_by": t.approved_by,
+        "posted_by": t.posted_by,
+        "posting_date": t.posting_date.isoformat() if t.posting_date else None,
+        "description": t.description,
+    }
+
+
+def update_purchase_status(
+    purchase_row_id: str, client_id: str, user: str, status: str,
+    alasan: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """[BARU] Ubah status satu transaksi Purchase (dipakai tombol Submit for
+    Review/Approve/Reject/Post to GL/Return for Correction di halaman
+    Journal Preview & tombol View di halaman Transaction). Pola identik
+    update_bank_cash() tapi kolom status Purchase punya lebih banyak nilai
+    (lihat PURCHASE_STATUS_VALID) jadi tidak diterjemahkan lewat
+    _map_status_frontend_ke_backend -- dipakai apa adanya dari frontend."""
+    if status not in PURCHASE_STATUS_VALID:
+        raise ValueError(f"Status '{status}' tidak dikenal. Nilai sah: {sorted(PURCHASE_STATUS_VALID)}")
+
+    session = SessionLocal()
+    try:
+        t = session.query(PurchaseTransactionRow).filter(
+            PurchaseTransactionRow.id == purchase_row_id,
+            PurchaseTransactionRow.client_id == client_id,
+        ).first()
+        if t is None:
+            return None
+
+        t_old_status = t.status
+        t.status = status
+        t.updated_at = datetime.now()
+        if status == "approved":
+            t.approved_by = user
+        elif status == "posted":
+            t.posted_by = user
+            t.posting_date = datetime.now().date()
+        elif status == "rejected" and alasan:
+            t.description = f"{t.description or ''} [Ditolak: {alasan}]".strip()
+
+        if status == "approved":
+            _event_type, _desc = "APPROVED", "Transaksi disetujui"
+        elif status == "posted":
+            _event_type, _desc = "POSTED", "Transaksi diposting ke General Ledger"
+        elif status == "rejected":
+            _event_type, _desc = "REJECTED", f"Transaksi ditolak{f': {alasan}' if alasan else ''}"
+        elif status == "pending_review" and t_old_status == "approved":
+            _event_type, _desc = "RETURNED", "Dikembalikan untuk perbaikan"
+        elif status == "pending_review":
+            _event_type, _desc = "SUBMITTED", "Diajukan untuk review"
+        else:
+            _event_type, _desc = "STATUS_CHANGED", f"Status diubah jadi {status}"
+        _catat_log_purchase(
+            session, client_id, t.id, _event_type, _desc, user,
+            reference_no=t.purchase_id,
+        )
+
+        session.commit()
+        session.refresh(t)
+        return _purchase_transaction_ke_dict(t)
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error update purchase status: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def bulk_update_purchase_status(
+    client_id: str, ids: List[str], user: str, target_status: str,
+    from_status: Optional[str] = None,
+) -> Dict[str, int]:
+    """[BARU] Ubah status banyak transaksi Purchase sekaligus -- dipakai
+    tombol "Bulk Approve" di halaman Transaction. Kalau `from_status`
+    diisi, hanya baris yang sedang berstatus itu yang diproses (baris lain
+    dilewati, bukan error), pola identik posting_massal_bank_cash_by_ids()."""
+    if target_status not in PURCHASE_STATUS_VALID:
+        raise ValueError(f"Status '{target_status}' tidak dikenal.")
+    if not ids:
+        return {"diperbarui": 0, "dilewati": 0, "tidak_ditemukan": 0}
+
+    _UKURAN_BATCH_IN = 500
+    session = SessionLocal()
+    try:
+        ditemukan_ids: set = set()
+        diperbarui = 0
+        dilewati = 0
+        sekarang = datetime.now()
+
+        for awal in range(0, len(ids), _UKURAN_BATCH_IN):
+            kelompok_id = ids[awal:awal + _UKURAN_BATCH_IN]
+            q = session.query(PurchaseTransactionRow).filter(
+                PurchaseTransactionRow.client_id == client_id,
+                PurchaseTransactionRow.id.in_(kelompok_id),
+            )
+            rows = q.all()
+            for t in rows:
+                ditemukan_ids.add(str(t.id))
+                if from_status and t.status != from_status:
+                    dilewati += 1
+                    continue
+                t.status = target_status
+                t.updated_at = sekarang
+                if target_status == "approved":
+                    t.approved_by = user
+                elif target_status == "posted":
+                    t.posted_by = user
+                    t.posting_date = sekarang.date()
+                diperbarui += 1
+
+                _catat_log_purchase(
+                    session, client_id, t.id,
+                    target_status.upper() if target_status in ("approved", "posted", "rejected") else "STATUS_CHANGED",
+                    f"Status diubah jadi {target_status} (bulk update)", user,
+                    reference_no=t.purchase_id,
+                )
+
+        tidak_ditemukan = len(set(ids) - ditemukan_ids)
+        session.commit()
+        return {"diperbarui": diperbarui, "dilewati": dilewati, "tidak_ditemukan": tidak_ditemukan}
+    except Exception as e:
+        session.rollback()
+        print(f"Error bulk update purchase status: {e}")
+        return {"diperbarui": 0, "dilewati": 0, "tidak_ditemukan": 0}
+    finally:
+        session.close()
+
+
+def update_purchase_exception_status(
+    exception_id: str, client_id: str, exception_status: str, user: str = "System",
+) -> Optional[Dict[str, Any]]:
+    """[BARU] Ubah status satu exception Purchase -- dipakai tombol Start
+    Review/Flag/Mark Resolved/Begin Correction/Ignore di halaman
+    Exceptions. Sebelumnya cuma diubah di state React lokal (resolveMap),
+    jadi hilang lagi begitu halaman di-refresh."""
+    if exception_status not in PURCHASE_EXCEPTION_STATUS_VALID:
+        raise ValueError(f"Status '{exception_status}' tidak dikenal. Nilai sah: {sorted(PURCHASE_EXCEPTION_STATUS_VALID)}")
+
+    session = SessionLocal()
+    try:
+        e = session.query(PurchaseExceptionRow).filter(
+            PurchaseExceptionRow.id == exception_id,
+            PurchaseExceptionRow.client_id == client_id,
+        ).first()
+        if e is None:
+            return None
+        e.exception_status = exception_status
+        e.updated_at = datetime.now()
+
+        purchase_row_id = None
+        if e.purchase_id:
+            t = session.query(PurchaseTransactionRow).filter(
+                PurchaseTransactionRow.purchase_id == e.purchase_id,
+                PurchaseTransactionRow.client_id == client_id,
+            ).first()
+            if t is not None:
+                purchase_row_id = t.id
+        _catat_log_purchase(
+            session, client_id, purchase_row_id, "EXCEPTION_UPDATED",
+            f"Status exception diubah jadi {exception_status}", user,
+            reference_no=e.purchase_id,
+        )
+
+        session.commit()
+        session.refresh(e)
+        return {"id": str(e.id), "exception_status": e.exception_status}
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as ex:
+        session.rollback()
+        print(f"Error update purchase exception status: {ex}")
+        return None
+    finally:
+        session.close()
+
+
+def ambil_data_purchase(client_id: str) -> Dict[str, Any]:
+    """
+    [BARU] Ambil seluruh data modul Purchase (vendor, purchase_transaction,
+    purchase_line_items, source_data, purchase_journal_lines, exceptions)
+    milik satu client sebagai dict of list-of-dict. Dipetakan ke tipe
+    PurchaseTransaction/PurchaseLine/PurchaseSourceRecord/PurchaseException
+    di frontend oleh src/app/transactions/purchase/purchasebridge.ts --
+    kalau nama/tipe field di sini diubah, sesuaikan juga di sana.
+    """
+    session = SessionLocal()
+    try:
+        vendor_rows = session.query(PurchaseVendor).filter(
+            PurchaseVendor.client_id == client_id
+        ).all()
+        transaksi_rows = session.query(PurchaseTransactionRow).filter(
+            PurchaseTransactionRow.client_id == client_id
+        ).order_by(PurchaseTransactionRow.purchase_date).all()
+        line_item_rows = session.query(PurchaseLineItemRow).filter(
+            PurchaseLineItemRow.client_id == client_id
+        ).all()
+        source_rows = session.query(PurchaseSourceDataRow).filter(
+            PurchaseSourceDataRow.client_id == client_id
+        ).order_by(PurchaseSourceDataRow.date).all()
+        jurnal_rows = session.query(PurchaseJournalLineRow).filter(
+            PurchaseJournalLineRow.client_id == client_id
+        ).all()
+        exception_rows = session.query(PurchaseExceptionRow).filter(
+            PurchaseExceptionRow.client_id == client_id
+        ).all()
+
+        def _iso(d):
+            return d.isoformat() if d else None
+
+        def _num(v):
+            return float(v) if v is not None else 0.0
+
+        return {
+            "vendor": [
+                {"id": str(v.id), "name": v.name}
+                for v in vendor_rows
+            ],
+            "purchase_transaction": [
+                {
+                    "id": str(t.id),
+                    "purchase_id": t.purchase_id,
+                    "vendor_id": str(t.vendor_id) if t.vendor_id else None,
+                    "invoice_no": t.invoice_no,
+                    "po_number": t.po_number,
+                    "category": t.category,
+                    "period": t.period,
+                    "payment_terms": t.payment_terms,
+                    "currency": t.currency,
+                    "source": t.source,
+                    "purchase_date": _iso(t.purchase_date),
+                    "invoice_date": _iso(t.invoice_date),
+                    "posting_date": _iso(t.posting_date),
+                    "due_date": _iso(t.due_date),
+                    "subtotal": _num(t.subtotal),
+                    "discount": _num(t.discount),
+                    "tax": _num(t.tax),
+                    "total_payable": _num(t.total_payable),
+                    "payment_status": t.payment_status,
+                    "status": t.status,
+                    "prepared_by": t.prepared_by,
+                    "approved_by": t.approved_by,
+                    "posted_by": t.posted_by,
+                    "description": t.description,
+                    "created_at": _iso(t.created_at),
+                    "updated_at": _iso(t.updated_at),
+                }
+                for t in transaksi_rows
+            ],
+            "purchase_line_items": [
+                {
+                    "id": str(li.id),
+                    "purchase_id": li.purchase_id,
+                    "item_code": li.item_code,
+                    "item_name": li.item_name,
+                    "qty": _num(li.qty),
+                    "unit": li.unit,
+                    "unit_price": _num(li.unit_price),
+                    "discount": _num(li.discount),
+                    "tax_rate": _num(li.tax_rate),
+                    "tax_amount": _num(li.tax_amount),
+                    "subtotal": _num(li.subtotal),
+                    "total": _num(li.total),
+                    "gl_account": li.gl_account,
+                }
+                for li in line_item_rows
+            ],
+            "source_data": [
+                {
+                    "id": str(s.id),
+                    "source_id": s.source_id,
+                    "type": s.type,
+                    "vendor": s.vendor,
+                    "date": _iso(s.date),
+                    "invoice_no": s.invoice_no,
+                    "po_number": s.po_number,
+                    "amount": _num(s.amount),
+                    "tax": _num(s.tax),
+                    "total": _num(s.total),
+                    "purchase_ref": s.purchase_ref,
+                    "validation": s.validation,
+                    "status": s.status,
+                }
+                for s in source_rows
+            ],
+            "purchase_journal_lines": [
+                {
+                    "id": str(j.id),
+                    "purchase_id": j.purchase_id,
+                    "account_code": j.account_code,
+                    "account_name": j.account_name,
+                    "description": j.description,
+                    "debit": _num(j.debit),
+                    "credit": _num(j.credit),
+                }
+                for j in jurnal_rows
+            ],
+            "exceptions": [
+                {
+                    "id": str(e.id),
+                    "purchase_id": e.purchase_id,
+                    "reason": e.reason,
+                    "severity": e.severity,
+                    "exception_status": e.exception_status,
+                    "created_at": _iso(e.created_at),
+                }
+                for e in exception_rows
+            ],
+        }
+    finally:
+        session.close()
+
+
+# ============================================================
+# MODUL BANK & CASH (BARU) -- tabel "finance_transaction_bank_cash" dibuat
+# manual oleh user lewat Supabase SQL Editor (bukan lewat init_db()/
+# create_all()), skemanya SENGAJA dibuat identik dengan JurnalPosting di
+# atas (jurnal_posting) -- bedanya tabel ini KHUSUS menampung entri jurnal
+# kelompok Cash Payment & Cash Receipt (dibedakan lewat kolom
+# `jenis_dokumen`, nilai 'cash_payment'/'cash_receipt'), TERPISAH dari
+# jurnal_posting umum (Sales/Expense/Other) -- lihat bankCashBridge.ts di
+# frontend utk pemetaan balik ke Transaction.
+# ============================================================
+
+STATUS_BANK_CASH_VALID = {"draft", "terposting", "ditolak"}
+JENIS_DOKUMEN_BANK_CASH_VALID = {"cash_payment", "cash_receipt"}
+
+
+class FinanceTransactionBankCash(Base):
+    """Entri jurnal Cash Payment & Cash Receipt (satu baris = satu pasang debet+kredit)."""
+    __tablename__ = "finance_transaction_bank_cash"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(BigInteger, primary_key=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    hasil_id = Column(Integer, nullable=True)
+    jenis_dokumen = Column(String(50), nullable=True)  # 'cash_payment' | 'cash_receipt'
+    tanggal = Column(String(20), nullable=True)
+    keterangan = Column(Text, nullable=True)
+    lawan_transaksi = Column(String(200), nullable=True)
+    no_dokumen = Column(String(100), nullable=True)
+    project_unit = Column(String(100), nullable=True)
+    jatuh_tempo = Column(String(20), nullable=True)
+    no_akun_debet = Column(String(50), nullable=False)
+    nama_akun_debet = Column(String(200), nullable=True)
+    jml_debet = Column(Float, nullable=False, default=0)
+    no_akun_kredit = Column(String(50), nullable=False)
+    nama_akun_kredit = Column(String(200), nullable=True)
+    jml_kredit = Column(Float, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="draft")  # draft/terposting/ditolak
+    sumber_placeholder = Column(Boolean, nullable=False, default=False)
+    voucher = Column(String(50), nullable=True)
+    periode_voucher = Column(String(10), nullable=True)
+    baris_asal = Column(Integer, nullable=True)
+    kode_bank = Column(String(20), nullable=True)
+    transaction_hash = Column(String(64), nullable=True)
+    diposting_oleh = Column(String(100), nullable=True)
+    diposting_at = Column(DateTime, nullable=True)
+    dibuat_at = Column(DateTime, nullable=False, default=datetime.now)
+    payment_status = Column(String(20), nullable=True)
+    paid_amount = Column(Float, nullable=True)
+
+    client = relationship("Client")
+
+
+def _bank_cash_ke_dict(j: "FinanceTransactionBankCash") -> Dict[str, Any]:
+    return {
+        "id": j.id, "hasil_id": j.hasil_id, "jenis_dokumen": j.jenis_dokumen,
+        "tanggal": j.tanggal, "keterangan": j.keterangan,
+        "lawan_transaksi": j.lawan_transaksi, "no_dokumen": j.no_dokumen,
+        "project_unit": j.project_unit, "jatuh_tempo": j.jatuh_tempo,
+        "no_akun_debet": j.no_akun_debet, "nama_akun_debet": j.nama_akun_debet,
+        "jml_debet": j.jml_debet,
+        "no_akun_kredit": j.no_akun_kredit, "nama_akun_kredit": j.nama_akun_kredit,
+        "jml_kredit": j.jml_kredit,
+        "status": j.status, "sumber_placeholder": j.sumber_placeholder,
+        "voucher": j.voucher, "periode_voucher": j.periode_voucher,
+        "payment_status": j.payment_status, "paid_amount": j.paid_amount,
+        "diposting_oleh": j.diposting_oleh,
+        "diposting_at": j.diposting_at.isoformat() if j.diposting_at else None,
+        "dibuat_at": j.dibuat_at.isoformat() if j.dibuat_at else None,
+    }
+
+
+def daftar_bank_cash(client_id: str, status: Optional[str] = None,
+                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Ambil seluruh baris Cash Payment + Cash Receipt milik client (tanpa
+    batas kalau limit=None -- sama seperti daftar_jurnal_posting)."""
+    session = SessionLocal()
+    try:
+        query = session.query(FinanceTransactionBankCash).filter(
+            FinanceTransactionBankCash.client_id == client_id
+        )
+        if status:
+            query = query.filter(FinanceTransactionBankCash.status == status)
+        query = query.order_by(FinanceTransactionBankCash.dibuat_at.desc())
+        if limit is not None and limit > 0:
+            query = query.limit(limit)
+        return [_bank_cash_ke_dict(j) for j in query.all()]
+    except Exception as e:
+        session.rollback()
+        print(f"Error daftar bank cash: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def ambil_bank_cash_by_id(bank_cash_id: int, client_id: str) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        j = session.query(FinanceTransactionBankCash).filter(
+            FinanceTransactionBankCash.id == bank_cash_id,
+            FinanceTransactionBankCash.client_id == client_id,
+        ).first()
+        return _bank_cash_ke_dict(j) if j else None
+    except Exception as e:
+        session.rollback()
+        print(f"Error ambil bank cash by id: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def update_bank_cash(bank_cash_id: int, client_id: str, user: str, **fields) -> Optional[Dict[str, Any]]:
+    """Edit satu baris Bank & Cash yang sudah ada -- pola identik
+    update_jurnal_posting()."""
+    KOLOM_BOLEH_DIUBAH = {
+        "tanggal", "keterangan", "lawan_transaksi", "no_dokumen", "project_unit",
+        "jatuh_tempo", "no_akun_debet", "nama_akun_debet", "jml_debet",
+        "no_akun_kredit", "nama_akun_kredit", "jml_kredit",
+        "payment_status", "paid_amount",
+    }
+    session = SessionLocal()
+    try:
+        j = session.query(FinanceTransactionBankCash).filter(
+            FinanceTransactionBankCash.id == bank_cash_id,
+            FinanceTransactionBankCash.client_id == client_id,
+        ).first()
+        if j is None:
+            return None
+
+        for kolom in KOLOM_BOLEH_DIUBAH:
+            if kolom in fields:
+                setattr(j, kolom, fields[kolom])
+
+        if "status" in fields and fields["status"] is not None:
+            status_baru = fields["status"]
+            if status_baru not in STATUS_BANK_CASH_VALID:
+                raise ValueError(f"Status '{status_baru}' tidak dikenal backend.")
+            j.status = status_baru
+            if status_baru == "terposting":
+                j.diposting_oleh = user
+                j.diposting_at = datetime.now()
+
+        if not j.no_akun_debet or not j.no_akun_kredit:
+            raise ValueError("Kode akun debet dan kredit tidak boleh kosong.")
+
+        j.sumber_placeholder = ("/" in j.no_akun_debet) or ("/" in j.no_akun_kredit)
+
+        # [BARU] catat ke activity log -- "POSTING" kalau status baru saja
+        # diubah jadi terposting, selain itu "UPDATED"
+        _event_type = "POSTING" if ("status" in fields and fields["status"] == "terposting") else "UPDATED"
+        _desc = "Transaksi diposting" if _event_type == "POSTING" else "Data transaksi diperbarui"
+        _catat_log_bank_cash(
+            session, client_id, bank_cash_id, _event_type, _desc, user,
+            reference_no=j.no_dokumen or j.voucher,
+        )
+
+        session.commit()
+        session.refresh(j)
+        return _bank_cash_ke_dict(j)
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error update bank cash: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def buat_bank_cash_manual(
+    client_id: str, user: str, jenis_dokumen: str, tanggal: str, keterangan: str,
+    no_akun_debet: str, nama_akun_debet: Optional[str], jml_debet: float,
+    no_akun_kredit: str, nama_akun_kredit: Optional[str], jml_kredit: float,
+    lawan_transaksi: Optional[str] = None, no_dokumen: Optional[str] = None,
+    project_unit: Optional[str] = None, jatuh_tempo: Optional[str] = None,
+    status: str = "draft", payment_status: Optional[str] = None,
+    paid_amount: Optional[float] = None,
+) -> Optional[int]:
+    """Buat baris Bank & Cash baru secara manual -- dipakai tombol
+    "+ Jurnal Baru" di halaman Cash Payment/Cash Receipt. `jenis_dokumen`
+    WAJIB 'cash_payment' atau 'cash_receipt' (menentukan sub-halaman mana
+    baris ini akan muncul di frontend, lihat bankCashBridge.ts)."""
+    if jenis_dokumen not in JENIS_DOKUMEN_BANK_CASH_VALID:
+        raise ValueError(f"jenis_dokumen '{jenis_dokumen}' tidak dikenal.")
+    session = SessionLocal()
+    try:
+        j = FinanceTransactionBankCash(
+            client_id=client_id,
+            hasil_id=None,
+            jenis_dokumen=jenis_dokumen,
+            tanggal=tanggal,
+            keterangan=keterangan,
+            lawan_transaksi=lawan_transaksi,
+            no_dokumen=no_dokumen,
+            project_unit=project_unit,
+            jatuh_tempo=jatuh_tempo,
+            no_akun_debet=no_akun_debet,
+            nama_akun_debet=nama_akun_debet,
+            jml_debet=jml_debet,
+            no_akun_kredit=no_akun_kredit,
+            nama_akun_kredit=nama_akun_kredit,
+            jml_kredit=jml_kredit,
+            status=status if status in STATUS_BANK_CASH_VALID else "draft",
+            sumber_placeholder=("/" in no_akun_debet) or ("/" in no_akun_kredit),
+            payment_status=payment_status,
+            paid_amount=paid_amount,
+            dibuat_at=datetime.now(),
+        )
+        if j.status == "terposting":
+            j.diposting_oleh = user
+            j.diposting_at = datetime.now()
+        session.add(j)
+        session.flush()  # supaya j.id terisi sebelum dipakai activity log
+
+        # [BARU] catat ke activity log
+        _catat_log_bank_cash(
+            session, client_id, j.id, "CREATED",
+            f"Transaksi {jenis_dokumen} baru dibuat" + (f" (No. {no_dokumen})" if no_dokumen else ""),
+            user, reference_no=no_dokumen,
+        )
+
+        session.commit()
+        session.refresh(j)
+        return j.id
+    except ValueError:
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error buat bank cash manual: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def posting_massal_bank_cash_by_ids(client_id: str, ids: List[int], user: str) -> Dict[str, int]:
+    """Posting banyak baris 'draft' Bank & Cash sekaligus jadi 'terposting'
+    -- pola identik konfirmasi_posting_by_ids()."""
+    if not ids:
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+
+    _UKURAN_BATCH_IN = 500
+    session = SessionLocal()
+    try:
+        ditemukan_ids: set = set()
+        diposting = 0
+        dilewati = 0
+        sekarang = datetime.now()
+
+        for awal in range(0, len(ids), _UKURAN_BATCH_IN):
+            kelompok_id = ids[awal:awal + _UKURAN_BATCH_IN]
+            rows = session.query(FinanceTransactionBankCash).filter(
+                FinanceTransactionBankCash.client_id == client_id,
+                FinanceTransactionBankCash.id.in_(kelompok_id),
+                FinanceTransactionBankCash.status == "draft",
+            ).all()
+            for j in rows:
+                ditemukan_ids.add(j.id)
+                if j.sumber_placeholder:
+                    dilewati += 1
+                    continue
+                j.status = "terposting"
+                j.diposting_oleh = user
+                j.diposting_at = sekarang
+                diposting += 1
+
+                # [BARU] catat ke activity log
+                _catat_log_bank_cash(
+                    session, client_id, j.id, "POSTING",
+                    "Transaksi diposting (posting massal)", user,
+                    reference_no=j.no_dokumen or j.voucher,
+                )
+
+        tidak_ditemukan = len(set(ids) - ditemukan_ids)
+        session.commit()
+        return {"diposting": diposting, "dilewati_placeholder": dilewati, "tidak_ditemukan": tidak_ditemukan}
+    except Exception as e:
+        session.rollback()
+        print(f"Error posting massal bank cash: {e}")
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+    finally:
+        session.close()
+
+
+def tolak_bank_cash(bank_cash_id: int, client_id: str, user: str, alasan: Optional[str] = None) -> bool:
+    """Tandai satu baris Bank & Cash sebagai 'ditolak' (dipakai tombol
+    Hapus, sama seperti tolak_posting_jurnal untuk jurnal_posting)."""
+    session = SessionLocal()
+    try:
+        j = session.query(FinanceTransactionBankCash).filter(
+            FinanceTransactionBankCash.id == bank_cash_id,
+            FinanceTransactionBankCash.client_id == client_id,
+        ).first()
+        if j is None:
+            return False
+        j.status = "ditolak"
+        j.diposting_oleh = user
+        j.diposting_at = datetime.now()
+        if alasan:
+            j.keterangan = f"{j.keterangan or ''} [Ditolak: {alasan}]".strip()
+
+        # [BARU] catat ke activity log
+        _catat_log_bank_cash(
+            session, client_id, bank_cash_id, "REJECTED",
+            f"Transaksi ditolak{f': {alasan}' if alasan else ''}",
+            user, reference_no=j.no_dokumen or j.voucher,
+        )
+
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error tolak bank cash: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# [BARU] MODUL OTHER (JURNAL LAIN-LAIN) -- tabel
+# "finance_transaction_other" dibuat manual oleh user lewat Supabase SQL
+# Editor (bukan lewat init_db()/create_all()), skemanya SUDAH mengikuti
+# bentuk final Transaction di frontend (satu baris = SATU KAKI/leg jurnal,
+# bukan sepasang debet+kredit dalam satu baris seperti
+# finance_transaction_bank_cash) -- dua baris dengan je_id yang sama adalah
+# sepasang leg debet+kredit dari satu entri jurnal yang sama. Tabel ini
+# KHUSUS menampung entri jurnal kelompok "Other" (lihat halaman
+# src/app/transactions/other/page.tsx), menggantikan sumber lama yang lewat
+# jurnal_posting umum + tebakan kategori/nama akun -- lihat otherBridge.ts
+# di frontend utk pemetaan balik ke Transaction.
+#
+# je_id di sini SELALU berformat "OTH-<suffix>" (mis. "OTH-1", dibuat lewat
+# _buat_je_id_other() di bawah) -- prefix ini dipakai frontend
+# (extractOtherJeId() di otherBridge.ts) untuk membedakan baris dari tabel
+# ini vs baris jurnal_posting biasa ("JE-<id>") atau bank & cash ("BC-<id>").
+# ============================================================
+
+STATUS_FINANCE_OTHER_VALID = {"Unposted", "Posted", "Draft", "Reconciled", "Voided"}
+
+
+class FinanceTransactionOther(Base):
+    """Satu baris = satu kaki (leg) jurnal kelompok Other. Kolom sudah 1:1
+    dengan interface Transaction di frontend (snake_case <-> camelCase)."""
+    __tablename__ = "finance_transaction_other"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=False)
+    tx_id = Column(String(50), nullable=True)
+    je_id = Column(String(50), nullable=True)
+    date = Column(Date, nullable=True)
+    account_code = Column(String(50), nullable=True)
+    account_name = Column(String(200), nullable=True)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric, nullable=False, default=0)
+    credit = Column(Numeric, nullable=False, default=0)
+    reference = Column(String(100), nullable=True)
+    party = Column(String(200), nullable=True)
+    category = Column(String(100), nullable=True)
+    type = Column(String(20), nullable=True)  # 'debit' | 'credit'
+    status = Column(String(20), nullable=True)  # Unposted/Posted/Draft/Reconciled/Voided (ala frontend, tanpa terjemahan)
+    notes = Column(Text, nullable=True)
+    voucher_no = Column(String(100), nullable=True)
+    saldo_akhir = Column(Numeric, nullable=False, default=0)
+    cek = Column(Boolean, nullable=False, default=False)
+    source_module = Column(String(50), nullable=True)
+    standard_account_code = Column(String(50), nullable=True)
+    account_role = Column(String(50), nullable=True)
+    core_journal_entry_id = Column(Integer, nullable=True)
+    core_journal_line_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now, onupdate=datetime.now)
+
+    client = relationship("Client")
+
+
+def _finance_other_ke_dict(o: "FinanceTransactionOther") -> Dict[str, Any]:
+    return {
+        "id": str(o.id), "tx_id": o.tx_id, "je_id": o.je_id,
+        "date": o.date.isoformat() if hasattr(o.date, "isoformat") else o.date,
+        "account_code": o.account_code, "account_name": o.account_name,
+        "description": o.description, "debit": float(o.debit or 0), "credit": float(o.credit or 0),
+        "reference": o.reference, "party": o.party, "category": o.category, "type": o.type,
+        "status": o.status, "notes": o.notes, "voucher_no": o.voucher_no,
+        "saldo_akhir": float(o.saldo_akhir or 0), "cek": bool(o.cek),
+        "source_module": o.source_module, "standard_account_code": o.standard_account_code,
+        "account_role": o.account_role,
+        "core_journal_entry_id": o.core_journal_entry_id, "core_journal_line_id": o.core_journal_line_id,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+        "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+    }
+
+
+def daftar_finance_other(client_id: str, status: Optional[str] = None,
+                          limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Ambil seluruh baris (kedua leg) Other milik client (tanpa batas
+    kalau limit=None -- sama seperti daftar_bank_cash)."""
+    session = SessionLocal()
+    try:
+        query = session.query(FinanceTransactionOther).filter(
+            FinanceTransactionOther.client_id == client_id
+        )
+        if status:
+            query = query.filter(FinanceTransactionOther.status == status)
+        query = query.order_by(FinanceTransactionOther.created_at.desc())
+        if limit is not None and limit > 0:
+            query = query.limit(limit)
+        return [_finance_other_ke_dict(o) for o in query.all()]
+    except Exception as e:
+        session.rollback()
+        print(f"Error daftar finance other: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def _buat_je_id_other() -> str:
+    """je_id baru unik berformat "OTH-<8 hex>" -- lihat catatan format di
+    komentar modul di atas."""
+    return f"OTH-{uuid.uuid4().hex[:8]}"
+
+
+def update_finance_other_by_je_id(je_id: str, client_id: str, user: str, **fields) -> Optional[List[Dict[str, Any]]]:
+    """Edit KEDUA baris (leg debet + leg kredit) yang berbagi je_id yang
+    sama sekaligus -- dipanggil dari 1 PATCH TransactionEditModal yang
+    menyunting sepasang leg. `debit_leg`/`credit_leg` (dict opsional) berisi
+    field yang KHUSUS beda per leg (account_code/account_name/debit/credit);
+    field lain di `fields` berlaku ke KEDUA baris."""
+    KOLOM_BERSAMA = {
+        "date", "description", "reference", "party", "category", "notes", "voucher_no",
+    }
+    session = SessionLocal()
+    try:
+        rows = session.query(FinanceTransactionOther).filter(
+            FinanceTransactionOther.je_id == je_id,
+            FinanceTransactionOther.client_id == client_id,
+        ).all()
+        if not rows:
+            return None
+
+        debit_leg = fields.pop("debit_leg", None) or {}
+        credit_leg = fields.pop("credit_leg", None) or {}
+        status_baru = fields.pop("status", None)
+        if status_baru is not None and status_baru not in STATUS_FINANCE_OTHER_VALID:
+            raise ValueError(f"Status '{status_baru}' tidak dikenal backend.")
+
+        for o in rows:
+            for kolom in KOLOM_BERSAMA:
+                if kolom in fields and fields[kolom] is not None:
+                    setattr(o, kolom, fields[kolom])
+            if status_baru is not None:
+                o.status = status_baru
+            leg_fields = debit_leg if o.type == "debit" else credit_leg
+            for kolom in ("account_code", "account_name", "debit", "credit"):
+                if kolom in leg_fields and leg_fields[kolom] is not None:
+                    setattr(o, kolom, leg_fields[kolom])
+            o.updated_at = datetime.now()
+
+        # [BARU] catat ke activity log -- "POSTING" kalau status baru saja
+        # diubah jadi Posted, selain itu "UPDATED"
+        _event_type = "POSTING" if status_baru == "Posted" else "UPDATED"
+        _desc = "Entri jurnal diposting" if _event_type == "POSTING" else "Data entri jurnal diperbarui"
+        _catat_log_finance_other(
+            session, client_id, je_id, _event_type, _desc, user,
+            reference_no=rows[0].voucher_no if rows else None,
+        )
+
+        session.commit()
+        return [_finance_other_ke_dict(o) for o in rows]
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error update finance other: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def buat_finance_other_manual(
+    client_id: str, tanggal: str, description: str,
+    account_code_debet: str, account_name_debet: Optional[str], jml_debet: float,
+    account_code_kredit: str, account_name_kredit: Optional[str], jml_kredit: float,
+    reference: Optional[str] = None, party: Optional[str] = None, category: Optional[str] = None,
+    notes: Optional[str] = None, voucher_no: Optional[str] = None,
+    status: str = "Unposted", user: Optional[str] = None,
+) -> Optional[str]:
+    """Buat entri Other baru (2 baris: leg debet + leg kredit berbagi je_id
+    baru) -- dipakai tombol "+ Jurnal Baru" di halaman Other. Jurnal harus
+    balance (debet == kredit).
+
+    [BARU] `user` dipakai untuk mencatat siapa yang membuat entri ini ke
+    finance_transaction_other_activity_log -- lihat _catat_log_finance_other()
+    di bawah. Parameter opsional (default None -> dicatat sebagai 'System')
+    supaya tetap kompatibel kalau ada pemanggil lama yang belum mengirim ini.
+    """
+    if round(jml_debet, 2) != round(jml_kredit, 2):
+        raise ValueError(f"Jurnal tidak balance: Debet {jml_debet:,.0f} vs Kredit {jml_kredit:,.0f}.")
+    if jml_debet <= 0:
+        raise ValueError("Nominal jurnal harus lebih besar dari 0.")
+    if status not in STATUS_FINANCE_OTHER_VALID:
+        status = "Unposted"
+
+    je_id = _buat_je_id_other()
+    session = SessionLocal()
+    try:
+        sekarang = datetime.now()
+        leg_debet = FinanceTransactionOther(
+            client_id=client_id, tx_id=f"TXN-{je_id}-D", je_id=je_id, date=tanggal,
+            account_code=account_code_debet, account_name=account_name_debet, description=description,
+            debit=jml_debet, credit=0, reference=reference, party=party, category=category, type="debit",
+            status=status, notes=notes, voucher_no=voucher_no, saldo_akhir=0, cek=False,
+            source_module="GENERAL_JOURNAL", created_at=sekarang, updated_at=sekarang,
+        )
+        leg_kredit = FinanceTransactionOther(
+            client_id=client_id, tx_id=f"TXN-{je_id}-K", je_id=je_id, date=tanggal,
+            account_code=account_code_kredit, account_name=account_name_kredit, description=description,
+            debit=0, credit=jml_kredit, reference=reference, party=party, category=category, type="credit",
+            status=status, notes=notes, voucher_no=voucher_no, saldo_akhir=0, cek=False,
+            source_module="GENERAL_JOURNAL", created_at=sekarang, updated_at=sekarang,
+        )
+        session.add(leg_debet)
+        session.add(leg_kredit)
+
+        # [BARU] catat ke activity log (satu baris log untuk seluruh entri,
+        # bukan per leg)
+        _catat_log_finance_other(
+            session, client_id, je_id, "CREATED",
+            f"Entri jurnal Other baru dibuat ({je_id})", user,
+            reference_no=voucher_no or reference,
+        )
+
+        session.commit()
+        return je_id
+    except ValueError:
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error buat finance other manual: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def posting_massal_finance_other_by_je_ids(client_id: str, je_ids: List[str], user: str) -> Dict[str, int]:
+    """Posting banyak ENTRI (sepasang leg per je_id) 'Unposted' Other
+    sekaligus jadi 'Posted' -- pola identik posting_massal_bank_cash_by_ids,
+    cuma dikelompokkan per je_id (bukan per baris) karena satu entri = 2 baris."""
+    if not je_ids:
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+
+    session = SessionLocal()
+    try:
+        rows = session.query(FinanceTransactionOther).filter(
+            FinanceTransactionOther.client_id == client_id,
+            FinanceTransactionOther.je_id.in_(je_ids),
+            FinanceTransactionOther.status == "Unposted",
+        ).all()
+        ditemukan_je_ids = {o.je_id for o in rows}
+        for o in rows:
+            o.status = "Posted"
+            o.updated_at = datetime.now()
+
+        # [BARU] catat ke activity log -- satu baris log per je_id (bukan
+        # per leg), meski setiap je_id punya 2 baris di `rows`
+        for _je_id in ditemukan_je_ids:
+            _catat_log_finance_other(
+                session, client_id, _je_id, "POSTING",
+                "Entri jurnal diposting (posting massal)", user,
+            )
+
+        session.commit()
+        tidak_ditemukan = len(set(je_ids) - ditemukan_je_ids)
+        return {"diposting": len(ditemukan_je_ids), "dilewati_placeholder": 0, "tidak_ditemukan": tidak_ditemukan}
+    except Exception as e:
+        session.rollback()
+        print(f"Error posting massal finance other: {e}")
+        return {"diposting": 0, "dilewati_placeholder": 0, "tidak_ditemukan": 0}
+    finally:
+        session.close()
+
+
+def tolak_finance_other_by_je_id(je_id: str, client_id: str, user: str, alasan: Optional[str] = None) -> bool:
+    """Tandai kedua leg satu entri Other (berbagi je_id) sebagai 'Voided' --
+    dipakai tombol Hapus di halaman Other. Pola identik tolak_bank_cash."""
+    session = SessionLocal()
+    try:
+        rows = session.query(FinanceTransactionOther).filter(
+            FinanceTransactionOther.je_id == je_id,
+            FinanceTransactionOther.client_id == client_id,
+        ).all()
+        if not rows:
+            return False
+        for o in rows:
+            o.status = "Voided"
+            o.updated_at = datetime.now()
+            if alasan:
+                o.notes = f"{o.notes or ''} [Ditolak: {alasan}]".strip()
+
+        # [BARU] catat ke activity log -- satu baris log untuk seluruh
+        # entri (bukan per leg)
+        _catat_log_finance_other(
+            session, client_id, je_id, "VOIDED",
+            f"Entri jurnal di-void{f': {alasan}' if alasan else ''}", user,
+            reference_no=rows[0].voucher_no if rows else None,
+        )
+
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error tolak finance other: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# [BARU] ACTIVITY LOG -- Bank & Cash dan Other
+# ============================================================
+# Dua tabel ini dibuat manual oleh user lewat Supabase SQL Editor,
+# skemanya SENGAJA dibuat mirip financial_transaction_sales_activity_log
+# (activity log modul Sales yang sudah ada lebih dulu) -- bedanya
+# masing-masing merujuk ke tabel sumbernya sendiri (finance_transaction_
+# bank_cash / finance_transaction_other), BUKAN ke sales invoice.
+#
+# Satu baris di sini = SATU kejadian/event pada satu transaksi Bank &
+# Cash atau Other (dibuat, diedit, diposting, ditolak/di-void) --
+# ditulis lewat _catat_log_bank_cash()/_catat_log_finance_other() di
+# DALAM session yang sama dengan operasi utamanya, SEBELUM
+# session.commit(), supaya log dan perubahan datanya selalu satu
+# transaksi (kalau salah satu gagal, keduanya rollback bareng).
+# ============================================================
+
+class FinanceTransactionBankCashActivityLog(Base):
+    """Log aktivitas satu baris finance_transaction_bank_cash (Cash
+    Payment/Cash Receipt) -- satu baris log per kejadian."""
+    __tablename__ = "finance_transaction_bank_cash_activity_log"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
+    bank_cash_id = Column(BigInteger, ForeignKey("app.finance_transaction_bank_cash.id"), nullable=True)
+    event_type = Column(String(50), nullable=False)  # "CREATED"/"UPDATED"/"POSTING"/"REJECTED"
+    description = Column(Text, nullable=False)
+    reference_no = Column(String(100), nullable=True)  # no_dokumen / voucher terkait
+    performed_by = Column(String(255), nullable=False)  # nama user, atau 'System'
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now)
+
+
+class FinanceTransactionOtherActivityLog(Base):
+    """Log aktivitas satu ENTRI finance_transaction_other (sepasang leg
+    debet+kredit yang berbagi je_id yang sama) -- satu baris log per
+    kejadian per je_id, BUKAN per leg."""
+    __tablename__ = "finance_transaction_other_activity_log"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
+    je_id = Column(String(50), nullable=True)  # bukan FK -- je_id tidak unik (2 baris/leg per je_id)
+    event_type = Column(String(50), nullable=False)  # "CREATED"/"UPDATED"/"POSTING"/"VOIDED"
+    description = Column(Text, nullable=False)
+    reference_no = Column(String(100), nullable=True)  # voucher_no / reference terkait
+    performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now)
+
+
+class PurchaseActivityLogRow(Base):
+    """[BARU] Log aktivitas satu transaksi finance_transaction_purchase_
+    transaction -- satu baris log per kejadian (submit for review/
+    approve/reject/post to GL/exception status change dsb). Tabel dibuat
+    manual oleh user lewat Supabase SQL Editor, skema mirip
+    finance_transaction_bank_cash_activity_log di atas -- lihat DDL yang
+    diberikan terpisah."""
+    __tablename__ = "finance_transaction_purchase_activity_log"
+    __table_args__ = {"schema": "app"}
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("app.management_clients.id"), nullable=True)
+    purchase_row_id = Column(PG_UUID(as_uuid=True), ForeignKey("app.finance_transaction_purchase_transaction.id"), nullable=True)
+    event_type = Column(String(50), nullable=False)  # "SUBMITTED"/"APPROVED"/"REJECTED"/"POSTED"/"RETURNED"/"EXCEPTION_UPDATED"
+    description = Column(Text, nullable=False)
+    reference_no = Column(String(100), nullable=True)  # purchase_id (mis. "PUR-2026-09-0001")
+    performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now)
+
+
+def _catat_log_bank_cash(session, client_id, bank_cash_id, event_type, description, user, reference_no=None):
+    """Insert satu baris ke finance_transaction_bank_cash_activity_log.
+    WAJIB dipanggil di DALAM session yang sama dengan operasi utamanya,
+    SEBELUM session.commit() -- lihat catatan modul di atas."""
+    session.add(FinanceTransactionBankCashActivityLog(
+        client_id=client_id,
+        bank_cash_id=bank_cash_id,
+        event_type=event_type,
+        description=description,
+        reference_no=reference_no,
+        performed_by=user or "System",
+    ))
+
+
+def _catat_log_finance_other(session, client_id, je_id, event_type, description, user, reference_no=None):
+    """Insert satu baris ke finance_transaction_other_activity_log (SATU
+    baris log per je_id per kejadian, bukan per leg). Sama seperti
+    _catat_log_bank_cash, WAJIB dipanggil sebelum session.commit()."""
+    session.add(FinanceTransactionOtherActivityLog(
+        client_id=client_id,
+        je_id=je_id,
+        event_type=event_type,
+        description=description,
+        reference_no=reference_no,
+        performed_by=user or "System",
+    ))
+
+
+def _catat_log_purchase(session, client_id, purchase_row_id, event_type, description, user, reference_no=None):
+    """[BARU] Insert satu baris ke finance_transaction_purchase_activity_log.
+    WAJIB dipanggil di DALAM session yang sama dengan operasi utamanya,
+    SEBELUM session.commit() -- pola identik _catat_log_bank_cash()."""
+    session.add(PurchaseActivityLogRow(
+        client_id=client_id,
+        purchase_row_id=purchase_row_id,
+        event_type=event_type,
+        description=description,
+        reference_no=reference_no,
+        performed_by=user or "System",
+    ))
 
 
 # ============================================================
@@ -1005,8 +2339,10 @@ def daftar_client(tipe: Optional[str] = None, punya_esb: Optional[bool] = None) 
     session = SessionLocal()
     try:
         query = session.query(Client)
-        if tipe:
-            query = query.filter(Client.tipe == tipe)
+        # [DIUBAH] `tipe` (jenis layanan "accounting"/"pajak") tidak lagi
+        # kolom fisik di database (lihat docstring class Client) -- filter
+        # ini untuk sementara TIDAK memfilter apa pun, semua client tetap
+        # dikembalikan berapa pun nilai `tipe` yang diminta pemanggil.
 
         if punya_esb is True:
             query = query.filter(Client.esb_accounts.any())
@@ -1042,7 +2378,7 @@ def daftar_client(tipe: Optional[str] = None, punya_esb: Optional[bool] = None) 
         session.close()
 
 
-def ambil_client(client_id: int) -> Optional[Dict[str, Any]]:
+def ambil_client(client_id: str) -> Optional[Dict[str, Any]]:
     """Ambil data client berdasarkan ID."""
     session = SessionLocal()
     try:
@@ -1066,15 +2402,19 @@ def ambil_client(client_id: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def ubah_tipe_client(client_id: int, tipe_baru: str) -> bool:
-    """Ubah tipe client."""
+def ubah_tipe_client(client_id: str, tipe_baru: str) -> bool:
+    """
+    [DIUBAH] `tipe` (jenis layanan "accounting"/"pajak") tidak lagi kolom
+    fisik di database (lihat docstring class Client) -- fungsi ini untuk
+    sementara jadi no-op (tidak benar-benar mengubah apa pun tersimpan),
+    tapi tetap dipertahankan supaya endpoint/pemanggil lama yang memanggil
+    fungsi ini tidak error. Return True selama client_id-nya valid.
+    """
     session = SessionLocal()
     try:
         client = session.query(Client).filter(Client.id == client_id).first()
         if not client:
             return False
-        client.tipe = tipe_baru
-        session.commit()
         return True
     except Exception:
         session.rollback()
@@ -1100,7 +2440,7 @@ def _mask_secret(secret: Optional[str]) -> Optional[str]:
 
 
 def tambah_esb_account(
-    client_id: int,
+    client_id: str,
     account_name: str,
     esb_type: Optional[str] = None,
     api_base_url: Optional[str] = None,
@@ -1131,7 +2471,7 @@ def tambah_esb_account(
         session.close()
 
 
-def ambil_esb_accounts_client(client_id: int, hanya_aktif: bool = False) -> List[Dict[str, Any]]:
+def ambil_esb_accounts_client(client_id: str, hanya_aktif: bool = False) -> List[Dict[str, Any]]:
     """Ambil semua akun ESB milik satu client. consumer_secret di-mask."""
     session = SessionLocal()
     try:
@@ -1192,7 +2532,7 @@ def hapus_esb_account(esb_account_id: int) -> bool:
         session.close()
 
 def simpan_hasil(
-    client_id: int,
+    client_id: str,
     conv_id: str,
     jenis: str,
     data: Any,
@@ -1231,7 +2571,7 @@ def simpan_hasil(
 
 
 def simpan_dataframe_ke_db(
-    client_id: int,
+    client_id: str,
     conv_id: str,
     jenis: str,
     df: pd.DataFrame,
@@ -1270,7 +2610,7 @@ def simpan_dataframe_ke_db(
 
 
 def ambil_hasil_client(
-    client_id: int,
+    client_id: str,
     jenis: Optional[str] = None,
     limit: int = 1000,
 ) -> List[Dict[str, Any]]:
@@ -1343,7 +2683,7 @@ def ambil_hasil_by_id(hasil_id: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 def simpan_hasil_esb(
-    client_id: int,
+    client_id: str,
     esb_account_id: int,
     conv_id: str,
     jenis: str,
@@ -1417,7 +2757,7 @@ def ambil_hasil_esb(
 
 
 def ambil_hasil_esb_client(
-    client_id: int,
+    client_id: str,
     jenis: Optional[str] = None,
     limit: int = 1000,
 ) -> List[Dict[str, Any]]:
@@ -1493,19 +2833,40 @@ def hitung_hasil_esb(esb_account_id: int, jenis: Optional[str] = None) -> int:
         session.close()
 
 def log_audit(
-    client_id: Optional[int],
+    client_id: Optional[str],
     user: str,
     aksi: str,
     detail: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Catat satu entri riwayat perubahan (audit trail)."""
+    """Catat satu entri riwayat perubahan (audit trail).
+
+    [DIUBAH -- migrasi ke management_audit_trails] Tabel baru pakai
+    `id_user` (uuid, FK ke management_users) sebagai identitas pelaku,
+    bukan string nama bebas seperti `audit_log` (lama). Supaya ~20 titik
+    pemanggil log_audit(client_id, user.get("username", ...), ...) di
+    main.py TIDAK perlu diubah satu-satu, fungsi ini sekarang mencari
+    id_user dari `user` (username) dulu sebelum insert.
+
+    CATATAN: kolom `detail` (JSON bebas, dulu ada di audit_log) TIDAK
+    ADA padanannya di management_audit_trails -- parameter detail masih
+    diterima supaya pemanggil lama tidak error, tapi isinya TIDAK
+    tersimpan ke DB. Kalau detail penting untuk ditelusuri lagi nanti,
+    kolom baru perlu ditambahkan ke management_audit_trails dulu.
+    """
     session = SessionLocal()
     try:
+        id_user = None
+        if user:
+            row = session.query(User.id_user).filter(User.username == user).first()
+            if row:
+                id_user = row[0]
+        if id_user is None:
+            print(f"Warning log_audit: username '{user}' tidak ditemukan di management_users, audit trail dilewati")
+            return False
         entry = AuditLog(
+            id_user=id_user,
             client_id=client_id,
-            user=user,
             aksi=aksi,
-            detail=json.dumps(detail or {}, default=str, ensure_ascii=False),
         )
         session.add(entry)
         session.commit()
@@ -1519,7 +2880,7 @@ def log_audit(
 
 
 def get_audit_history(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """Ambil riwayat perubahan terbaru, opsional filter per client."""
@@ -1532,18 +2893,19 @@ def get_audit_history(
 
         results = []
         for entry in query.all():
-            detail = {}
-            if entry.detail:
-                try:
-                    detail = json.loads(entry.detail)
-                except Exception:
-                    detail = {"raw": entry.detail}
+            # [DIUBAH] "user" & "detail" tidak lagi tersimpan sebagai
+            # kolom (lihat catatan di log_audit()/class AuditLog) --
+            # username di-lookup balik dari id_user; detail selalu {}.
+            username = None
+            if entry.id_user:
+                u = session.query(User.username).filter(User.id_user == entry.id_user).first()
+                username = u[0] if u else None
             results.append({
                 "id": entry.id,
                 "client_id": entry.client_id,
-                "user": entry.user,
+                "user": username,
                 "aksi": entry.aksi,
-                "detail": detail,
+                "detail": {},
                 "dibuat_at": entry.dibuat_at.isoformat() if entry.dibuat_at else None,
             })
         return results
@@ -1562,25 +2924,34 @@ def get_audit_history(
 def _user_ke_dict(user: "User") -> Dict[str, Any]:
     """Bentuk dict balikan dipertahankan sama seperti sebelum pindah ke
     management_users (id/nama/aktif), supaya modules/auth/*.py & pemanggil
-    lain tidak perlu ikut berubah. `id` sekarang UUID (str), bukan int."""
+    lain tidak perlu ikut berubah. `id` sekarang UUID (str), bukan int.
+
+    [DIUBAH] `role` di DB sekarang integer (1-5) -- dikonversi balik ke
+    string "tahap_N" di sini (lewat role_int_ke_tahap()) supaya SEMUA
+    logic RBAC lama di modules/auth/core.py (LEVELS, dict "tahap_1".."tahap_5")
+    tidak perlu diubah sama sekali."""
     return {
         "id": user.id_user,
         "username": user.username,
         "password_hash": user.password_hash,
-        "role": user.role,
+        "role": role_int_ke_tahap(user.role),
         "nama": user.nama_user,
         "aktif": user.deleted_at is None,
     }
 
 
 def create_user(username: str, password_hash: str, role: str, nama: Optional[str] = None) -> bool:
-    """Buat user baru. `nama_user` wajib diisi di DB -- fallback ke username kalau nama tidak dikirim."""
+    """Buat user baru. `nama_user` wajib diisi di DB -- fallback ke username kalau nama tidak dikirim.
+
+    [DIUBAH] `role` parameter tetap string "tahap_N" seperti sebelumnya
+    (supaya pemanggil lama tidak perlu berubah) -- dikonversi ke integer
+    di sini sebelum disimpan (lihat role_tahap_ke_int())."""
     session = SessionLocal()
     try:
         user = User(
             username=username,
             password_hash=password_hash,
-            role=role,
+            role=role_tahap_ke_int(role),
             nama_user=nama or username,
         )
         session.add(user)
@@ -1623,13 +2994,13 @@ def list_users() -> List[Dict[str, Any]]:
 
 
 def update_user_role(username: str, role: str) -> bool:
-    """Update role user."""
+    """Update role user. `role` tetap string "tahap_N" (lihat create_user())."""
     session = SessionLocal()
     try:
         user = session.query(User).filter(User.username == username).first()
         if not user:
             return False
-        user.role = role
+        user.role = role_tahap_ke_int(role)
         session.commit()
         return True
     except Exception:
@@ -1737,7 +3108,7 @@ def get_client_by_nama(nama: str) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def delete_client(client_id: int) -> bool:
+def delete_client(client_id: str) -> bool:
     """Hapus client. Hasil analisis terkait (tabel 'hasil' dan 'hasil_esb')
     ikut dihapus dulu supaya tidak melanggar foreign key ke 'clients'."""
     session = SessionLocal()
@@ -1780,7 +3151,7 @@ def hapus_hasil(hasil_id: int) -> bool:
         session.close()
 
 
-def hapus_semua_hasil_client(client_id: int, jenis: Optional[str] = None) -> int:
+def hapus_semua_hasil_client(client_id: str, jenis: Optional[str] = None) -> int:
     """Hapus semua hasil milik satu client, opsional filter per jenis.
     Return jumlah baris yang dihapus."""
     session = SessionLocal()
@@ -1799,7 +3170,7 @@ def hapus_semua_hasil_client(client_id: int, jenis: Optional[str] = None) -> int
         session.close()
 
 
-def hitung_hasil_client(client_id: int, jenis: Optional[str] = None) -> int:
+def hitung_hasil_client(client_id: str, jenis: Optional[str] = None) -> int:
     """Hitung jumlah baris hasil milik satu client, opsional filter per jenis."""
     session = SessionLocal()
     try:
@@ -1821,7 +3192,7 @@ def hitung_hasil_client(client_id: int, jenis: Optional[str] = None) -> int:
 
 def buat_percakapan(
     username: str,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     esb_account_id: Optional[int] = None,
     judul: str = "Percakapan Baru",
 ) -> Optional[int]:
@@ -1845,7 +3216,7 @@ def buat_percakapan(
 
 def daftar_percakapan(
     username: str,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     esb_account_id: Optional[int] = None,
     jalur: Optional[str] = None,
     limit: int = 50,
@@ -1978,7 +3349,7 @@ def hapus_percakapan(percakapan_id: int) -> bool:
         session.close()
 
 def simpan_hasil_analisis(
-    client_id: int,
+    client_id: str,
     jenis_analisis: str,
     hasil: Any,
     prompt: Optional[str] = None,
@@ -2047,7 +3418,7 @@ def ambil_hasil_analisis_by_id(analisis_id: int) -> Optional[Dict[str, Any]]:
 
 
 def ambil_hasil_analisis_client(
-    client_id: int,
+    client_id: str,
     jenis_analisis: Optional[str] = None,
     esb_account_id: Optional[int] = None,
     limit: int = 50,
@@ -2095,7 +3466,7 @@ def simpan_pola_augmentasi(
     jenis: str,
     data_asli: Any,
     koreksi: Any,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     username: Optional[str] = None,
 ) -> Optional[int]:
     """Simpan 1 feedback koreksi user (prediksi sistem vs koreksi user)
@@ -2129,7 +3500,7 @@ def simpan_pola_augmentasi(
 
 
 def ambil_pola_augmentasi(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     jenis: Optional[str] = None,
     limit: int = 500,
 ) -> List[Dict[str, Any]]:
@@ -2176,7 +3547,7 @@ def ambil_pola_augmentasi(
         session.close()
 
 def buat_pertanyaan_klarifikasi(
-    client_id: int,
+    client_id: str,
     jenis: str,
     pertanyaan: str,
     conv_id: Optional[str] = None,
@@ -2212,7 +3583,7 @@ def buat_pertanyaan_klarifikasi(
 
 
 def daftar_pertanyaan_klarifikasi(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     status: Optional[str] = "pending",
     limit: int = 200,
 ) -> List[Dict[str, Any]]:
@@ -2359,7 +3730,7 @@ def jawab_pertanyaan_klarifikasi(
 # ============================================================
 
 def buat_alert_anomali(
-    client_id: int,
+    client_id: str,
     jenis: str,
     tipe_alert: str,
     pesan: str,
@@ -2394,7 +3765,7 @@ def buat_alert_anomali(
 
 
 def daftar_alert_anomali(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     status: Optional[str] = "baru",
     tipe_alert: Optional[str] = None,
     limit: int = 200,
@@ -2469,7 +3840,7 @@ def tandai_alert_anomali(alert_id: int, status: str, username: str) -> bool:
     finally:
         session.close()
 
-def update_kontak_client(client_id: int, nomor_wa: Optional[str] = None, email: Optional[str] = None) -> bool:
+def update_kontak_client(client_id: str, nomor_wa: Optional[str] = None, email: Optional[str] = None) -> bool:
     """Update nomor WA dan/atau email client. Kirim None utk field yang
     tidak mau diubah (bukan dikosongkan) -- utk sengaja mengosongkan,
     kirim string kosong ""."""
@@ -2492,7 +3863,7 @@ def update_kontak_client(client_id: int, nomor_wa: Optional[str] = None, email: 
 
 
 def update_profil_client(
-    client_id: int,
+    client_id: str,
     industry: Optional[str] = None,
     status: Optional[str] = None,
     assigned_accountant: Optional[str] = None,
@@ -2538,7 +3909,7 @@ def update_profil_client(
 # sbg 1 baris yang bisa dipantau scheduler harian (lihat modules/
 # notifikasi.py -- jalankan_pengecekan_reminder_spt()).
 
-def simpan_reminder_deadline_spt(client_id: int, daftar_item: List[Dict[str, Any]]) -> int:
+def simpan_reminder_deadline_spt(client_id: str, daftar_item: List[Dict[str, Any]]) -> int:
     """Upsert daftar kewajiban SPT (lapor & setor) utk 1 client. Setiap
     item dict berisi: npwp, kategori_spt, jenis_spt_label, bulan_pajak,
     tahun_pajak, jenis_deadline ("lapor"/"setor"), tanggal_batas (date/
@@ -2668,7 +4039,7 @@ def tandai_milestone_terkirim(reminder_id: int, milestone: str) -> bool:
         session.close()
 
 
-def daftar_reminder_spt_client(client_id: int, hanya_belum_selesai: bool = True) -> List[Dict[str, Any]]:
+def daftar_reminder_spt_client(client_id: str, hanya_belum_selesai: bool = True) -> List[Dict[str, Any]]:
     """Daftar semua kewajiban SPT 1 client, terdekat jatuh tempo dulu --
     utk kalender deadline di dashboard client (terpisah dari kotak masuk
     alert, supaya bisa lihat SEMUA kewajiban walau belum waktunya
@@ -2705,7 +4076,7 @@ def daftar_reminder_spt_client(client_id: int, hanya_belum_selesai: bool = True)
     finally:
         session.close()
 
-def simpan_coa_bulk(client_id: int, daftar_akun: List[Dict[str, Any]], ganti_semua: bool = True) -> int:
+def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_semua: bool = True) -> int:
     """
     Simpan banyak akun COA sekaligus untuk satu client (mis. hasil import
     dari sheet 'COA' file Excel, atau input manual dari UI).
@@ -2806,7 +4177,7 @@ def simpan_coa_bulk(client_id: int, daftar_akun: List[Dict[str, Any]], ganti_sem
         session.close()
 
 
-def ambil_coa_client(client_id: int, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+def ambil_coa_client(client_id: str, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
     """Ambil seluruh COA milik satu client, terurut berdasarkan no_akun."""
     session = SessionLocal()
     try:
@@ -2867,7 +4238,7 @@ def ambil_coa_client(client_id: int, hanya_aktif: bool = True) -> List[Dict[str,
         session.close()
 
 
-def cari_akun_coa(client_id: int, no_akun: str) -> Optional[Dict[str, Any]]:
+def cari_akun_coa(client_id: str, no_akun: str) -> Optional[Dict[str, Any]]:
     """Cari satu akun COA client berdasarkan no_akun persis."""
     session = SessionLocal()
     try:
@@ -2915,7 +4286,7 @@ def ambil_akun_coa_by_id(akun_id: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def tambah_akun_coa(client_id: int, no_akun: str, nama_akun: str, kategori: Optional[str] = None,
+def tambah_akun_coa(client_id: str, no_akun: str, nama_akun: str, kategori: Optional[str] = None,
                      sub_kategori: Optional[str] = None, normal_saldo: Optional[str] = None,
                      saldo_awal: float = 0, segment: Optional[str] = None,
                      arus_kas: Optional[str] = None, keterangan: Optional[str] = None,
@@ -2989,7 +4360,7 @@ def hapus_akun_coa(akun_id: int) -> bool:
     finally:
         session.close()
 
-def ambil_blok_nomor_voucher(client_id: int, kode_bank: str, periode: str, jumlah: int) -> range:
+def ambil_blok_nomor_voucher(client_id: str, kode_bank: str, periode: str, jumlah: int) -> range:
     """
     Reservasi 'jumlah' nomor voucher BERURUTAN sekaligus untuk kombinasi
     (client_id, kode_bank, periode), dan LANGSUNG SIMPAN ke database
@@ -3052,7 +4423,7 @@ def ambil_blok_nomor_voucher(client_id: int, kode_bank: str, periode: str, jumla
         session.close()
 
 
-def ambil_nomor_voucher_terakhir(client_id: int, kode_bank: str, periode: str) -> int:
+def ambil_nomor_voucher_terakhir(client_id: str, kode_bank: str, periode: str) -> int:
     """Lihat nomor voucher terakhir yang SUDAH terpakai (tanpa mereservasi
     nomor baru) -- utk keperluan tampilan/audit di frontend, mis. menampilkan
     'Voucher terakhir bulan ini: BRI-0726-42' sebelum akuntan upload file baru."""
@@ -3070,7 +4441,7 @@ def ambil_nomor_voucher_terakhir(client_id: int, kode_bank: str, periode: str) -
         session.close()
 
 
-def reset_voucher_counter(client_id: int, kode_bank: str, periode: str) -> bool:
+def reset_voucher_counter(client_id: str, kode_bank: str, periode: str) -> bool:
     """
     Reset counter voucher ke 0 utk kombinasi client+bank+periode tertentu.
 
@@ -3200,7 +4571,7 @@ _SYSTEM_PROMPT_DETEKSI_BANK = (
 )
 
 
-def _deteksi_kode_bank_dengan_claude(nama_bank: str, keterangan_contoh: Optional[str], client_id: Optional[int]) -> Optional[str]:
+def _deteksi_kode_bank_dengan_claude(nama_bank: str, keterangan_contoh: Optional[str], client_id: Optional[str]) -> Optional[str]:
     """
     [BARU] Fallback Claude -- HANYA dipanggil kalau _deteksi_kode_bank_robust()
     gagal (nama bank tidak cocok ke daftar dikenal). Pakai
@@ -3251,7 +4622,7 @@ def _deteksi_kode_bank_dengan_claude(nama_bank: str, keterangan_contoh: Optional
 
 
 def beri_nomor_voucher_draf_jurnal(
-    client_id: int,
+    client_id: str,
     draf_jurnal: List[Dict[str, Any]],
     jenis_dokumen: str,
     pakai_ai: bool = False,
@@ -3440,7 +4811,7 @@ def _buat_transaction_hash_baris(baris: Dict[str, Any]) -> str:
     return hashlib.sha256("|".join(bagian).encode("utf-8")).hexdigest()
 
 
-def cari_upload_batch_by_file_hash(client_id: int, file_hash: str) -> Optional[Dict[str, Any]]:
+def cari_upload_batch_by_file_hash(client_id: str, file_hash: str) -> Optional[Dict[str, Any]]:
     """Cek apakah file dgn hash ini PERNAH diupload utk client ini
     (status apapun -- termasuk yang lama sudah 'revisi_diganti', supaya
     tetap terdeteksi walau batch lamanya sudah tidak aktif lagi)."""
@@ -3464,7 +4835,7 @@ def cari_upload_batch_by_file_hash(client_id: int, file_hash: str) -> Optional[D
         session.close()
 
 
-def ambil_batch_aktif(client_id: int, kode_bank: str, periode: str) -> Optional[Dict[str, Any]]:
+def ambil_batch_aktif(client_id: str, kode_bank: str, periode: str) -> Optional[Dict[str, Any]]:
     """Batch TERAKTIF (status == 'aktif', paling baru) utk kombinasi
     client+bank+periode ini -- ini yang jadi 'sumber kebenaran' saat
     membandingkan upload baru."""
@@ -3505,7 +4876,7 @@ def ambil_upload_batch_by_id(batch_id: int) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def daftar_upload_batch_client(client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+def daftar_upload_batch_client(client_id: str, limit: int = 100) -> List[Dict[str, Any]]:
     """Riwayat upload rekening koran per client -- utk tab 'Riwayat
     Upload' di UI, independen dari riwayat per-baris jurnal_posting."""
     session = SessionLocal()
@@ -3527,7 +4898,7 @@ def daftar_upload_batch_client(client_id: int, limit: int = 100) -> List[Dict[st
         session.close()
 
 
-def ambil_hash_transaksi_aktif(client_id: int, kode_bank: str, periode: str) -> set:
+def ambil_hash_transaksi_aktif(client_id: str, kode_bank: str, periode: str) -> set:
     """Kumpulan transaction_hash SEMUA baris jurnal_posting yang masih
     'berlaku' (status draft ATAU terposting -- BUKAN yang sudah
     'ditolak', krn baris ditolak dianggap tidak pernah benar-benar
@@ -3556,7 +4927,7 @@ def ambil_hash_transaksi_aktif(client_id: int, kode_bank: str, periode: str) -> 
 
 
 def catat_upload_batch(
-    client_id: int,
+    client_id: str,
     kode_bank: str,
     periode: str,
     status: str,
@@ -3690,7 +5061,7 @@ def _upload_batch_ke_dict(b: "UploadBatch", sertakan_draf_jurnal: bool = False) 
     return hasil
 
 
-def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: str,
+def tarik_draf_jurnal_ke_posting(client_id: str, hasil_id: int, jenis_dokumen: str,
                                   draf_jurnal: List[Dict[str, Any]],
                                   sudah_diberi_nomor: bool = False) -> int:
     """
@@ -3820,7 +5191,7 @@ def tarik_draf_jurnal_ke_posting(client_id: int, hasil_id: int, jenis_dokumen: s
             session.close()
 
 
-def daftar_jurnal_posting(client_id: int, status: Optional[str] = "draft",
+def daftar_jurnal_posting(client_id: str, status: Optional[str] = "draft",
                            limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """
     Ambil baris jurnal_posting client (default: yang masih 'draft', perlu direview).
@@ -3878,7 +5249,7 @@ def daftar_jurnal_posting(client_id: int, status: Optional[str] = "draft",
         session.close()
 
 
-def ambil_jurnal_posting_by_id(posting_id: int, client_id: int) -> Optional[Dict[str, Any]]:
+def ambil_jurnal_posting_by_id(posting_id: int, client_id: str) -> Optional[Dict[str, Any]]:
     """[BARU] Ambil SATU baris jurnal_posting milik client tertentu --
     dipakai endpoint edit (PATCH) untuk validasi kepemilikan (posting_id ini
     benar milik client_id ini) sebelum mengubah apa pun, dan untuk
@@ -3922,7 +5293,7 @@ def ambil_jurnal_posting_by_id(posting_id: int, client_id: int) -> Optional[Dict
 STATUS_JURNAL_VALID = {"draft", "terposting", "ditolak"}
 
 
-def update_jurnal_posting(posting_id: int, client_id: int, user: str, **fields) -> Optional[Dict[str, Any]]:
+def update_jurnal_posting(posting_id: int, client_id: str, user: str, **fields) -> Optional[Dict[str, Any]]:
     """
     [BARU] Edit SATU baris jurnal_posting yang SUDAH ADA -- dipakai halaman
     Transaksi (TransactionEditModal, tombol "Simpan Perubahan") supaya
@@ -4015,7 +5386,7 @@ def update_jurnal_posting(posting_id: int, client_id: int, user: str, **fields) 
 
 
 def buat_jurnal_manual(
-    client_id: int, user: str, tanggal: str, keterangan: str,
+    client_id: str, user: str, tanggal: str, keterangan: str,
     no_akun_debet: str, nama_akun_debet: Optional[str],
     jml_debet: float,
     no_akun_kredit: str, nama_akun_kredit: Optional[str],
@@ -4081,7 +5452,7 @@ def buat_jurnal_manual(
         session.close()
 
 
-def konfirmasi_posting_by_ids(client_id: int, posting_ids: List[int], user: str) -> Dict[str, int]:
+def konfirmasi_posting_by_ids(client_id: str, posting_ids: List[int], user: str) -> Dict[str, int]:
     """
     [BARU] Sama tujuannya dengan konfirmasi_posting_massal() (posting
     banyak baris 'draft' sekaligus jadi 'terposting'), tapi dipilih lewat
@@ -4234,7 +5605,7 @@ def tolak_posting_jurnal(posting_id: int, user: str, alasan: Optional[str] = Non
         session.close()
 
 
-def konfirmasi_posting_massal(client_id: int, hasil_id: int, user: str) -> Dict[str, int]:
+def konfirmasi_posting_massal(client_id: str, hasil_id: int, user: str) -> Dict[str, int]:
     """
     [BARU - Prioritas #7] Konfirmasi SEMUA baris jurnal_posting berstatus
     'draft' milik SATU hasil_id (= satu file upload) sekaligus, jadi
@@ -4283,7 +5654,7 @@ def konfirmasi_posting_massal(client_id: int, hasil_id: int, user: str) -> Dict[
         session.close()
 
 
-def ambil_jurnal_posting_by_hasil(client_id: int, hasil_id: int) -> List[Dict[str, Any]]:
+def ambil_jurnal_posting_by_hasil(client_id: str, hasil_id: int) -> List[Dict[str, Any]]:
     """
     [BARU - Prioritas #7] Ambil SEMUA baris jurnal_posting utk SATU
     hasil_id, apa pun statusnya (draft/terposting/ditolak) -- dipakai
@@ -4317,7 +5688,7 @@ def ambil_jurnal_posting_by_hasil(client_id: int, hasil_id: int) -> List[Dict[st
         session.close()
 
 
-def ambil_jurnal_terposting(client_id: int, tanggal_mulai: Optional[str] = None,
+def ambil_jurnal_terposting(client_id: str, tanggal_mulai: Optional[str] = None,
                              tanggal_akhir: Optional[str] = None,
                              hanya_terposting: bool = True) -> List[Dict[str, Any]]:
     """
@@ -4410,7 +5781,7 @@ def ambil_jurnal_terposting(client_id: int, tanggal_mulai: Optional[str] = None,
         session.close()
 
 
-def hitung_jurnal_perlu_posting(client_id: int) -> int:
+def hitung_jurnal_perlu_posting(client_id: str) -> int:
     """Jumlah baris jurnal_posting client yang masih berstatus 'draft' (badge notifikasi di UI)."""
     session = SessionLocal()
     try:
@@ -4430,7 +5801,7 @@ def hitung_jurnal_perlu_posting(client_id: int) -> int:
     finally:
         session.close()
 
-def simpan_laporan_keuangan(client_id: int, periode: str, data: Dict[str, Any],
+def simpan_laporan_keuangan(client_id: str, periode: str, data: Dict[str, Any],
                              dibuat_oleh: Optional[str] = None,
                              tanggal_mulai: Optional[str] = None,
                              tanggal_akhir: Optional[str] = None) -> Optional[int]:
@@ -4455,7 +5826,7 @@ def simpan_laporan_keuangan(client_id: int, periode: str, data: Dict[str, Any],
         session.close()
 
 
-def ambil_laporan_keuangan_terbaru(client_id: int, periode: str) -> Optional[Dict[str, Any]]:
+def ambil_laporan_keuangan_terbaru(client_id: str, periode: str) -> Optional[Dict[str, Any]]:
     """Ambil snapshot laporan keuangan TERBARU untuk satu client+periode (kalau pernah di-generate ulang)."""
     session = SessionLocal()
     try:
@@ -4482,7 +5853,7 @@ def ambil_laporan_keuangan_terbaru(client_id: int, periode: str) -> Optional[Dic
         session.close()
 
 
-def daftar_riwayat_laporan_keuangan(client_id: int, periode: Optional[str] = None) -> List[Dict[str, Any]]:
+def daftar_riwayat_laporan_keuangan(client_id: str, periode: Optional[str] = None) -> List[Dict[str, Any]]:
     """Daftar semua snapshot laporan keuangan client (histori tiap kali di-generate ulang)."""
     session = SessionLocal()
     try:
@@ -4516,7 +5887,7 @@ def daftar_riwayat_laporan_keuangan(client_id: int, periode: Optional[str] = Non
 # dipakai sebelumnya -- tolong dicek ulang sekali kalau masih ada salinan
 # db_client.py versi lama untuk memastikan tidak ada penyesuaian lanjutan
 # yang ikut hilang.
-def hitung_signature_data_laporan(client_id: int, tahun: Optional[int] = None) -> str:
+def hitung_signature_data_laporan(client_id: str, tahun: Optional[int] = None) -> str:
     """
     Hitung signature ringan (hash) dari data yang memengaruhi laporan
     client ini -- dipakai buat validasi cache-hit di endpoint export
@@ -4577,7 +5948,7 @@ def hitung_signature_data_laporan(client_id: int, tahun: Optional[int] = None) -
 # digenerate (lihat endpoint generate laporan bulanan di main.py).
 
 def simpan_riwayat_saldo_bulanan(
-    client_id: int,
+    client_id: str,
     saldo_per_akun: Dict[str, Dict[str, Any]],
     tahun: int,
     bulan: int,
@@ -4626,7 +5997,7 @@ def simpan_riwayat_saldo_bulanan(
         session.close()
 
 
-def ambil_riwayat_saldo_bulanan(client_id: int, no_akun: str, tahun: int) -> List[Dict[str, Any]]:
+def ambil_riwayat_saldo_bulanan(client_id: str, no_akun: str, tahun: int) -> List[Dict[str, Any]]:
     """Ambil saldo per bulan untuk 1 akun dalam 1 tahun."""
     session = SessionLocal()
     try:
@@ -4650,7 +6021,7 @@ def ambil_riwayat_saldo_bulanan(client_id: int, no_akun: str, tahun: int) -> Lis
 
 
 def ambil_riwayat_saldo_bulanan_client(
-    client_id: int, tahun: int, no_akun: Optional[str] = None, kategori: Optional[str] = None,
+    client_id: str, tahun: int, no_akun: Optional[str] = None, kategori: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Ambil riwayat saldo bulanan untuk seluruh client dalam 1 tahun."""
     session = SessionLocal()
@@ -4681,7 +6052,7 @@ def ambil_riwayat_saldo_bulanan_client(
 
 
 def ambil_riwayat_saldo_bulanan_akun_tren(
-    client_id: int, tahun: int, pola_no_akun: Optional[str] = None, kategori: Optional[str] = None,
+    client_id: str, tahun: int, pola_no_akun: Optional[str] = None, kategori: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Ambil tren saldo bulanan dikelompokkan per akun (untuk grafik tren)."""
     session = SessionLocal()
@@ -4713,7 +6084,7 @@ def ambil_riwayat_saldo_bulanan_akun_tren(
 # ACCOUNTING CORE / SECURITY HELPERS
 # ============================================================
 
-def user_has_client_access(user_id: Optional[str], client_id: int, role: Optional[str] = None) -> bool:
+def user_has_client_access(user_id: Optional[str], client_id: str, role: Optional[str] = None) -> bool:
     """Return True jika user boleh mengakses client. tahap_5 & super_admin
     (lihat RBAC.md) = superuser, selalu lolos ke SEMUA client.
 
@@ -4733,7 +6104,7 @@ def user_has_client_access(user_id: Optional[str], client_id: int, role: Optiona
     try:
         row = session.query(UserClientAccess).filter(
             UserClientAccess.user_id == user_id,
-            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.client_id == client_id,
             UserClientAccess.active.is_(True),
         ).first()
         return row is not None
@@ -4744,7 +6115,7 @@ def user_has_client_access(user_id: Optional[str], client_id: int, role: Optiona
         session.close()
 
 
-def set_user_client_access(user_id: str, client_id: int, active: bool = True,
+def set_user_client_access(user_id: str, client_id: str, active: bool = True,
                            access_role: Optional[str] = None) -> bool:
     session = SessionLocal()
     try:
@@ -4767,7 +6138,7 @@ def set_user_client_access(user_id: str, client_id: int, active: bool = True,
         session.close()
 
 
-def get_user_client_access(user_id: Optional[str], client_id: int) -> Optional[Dict[str, Any]]:
+def get_user_client_access(user_id: Optional[str], client_id: str) -> Optional[Dict[str, Any]]:
     """Baris akses AKTIF milik 1 user ke 1 client tertentu, atau None kalau
     tidak ada -- dipakai modules/auth/core.py::require_client_level() untuk
     baca access_role (org_owner..viewer, lihat RBAC.md) user ini di client
@@ -4779,7 +6150,7 @@ def get_user_client_access(user_id: Optional[str], client_id: int) -> Optional[D
     try:
         row = session.query(UserClientAccess).filter(
             UserClientAccess.user_id == user_id,
-            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.client_id == client_id,
             UserClientAccess.active.is_(True),
         ).first()
         if row is None:
@@ -4792,7 +6163,7 @@ def get_user_client_access(user_id: Optional[str], client_id: int) -> Optional[D
         session.close()
 
 
-def daftar_akses_client(client_id: int) -> List[Dict[str, Any]]:
+def daftar_akses_client(client_id: str) -> List[Dict[str, Any]]:
     """Semua user (yang aksesnya masih aktif) yang punya akses ke 1 client
     tertentu -- kebalikan dari daftar_user_client_access() (yang per-user,
     dipakai company switcher). Dipakai GET /api/client/{client_id}/access
@@ -4802,7 +6173,7 @@ def daftar_akses_client(client_id: int) -> List[Dict[str, Any]]:
         rows = session.query(UserClientAccess, User).join(
             User, UserClientAccess.user_id == User.id_user
         ).filter(
-            UserClientAccess.client_id == int(client_id),
+            UserClientAccess.client_id == client_id,
             UserClientAccess.active.is_(True),
         ).all()
         return [

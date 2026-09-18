@@ -7,9 +7,9 @@ export default function SalesKpiRow() {
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
       <KpiCard
         label="Total Sales (Sep)"
-        value="$284,760"
-        subValue="48 invoices this period"
-        trend={12.4}
+        value="$0"
+        subValue="0 invoices this period"
+        trend={0}
         trendLabel="vs Aug 2026"
         icon={<DollarSign size={18} />}
         variant="positive"
@@ -17,36 +17,36 @@ export default function SalesKpiRow() {
       />
       <KpiCard
         label="Outstanding AR"
-        value="$67,340"
-        subValue="14 invoices pending"
-        trend={-3.1}
+        value="$0"
+        subValue="0 invoices pending"
+        trend={0}
         trendLabel="vs prior period"
         icon={<Clock size={18} />}
         variant="warning"
       />
       <KpiCard
         label="Paid Invoices"
-        value="$198,920"
-        subValue="32 invoices collected"
-        trend={8.7}
+        value="$0"
+        subValue="0 invoices collected"
+        trend={0}
         trendLabel="vs Aug 2026"
         icon={<CheckCircle size={18} />}
         variant="positive"
       />
       <KpiCard
         label="Overdue Amount"
-        value="$18,500"
-        subValue="5 invoices overdue"
-        trend={-15.2}
+        value="$0"
+        subValue="0 invoices overdue"
+        trend={0}
         trendLabel="vs prior period"
         icon={<AlertTriangle size={18} />}
         variant="negative"
       />
       <KpiCard
         label="Sales Tax Collected"
-        value="$23,840"
-        subValue="8.37% effective rate"
-        trend={11.2}
+        value="$0"
+        subValue="0% effective rate"
+        trend={0}
         trendLabel="vs Aug 2026"
         icon={<Receipt size={18} />}
         variant="info"

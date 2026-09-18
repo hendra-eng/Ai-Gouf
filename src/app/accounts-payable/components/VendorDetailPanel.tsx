@@ -28,11 +28,11 @@ export default function VendorDetailPanel({ vendor, bills, onClose }: Props) {
     { id: 'payments' as const, label: 'Payment History' },
   ];
 
-  const paymentHistory = [
-    { id: `vph-${vendor.id}-1`, date: '2026-08-10', amount: Math.round(vendor.totalAP * 0.28), method: 'Bank Transfer', ref: `PAY-${vendor.code}-001` },
-    { id: `vph-${vendor.id}-2`, date: '2026-07-15', amount: Math.round(vendor.totalAP * 0.22), method: 'Bank Transfer', ref: `PAY-${vendor.code}-002` },
-    { id: `vph-${vendor.id}-3`, date: '2026-06-20', amount: Math.round(vendor.totalAP * 0.25), method: 'Giro', ref: `PAY-${vendor.code}-003` },
-  ];
+  // [DIUBAH] Sebelumnya 3 baris riwayat pembayaran difabrikasi (tanggal &
+  // referensi hardcode, nominal dikarang dari persentase totalAP) -- belum
+  // ada sumber data riwayat pembayaran vendor yang real di backend saat ini,
+  // jadi dikosongkan supaya tidak menampilkan data palsu ke pengguna.
+  const paymentHistory: { id: string; date: string; amount: number; method: string; ref: string }[] = [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
@@ -166,6 +166,9 @@ export default function VendorDetailPanel({ vendor, bills, onClose }: Props) {
 
           {activeTab === 'payments' && (
             <div className="space-y-2">
+              {paymentHistory.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">No payment history yet.</p>
+              )}
               {paymentHistory.map((p) => (
                 <div key={p.id} className="bg-card border border-border rounded-lg p-3">
                   <div className="flex items-center justify-between">

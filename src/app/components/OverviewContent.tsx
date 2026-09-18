@@ -225,8 +225,8 @@ export default function OverviewContent() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 1.24M')}</p>
-              <p className="text-xs text-danger mt-0.5">{fx(t('Rp 320M overdue'))} — action required</p>
+              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
@@ -242,8 +242,8 @@ export default function OverviewContent() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 860M')}</p>
-              <p className="text-xs text-warning mt-0.5">{fx(t('Rp 142M due this week'))}</p>
+              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
@@ -252,7 +252,7 @@ export default function OverviewContent() {
             <span className="text-sm font-600 text-ai-purple">AI Financial Analyst</span>
             <Icon name="ArrowRightIcon" size={14} className="text-ai-purple group-hover:text-purple-700 transition-colors" />
           </div>
-          <p className="text-sm text-ai-purple-foreground">5 analyses ready</p>
+          <p className="text-sm text-ai-purple-foreground">0 analyses ready</p>
           <p className="text-xs text-ai-purple mt-0.5">Ask a financial question →</p>
         </Link>
       </div>

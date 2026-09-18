@@ -12,7 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { searchPages } from '@/lib/searchIndex';
 
-const COMPANIES = ['PT Nusantara Teknologi', 'PT Maju Bersama Sentosa', 'CV Karya Mandiri Digital'];
+const COMPANIES = ['PT Nusantara Teknologi Indonesia', 'PT Maju Bersama Sentosa'];
 const PERIODS = ['Jan 2026 – Aug 2026', 'Apr 2026 – Jun 2026', 'Jan 2026 – Mar 2026', 'Jan 2025 – Dec 2025'];
 
 interface GlobalHeaderProps {

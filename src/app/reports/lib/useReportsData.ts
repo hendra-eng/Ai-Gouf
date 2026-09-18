@@ -101,12 +101,14 @@ export interface ReportsData {
 }
 
 export function useReportsData(): ReportsData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [realReports, setRealReports] = useState<Report[] | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!activeClientId) {
       setRealReports(null);
       setLoading(false);
@@ -137,7 +139,7 @@ export function useReportsData(): ReportsData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId, activeClientName]);
+  }, [hydrated, activeClientId, activeClientName]);
 
   const adaDataReal = !!realReports && realReports.length > 0;
   // Kategori tanpa sumber backend tetap dipertahankan dari data contoh,

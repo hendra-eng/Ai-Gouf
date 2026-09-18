@@ -3,14 +3,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-const SAMPLE_DATA = [
-  { period: 'Mar 2026', payable: 76 },
-  { period: 'Apr 2026', payable: 70 },
-  { period: 'May 2026', payable: 80 },
-  { period: 'Jun 2026', payable: 90 },
-  { period: 'Jul 2026', payable: 91 },
-  { period: 'Aug 2026', payable: 94 },
-];
+// Fallback kosong kalau parent belum mengirim `data` (belum ada client aktif).
+const SAMPLE_DATA: { period: string; payable: number }[] = [];
 
 const AXIS_WIDTH = 40;
 const AXIS_OVERLAY_WIDTH = AXIS_WIDTH; // margin.left BarChart di sini = 0

@@ -95,12 +95,16 @@ export interface UseNeracaAccountsResult {
 
 /** Hook fetch mentah -- dipakai oleh useAssetsData/useLiabilitiesData/useEquityData. */
 export function useNeracaAccounts(): UseNeracaAccountsResult {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts.
+  // Hook ini dipakai bersama oleh useAssetsData/useLiabilitiesData/
+  // useEquityData, jadi perbaikan di sini otomatis berlaku utk 3 halaman itu.
+  const [loading, setLoading] = useState(true);
   const [computed, setComputed] = useState<NeracaAccounts | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!activeClientId) {
       setComputed(null);
       setLoading(false);
@@ -127,7 +131,7 @@ export function useNeracaAccounts(): UseNeracaAccountsResult {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   return { loading, isSampleData: !computed, companyName: activeClientName, data: computed };
 }

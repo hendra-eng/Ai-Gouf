@@ -41,25 +41,25 @@ interface KpiBentoResponse {
 }
 
 const MOCK_SPARKLINES: Record<string, number[]> = {
-  'Total Revenue': [820, 945, 880, 1020, 1100, 1050, 1180, 1220].map((v) => v * 1e6),
-  'Net Profit': [180, 210, 195, 240, 260, 230, 280, 290].map((v) => v * 1e6),
-  'Gross Profit': [380, 420, 395, 450, 490, 460, 510, 530].map((v) => v * 1e6),
-  'Cash & Bank': [240, 260, 280, 270, 310, 290, 320, 296].map((v) => v * 1e6),
-  'Accounts Receivable': [140, 155, 148, 162, 158, 150, 135, 124].map((v) => v * 1e6),
-  'Accounts Payable': [72, 80, 75, 88, 82, 90, 85, 86].map((v) => v * 1e6),
-  'EBITDA': [195, 220, 210, 248, 265, 240, 278, 285].map((v) => v * 1e6),
-  'Tax Payable': [15, 18, 16, 22, 20, 19, 21, 18].map((v) => v * 1e6),
+  'Total Revenue': Array(8).fill(0),
+  'Net Profit': Array(8).fill(0),
+  'Gross Profit': Array(8).fill(0),
+  'Cash & Bank': Array(8).fill(0),
+  'Accounts Receivable': Array(8).fill(0),
+  'Accounts Payable': Array(8).fill(0),
+  'EBITDA': Array(8).fill(0),
+  'Tax Payable': Array(8).fill(0),
 };
 
 const MOCK_CHANGE: Record<string, number> = {
-  'Total Revenue': 12.8,
-  'Net Profit': 8.4,
-  'Gross Profit': 10.2,
-  'Cash & Bank': 5.7,
-  'Accounts Receivable': -4.3,
-  'Accounts Payable': 3.1,
-  'EBITDA': 11.7,
-  'Tax Payable': 6.2,
+  'Total Revenue': 0,
+  'Net Profit': 0,
+  'Gross Profit': 0,
+  'Cash & Bank': 0,
+  'Accounts Receivable': 0,
+  'Accounts Payable': 0,
+  'EBITDA': 0,
+  'Tax Payable': 0,
 };
 
 function buatKartuMock(): KartuKpiBackend[] {
@@ -73,7 +73,7 @@ function buatKartuMock(): KartuKpiBackend[] {
   }));
 }
 
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
 function buatKartuKosong(): KartuKpiBackend[] {
   return Object.keys(MOCK_SPARKLINES).map((label) => ({
@@ -132,10 +132,15 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
   const router = useRouter();
   const { currency } = useCurrency();
   const { t } = useLanguage();
-  const { activeClientId } = useActiveClient();
+  const { activeClientId, hydrated } = useActiveClient();
 
   const [kartu, setKartu] = useState<KartuKpiBackend[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  // [FIX flash-ke-0] Mulai dari `true`, bukan `false` -- di render pertama
+  // kita BELUM TAHU apakah bakal ada client aktif (localStorage belum
+  // sempat dibaca), jadi anggap "sedang menentukan/memuat" dulu, supaya
+  // skeleton yang tampil (lihat `loading && !kartu` di bawah), bukan
+  // kartu kosong bernilai 0.
+  const [loading, setLoading] = useState(true);
   const [isSampleData, setIsSampleData] = useState(DEMO_MODE);
   const requestIdRef = useRef(0);
 
@@ -173,7 +178,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
     (Object.keys(PL_FIELD_UNTUK_LABEL) as (keyof typeof PL_FIELD_UNTUK_LABEL)[]).forEach((label) => {
       const field = PL_FIELD_UNTUK_LABEL[label];
       const actualJt = plIsSample
-        ? { revenue: 1160, netProfit: 240, grossProfit: 550, ebitda: 300 }[field] * elapsedMonths / 8
+        ? { revenue: 0, netProfit: 0, grossProfit: 0, ebitda: 0 }[field] * elapsedMonths / 8
         : (PL_CORE as any)[field] || 0;
       if (viewMode === 'Budget') {
         const budgetJt = (BUDGET as any)[field] * budgetFraction;
@@ -200,6 +205,10 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
   }, [viewMode, plIsSample, PL_CORE, budgetFraction, elapsedMonths, prevYearPL]);
 
   useEffect(() => {
+    // [FIX flash-ke-0] Belum tahu client aktifnya siapa (context masih
+    // baca localStorage) -- jangan simpulkan apa pun dulu, biarkan
+    // skeleton loading tetap tampil.
+    if (!hydrated) return;
     if (!activeClientId) {
       setKartu(DEMO_MODE ? buatKartuMock() : buatKartuKosong());
       setIsSampleData(DEMO_MODE);
@@ -230,7 +239,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
       .finally(() => {
         if (requestIdRef.current === requestId) setLoading(false);
       });
-  }, [activeClientId, branch]);
+  }, [hydrated, activeClientId, branch]);
 
   if (loading && !kartu) {
     return (

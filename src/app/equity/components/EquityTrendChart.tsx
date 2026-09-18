@@ -4,18 +4,9 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import type { EquityTrendRow } from '../lib/useEquityData';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat EquityContent.tsx
-// (useEquityData()) untuk sumber data ASLI client aktif.
-const mockTrendData: EquityTrendRow[] = [
-  { month: 'Jan', total: 3800, retained: 900, capital: 3000 },
-  { month: 'Feb', total: 3920, retained: 950, capital: 3000 },
-  { month: 'Mar', total: 4050, retained: 1000, capital: 3000 },
-  { month: 'Apr', total: 4120, retained: 1050, capital: 3000 },
-  { month: 'May', total: 4280, retained: 1100, capital: 3000 },
-  { month: 'Jun', total: 4420, retained: 1160, capital: 3000 },
-  { month: 'Jul', total: 4550, retained: 1200, capital: 3000 },
-  { month: 'Aug', total: 4700, retained: 1240, capital: 3000 },
-];
+// [UBAH] Fallback kosong -- lihat EquityContent.tsx (useEquityData())
+// untuk sumber data ASLI client aktif.
+const mockTrendData: EquityTrendRow[] = [];
 
 const periodOptions = ['6M', 'YTD', '12M', '3Y'];
 
@@ -23,7 +14,7 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload) return null;
   return (
     <div className="fin-card p-3 text-[11px] shadow-lg min-w-[160px]">
-      <div className="font-600 text-foreground mb-2">{label} 2026</div>
+      <div className="font-600 text-foreground mb-2">{label}</div>
       {payload.map((p, i) => (
         <div key={`eq-tt-${i}`} className="flex justify-between gap-4">
           <span className="text-muted-foreground">{p.name}</span>
@@ -49,7 +40,7 @@ const trendEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 export default function EquityTrendChart({ trendData, companyName }: EquityTrendChartProps) {
   const [activePeriod, setActivePeriod] = useState('YTD');
   const trend = trendData && trendData.length > 0 ? trendData : mockTrendData;
-  const subtitle = companyName ? `Monthly equity composition — ${companyName}` : 'Monthly equity composition — 2026';
+  const subtitle = companyName ? `Monthly equity composition — ${companyName}` : 'Monthly equity composition';
 
   // ── Fitur 1: Drag-zoom skala sumbu Y (harga) — tarik naik/turun di area
   // label sumbu Y buat zoom in/out skala, double-click buat reset. Data

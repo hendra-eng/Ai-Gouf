@@ -40,6 +40,20 @@ interface ActiveClientContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => void;
+  /**
+   * [BARU -- FIX flash-ke-0] false SEBENTAR saja di render pertama, sebelum
+   * context ini sempat baca pilihan client tersimpan dari localStorage.
+   * Semua hook data (useProfitLossData, useBalanceSheetData, KPIBentoGrid,
+   * dst) HARUS menunggu `hydrated === true` sebelum menyimpulkan
+   * "activeClientId null = memang tidak ada client dipilih". Sebelum fix
+   * ini, hook-hook tsb langsung menganggap activeClientId null di render
+   * pertama sebagai "kosong" dan menampilkan angka 0 -- padahal
+   * sebenarnya baru "belum sempat dibaca dari localStorage", bukan
+   * "memang kosong". Client aktif dari sesi sebelumnya selalu ADA
+   * (tersimpan di localStorage), jadi kondisi "null tapi sudah hydrated"
+   * itu barulah benar-benar berarti "tidak ada client dipilih".
+   */
+  hydrated: boolean;
 }
 
 const ActiveClientContext = createContext<ActiveClientContextValue | undefined>(undefined);
@@ -105,8 +119,8 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ActiveClientContextValue>(
-    () => ({ clients, activeClientId, activeClientName, setActiveClient, loading, error, refresh }),
-    [clients, activeClientId, activeClientName, setActiveClient, loading, error, refresh]
+    () => ({ clients, activeClientId, activeClientName, setActiveClient, loading, error, refresh, hydrated }),
+    [clients, activeClientId, activeClientName, setActiveClient, loading, error, refresh, hydrated]
   );
 
   return <ActiveClientContext.Provider value={value}>{children}</ActiveClientContext.Provider>;
