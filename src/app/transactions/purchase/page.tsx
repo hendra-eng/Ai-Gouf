@@ -669,18 +669,18 @@ export default function PurchaseOverviewPage() {
                   <div
                     key={item.name}
                     onClick={() => setActiveStatus((prev) => (prev === index ? null : index))}
-                    className={`flex items-center justify-between text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
+                    className={`flex items-center gap-2 text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
                       activeStatus === index ? 'bg-secondary' : 'hover:bg-secondary/50'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className={activeStatus === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}>
+                      <span className={`truncate ${activeStatus === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
                         {item.name}
                       </span>
                     </div>
-                    <span className="font-semibold text-foreground tabular-nums">{displayValue}</span>
-                    <span className="text-muted-foreground w-10 text-right">{displayPct.toFixed(0)}%</span>
+                    <span className="font-semibold text-foreground tabular-nums w-8 text-right flex-shrink-0">{displayValue}</span>
+                    <span className="text-muted-foreground w-10 text-right flex-shrink-0">{displayPct.toFixed(0)}%</span>
                   </div>
                 );
               })}
