@@ -21,14 +21,16 @@
 // sumber yang sama yang dipakai halaman /clients -- jadi tidak ada dua
 // sumber data client yang berbeda.
 //
-// localStorage key SENGAJA dipakai sama dengan yang sebelumnya dipakai
-// /agent-ai/context/ClientContext.jsx ("ai_gouf_active_client") supaya
-// pilihan client yang sudah tersimpan dari sesi sebelumnya tetap kebaca,
-// tidak reset ke kosong begitu context ini pindah ke root.
+// [DIUBAH] Sebelumnya context ini menyimpan & membaca pilihan client
+// terakhir dari localStorage ("ai_gouf_active_client"), jadi client aktif
+// "diingat" lintas sesi. Atas permintaan user: sekarang SENGAJA tidak lagi
+// membaca localStorage saat mount -- setiap kali halaman/tab baru dibuka
+// (termasuk setelah refresh), client aktif SELALU jatuh ke client PERTAMA
+// di database (urutan dari GET /api/client), bukan client terakhir yang
+// dipilih. Tombol "Switch Company" di Topbar tetap bisa dipakai untuk
+// ganti client sementara selama sesi itu berjalan.
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useClientsList, type Client } from '@/lib/clientsStore';
-
-const STORAGE_KEY = 'ai_gouf_active_client';
 
 interface ActiveClientContextValue {
   /** Daftar semua client (dari backend, sama seperti halaman /clients). */
@@ -42,16 +44,15 @@ interface ActiveClientContextValue {
   refresh: () => void;
   /**
    * [BARU -- FIX flash-ke-0] false SEBENTAR saja di render pertama, sebelum
-   * context ini sempat baca pilihan client tersimpan dari localStorage.
+   * context ini sempat selesai proses inisialisasi awal (dulu: baca
+   * localStorage; sekarang: cuma menunggu satu tick render pertama).
    * Semua hook data (useProfitLossData, useBalanceSheetData, KPIBentoGrid,
    * dst) HARUS menunggu `hydrated === true` sebelum menyimpulkan
    * "activeClientId null = memang tidak ada client dipilih". Sebelum fix
    * ini, hook-hook tsb langsung menganggap activeClientId null di render
    * pertama sebagai "kosong" dan menampilkan angka 0 -- padahal
-   * sebenarnya baru "belum sempat dibaca dari localStorage", bukan
-   * "memang kosong". Client aktif dari sesi sebelumnya selalu ADA
-   * (tersimpan di localStorage), jadi kondisi "null tapi sudah hydrated"
-   * itu barulah benar-benar berarti "tidak ada client dipilih".
+   * sebenarnya baru "belum sempat di-set ke client pertama", bukan
+   * "memang kosong".
    */
   hydrated: boolean;
 }
@@ -64,28 +65,21 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
   const [activeClientName, setActiveClientName] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // Baca pilihan tersimpan dari sesi sebelumnya (sekali saja, saat mount).
+  // [DIUBAH] Sengaja tidak lagi membaca localStorage di sini -- setiap
+  // halaman dibuka baru, client aktif SELALU jatuh ke client pertama di
+  // database (lihat effect di bawah), bukan client terakhir yang dipilih
+  // sebelumnya. Effect ini sekarang cuma menandai bahwa render pertama
+  // sudah lewat, supaya effect fallback-ke-client-pertama di bawah boleh
+  // mulai jalan.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as { id?: string | number; nama?: string | null };
-        if (parsed.id != null) {
-          setActiveClientId(String(parsed.id));
-          setActiveClientName(parsed.nama ?? null);
-        }
-      } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
-      }
-    }
     setHydrated(true);
   }, []);
 
   // Begitu daftar client (asli, dari backend) sudah siap: pastikan client
   // yang aktif masih valid (belum dihapus). Kalau tidak valid / belum ada
-  // pilihan sama sekali, jatuhkan ke client pertama di daftar -- konsisten
-  // dengan perilaku dropdown "Switch Company" yang lama di Topbar.
+  // pilihan sama sekali (selalu begitu sekarang, tiap halaman baru dibuka),
+  // jatuhkan ke client pertama di daftar -- konsisten dengan perilaku
+  // dropdown "Switch Company" yang lama di Topbar.
   useEffect(() => {
     if (!hydrated || loading) return;
     if (clients.length === 0) {
@@ -107,15 +101,13 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, loading, hydrated]);
 
+  // [DIUBAH] Tidak lagi menulis ke localStorage -- pilihan lewat Switch
+  // Company ini hanya berlaku untuk sesi/halaman yang sedang berjalan.
+  // Begitu halaman dibuka ulang, effect di atas akan mengembalikannya ke
+  // client pertama.
   const setActiveClient = useCallback((id: string | null, name?: string | null) => {
     setActiveClientId(id);
     setActiveClientName(name ?? null);
-    if (typeof window === 'undefined') return;
-    if (id) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ id, nama: name ?? null }));
-    } else {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
   }, []);
 
   const value = useMemo<ActiveClientContextValue>(
