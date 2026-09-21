@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
-import { useBudgetData } from '../lib/budgetBridge';
+import { useBudgetData, useScenarios } from '../lib/budgetBridge';
 import { useCashFlowData } from '@/app/financial-statements/lib/useCashFlowData';
 
 type ScenarioKey = 'Base Case' | 'Optimistic' | 'Conservative';
@@ -14,6 +14,14 @@ export default function ScenarioPlanning() {
   const { fx } = useCurrency();
   const { lines } = useBudgetData();
   const { CF_CORE } = useCashFlowData();
+  // [BARU] Skenario custom tersimpan (tabel scenario, schema 5_Planning) --
+  // ditambahkan sbg daftar terpisah di bawah 3 skenario bawaan (yang tetap
+  // dihitung dari run-rate aktual, tidak diganti, supaya perbandingan
+  // Revenue/EBITDA/Net Profit/Ending Cash tetap konsisten & bisa dipercaya).
+  const { scenarios: customScenarios, addScenario, removeScenario } = useScenarios();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nama: '', revenueGrowth: '', cogsPct: '', opexGrowth: '', taxRate: '' });
+  const [savingScenario, setSavingScenario] = useState(false);
 
   // Base Case = proyeksi full-year run-rate (real, dari budgetBridge).
   // Optimistic/Conservative menerapkan sensitivitas pertumbuhan +/-6pp
@@ -67,13 +75,74 @@ export default function ScenarioPlanning() {
           <p className="text-sm text-muted-foreground mt-0.5">Compare financial outcomes under different assumptions</p>
         </div>
         <button
-          onClick={() => toast.info('Form skenario baru dibuka')}
+          onClick={() => setShowForm((v) => !v)}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-2 bg-muted border border-border rounded-lg"
         >
           <Icon name="PlusIcon" size={14} />
           New Scenario
         </button>
       </div>
+
+      {showForm && (
+        <div className="mb-6 p-4 rounded-xl border border-border bg-muted/30 space-y-3">
+          <p className="text-sm font-semibold text-foreground">Simpan skenario custom</p>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <input
+              type="text" placeholder="Nama skenario" value={form.nama}
+              onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
+              className="col-span-2 md:col-span-1 text-sm bg-card border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-primary"
+            />
+            <input
+              type="number" placeholder="Revenue growth %" value={form.revenueGrowth}
+              onChange={(e) => setForm((f) => ({ ...f, revenueGrowth: e.target.value }))}
+              className="text-sm bg-card border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-primary"
+            />
+            <input
+              type="number" placeholder="COGS %" value={form.cogsPct}
+              onChange={(e) => setForm((f) => ({ ...f, cogsPct: e.target.value }))}
+              className="text-sm bg-card border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-primary"
+            />
+            <input
+              type="number" placeholder="OpEx growth %" value={form.opexGrowth}
+              onChange={(e) => setForm((f) => ({ ...f, opexGrowth: e.target.value }))}
+              className="text-sm bg-card border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-primary"
+            />
+            <input
+              type="number" placeholder="Tax rate %" value={form.taxRate}
+              onChange={(e) => setForm((f) => ({ ...f, taxRate: e.target.value }))}
+              className="text-sm bg-card border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={savingScenario || !form.nama.trim()}
+              onClick={async () => {
+                setSavingScenario(true);
+                try {
+                  await addScenario({
+                    nama_skenario: form.nama.trim(),
+                    revenue_growth_pct: form.revenueGrowth ? parseFloat(form.revenueGrowth) : undefined,
+                    cogs_pct: form.cogsPct ? parseFloat(form.cogsPct) : undefined,
+                    opex_growth_pct: form.opexGrowth ? parseFloat(form.opexGrowth) : undefined,
+                    tax_rate_pct: form.taxRate ? parseFloat(form.taxRate) : undefined,
+                  });
+                  toast.success(`Skenario "${form.nama.trim()}" tersimpan`);
+                  setForm({ nama: '', revenueGrowth: '', cogsPct: '', opexGrowth: '', taxRate: '' });
+                  setShowForm(false);
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : 'Gagal menyimpan skenario');
+                } finally {
+                  setSavingScenario(false);
+                }
+              }}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {savingScenario ? 'Menyimpan…' : 'Simpan'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5">Batal</button>
+          </div>
+        </div>
+      )}
 
       {/* Scenario selector */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -146,6 +215,38 @@ export default function ScenarioPlanning() {
           </tbody>
         </table>
       </div>
+
+      {/* [BARU] Skenario custom tersimpan (tabel scenario di Supabase) */}
+      {customScenarios.length > 0 && (
+        <div className="mt-6 pt-5 border-t border-border">
+          <p className="text-sm font-semibold text-foreground mb-3">Saved Custom Scenarios</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {customScenarios.map((s) => (
+              <div key={s.id} className="p-3 rounded-lg border border-border bg-muted/20">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-sm font-semibold text-foreground">{s.nama_skenario}{s.is_base_case && ' (Base)'}</span>
+                  <button
+                    onClick={async () => {
+                      try { await removeScenario(s.id); toast.success('Skenario dihapus'); }
+                      catch (e) { toast.error(e instanceof Error ? e.message : 'Gagal menghapus skenario'); }
+                    }}
+                    className="text-muted-foreground hover:text-danger transition-colors"
+                    title="Hapus skenario"
+                  >
+                    <Icon name="TrashIcon" size={14} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-muted-foreground">
+                  {s.revenue_growth_pct != null && <span>Revenue {s.revenue_growth_pct >= 0 ? '+' : ''}{s.revenue_growth_pct}%</span>}
+                  {s.cogs_pct != null && <span>COGS {s.cogs_pct}%</span>}
+                  {s.opex_growth_pct != null && <span>OpEx {s.opex_growth_pct >= 0 ? '+' : ''}{s.opex_growth_pct}%</span>}
+                  {s.tax_rate_pct != null && <span>Tax {s.tax_rate_pct}%</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

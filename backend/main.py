@@ -82,7 +82,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -687,6 +687,589 @@ def api_data_purchase(client_id: str, user: dict = Depends(auth.get_current_user
     return dbc.ambil_data_purchase(client_id)
 
 
+@app.get("/api/client/{client_id}/documents")
+def api_data_documents(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel Documents (schema "7_Management",
+    "Management_Documents_Documents") untuk satu client -- tabel dibuat
+    manual oleh user lewat Supabase SQL Editor, sama pola dengan modul
+    Purchase. Frontend memetakan hasilnya ke tipe FinancialDocument lewat
+    src/app/documents/lib/documentsDbBridge.ts.
+    """
+    return {"documents": dbc.ambil_data_documents(client_id)}
+
+
+@app.get("/api/client/{client_id}/reports-registry")
+def api_data_reports_registry(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_registry (schema "7_Management",
+    "Management_Reports_report_registry") untuk satu client -- laporan yang
+    dicatat manual/oleh proses lain, di luar 3 sumber otomatis (Laporan
+    Keuangan/CALK/PPh Badan). Digabung ke daftar reports oleh
+    src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_registry": dbc.ambil_data_report_registry(client_id)}
+
+
+@app.get("/api/client/{client_id}/report-schedule")
+def api_data_report_schedule(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_schedule (schema "7_Management",
+    "Management_Reports_report_schedule") untuk satu client -- jadwal
+    laporan berkala (tab "Report Scheduler"). Frontend memetakan hasilnya
+    ke tipe ScheduledReport lewat src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_schedule": dbc.ambil_data_report_schedule(client_id)}
+
+
+@app.get("/api/client/{client_id}/ar")
+def api_data_ar(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah modul Account Receivable (customer, invoice, payment,
+    collection_note) untuk satu client -- tabel dibuat manual oleh user
+    lewat Supabase (schema "3_Financial"). Frontend memetakan hasilnya ke
+    tipe Invoice/Customer lewat
+    src/app/accounts-receivable/lib/arDbBridge.ts.
+    """
+    return dbc.ambil_data_ar(client_id)
+
+
+class CatatPembayaranArRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ar/payments."""
+    invoice_id: str
+    payment_date: str  # YYYY-MM-DD
+    amount: Decimal
+    method: Optional[str] = None
+    reference: Optional[str] = None
+
+
+class TambahCatatanArRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ar/notes (invoice_id kosong = catatan level customer)."""
+    customer_id: str
+    invoice_id: Optional[str] = None
+    content: str
+    note_type: Optional[str] = None
+
+
+class UbahStatusInvoiceArRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/ar/invoices/{invoice_id}/status.
+    manual_status: 'Disputed' | 'Written Off' | null (hapus penanda)."""
+    manual_status: Optional[str] = None
+    alasan: Optional[str] = None
+
+
+@app.post("/api/client/{client_id}/ar/payments")
+def api_catat_pembayaran_ar(
+    client_id: str, req: CatatPembayaranArRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Catat pembayaran invoice AR (tombol Record Payment di halaman
+    Accounts Receivable). Aturan validasi ada di dbc.catat_pembayaran_ar()."""
+    try:
+        hasil = dbc.catat_pembayaran_ar(
+            client_id=client_id, invoice_id=req.invoice_id, payment_date=req.payment_date,
+            amount=req.amount, method=req.method, reference=req.reference,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="catat_pembayaran_ar",
+        detail={"invoice_id": req.invoice_id, "amount": float(req.amount), "payment_date": req.payment_date},
+    )
+    return {"berhasil": True, "pembayaran": hasil}
+
+
+@app.post("/api/client/{client_id}/ar/notes")
+def api_tambah_catatan_ar(
+    client_id: str, req: TambahCatatanArRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    """[BARU] Tambah catatan penagihan (per customer / per invoice)."""
+    try:
+        hasil = dbc.tambah_catatan_ar(
+            client_id=client_id, customer_id=req.customer_id, content=req.content,
+            invoice_id=req.invoice_id, note_type=req.note_type,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_catatan_ar",
+        detail={"customer_id": req.customer_id, "invoice_id": req.invoice_id, "note_type": req.note_type},
+    )
+    return {"berhasil": True, "catatan": hasil}
+
+
+@app.patch("/api/client/{client_id}/ar/invoices/{invoice_id}/status")
+def api_ubah_status_invoice_ar(
+    client_id: str, invoice_id: str, req: UbahStatusInvoiceArRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai invoice Disputed / Written Off, atau hapus penandanya."""
+    try:
+        hasil = dbc.ubah_status_invoice_ar(
+            client_id=client_id, invoice_id=invoice_id, manual_status=req.manual_status,
+            alasan=req.alasan, created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_status_invoice_ar",
+        detail={"invoice_id": invoice_id, "manual_status": req.manual_status, "alasan": req.alasan},
+    )
+    return {"berhasil": True, "invoice": hasil}
+
+
+# ============================================================
+# [BARU] MODUL ACCOUNTS PAYABLE -- pola endpoint SAMA persis dengan AR di
+# atas. Vendor & bill dipakai ulang dari modul Purchase; payment & note
+# adalah 2 tabel baru khusus AP. Lihat db_client.py::ambil_data_ap() dkk.
+# ============================================================
+
+@app.get("/api/client/{client_id}/ap")
+def api_data_ap(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """[BARU] Data mentah modul Account Payable (vendor, bill, payment,
+    note) untuk satu client. Frontend memetakan hasilnya ke tipe
+    Bill/Vendor lewat src/app/accounts-payable/lib/apDbBridge.ts."""
+    return dbc.ambil_data_ap(client_id)
+
+
+class CatatPembayaranApRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ap/payments."""
+    bill_id: str
+    payment_date: str  # YYYY-MM-DD
+    amount: Decimal
+    status: Optional[str] = "Paid"  # 'Scheduled' | 'Paid' | 'Cancelled'
+    method: Optional[str] = None
+    reference_no: Optional[str] = None
+
+
+class TambahCatatanApRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ap/notes (bill_id kosong = catatan level vendor)."""
+    vendor_id: str
+    bill_id: Optional[str] = None
+    content: str
+
+
+class UbahStatusBillApRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/ap/bills/{bill_id}/status.
+    manual_status: 'Disputed' | 'On Hold' | null (hapus penanda)."""
+    manual_status: Optional[str] = None
+    alasan: Optional[str] = None
+
+
+@app.post("/api/client/{client_id}/ap/payments")
+def api_catat_pembayaran_ap(
+    client_id: str, req: CatatPembayaranApRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Catat/jadwalkan pembayaran tagihan vendor (tombol Mark Paid /
+    Schedule Payment di halaman Accounts Payable)."""
+    try:
+        hasil = dbc.catat_pembayaran_ap(
+            client_id=client_id, bill_id=req.bill_id, payment_date=req.payment_date,
+            amount=req.amount, status=req.status, method=req.method, reference_no=req.reference_no,
+            recorded_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="catat_pembayaran_ap",
+        detail={"bill_id": req.bill_id, "amount": float(req.amount), "status": req.status},
+    )
+    return {"berhasil": True, "pembayaran": hasil}
+
+
+@app.post("/api/client/{client_id}/ap/notes")
+def api_tambah_catatan_ap(
+    client_id: str, req: TambahCatatanApRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    """[BARU] Tambah catatan internal (per vendor / per bill)."""
+    try:
+        hasil = dbc.tambah_catatan_ap(
+            client_id=client_id, vendor_id=req.vendor_id, content=req.content, bill_id=req.bill_id,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_catatan_ap",
+        detail={"vendor_id": req.vendor_id, "bill_id": req.bill_id},
+    )
+    return {"berhasil": True, "catatan": hasil}
+
+
+@app.patch("/api/client/{client_id}/ap/bills/{bill_id}/status")
+def api_ubah_status_bill_ap(
+    client_id: str, bill_id: str, req: UbahStatusBillApRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai bill Disputed / On Hold, atau hapus penandanya."""
+    try:
+        hasil = dbc.ubah_status_bill_ap(
+            client_id=client_id, bill_id=bill_id, manual_status=req.manual_status,
+            alasan=req.alasan, created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_status_bill_ap",
+        detail={"bill_id": bill_id, "manual_status": req.manual_status, "alasan": req.alasan},
+    )
+    return {"berhasil": True, "bill": hasil}
+
+
+# ============================================================
+# [BARU] MODUL BUDGET & FORECAST -- forecast_assumption & scenario (schema
+# 5_Planning). Lihat db_client.py utk detail; halaman ini tetap menghitung
+# "Actual" dari P&L asli dan skenario Base/Optimistic/Conservative bawaan
+# dari run-rate -- 2 tabel ini menggantikan konstanta hardcoded
+# BUDGET_ASSUMPTIONS (Apply di ForecastAssumptions.tsx) dan menambah
+# skenario custom tersimpan (New Scenario di ScenarioPlanning.tsx).
+# [DITUNTASKAN] ambil_forecast_assumption() sekarang membuat baris default
+# otomatis kalau client belum pernah Apply, jadi GET di bawah TIDAK PERNAH
+# mengembalikan assumption: null lagi utk client_id yang valid.
+# ============================================================
+
+@app.get("/api/client/{client_id}/forecast-assumption")
+def api_ambil_forecast_assumption(
+    client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)
+):
+    """Asumsi budget tersimpan client utk 1 tahun -- dibuat otomatis dgn
+    nilai default kalau ini kali pertama client ybs diminta (lihat
+    _DEFAULT_FORECAST_ASSUMPTION di db_client.py), jadi tidak pernah null
+    lagi untuk client_id yang valid."""
+    tahun_dipakai = tahun or date.today().year
+    try:
+        assumption = dbc.ambil_forecast_assumption(client_id, tahun_dipakai)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"tahun": tahun_dipakai, "assumption": assumption}
+
+
+class SimpanForecastAssumptionRequest(BaseModel):
+    """Body POST /api/client/{client_id}/forecast-assumption. Semua field
+    opsional -- hanya yang dikirim yang di-upsert."""
+    tahun: Optional[int] = None
+    revenue_growth_pct: Optional[float] = None
+    cogs_pct: Optional[float] = None
+    payroll_growth_pct: Optional[float] = None
+    opex_growth_pct: Optional[float] = None
+    collection_rate_pct: Optional[float] = None
+    tax_rate_pct: Optional[float] = None
+    capex: Optional[float] = None
+    interest_expense: Optional[float] = None
+
+
+@app.post("/api/client/{client_id}/forecast-assumption")
+def api_simpan_forecast_assumption(
+    client_id: str, req: SimpanForecastAssumptionRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """Upsert asumsi budget client (tombol Apply di ForecastAssumptions.tsx)."""
+    tahun_dipakai = req.tahun or date.today().year
+    nilai = {k: v for k, v in req.model_dump().items() if k != "tahun" and v is not None}
+    try:
+        hasil = dbc.simpan_forecast_assumption(client_id, tahun_dipakai, **nilai)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="simpan_forecast_assumption",
+        detail={"tahun": tahun_dipakai, **nilai},
+    )
+    return {"berhasil": True, "assumption": hasil}
+
+
+@app.get("/api/client/{client_id}/scenarios")
+def api_daftar_scenario(client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)):
+    """Daftar skenario custom tersimpan client utk 1 tahun."""
+    tahun_dipakai = tahun or date.today().year
+    return {"tahun": tahun_dipakai, "scenarios": dbc.daftar_scenario(client_id, tahun_dipakai)}
+
+
+class TambahScenarioRequest(BaseModel):
+    """Body POST /api/client/{client_id}/scenarios -> tombol "New Scenario"."""
+    tahun: Optional[int] = None
+    nama_skenario: str
+    revenue_growth_pct: Optional[float] = None
+    cogs_pct: Optional[float] = None
+    opex_growth_pct: Optional[float] = None
+    tax_rate_pct: Optional[float] = None
+    is_base_case: bool = False
+
+
+@app.post("/api/client/{client_id}/scenarios")
+def api_tambah_scenario(
+    client_id: str, req: TambahScenarioRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    tahun_dipakai = req.tahun or date.today().year
+    try:
+        hasil = dbc.tambah_scenario(
+            client_id=client_id, tahun=tahun_dipakai, nama_skenario=req.nama_skenario,
+            revenue_growth_pct=req.revenue_growth_pct, cogs_pct=req.cogs_pct,
+            opex_growth_pct=req.opex_growth_pct, tax_rate_pct=req.tax_rate_pct,
+            is_base_case=req.is_base_case, created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_scenario",
+        detail={"tahun": tahun_dipakai, "nama_skenario": req.nama_skenario},
+    )
+    return {"berhasil": True, "scenario": hasil}
+
+
+@app.delete("/api/client/{client_id}/scenarios/{scenario_id}")
+def api_hapus_scenario(
+    client_id: str, scenario_id: str, user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    try:
+        hasil = dbc.hapus_scenario(client_id, scenario_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="hapus_scenario",
+        detail={"scenario_id": scenario_id},
+    )
+    return {"berhasil": True, **hasil}
+
+
+# ============================================================
+# [BARU] MODUL TAX & COMPLIANCE -- fiscal_correction (rekonsiliasi
+# akuntansi vs fiskal, TaxReconciliation.tsx) dan tax_compliance_task
+# (checklist tugas kepatuhan custom, ComplianceTasks.tsx), schema
+# 5_Planning. Kewajiban pajak (PPN/PPh) sendiri tetap dari jurnal
+# transaksi (taxBridge.ts, tidak lewat endpoint ini).
+# ============================================================
+
+@app.get("/api/client/{client_id}/fiscal-correction")
+def api_fiscal_correction(client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)):
+    """Koreksi fiskal tersimpan -- sumber TaxReconciliation.tsx."""
+    tahun_dipakai = tahun or date.today().year
+    return dbc.ambil_fiscal_correction(client_id, tahun_dipakai)
+
+
+@app.get("/api/client/{client_id}/tax-compliance-tasks")
+def api_daftar_tax_tasks(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """Daftar task kepatuhan pajak custom -- sumber ComplianceTasks.tsx."""
+    return dbc.daftar_tax_tasks(client_id)
+
+
+class TambahTaxTaskRequest(BaseModel):
+    """Body POST /api/client/{client_id}/tax-compliance-tasks -> tombol "Add Task"."""
+    taskName: str
+    taxType: Optional[str] = None
+    period: Optional[str] = None
+    owner: Optional[str] = None
+    dueDate: Optional[date] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+
+
+@app.post("/api/client/{client_id}/tax-compliance-tasks")
+def api_tambah_tax_task(
+    client_id: str, req: TambahTaxTaskRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    hasil = dbc.tambah_tax_task(client_id, req.model_dump())
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_tax_task",
+        detail={"task_name": req.taskName},
+    )
+    return {"berhasil": True, "task": hasil}
+
+
+class UbahStatusTaxTaskRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/tax-compliance-tasks/{task_id}."""
+    status: str
+
+
+@app.patch("/api/client/{client_id}/tax-compliance-tasks/{task_id}")
+def api_ubah_status_tax_task(
+    client_id: str, task_id: str, req: UbahStatusTaxTaskRequest,
+    user: dict = Depends(auth.get_current_user),
+):
+    hasil = dbc.ubah_status_tax_task(client_id, task_id, req.status)
+    if not hasil.get("berhasil"):
+        raise HTTPException(status_code=404, detail=hasil.get("pesan", "Task tidak ditemukan"))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_status_tax_task",
+        detail={"task_id": task_id, "status": req.status},
+    )
+    return hasil
+
+
+@app.delete("/api/client/{client_id}/tax-compliance-tasks/{task_id}")
+def api_hapus_tax_task(
+    client_id: str, task_id: str, user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    hasil = dbc.hapus_tax_task(client_id, task_id)
+    if not hasil.get("berhasil"):
+        raise HTTPException(status_code=404, detail=hasil.get("pesan", "Task tidak ditemukan"))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="hapus_tax_task",
+        detail={"task_id": task_id},
+    )
+    return hasil
+
+
+# ============================================================
+# MODUL AUDIT (BARU) -- 4 tabel dibuat manual oleh user lewat Supabase,
+# schema "6_Intellegence": audit_finding/audit_stage/audit_activity/
+# audit_evidence. Lihat db_client.py: AuditFindingRow/AuditStageRow/
+# AuditActivityRow/AuditEvidenceRow dan fungsi ambil_data_audit/
+# tambah_audit_finding/ubah_audit_finding/tambah_audit_evidence/dst.
+# Frontend: src/app/audit/lib/auditBridge.ts.
+# ============================================================
+
+@app.get("/api/client/{client_id}/audit")
+def api_data_audit(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """[BARU] Data mentah modul Audit (finding, stage, activity, evidence
+    metadata) utk satu client -- tabel dibuat manual oleh user lewat
+    Supabase SQL Editor, schema "6_Intellegence"."""
+    return dbc.ambil_data_audit(client_id)
+
+
+class TambahAuditFindingRequest(BaseModel):
+    """Body POST /api/client/{client_id}/audit/findings -> tombol "New Finding"."""
+    area: Optional[str] = None
+    description: str
+    account: Optional[str] = None
+    amount: Decimal = Decimal("0")
+    risk: str = "Medium"
+    assignedTo: Optional[str] = None
+    dueDate: Optional[str] = None
+    status: str = "Open"
+    rootCause: Optional[str] = None
+    recommendation: Optional[str] = None
+    managementResponse: Optional[str] = None
+    likelihood: int = 3
+    impact: int = 3
+
+
+@app.post("/api/client/{client_id}/audit/findings")
+def api_tambah_audit_finding(
+    client_id: str, req: TambahAuditFindingRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tambah temuan audit baru -- tombol "New Finding" di
+    src/app/audit/page.tsx."""
+    hasil = dbc.tambah_audit_finding(client_id, req.model_dump(), user.get("username", "unknown"))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_audit_finding",
+        detail={"finding_id": hasil["id"], "description": req.description},
+    )
+    return {"berhasil": True, "finding": hasil}
+
+
+class UbahAuditFindingRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/audit/findings/{finding_id} --
+    semua field opsional, hanya yang dikirim yang diubah."""
+    status: Optional[str] = None
+    risk: Optional[str] = None
+    rootCause: Optional[str] = None
+    recommendation: Optional[str] = None
+    managementResponse: Optional[str] = None
+    assignedTo: Optional[str] = None
+    dueDate: Optional[str] = None
+    likelihood: Optional[int] = None
+    impact: Optional[int] = None
+
+
+@app.patch("/api/client/{client_id}/audit/findings/{finding_id}")
+def api_ubah_audit_finding(
+    client_id: str, finding_id: str, req: UbahAuditFindingRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Ubah temuan audit -- dipakai tombol Review/Resolve/Escalate
+    di FindingDrawer (src/app/audit/page.tsx)."""
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    hasil = dbc.ubah_audit_finding(client_id, finding_id, fields, user.get("username", "unknown"))
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Temuan audit tidak ditemukan untuk client ini.")
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_audit_finding",
+        detail={"finding_id": finding_id, "fields": list(fields.keys())},
+    )
+    return {"berhasil": True, "finding": hasil}
+
+
+@app.post("/api/client/{client_id}/audit/findings/{finding_id}/evidence")
+async def api_tambah_audit_evidence(
+    client_id: str, finding_id: str, file: UploadFile = File(...),
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Upload 1 file evidence utk 1 temuan -- tombol "Add
+    Evidence" di FindingDrawer. File disimpan sbg bytea langsung di
+    Postgres (bukan Supabase Storage)."""
+    content = await file.read()
+    try:
+        hasil = dbc.tambah_audit_evidence(
+            client_id, finding_id, file.filename, len(content),
+            file.content_type, content, user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_audit_evidence",
+        detail={"finding_id": finding_id, "file_name": file.filename},
+    )
+    return {"berhasil": True, "evidence": hasil}
+
+
+@app.get("/api/client/{client_id}/audit/evidence/{evidence_id}/file")
+def api_ambil_audit_evidence_file(client_id: str, evidence_id: str, user: dict = Depends(auth.get_current_user)):
+    """[BARU] Download isi 1 file evidence."""
+    hasil = dbc.ambil_audit_evidence_file(evidence_id, client_id)
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Evidence tidak ditemukan.")
+    return Response(
+        content=hasil["content"], media_type=hasil["mimeType"],
+        headers={"Content-Disposition": f'attachment; filename="{hasil["fileName"]}"'},
+    )
+
+
+@app.delete("/api/client/{client_id}/audit/evidence/{evidence_id}")
+def api_hapus_audit_evidence(
+    client_id: str, evidence_id: str, user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Hapus 1 file evidence."""
+    hasil = dbc.hapus_audit_evidence(evidence_id, client_id)
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="hapus_audit_evidence",
+        detail={"evidence_id": evidence_id},
+    )
+    return hasil
+
+
+class UbahAuditStageRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/audit/stage/{stage_id}."""
+    done: Optional[bool] = None
+    current: Optional[bool] = None
+
+
+@app.patch("/api/client/{client_id}/audit/stage/{stage_id}")
+def api_ubah_audit_stage(
+    client_id: str, stage_id: str, req: UbahAuditStageRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai tahapan audit selesai/berjalan -- klik di Audit
+    Progress bar (src/app/audit/page.tsx)."""
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    hasil = dbc.ubah_audit_stage(client_id, stage_id, fields)
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Tahapan audit tidak ditemukan.")
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_audit_stage",
+        detail={"stage_id": stage_id, **fields},
+    )
+    return {"berhasil": True, "stage": hasil}
+    return hasil
+
+
 class UpdatePurchaseStatusRequest(BaseModel):
     """Body PATCH ubah status satu transaksi Purchase -- lihat
     api_update_purchase_status()."""
@@ -1023,6 +1606,188 @@ def api_kpi_bento_dashboard(
     jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
     hasil = lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
     return hasil
+
+
+# ============================================================
+# [BARU] MODUL OVERVIEW -- dropdown Branch & mode "Budget" di Financial
+# Overview, sumber tabel overview_overview_management_branches &
+# overview_overview_financial_budget (schema 2_Overview). Lihat
+# db_client.py::daftar_branches()/ambil_financial_budget() utk detail.
+# ============================================================
+
+@app.get("/api/client/{client_id}/branches")
+def api_daftar_branches(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """Daftar cabang milik client -- sumber dropdown "Branch" di
+    OverviewContent.tsx (menggantikan opsi hardcoded Jakarta/Surabaya)."""
+    return {"branches": dbc.daftar_branches(client_id)}
+
+
+@app.get("/api/client/{client_id}/financial-budget")
+def api_financial_budget(
+    client_id: str,
+    tahun: Optional[int] = None,
+    bulan_sampai: int = 12,
+    branch_id: Optional[str] = None,
+    user: dict = Depends(auth.get_current_user),
+):
+    """Anggaran P&L (YTD s.d. `bulan_sampai`) untuk mode "Budget" di
+    KPIBentoGrid.tsx -- menggantikan konstanta hardcoded BUDGET di
+    src/lib/financialData.tsx. `branch_id` opsional (UUID dari
+    /branches), kosong = semua cabang digabung."""
+    tahun_dipakai = tahun or date.today().year
+    return dbc.ambil_financial_budget(client_id, tahun_dipakai, bulan_sampai, branch_id)
+
+
+# ============================================================
+# [BARU] MODUL FINANCIAL STATEMENTS -- 3 tabel schema "3_Financial"
+# (budget P&L, insight P&L, forecast Cash Flow). Lihat komentar di
+# db_client.py (PLBudgetLine/PLInsight/CashFlowForecastRow) utk detail.
+# ============================================================
+
+@app.get("/api/client/{client_id}/pl-budget")
+def api_pl_budget(
+    client_id: str,
+    tahun: Optional[int] = None,
+    bulan_sampai: int = 12,
+    user: dict = Depends(auth.get_current_user),
+):
+    """Anggaran P&L (YTD s.d. `bulan_sampai`) untuk kolom "Budget" di kartu
+    "Profitability vs Budget" halaman Profit & Loss. Bentuk respons sama
+    dengan /financial-budget."""
+    tahun_dipakai = tahun or date.today().year
+    return dbc.ambil_pl_budget(client_id, tahun_dipakai, bulan_sampai)
+
+
+@app.get("/api/client/{client_id}/pl-insights")
+def api_pl_insights(
+    client_id: str,
+    modul: str = "profit_loss",
+    user: dict = Depends(auth.get_current_user),
+):
+    """Insight P&L utk panel "AI Performance Insights". `modul` memilih
+    kelompok insight di tabel (default "profit_loss")."""
+    return {"modul": modul, "insights": dbc.daftar_pl_insights(client_id, modul)}
+
+
+@app.get("/api/client/{client_id}/cash-flow-forecast")
+def api_cash_flow_forecast(
+    client_id: str,
+    tahun: Optional[int] = None,
+    user: dict = Depends(auth.get_current_user),
+):
+    """Proyeksi arus kas bulanan utk grafik "Cash Flow Forecast" & tabel
+    "Projected Cash Position" halaman Cash Flow (nominal Rupiah penuh)."""
+    return {"forecast": dbc.daftar_cash_flow_forecast(client_id, tahun)}
+
+
+# ============================================================
+# [BARU] MODUL ASSETS -- Fixed Asset Register & Depreciation di halaman
+# Assets, sumber tabel assets_equity_assets_fixed_assets (schema
+# 4_Assets_Equity). Lihat db_client.py::ambil_fixed_assets() utk detail
+# perhitungan penyusutan. Tidak menggantikan KPI/grafik total Assets
+# (useAssetsData.ts) yang tetap dari saldo neraca/COA.
+# ============================================================
+
+@app.get("/api/client/{client_id}/assets")
+def api_fixed_assets(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """Register aset tetap per-unit -- sumber Fixed Asset Register &
+    Depreciation Section di assetRegisterBridge.ts (menggantikan sumber
+    lama hasil upload file 'Aset Tetap' di public.hasil)."""
+    return dbc.ambil_fixed_assets(client_id)
+
+
+class TambahFixedAssetRequest(BaseModel):
+    """Body POST /api/client/{client_id}/assets (tombol "Add Asset")."""
+    name: str
+    category: Optional[str] = None
+    purchase_date: Optional[str] = None  # YYYY-MM-DD
+    cost: Decimal = Decimal("0")
+    residual_value: Decimal = Decimal("0")
+    useful_life_years: Optional[int] = None
+    depreciation_method: Optional[str] = None
+    location: Optional[str] = None
+    department: Optional[str] = None
+
+
+@app.post("/api/client/{client_id}/assets")
+def api_tambah_fixed_asset(
+    client_id: str, req: TambahFixedAssetRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tambah aset tetap baru."""
+    try:
+        hasil = dbc.tambah_fixed_asset(
+            client_id=client_id, name=req.name, category=req.category, purchase_date=req.purchase_date,
+            cost=req.cost, residual_value=req.residual_value, useful_life_years=req.useful_life_years,
+            depreciation_method=req.depreciation_method, location=req.location, department=req.department,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_fixed_asset",
+        detail={"name": req.name, "cost": float(req.cost)},
+    )
+    return {"berhasil": True, "asset": hasil}
+
+
+class UbahFixedAssetRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/assets/{asset_id} (tombol "Edit").
+    Semua field opsional -- hanya yang dikirim (bukan None) yang diubah."""
+    name: Optional[str] = None
+    category: Optional[str] = None
+    purchase_date: Optional[str] = None
+    cost: Optional[Decimal] = None
+    residual_value: Optional[Decimal] = None
+    useful_life_years: Optional[int] = None
+    depreciation_method: Optional[str] = None
+    location: Optional[str] = None
+    department: Optional[str] = None
+    needs_review: Optional[bool] = None
+    status: Optional[str] = None  # active/maintenance/inactive (bukan 'disposed' -- pakai endpoint /dispose)
+
+
+@app.patch("/api/client/{client_id}/assets/{asset_id}")
+def api_ubah_fixed_asset(
+    client_id: str, asset_id: str, req: UbahFixedAssetRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Ubah field aset tetap yang ada."""
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    try:
+        hasil = dbc.ubah_fixed_asset(client_id=client_id, asset_id=asset_id, **fields)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_fixed_asset",
+        detail={"asset_id": asset_id, "fields": list(fields.keys())},
+    )
+    return {"berhasil": True, "asset": hasil}
+
+
+class DisposisiFixedAssetRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/assets/{asset_id}/dispose."""
+    disposal_date: str  # YYYY-MM-DD
+    disposal_value: Decimal = Decimal("0")
+
+
+@app.patch("/api/client/{client_id}/assets/{asset_id}/dispose")
+def api_disposisi_fixed_asset(
+    client_id: str, asset_id: str, req: DisposisiFixedAssetRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai aset sebagai disposed (dijual/dibuang) -- permanen."""
+    try:
+        hasil = dbc.disposisi_fixed_asset(
+            client_id=client_id, asset_id=asset_id,
+            disposal_date=req.disposal_date, disposal_value=req.disposal_value,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="disposisi_fixed_asset",
+        detail={"asset_id": asset_id, "disposal_date": req.disposal_date, "disposal_value": float(req.disposal_value)},
+    )
+    return {"berhasil": True, "asset": hasil}
 
 
 # ============================================================
@@ -5675,7 +6440,7 @@ def api_posting_massal_by_ids(
 
 # ============================================================
 # [BARU] MODUL BANK & CASH -- endpoint khusus tabel
-# finance_transaction_bank_cash, dipakai halaman Cash Payment & Cash
+# financial_transaction_bank_cash, dipakai halaman Cash Payment & Cash
 # Receipt (menggantikan sumber data lama yang lewat jurnal-posting umum).
 # Pola endpoint SENGAJA identik dengan jurnal-posting di atas (skema tabel
 # sama persis) -- lihat bankCashBridge.ts di frontend utk pemetaan balik
@@ -5849,7 +6614,7 @@ def api_tolak_bank_cash(
 
 # ============================================================
 # [BARU] MODUL OTHER (JURNAL LAIN-LAIN) -- endpoint khusus tabel
-# finance_transaction_other, dipakai halaman Other (menggantikan sumber
+# financial_transaction_other, dipakai halaman Other (menggantikan sumber
 # data lama yang lewat jurnal-posting umum + tebakan kategori/nama akun).
 # Pola endpoint identik modul Bank & Cash di atas, bedanya operasi
 # update/posting/tolak dikelompokkan per je_id (bukan per id baris) karena
@@ -5953,7 +6718,7 @@ def api_buat_finance_other_manual(
             jml_kredit=req.jml_kredit,
             reference=req.reference, party=req.party, category=req.category,
             notes=req.notes, voucher_no=req.voucher_no, status=req.status,
-            user=user.get("username", "unknown"),  # [BARU] utk finance_transaction_other_activity_log
+            user=user.get("username", "unknown"),  # [BARU] utk financial_transaction_other_activity_log
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -7,7 +7,7 @@ import { useCurrency } from '@/lib/currency';
 import { useProfitLossData } from '@/app/financial-statements/lib/useProfitLossData';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import { invoicesFromTransactions, customersFromInvoices, arKpisFromInvoices } from '@/app/transactions/lib/arBridge';
-import { useTaxComplianceData } from '../lib/taxBridge';
+import { useTaxComplianceData, useFiscalCorrections } from '../lib/taxBridge';
 
 const STATUS_STYLES: Record<string, { badge: string; icon: string }> = {
   'Reconciled': { badge: 'bg-positive-subtle text-positive border-positive/20', icon: 'CheckCircleIcon' },
@@ -30,6 +30,7 @@ export default function TaxReconciliation() {
   const { PL_CORE, isSampleData: plSample } = useProfitLossData();
   const { transactions } = useTransactions();
   const { ppn } = useTaxComplianceData();
+  const { corrections } = useFiscalCorrections();
 
   const arTotal = useMemo(() => {
     const invoices = invoicesFromTransactions(transactions);
@@ -37,11 +38,24 @@ export default function TaxReconciliation() {
     return arKpisFromInvoices(invoices, customers).totalAR;
   }, [transactions]);
 
+  // [FIX] Kalau client aktif sudah punya baris tersimpan di fiscal_correction
+  // (schema 5_Planning) utk kategori tsb, angka & catatan ASLI itu yang
+  // dipakai (ambil bulan terbaru per kategori) -- menggantikan placeholder
+  // "akuntansi = fiskal, selalu Reconciled" utk kategori itu saja. Kategori
+  // yang belum punya baris tersimpan tetap pakai placeholder lama.
+  const latestCorrectionByCategory = useMemo(() => {
+    const map: Record<string, typeof corrections[number]> = {};
+    for (const c of corrections) {
+      if (!map[c.kategori] || c.bulan > map[c.kategori].bulan) map[c.kategori] = c;
+    }
+    return map;
+  }, [corrections]);
+
   // Rekonsiliasi Revenue/Expenses/Tax Expense/AR dibandingkan dengan angka
-  // akuntansi ITU SENDIRI (belum ada ledger fiskal terpisah di backend), jadi
-  // secara default "Reconciled" (selisih 0) -- ini akurat merepresentasikan
-  // keterbatasan data saat ini, bukan angka rekaan. Depreciation memerlukan
-  // register aset tetap (modul Assets) yang belum tersambung.
+  // akuntansi ITU SENDIRI (placeholder, dipakai kalau belum ada baris
+  // fiscal_correction tersimpan utk kategori itu) -- ini akurat
+  // merepresentasikan keterbatasan data saat ini, bukan angka rekaan.
+  // Depreciation memerlukan register aset tetap (modul Assets).
   const items = [
     {
       id: 'recon-rev',
@@ -80,10 +94,15 @@ export default function TaxReconciliation() {
       noData: true,
     },
   ].map((it) => {
-    const difference = it.accountingValue - it.taxValue;
-    const diffPct = it.accountingValue !== 0 ? (difference / it.accountingValue) * 100 : 0;
-    const status = it.noData ? 'No Data' : difference === 0 ? 'Reconciled' : Math.abs(diffPct) > 5 ? 'Requires Review' : 'Difference Found';
-    return { ...it, difference, diffPct, status };
+    const real = latestCorrectionByCategory[it.category];
+    const accountingValue = real ? real.accountingValue : it.accountingValue;
+    const taxValue = real ? real.taxValue : it.taxValue;
+    const note = real?.keterangan || it.note;
+    const noData = real ? false : (it as any).noData;
+    const difference = accountingValue - taxValue;
+    const diffPct = accountingValue !== 0 ? (difference / accountingValue) * 100 : 0;
+    const status = noData ? 'No Data' : difference === 0 ? 'Reconciled' : Math.abs(diffPct) > 5 ? 'Requires Review' : 'Difference Found';
+    return { ...it, accountingValue, taxValue, note, noData, difference, diffPct, status };
   });
 
   const reconciledCount = items.filter((i) => i.status === 'Reconciled').length;

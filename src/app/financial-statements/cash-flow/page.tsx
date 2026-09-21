@@ -8,17 +8,16 @@ import {
   AreaChart, Area, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import {
-  CF_FORECAST, CF_AI_INSIGHTS
-} from '@/lib/financialData';
+import { CF_AI_INSIGHTS } from '@/lib/financialData';
 // [BARU] CF_CORE, CF_MONTHLY, OPERATING/INVESTING/FINANCING_ITEMS &
 // RECENT_TRANSACTIONS sekarang REAL -- diambil dari client aktif lewat
 // useCashFlowData() (lihat lib/useCashFlowData.ts untuk detail & sumber
 // backend), bukan lagi konstanta hardcoded dari '@/lib/financialData'.
-// CF_FORECAST & CF_AI_INSIGHTS di atas TETAP data contoh -- backend belum
-// punya modul proyeksi/AI-insight utk Cash Flow (sama seperti
-// BUDGET_VS_ACTUAL & PL_AI_INSIGHTS di halaman Profit & Loss).
+// CF_AI_INSIGHTS di atas TETAP data contoh -- belum ada sumber data backend.
+// [BARU] CF_FORECAST sekarang REAL -- dari tabel ..._Cash Flow_
+// cash_flow_forecast (schema 3_Financial) lewat useCashFlowForecast().
 import { useCashFlowData } from '../lib/useCashFlowData';
+import { useCashFlowForecast } from '../lib/useCashFlowForecast';
 import { useProfitLossData } from '../lib/useProfitLossData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
@@ -171,6 +170,9 @@ export default function CashFlowPage() {
     loading, isSampleData, companyName, periodLabel,
     CF_CORE, CF_MONTHLY, OPERATING_ITEMS, INVESTING_ITEMS, FINANCING_ITEMS, RECENT_TRANSACTIONS,
   } = useCashFlowData();
+  // [BARU] Proyeksi arus kas (semua bulan di tabel, urut waktu). Difilter
+  // ke bulan SETELAH bulan aktual terakhir di bawah (CF_FORECAST).
+  const { CF_FORECAST: CF_FORECAST_SEMUA } = useCashFlowForecast();
   // [BARU] Net Profit (utk rasio Cash Conversion) diambil dari hook Profit
   // & Loss yang SUDAH tersambung ke client aktif -- bukan lagi PL_CORE
   // hardcoded dari financialData.tsx, supaya rasio ini konsisten dengan
@@ -247,6 +249,17 @@ export default function CashFlowPage() {
   const freeCashFlow = CF_CORE.netOperatingCF + CF_CORE.netInvestingCF;
   const cashConversion = PL_CORE.netProfit ? (CF_CORE.netOperatingCF / PL_CORE.netProfit) * 100 : 0;
   const minCashThreshold = 800;
+
+  // [BARU] Buang baris proyeksi yang bulannya sudah tercakup data aktual
+  // (tahun berjalan, bulan <= bulan aktual terakhir) supaya bulan yang sama
+  // tidak muncul dua kali di grafik/tabel. Kalau bulan aktual terakhir tidak
+  // dikenali, semua baris proyeksi dipakai apa adanya.
+  const NAMA_BULAN_CF = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const bulanAktualTerakhir = NAMA_BULAN_CF.indexOf(String(bulanTerakhir?.month)) + 1; // 0 = tidak dikenali
+  const tahunBerjalan = new Date().getFullYear();
+  const CF_FORECAST = CF_FORECAST_SEMUA.filter(
+    (r) => bulanAktualTerakhir === 0 || r.tahun > tahunBerjalan || (r.tahun === tahunBerjalan && r.bulan > bulanAktualTerakhir)
+  );
 
   const allCFData = [
     ...CF_MONTHLY.map(d => ({ ...d, isForecast: false })),
@@ -733,7 +746,7 @@ export default function CashFlowPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...CF_MONTHLY, ...CF_FORECAST.slice(0, forecastRange === '3M' ? 3 : 6)].map((row, i) => {
+                {[...CF_MONTHLY, ...CF_FORECAST.slice(0, forecastRange === '3M' ? 3 : forecastRange === '6M' ? 6 : 12)].map((row, i) => {
                   const isForecast = Boolean('isForecast' in row && row.isForecast);
                   const isWarning = row.endCash < minCashThreshold * 1.5;
                   return (

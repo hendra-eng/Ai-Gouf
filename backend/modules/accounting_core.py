@@ -13,6 +13,7 @@ Hanya JournalEntry berstatus POSTED yang boleh dipakai laporan Actual.
 """
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 import db_client as dbc
 
 MONEY_QUANT = Decimal("0.01")
+_log = logging.getLogger(__name__)
 
 LEGACY_STATUS_TO_CORE = {
     "draft": "DRAFT",
@@ -184,6 +186,38 @@ def _account_metadata(session: Session, client_id: str, account_code: str) -> Di
     }
 
 
+def _standard_meta_bulk(session: Session, client_id: str, coa_ids: Iterable[Optional[int]]) -> Dict[int, Dict[str, Any]]:
+    """[SESUAI DB] 1_app.journal_lines tidak lagi menyimpan standard_account_*
+    dan account_role per baris -- keduanya dihitung dari mapping COA
+    (coa_standard_mapping & company_account_roles) saat dibaca, sekali query
+    untuk semua coa_id sekaligus."""
+    ids = {int(c) for c in coa_ids if c}
+    if not ids:
+        return {}
+    out: Dict[int, Dict[str, Any]] = {
+        c: {"standard_account_id": None, "standard_account_code": None, "account_role": None} for c in ids
+    }
+    for mp, std in session.query(dbc.CoaStandardMapping, dbc.StandardAccount).join(
+        dbc.StandardAccount, dbc.CoaStandardMapping.standard_account_id == dbc.StandardAccount.id
+    ).filter(
+        dbc.CoaStandardMapping.client_id == client_id,
+        dbc.CoaStandardMapping.coa_id.in_(ids),
+        dbc.CoaStandardMapping.active.is_(True),
+    ).all():
+        out[mp.coa_id]["standard_account_id"] = std.id
+        out[mp.coa_id]["standard_account_code"] = std.standard_code
+    for car, role in session.query(dbc.CompanyAccountRole, dbc.AccountRole).join(
+        dbc.AccountRole, dbc.CompanyAccountRole.role_id == dbc.AccountRole.id
+    ).filter(
+        dbc.CompanyAccountRole.client_id == client_id,
+        dbc.CompanyAccountRole.coa_id.in_(ids),
+        dbc.CompanyAccountRole.active.is_(True),
+        dbc.AccountRole.active.is_(True),
+    ).all():
+        out[car.coa_id]["account_role"] = role.role_code
+    return out
+
+
 def validate_lines(client_id: str, lines: Sequence[Dict[str, Any]], session: Optional[Session] = None) -> Dict[str, Any]:
     own_session = session is None
     session = session or dbc.SessionLocal()
@@ -242,6 +276,15 @@ def sync_legacy_to_core(client_id: str, posting_ids: Optional[Iterable[int]] = N
             query = query.filter(dbc.JurnalPosting.id.in_(ids))
         rows = query.all()
         for j in rows:
+            # [SESUAI DB] journal_lines.coa_id NOT NULL -> akun wajib ada di COA.
+            debit_meta = _account_metadata(session, client_id, j.no_akun_debet)
+            credit_meta = _account_metadata(session, client_id, j.no_akun_kredit)
+            if debit_meta["coa_id"] is None or credit_meta["coa_id"] is None:
+                _log.warning(
+                    "sync_legacy_to_core: posting %s dilewati, akun %s/%s belum ada di COA client %s",
+                    j.id, j.no_akun_debet, j.no_akun_kredit, client_id,
+                )
+                continue
             entry = session.query(dbc.JournalEntry).filter(
                 dbc.JournalEntry.client_id == client_id,
                 dbc.JournalEntry.legacy_posting_id == j.id,
@@ -271,21 +314,15 @@ def sync_legacy_to_core(client_id: str, posting_ids: Optional[Iterable[int]] = N
 
             # Recreate lines so edits on legacy queue are reflected exactly.
             session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).delete()
-            debit_meta = _account_metadata(session, client_id, j.no_akun_debet)
-            credit_meta = _account_metadata(session, client_id, j.no_akun_kredit)
             session.add(dbc.JournalLine(
                 journal_entry_id=entry.id, client_id=client_id, line_no=1,
-                coa_id=debit_meta["coa_id"], account_code=j.no_akun_debet,
-                account_name=j.nama_akun_debet, standard_account_id=debit_meta["standard_account_id"],
-                standard_account_code=debit_meta["standard_account_code"], account_role=debit_meta["account_role"],
+                coa_id=debit_meta["coa_id"],
                 description=j.keterangan, debit=_money(j.jml_debet), credit=Decimal("0.00"),
                 partner_name=j.lawan_transaksi, project=j.project_unit,
             ))
             session.add(dbc.JournalLine(
                 journal_entry_id=entry.id, client_id=client_id, line_no=2,
-                coa_id=credit_meta["coa_id"], account_code=j.no_akun_kredit,
-                account_name=j.nama_akun_kredit, standard_account_id=credit_meta["standard_account_id"],
-                standard_account_code=credit_meta["standard_account_code"], account_role=credit_meta["account_role"],
+                coa_id=credit_meta["coa_id"],
                 description=j.keterangan, debit=Decimal("0.00"), credit=_money(j.jml_kredit),
                 partner_name=j.lawan_transaksi, project=j.project_unit,
             ))
@@ -299,7 +336,216 @@ def sync_legacy_to_core(client_id: str, posting_ids: Optional[Iterable[int]] = N
         session.close()
 
 
-def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"]) -> Dict[str, Any]:
+# ---------------------------------------------------------------------------
+# [BARU] MIRROR transaksi modul (schema 3_Financial) -> Accounting Core
+# ---------------------------------------------------------------------------
+# Kenapa ada: halaman Financial Overview (Actual), Financial Statements, GL,
+# dll. HANYA membaca 1_app.journal_entries + journal_lines berstatus POSTED
+# (list_posted_lines). Selama ini satu-satunya "pengisi" tabel itu adalah
+# sync_legacy_to_core(), yang hanya menyalin public.jurnal_posting (tabel
+# lama). Transaksi yang sekarang tersimpan di tabel modul 3_Financial --
+# financial_transaction_bank_cash, financial_transaction_other, dan
+# financial_transaction_purchase_* -- tidak pernah disalin ke core, sehingga
+# semua laporan Actual kosong padahal datanya ada.
+#
+# Aturan mirror (idempotent, aman dipanggil berkali-kali):
+#   * Hanya transaksi berstatus POSTED yang dibuat sebagai JournalEntry POSTED.
+#   * Setiap akun HARUS ada di COA client (journal_lines.coa_id NOT NULL).
+#     Kalau ada akun yang belum ada di COA, transaksi itu DILEWATI dan dicatat
+#     di log (WARNING), bukan error.
+#   * Jurnal harus seimbang (total debit == total kredit), kalau tidak dilewati.
+#   * Transaksi yang sebelumnya sudah di-mirror lalu berubah jadi tidak POSTED
+#     (Unposted/Voided/...) dikembalikan ke DRAFT supaya keluar dari laporan.
+#   * Hanya entry bertanda created_by == MODULE_SYNC_MARK yang disentuh, jadi
+#     jurnal buatan modul lain (create_journal_entry) tidak terganggu.
+MODULE_SYNC_MARK = "module-sync"
+_MODULE_SOURCES = ("BANK_CASH", "OTHER", "PURCHASE")
+_OTHER_POSTED_STATUS = {"posted", "reconciled"}
+
+
+def _mirror_module_entry(session: Session, client_id: str, coa_ids: Dict[str, int], *,
+                         source_module: str, key: str, posting_date: Any, description: Optional[str],
+                         reference: Optional[str], posted_by: Optional[str],
+                         lines: Sequence[Dict[str, Any]]) -> bool:
+    """Buat/perbarui satu JournalEntry POSTED dari satu transaksi modul."""
+    tgl = _parse_date(posting_date)
+    if tgl is None:
+        _log.warning("mirror %s %s dilewati: tanggal tidak valid (%r)", source_module, key, posting_date)
+        return False
+
+    resolved: List[Dict[str, Any]] = []
+    for ln in lines:
+        kode = str(ln.get("account_code") or "").strip()
+        debit, credit = _money(ln.get("debit")), _money(ln.get("credit"))
+        if debit == 0 and credit == 0:
+            continue
+        coa_id = coa_ids.get(kode)
+        if coa_id is None:
+            _log.warning("mirror %s %s dilewati: akun %r belum ada di COA client %s",
+                         source_module, key, kode, client_id)
+            return False
+        resolved.append({"coa_id": coa_id, "debit": debit, "credit": credit,
+                         "description": ln.get("description"), "partner": ln.get("partner")})
+    if len(resolved) < 2:
+        _log.warning("mirror %s %s dilewati: kurang dari 2 baris jurnal", source_module, key)
+        return False
+    if sum(r["debit"] for r in resolved) != sum(r["credit"] for r in resolved):
+        _log.warning("mirror %s %s dilewati: jurnal tidak seimbang", source_module, key)
+        return False
+
+    entry = session.query(dbc.JournalEntry).filter(
+        dbc.JournalEntry.client_id == client_id,
+        dbc.JournalEntry.source_module == source_module,
+        dbc.JournalEntry.source_transaction_id == key,
+        dbc.JournalEntry.legacy_posting_id.is_(None),
+    ).first()
+    if entry is None:
+        entry = dbc.JournalEntry(
+            client_id=client_id, journal_no=key[:80], source_module=source_module,
+            source_transaction_id=key, created_by=MODULE_SYNC_MARK, created_at=datetime.now(),
+        )
+        session.add(entry)
+        session.flush()
+    entry.document_date = tgl
+    entry.posting_date = tgl
+    entry.description = description
+    entry.reference = (reference or "")[:150] or None
+    entry.status = "POSTED"
+    entry.posted_by = posted_by or MODULE_SYNC_MARK
+    entry.posted_at = entry.posted_at or datetime.now()
+    entry.updated_at = datetime.now()
+
+    session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).delete()
+    for no, r in enumerate(resolved, 1):
+        session.add(dbc.JournalLine(
+            journal_entry_id=entry.id, client_id=client_id, line_no=no, coa_id=r["coa_id"],
+            description=r["description"] or description, debit=r["debit"], credit=r["credit"],
+            partner_name=r["partner"],
+        ))
+    return True
+
+
+def sync_module_transactions_to_core(client_id: str) -> int:
+    """Mirror transaksi POSTED dari tabel modul 3_Financial ke JournalEntry/JournalLine.
+
+    Sumber: Bank & Cash (status 'terposting'), Other (status Posted/Reconciled,
+    dikelompokkan per je_id), Purchase (status 'Posted', baris jurnal dari
+    financial_transaction_purchase_journal_lines). Mengembalikan jumlah entry
+    yang berhasil di-mirror.
+    """
+    session = dbc.SessionLocal()
+    count = 0
+    try:
+        coa_ids: Dict[str, int] = {
+            c.no_akun: c.id
+            for c in session.query(dbc.Coa).filter(dbc.Coa.client_id == client_id).all()
+        }
+        posted_keys: Dict[str, set] = {m: set() for m in _MODULE_SOURCES}
+
+        # 1) Bank & Cash: satu baris = satu pasang debet/kredit.
+        for r in session.query(dbc.FinanceTransactionBankCash).filter(
+            dbc.FinanceTransactionBankCash.client_id == client_id,
+            dbc.FinanceTransactionBankCash.status == "terposting",
+        ).all():
+            key = f"BANK_CASH:{r.id}"
+            posted_keys["BANK_CASH"].add(key)
+            if _mirror_module_entry(
+                session, client_id, coa_ids, source_module="BANK_CASH", key=key,
+                posting_date=r.tanggal, description=r.keterangan, reference=r.no_dokumen or r.voucher,
+                posted_by=r.diposting_oleh,
+                lines=[
+                    {"account_code": r.no_akun_debet, "debit": r.jml_debet, "credit": 0, "partner": r.lawan_transaksi},
+                    {"account_code": r.no_akun_kredit, "debit": 0, "credit": r.jml_kredit, "partner": r.lawan_transaksi},
+                ],
+            ):
+                count += 1
+
+        # 2) Other: satu baris = satu leg; jurnal = kumpulan leg dengan je_id sama.
+        groups: Dict[str, List[Any]] = defaultdict(list)
+        for r in session.query(dbc.FinanceTransactionOther).filter(
+            dbc.FinanceTransactionOther.client_id == client_id
+        ).all():
+            if r.je_id:
+                groups[r.je_id].append(r)
+        for je_id, rows in groups.items():
+            if not all((x.status or "").strip().lower() in _OTHER_POSTED_STATUS for x in rows):
+                continue  # masih ada leg yang belum Posted -> jangan masuk core
+            key = f"OTHER:{je_id}"
+            posted_keys["OTHER"].add(key)
+            first = rows[0]
+            if _mirror_module_entry(
+                session, client_id, coa_ids, source_module="OTHER", key=key,
+                posting_date=first.date, description=first.description, reference=first.reference or first.voucher_no,
+                posted_by=None,
+                lines=[{"account_code": x.account_code, "debit": x.debit, "credit": x.credit,
+                        "description": x.description, "partner": x.party} for x in rows],
+            ):
+                count += 1
+
+        # 3) Purchase: header di purchase_transaction, jurnal di purchase_journal_lines.
+        purchases = session.query(dbc.PurchaseTransactionRow).filter(
+            dbc.PurchaseTransactionRow.client_id == client_id,
+            dbc.PurchaseTransactionRow.status == "Posted",
+        ).all()
+        if purchases:
+            jl_by_purchase: Dict[str, List[Any]] = defaultdict(list)
+            for jl in session.query(dbc.PurchaseJournalLineRow).filter(
+                dbc.PurchaseJournalLineRow.client_id == client_id,
+                dbc.PurchaseJournalLineRow.purchase_id.in_([p.purchase_id for p in purchases]),
+            ).all():
+                jl_by_purchase[jl.purchase_id].append(jl)
+            for p in purchases:
+                key = f"PURCHASE:{p.purchase_id}"
+                posted_keys["PURCHASE"].add(key)
+                if _mirror_module_entry(
+                    session, client_id, coa_ids, source_module="PURCHASE", key=key,
+                    posting_date=p.posting_date or p.invoice_date or p.purchase_date,
+                    description=p.description or f"Purchase {p.purchase_id}",
+                    reference=p.invoice_no or p.purchase_id, posted_by=p.posted_by,
+                    lines=[{"account_code": jl.account_code, "debit": jl.debit, "credit": jl.credit,
+                            "description": jl.description} for jl in jl_by_purchase.get(p.purchase_id, [])],
+                ):
+                    count += 1
+
+        # 4) Yang dulu di-mirror tapi sekarang tidak POSTED lagi -> kembali DRAFT.
+        for modul, keys in posted_keys.items():
+            stale = session.query(dbc.JournalEntry).filter(
+                dbc.JournalEntry.client_id == client_id,
+                dbc.JournalEntry.source_module == modul,
+                dbc.JournalEntry.created_by == MODULE_SYNC_MARK,
+                dbc.JournalEntry.legacy_posting_id.is_(None),
+                dbc.JournalEntry.status == "POSTED",
+            ).all()
+            for e in stale:
+                if e.source_transaction_id not in keys:
+                    e.status = "DRAFT"
+                    e.posted_at = None
+                    e.updated_at = datetime.now()
+
+        session.commit()
+        return count
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def sync_all_to_core(client_id: str) -> None:
+    """Sinkronkan SEMUA sumber ke core: tabel legacy (jurnal_posting) + tabel modul 3_Financial.
+
+    Kegagalan mirror modul TIDAK boleh menjatuhkan laporan, jadi hanya dicatat di log.
+    """
+    sync_legacy_to_core(client_id)
+    try:
+        sync_module_transactions_to_core(client_id)
+    except Exception:
+        _log.exception("sync_module_transactions_to_core gagal untuk client %s", client_id)
+
+
+def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"],
+                meta: Optional[Dict[int, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    meta = meta or {}
     return {
         "id": entry.id,
         "client_id": entry.client_id,
@@ -324,8 +570,8 @@ def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"]) -
                 "line_no": line.line_no,
                 "account_code": line.account_code,
                 "account_name": line.account_name,
-                "standard_account_code": line.standard_account_code,
-                "account_role": line.account_role,
+                "standard_account_code": meta.get(line.coa_id, {}).get("standard_account_code", line.standard_account_code),
+                "account_role": meta.get(line.coa_id, {}).get("account_role", line.account_role),
                 "description": line.description,
                 "debit": float(line.debit or 0),
                 "credit": float(line.credit or 0),
@@ -343,7 +589,7 @@ def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"]) -
 
 
 def list_journal_entries(client_id: str, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    sync_legacy_to_core(client_id)
+    sync_all_to_core(client_id)
     session = dbc.SessionLocal()
     try:
         query = session.query(dbc.JournalEntry).filter(dbc.JournalEntry.client_id == client_id)
@@ -360,7 +606,8 @@ def list_journal_entries(client_id: str, status: Optional[str] = None, limit: Op
         by_entry: Dict[int, List[Any]] = defaultdict(list)
         for line in all_lines:
             by_entry[line.journal_entry_id].append(line)
-        return [_entry_dict(e, by_entry[e.id]) for e in entries]
+        meta = _standard_meta_bulk(session, client_id, [l.coa_id for l in all_lines])
+        return [_entry_dict(e, by_entry[e.id], meta) for e in entries]
     finally:
         session.close()
 
@@ -368,7 +615,7 @@ def list_journal_entries(client_id: str, status: Optional[str] = None, limit: Op
 def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
                       tanggal_akhir: Optional[str] = None) -> List[Dict[str, Any]]:
     """Flat journal lines untuk GL/TB/FS. Hanya POSTED."""
-    sync_legacy_to_core(client_id)
+    sync_all_to_core(client_id)
     session = dbc.SessionLocal()
     try:
         query = session.query(dbc.JournalLine, dbc.JournalEntry).join(
@@ -384,8 +631,10 @@ def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
         if d2:
             query = query.filter(dbc.JournalEntry.posting_date <= d2)
         rows = query.order_by(dbc.JournalEntry.posting_date, dbc.JournalEntry.id, dbc.JournalLine.line_no).all()
+        meta = _standard_meta_bulk(session, client_id, [line.coa_id for line, _ in rows])
         result = []
         for line, entry in rows:
+            _m = meta.get(line.coa_id, {})
             result.append({
                 "journal_entry_id": entry.id,
                 "journal_no": entry.journal_no,
@@ -397,8 +646,8 @@ def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
                 "reference": entry.reference,
                 "account_code": line.account_code,
                 "account_name": line.account_name,
-                "standard_account_code": line.standard_account_code,
-                "account_role": line.account_role,
+                "standard_account_code": _m.get("standard_account_code", line.standard_account_code),
+                "account_role": _m.get("account_role", line.account_role),
                 "debit": float(line.debit or 0),
                 "credit": float(line.credit or 0),
                 "partner_name": line.partner_name,
@@ -451,14 +700,11 @@ def create_journal_entry(client_id: str, *, source_module: str, posting_date: An
         for idx, payload in enumerate(lines, 1):
             code = str(payload.get("account_code") or "").strip()
             meta = _account_metadata(session, client_id, code)
-            coa = session.query(dbc.Coa).filter(dbc.Coa.id == meta["coa_id"]).first() if meta["coa_id"] else None
+            if meta["coa_id"] is None:  # [SESUAI DB] coa_id NOT NULL (sudah dicek validate_lines juga)
+                raise ValueError(f"Line {idx}: akun {code} tidak ditemukan pada COA client.")
             session.add(dbc.JournalLine(
                 journal_entry_id=entry.id, client_id=client_id, line_no=idx,
-                coa_id=meta["coa_id"], account_code=code,
-                account_name=payload.get("account_name") or (coa.nama_akun if coa else code),
-                standard_account_id=meta["standard_account_id"],
-                standard_account_code=meta["standard_account_code"],
-                account_role=payload.get("account_role") or meta["account_role"],
+                coa_id=meta["coa_id"],
                 description=payload.get("description") or description,
                 debit=_money(payload.get("debit")), credit=_money(payload.get("credit")),
                 partner_name=payload.get("partner_name"), tax_code=payload.get("tax_code"),
@@ -469,7 +715,7 @@ def create_journal_entry(client_id: str, *, source_module: str, posting_date: An
         session.commit()
         session.refresh(entry)
         saved_lines = session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).all()
-        return _entry_dict(entry, saved_lines)
+        return _entry_dict(entry, saved_lines, _standard_meta_bulk(session, client_id, [l.coa_id for l in saved_lines]))
     except Exception:
         session.rollback()
         raise
@@ -487,7 +733,7 @@ def post_journal_entry(client_id: str, journal_entry_id: int, user: str) -> Dict
             raise ValueError("Journal entry tidak ditemukan.")
         if entry.status == "POSTED":
             lines = session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).all()
-            return _entry_dict(entry, lines)
+            return _entry_dict(entry, lines, _standard_meta_bulk(session, client_id, [l.coa_id for l in lines]))
         if entry.status in {"REJECTED", "REVERSED"}:
             raise ValueError(f"Journal status {entry.status} tidak dapat diposting.")
         lines = session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).all()
@@ -501,7 +747,7 @@ def post_journal_entry(client_id: str, journal_entry_id: int, user: str) -> Dict
         entry.updated_at = datetime.now()
         session.commit()
         session.refresh(entry)
-        return _entry_dict(entry, lines)
+        return _entry_dict(entry, lines, _standard_meta_bulk(session, client_id, [l.coa_id for l in lines]))
     except Exception:
         session.rollback()
         raise

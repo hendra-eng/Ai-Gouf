@@ -8,7 +8,7 @@ import { useCurrency } from '@/lib/currency';
 import { useActiveClient } from '@/lib/activeClient';
 // [BARU] Sambungkan ke client aktif -- lihat lib/useReportsData.ts untuk
 // sumber backend & keterbatasan pemetaan (kategori tanpa backend, dst).
-import { useReportsData } from '../lib/useReportsData';
+import { useReportsData, useScheduledReportsData } from '../lib/useReportsData';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -710,7 +710,18 @@ export default function ReportsPageClient() {
   useEffect(() => {
     setReportList(liveReports);
   }, [liveReports]);
+  // [BARU] Nilai awal dari tabel report_schedule (schema "7_Management") --
+  // lihat useScheduledReportsData di lib/useReportsData.ts. Sama seperti
+  // reportList di atas: state lokal supaya tab ini tetap bisa
+  // ditambah/dihapus interaktif, disinkronkan tiap data real berubah.
+  // CATATAN: menambah/menghapus jadwal lewat UI saat ini MASIH lokal saja
+  // (belum ada endpoint POST/DELETE report_schedule di backend), jadi
+  // perubahan hilang saat reload -- lihat handleAddSchedule di bawah.
+  const { scheduledReports: liveScheduledReports } = useScheduledReportsData();
   const [scheduleList, setScheduleList] = useState<ScheduledReport[]>(initialScheduledReports);
+  useEffect(() => {
+    setScheduleList(liveScheduledReports);
+  }, [liveScheduledReports]);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewReport, setPreviewReport] = useState<Report | null>(null);

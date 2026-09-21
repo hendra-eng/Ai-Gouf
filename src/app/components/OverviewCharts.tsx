@@ -26,7 +26,13 @@ import { useProfitLossData, fetchMonthlyPLForYear, type MonthlyPLRow } from '@/a
 import { useActiveClient } from '@/lib/activeClient';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import { invoicesFromTransactions, arAgingFromInvoices } from '@/app/transactions/lib/arBridge';
-import { BUDGET } from '@/lib/financialData';
+// [FIX] Chart "Actual vs Budget" ini sebelumnya masih pakai konstanta
+// BUDGET hardcoded (src/lib/financialData.tsx, isinya semua 0) --
+// sekarang disambungkan ke data ASLI overview_overview_financial_budget
+// (schema 2_Overview) lewat ambilFinancialBudget(), SAMA PERSIS dengan
+// pola yang sudah dipakai KPIBentoGrid.tsx, supaya angka Budget di kedua
+// tempat ini selalu konsisten.
+import { ambilFinancialBudget } from '@/app/agent-ai/lib/api';
 
 export type OverviewViewMode = 'Actual' | 'Budget' | 'Previous Year';
 
@@ -57,7 +63,7 @@ const SAMPLE_AGING = [
 ];
 const SAMPLE_AGING_TOTAL = SAMPLE_AGING.reduce((s, a) => s + a.value, 0);
 
-export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: OverviewViewMode }) {
+export default function OverviewCharts({ viewMode = 'Actual', branchId }: { viewMode?: OverviewViewMode; branchId?: string }) {
   const [period, setPeriod] = useState<'6M' | 'YTD' | '12M' | '3Y'>('YTD');
   const [activeAging, setActiveAging] = useState<number | null>(null);
   const [livePreview, setLivePreview] = useState<AgingLivePreview[] | null>(null);
@@ -168,11 +174,27 @@ export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: Ove
   const totalAgingJt = agingData.reduce((s, a) => s + a.value, 0);
 
   // ── Mode "Anggaran": bandingkan Aktual (YTD, jumlah bulan yg sudah punya
-  // transaksi) vs Anggaran (BUDGET tahunan diprorata sesuai jumlah bulan
-  // yg sama), supaya perbandingannya apple-to-apple walau baru berjalan
-  // sebagian tahun. Kalau sample data, pakai jumlah bulan contoh (8/12). ──
+  // transaksi) vs Anggaran ASLI (overview_overview_financial_budget,
+  // sudah di-YTD-kan langsung oleh backend sampai `elapsedMonths` --
+  // lihat ambil_financial_budget() di db_client.py), supaya perbandingannya
+  // apple-to-apple walau baru berjalan sebagian tahun. Kalau sample data,
+  // pakai jumlah bulan contoh (8/12) dan Anggaran tetap 0 (tidak ada
+  // client aktif untuk di-query). ──
   const elapsedMonths = plIsSample ? SAMPLE_REVENUE.length : Math.max(1, MONTHLY_PL.length);
-  const budgetFraction = elapsedMonths / 12;
+
+  // [BARU] Anggaran P&L REAL, pola fetch identik dengan KPIBentoGrid.tsx.
+  const [budgetData, setBudgetData] = useState<{
+    revenue: number; cogs: number; grossProfit: number;
+    operatingExpenses: number; ebitda: number; netProfit: number; ada_data: boolean;
+  } | null>(null);
+  const fetchingBudgetRef = useRef(false);
+  useEffect(() => {
+    if (viewMode !== 'Budget' || plIsSample || !activeClientId || fetchingBudgetRef.current) return;
+    fetchingBudgetRef.current = true;
+    ambilFinancialBudget(activeClientId, anchorYear, elapsedMonths, branchId)
+      .then((res) => { fetchingBudgetRef.current = false; setBudgetData(res?.ada_data ? res : null); })
+      .catch(() => { fetchingBudgetRef.current = false; setBudgetData(null); });
+  }, [viewMode, plIsSample, activeClientId, anchorYear, elapsedMonths, branchId]);
 
   const actualYtdByField = useMemo(() => {
     const source = plIsSample
@@ -201,16 +223,22 @@ export default function OverviewCharts({ viewMode = 'Actual' }: { viewMode?: Ove
   }, [plIsSample, MONTHLY_PL]);
 
   const budgetComparisonData = useMemo(() => {
+    // budgetData datang dari backend dalam Rupiah mentah (bukan Jt) dan
+    // SUDAH di-YTD-kan sampai elapsedMonths -- konversi ke Jt dulu di sini
+    // supaya sejajar dengan actualYtdByField (juga dalam Jt), baru
+    // dikonversi balik ke Rupiah mentah (`*Raw`) khusus untuk chart, sama
+    // seperti pola field lain di komponen ini.
+    const b = budgetData;
     const rows: { name: string; actual: number; budget: number }[] = [
-      { name: t('Revenue'), actual: actualYtdByField.revenue, budget: BUDGET.revenue * budgetFraction },
-      { name: t('COGS'), actual: actualYtdByField.cogs, budget: BUDGET.cogs * budgetFraction },
-      { name: t('Gross Profit'), actual: actualYtdByField.grossProfit, budget: BUDGET.grossProfit * budgetFraction },
-      { name: t('OpEx'), actual: actualYtdByField.opEx, budget: BUDGET.operatingExpenses * budgetFraction },
-      { name: t('EBITDA'), actual: actualYtdByField.ebitda, budget: BUDGET.ebitda * budgetFraction },
-      { name: t('Net Profit'), actual: actualYtdByField.netProfit, budget: BUDGET.netProfit * budgetFraction },
+      { name: t('Revenue'), actual: actualYtdByField.revenue, budget: b ? b.revenue / 1e6 : 0 },
+      { name: t('COGS'), actual: actualYtdByField.cogs, budget: b ? b.cogs / 1e6 : 0 },
+      { name: t('Gross Profit'), actual: actualYtdByField.grossProfit, budget: b ? b.grossProfit / 1e6 : 0 },
+      { name: t('OpEx'), actual: actualYtdByField.opEx, budget: b ? b.operatingExpenses / 1e6 : 0 },
+      { name: t('EBITDA'), actual: actualYtdByField.ebitda, budget: b ? b.ebitda / 1e6 : 0 },
+      { name: t('Net Profit'), actual: actualYtdByField.netProfit, budget: b ? b.netProfit / 1e6 : 0 },
     ];
     return rows.map((r) => ({ ...r, actualRaw: r.actual * 1e6, budgetRaw: r.budget * 1e6 }));
-  }, [actualYtdByField, budgetFraction, t]);
+  }, [actualYtdByField, budgetData, t]);
 
   // ── Mode "Tahun Sebelumnya": pendapatan bulanan tahun berjalan vs tahun
   // lalu, sejajar per nama bulan, sepanjang bulan yg sudah punya transaksi

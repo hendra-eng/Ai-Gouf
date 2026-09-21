@@ -8,23 +8,23 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
 import { formatRupiah, riskColors, arStatusColors, type Customer, type Invoice, type ARStatus } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
-// [BARU] Data customers/invoices/KPI di halaman ini TIDAK LAGI dari mock
-// statis — semuanya diturunkan langsung dari transaksi kelompok Sales di
-// halaman Transaksi lewat TransactionsContext + arBridge.ts. Kalau ada
-// transaksi Sales baru/diedit, halaman ini otomatis ikut berubah (re-render)
-// karena sama-sama membaca context yang sama. Polanya sama persis dengan
-// APContent.tsx (Expense -> Account Payable).
-import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+// [DIUBAH -- halaman AR dituntaskan] Sumber data TUNGGAL halaman ini = 4
+// tabel AR di Supabase (customer + invoice + payment + collection note,
+// schema "3_Financial") lewat useARData() -> GET /api/client/{id}/ar.
+// Tidak ada lagi fallback ke turunan transaksi Sales, karena hanya baris di
+// tabel AR yang bisa dicatat pembayarannya, diberi catatan, atau ditandai
+// Disputed / Written Off. Fungsi hitung KPI/aging/tren/forecast tetap
+// dipakai dari arBridge.ts (murni menghitung dari Invoice[]).
 import {
   getArReferenceDate,
-  invoicesFromTransactions,
-  customersFromInvoices,
   arKpisFromInvoices,
   arAgingFromInvoices,
   arTrendFromInvoices,
   sparklineFromTrend,
   collectionForecastFromInvoices,
 } from '@/app/transactions/lib/arBridge';
+import { useARData } from '../lib/arDbBridge';
+import { exportInvoicesCsv } from '../lib/arExport';
 
 const ARCharts = dynamic(() => import('./ARCharts'), { ssr: false });
 const CustomerDetailPanel = dynamic(() => import('./CustomerDetailPanel'), { ssr: false });
@@ -35,11 +35,11 @@ type ARTab = 'overview' | 'customers' | 'invoices' | 'collections';
 export default function ARContent() {
   const router = useRouter();
   const { fx } = useCurrency();
-  const { transactions } = useTransactions();
-
-  // ─── Turunan dari transaksi Sales (sumber tunggal) ─────────────────────
-  const invoices = useMemo(() => invoicesFromTransactions(transactions), [transactions]);
-  const customers = useMemo(() => customersFromInvoices(invoices), [invoices]);
+  const {
+    invoices, customers, collectionNotes, payments, loading, isFetching, error,
+    refetch, recordPayment, addNote, setInvoiceStatus,
+  } = useARData();
+  const hasData = invoices.length > 0 || customers.length > 0;
   const kpiValues = useMemo(() => arKpisFromInvoices(invoices, customers), [invoices, customers]);
   const agingData = useMemo(() => arAgingFromInvoices(invoices), [invoices]);
   const trendData = useMemo(() => arTrendFromInvoices(invoices), [invoices]);
@@ -52,8 +52,17 @@ export default function ARContent() {
   const [sortField, setSortField] = useState<keyof Invoice>('daysOverdue');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoiceIntent, setInvoiceIntent] = useState<'payment' | 'note' | undefined>(undefined);
+  // Objek panel diturunkan dari data TERBARU (bukan disalin saat diklik), supaya
+  // panel ikut ter-update begitu pembayaran/catatan baru tersimpan.
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) || null;
+  const selectedInvoice = invoices.find((i) => i.id === selectedInvoiceId) || null;
+  const openInvoice = (id: string, intent?: 'payment' | 'note') => {
+    setInvoiceIntent(intent);
+    setSelectedInvoiceId(id);
+  };
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const pageSize = 8;
 
@@ -96,7 +105,9 @@ export default function ARContent() {
   };
 
   const handleExport = () => {
-    toast.success('Export initiated — AR report will be ready in a moment');
+    if (filteredInvoices.length === 0) { toast.info('Tidak ada invoice untuk diekspor'); return; }
+    exportInvoicesCsv(filteredInvoices);
+    toast.success(`${filteredInvoices.length} invoice diekspor (CSV)`);
   };
 
   const handleAIAnalyze = () => {
@@ -112,7 +123,7 @@ export default function ARContent() {
   const ar90PlusPct = kpiValues.totalAR > 0 ? Math.round((kpiValues.ar90Plus / kpiValues.totalAR) * 1000) / 10 : 0;
 
   const kpis: { id: string; label: string; value: string; subLabel: string; change: string; changeNeutral: boolean; changePositive?: boolean; alert?: boolean; sparkline: number[]; color: string }[] = [
-    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: formatRupiah(kpiValues.totalAR, true), subLabel: `Dari ${invoices.length} transaksi Sales`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
+    { id: 'kpi-ar-total', label: 'TOTAL ACCOUNTS RECEIVABLE', value: formatRupiah(kpiValues.totalAR, true), subLabel: `Dari ${invoices.length} invoice`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
     { id: 'kpi-ar-current', label: 'CURRENT RECEIVABLES', value: formatRupiah(kpiValues.currentAR, true), subLabel: `${kpiValues.totalAR > 0 ? Math.round((kpiValues.currentAR / kpiValues.totalAR) * 1000) / 10 : 0}% dari total AR`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--success)' },
     { id: 'kpi-ar-overdue', label: 'OVERDUE RECEIVABLES', value: formatRupiah(kpiValues.overdueAR, true), subLabel: `${overduePct}% dari total AR`, change: '', changeNeutral: true, alert: kpiValues.overdueAR > 0, sparkline: trendSparkline, color: 'var(--danger)' },
     { id: 'kpi-ar-week', label: 'DUE SOON', value: formatRupiah(kpiValues.dueSoonAR, true), subLabel: 'Jatuh tempo ≤ 7 hari', change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
@@ -130,7 +141,7 @@ export default function ARContent() {
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Receivable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor receivables, collections, customer exposure, and overdue balances.</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="badge-info">Tersinkron dari Transaksi → Sales</span>
+            <span className="badge-info">Tersinkron dari database AR (Supabase)</span>
             <span className="badge-neutral">{invoices.length} invoice · {customers.length} customer</span>
             <span className="text-xs text-muted-foreground">
               Per {new Date(getArReferenceDate()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -149,12 +160,40 @@ export default function ARContent() {
             <Icon name="ArrowDownTrayIcon" size={14} />
             Export
           </button>
-          <button className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors" onClick={() => toast.info('Refreshing AR data...')}>
-            <Icon name="ArrowPathIcon" size={16} />
+          <button
+            className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors"
+            title="Muat ulang data AR"
+            onClick={() => { refetch(); toast.info('Memuat ulang data AR…'); }}
+          >
+            <Icon name="ArrowPathIcon" size={16} className={isFetching ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center justify-between gap-3 bg-danger-bg border border-red-200 rounded-lg px-4 py-3">
+          <p className="text-sm text-danger-foreground">Gagal memuat data AR: {error}</p>
+          <button onClick={() => refetch()} className="text-sm font-medium text-danger hover:underline flex-shrink-0">Coba lagi</button>
+        </div>
+      )}
+      {!hasData && loading && (
+        <div className="bg-card border border-border rounded-lg shadow-card px-4 py-16 text-center">
+          <p className="text-sm font-medium text-muted-foreground">Memuat data Accounts Receivable…</p>
+        </div>
+      )}
+      {!hasData && !loading && !error && (
+        <div className="bg-card border border-border rounded-lg shadow-card px-4 py-16 text-center">
+          <div className="flex flex-col items-center gap-2">
+            <Icon name="DocumentTextIcon" size={32} className="text-muted-foreground/40" />
+            <p className="text-sm font-medium text-foreground">Belum ada data Accounts Receivable untuk client ini</p>
+            <p className="text-xs text-muted-foreground max-w-md">
+              Data AR diambil dari tabel customer, invoice, payment, dan catatan penagihan di schema 3_Financial. Isi tabel tersebut lalu muat ulang halaman ini.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {hasData && (<>
       {/* KPI Grid — 4 cols × 2 rows = 8 cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
         {kpis.map((k) => (
@@ -237,7 +276,7 @@ export default function ARContent() {
                     <td colSpan={11} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <Icon name="UsersIcon" size={32} className="text-muted-foreground/40" />
-                        <p className="text-sm font-medium text-muted-foreground">Belum ada transaksi Sales</p>
+                        <p className="text-sm font-medium text-muted-foreground">Belum ada customer AR</p>
                       </div>
                     </td>
                   </tr>
@@ -248,7 +287,7 @@ export default function ARContent() {
                       <tr
                         key={c.id}
                         className="border-b border-border hover:bg-secondary/40 cursor-pointer transition-colors"
-                        onClick={() => setSelectedCustomer(c)}
+                        onClick={() => setSelectedCustomerId(c.id)}
                       >
                         <td className="px-4 py-3">
                           <div>
@@ -280,7 +319,8 @@ export default function ARContent() {
                         <td className="px-4 py-3">
                           <button
                             className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors"
-                            onClick={(e) => { e.stopPropagation(); toast.info(`Menu aksi untuk ${c.name}`); }}
+                            title="Lihat detail customer"
+                            onClick={(e) => { e.stopPropagation(); setSelectedCustomerId(c.id); }}
                           >
                             <Icon name="EllipsisHorizontalIcon" size={16} />
                           </button>
@@ -324,7 +364,7 @@ export default function ARContent() {
               {selectedRows.size > 0 && (
                 <div className="flex items-center gap-2 bg-primary/10 rounded-md px-3 py-1.5">
                   <span className="text-sm font-semibold text-primary">{selectedRows.size} selected</span>
-                  <button className="text-sm text-primary hover:text-primary/80" onClick={() => toast.success(`${selectedRows.size} invoices exported`)}>Export</button>
+                  <button className="text-sm text-primary hover:text-primary/80" onClick={() => { exportInvoicesCsv(invoices.filter((i) => selectedRows.has(i.id))); toast.success(`${selectedRows.size} invoice diekspor (CSV)`); }}>Export</button>
                   <button className="text-sm text-danger hover:text-danger/80" onClick={() => { setSelectedRows(new Set()); toast.info('Selection cleared'); }}>Clear</button>
                 </div>
               )}
@@ -393,7 +433,7 @@ export default function ARContent() {
                       <td className="px-4 py-3">
                         <input type="checkbox" className="rounded" checked={selectedRows.has(inv.id)} onChange={() => toggleRow(inv.id)} onClick={(e) => e.stopPropagation()} />
                       </td>
-                      <td className="px-4 py-3 font-medium text-primary hover:underline cursor-pointer" onClick={() => setSelectedInvoice(inv)}>{inv.number}</td>
+                      <td className="px-4 py-3 font-medium text-primary hover:underline cursor-pointer" onClick={() => openInvoice(inv.id)}>{inv.number}</td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-foreground">{inv.customerName}</p>
                         <p className="text-2xs text-muted-foreground">{inv.accountManager}</p>
@@ -426,13 +466,18 @@ export default function ARContent() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
-                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="View invoice" onClick={() => setSelectedInvoice(inv)}>
+                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="View invoice" onClick={() => openInvoice(inv.id)}>
                             <Icon name="EyeIcon" size={14} />
                           </button>
-                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Record payment" onClick={() => toast.success(`Recording payment for ${inv.number}`)}>
+                          <button
+                            className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={inv.outstanding > 0 ? 'Record payment' : 'Tidak ada sisa tagihan'}
+                            disabled={inv.outstanding <= 0}
+                            onClick={() => openInvoice(inv.id, 'payment')}
+                          >
                             <Icon name="BanknotesIcon" size={14} />
                           </button>
-                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Add note" onClick={() => toast.info(`Note added to ${inv.number}`)}>
+                          <button className="p-1 rounded hover:bg-secondary text-muted-foreground transition-colors" title="Add note" onClick={() => openInvoice(inv.id, 'note')}>
                             <Icon name="ChatBubbleLeftIcon" size={14} />
                           </button>
                         </div>
@@ -480,23 +525,48 @@ export default function ARContent() {
         </div>
       )}
 
-      {activeTab === 'collections' && <ARCollections invoices={invoices} forecastData={forecastData} />}
+      {activeTab === 'collections' && <ARCollections invoices={invoices} forecastData={forecastData} onOpenInvoice={openInvoice} />}
 
       {/* Detail Panels */}
       {selectedCustomer && (
-        <CustomerDetailPanel customer={selectedCustomer} invoices={invoices} onClose={() => setSelectedCustomer(null)} />
+        <CustomerDetailPanel
+          customer={selectedCustomer}
+          invoices={invoices}
+          payments={payments.filter((p) => p.customerId === selectedCustomer.id)}
+          notes={collectionNotes.filter((n) => n.customerId === selectedCustomer.id)}
+          onClose={() => setSelectedCustomerId(null)}
+          onRecordPayment={recordPayment}
+          onAddNote={addNote}
+          onOpenInvoice={(id) => { setSelectedCustomerId(null); openInvoice(id); }}
+        />
       )}
       {selectedInvoice && (
-        <InvoiceDetailPanel invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+        <InvoiceDetailPanel
+          invoice={selectedInvoice}
+          payments={payments.filter((p) => p.invoiceId === selectedInvoice.id)}
+          notes={collectionNotes.filter((n) => n.invoiceId === selectedInvoice.id)}
+          initialAction={invoiceIntent}
+          onClose={() => { setSelectedInvoiceId(null); setInvoiceIntent(undefined); }}
+          onRecordPayment={recordPayment}
+          onAddNote={addNote}
+          onSetStatus={setInvoiceStatus}
+          onViewCustomer={(id) => { setSelectedInvoiceId(null); setInvoiceIntent(undefined); setSelectedCustomerId(id); }}
+        />
       )}
+      </>)}
     </div>
   );
 }
 
-// [DIUBAH] invoices & forecastData sekarang diterima lewat props (hasil
-// turunan transaksi Sales), bukan import langsung dari mockData — sama
-// seperti APPaymentPlanning di APContent.tsx.
-function ARCollections({ invoices, forecastData }: { invoices: Invoice[]; forecastData: ReturnType<typeof collectionForecastFromInvoices> }) {
+// invoices & forecastData diterima lewat props (dari tabel AR); tombol Record/Note
+// membuka panel invoice dengan aksi yang dipilih.
+function ARCollections({
+  invoices, forecastData, onOpenInvoice,
+}: {
+  invoices: Invoice[];
+  forecastData: ReturnType<typeof collectionForecastFromInvoices>;
+  onOpenInvoice: (invoiceId: string, intent?: 'payment' | 'note') => void;
+}) {
   const { fx } = useCurrency();
   const critical = invoices.filter((i) => i.priority === 'Critical' && i.outstanding > 0);
   const high = invoices.filter((i) => i.priority === 'High' && i.outstanding > 0);
@@ -523,8 +593,8 @@ function ARCollections({ invoices, forecastData }: { invoices: Invoice[]; foreca
           {inv.daysOverdue > 0 ? `${inv.daysOverdue} days overdue` : 'Due soon'}
         </span>
         <div className="flex gap-1">
-          <button className="text-xs text-primary hover:underline font-medium" onClick={() => toast.success('Collection action recorded')}>Record</button>
-          <button className="text-xs text-muted-foreground hover:text-foreground font-medium ml-2" onClick={() => toast.info('Note added')}>Note</button>
+          <button className="text-xs text-primary hover:underline font-medium" onClick={() => onOpenInvoice(inv.id, 'payment')}>Record</button>
+          <button className="text-xs text-muted-foreground hover:text-foreground font-medium ml-2" onClick={() => onOpenInvoice(inv.id, 'note')}>Note</button>
         </div>
       </div>
     </div>

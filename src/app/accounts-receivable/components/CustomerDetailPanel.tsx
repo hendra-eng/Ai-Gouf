@@ -1,40 +1,47 @@
 'use client';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { type Customer, type Invoice, formatRupiah, riskColors, arStatusColors } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
+import type { AddNoteInput, CollectionNoteView, PaymentView, RecordPaymentInput, RecordPaymentResult } from '../lib/arDbBridge';
+import { CollectionNotesSection, RecordPaymentForm } from './ARActionForms';
 
-// [DIUBAH] `invoices` sekarang diterima lewat props (daftar Invoice hasil
-// turunan transaksi Sales yang sesungguhnya dari ARContent.tsx), bukan lagi
-// import langsung dari mockData — panel ini dulu selalu kosong/salah untuk
-// customer real karena ID customer real (cust-sales-xxx, lihat arBridge.ts)
-// tidak pernah cocok dengan customerId di invoice mock statis (cust-001, dst).
+// [DIUBAH -- halaman AR dituntaskan] Panel customer sekarang membaca riwayat
+// pembayaran & catatan penagihan dari tabel AR di Supabase, dan bisa mencatat
+// pembayaran (pilih salah satu invoice yang masih punya sisa tagihan) serta
+// menambah catatan level customer. Sebelumnya Payment History selalu kosong
+// dan tombol Record Payment / Add Note hanya menampilkan toast.
 interface Props {
   customer: Customer;
   invoices: Invoice[];
+  /** Pembayaran seluruh invoice customer ini (terbaru dulu). */
+  payments: PaymentView[];
+  /** Catatan penagihan customer ini -- level customer maupun level invoice (terbaru dulu). */
+  notes: CollectionNoteView[];
   onClose: () => void;
+  onRecordPayment: (input: RecordPaymentInput) => Promise<RecordPaymentResult>;
+  onAddNote: (input: AddNoteInput) => Promise<void>;
+  onOpenInvoice: (invoiceId: string) => void;
 }
 
-export default function CustomerDetailPanel({ customer, invoices, onClose }: Props) {
+export default function CustomerDetailPanel({
+  customer, invoices, payments, notes, onClose, onRecordPayment, onAddNote, onOpenInvoice,
+}: Props) {
   const { fx } = useCurrency();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'payments'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'payments' | 'notes'>('overview');
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
   const customerInvoices = invoices.filter((i) => i.customerId === customer.id);
+  const payableInvoices = customerInvoices.filter((i) => i.outstanding > 0 && i.status !== 'Written Off');
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview' },
     { id: 'invoices' as const, label: 'Invoices', count: customerInvoices.length },
-    { id: 'payments' as const, label: 'Payment History' },
+    { id: 'payments' as const, label: 'Payment History', count: payments.length },
+    { id: 'notes' as const, label: 'Notes', count: notes.length },
   ];
-
-  // [DIUBAH] Sebelumnya 3 baris riwayat pembayaran difabrikasi (tanggal &
-  // referensi hardcode, nominal dikarang dari persentase totalAR) -- belum
-  // ada sumber data riwayat pembayaran customer yang real di backend saat
-  // ini, jadi dikosongkan supaya tidak menampilkan data palsu ke pengguna.
-  const paymentHistory: { id: string; date: string; amount: number; method: string; ref: string }[] = [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
@@ -67,14 +74,16 @@ export default function CustomerDetailPanel({ customer, invoices, onClose }: Pro
               AI Risk Assessment
             </button>
             <button
-              onClick={() => toast.success('Payment recorded')}
-              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
+              onClick={() => setShowPaymentForm((v) => !v)}
+              disabled={payableInvoices.length === 0}
+              title={payableInvoices.length === 0 ? 'Tidak ada invoice dengan sisa tagihan' : 'Catat pembayaran invoice customer ini'}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Icon name="BanknotesIcon" size={12} />
               Record Payment
             </button>
             <button
-              onClick={() => toast.info('Note added')}
+              onClick={() => setActiveTab('notes')}
               className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
             >
               <Icon name="ChatBubbleLeftIcon" size={12} />
@@ -103,6 +112,15 @@ export default function CustomerDetailPanel({ customer, invoices, onClose }: Pro
         </div>
 
         <div className="p-5 space-y-5 mt-4">
+          {showPaymentForm && (
+            <RecordPaymentForm
+              invoices={payableInvoices}
+              onRecord={onRecordPayment}
+              onDone={() => setShowPaymentForm(false)}
+              onCancel={() => setShowPaymentForm(false)}
+            />
+          )}
+
           {activeTab === 'overview' && (
             <>
               {/* Key Metrics Grid */}
@@ -201,7 +219,11 @@ export default function CustomerDetailPanel({ customer, invoices, onClose }: Pro
                 </div>
               ) : (
                 customerInvoices.map((inv) => (
-                  <div key={inv.id} className="bg-card border border-border rounded-lg p-3 hover:shadow-card transition-all">
+                  <div
+                    key={inv.id}
+                    onClick={() => onOpenInvoice(inv.id)}
+                    className="bg-card border border-border rounded-lg p-3 hover:shadow-card transition-all cursor-pointer"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-semibold text-foreground">{inv.number}</p>
@@ -223,15 +245,15 @@ export default function CustomerDetailPanel({ customer, invoices, onClose }: Pro
 
           {activeTab === 'payments' && (
             <div className="space-y-2">
-              {paymentHistory.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-6">No payment history yet.</p>
+              {payments.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">Belum ada riwayat pembayaran.</p>
               )}
-              {paymentHistory.map((p) => (
+              {payments.map((p) => (
                 <div key={p.id} className="bg-card border border-border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{fx(formatRupiah(p.amount, true))}</p>
-                      <p className="text-xs text-muted-foreground">{p.ref} · {p.method}</p>
+                      <p className="text-xs text-muted-foreground">{p.invoiceNumber} · {p.method} · {p.reference}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">{p.date}</p>
@@ -241,6 +263,10 @@ export default function CustomerDetailPanel({ customer, invoices, onClose }: Pro
                 </div>
               ))}
             </div>
+          )}
+
+          {activeTab === 'notes' && (
+            <CollectionNotesSection notes={notes} customerId={customer.id} onAdd={onAddNote} autoFocus showInvoiceTag />
           )}
         </div>
       </div>

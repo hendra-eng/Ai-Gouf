@@ -6,12 +6,15 @@ import FinancialStatusBadge from '@/components/ui/FinancialStatusBadge';
 import { useCurrency } from '@/lib/currency';
 import { formatIDR } from '@/lib/financialData';
 import { useAssetRegisterData } from '../lib/assetRegisterBridge';
+import { AssetForm, DisposeAssetForm } from './AssetActionForms';
 
 interface DisplayRow {
-  id: string; name: string; category: string; purchaseDate: string; cost: string;
+  id: string; dbId: string; name: string; category: string; purchaseDate: string; cost: string;
   usefulLife: string; method: string; accDepr: string; nbv: string;
   status: 'active' | 'maintenance' | 'fully-depreciated' | 'disposed';
   location: string; dept: string;
+  rawCost: number; rawResidual: number; rawUsefulLife: number | null; rawMethod: string;
+  rawCategory: string; rawLocation: string; rawDept: string; rawPurchaseDate: string;
 }
 
 // [UBAH] Data contoh dikosongkan -- kalau client aktif belum pernah upload
@@ -29,6 +32,12 @@ export default function FixedAssetRegister() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const [perPage] = useState(8);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingDbId, setEditingDbId] = useState<string | null>(null);
+  const [disposingDbId, setDisposingDbId] = useState<string | null>(null);
+
+  const editingAsset = editingDbId ? registerData.assets.find((a) => a.dbId === editingDbId) || null : null;
+  const disposingAsset = disposingDbId ? registerData.assets.find((a) => a.dbId === disposingDbId) || null : null;
 
   // Kalau client aktif punya register real (sudah upload file "Aset
   // Tetap"), pakai itu. Kalau belum, jatuh ke data contoh supaya halaman
@@ -37,6 +46,7 @@ export default function FixedAssetRegister() {
     if (registerData.isSampleData) return SAMPLE_FIXED_ASSETS;
     return registerData.assets.map((a) => ({
       id: a.id,
+      dbId: a.dbId,
       name: a.name,
       category: a.category,
       purchaseDate: a.purchaseDate,
@@ -46,8 +56,16 @@ export default function FixedAssetRegister() {
       accDepr: a.accumulatedDepreciation > 0 ? `(${formatIDR(a.accumulatedDepreciation / 1_000_000, true)})` : 'Rp 0',
       nbv: formatIDR(a.netBookValue / 1_000_000, true),
       status: a.status,
-      location: '—',
-      dept: '—',
+      location: a.location,
+      dept: a.department,
+      rawCost: a.cost,
+      rawResidual: a.residualValue,
+      rawUsefulLife: a.usefulLifeYears,
+      rawMethod: a.method,
+      rawCategory: a.category,
+      rawLocation: a.location,
+      rawDept: a.department,
+      rawPurchaseDate: a.purchaseDateISO || '',
     }));
   }, [registerData]);
 
@@ -91,7 +109,7 @@ export default function FixedAssetRegister() {
               Filter
             </button>
             <button
-              onClick={() => toast.info('Form tambah aset baru dibuka')}
+              onClick={() => setAddOpen(true)}
               className="fin-btn-primary flex items-center gap-1.5 text-[12px]"
             >
               <Icon name="PlusIcon" size={13} />
@@ -142,19 +160,23 @@ export default function FixedAssetRegister() {
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      onClick={() => toast.info(`Detail aset ${asset.id}: ${asset.name}`)}
-                      className="p-1 rounded hover:bg-muted transition-colors"
-                      title="View details"
-                    >
-                      <Icon name="EyeIcon" size={13} className="text-muted-foreground hover:text-foreground" />
-                    </button>
-                    <button
-                      onClick={() => toast.info(`Mengedit aset ${asset.id}`)}
+                      onClick={() => setEditingDbId(asset.dbId)}
                       className="p-1 rounded hover:bg-muted transition-colors"
                       title="Edit asset"
+                      disabled={registerData.isSampleData}
                     >
                       <Icon name="PencilIcon" size={13} className="text-muted-foreground hover:text-foreground" />
                     </button>
+                    {asset.status !== 'disposed' && (
+                      <button
+                        onClick={() => setDisposingDbId(asset.dbId)}
+                        className="p-1 rounded hover:bg-muted transition-colors"
+                        title="Dispose asset"
+                        disabled={registerData.isSampleData}
+                      >
+                        <Icon name="TrashIcon" size={13} className="text-muted-foreground hover:text-danger" />
+                      </button>
+                    )}
                     <button
                       onClick={() => toast.info(`Membuka journal entry untuk ${asset.id}`)}
                       className="p-1 rounded hover:bg-muted transition-colors"
@@ -201,6 +223,30 @@ export default function FixedAssetRegister() {
           </button>
         </div>
       </div>
+
+      {addOpen && (
+        <AssetForm
+          onSave={(input) => registerData.addAsset(input as Parameters<typeof registerData.addAsset>[0])}
+          onDone={() => setAddOpen(false)}
+          onCancel={() => setAddOpen(false)}
+        />
+      )}
+      {editingAsset && (
+        <AssetForm
+          asset={editingAsset}
+          onSave={(input) => registerData.updateAsset(editingAsset.dbId, input)}
+          onDone={() => setEditingDbId(null)}
+          onCancel={() => setEditingDbId(null)}
+        />
+      )}
+      {disposingAsset && (
+        <DisposeAssetForm
+          asset={disposingAsset}
+          onDispose={(date, value) => registerData.disposeAsset(disposingAsset.dbId, date, value)}
+          onDone={() => setDisposingDbId(null)}
+          onCancel={() => setDisposingDbId(null)}
+        />
+      )}
     </div>
   );
 }

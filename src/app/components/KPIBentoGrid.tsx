@@ -6,8 +6,7 @@ import { KPICardSkeleton } from '@/components/ui/LoadingSkeleton';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilKpiBento } from '@/app/agent-ai/lib/api';
-import { BUDGET } from '@/lib/financialData';
+import { ambilKpiBento, ambilFinancialBudget } from '@/app/agent-ai/lib/api';
 import { useProfitLossData, fetchMonthlyPLForYear } from '@/app/financial-statements/lib/useProfitLossData';
 import type { OverviewViewMode } from './OverviewCharts';
 
@@ -128,7 +127,9 @@ function hitungStatus(perubahan: number, arahBaik: 'naik' | 'turun', warningJika
   return bagus ? ('positive' as const) : ('negative' as const);
 }
 
-export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branches' }: { viewMode?: OverviewViewMode; branch?: string }) {
+export default function KPIBentoGrid({
+  viewMode = 'Actual', branch = 'All Branches', branchId,
+}: { viewMode?: OverviewViewMode; branch?: string; branchId?: string }) {
   const router = useRouter();
   const { currency } = useCurrency();
   const { t } = useLanguage();
@@ -149,7 +150,19 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
   const { isSampleData: plIsSample, PL_CORE, MONTHLY_PL } = useProfitLossData();
   const anchorYear = new Date().getFullYear();
   const elapsedMonths = plIsSample ? 8 : Math.max(1, MONTHLY_PL.length);
-  const budgetFraction = elapsedMonths / 12;
+
+  // [BARU] Anggaran P&L REAL (overview_overview_financial_budget lewat
+  // ambilFinancialBudget()), menggantikan konstanta hardcoded BUDGET di
+  // src/lib/financialData.tsx -- pola fetch identik prevYearPL di bawah.
+  const [budgetData, setBudgetData] = useState<{ revenue: number; grossProfit: number; ebitda: number; netProfit: number; ada_data: boolean } | null>(null);
+  const fetchingBudgetRef = useRef(false);
+  useEffect(() => {
+    if (viewMode !== 'Budget' || !activeClientId || fetchingBudgetRef.current) return;
+    fetchingBudgetRef.current = true;
+    ambilFinancialBudget(activeClientId, anchorYear, elapsedMonths, branchId)
+      .then((res) => { fetchingBudgetRef.current = false; setBudgetData(res?.ada_data ? res : null); })
+      .catch(() => { fetchingBudgetRef.current = false; setBudgetData(null); });
+  }, [viewMode, activeClientId, anchorYear, elapsedMonths, branchId]);
 
   const [prevYearPL, setPrevYearPL] = useState<typeof PL_CORE | null>(null);
   const fetchingPrevYearRef = useRef(false);
@@ -181,11 +194,12 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
         ? { revenue: 0, netProfit: 0, grossProfit: 0, ebitda: 0 }[field] * elapsedMonths / 8
         : (PL_CORE as any)[field] || 0;
       if (viewMode === 'Budget') {
-        const budgetJt = (BUDGET as any)[field] * budgetFraction;
-        result[label] = {
-          nilai: budgetJt * 1e6,
-          perubahan_persen: budgetJt !== 0 ? ((actualJt - budgetJt) / budgetJt) * 100 : 0,
-        };
+        if (!budgetData) { result[label] = null; return; } // masih loading / belum ada data anggaran
+        const budgetRp = (budgetData as any)[field] || 0;
+        const actualRp = actualJt * 1e6;
+        result[label] = budgetRp !== 0
+          ? { nilai: budgetRp, perubahan_persen: ((actualRp - budgetRp) / budgetRp) * 100 }
+          : { nilai: 0, perubahan_persen: 0 };
       } else {
         // Previous Year
         if (plIsSample) {
@@ -202,7 +216,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
       }
     });
     return result;
-  }, [viewMode, plIsSample, PL_CORE, budgetFraction, elapsedMonths, prevYearPL]);
+  }, [viewMode, plIsSample, PL_CORE, budgetData, elapsedMonths, prevYearPL]);
 
   useEffect(() => {
     // [FIX flash-ke-0] Belum tahu client aktifnya siapa (context masih
@@ -267,7 +281,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
       {viewMode !== 'Actual' && (
         <p className="text-xs text-muted-foreground mb-2">
           {viewMode === 'Budget'
-            ? t('Menampilkan nilai Anggaran (diprorata YTD) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual')
+            ? t('Menampilkan nilai Anggaran (YTD) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual')
             : t('Menampilkan nilai Tahun Lalu (periode sama) vs Aktual pada 4 kartu P&L — kartu lain tetap Aktual')}
         </p>
       )}
@@ -290,7 +304,7 @@ export default function KPIBentoGrid({ viewMode = 'Actual', branch = 'All Branch
           ? ('neutral' as const)
           : hitungStatus(displayPerubahan, cfg.arahBaik, cfg.warningJikaAda, displayNilai);
         const subtitle = isPendingOverride
-          ? t('Memuat data tahun lalu...')
+          ? (viewMode === 'Budget' ? t('Memuat data anggaran...') : t('Memuat data tahun lalu...'))
           : data.margin_persen !== null && data.margin_persen !== undefined
           ? `${t('Margin')} ${data.margin_persen}%`
           : undefined;

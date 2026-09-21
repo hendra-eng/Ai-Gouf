@@ -626,6 +626,253 @@ export async function purchaseDataClient(clientId) {
 }
 
 /**
+ * [BARU] Data mentah tabel Documents (schema "7_Management",
+ * "Management_Documents_Documents") untuk satu client. Lihat main.py:
+ * GET /api/client/{client_id}/documents, dipetakan ke tipe
+ * FinancialDocument frontend oleh
+ * src/app/documents/lib/documentsDbBridge.ts.
+ */
+export async function documentsDataClient(clientId) {
+  return request(`/api/client/${clientId}/documents`);
+}
+
+/**
+ * [BARU] Data mentah tabel report_registry (schema "7_Management") untuk
+ * satu client. Lihat main.py: GET /api/client/{client_id}/reports-registry,
+ * digabung ke daftar reports oleh src/app/reports/lib/reportsDbBridge.ts.
+ */
+export async function reportRegistryClient(clientId) {
+  return request(`/api/client/${clientId}/reports-registry`);
+}
+
+/**
+ * [BARU] Data mentah tabel report_schedule (schema "7_Management") untuk
+ * satu client. Lihat main.py: GET /api/client/{client_id}/report-schedule,
+ * dipetakan ke tipe ScheduledReport oleh
+ * src/app/reports/lib/reportsDbBridge.ts.
+ */
+export async function reportScheduleClient(clientId) {
+  return request(`/api/client/${clientId}/report-schedule`);
+}
+
+/**
+ * [BARU] Data mentah modul Account Receivable (ar_customer, ar_invoice,
+ * ar_payment, ar_collection_note, schema "3_Financial") untuk satu client.
+ * Lihat main.py: GET /api/client/{client_id}/ar, dipetakan ke tipe
+ * Invoice/Customer frontend oleh src/app/accounts-receivable/lib/arDbBridge.ts.
+ */
+export async function arDataClient(clientId) {
+  return request(`/api/client/${clientId}/ar`);
+}
+
+/**
+ * [BARU] Catat pembayaran (boleh cicilan) untuk satu invoice AR.
+ * Backend: POST /api/client/{id}/ar/payments -> dbc.catat_pembayaran_ar().
+ * Nominal yang melebihi sisa tagihan / tanggal tidak valid ditolak backend
+ * dengan pesan siap tampil (Error.message berisi pesan itu).
+ */
+export async function catatPembayaranAr(clientId, invoiceId, paymentDate, amount, method, reference) {
+  return request(`/api/client/${clientId}/ar/payments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      invoice_id: invoiceId,
+      payment_date: paymentDate,
+      amount,
+      method: method || null,
+      reference: reference || null,
+    }),
+  });
+}
+
+/**
+ * [BARU] Tambah catatan penagihan. `invoiceId` kosong = catatan level
+ * customer. Backend: POST /api/client/{id}/ar/notes -> dbc.tambah_catatan_ar().
+ */
+export async function tambahCatatanAr(clientId, customerId, content, invoiceId, noteType) {
+  return request(`/api/client/${clientId}/ar/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customer_id: customerId,
+      invoice_id: invoiceId || null,
+      content,
+      note_type: noteType || null,
+    }),
+  });
+}
+
+/**
+ * [BARU] Tandai invoice 'Disputed' / 'Written Off', atau hapus penanda
+ * (manualStatus = null). Backend: PATCH /api/client/{id}/ar/invoices/{invoiceId}/status.
+ */
+export async function ubahStatusInvoiceAr(clientId, invoiceId, manualStatus, alasan) {
+  return request(`/api/client/${clientId}/ar/invoices/${invoiceId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manual_status: manualStatus || null, alasan: alasan || null }),
+  });
+}
+
+/**
+ * [BARU] Data mentah modul Account Payable (vendor dari
+ * financial_transaction_purchase_vendor, bill dari
+ * financial_transaction_purchase_transaction, payment & note dari 2 tabel
+ * AP di schema "3_Financial") untuk satu client. Lihat main.py:
+ * GET /api/client/{client_id}/ap, dipetakan ke tipe Bill/Vendor frontend
+ * oleh src/app/accounts-payable/lib/apDbBridge.ts.
+ */
+export async function apDataClient(clientId) {
+  return request(`/api/client/${clientId}/ap`);
+}
+
+/**
+ * [BARU] Catat/jadwalkan pembayaran satu bill/tagihan vendor.
+ * Backend: POST /api/client/{id}/ap/payments -> dbc.catat_pembayaran_ap().
+ * @param {string} [status] 'Scheduled' | 'Paid' (default) | 'Cancelled'
+ */
+export async function catatPembayaranAp(clientId, billId, paymentDate, amount, status, method, referenceNo) {
+  return request(`/api/client/${clientId}/ap/payments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bill_id: billId,
+      payment_date: paymentDate,
+      amount,
+      status: status || "Paid",
+      method: method || null,
+      reference_no: referenceNo || null,
+    }),
+  });
+}
+
+/**
+ * [BARU] Tambah catatan internal AP. `billId` kosong = catatan level
+ * vendor. Backend: POST /api/client/{id}/ap/notes -> dbc.tambah_catatan_ap().
+ */
+export async function tambahCatatanAp(clientId, vendorId, content, billId) {
+  return request(`/api/client/${clientId}/ap/notes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vendor_id: vendorId, bill_id: billId || null, content }),
+  });
+}
+
+/**
+ * [BARU] Tandai bill 'Disputed' / 'On Hold', atau hapus penanda
+ * (manualStatus = null). Backend: PATCH /api/client/{id}/ap/bills/{billId}/status.
+ */
+export async function ubahStatusBillAp(clientId, billId, manualStatus, alasan) {
+  return request(`/api/client/${clientId}/ap/bills/${billId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manual_status: manualStatus || null, alasan: alasan || null }),
+  });
+}
+
+/**
+ * [BARU] Asumsi budget tersimpan client utk 1 tahun (assumption: null kalau
+ * belum pernah di-Apply). Backend: GET /api/client/{id}/forecast-assumption.
+ */
+export async function ambilForecastAssumption(clientId, tahun) {
+  const query = tahun ? `?tahun=${tahun}` : "";
+  return request(`/api/client/${clientId}/forecast-assumption${query}`);
+}
+
+/**
+ * [BARU] Upsert asumsi budget client (tombol Apply di ForecastAssumptions.tsx).
+ * `nilai` object berisi key sesuai kolom tabel forecast_assumption
+ * (revenue_growth_pct, cogs_pct, payroll_growth_pct, opex_growth_pct,
+ * collection_rate_pct, tax_rate_pct, capex, interest_expense) -- hanya yang
+ * diisi yang dikirim. Backend: POST /api/client/{id}/forecast-assumption.
+ */
+export async function simpanForecastAssumption(clientId, tahun, nilai) {
+  return request(`/api/client/${clientId}/forecast-assumption`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tahun: tahun || null, ...nilai }),
+  });
+}
+
+/**
+ * [BARU] Daftar skenario custom tersimpan client utk 1 tahun.
+ * Backend: GET /api/client/{id}/scenarios.
+ */
+export async function daftarScenario(clientId, tahun) {
+  const query = tahun ? `?tahun=${tahun}` : "";
+  return request(`/api/client/${clientId}/scenarios${query}`);
+}
+
+/**
+ * [BARU] Simpan skenario custom baru (tombol "New Scenario" di
+ * ScenarioPlanning.tsx). Backend: POST /api/client/{id}/scenarios.
+ */
+export async function tambahScenario(clientId, tahun, namaSkenario, nilai = {}) {
+  return request(`/api/client/${clientId}/scenarios`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tahun: tahun || null, nama_skenario: namaSkenario, ...nilai }),
+  });
+}
+
+/**
+ * [BARU] Hapus 1 skenario custom. Backend: DELETE /api/client/{id}/scenarios/{scenarioId}.
+ */
+export async function hapusScenario(clientId, scenarioId) {
+  return request(`/api/client/${clientId}/scenarios/${scenarioId}`, { method: "DELETE" });
+}
+
+/**
+ * [BARU] Koreksi fiskal tersimpan (rekonsiliasi akuntansi vs fiskal) --
+ * sumber TaxReconciliation.tsx. Backend: GET /api/client/{id}/fiscal-correction.
+ */
+export async function ambilFiscalCorrection(clientId, tahun) {
+  const query = tahun ? `?tahun=${tahun}` : "";
+  return request(`/api/client/${clientId}/fiscal-correction${query}`);
+}
+
+/**
+ * [BARU] Daftar task kepatuhan pajak custom tersimpan (bukan yang
+ * auto-generated dari obligasi belum lunas) -- sumber ComplianceTasks.tsx.
+ * Backend: GET /api/client/{id}/tax-compliance-tasks.
+ */
+export async function daftarTaxTasks(clientId) {
+  return request(`/api/client/${clientId}/tax-compliance-tasks`);
+}
+
+/**
+ * [BARU] Tambah 1 task kepatuhan pajak custom (tombol "Add Task" di
+ * ComplianceTasks.tsx). Backend: POST /api/client/{id}/tax-compliance-tasks.
+ */
+export async function tambahTaxTask(clientId, data) {
+  return request(`/api/client/${clientId}/tax-compliance-tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * [BARU] Ubah status task kepatuhan pajak custom (klik utk memajukan
+ * status). Backend: PATCH /api/client/{id}/tax-compliance-tasks/{taskId}.
+ */
+export async function ubahStatusTaxTask(clientId, taskId, status) {
+  return request(`/api/client/${clientId}/tax-compliance-tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+/**
+ * [BARU] Hapus task kepatuhan pajak custom.
+ * Backend: DELETE /api/client/{id}/tax-compliance-tasks/{taskId}.
+ */
+export async function hapusTaxTask(clientId, taskId) {
+  return request(`/api/client/${clientId}/tax-compliance-tasks/${taskId}`, { method: "DELETE" });
+}
+
+/**
  * [BARU] Ubah status satu transaksi Purchase -- dipakai tombol Submit for
  * Review/Approve/Reject/Post to GL/Return for Correction di halaman
  * Journal Preview. `purchaseRowId` adalah UUID baris (field `id` yang
@@ -683,6 +930,87 @@ export async function updatePurchaseExceptionStatus(clientId, exceptionId, excep
  */
 export async function auditLogClient(clientId, limit = 200) {
   return request(`/api/client/${clientId}/audit-log?limit=${limit}`);
+}
+
+/**
+ * [BARU] Data mentah modul Audit Center (finding, stage, activity,
+ * evidence metadata -- tanpa isi file) untuk satu client, schema
+ * "6_Intellegence". Lihat main.py: GET /api/client/{client_id}/audit,
+ * dipetakan ke tipe AuditFinding/Stage/Activity/Evidence oleh
+ * src/app/audit/lib/auditBridge.ts.
+ */
+export async function auditDataClient(clientId) {
+  return request(`/api/client/${clientId}/audit`);
+}
+
+/**
+ * [BARU] Tambah 1 temuan audit baru (tombol "New Finding" di
+ * src/app/audit/page.tsx). Backend: POST
+ * /api/client/{id}/audit/findings.
+ */
+export async function tambahAuditFinding(clientId, data) {
+  return request(`/api/client/${clientId}/audit/findings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * [BARU] Ubah field temuan audit (status/risk/root cause/rekomendasi/
+ * tanggapan manajemen/dst) -- dipakai tombol Review/Resolve/Escalate
+ * di FindingDrawer. Backend: PATCH
+ * /api/client/{id}/audit/findings/{findingId}.
+ */
+export async function ubahAuditFinding(clientId, findingId, fields) {
+  return request(`/api/client/${clientId}/audit/findings/${findingId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+}
+
+/**
+ * [BARU] Upload 1 file evidence utk 1 temuan (tombol "Add Evidence" di
+ * FindingDrawer). Backend: POST
+ * /api/client/{id}/audit/findings/{findingId}/evidence.
+ */
+export async function tambahAuditEvidence(clientId, findingId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/api/client/${clientId}/audit/findings/${findingId}/evidence`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+/**
+ * [BARU] URL untuk download/lihat 1 file evidence -- dipakai langsung
+ * sbg `href` (bukan lewat request(), karena responnya bukan JSON).
+ * Backend: GET /api/client/{id}/audit/evidence/{evidenceId}/file.
+ */
+export function auditEvidenceFileUrl(clientId, evidenceId) {
+  return `${API_BASE_URL}/api/client/${clientId}/audit/evidence/${evidenceId}/file`;
+}
+
+/**
+ * [BARU] Hapus 1 file evidence. Backend: DELETE
+ * /api/client/{id}/audit/evidence/{evidenceId}.
+ */
+export async function hapusAuditEvidence(clientId, evidenceId) {
+  return request(`/api/client/${clientId}/audit/evidence/${evidenceId}`, { method: "DELETE" });
+}
+
+/**
+ * [BARU] Tandai 1 tahapan audit selesai/berjalan -- klik di Audit
+ * Progress bar. Backend: PATCH /api/client/{id}/audit/stage/{stageId}.
+ */
+export async function ubahAuditStage(clientId, stageId, fields) {
+  return request(`/api/client/${clientId}/audit/stage/${stageId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
 }
 
 /**
@@ -820,6 +1148,111 @@ export async function ambilKpiBento(clientId, tahun /* optional */, cabang /* op
   if (cabang && cabang !== 'All Branches') params.set('cabang', cabang);
   const query = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/client/${clientId}/kpi-bento${query}`);
+}
+
+// [BARU] Daftar cabang milik client -- sumber dropdown "Branch" di
+// OverviewContent.tsx (Financial Overview), menggantikan opsi hardcoded
+// "Jakarta"/"Surabaya". Lihat main.py: GET /api/client/{client_id}/branches.
+export async function daftarBranches(clientId) {
+  return request(`/api/client/${clientId}/branches`);
+}
+
+// [BARU] Anggaran P&L (YTD s.d. bulan_sampai, opsional per cabang) untuk
+// mode "Budget" di KPIBentoGrid.tsx -- menggantikan konstanta hardcoded
+// BUDGET di src/lib/financialData.tsx. Lihat main.py:
+// GET /api/client/{client_id}/financial-budget.
+// @param {number|string} clientId
+// @param {number} [tahun]
+// @param {number} [bulanSampai] -- default 12 (full year)
+// @param {string} [branchId] -- UUID dari daftarBranches(), kosong = semua cabang
+export async function ambilFinancialBudget(clientId, tahun, bulanSampai = 12, branchId) {
+  const params = new URLSearchParams();
+  if (tahun) params.set('tahun', tahun);
+  if (bulanSampai) params.set('bulan_sampai', bulanSampai);
+  if (branchId) params.set('branch_id', branchId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/client/${clientId}/financial-budget${query}`);
+}
+
+// [BARU] Anggaran P&L untuk kolom "Budget" di kartu "Profitability vs
+// Budget" (halaman Profit & Loss), sumber tabel ..._profit and loss_
+// finance_budget_li (schema 3_Financial). Bentuk respons SAMA dengan
+// ambilFinancialBudget() (revenue, cogs, grossProfit, operatingExpenses,
+// ebitda, netProfit, ada_data). Backend: GET /api/client/{id}/pl-budget.
+export async function ambilPlBudget(clientId, tahun, bulanSampai = 12) {
+  const params = new URLSearchParams();
+  if (tahun) params.set('tahun', tahun);
+  if (bulanSampai) params.set('bulan_sampai', bulanSampai);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/client/${clientId}/pl-budget${query}`);
+}
+
+// [BARU] Insight P&L untuk panel "AI Performance Insights", sumber tabel
+// ..._profit and loss_finance_insights. `modul` default "profit_loss".
+// Respons: { modul, insights: [{ id, title, description, metric,
+// severity, periode, modul }] }. Backend: GET /api/client/{id}/pl-insights.
+export async function ambilPlInsights(clientId, modul = "profit_loss") {
+  const params = new URLSearchParams();
+  if (modul) params.set('modul', modul);
+  return request(`/api/client/${clientId}/pl-insights?${params.toString()}`);
+}
+
+// [BARU] Proyeksi arus kas bulanan untuk halaman Cash Flow, sumber tabel
+// ..._Cash Flow_cash_flow_forecast. Respons: { forecast: [{ tahun, bulan,
+// begin_cash, operating_cf, investing_cf, financing_cf, net_change,
+// end_cash }] } dalam Rupiah penuh. Backend: GET
+// /api/client/{id}/cash-flow-forecast.
+export async function ambilCashFlowForecast(clientId, tahun) {
+  const query = tahun ? `?tahun=${encodeURIComponent(tahun)}` : "";
+  return request(`/api/client/${clientId}/cash-flow-forecast${query}`);
+}
+
+// [BARU] Register aset tetap per-unit (Fixed Asset Register & Depreciation
+// di halaman Assets), sumber tabel assets_equity_assets_fixed_assets
+// (schema 4_Assets_Equity). Menggantikan sumber lama hasil upload file
+// "Aset Tetap" di public.hasil (lihat assetRegisterBridge.ts).
+// Backend: GET /api/client/{client_id}/assets -> dbc.ambil_fixed_assets().
+export async function ambilFixedAssets(clientId) {
+  return request(`/api/client/${clientId}/assets`);
+}
+
+/**
+ * [BARU] Tambah aset tetap baru. Backend: POST /api/client/{id}/assets ->
+ * dbc.tambah_fixed_asset(). `fields` bebas berisi kombinasi name/category/
+ * purchase_date/cost/residual_value/useful_life_years/depreciation_method/
+ * location/department (name & cost wajib).
+ */
+export async function tambahFixedAsset(clientId, fields) {
+  return request(`/api/client/${clientId}/assets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+}
+
+/**
+ * [BARU] Ubah field aset tetap yang ada (partial update -- hanya field yang
+ * diisi di `fields` yang dikirim/diubah). Backend:
+ * PATCH /api/client/{id}/assets/{assetId} -> dbc.ubah_fixed_asset().
+ */
+export async function ubahFixedAsset(clientId, assetId, fields) {
+  return request(`/api/client/${clientId}/assets/${assetId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+}
+
+/**
+ * [BARU] Tandai aset sebagai disposed (permanen). Backend:
+ * PATCH /api/client/{id}/assets/{assetId}/dispose -> dbc.disposisi_fixed_asset().
+ */
+export async function disposisiFixedAsset(clientId, assetId, disposalDate, disposalValue) {
+  return request(`/api/client/${clientId}/assets/${assetId}/dispose`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ disposal_date: disposalDate, disposal_value: disposalValue || 0 }),
+  });
 }
 
 // [BARU] Laporan bulanan (Trial Balance/Laba Rugi/Balance Sheet Jan-Des
