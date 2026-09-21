@@ -36,6 +36,13 @@ except ImportError:
 from _history import catat_history
 from db_client import engine
 
+# Console Windows default-nya cp1252 -> print() emoji melempar UnicodeEncodeError.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 
 def main(argv) -> int:
     if len(argv) != 2:
@@ -51,6 +58,20 @@ def main(argv) -> int:
     print("=" * 60)
     print(f"🌱 SEED: {sql_path.name}")
     print("=" * 60)
+
+    # [FIX] Seed memakai blok DO $do$ ... (khusus PostgreSQL). Kalau .env tidak
+    # terbaca (python-dotenv tidak ter-install / DATABASE_URL di terminal
+    # menimpa .env) db_client diam-diam jatuh ke fallback SQLite dan errornya
+    # menyesatkan: 'near "DO": syntax error'. Hentikan lebih awal + tampilkan
+    # database yang sedang dipakai.
+    if engine.dialect.name != "postgresql":
+        print(f"❌ Database yang terhubung: {engine.url.render_as_string(hide_password=True)}")
+        print("   Seed ini butuh PostgreSQL. Kemungkinan penyebab:")
+        print("   - python-dotenv tidak ter-install di Python yang dipakai (bukan venv project)")
+        print("   - variabel DATABASE_URL di sesi terminal ini menimpa backend/.env")
+        print("     (cek: cmd `echo %DATABASE_URL%` / PowerShell `$env:DATABASE_URL`)")
+        return 1
+    print(f"🔌 Database: {engine.url.render_as_string(hide_password=True)}")
 
     sql = sql_path.read_text(encoding="utf-8")
     # raw_connection (psycopg2) -- bukan text() SQLAlchemy -- supaya blok

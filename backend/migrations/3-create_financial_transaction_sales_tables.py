@@ -43,11 +43,19 @@ dihapus/ditimpa.
 
 Cara pakai:
     cd backend
-    venv\\Scripts\\python migrations\\create_financial_transaction_sales_tables.py
+    venv\\Scripts\\python migrations\\3-create_financial_transaction_sales_tables.py
 """
 
 import sys
 from pathlib import Path
+
+# Console Windows default-nya cp1252 -> print() emoji (🔄 ✅ ❌) melempar
+# UnicodeEncodeError. Paksa UTF-8 supaya skrip jalan di terminal apa pun.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -59,6 +67,18 @@ try:
     load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
+
+# [FIX] Kalau python-dotenv tidak ter-install (mis. skrip dijalankan pakai
+# Python global, bukan venv) .env tidak terbaca dan db_client diam-diam jatuh
+# ke fallback SQLite -- model ini memakai JSONB (khusus PostgreSQL), jadi
+# CREATE TABLE gagal dengan error yang menyesatkan. Hentikan lebih awal.
+import os
+if not os.environ.get("DATABASE_URL"):
+    sys.exit(
+        "❌ DATABASE_URL tidak terbaca dari backend/.env.\n"
+        "   Jalankan pakai Python venv project (butuh python-dotenv):\n"
+        "   venv\\Scripts\\python migrations\\3-create_financial_transaction_sales_tables.py"
+    )
 
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError, ProgrammingError
