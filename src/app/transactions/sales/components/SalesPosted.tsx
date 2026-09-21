@@ -35,9 +35,9 @@ const RECONCILE_STYLE: Record<string, string> = {
 };
 
 function downloadCSV(rows: (BackendSalesInvoice & { payStatus: PayStatus })[], filename: string) {
-  const headers = ['Tanggal Posting', 'Invoice', 'Pelanggan', 'DPP', 'PPN', 'Nilai Gross', 'No. Jurnal', 'AR', 'Status Pembayaran', 'Rekonsiliasi', 'Diposting Oleh', 'Status'];
+  const headers = ['Posting Date', 'Invoice', 'Customer', 'Branch', 'Tax Base (DPP)', 'VAT', 'Gross Value', 'Journal No.', 'AR', 'Payment Status', 'Reconciliation', 'Posted By', 'Status'];
   const lines = rows.map(r => [
-    r.posted_at || '', r.invoice_no, r.customer_name, r.dpp, r.ppn, r.gross_amount,
+    r.posted_at || '', r.invoice_no, r.customer_name, r.cabang || '', r.dpp, r.ppn, r.gross_amount,
     r.journal_entry_id ?? '', r.outstanding_amount, r.payStatus, r.reconcile_status, r.posted_by || '', r.posting_status,
   ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
   const csv = [headers.join(','), ...lines].join('\n');
@@ -70,6 +70,7 @@ export default function SalesPosted() {
   // Filters
   const [search, setSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
   const [payStatusFilter, setPayStatusFilter] = useState('all');
   const [journalStatusFilter, setJournalStatusFilter] = useState('all');
   const [dateStart, setDateStart] = useState('');
@@ -89,6 +90,7 @@ export default function SalesPosted() {
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
 
   const CUSTOMERS = useMemo(() => Array.from(new Set(postedInvoices.map(r => r.customer_name))), [postedInvoices]);
+  const BRANCHES = useMemo(() => Array.from(new Set(postedInvoices.map(r => r.cabang).filter((b): b is string => !!b))).sort(), [postedInvoices]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -97,6 +99,7 @@ export default function SalesPosted() {
     return postedInvoices.filter(r => {
       if (q && !(r.invoice_no.toLowerCase().includes(q) || r.customer_name.toLowerCase().includes(q) || String(r.journal_entry_id ?? '').includes(q))) return false;
       if (customerFilter !== 'all' && r.customer_name !== customerFilter) return false;
+      if (branchFilter !== 'all' && r.cabang !== branchFilter) return false;
       if (payStatusFilter !== 'all' && r.payStatus !== payStatusFilter) return false;
       if (journalStatusFilter !== 'all' && r.journal_sync_status !== journalStatusFilter) return false;
       const d = r.posted_at ? new Date(r.posted_at) : (r.invoice_date ? new Date(r.invoice_date) : null);
@@ -104,7 +107,7 @@ export default function SalesPosted() {
       if (end && d && d > end) return false;
       return true;
     });
-  }, [postedInvoices, search, customerFilter, payStatusFilter, journalStatusFilter, dateStart, dateEnd]);
+  }, [postedInvoices, search, customerFilter, branchFilter, payStatusFilter, journalStatusFilter, dateStart, dateEnd]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(currentPage, totalPages);
@@ -121,7 +124,7 @@ export default function SalesPosted() {
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const resetFilters = () => {
-    setSearch(''); setCustomerFilter('all'); setPayStatusFilter('all'); setJournalStatusFilter('all');
+    setSearch(''); setCustomerFilter('all'); setBranchFilter('all'); setPayStatusFilter('all'); setJournalStatusFilter('all');
     setDateStart(''); setDateEnd('');
     setCurrentPage(1); setShowDatePicker(false);
   };
@@ -234,8 +237,8 @@ export default function SalesPosted() {
             >
               <span className="text-muted-foreground">📅 {t('Periode Posting')}</span>
               <span className="font-medium text-foreground">
-                {dateStart ? new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : t('Semua')}
-                {dateEnd ? ` – ${new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
+                {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
               <ChevronDown size={12} className="text-muted-foreground" />
             </button>
@@ -266,6 +269,14 @@ export default function SalesPosted() {
           >
             <option value="all">{t('Semua Pelanggan')}</option>
             {CUSTOMERS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select
+            value={branchFilter}
+            onChange={ev => { setBranchFilter(ev.target.value); setCurrentPage(1); }}
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+          >
+            <option value="all">{t('All Branches')}</option>
+            {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select
             value={payStatusFilter}
@@ -343,7 +354,7 @@ export default function SalesPosted() {
                   <th className="py-2.5 px-3 w-8">
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
-                  {['Tanggal Posting', 'Invoice', 'Pelanggan', 'DPP (Rp)', 'PPN (Rp)', 'Nilai Gross (Rp)', 'No. Jurnal', 'AR (Rp)', 'Status Pembayaran', 'Rekonsiliasi', 'Diposting Oleh', 'Status', 'Aksi'].map(h => (
+                  {['Tanggal Posting', 'Invoice', 'Pelanggan', 'Cabang', 'DPP (Rp)', 'PPN (Rp)', 'Nilai Gross (Rp)', 'No. Jurnal', 'AR (Rp)', 'Status Pembayaran', 'Rekonsiliasi', 'Diposting Oleh', 'Status', 'Aksi'].map(h => (
                     <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
                   ))}
                 </tr>
@@ -351,7 +362,7 @@ export default function SalesPosted() {
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td>
+                    <td colSpan={15} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td>
                   </tr>
                 )}
                 {paginated.map(row => (
@@ -362,6 +373,7 @@ export default function SalesPosted() {
                     <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{formatTanggalSingkat(row.posted_at)}</td>
                     <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{row.invoice_no}</td>
                     <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{row.customer_name}</td>
+                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{row.cabang || '—'}</td>
                     <td className="py-2.5 px-2 text-right whitespace-nowrap">{formatIDR(row.dpp)}</td>
                     <td className="py-2.5 px-2 text-right whitespace-nowrap">{formatIDR(row.ppn)}</td>
                     <td className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">{formatIDR(row.gross_amount)}</td>
@@ -448,6 +460,7 @@ export default function SalesPosted() {
               {[
                 ['Tanggal Posting', formatTanggalSingkat(selected.posted_at)],
                 ['Pelanggan', selected.customer_name],
+                ['Cabang', selected.cabang || '—'],
                 ['DPP', formatIDR(selected.dpp)],
                 ['PPN', formatIDR(selected.ppn)],
                 ['Nilai Gross', formatIDR(selected.gross_amount)],

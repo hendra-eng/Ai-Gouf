@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Upload, Download, Settings, CheckCircle, MoreHorizontal, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
-import { useClientsList } from '@/lib/clientsStore';
+import { useActiveClient } from '@/lib/activeClient';
 import KpiCard from '@/components/shared/KpiCard';
 import { downloadBlob } from '../../components/exportTemplates/exportExcelShared';
 import {
@@ -62,20 +62,12 @@ export default function SalesSourceData() {
   const { user } = useAuth();
   const clientId = user?.id ?? null;
 
-  // [BARU] Dropdown "Pilih Klien" -- WAJIB diisi sebelum upload, dipakai
-  // backend sebagai key pencocokan/pembuatan template pola kolom (lihat
-  // root/SALES_IMPORT_TEMPLATES.md). Daftar klien pakai sumber yang SAMA
-  // dengan halaman /clients (management_clients), BUKAN activeClientId
-  // dari dropdown "Switch Company" di Topbar -- keduanya sengaja dibiarkan
-  // independen (lihat catatan di salesStore.tsx soal client_id vs
-  // management_client_id).
-  const { clients: managementClients, loading: loadingClients } = useClientsList();
-  const [managementClientId, setManagementClientId] = useState<string>('');
-  useEffect(() => {
-    if (!managementClientId && managementClients.length > 0) {
-      setManagementClientId(managementClients[0].id);
-    }
-  }, [managementClients, managementClientId]);
+  // [FIX] Klien untuk upload diambil dari dropdown "Switch Company" di header
+  // (useActiveClient) -- TIDAK ada lagi dropdown klien terpisah di halaman ini.
+  // Sumber daftarnya tetap management_clients (sama dengan halaman /clients),
+  // dipakai backend sebagai key pencocokan/pembuatan template pola kolom
+  // (lihat root/SALES_IMPORT_TEMPLATES.md).
+  const { activeClientId: managementClientId } = useActiveClient();
 
   const { files: sourceFiles, loading, error, refresh } = useSalesSourceFiles(clientId);
   // [FIX] Menyimpan ID saja (bukan salinan objek BackendSalesSourceFile) --
@@ -158,7 +150,7 @@ export default function SalesSourceData() {
 
   const handleUploadClick = () => {
     if (!managementClientId) {
-      toast.error(t('Pilih klien dulu sebelum upload file.'));
+      toast.error(t('Select a company in the header before uploading a file.'));
       return;
     }
     fileInputRef.current?.click();
@@ -177,7 +169,7 @@ export default function SalesSourceData() {
       return;
     }
     if (!managementClientId) {
-      toast.error(t('Pilih klien dulu sebelum upload file.'));
+      toast.error(t('Select a company in the header before uploading a file.'));
       return;
     }
     setIsUploading(true);
@@ -215,20 +207,20 @@ export default function SalesSourceData() {
 
   const handleDownloadTemplate = async () => {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Template Penjualan');
+    const sheet = workbook.addWorksheet('Sales Template');
     sheet.columns = [
-      { header: 'Tanggal', key: 'tanggal', width: 14 },
-      { header: 'No. Invoice', key: 'invoice', width: 18 },
-      { header: 'Nama Customer', key: 'customer', width: 26 },
-      { header: 'DPP (IDR)', key: 'dpp', width: 16 },
-      { header: 'PPN (IDR)', key: 'ppn', width: 16 },
+      { header: 'Date', key: 'tanggal', width: 14 },
+      { header: 'Invoice No.', key: 'invoice', width: 18 },
+      { header: 'Customer Name', key: 'customer', width: 26 },
+      { header: 'Tax Base (IDR)', key: 'dpp', width: 16 },
+      { header: 'VAT (IDR)', key: 'ppn', width: 16 },
       { header: 'Total (IDR)', key: 'total', width: 16 },
     ];
     sheet.getRow(1).font = { bold: true };
-    sheet.addRow({ tanggal: '01/12/2024', invoice: 'INV-2024-001', customer: 'PT Contoh Sejahtera', dpp: 10000000, ppn: 1100000, total: 11100000 });
+    sheet.addRow({ tanggal: '01/12/2024', invoice: 'INV-2024-001', customer: 'PT Example Corp', dpp: 10000000, ppn: 1100000, total: 11100000 });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    downloadBlob(blob, 'Template_Data_Penjualan.xlsx');
+    downloadBlob(blob, 'Sales_Data_Template.xlsx');
     toast.success(t('Template Excel diunduh'));
   };
 
@@ -242,8 +234,8 @@ export default function SalesSourceData() {
       { header: 'Customer / Entity', key: 'customer', width: 24 },
       { header: 'Period', key: 'period', width: 14 },
       { header: 'Rows Detected', key: 'rows', width: 14 },
-      { header: 'Status Ekstraksi', key: 'statusEkstraksi', width: 16 },
-      { header: 'Status Mapping', key: 'statusMapping', width: 16 },
+      { header: 'Extraction Status', key: 'statusEkstraksi', width: 16 },
+      { header: 'Mapping Status', key: 'statusMapping', width: 16 },
       { header: 'Confidence', key: 'confidence', width: 12 },
       { header: 'Processed By', key: 'processedBy', width: 18 },
     ];
@@ -310,20 +302,6 @@ export default function SalesSourceData() {
 
       {/* Action Bar */}
       <div className="flex flex-wrap items-center gap-2 justify-end">
-        {/* [BARU] Dropdown "Pilih Klien" -- WAJIB sebelum upload, lihat
-            root/SALES_IMPORT_TEMPLATES.md. Ditaruh paling kiri supaya
-            jelas ini "konteks" upload, bukan aksi. */}
-        <select
-          value={managementClientId}
-          onChange={ev => setManagementClientId(ev.target.value)}
-          disabled={loadingClients || isUploading}
-          className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground mr-auto"
-        >
-          {managementClients.length === 0 && <option value="">{t('Belum ada klien')}</option>}
-          {managementClients.map(c => (
-            <option key={c.id} value={c.id}>{c.companyName}</option>
-          ))}
-        </select>
         <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className="btn-secondary text-xs py-1.5 gap-1.5">
           <Upload size={13} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
         </button>
@@ -451,7 +429,7 @@ export default function SalesSourceData() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border">
-                      {['No', 'Tanggal', 'No. Invoice', 'Nama Customer', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].map(h => (
+                      {['No', 'Tanggal', 'No. Invoice', 'Nama Customer', 'Cabang', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].map(h => (
                         <th key={h} className="text-left py-1.5 px-1.5 text-[10px] font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
                       ))}
                     </tr>
@@ -463,6 +441,7 @@ export default function SalesSourceData() {
                         <td className="py-1.5 px-1.5 whitespace-nowrap">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
                         <td className="py-1.5 px-1.5 whitespace-nowrap">{r.no_invoice || '-'}</td>
                         <td className="py-1.5 px-1.5 whitespace-nowrap">{r.nama_customer || '-'}</td>
+                        <td className="py-1.5 px-1.5 whitespace-nowrap">{r.cabang || '-'}</td>
                         <td className="py-1.5 px-1.5 text-right">{(r.dpp / 1000).toFixed(0)}</td>
                         <td className="py-1.5 px-1.5 text-right">{(r.ppn / 1000).toFixed(0)}</td>
                         <td className="py-1.5 px-1.5 text-right">{(r.total / 1000).toFixed(0)}</td>

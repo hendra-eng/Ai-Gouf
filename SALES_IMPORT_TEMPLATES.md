@@ -33,7 +33,9 @@ akun siapa yang kebetulan login dan mengklik upload. Karena itu:
   `client_code` di `management_clients` diedit belakangan).
 - Tabel `financial_transaction_sales_source_files` mendapat kolom baru
   **`management_client_id UUID NOT NULL -> management_clients(id)`** —
-  wajib diisi user lewat dropdown "Pilih Klien" saat upload. Ini terpisah
+  wajib diisi saat upload (diambil dari klien aktif di dropdown "Switch
+  Company" di header -- tidak ada dropdown klien terpisah di halaman Sales).
+  Ini terpisah
   dari `client_id` (management_users) yang sudah ada di tabel itu.
 
 Akibatnya, satu file upload sekarang punya 2 relasi klien yang beda makna:
@@ -93,8 +95,9 @@ supaya tidak menambah kolom yang belum tentu dipakai).
 ## 3. Alur end-to-end
 
 ```
-1. User buka tab Source Data → pilih Klien (dropdown management_clients,
-   WAJIB) → klik Upload File → pilih 1+ file (CSV/Excel; PDF tetap bisa
+1. User buka tab Source Data → pastikan klien yang benar sudah dipilih di
+   dropdown "Switch Company" di header (WAJIB, dipakai sebagai klien
+   upload) → klik Upload File → pilih 1+ file (CSV/Excel; PDF tetap bisa
    diupload tapi lihat batasan di §5).
 
 2. Untuk SETIAP file:
@@ -169,6 +172,7 @@ supaya tidak menambah kolom yang belum tentu dipakai).
 | `tanggal` | `tanggal` (DATE) | `invoice_date` |
 | `invoice` | `no_invoice` (VARCHAR) | `invoice_no` |
 | `customer` | `nama_customer` (VARCHAR) | `customer_name` |
+| `cabang` (opsional) | `cabang` (VARCHAR(100)) | `cabang` — CSV POS: kolom Outlet; Excel per-pelanggan: baris judul section (bold); SAU: substring nama file lewat `mapping_rules.cabang_dari_nama_file` (`Detail PENJ OL.csv` → `OL`). Migration: `add_cabang_to_sales_source_rows.py` |
 | `dpp` | `dpp` (NUMERIC) | `dpp` |
 | `ppn` | `ppn` (NUMERIC) | `ppn` |
 | `total` | `total` (NUMERIC) | `gross_amount` |
@@ -207,6 +211,34 @@ sudah ada di DDL.
   klien memang punya 2 sistem sumber data yang formatnya beda) — sistem
   TIDAK membatasi jumlah, tinggal signature-nya beda.
 
+## 6. Template `Multi` — 1 setting, beberapa format file
+
+Klien yang laporannya datang dari 2+ sistem/format (contoh NBM: export POS
+CSV + laporan Excel "Penjualan per Pelanggan") bisa dipegang **1 baris
+template** dengan `file_type = 'Multi'` dan
+`mapping_rules.format_type = 'multi_format'`. Isinya array `variants[]`;
+tiap varian punya `file_type`, `sheet_name`, `header_row_index`,
+`data_start_row_index`, `column_signature_hash`, `header_columns`, dan
+`mapping_rules` (resep parsing) sendiri. Backend
+(`sales_import_v1.py::_kandidat_template`) memecahnya jadi template virtual
+per varian, lalu memakai varian yang tipe file & hash header-nya cocok —
+`usage_count` dan `source_files.template_id` tetap menunjuk ke 1 baris itu.
+Nilai `header_row_index`/`column_signature_hash` di level baris Multi hanya
+pengisi kolom NOT NULL (hash-nya gabungan hash tiap varian, supaya unik).
+
+Jenis resep (`format_type`) yang dikenal parser:
+
+| `format_type` | Bentuk file | 1 baris `source_rows` = |
+|---|---|---|
+| `grouped_invoice_report` | Blok multi-baris per transaksi (POS/kasir cetak, contoh SAU) | 1 blok/invoice |
+| `flat_grouped_by_key` | Tabel flat, banyak baris berbagi 1 key (contoh NBM CSV POS, NPI Excel POS) — kolom dicari via nama header, nilai dijumlah per key. Opsi: `customer_kosong_jika` (nilai penanda seperti `"-"` dianggap kosong), `abaikan_baris_tanpa_key` (lewati baris ringkasan di bawah data) | 1 key (mis. Receipt Number / Bill Number) |
+| `sectioned_by_customer_header` | Laporan per pelanggan: baris judul section, baris line, baris total (contoh NBM Excel) — kolom via posisi | 1 no. invoice |
+| (tanpa `format_type`) | Flat 1 baris = 1 invoice | 1 baris |
+
+Resep dengan CSV yang nilainya bisa memuat delimiter (dibungkus tanda
+kutip) harus memakai `"quoted_fields": true` supaya dibaca `csv.reader`,
+bukan `split()`. Contoh lengkap: `backend/migrations/seed_template_nbm_multi_format.sql` (Multi) dan `seed_template_npi_sales_recapitulation_excel.sql` (1 format Excel).
+
 ## Langkah Implementasi (belum dikerjakan)
 
 1. Migration script (`backend/migrations/create_sales_import_templates.py`)
@@ -218,6 +250,7 @@ sudah ada di DDL.
 3. Endpoint backend: deteksi header, hitung signature, cari/buat template,
    panggil AI (reuse provider di `akuntansi_ai.py`), ekstraksi baris —
    kemungkinan modul baru `backend/modules/transactions/sales_import_v1.py`.
-4. Frontend: dropdown "Pilih Klien" (wajib) di action bar upload
-   `SalesSourceData.tsx`, ambil daftar dari `GET /api/v1/management/clients`
-   yang sudah ada.
+4. Frontend: `SalesSourceData.tsx` memakai klien aktif dari dropdown
+   "Switch Company" di header (`useActiveClient()`, daftar dari
+   `GET /api/v1/management/clients` yang sudah ada) -- tidak ada dropdown
+   klien tersendiri di action bar upload.

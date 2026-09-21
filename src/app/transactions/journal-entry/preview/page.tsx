@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
-import type { JEStatus } from '@/data/journalEntryData';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   DocumentTextIcon,
   CalendarIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiStatus } from '@/lib/journalEntryStore';
+
+type JEStatus = JeUiStatus;
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
@@ -33,12 +35,40 @@ const statusLabels: Record<JEStatus, string> = {
 };
 
 export default function JournalPreviewPage() {
-  const [selectedId, setSelectedId] = useState(journalEntries[0].id);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedId && journalEntries.length > 0) setSelectedId(journalEntries[0].id);
+  }, [journalEntries, selectedId]);
 
   const je = journalEntries.find(t => t.id === selectedId) || journalEntries[0];
-  const totalDebit = je.lines.reduce((s, l) => s + l.debit, 0);
-  const totalCredit = je.lines.reduce((s, l) => s + l.credit, 0);
+  const { lines: backendLines } = useJeDraftLines(je?.id);
+  const lines = useMemo(() => backendLines.map(mapJeDraftLineToUi), [backendLines]);
+  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+  if (loading) {
+    return (
+      <div className="space-y-6 fade-in">
+        <JournalEntryTabs activeTab="preview" />
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">Memuat journal entries…</div>
+      </div>
+    );
+  }
+
+  if (!je) {
+    return (
+      <div className="space-y-6 fade-in">
+        <JournalEntryTabs activeTab="preview" />
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">Belum ada journal entry untuk dipratinjau.</div>
+      </div>
+    );
+  }
 
   return (
       <div className="space-y-6 fade-in">
@@ -135,7 +165,7 @@ export default function JournalPreviewPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {je.lines.map(line => (
+                    {lines.map(line => (
                       <tr key={line.id} className="table-row-hover">
                         <td className="px-4 py-2.5 font-medium text-foreground whitespace-nowrap">{line.accountCode} · {line.accountName}</td>
                         <td className="px-4 py-2.5 text-foreground max-w-[240px] truncate">{line.description}</td>

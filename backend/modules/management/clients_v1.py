@@ -36,7 +36,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import db_client as dbc
 from ..auth import core as auth
@@ -86,6 +86,24 @@ def _require_level_v1(min_tahap: int):
 # SKEMA REQUEST
 # ============================================================
 
+# Batas ukuran logo (panjang string data URL). Frontend sudah mengecilkan gambar
+# ke maks 256px sebelum kirim, jadi normalnya jauh di bawah ini -- batas ini
+# cuma pagar pengaman supaya baris management_clients (yang ikut terkirim di
+# SETIAP list klien) tidak bisa membengkak.
+LOGO_MAX_LENGTH = 400_000
+LOGO_PREFIX_DIIZINKAN = ("data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,")
+
+
+def _validasi_logo(nilai: Optional[str]) -> Optional[str]:
+    """None/string kosong = hapus logo. Selain itu wajib data URL gambar
+    png/jpeg/webp (SVG sengaja ditolak: tidak bisa dipakai jsPDF & bisa
+    membawa script)."""
+    if nilai is None or nilai.strip() == "":
+        return None
+    if not nilai.startswith(LOGO_PREFIX_DIIZINKAN):
+        raise ValueError("Logo harus berupa gambar PNG, JPEG, atau WebP (data URL base64).")
+    return nilai
+
 class ManagementClientCreateRequest(BaseModel):
     client_code: Optional[str] = Field(None, max_length=50)
     nama_client: str = Field(..., min_length=1, max_length=255)
@@ -109,6 +127,9 @@ class ManagementClientCreateRequest(BaseModel):
     status: Optional[str] = Field(None, max_length=10)
     akuntan_penanggung_jawab: Optional[str] = None
     tanggal_mulai_kerjasama: Optional[datetime] = None
+    logo: Optional[str] = Field(None, max_length=LOGO_MAX_LENGTH)
+
+    _cek_logo = field_validator("logo")(_validasi_logo)
 
 
 class ManagementClientUpdateRequest(BaseModel):
@@ -136,6 +157,10 @@ class ManagementClientUpdateRequest(BaseModel):
     status: Optional[str] = Field(None, max_length=10)
     akuntan_penanggung_jawab: Optional[str] = None
     tanggal_mulai_kerjasama: Optional[datetime] = None
+    # Kirim null/"" untuk MENGHAPUS logo; tidak dikirim = tidak diubah.
+    logo: Optional[str] = Field(None, max_length=LOGO_MAX_LENGTH)
+
+    _cek_logo = field_validator("logo")(_validasi_logo)
 
 
 # ============================================================
