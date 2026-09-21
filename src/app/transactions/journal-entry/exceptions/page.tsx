@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -10,17 +9,19 @@ import {
   ExclamationCircleIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry } from '@/lib/journalEntryStore';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
 interface FlaggedEntry {
-  entry: typeof journalEntries[0];
+  entry: JeUiEntry;
   reasons: string[];
 }
 
 // Real, derivable exception detection — no fabricated severity/assignee fields.
-function detectExceptions(): FlaggedEntry[] {
+function detectExceptions(journalEntries: JeUiEntry[]): FlaggedEntry[] {
   const flagged: FlaggedEntry[] = [];
   journalEntries.forEach(je => {
     const reasons: string[] = [];
@@ -34,11 +35,18 @@ function detectExceptions(): FlaggedEntry[] {
 }
 
 export default function JournalEntryExceptionsPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
+
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('All');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { lines: expandedBackendLines } = useJeDraftLines(expandedId);
+  const expandedLines = useMemo(() => expandedBackendLines.map(mapJeDraftLineToUi), [expandedBackendLines]);
 
-  const flaggedEntries = useMemo(() => detectExceptions(), []);
+  const flaggedEntries = useMemo(() => detectExceptions(journalEntries), [journalEntries]);
   const sourceTypes = ['All', ...Array.from(new Set(flaggedEntries.map(f => f.entry.sourceType)))];
 
   const filtered = useMemo(() => {
@@ -101,7 +109,9 @@ export default function JournalEntryExceptionsPage() {
 
         {/* Exception Cards */}
         <div className="space-y-3">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="je-card p-12 text-center text-sm text-muted-foreground">Memuat journal entries…</div>
+          ) : filtered.length === 0 ? (
             <div className="je-card p-12 text-center">
               <CheckCircleIcon className="w-10 h-10 text-green-400 mx-auto mb-3" />
               <p className="text-sm font-medium text-foreground">No exceptions match your filters</p>
@@ -155,7 +165,7 @@ export default function JournalEntryExceptionsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {entry.lines.map(line => (
+                        {expandedLines.map(line => (
                           <tr key={line.id}>
                             <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
                             <td className="px-3 py-2 text-foreground">{line.description}</td>

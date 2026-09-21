@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -11,12 +10,11 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi } from '@/lib/journalEntryStore';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
-
-// Only posted journal entries
-const postedEntries = journalEntries.filter(t => t.status === 'posted');
 
 const sourceColors: Record<string, string> = {
   Sales: 'bg-emerald-100 text-emerald-700',
@@ -32,12 +30,19 @@ const sourceColors: Record<string, string> = {
 };
 
 export default function JournalEntryPostedPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendPosted, loading } = useJeDrafts(clientId, 'posted');
+  const postedEntries = useMemo(() => backendPosted.map(mapJeDraftToUi), [backendPosted]);
+
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState('All');
   const [sortField, setSortField] = useState('postingDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { lines: expandedBackendLines } = useJeDraftLines(expandedId);
+  const expandedLines = useMemo(() => expandedBackendLines.map(mapJeDraftLineToUi), [expandedBackendLines]);
 
   const periods = ['All', ...Array.from(new Set(postedEntries.map(t => t.period)))];
   const sourceTypes = ['All', ...Array.from(new Set(postedEntries.map(t => t.sourceType)))];
@@ -59,7 +64,7 @@ export default function JournalEntryPostedPage() {
       return 0;
     });
     return data;
-  }, [search, periodFilter, sourceFilter, sortField, sortDir]);
+  }, [postedEntries, search, periodFilter, sourceFilter, sortField, sortDir]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -71,7 +76,7 @@ export default function JournalEntryPostedPage() {
     totalDebit: postedEntries.reduce((s, t) => s + t.totalDebit, 0),
     totalCredit: postedEntries.reduce((s, t) => s + t.totalCredit, 0),
     periods: [...new Set(postedEntries.map(t => t.period))].length,
-  }), []);
+  }), [postedEntries]);
 
   return (
       <div className="space-y-6 fade-in">
@@ -152,7 +157,9 @@ export default function JournalEntryPostedPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Memuat posted journal entries…</td></tr>
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No posted journal entries match your filters.</td></tr>
                 ) : filtered.map(row => (
                   <React.Fragment key={row.id}>
@@ -209,7 +216,7 @@ export default function JournalEntryPostedPage() {
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
-                                  {row.lines.map(line => (
+                                  {expandedLines.map(line => (
                                     <tr key={line.id}>
                                       <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
                                       <td className="px-3 py-2 text-foreground">{line.description}</td>

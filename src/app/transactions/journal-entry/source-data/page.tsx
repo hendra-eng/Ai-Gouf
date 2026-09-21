@@ -3,6 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeSourceRecords, useJeDrafts, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type SyncStatus = 'Synced' | 'Pending Sync' | 'Sync Failed' | 'Manual';
@@ -25,23 +27,30 @@ interface SourceRecord {
   vendor?: string;
 }
 
-const sourceData: SourceRecord[] = [
-  { id: 'src-001', sourceId: 'INV-2026-1847', sourceType: 'Sales', sourceDate: '2026-09-14', description: 'Customer Invoice — Meridian Corp Q3 Services', amount: 125000.00, currency: 'USD', relatedAccount: 'Accounts Receivable', accountCode: '1200', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0042', createdDate: '2026-09-14', syncStatus: 'Synced', mappingStatus: 'Mapped', vendor: 'Meridian Corp' },
-  { id: 'src-002', sourceId: 'PO-2026-0934', sourceType: 'Purchase', sourceDate: '2026-09-13', description: 'Vendor Purchase Order — Apex Supplies Ltd', amount: 48750.00, currency: 'USD', relatedAccount: 'Accounts Payable', accountCode: '2100', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0041', createdDate: '2026-09-13', syncStatus: 'Synced', mappingStatus: 'Mapped', vendor: 'Apex Supplies Ltd' },
-  { id: 'src-003', sourceId: 'PR-2026-09-W2', sourceType: 'Payroll', sourceDate: '2026-09-12', description: 'Payroll Run — Sep 2026 Week 2', amount: 287400.00, currency: 'USD', relatedAccount: 'Salaries & Wages Expense', accountCode: '6100', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0040', createdDate: '2026-09-12', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-  { id: 'src-004', sourceId: 'BT-2026-0188', sourceType: 'Bank', sourceDate: '2026-09-11', description: 'Bank Transfer — Operating to Reserve Account', amount: 75000.00, currency: 'USD', relatedAccount: 'Cash — Reserve Account', accountCode: '1101', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0039', createdDate: '2026-09-11', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-  { id: 'src-005', sourceId: 'DEP-2026-09', sourceType: 'Fixed Assets', sourceDate: '2026-09-10', description: 'Fixed Asset Depreciation Schedule — Sep 2026', amount: 12350.00, currency: 'USD', relatedAccount: 'Depreciation Expense', accountCode: '6500', sourceStatus: 'Validation Error', jeReference: 'JE-2026-09-0038', createdDate: '2026-09-10', syncStatus: 'Sync Failed', mappingStatus: 'Validation Error' },
-  { id: 'src-006', sourceId: 'EXP-2026-0417', sourceType: 'Expense', sourceDate: '2026-09-10', description: 'Expense Reimbursement — Sales Team Q3 Travel', amount: 8920.00, currency: 'USD', relatedAccount: 'Travel & Entertainment', accountCode: '6300', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0037', createdDate: '2026-09-10', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-  { id: 'src-007', sourceId: 'INV-ADJ-2026-031', sourceType: 'Inventory', sourceDate: '2026-09-09', description: 'Inventory Physical Count Adjustment — Sep 2026', amount: 5640.00, currency: 'USD', relatedAccount: 'Inventory', accountCode: '1400', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0036', createdDate: '2026-09-09', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-  { id: 'src-008', sourceId: 'ACR-2026-09-003', sourceType: 'Manual', sourceDate: '2026-09-08', description: 'Accrued Expenses — Utilities & Rent Sep 2026', amount: 34200.00, currency: 'USD', relatedAccount: 'Accrued Liabilities', accountCode: '2200', sourceStatus: 'Pending Mapping', jeReference: 'JE-2026-09-0035', createdDate: '2026-09-08', syncStatus: 'Manual', mappingStatus: 'Pending Mapping' },
-  { id: 'src-009', sourceId: 'TAX-Q3-2026', sourceType: 'Tax', sourceDate: '2026-09-07', description: 'Q3 2026 Income Tax Provision Calculation', amount: 62500.00, currency: 'USD', relatedAccount: 'Income Tax Payable', accountCode: '2400', sourceStatus: 'Pending Mapping', jeReference: 'JE-2026-09-0034', createdDate: '2026-09-07', syncStatus: 'Manual', mappingStatus: 'Pending Mapping' },
-  { id: 'src-010', sourceId: 'CR-2026-0892', sourceType: 'Cash', sourceDate: '2026-09-06', description: 'Cash Receipt — Hartley Industries Invoice Settlement', amount: 98400.00, currency: 'USD', relatedAccount: 'Cash — Operating Account', accountCode: '1100', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0033', createdDate: '2026-09-06', syncStatus: 'Synced', mappingStatus: 'Mapped', vendor: 'Hartley Industries' },
-  { id: 'src-011', sourceId: 'AMR-2026-09-001', sourceType: 'Manual', sourceDate: '2026-09-05', description: 'Prepaid Insurance Amortization — Sep 2026', amount: 4166.67, currency: 'USD', relatedAccount: 'Prepaid Insurance', accountCode: '1500', sourceStatus: 'Pending Mapping', jeReference: 'JE-2026-09-0032', createdDate: '2026-09-05', syncStatus: 'Manual', mappingStatus: 'Pending Mapping' },
-  { id: 'src-012', sourceId: 'REV-2026-0291', sourceType: 'Sales', sourceDate: '2026-09-04', description: 'Deferred Revenue Release — Sep 2026 Recognition', amount: 22000.00, currency: 'USD', relatedAccount: 'Deferred Revenue', accountCode: '2600', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0031', createdDate: '2026-09-04', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-  { id: 'src-013', sourceId: 'INV-2026-1831', sourceType: 'Sales', sourceDate: '2026-09-03', description: 'Customer Invoice — Brightfield Tech Ltd', amount: 67800.00, currency: 'USD', relatedAccount: 'Accounts Receivable', accountCode: '1200', sourceStatus: 'Imported', jeReference: null, createdDate: '2026-09-03', syncStatus: 'Pending Sync', mappingStatus: 'Imported', vendor: 'Brightfield Tech Ltd' },
-  { id: 'src-014', sourceId: 'PO-2026-0921', sourceType: 'Purchase', sourceDate: '2026-09-02', description: 'Vendor Purchase — Nexus IT Solutions', amount: 31500.00, currency: 'USD', relatedAccount: 'Accounts Payable', accountCode: '2100', sourceStatus: 'Imported', jeReference: null, createdDate: '2026-09-02', syncStatus: 'Pending Sync', mappingStatus: 'Imported', vendor: 'Nexus IT Solutions' },
-  { id: 'src-015', sourceId: 'PR-2026-09-W1', sourceType: 'Payroll', sourceDate: '2026-09-01', description: 'Payroll Run — Sep 2026 Week 1', amount: 291200.00, currency: 'USD', relatedAccount: 'Salaries & Wages Expense', accountCode: '6100', sourceStatus: 'Mapped', jeReference: 'JE-2026-09-0028', createdDate: '2026-09-01', syncStatus: 'Synced', mappingStatus: 'Mapped' },
-];
+/** jeReference TIDAK disimpan sebagai kolom di source_records (hindari FK
+ *  balik/data yang bisa tidak sinkron) -- di-derive dengan mencari draft
+ *  yang source_record_id-nya menunjuk ke baris ini, pola sama dengan
+ *  last_used_at di financial_transaction_sales_import_templates. */
+function petakanDariBackend(r: BackendJeSourceRecord, draftByLastUpdated: Map<string, BackendJeDraft>): SourceRecord {
+  const draft = draftByLastUpdated.get(r.id);
+  return {
+    id: r.id,
+    sourceId: r.source_code,
+    sourceType: r.source_type,
+    sourceDate: r.source_date || '',
+    description: r.description || '',
+    amount: r.amount,
+    currency: r.currency,
+    relatedAccount: r.related_account_name || '-',
+    accountCode: r.related_account_code || '-',
+    sourceStatus: (r.mapping_status as SourceStatus) || 'Imported',
+    jeReference: draft ? draft.je_number : null,
+    createdDate: (r.created_at || '').slice(0, 10),
+    syncStatus: (r.sync_status as SyncStatus) || 'Manual',
+    mappingStatus: (r.mapping_status as SourceStatus) || 'Imported',
+    vendor: r.party_name || undefined,
+  };
+}
 
 const sourceTypeColors: Record<string, string> = {
   Sales: 'bg-emerald-100 text-emerald-700',
@@ -86,6 +95,22 @@ function SyncStatusBadge({ status }: { status: SyncStatus }) {
 }
 
 export default function SourceDataPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { records: backendRecords, loading } = useJeSourceRecords(clientId);
+  const { drafts } = useJeDrafts(clientId);
+
+  const draftBySourceRecordId = useMemo(() => {
+    const map = new Map<string, BackendJeDraft>();
+    drafts.forEach(d => { if (d.source_record_id) map.set(d.source_record_id, d); });
+    return map;
+  }, [drafts]);
+
+  const sourceData = useMemo(
+    () => backendRecords.map(r => petakanDariBackend(r, draftBySourceRecordId)),
+    [backendRecords, draftBySourceRecordId],
+  );
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -109,7 +134,7 @@ export default function SourceDataPage() {
       return 0;
     });
     return data;
-  }, [search, typeFilter, statusFilter, sortField, sortDir]);
+  }, [sourceData, search, typeFilter, statusFilter, sortField, sortDir]);
 
   const handleSort = (field: keyof SourceRecord) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -122,7 +147,7 @@ export default function SourceDataPage() {
     pending: sourceData.filter(r => r.sourceStatus === 'Pending Mapping' || r.sourceStatus === 'Imported').length,
     errors: sourceData.filter(r => r.sourceStatus === 'Validation Error').length,
     totalAmount: sourceData.reduce((s, r) => s + r.amount, 0),
-  }), []);
+  }), [sourceData]);
 
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
@@ -134,7 +159,7 @@ export default function SourceDataPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Total Sources', value: summaryStats.total, sub: 'All source records', color: 'text-slate-700', bg: 'bg-slate-50' },
-            { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${Math.round(summaryStats.mapped / summaryStats.total * 100)}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
+            { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${summaryStats.total > 0 ? Math.round(summaryStats.mapped / summaryStats.total * 100) : 0}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
             { label: 'Pending / Imported', value: summaryStats.pending, sub: 'Awaiting mapping', color: 'text-amber-700', bg: 'bg-amber-50' },
             { label: 'Validation Errors', value: summaryStats.errors, sub: 'Require attention', color: 'text-red-700', bg: 'bg-red-50' },
           ].map(card => (
@@ -196,7 +221,9 @@ export default function SourceDataPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Memuat source records…</td></tr>
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
                 ) : filtered.map(row => (
                   <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>

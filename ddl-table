@@ -75,6 +75,7 @@ CREATE TABLE management_clients (
     status                      VARCHAR(10),
     akuntan_penanggung_jawab    UUID,
     tanggal_mulai_kerjasama     TIMESTAMP,
+    logo                        TEXT,                                   -- logo perusahaan (data URL gambar base64, maks ~400KB) untuk kop dokumen cetak
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                  UUID,
     edited_at                   TIMESTAMPTZ,
@@ -102,7 +103,7 @@ CREATE TABLE financial_transaction_sales_import_templates (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id               UUID NOT NULL REFERENCES management_clients(id),
     client_code             VARCHAR(50) NOT NULL,                  -- salinan management_clients.client_code saat dibuat -- key pencarian tambahan
-    file_type               VARCHAR(20) NOT NULL,                  -- Excel/CSV/PDF/TXT -- pola kolom beda per format, jadi bagian dari key pencocokan
+    file_type               VARCHAR(20) NOT NULL,                  -- Excel/CSV/PDF/TXT -- pola kolom beda per format, jadi bagian dari key pencocokan. 'Multi' = 1 setting untuk beberapa format file sekaligus: mapping_rules.variants[] berisi file_type/sheet_name/header_row_index/data_start_row_index/column_signature_hash/header_columns/mapping_rules per varian (contoh: backend/migrations/seed_template_nbm_multi_format.sql)
     sheet_name              VARCHAR(255),                          -- khusus Excel: nama sheet tempat tabel data ditemukan (NULL utk CSV/TXT)
     header_row_index        INTEGER NOT NULL DEFAULT 1,            -- baris ke berapa (1-based) berisi header kolom -- sebagian laporan punya baris judul/logo di atas header asli
     data_start_row_index    INTEGER NOT NULL DEFAULT 2,            -- baris ke berapa data mulai (biasanya header_row_index + 1)
@@ -236,6 +237,7 @@ CREATE TABLE financial_transaction_sales_source_rows (
     tanggal                 DATE,
     no_invoice              VARCHAR(100),
     nama_customer           VARCHAR(255),
+    cabang                  VARCHAR(100),                           -- [BARU] cabang/outlet hasil ekstraksi (kolom Outlet di CSV POS, judul section bold di Excel per-pelanggan) -- NULL kalau file sumber tak punya info cabang; dibawa ke financial_transaction_sales_invoices.cabang saat 'Buat Invoice'
     dpp                     NUMERIC(24,2) NOT NULL DEFAULT 0,
     ppn                     NUMERIC(24,2) NOT NULL DEFAULT 0,
     total                   NUMERIC(24,2) NOT NULL DEFAULT 0,
@@ -268,6 +270,7 @@ CREATE TABLE financial_transaction_sales_invoices (
     project_name            VARCHAR(255),                           -- mis. "PJT-002 - Implementasi ERP"
     sales_person            VARCHAR(255),
     term_of_payment         VARCHAR(50),                            -- mis. "Net 14"
+    cabang                  VARCHAR(100),                           -- cabang tempat transaksi terjadi, mis. "Jakarta" (NULL = belum ditentukan)
     dpp                     NUMERIC(24,2) NOT NULL DEFAULT 0,
     ppn                     NUMERIC(24,2) NOT NULL DEFAULT 0,
     pph                     NUMERIC(24,2) NOT NULL DEFAULT 0,
@@ -293,6 +296,7 @@ CREATE TABLE financial_transaction_sales_invoices (
 
 CREATE INDEX idx_sales_invoices_client_status ON financial_transaction_sales_invoices(client_id, posting_status);
 CREATE INDEX idx_sales_invoices_client_date ON financial_transaction_sales_invoices(client_id, invoice_date);
+CREATE INDEX idx_sales_invoices_client_cabang ON financial_transaction_sales_invoices(client_id, cabang);
 
 -- 4) Pemetaan akun (Piutang/Pendapatan/PPN/PPh) per invoice -- isi tab
 --    "Accounting Classification" di Journal Preview, disimpan 1:1 per
@@ -367,3 +371,170 @@ CREATE TABLE financial_transaction_sales_activity_log (
 );
 
 CREATE INDEX idx_sales_activity_log_invoice ON financial_transaction_sales_activity_log(invoice_id);
+
+-- ============================================================
+-- FITUR TRANSACTIONS > JOURNAL ENTRY (frontend: src/app/transactions/journal-entry/*)
+-- ============================================================
+-- 4 tabel di bawah menampung data yang sekarang masih mock/local state di
+-- 6 tab halaman Journal Entry (Overview, Source Data, JE Transaction,
+-- Journal Preview, Exceptions, Posted) -- struktur tabnya PERSIS sama
+-- dengan fitur Sales di atas (lihat JournalEntryTabs.tsx), tapi entitas
+-- intinya beda: satu Journal Entry ITU SENDIRI sudah multi-baris
+-- debit/kredit (bukan satu angka seperti invoice Sales), jadi butuh 1
+-- tabel header + 1 tabel child baris, bukan cuma 1 tabel invoice datar.
+--
+-- Sumber kebenaran field: src/data/journalEntryData.ts (dipakai bersama
+-- oleh tab Overview/JE Transaction/Journal Preview/Exceptions/Posted lewat
+-- export `journalEntries` / `JournalLine` / `JEStatus`) -- BUKAN dataset
+-- lokal di src/app/transactions/components/tabs/journal-entry/components/
+-- JournalEntryTable.tsx (implementasi lama/paralel yang dipasang di tab
+-- gabungan "Transactions", sudah digantikan pola route
+-- src/app/transactions/journal-entry/* sesuai komentar "[DIUBAH]" di
+-- JournalEntryTabContent.tsx). Dataset lama itu memecah status jadi 3
+-- kolom terpisah (postingStatus/reviewStatus/balanceStatus) + field
+-- `difference` -- semuanya BISA DIHITUNG dari `status` tunggal + SUM(lines)
+-- di skema baru ini, jadi sengaja tidak diduplikasi jadi kolom.
+--
+-- client_id memakai UUID -> management_users(id_user), pola sama seperti
+-- 6 tabel Sales di atas (akun client_lv_1..9 di RBAC.md).
+--
+-- Tab "Source Data" di fitur ini BUKAN upload file (beda dari Sales) --
+-- isinya registri transaksi dari modul LAIN (Sales/Purchase/Payroll/Bank/
+-- Cash/Expense/Inventory/Fixed Assets/Tax/Manual) yang berpotensi/sudah
+-- dijadikan Journal Entry, makanya tabelnya bernama *_source_records
+-- (bukan *_source_files + *_source_rows seperti Sales).
+--
+-- Tab "Exceptions" SENGAJA TIDAK punya tabel tersendiri -- lihat komentar
+-- asli di exceptions/page.tsx: "Real, derivable exception detection -- no
+-- fabricated severity/assignee fields." Exception adalah HASIL QUERY dari
+-- financial_transaction_journal_entry_drafts (status='exception' ATAU
+-- status='rejected' ATAU total_debit<>total_credit), bukan tabel antrean
+-- review terpisah seperti financial_transaction_sales_exceptions. Ikuti
+-- prinsip yang sama kalau nanti fitur ini butuh field severity/assignee
+-- sungguhan -- BARU tambah tabel, jangan fabrikasi lebih dulu.
+--
+-- Chart/aggregate di tab Overview (trendData, statusDistribution,
+-- exceptionBreakdown, sourceDistribution di journalEntryData.ts) semuanya
+-- juga derivable (GROUP BY status/source_type/tanggal terhadap tabel
+-- drafts+lines di bawah), tidak perlu tabel snapshot terpisah.
+--
+-- Baris jurnal debit/kredit RESMI (setelah diposting) tetap di
+-- `journal_entries` + `journal_lines` (Accounting Core V2) -- tabel di
+-- bawah cuma DRAFT sebelum diposting, `journal_entry_id` diisi sebagai
+-- pointer begitu draft ini benar-benar diposting (pola sama dengan
+-- financial_transaction_sales_invoices.journal_entry_id).
+
+-- 1) Registri transaksi sumber dari modul lain yang berpotensi/sudah
+--    dijadikan Journal Entry (tab "Source Data" -- lihat interface
+--    SourceRecord di source-data/page.tsx).
+CREATE TABLE financial_transaction_journal_entry_source_records (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    source_code             VARCHAR(100) NOT NULL,                 -- mis. "INV-2026-1847", "PO-2026-0934" (kolom "Source ID" di UI)
+    source_type             VARCHAR(20) NOT NULL,                  -- Sales/Purchase/Payroll/Bank/Cash/Expense/Inventory/Fixed Assets/Tax/Manual
+    source_date             DATE,
+    description             TEXT,
+    amount                  NUMERIC(24,2) NOT NULL DEFAULT 0,
+    currency                VARCHAR(10) NOT NULL DEFAULT 'USD',
+    related_account_code    VARCHAR(50),
+    related_account_name    VARCHAR(200),
+    party_name              VARCHAR(255),                          -- label UI "Vendor / Party" (field `vendor` di kode) -- dipakai utk vendor maupun customer, NULL kalau source tidak melibatkan pihak ketiga (mis. Payroll, Bank)
+    mapping_status           VARCHAR(20) NOT NULL DEFAULT 'Imported', -- Mapped/Pending Mapping/Validation Error/Imported -- [FIX] frontend punya 2 prop (sourceStatus & mappingStatus) yg NILAINYA SELALU SAMA di semua mock data, jadi cukup 1 kolom
+    sync_status               VARCHAR(20) NOT NULL DEFAULT 'Manual',  -- Synced/Pending Sync/Sync Failed/Manual
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_je_source_records_client_code UNIQUE (client_id, source_code)
+);
+
+CREATE INDEX idx_je_source_records_client_status ON financial_transaction_journal_entry_source_records(client_id, mapping_status);
+
+-- 2) Entitas inti: header Journal Entry (draft sampai benar-benar
+--    diposting ke journal_entries). Dipakai bersama oleh tab JE
+--    Transaction, Journal Preview, Exceptions (via query), dan Posted.
+CREATE TABLE financial_transaction_journal_entry_drafts (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    je_number               VARCHAR(100) NOT NULL,                 -- mis. "JE-2026-09-0042"
+    entry_date              DATE NOT NULL,
+    posting_date            DATE,                                  -- NULL sampai benar-benar diposting
+    period_label            VARCHAR(50) NOT NULL,                  -- mis. "Sep 2026" (gaya sama dgn period_label di financial_transaction_sales_source_files)
+    description             TEXT,
+    source_type             VARCHAR(20) NOT NULL DEFAULT 'Manual', -- Sales/Purchase/Payroll/Bank/Cash/Expense/Inventory/Fixed Assets/Tax/Manual
+    source_reference        VARCHAR(100),                          -- salinan (denormalized) source_code -- tetap dipertahankan meski source_record_id diedit/dihapus
+    source_record_id        UUID REFERENCES financial_transaction_journal_entry_source_records(id), -- NULL kalau dibuat manual (bukan hasil mapping dari tab Source Data)
+    total_debit              NUMERIC(24,2) NOT NULL DEFAULT 0,      -- didenormalisasi dari SUM(lines.debit) utk listing cepat tanpa join
+    total_credit              NUMERIC(24,2) NOT NULL DEFAULT 0,
+    currency                  VARCHAR(10) NOT NULL DEFAULT 'USD',
+    status                    VARCHAR(20) NOT NULL DEFAULT 'draft', -- draft/pending/approved/posted/rejected/exception (JEStatus)
+    created_by_name            VARCHAR(255),                         -- nama pembuat tampilan (mis. "Sarah Chen", atau "System" utk auto-generated) -- BEDA dari created_by (UUID audit teknis) di bawah
+    reviewed_by_name           VARCHAR(255),
+    approved_by_name           VARCHAR(255),
+    notes                       TEXT,
+    journal_entry_id            INTEGER REFERENCES journal_entries(id), -- diisi begitu draft ini disinkronkan ke jurnal native (Accounting Core V2)
+    posted_at                   TIMESTAMPTZ,
+    posted_by                   UUID REFERENCES management_users(id_user),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_je_drafts_client_number UNIQUE (client_id, je_number)
+);
+
+CREATE INDEX idx_je_drafts_client_status ON financial_transaction_journal_entry_drafts(client_id, status);
+CREATE INDEX idx_je_drafts_client_date ON financial_transaction_journal_entry_drafts(client_id, entry_date);
+CREATE INDEX idx_je_drafts_source_record ON financial_transaction_journal_entry_drafts(source_record_id);
+
+-- 3) Baris debit/kredit per draft (tab Journal Preview & detail panel --
+--    lihat interface JournalLine di journalEntryData.ts). Begitu draft
+--    diposting, baris ini DICERMINKAN jadi journal_lines resmi (Accounting
+--    Core V2), bukan dipindah/dihapus -- draft tetap tersimpan sbg riwayat.
+CREATE TABLE financial_transaction_journal_entry_draft_lines (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id                 UUID NOT NULL REFERENCES financial_transaction_journal_entry_drafts(id) ON DELETE CASCADE,
+    client_id                 UUID REFERENCES management_users(id_user),
+    line_no                   INTEGER NOT NULL,
+    account_code               VARCHAR(50) NOT NULL,
+    account_name               VARCHAR(200),
+    description                 TEXT,
+    debit                       NUMERIC(24,2) NOT NULL DEFAULT 0,
+    credit                      NUMERIC(24,2) NOT NULL DEFAULT 0,
+    cost_center                 VARCHAR(100),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_je_draft_lines_draft_no UNIQUE (draft_id, line_no)
+);
+
+CREATE INDEX idx_je_draft_lines_draft ON financial_transaction_journal_entry_draft_lines(draft_id);
+CREATE INDEX idx_je_draft_lines_client_account ON financial_transaction_journal_entry_draft_lines(client_id, account_code);
+
+-- 4) Jejak aktivitas khusus modul Journal Entry (tab Overview -> "Recent
+--    Activity" -- lihat recentActivity di journalEntryData.ts). Sama
+--    perannya dgn financial_transaction_sales_activity_log.
+CREATE TABLE financial_transaction_journal_entry_activity_log (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id                 UUID REFERENCES management_users(id_user),
+    draft_id                  UUID REFERENCES financial_transaction_journal_entry_drafts(id),
+    je_number                  VARCHAR(100),                          -- salinan (denormalized) je_number saat kejadian dicatat -- tetap ada meski draft-nya kelak dihapus
+    event_type                  VARCHAR(50) NOT NULL,                  -- mis. "Created"/"Approved"/"Posted"/"Exception Flagged"/"Saved Draft"/"Submitted for Review"
+    description                  TEXT NOT NULL,
+    status_snapshot              VARCHAR(20),                           -- JEStatus draft ini pada saat event terjadi
+    performed_by                 VARCHAR(255) NOT NULL,                 -- nama user, atau 'System' utk proses otomatis
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+CREATE INDEX idx_je_activity_log_draft ON financial_transaction_journal_entry_activity_log(draft_id);

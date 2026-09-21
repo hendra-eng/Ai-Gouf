@@ -17,7 +17,11 @@ dengan modules/auth/ dan modules/management/ (lihat modules/auth/v1.py):
     modules/transactions/sales_import_v1.py -- upload file + ekstraksi
     otomatis pakai Sales Import Template (lihat root/
     SALES_IMPORT_TEMPLATES.md).
+    modules/transactions/journal_entry_v1.py -- CRUD 4 tabel
+    financial_transaction_journal_entry_* (fitur Transactions > Journal
+    Entry).
 """
 
 from . import sales_v1  # noqa: F401
 from . import sales_import_v1  # noqa: F401
+from . import journal_entry_v1  # noqa: F401

@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 import KpiCard from '@/components/shared/KpiCard';
 import {
   useSalesInvoices, createSalesInvoice, updateSalesInvoice, deleteSalesInvoice,
-  createSalesActivityLog, type BackendSalesInvoice,
+  createSalesActivityLog, formatTanggalSingkat, type BackendSalesInvoice,
 } from '@/lib/salesStore';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
@@ -28,6 +28,7 @@ interface TrxItem {
   date: string; // tampilan "02 Jan 2024"
   dateISO: string;
   customer: string;
+  cabang: string;
   desc: string;
   dpp: number;
   ppn: number;
@@ -51,6 +52,7 @@ function petakanDariBackend(inv: BackendSalesInvoice): TrxItem {
     date: formatTanggal(inv.invoice_date),
     dateISO: inv.invoice_date,
     customer: inv.customer_name,
+    cabang: inv.cabang || '-',
     desc: inv.description || '',
     dpp: inv.dpp,
     ppn: inv.ppn,
@@ -71,7 +73,7 @@ function petakanDariBackend(inv: BackendSalesInvoice): TrxItem {
 function formatTanggal(iso: string): string {
   try {
     const d = new Date(iso + 'T00:00:00');
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
   } catch {
     return '-';
@@ -93,6 +95,7 @@ const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 
 const emptyForm = {
   date: new Date().toISOString().slice(0, 10),
   customer: '',
+  cabang: '',
   desc: '',
   dpp: '',
   type: TRANSACTION_TYPES[0],
@@ -110,6 +113,7 @@ export default function SalesTransaction() {
   // Filters
   const [search, setSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
   const [taxStatusFilter, setTaxStatusFilter] = useState('all');
   const [postingStatusFilter, setPostingStatusFilter] = useState('all');
   const [projectFilter, setProjectFilter] = useState('all');
@@ -118,6 +122,7 @@ export default function SalesTransaction() {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const CUSTOMERS = useMemo(() => Array.from(new Set(transactions.map(r => r.customer))), [transactions]);
+  const BRANCHES = useMemo(() => Array.from(new Set(transactions.map(r => r.cabang).filter(b => b !== '-'))).sort(), [transactions]);
   const PROJECTS = useMemo(() => Array.from(new Set(transactions.map(r => r.project).filter(p => p !== '-'))), [transactions]);
   const TAX_STATUSES = useMemo(() => Array.from(new Set(transactions.map(r => r.taxStatus))), [transactions]);
 
@@ -129,7 +134,7 @@ export default function SalesTransaction() {
 
   // Edit drawer
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ customer: '', desc: '', dpp: 0, project: '', dueDate: '' });
+  const [editForm, setEditForm] = useState({ customer: '', cabang: '', desc: '', dpp: 0, project: '', dueDate: '' });
   const [saving, setSaving] = useState(false);
 
   // Add transaction modal
@@ -151,6 +156,7 @@ export default function SalesTransaction() {
     return transactions.filter(r => {
       if (q && !(r.id.toLowerCase().includes(q) || r.customer.toLowerCase().includes(q) || r.desc.toLowerCase().includes(q))) return false;
       if (customerFilter !== 'all' && r.customer !== customerFilter) return false;
+      if (branchFilter !== 'all' && r.cabang !== branchFilter) return false;
       if (taxStatusFilter !== 'all' && r.taxStatus !== taxStatusFilter) return false;
       if (postingStatusFilter !== 'all' && r.status !== postingStatusFilter) return false;
       if (projectFilter !== 'all' && r.project !== projectFilter) return false;
@@ -159,7 +165,7 @@ export default function SalesTransaction() {
       if (end && d && d > end) return false;
       return true;
     });
-  }, [transactions, search, customerFilter, taxStatusFilter, postingStatusFilter, projectFilter, dateStart, dateEnd]);
+  }, [transactions, search, customerFilter, branchFilter, taxStatusFilter, postingStatusFilter, projectFilter, dateStart, dateEnd]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
@@ -169,7 +175,7 @@ export default function SalesTransaction() {
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const resetFilters = () => {
-    setSearch(''); setCustomerFilter('all'); setTaxStatusFilter('all'); setPostingStatusFilter('all');
+    setSearch(''); setCustomerFilter('all'); setBranchFilter('all'); setTaxStatusFilter('all'); setPostingStatusFilter('all');
     setProjectFilter('all'); setDateStart(''); setDateEnd('');
     setCurrentPage(1); setShowDatePicker(false);
   };
@@ -201,7 +207,7 @@ export default function SalesTransaction() {
   const startEdit = (row?: TrxItem) => {
     const target = row || selectedTrx;
     if (!target) return;
-    setEditForm({ customer: target.customer, desc: target.desc, dpp: target.dpp, project: target.project === '-' ? '' : target.project, dueDate: target.dueDateISO });
+    setEditForm({ customer: target.customer, cabang: target.cabang === '-' ? '' : target.cabang, desc: target.desc, dpp: target.dpp, project: target.project === '-' ? '' : target.project, dueDate: target.dueDateISO });
     setIsEditing(true);
   };
 
@@ -215,6 +221,7 @@ export default function SalesTransaction() {
     try {
       await updateSalesInvoice(selectedTrx.uuid, {
         customer_name: editForm.customer,
+        cabang: editForm.cabang.trim() || null,
         description: editForm.desc,
         dpp, ppn, pph,
         gross_amount: gross,
@@ -274,14 +281,14 @@ export default function SalesTransaction() {
   };
 
   const handleExport = () => {
-    const headers = ['Tanggal', 'Invoice', 'Customer', 'Deskripsi', 'DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Tipe', 'Jurnal', 'Status'];
-    const rows = filtered.map(r => [r.date, r.id, r.customer, r.desc, r.dpp, r.ppn, r.pph, r.gross, r.paid, r.outstanding, r.dueDate, r.type, r.journal, r.status]);
+    const headers = ['Date', 'Invoice', 'Customer', 'Branch', 'Description', 'Tax Base (DPP)', 'VAT', 'Withholding Tax (PPh)', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Type', 'Journal', 'Status'];
+    const rows = filtered.map(r => [r.date, r.id, r.customer, r.cabang, r.desc, r.dpp, r.ppn, r.pph, r.gross, r.paid, r.outstanding, r.dueDate, t(r.type), r.journal, r.status]);
     const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `transaksi-penjualan-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `sales-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success(t('Export berhasil'), { description: `${filtered.length} ${t('baris diunduh sebagai CSV.')}` });
@@ -308,6 +315,7 @@ export default function SalesTransaction() {
         invoice_date: addForm.date,
         due_date: addForm.dueDate,
         customer_name: addForm.customer.trim(),
+        cabang: addForm.cabang.trim() || undefined,
         description: addForm.desc.trim(),
         transaction_type: addForm.type,
         project_name: addForm.project || undefined,
@@ -334,6 +342,11 @@ export default function SalesTransaction() {
           <button onClick={refresh} className="underline font-medium">{t('Coba lagi')}</button>
         </div>
       )}
+
+      {/* Saran nama cabang (dari cabang yang sudah ada) untuk input Cabang di form Tambah/Edit */}
+      <datalist id="sales-branch-options">
+        {BRANCHES.map(b => <option key={b} value={b} />)}
+      </datalist>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -363,8 +376,8 @@ export default function SalesTransaction() {
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
               <span className="font-medium text-foreground">
-                {dateStart ? new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : t('Semua')}
-                {dateEnd ? ` – ${new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
+                {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
@@ -387,6 +400,11 @@ export default function SalesTransaction() {
           <select value={customerFilter} onChange={ev => { setCustomerFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
             <option value="all">{t('Semua Customer')}</option>
             {CUSTOMERS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <select value={branchFilter} onChange={ev => { setBranchFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
+            <option value="all">{t('All Branches')}</option>
+            {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
 
           <select value={taxStatusFilter} onChange={ev => { setTaxStatusFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
@@ -462,7 +480,7 @@ export default function SalesTransaction() {
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
                   {[
-                    'Tanggal', 'Invoice', 'Customer', 'Deskripsi', 'DPP', 'PPN',
+                    'Tanggal', 'Invoice', 'Customer', 'Cabang', 'Deskripsi', 'DPP', 'PPN',
                     ...(visibleCols.pph ? ['PPh'] : []),
                     'Gross', 'Paid', 'Outstanding',
                     ...(visibleCols.dueDate ? ['Due Date'] : []),
@@ -476,7 +494,7 @@ export default function SalesTransaction() {
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
-                  <tr><td colSpan={15} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td></tr>
+                  <tr><td colSpan={16} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td></tr>
                 )}
                 {paginated.map(row => (
                   <tr
@@ -490,6 +508,7 @@ export default function SalesTransaction() {
                     <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.date}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-primary font-medium">{row.id}</td>
                     <td className="py-2 px-2 whitespace-nowrap font-medium text-foreground">{row.customer}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.cabang}</td>
                     <td className="py-2 px-2 max-w-[120px] truncate text-muted-foreground">{row.desc}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right">{formatIDR(row.dpp)}</td>
                     <td className="py-2 px-2 whitespace-nowrap text-right">{formatIDR(row.ppn)}</td>
@@ -586,6 +605,7 @@ export default function SalesTransaction() {
               <div className="space-y-2 text-xs">
                 {[
                   ['Customer', selectedTrx.customer],
+                  ['Cabang', selectedTrx.cabang],
                   ['Tipe Transaksi', t(selectedTrx.type)],
                   ['Project', selectedTrx.project],
                   ['Due Date', selectedTrx.dueDate],
@@ -627,6 +647,10 @@ export default function SalesTransaction() {
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Customer')}</label>
                   <input value={editForm.customer} onChange={ev => setEditForm(f => ({ ...f, customer: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                </div>
+                <div>
+                  <label className="text-[11px] text-muted-foreground">{t('Cabang')}</label>
+                  <input value={editForm.cabang} list="sales-branch-options" onChange={ev => setEditForm(f => ({ ...f, cabang: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
                 </div>
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Deskripsi')}</label>
@@ -695,6 +719,10 @@ export default function SalesTransaction() {
               <div>
                 <label className="text-[11px] text-muted-foreground">{t('Customer')}</label>
                 <input value={addForm.customer} onChange={ev => setAddForm(f => ({ ...f, customer: ev.target.value }))} placeholder={t('Nama customer')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground">{t('Cabang')}</label>
+                <input value={addForm.cabang} list="sales-branch-options" onChange={ev => setAddForm(f => ({ ...f, cabang: ev.target.value }))} placeholder={t('Nama cabang (opsional)')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
               </div>
               <div>
                 <label className="text-[11px] text-muted-foreground">{t('Deskripsi')}</label>

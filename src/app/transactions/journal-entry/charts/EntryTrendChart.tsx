@@ -5,7 +5,13 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
-import { trendData } from '@/data/journalEntryData';
+
+export interface EntryTrendPoint {
+  date: string;
+  entries: number;
+  posted: number;
+  exceptions: number;
+}
 
 interface TooltipPayload {
   color: string;
@@ -29,11 +35,17 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   );
 }
 
-export default function EntryTrendChart() {
-  const displayData = trendData.filter((_, i) => i % 2 === 0);
+export default function EntryTrendChart({ data }: { data: EntryTrendPoint[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="h-[210px] flex items-center justify-center text-xs text-muted-foreground">
+        Belum ada data journal entry.
+      </div>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={210}>
-      <AreaChart data={displayData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="gradEntries" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.18} />

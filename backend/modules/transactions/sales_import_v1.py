@@ -37,7 +37,9 @@ fisik (local disk / object storage) sengaja di luar scope perubahan ini.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import re
 from datetime import date, datetime
 from io import BytesIO
@@ -90,8 +92,13 @@ def _decode_teks(content: bytes, encoding: str) -> str:
     return content.decode("utf-8", errors="replace")
 
 
-def _baca_csv_baris(content: bytes, encoding: str, delimiter: str) -> List[List[str]]:
+def _baca_csv_baris(content: bytes, encoding: str, delimiter: str, quoted_fields: bool = False) -> List[List[str]]:
     teks = _decode_teks(content, encoding)
+    if quoted_fields:
+        # CSV "sungguhan" -- nilai yang memuat delimiter dibungkus tanda kutip
+        # (mis. "Afternoon Delight, Tomu Friendly"), jadi WAJIB lewat csv.reader;
+        # split() polos menggeser semua kolom di sebelah kanannya.
+        return [list(r) for r in csv.reader(io.StringIO(teks), delimiter=delimiter)]
     baris_mentah = teks.splitlines()  # otomatis handle \r\n maupun \n
     return [baris.split(delimiter) for baris in baris_mentah]
 
@@ -107,12 +114,12 @@ def _baca_excel_baris(content: bytes, sheet_name: Optional[str]) -> List[List[st
     return hasil
 
 
-def _baca_file_jadi_baris(content: bytes, file_type: str, encoding: str, delimiter: str, sheet_name: Optional[str]) -> List[List[str]]:
+def _baca_file_jadi_baris(content: bytes, file_type: str, encoding: str, delimiter: str, sheet_name: Optional[str], quoted_fields: bool = False) -> List[List[str]]:
     if file_type == "Excel":
         return _baca_excel_baris(content, sheet_name)
     # CSV/TXT dianggap delimited text -- PDF ditangani terpisah (tidak
     # pernah sampai fungsi ini, lihat endpoint di bawah).
-    return _baca_csv_baris(content, encoding, delimiter)
+    return _baca_csv_baris(content, encoding, delimiter, quoted_fields)
 
 
 # ============================================================
@@ -135,18 +142,53 @@ def _hash_baris(row: List[str]) -> str:
 # 3) Cocokkan file ke template yang sudah ada
 # ============================================================
 
+FILE_TYPE_MULTI = "Multi"
+
+
+def _template_dari_varian(template: Dict[str, Any], varian: Dict[str, Any]) -> Dict[str, Any]:
+    """Template "Multi" (1 baris DB, beberapa format file) dipecah jadi
+    template virtual per varian: tiap varian membawa field yang sama dgn
+    baris template biasa (sheet_name, header_row_index, data_start_row_index,
+    column_signature_hash, header_columns, mapping_rules), jadi sisa alur
+    (cocokkan hash -> ekstrak) tidak perlu tahu bedanya. id/client_id tetap
+    milik baris aslinya, supaya usage_count & source_files.template_id
+    menunjuk ke 1 setting yang sama."""
+    return {
+        **template,
+        "file_type": varian.get("file_type"),
+        "sheet_name": varian.get("sheet_name"),
+        "header_row_index": varian["header_row_index"],
+        "data_start_row_index": varian["data_start_row_index"],
+        "column_signature_hash": varian["column_signature_hash"],
+        "header_columns": varian.get("header_columns", []),
+        "mapping_rules": varian["mapping_rules"],
+    }
+
+
+def _kandidat_template(management_client_id: str, file_type: str) -> List[Dict[str, Any]]:
+    kandidat: List[Dict[str, Any]] = []
+    for template in dbc.list_sales_import_templates(client_id=management_client_id, hanya_aktif=True):
+        if template.get("file_type") == file_type:
+            kandidat.append(template)
+        elif template.get("file_type") == FILE_TYPE_MULTI:
+            for varian in (template.get("mapping_rules") or {}).get("variants", []):
+                if varian.get("file_type") == file_type:
+                    kandidat.append(_template_dari_varian(template, varian))
+    return kandidat
+
+
 def _cocokkan_template(content: bytes, file_type: str, management_client_id: str) -> Optional[Tuple[Dict[str, Any], List[List[str]]]]:
-    """Coba tiap template AKTIF milik client+file_type ini -- kembalikan
-    (template, baris_hasil_decode) kalau ketemu yang cocok, None kalau
-    tidak ada satu pun yang match (file ini polanya belum pernah
-    dipelajari)."""
-    kandidat = dbc.list_sales_import_templates(client_id=management_client_id, file_type=file_type, hanya_aktif=True)
+    """Coba tiap template AKTIF milik client+file_type ini (termasuk varian
+    dari template file_type='Multi') -- kembalikan (template, baris_hasil_
+    decode) kalau ketemu yang cocok, None kalau tidak ada satu pun yang
+    match (file ini polanya belum pernah dipelajari)."""
+    kandidat = _kandidat_template(management_client_id, file_type)
     for template in kandidat:
         mapping_rules = template.get("mapping_rules") or {}
         encoding = mapping_rules.get("encoding", "utf-8")
         delimiter = mapping_rules.get("delimiter", ",")
         try:
-            rows = _baca_file_jadi_baris(content, file_type, encoding, delimiter, template.get("sheet_name"))
+            rows = _baca_file_jadi_baris(content, file_type, encoding, delimiter, template.get("sheet_name"), mapping_rules.get("quoted_fields", False))
         except Exception as e:
             logger.warning(f"Gagal decode file pakai template {template['id']}: {e}")
             continue
@@ -199,6 +241,13 @@ def _parse_tanggal(s: str, fmt: str) -> Optional[date]:
             return datetime.strptime(s, alt).date()
         except ValueError:
             continue
+    # sel Excel bertipe tanggal dibaca sbg str(datetime) -> "2026-08-01 00:00:00"
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})[ T]", s)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            pass
     return None
 
 
@@ -274,6 +323,7 @@ def _parse_grouped_invoice_report(rows: List[List[str]], recipe: Dict[str, Any])
             "tanggal": tanggal,
             "no_invoice": no_invoice or None,
             "nama_customer": nama_pelanggan or None,
+            "cabang": None,  # format blok POS/kasir ini tidak punya info cabang
             "dpp": dpp,
             "ppn": pajak,
             "total": total_akhir,
@@ -340,6 +390,7 @@ def _parse_flat_mapping(rows: List[List[str]], template: Dict[str, Any]) -> List
             "tanggal": tanggal,
             "no_invoice": no_invoice or None,
             "nama_customer": ambil(row, idx_customer) or None,
+            "cabang": None,  # template flat lama tidak punya field cabang
             "dpp": _parse_angka(ambil(row, idx_dpp), number_format),
             "ppn": _parse_angka(ambil(row, idx_ppn), number_format),
             "total": _parse_angka(ambil(row, idx_total), number_format),
@@ -350,11 +401,171 @@ def _parse_flat_mapping(rows: List[List[str]], template: Dict[str, Any]) -> List
     return hasil
 
 
-def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _susun_baris_hasil(agregat: "Dict[str, Dict[str, Any]]", date_format: str) -> List[Dict[str, Any]]:
+    """Ubah agregat per invoice ({no_invoice: {tanggal_raw, customer, dpp, ppn}})
+    jadi baris source_rows -- dipakai bersama oleh parser flat_grouped_by_key
+    dan sectioned_by_customer_header."""
+    hasil: List[Dict[str, Any]] = []
+    for no_invoice, a in agregat.items():
+        tanggal = _parse_tanggal(a["tanggal_raw"], date_format)
+        dpp = round(a["dpp"], 2)
+        ppn = round(a["ppn"], 2)
+        catatan = []
+        if not no_invoice:
+            catatan.append("No. invoice kosong")
+        if tanggal is None:
+            catatan.append("Tanggal tidak terbaca")
+        hasil.append({
+            "row_no": len(hasil) + 1,
+            "tanggal": tanggal,
+            "no_invoice": no_invoice or None,
+            "nama_customer": a["customer"] or None,
+            "cabang": a.get("cabang") or None,
+            "dpp": dpp,
+            "ppn": ppn,
+            "total": round(dpp + ppn, 2),
+            "is_valid": not catatan,
+            "validation_notes": "; ".join(catatan) or None,
+            "is_duplicate_candidate": False,  # agregat per no. invoice -> tidak mungkin dobel di dalam 1 file
+        })
+    return hasil
+
+
+def _parse_flat_grouped_by_key(rows: List[List[str]], template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Tabel flat 1 baris = 1 item/line (mis. export POS "Report Item
+    Details"), banyak baris berbagi 1 key (Receipt Number) -> dijumlah jadi
+    1 baris kanonis per key. Kolom dicari lewat NAMA di baris header, bukan
+    posisi. dpp = jumlah kolom `dpp_columns`, ppn = jumlah `ppn_columns`,
+    total = dpp + ppn. Baris refund yang bernilai negatif otomatis
+    mengurangi total struk asalnya."""
+    recipe = template["mapping_rules"]
+    header_idx = template["header_row_index"] - 1
+    if header_idx < 0 or header_idx >= len(rows):
+        return []
+    header = [h.strip().lower() for h in rows[header_idx]]
+
+    def kolom(nama: str) -> int:
+        try:
+            return header.index(nama.strip().lower())
+        except ValueError:
+            raise ValueError(f"Kolom '{nama}' tidak ada di header file")
+
+    number_format = recipe.get("number_format", {})
+    i_key = kolom(recipe["invoice_key"])
+    i_tanggal = kolom(recipe["tanggal"])
+    i_customer = kolom(recipe["customer"]) if recipe.get("customer") else None
+    i_cabang = kolom(recipe["cabang"]) if recipe.get("cabang") else None
+    i_dpp = [kolom(n) for n in recipe["dpp_columns"]]
+    i_ppn = [kolom(n) for n in recipe.get("ppn_columns", [])]
+    fallback = recipe.get("customer_fallback")  # mis. "Penjualan POS - {Outlet}"
+    fallback_kolom = {n: kolom(n) for n in re.findall(r"\{([^}]+)\}", fallback or "")}
+    customer_kosong = {v.strip().lower() for v in recipe.get("customer_kosong_jika", [])}  # mis. ["-"]
+    abaikan_tanpa_key = recipe.get("abaikan_baris_tanpa_key", False)  # baris ringkasan/total di bawah data
+
+    def angka(row: List[str], idx: int) -> float:
+        return _parse_angka(_ambil_kolom(row, idx + 1), number_format)
+
+    agregat: Dict[str, Dict[str, Any]] = {}
+    for row in rows[template["data_start_row_index"] - 1:]:
+        if all((c or "").strip() == "" for c in row):
+            continue
+        key = _ambil_kolom(row, i_key + 1)
+        if not key and abaikan_tanpa_key:
+            continue
+        a = agregat.get(key)
+        if a is None:
+            customer = _ambil_kolom(row, i_customer + 1) if i_customer is not None else ""
+            if customer.lower() in customer_kosong:
+                customer = ""
+            if not customer and fallback:
+                customer = re.sub(r"\{([^}]+)\}", lambda m: _ambil_kolom(row, fallback_kolom[m.group(1)] + 1), fallback)
+            cabang = _ambil_kolom(row, i_cabang + 1) if i_cabang is not None else ""
+            a = agregat[key] = {"tanggal_raw": _ambil_kolom(row, i_tanggal + 1), "customer": customer, "cabang": cabang, "dpp": 0.0, "ppn": 0.0}
+        a["dpp"] += sum(angka(row, i) for i in i_dpp)
+        a["ppn"] += sum(angka(row, i) for i in i_ppn)
+    return _susun_baris_hasil(agregat, recipe.get("date_format", "DD/MM/YYYY"))
+
+
+def _parse_sectioned_by_customer_header(rows: List[List[str]], template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Laporan "Penjualan per Pelanggan" (gaya Jurnal/Accurate): tiap
+    pelanggan = 1 SECTION -- 1 baris judul (nama pelanggan saja, kolom lain
+    kosong), N baris line invoice (1 invoice bisa punya banyak line produk,
+    termasuk line "Diskon" bernilai negatif), 1 baris "Total Penjualan".
+    Line dijumlah per no. invoice -> 1 baris kanonis per invoice. Posisi
+    kolom (1-based) dari recipe, bukan nama, karena kolom judul section
+    ("Pelanggan / Tanggal") dipakai ganda untuk nama pelanggan & tanggal."""
+    recipe = template["mapping_rules"]
+    cols = recipe["columns"]
+    number_format = recipe.get("number_format", {})
+    total_marker = recipe.get("section_total_marker", {})
+    end_marker = recipe.get("end_of_data_marker", {})
+
+    def cocok(row: List[str], marker: Dict[str, Any]) -> bool:
+        if not marker:
+            return False
+        teks = _ambil_kolom(row, marker["column"])
+        if "value" in marker:
+            return teks == marker["value"]
+        return marker["contains"] in teks
+
+    agregat: Dict[str, Dict[str, Any]] = {}
+    customer = ""
+    for row in rows[template["data_start_row_index"] - 1:]:
+        if all((c or "").strip() == "" for c in row):
+            continue
+        if cocok(row, end_marker):
+            break
+        if cocok(row, total_marker):
+            continue
+        if not _ambil_kolom(row, cols["transaksi"]):
+            # bukan baris line -> baris judul section (nama pelanggan)
+            nama = _ambil_kolom(row, cols["tanggal"])
+            if nama:
+                customer = nama
+            continue
+        no_invoice = _ambil_kolom(row, cols["no_invoice"])
+        a = agregat.get(no_invoice)
+        if a is None:
+            a = agregat[no_invoice] = {"tanggal_raw": _ambil_kolom(row, cols["tanggal"]), "customer": customer, "cabang": customer if recipe.get("cabang_dari_judul_section") else "", "dpp": 0.0, "ppn": 0.0}
+        a["dpp"] += _parse_angka(_ambil_kolom(row, cols["jumlah"]), number_format)
+    return _susun_baris_hasil(agregat, recipe.get("date_format", "DD/MM/YYYY"))
+
+
+def _cabang_dari_nama_file(recipe: Dict[str, Any], file_name: Optional[str]) -> Optional[str]:
+    """Cabang yang diambil dari SUBSTRING nama file (dipakai klien yang
+    laporannya tidak memuat kolom cabang, tapi 1 file = 1 cabang -- mis. SAU:
+    "Detail PENJ OL.csv" -> "OL"). Aturannya di recipe:
+        "cabang_dari_nama_file": {"pattern": "^Detail PENJ (.+)$", "group": 1}
+    pattern dicocokkan (tidak peka huruf besar/kecil) ke nama file TANPA
+    ekstensi & tanpa folder. Tidak cocok -> None (cabang dibiarkan kosong)."""
+    aturan = recipe.get("cabang_dari_nama_file")
+    if not aturan or not file_name:
+        return None
+    stem = file_name.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[0].strip()  # chr(92) = backslash (path Windows)
+    m = re.search(aturan["pattern"], stem, re.IGNORECASE)
+    if not m:
+        return None
+    return (m.group(aturan.get("group", 1)) or "").strip()[:100] or None
+
+
+def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     mapping_rules = template.get("mapping_rules") or {}
-    if mapping_rules.get("format_type") == "grouped_invoice_report":
-        return _parse_grouped_invoice_report(rows, mapping_rules)
-    return _parse_flat_mapping(rows, template)
+    format_type = mapping_rules.get("format_type")
+    if format_type == "grouped_invoice_report":
+        hasil = _parse_grouped_invoice_report(rows, mapping_rules)
+    elif format_type == "flat_grouped_by_key":
+        hasil = _parse_flat_grouped_by_key(rows, template)
+    elif format_type == "sectioned_by_customer_header":
+        hasil = _parse_sectioned_by_customer_header(rows, template)
+    else:
+        hasil = _parse_flat_mapping(rows, template)
+
+    cabang_file = _cabang_dari_nama_file(mapping_rules, file_name)
+    if cabang_file:
+        for r in hasil:
+            if not r.get("cabang"):  # cabang yang terbaca dari isi file (kalau ada) menang atas nama file
+                r["cabang"] = cabang_file
+    return hasil
 
 
 # ============================================================
@@ -443,7 +654,7 @@ async def upload_source_file(
 
     template, rows = cocok
     try:
-        baris_ekstrak = _ekstrak_dengan_template(rows, template)
+        baris_ekstrak = _ekstrak_dengan_template(rows, template, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
         source_file = dbc.create_sales_source_file({
@@ -571,6 +782,7 @@ def promote_source_file_to_invoices(
             "invoice_no": no_invoice,
             "invoice_date": row.get("tanggal"),
             "customer_name": row.get("nama_customer") or "-",
+            "cabang": row.get("cabang"),
             "dpp": row.get("dpp") or 0,
             "ppn": row.get("ppn") or 0,
             "gross_amount": row.get("total") or 0,

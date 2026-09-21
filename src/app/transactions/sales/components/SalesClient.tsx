@@ -49,7 +49,7 @@ export default function SalesClient() {
         </div>
         <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
           <CalendarDays size={14} className="text-muted-foreground" />
-          <span className="text-foreground font-medium">01 Jan 2024 – 31 Des 2024</span>
+          <span className="text-foreground font-medium">01 Jan 2024 – 31 Dec 2024</span>
           <ChevronDown size={14} className="text-muted-foreground" />
         </button>
       </div>

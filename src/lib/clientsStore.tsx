@@ -98,6 +98,7 @@ interface BackendManagementClient {
   status: string | null;
   akuntan_penanggung_jawab: string | null;
   tanggal_mulai_kerjasama: string | null;
+  logo: string | null;
   created_at: string | null;
   created_by: string | null;
   edited_at: string | null;
@@ -159,6 +160,7 @@ function petakanDariBackend(row: BackendManagementClient): Client {
     contactPhone: row.no_handphone || row.no_telepon || '-',
     npwp: row.npwp || '-',
     address: row.alamat || '-',
+    logo: row.logo || null,
     aiInsight: 'New client — insufficient data for AI assessment yet.',
   };
 }
@@ -193,6 +195,8 @@ function keBackendPayload(c: ClientFormInput): Record<string, unknown> {
     npwp: bukanPlaceholder(c.npwp),
     alamat: bukanPlaceholder(c.address),
     akuntan_penanggung_jawab: bukanPlaceholder(c.assignedAccountant),
+    // undefined = tidak dikirim (logo tidak diubah), null = hapus logo.
+    logo: c.logo,
   };
 }
 

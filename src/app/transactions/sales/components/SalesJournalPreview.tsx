@@ -24,7 +24,7 @@ function keUiStatus(posting_status: string): UiStatus {
 function formatTanggal(iso: string): string {
   try {
     const d = new Date(iso + 'T00:00:00');
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${String(d.getDate()).padStart(2, '0')} ${names[d.getMonth()]} ${d.getFullYear()}`;
   } catch {
     return '-';

@@ -150,6 +150,7 @@ class SalesSourceRowCreateRequest(BaseModel):
     tanggal: Optional[date] = None
     no_invoice: Optional[str] = Field(None, max_length=100)
     nama_customer: Optional[str] = Field(None, max_length=255)
+    cabang: Optional[str] = Field(None, max_length=100)
     dpp: float = 0
     ppn: float = 0
     total: float = 0
@@ -164,6 +165,7 @@ class SalesSourceRowUpdateRequest(BaseModel):
     tanggal: Optional[date] = None
     no_invoice: Optional[str] = Field(None, max_length=100)
     nama_customer: Optional[str] = Field(None, max_length=255)
+    cabang: Optional[str] = Field(None, max_length=100)
     dpp: Optional[float] = None
     ppn: Optional[float] = None
     total: Optional[float] = None
@@ -188,6 +190,7 @@ class SalesInvoiceCreateRequest(BaseModel):
     project_name: Optional[str] = Field(None, max_length=255)
     sales_person: Optional[str] = Field(None, max_length=255)
     term_of_payment: Optional[str] = Field(None, max_length=50)
+    cabang: Optional[str] = Field(None, max_length=100)
     dpp: float = 0
     ppn: float = 0
     pph: float = 0
@@ -215,6 +218,7 @@ class SalesInvoiceUpdateRequest(BaseModel):
     project_name: Optional[str] = Field(None, max_length=255)
     sales_person: Optional[str] = Field(None, max_length=255)
     term_of_payment: Optional[str] = Field(None, max_length=50)
+    cabang: Optional[str] = Field(None, max_length=100)
     dpp: Optional[float] = None
     ppn: Optional[float] = None
     pph: Optional[float] = None

@@ -269,8 +269,8 @@ export default function SalesExceptions() {
             >
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-foreground">
-                {dateStart ? new Date(dateStart).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : t('Semua')}
-                {dateEnd ? ` – ${new Date(dateEnd).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
+                {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (

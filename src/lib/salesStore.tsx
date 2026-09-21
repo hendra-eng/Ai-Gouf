@@ -48,7 +48,7 @@ interface ApiEnvelope<T> {
 async function baca<T>(res: Response): Promise<T> {
   const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
   if (!res.ok || !json || json.status !== 'success') {
-    throw new Error(json?.message || `Request gagal (${res.status})`);
+    throw new Error(json?.message || `Request failed (${res.status})`);
   }
   return json.data as T;
 }
@@ -215,7 +215,7 @@ export function useSalesSourceFiles(clientId: string | null | undefined): {
     setLoading(true);
     listSalesSourceFiles(clientId)
       .then(data => { setFiles(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat source files'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source files'))
       .finally(() => setLoading(false));
   }, [clientId]);
 
@@ -245,6 +245,7 @@ export interface BackendSalesSourceRow {
   tanggal: string | null;
   no_invoice: string | null;
   nama_customer: string | null;
+  cabang: string | null;
   dpp: number;
   ppn: number;
   total: number;
@@ -271,7 +272,7 @@ export function useSalesSourceRows(sourceFileId: string | null | undefined): {
     setLoading(true);
     listSalesSourceRows(sourceFileId)
       .then(data => { setRows(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat baris source data'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source data rows'))
       .finally(() => setLoading(false));
   }, [sourceFileId]);
 
@@ -301,6 +302,8 @@ export interface BackendSalesInvoice {
   project_name: string | null;
   sales_person: string | null;
   term_of_payment: string | null;
+  // Branch where the transaction happened (free text). null = not set yet.
+  cabang: string | null;
   dpp: number;
   ppn: number;
   pph: number;
@@ -356,7 +359,7 @@ export function useSalesInvoices(clientId: string | null | undefined, postingSta
     setLoading(true);
     listSalesInvoices(clientId, postingStatus)
       .then(data => { setInvoices(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat invoice'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load invoices'))
       .finally(() => setLoading(false));
   }, [clientId, postingStatus]);
 
@@ -477,7 +480,7 @@ export function useSalesExceptions(clientId: string | null | undefined): {
     setLoading(true);
     listSalesExceptions(clientId)
       .then(data => { setExceptions(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat exceptions'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load exceptions'))
       .finally(() => setLoading(false));
   }, [clientId]);
 
@@ -528,7 +531,7 @@ export function useSalesActivityLogs(clientId: string | null | undefined): {
     setLoading(true);
     listSalesActivityLogs(clientId)
       .then(data => { setLogs(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat activity log'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load activity log'))
       .finally(() => setLoading(false));
   }, [clientId]);
 
@@ -545,20 +548,22 @@ export function useSalesActivityLogs(clientId: string | null | undefined): {
 // Helper format tampilan -- dipakai bersama oleh komponen tab Sales
 // ============================================================
 
+const MONTH_NAMES_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "02 Jan 2024" -- English month names, independent of the browser locale. */
 export function formatTanggalSingkat(iso: string | null): string {
   if (!iso) return '-';
-  try {
-    return new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-  } catch {
-    return '-';
-  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTH_NAMES_EN[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+/** "2 Jan 2024, 14:30" -- English month names, independent of the browser locale. */
 export function formatTanggalWaktu(iso: string | null): string {
   if (!iso) return '-';
-  try {
-    return new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '-';
-  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getDate()} ${MONTH_NAMES_EN[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}`;
 }
