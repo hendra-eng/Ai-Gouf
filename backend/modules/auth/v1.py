@@ -94,11 +94,28 @@ async def jwt_v1_middleware(request: Request, call_next):
     tidak ada perubahan perilaku di luar fitur yang diminta.
 
     Kalau path termasuk grup /api/v1/ dan BUKAN salah satu
-    PUBLIC_PATHS_V1 (mis. login): wajib header
-    "Authorization: Bearer <token>" yang valid. Kalau tidak ada/tidak
-    valid, request langsung dibalas 401 dengan amplop standar TANPA
-    diteruskan ke endpoint -- handler endpoint tidak perlu cek token-nya
-    sendiri lagi.
+    PUBLIC_PATHS_V1 (mis. login): wajib token valid, dicari dari DUA
+    sumber (urutan: header dulu, baru cookie):
+
+      1. Header "Authorization: Bearer <token>" -- dipakai pemanggil
+         non-browser (mis. Swagger UI /docs, curl, script lain) yang
+         memang menaruh token sendiri di header.
+      2. Cookie httpOnly "gouf_session" -- dipakai browser: token ini
+         DISET oleh src/app/api/session/login/route.ts (Next.js) sehabis
+         POST /api/v1/auth/login, lalu otomatis ikut terkirim oleh
+         browser di setiap request ke domain ini (termasuk /api/v1/**
+         lewat proxy Next.js). JS di browser SENGAJA tidak pernah bisa
+         baca token ini (httpOnly, cegah XSS) -- makanya frontend
+         (agent-ai/lib/api.js) tidak pernah mengirim header Authorization
+         sama sekali, jadi cookie ini WAJIB dicek di sini juga, kalau
+         tidak SEMUA endpoint /api/v1/** dari browser selalu 401.
+         Nama cookie & cara least-privilege-nya sama dengan yang dibaca
+         src/middleware.ts (Next.js) -- lihat src/lib/session.ts::
+         SESSION_COOKIE_NAME.
+
+    Kalau tidak ada satupun / tidak valid, request langsung dibalas 401
+    dengan amplop standar TANPA diteruskan ke endpoint -- handler
+    endpoint tidak perlu cek token-nya sendiri lagi.
     """
     path = request.url.path
     if path.startswith("/api/v1/") and path not in PUBLIC_PATHS_V1:
@@ -106,6 +123,8 @@ async def jwt_v1_middleware(request: Request, call_next):
         token = None
         if header_value and header_value.startswith("Bearer "):
             token = header_value[len("Bearer "):].strip()
+        if not token:
+            token = request.cookies.get("gouf_session")
 
         user = auth.decode_token(token) if token else None
         if user is None:

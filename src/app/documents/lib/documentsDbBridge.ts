@@ -18,7 +18,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { documentsDataClient } from '@/app/agent-ai/lib/api';
+import { documentsDataClient, tambahDokumen, ubahStatusDokumen } from '@/app/agent-ai/lib/api';
 import type {
   FinancialDocument,
   DocumentFolder,
@@ -92,6 +92,23 @@ function splitTags(raw: string | null | undefined): string[] {
   return raw.split(',').map((t) => t.trim()).filter(Boolean);
 }
 
+// ─── Helper tulis (upload/status) -- dipakai uploadDocuments() di bawah ────
+function tebakFileFormat(fileName: string): FileFormat {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (ext === 'pdf') return 'PDF';
+  if (['xlsx', 'xls'].includes(ext)) return 'Excel';
+  if (ext === 'csv') return 'CSV';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return 'Image';
+  if (['doc', 'docx'].includes(ext)) return 'Word';
+  return 'PDF';
+}
+
+function formatUkuranFile(bytes: number): string {
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
 function mapDocuments(raw: RawDocument[], companyName: string | null): (FinancialDocument & { __folderId: string })[] {
   return raw.map((d) => {
     const type = matchEnum(d.category, DOCUMENT_TYPES, 'Other');
@@ -135,13 +152,20 @@ export interface DocumentsBridgeData {
   companyName: string | null;
   documents: FinancialDocument[];
   documentFolders: DocumentFolder[];
-  /** ID client aktif -- kalau nanti butuh mutasi (upload/hapus/update
-   * status dokumen), tambahkan endpoint PATCH/POST di main.py + panggil
-   * dari sini, sama pola dengan updatePurchaseStatus. */
   activeClientId: string | number | null;
   /** Ambil ulang data dari Supabase -- panggil setelah upload/mutasi
    * dokumen berhasil supaya daftar langsung menampilkan data terbaru. */
   refetch: () => void;
+  /** [BARU] Catat metadata 1+ file baru (tombol "Upload"). Backend:
+   * POST /api/v1/management/documents -> dbc.tambah_dokumen(). File FISIK
+   * tidak diunggah lewat sini (belum ada integrasi storage) -- hanya
+   * metadata (nama, format tebakan dari ekstensi, ukuran) yang tercatat.
+   * `category` opsional, dipakai sebagai kategori semua file yang
+   * diunggah kalau diisi (mis. folder aktif saat upload). */
+  uploadDocuments: (files: File[], category?: DocumentType) => Promise<void>;
+  /** [BARU] Ubah status satu dokumen. Backend:
+   * PATCH /api/v1/management/documents/{id}/status -> dbc.ubah_status_dokumen(). */
+  changeDocumentStatus: (documentId: string, status: DocumentStatus) => Promise<void>;
 }
 
 async function fetchDocumentsData(activeClientId: string | number, companyName: string | null) {
@@ -174,6 +198,31 @@ export function useDocumentsDbData(): DocumentsBridgeData {
     queryClient.invalidateQueries({ queryKey: ['documents', activeClientId] });
   }, [queryClient, activeClientId]);
 
+  const uploadDocuments = useCallback(
+    async (files: File[], category?: DocumentType) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      for (const file of files) {
+        await tambahDokumen(activeClientId, {
+          name: file.name,
+          category,
+          fileFormat: tebakFileFormat(file.name),
+          fileSize: formatUkuranFile(file.size),
+        });
+      }
+      refetch();
+    },
+    [activeClientId, refetch]
+  );
+
+  const changeDocumentStatus = useCallback(
+    async (documentId: string, status: DocumentStatus) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await ubahStatusDokumen(activeClientId, documentId, status);
+      refetch();
+    },
+    [activeClientId, refetch]
+  );
+
   const adaDataReal = !!data && data.documents.length > 0;
   const loading = !hydrated || isLoading;
 
@@ -186,6 +235,8 @@ export function useDocumentsDbData(): DocumentsBridgeData {
       documentFolders: [],
       activeClientId: activeClientId ?? null,
       refetch,
+      uploadDocuments,
+      changeDocumentStatus,
     };
   }
 
@@ -196,5 +247,7 @@ export function useDocumentsDbData(): DocumentsBridgeData {
     companyName: activeClientName,
     activeClientId: activeClientId ?? null,
     refetch,
+    uploadDocuments,
+    changeDocumentStatus,
   };
 }

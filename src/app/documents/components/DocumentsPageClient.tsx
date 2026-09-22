@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { FolderOpen, FileText, Receipt, Landmark, FileCheck, ScrollText, ShieldCheck, BarChart3, Folder, Search, Upload, Download, LayoutGrid, List, X, Eye, Trash2, Link2, Tag, CheckCircle, AlertTriangle, Clock, Sparkles, Copy, Move, File, FileSpreadsheet, Image as ImageIcon, FileArchive,  } from 'lucide-react';
 import { type FinancialDocument, type DocumentFolder,  } from '@/lib/documentsMockData';
@@ -73,9 +73,23 @@ function StatusBadge({ status }: { status: FinancialDocument['status'] }) {
 
 // ─── Document Preview Panel ──────────────────────────────────────────────────
 
-function DocumentPreviewPanel({ doc, onClose }: { doc: FinancialDocument; onClose: () => void }) {
+const DOCUMENT_STATUS_OPTIONS: FinancialDocument['status'][] = ['Processed', 'Pending Review', 'Needs Attention', 'Archived'];
+
+function DocumentPreviewPanel({
+  doc,
+  onClose,
+  onChangeStatus,
+}: {
+  doc: FinancialDocument;
+  onClose: () => void;
+  /** [BARU] Ubah status dokumen (PATCH /api/v1/management/documents/{id}/status)
+   * -- opsional supaya panel ini tetap bisa dipakai tanpa mutasi kalau
+   * suatu saat dibutuhkan mode read-only. */
+  onChangeStatus?: (documentId: string, status: FinancialDocument['status']) => Promise<void>;
+}) {
   const { fx } = useCurrency();
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
   const hasFlags = (doc.aiAnalysis?.flags?.length ?? 0) > 0;
   const confidence = doc.aiAnalysis?.confidence ?? 0;
 
@@ -83,6 +97,20 @@ function DocumentPreviewPanel({ doc, onClose }: { doc: FinancialDocument; onClos
     setActiveAction(action);
     setTimeout(() => setActiveAction(null), 1500);
     // Backend integration: POST /api/documents/[doc.id]/[action]
+  }
+
+  // [BARU] Status dokumen sekarang beneran tersimpan ke Supabase.
+  async function handleStatusChange(next: FinancialDocument['status']) {
+    if (!onChangeStatus || next === doc.status) return;
+    setChangingStatus(true);
+    try {
+      await onChangeStatus(doc.id, next);
+      toast.success('Status dokumen diubah', { description: `${doc.name} → ${next}` });
+    } catch (err) {
+      toast.error('Gagal mengubah status', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setChangingStatus(false);
+    }
   }
 
   return (
@@ -126,8 +154,23 @@ function DocumentPreviewPanel({ doc, onClose }: { doc: FinancialDocument; onClos
         {/* Metadata */}
         <div className="p-4 space-y-4">
           {/* Status */}
-          <div className="flex items-center justify-between">
-            <StatusBadge status={doc.status} />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={doc.status} />
+              {onChangeStatus && (
+                <select
+                  value={doc.status}
+                  disabled={changingStatus}
+                  onChange={e => handleStatusChange(e.target.value as FinancialDocument['status'])}
+                  className="text-[11px] border border-border rounded-md px-1.5 py-1 bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                  title="Ubah status dokumen"
+                >
+                  {DOCUMENT_STATUS_OPTIONS.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">{doc.date}</span>
           </div>
 
@@ -381,7 +424,10 @@ const folderTypeMap: Record<string, string> = {
 };
 
 export default function DocumentsPageClient() {
-  const { documents, documentFolders, isSampleData, loading: loadingDocs } = useDocumentsData();
+  const {
+    documents, documentFolders, isSampleData, loading: loadingDocs,
+    activeClientId, uploadDocuments, changeDocumentStatus,
+  } = useDocumentsData();
   const [activeFolder, setActiveFolder] = useState('folder-all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -390,13 +436,42 @@ export default function DocumentsPageClient() {
   const [showUploadZone, setShowUploadZone] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleFilesSelected(files: FileList | null) {
+  // [BARU] Sinkronkan panel preview kalau daftar `documents` berubah
+  // (mis. setelah status diubah / dokumen baru ditambah) -- tanpa ini,
+  // panel akan terus menampilkan snapshot lama walau data di baliknya
+  // sudah ter-update di Supabase.
+  useEffect(() => {
+    if (!selectedDoc) return;
+    const updated = documents.find(d => d.id === selectedDoc.id);
+    if (updated && updated !== selectedDoc) setSelectedDoc(updated);
+  }, [documents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // [DIUBAH] Sekarang beneran mencatat metadata dokumen ke Supabase lewat
+  // POST /api/v1/management/documents (dbc.tambah_dokumen). File FISIK
+  // masih belum diunggah ke storage manapun -- cuma metadatanya (nama,
+  // format tebakan dari ekstensi, ukuran) yang tersimpan.
+  async function handleFilesSelected(files: FileList | null) {
     if (!files || files.length === 0) return;
-    toast.success(`${files.length} file berhasil diunggah`);
-    setShowUploadZone(false);
-    // Backend integration: POST /api/documents/upload with FormData
+    if (!activeClientId) {
+      toast.error('Pilih client aktif dulu', { description: 'Dokumen perlu terhubung ke satu client.' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const category = (folderTypeMap[activeFolder] || undefined) as FinancialDocument['type'] | undefined;
+      await uploadDocuments(Array.from(files), category);
+      toast.success(`${files.length} dokumen berhasil dicatat`, {
+        description: 'Metadata tersimpan -- file fisik belum diunggah ke storage.',
+      });
+      setShowUploadZone(false);
+    } catch (err) {
+      toast.error('Gagal mengunggah dokumen', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setUploading(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -479,24 +554,26 @@ export default function DocumentsPageClient() {
               ref={fileInputRef}
               type="file"
               multiple
+              disabled={uploading}
               onChange={e => handleFilesSelected(e.target.files)}
               className="hidden"
             />
             <div className="flex items-center justify-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors"
+                disabled={uploading}
+                className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
               >
-                Browse Files
+                {uploading ? 'Menyimpan…' : 'Browse Files'}
               </button>
               <button
                 onClick={() => setShowUploadZone(false)}
-                className="px-4 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                disabled={uploading}
+                className="px-4 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors disabled:opacity-60"
               >
                 Cancel
               </button>
             </div>
-            {/* Backend integration: POST /api/documents/upload with FormData */}
           </div>
         </div>
       )}
@@ -698,7 +775,7 @@ export default function DocumentsPageClient() {
           {/* Right: Preview Panel */}
           {selectedDoc && (
             <div className="w-72 flex-shrink-0 bg-card border border-border rounded-xl overflow-hidden flex flex-col">
-              <DocumentPreviewPanel doc={selectedDoc} onClose={() => setSelectedDoc(null)} />
+              <DocumentPreviewPanel doc={selectedDoc} onClose={() => setSelectedDoc(null)} onChangeStatus={changeDocumentStatus} />
             </div>
           )}
         </div>

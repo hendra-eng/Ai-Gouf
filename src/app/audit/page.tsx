@@ -14,7 +14,7 @@ import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEv
 // array statis KOSONG karena belum ada jembatan ke Supabase (lihat komentar
 // lama di git history). Sekarang diambil dari useAuditData() ->
 // src/app/audit/lib/auditBridge.ts, yang membaca 4 tabel asli schema
-// "6_Intellegence" (audit_finding/audit_stage/audit_activity/
+// "6_Intelligence" (audit_finding/audit_stage/audit_activity/
 // audit_evidence) -- pola yang sama dengan Purchase (purchasebridge.ts).
 // "Audit Trail" di bagian BAWAH halaman ini TETAP dari useAuditTrail.ts
 // (diturunkan dari jurnal_posting) -- konsep berbeda, sengaja dibiarkan

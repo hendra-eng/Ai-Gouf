@@ -698,7 +698,7 @@ function AddScheduleModal({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function ReportsPageClient() {
-  const { reports: liveReports, isSampleData, loading: loadingReports } = useReportsData();
+  const { reports: liveReports, isSampleData, loading: loadingReports, addReport } = useReportsData();
   const [reportList, setReportList] = useState<Report[]>(initialReports);
   // [BARU] `reportList` adalah state lokal yang bisa diubah langsung oleh
   // aksi user (delete/duplicate/regenerate) -- karena itu tidak bisa langsung
@@ -717,7 +717,7 @@ export default function ReportsPageClient() {
   // CATATAN: menambah/menghapus jadwal lewat UI saat ini MASIH lokal saja
   // (belum ada endpoint POST/DELETE report_schedule di backend), jadi
   // perubahan hilang saat reload -- lihat handleAddSchedule di bawah.
-  const { scheduledReports: liveScheduledReports } = useScheduledReportsData();
+  const { scheduledReports: liveScheduledReports, addSchedule, changeScheduleStatus } = useScheduledReportsData();
   const [scheduleList, setScheduleList] = useState<ScheduledReport[]>(initialScheduledReports);
   useEffect(() => {
     setScheduleList(liveScheduledReports);
@@ -760,50 +760,63 @@ export default function ReportsPageClient() {
     e.target.value = '';
   }
 
-  function handleCreateReport(data: { name: string; description: string; category: ReportCategory; period: string }) {
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const newReport: Report = {
-      id: `rpt-custom-${Date.now()}`,
-      name: data.name,
-      description: data.description,
-      category: data.category,
-      period: data.period,
-      lastGenerated: today,
-      createdBy: 'You',
-      formats: ['PDF'],
-      status: 'ready',
-      tags: ['Custom'],
-    };
-    setReportList(prev => [newReport, ...prev]);
-    setShowCreateModal(false);
-    setActiveCategory('all');
-    toast.success('Report dibuat', { description: `${newReport.name} ditambahkan ke library.` });
+  // [DIUBAH] Sekarang beneran mencatat laporan ke report_registry lewat
+  // POST /api/v1/management/reports/registry (dbc.tambah_report_registry).
+  // Setelah sukses, query 'report-registry' di-invalidate (lihat
+  // reportsDbBridge.ts::addReport) -- reportList ikut ter-update otomatis
+  // lewat useEffect di atas yang menyinkronkan dari liveReports.
+  async function handleCreateReport(data: { name: string; description: string; category: ReportCategory; period: string }) {
+    try {
+      await addReport({
+        name: data.name,
+        description: data.description,
+        category: data.category,
+        period: data.period,
+      });
+      setShowCreateModal(false);
+      setActiveCategory('all');
+      toast.success('Report dibuat', { description: `${data.name} ditambahkan ke library.` });
+    } catch (err) {
+      toast.error('Gagal membuat report', { description: err instanceof Error ? err.message : String(err) });
+    }
   }
 
-  function handleAddSchedule(data: { reportName: string; frequency: ScheduledReport['frequency']; recipients: string; format: Report['formats'][number] }) {
-    const newSchedule: ScheduledReport = {
-      id: `sched-${Date.now()}`,
-      reportName: data.reportName,
-      frequency: data.frequency,
-      recipients: data.recipients.split(',').map(r => r.trim()).filter(Boolean),
-      nextRun: 'Pending',
-      status: 'Active',
-      format: data.format,
-    };
-    setScheduleList(prev => [newSchedule, ...prev]);
-    setShowScheduleModal(false);
-    toast.success('Jadwal ditambahkan', { description: `${newSchedule.reportName} — ${newSchedule.frequency}` });
+  // [DIUBAH] Sekarang beneran menyimpan jadwal ke report_schedule lewat
+  // POST /api/v1/management/reports/schedule (dbc.tambah_report_schedule).
+  async function handleAddSchedule(data: { reportName: string; frequency: ScheduledReport['frequency']; recipients: string; format: Report['formats'][number] }) {
+    try {
+      await addSchedule({
+        reportName: data.reportName,
+        frequency: data.frequency,
+        recipients: data.recipients,
+        format: data.format,
+      });
+      setShowScheduleModal(false);
+      toast.success('Jadwal ditambahkan', { description: `${data.reportName} — ${data.frequency}` });
+    } catch (err) {
+      toast.error('Gagal menambah jadwal', { description: err instanceof Error ? err.message : String(err) });
+    }
   }
 
-  function toggleScheduleStatus(id: string) {
-    setScheduleList(prev => prev.map(s => {
-      if (s.id !== id) return s;
-      const next = s.status === 'Active' ? 'Paused' : 'Active';
-      toast.success(next === 'Paused' ? 'Jadwal dijeda' : 'Jadwal diaktifkan kembali', { description: s.reportName });
-      return { ...s, status: next };
-    }));
+  // [DIUBAH] Sekarang beneran mengubah status jadwal lewat PATCH
+  // /api/v1/management/reports/schedule/{id}/status
+  // (dbc.ubah_status_report_schedule). Terima objek schedule utuh (bukan
+  // cuma id) supaya bisa tahu status SEKARANG utk menentukan status
+  // berikutnya, tanpa nebak-nebak dari state lama.
+  async function toggleScheduleStatus(schedule: ScheduledReport) {
+    const next = schedule.status === 'Active' ? 'Paused' : 'Active';
+    try {
+      await changeScheduleStatus(schedule.id, next);
+      toast.success(next === 'Paused' ? 'Jadwal dijeda' : 'Jadwal diaktifkan kembali', { description: schedule.reportName });
+    } catch (err) {
+      toast.error('Gagal mengubah status jadwal', { description: err instanceof Error ? err.message : String(err) });
+    }
   }
 
+  // [CATATAN] "Send now" & "Delete" jadwal MASIH lokal saja (state
+  // browser) -- backend belum punya endpoint kirim-sekarang / hapus
+  // jadwal (baru GET/POST/PATCH status, lihat modules/management/reports_v1.py).
+  // Jadi perubahan dari 2 aksi ini hilang tiap reload / ganti client aktif.
   function sendScheduleNow(schedule: ScheduledReport) {
     toast.success('Laporan dikirim', { description: `${schedule.reportName} dikirim ke ${schedule.recipients.length} penerima.` });
   }
@@ -1035,7 +1048,7 @@ export default function ReportsPageClient() {
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {s.status === 'Active' ? (
                             <button
-                              onClick={() => toggleScheduleStatus(s.id)}
+                              onClick={() => toggleScheduleStatus(s)}
                               className="p-1.5 rounded hover:bg-amber-50 text-muted-foreground hover:text-amber-600 transition-colors"
                               title="Pause schedule"
                             >
@@ -1043,7 +1056,7 @@ export default function ReportsPageClient() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => toggleScheduleStatus(s.id)}
+                              onClick={() => toggleScheduleStatus(s)}
                               className="p-1.5 rounded hover:bg-emerald-50 text-muted-foreground hover:text-emerald-600 transition-colors"
                               title="Resume schedule"
                             >

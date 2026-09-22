@@ -1,5 +1,5 @@
 'use client';
-// ─── JEMBATAN backend (schema "6_Intellegence": audit_finding/audit_stage/
+// ─── JEMBATAN backend (schema "6_Intelligence": audit_finding/audit_stage/
 // audit_activity/audit_evidence) → halaman Audit Center (src/app/audit/
 // page.tsx) ──────────────────────────────────────────────────────────────
 // Sebelumnya halaman ini SENGAJA pakai array statis KOSONG untuk

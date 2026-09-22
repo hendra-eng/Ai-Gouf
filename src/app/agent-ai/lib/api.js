@@ -81,6 +81,38 @@ export async function ambilStatusAI() {
   return res.json(); // { status, ai_aktif, claude_aktif, database_aktif }
 }
 
+// [BARU] Endpoint /api/v1/management/... (documents_v1.py/reports_v1.py)
+// membungkus response dengan amplop standar
+// {status,message,data,errors} (lihat modules/api_response.py) --
+// BEDA dari endpoint /api/v1/... lain yang sudah ada (getDocuments,
+// finance/*, dst) yang balikin bentuk bebas langsung. request() di atas
+// tidak cocok dipakai apa adanya karena pesan error dari gagal() ada di
+// field "message", bukan "detail" seperti error FastAPI biasa -- kalau
+// dipaksa pakai request(), pesan spesifik (mis. "Status tidak dikenal")
+// akan hilang, jadi generic "Request gagal (422)". requestEnvelope()
+// di bawah ini yang bongkar amplopnya: throw pakai body.message kalau
+// gagal, return body.data kalau sukses.
+async function requestEnvelope(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const token = tokenTersimpan();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.status === "error") {
+    if (res.status === 401 && typeof window !== "undefined") {
+      hapusToken();
+      if (window.location.pathname !== "/login") {
+        const next = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.assign(`/login?next=${next}`);
+      }
+    }
+    throw new Error(body.message || `Request gagal (${res.status})`);
+  }
+  return body.data;
+}
+
 async function request(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   // [UBAH -- login dihilangkan] Sebelumnya di sini ada pengecekan: kalau
@@ -657,6 +689,98 @@ export async function reportScheduleClient(clientId) {
 }
 
 /**
+ * [BARU] Catat dokumen baru (tombol "Upload" di DocumentsPageClient.tsx).
+ * Backend: POST /api/v1/management/documents -> dbc.tambah_dokumen().
+ * Cuma mencatat METADATA -- file fisik tidak diunggah lewat sini (belum
+ * ada integrasi storage). `data.category`/`data.fileFormat` boleh
+ * kosong, backend akan fallback ke default (Other/PDF).
+ */
+export async function tambahDokumen(clientId, data) {
+  return requestEnvelope(`/api/v1/management/documents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      name: data.name,
+      category: data.category || null,
+      file_format: data.fileFormat || null,
+      file_size: data.fileSize || null,
+      storage_url: data.storageUrl || null,
+      tags: data.tags || null,
+      related_record: data.relatedRecord || null,
+    }),
+  });
+}
+
+/**
+ * [BARU] Ubah status satu dokumen (mis. "Pending Review" -> "Processed").
+ * Backend: PATCH /api/v1/management/documents/{id}/status -> dbc.ubah_status_dokumen().
+ */
+export async function ubahStatusDokumen(clientId, documentId, status) {
+  return requestEnvelope(`/api/v1/management/documents/${documentId}/status?client_id=${clientId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+/**
+ * [BARU] Catat laporan baru ke Report Library (tombol "Create Report" di
+ * ReportsPageClient.tsx). Backend: POST /api/v1/management/reports/registry
+ * -> dbc.tambah_report_registry(). `data.formats` dikirim sebagai array,
+ * digabung jadi string dipisah koma di sini (bentuk yang dipahami backend).
+ */
+export async function tambahReportRegistry(clientId, data) {
+  return requestEnvelope(`/api/v1/management/reports/registry`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      name: data.name,
+      category: data.category,
+      description: data.description || null,
+      period: data.period || null,
+      formats: Array.isArray(data.formats) ? data.formats.join(",") : (data.formats || null),
+      tags: Array.isArray(data.tags) ? data.tags.join(",") : (data.tags || null),
+    }),
+  });
+}
+
+/**
+ * [BARU] Buat jadwal laporan berkala baru (tombol "Add Schedule" di tab
+ * "Report Scheduler"). Backend: POST /api/v1/management/reports/schedule
+ * -> dbc.tambah_report_schedule(). `data.recipients` boleh string
+ * (dipisah koma, dari form) ATAU array (digabung di sini).
+ */
+export async function tambahReportSchedule(clientId, data) {
+  return requestEnvelope(`/api/v1/management/reports/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      report_name: data.reportName,
+      frequency: data.frequency,
+      recipients: Array.isArray(data.recipients) ? data.recipients.join(",") : (data.recipients || null),
+      format: data.format || null,
+      next_run: data.nextRun || null,
+    }),
+  });
+}
+
+/**
+ * [BARU] Ubah status jadwal laporan (tombol "Pause"/"Resume"). Backend:
+ * PATCH /api/v1/management/reports/schedule/{id}/status
+ * -> dbc.ubah_status_report_schedule().
+ */
+export async function ubahStatusReportSchedule(clientId, scheduleId, status) {
+  return requestEnvelope(`/api/v1/management/reports/schedule/${scheduleId}/status?client_id=${clientId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+/**
  * [BARU] Data mentah modul Account Receivable (ar_customer, ar_invoice,
  * ar_payment, ar_collection_note, schema "3_Financial") untuk satu client.
  * Lihat main.py: GET /api/client/{client_id}/ar, dipetakan ke tipe
@@ -936,7 +1060,7 @@ export async function auditLogClient(clientId, limit = 200) {
 /**
  * [DIUBAH] Data mentah modul Audit Center (finding, stage, activity,
  * evidence metadata -- tanpa isi file) untuk satu client, schema
- * "6_Intellegence". Lihat main.py: GET /api/v1/intelligence/getAudit
+ * "6_Intelligence". Lihat main.py: GET /api/v1/intelligence/getAudit
  * (dulu /api/client/{client_id}/audit), dipetakan ke tipe
  * AuditFinding/Stage/Activity/Evidence oleh src/app/audit/lib/auditBridge.ts.
  */

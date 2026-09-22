@@ -1425,6 +1425,181 @@ def ambil_data_report_schedule(client_id: str) -> List[Dict[str, Any]]:
         session.close()
 
 
+# [BARU] Nilai kolom yang dibolehkan -- dipakai modules/management/documents_v1.py & reports_v1.py.
+DOCUMENT_CATEGORY_VALID = {"Invoice", "Receipt", "Bank Statement", "Tax Document", "Contract", "Audit Evidence", "Financial Report", "Other"}
+DOCUMENT_FORMAT_VALID = {"PDF", "Excel", "Image", "CSV", "Word"}
+DOCUMENT_STATUS_VALID = {"Processed", "Pending Review", "Needs Attention", "Archived"}
+REPORT_CATEGORY_VALID = {"financial-statements", "management", "tax", "ar-ap", "budget", "audit", "custom"}
+REPORT_STATUS_VALID = {"ready", "generating", "scheduled", "error"}
+REPORT_FORMAT_VALID = {"PDF", "Excel", "CSV", "Word"}
+REPORT_FREQUENCY_VALID = {"Daily", "Weekly", "Monthly", "Quarterly", "Yearly"}
+REPORT_SCHEDULE_STATUS_VALID = {"Active", "Paused", "Error"}
+
+
+def tambah_dokumen(
+    client_id: str, name: str, category: Optional[str] = None, file_format: Optional[str] = None,
+    file_size: Optional[str] = None, storage_url: Optional[str] = None, tags: Optional[str] = None,
+    related_record: Optional[str] = None, uploaded_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """[BARU] Catat 1 dokumen baru (tombol "Upload" di halaman Documents).
+
+    File fisiknya sendiri TIDAK disimpan di sini -- `storage_url` diisi
+    frontend setelah upload ke storage terpisah (mis. Supabase Storage).
+    Kalau `storage_url` kosong, baris tetap dibuat (status default
+    'Pending Review') supaya metadata dokumen tidak hilang; frontend boleh
+    PATCH storage_url belakangan setelah upload selesai.
+    """
+    _ar_uuid(client_id, "Client")
+    nama = (name or "").strip()
+    if not nama:
+        raise ValueError("Nama dokumen tidak boleh kosong.")
+    if category and category not in DOCUMENT_CATEGORY_VALID:
+        raise ValueError(f"Kategori tidak dikenal. Nilai sah: {sorted(DOCUMENT_CATEGORY_VALID)}.")
+    if file_format and file_format not in DOCUMENT_FORMAT_VALID:
+        raise ValueError(f"Format file tidak dikenal. Nilai sah: {sorted(DOCUMENT_FORMAT_VALID)}.")
+
+    session = SessionLocal()
+    try:
+        row = DocumentRow(
+            id=uuid.uuid4(), client_id=client_id, name=nama, category=category,
+            file_format=file_format, file_size=(file_size or "").strip()[:30] or None,
+            storage_url=storage_url, uploaded_by=(uploaded_by or "").strip()[:100] or None,
+            status="Pending Review", tags=(tags or "").strip()[:255] or None,
+            related_record=(related_record or "").strip()[:200] or None,
+            created_at=datetime.now(), updated_at=datetime.now(),
+        )
+        session.add(row)
+        session.commit()
+        return {"id": str(row.id), "name": row.name, "status": row.status}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def ubah_status_dokumen(client_id: str, document_id: str, status: str) -> Dict[str, Any]:
+    """[BARU] Ubah status dokumen (mis. tandai 'Archived'/'Processed' setelah direview manual)."""
+    _ar_uuid(client_id, "Client")
+    doc_uuid = _ar_uuid(document_id, "Document")
+    status_bersih = (status or "").strip()
+    if status_bersih not in DOCUMENT_STATUS_VALID:
+        raise ValueError(f"Status tidak dikenal. Nilai sah: {sorted(DOCUMENT_STATUS_VALID)}.")
+
+    session = SessionLocal()
+    try:
+        row = session.query(DocumentRow).filter(
+            DocumentRow.id == doc_uuid, DocumentRow.client_id == client_id
+        ).with_for_update().first()
+        if row is None:
+            raise ValueError("Dokumen tidak ditemukan untuk client ini.")
+        row.status = status_bersih
+        row.updated_at = datetime.now()
+        session.commit()
+        return {"id": str(row.id), "status": row.status}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def tambah_report_registry(
+    client_id: str, name: str, category: str, description: Optional[str] = None,
+    period: Optional[str] = None, formats: Optional[str] = None, tags: Optional[str] = None,
+    created_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """[BARU] Catat 1 laporan baru ke registry (tombol "Create Report")."""
+    _ar_uuid(client_id, "Client")
+    nama = (name or "").strip()
+    if not nama:
+        raise ValueError("Nama laporan tidak boleh kosong.")
+    kategori = (category or "").strip()
+    if kategori not in REPORT_CATEGORY_VALID:
+        raise ValueError(f"Kategori tidak dikenal. Nilai sah: {sorted(REPORT_CATEGORY_VALID)}.")
+    if formats:
+        for f in [x.strip() for x in formats.split(",") if x.strip()]:
+            if f not in REPORT_FORMAT_VALID:
+                raise ValueError(f"Format '{f}' tidak dikenal. Nilai sah: {sorted(REPORT_FORMAT_VALID)}.")
+
+    session = SessionLocal()
+    try:
+        row = ReportRegistryRow(
+            id=uuid.uuid4(), client_id=client_id, name=nama, description=description,
+            category=kategori, period=(period or "").strip()[:50] or None,
+            created_by=created_by, formats=formats, status="ready",
+            tags=(tags or "").strip()[:255] or None,
+            created_at=datetime.now(), updated_at=datetime.now(),
+        )
+        session.add(row)
+        session.commit()
+        return {"id": str(row.id), "name": row.name, "status": row.status}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def tambah_report_schedule(
+    client_id: str, report_name: str, frequency: str, recipients: Optional[str] = None,
+    format: Optional[str] = None, next_run: Any = None,
+) -> Dict[str, Any]:
+    """[BARU] Buat 1 jadwal laporan berkala baru (tombol "Add Schedule")."""
+    _ar_uuid(client_id, "Client")
+    nama = (report_name or "").strip()
+    if not nama:
+        raise ValueError("Nama laporan tidak boleh kosong.")
+    freq = (frequency or "").strip()
+    if freq not in REPORT_FREQUENCY_VALID:
+        raise ValueError(f"Frekuensi tidak dikenal. Nilai sah: {sorted(REPORT_FREQUENCY_VALID)}.")
+    if format and format not in REPORT_FORMAT_VALID:
+        raise ValueError(f"Format tidak dikenal. Nilai sah: {sorted(REPORT_FORMAT_VALID)}.")
+    tgl_next_run = _ar_tanggal(next_run, "Next run") if next_run else None
+
+    session = SessionLocal()
+    try:
+        row = ReportScheduleRow(
+            id=uuid.uuid4(), client_id=client_id, report_name=nama, frequency=freq,
+            recipients=recipients, format=format, next_run=tgl_next_run, status="Active",
+            created_at=datetime.now(), updated_at=datetime.now(),
+        )
+        session.add(row)
+        session.commit()
+        return {"id": str(row.id), "report_name": row.report_name, "status": row.status}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def ubah_status_report_schedule(client_id: str, schedule_id: str, status: str) -> Dict[str, Any]:
+    """[BARU] Ubah status jadwal laporan (tombol "Pause"/"Resume" di tab Report Scheduler)."""
+    _ar_uuid(client_id, "Client")
+    sched_uuid = _ar_uuid(schedule_id, "Schedule")
+    status_bersih = (status or "").strip()
+    if status_bersih not in REPORT_SCHEDULE_STATUS_VALID:
+        raise ValueError(f"Status tidak dikenal. Nilai sah: {sorted(REPORT_SCHEDULE_STATUS_VALID)}.")
+
+    session = SessionLocal()
+    try:
+        row = session.query(ReportScheduleRow).filter(
+            ReportScheduleRow.id == sched_uuid, ReportScheduleRow.client_id == client_id
+        ).with_for_update().first()
+        if row is None:
+            raise ValueError("Jadwal laporan tidak ditemukan untuk client ini.")
+        row.status = status_bersih
+        row.updated_at = datetime.now()
+        session.commit()
+        return {"id": str(row.id), "status": row.status}
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 # ============================================================
 # ACCOUNTS RECEIVABLE (AR) -- schema "3_Financial"
 # ============================================================
@@ -8113,7 +8288,7 @@ def hapus_tax_task(client_id: str, task_id: str) -> Dict[str, Any]:
 
 # ============================================================
 # MODUL AUDIT (BARU) -- 4 tabel dibuat manual oleh user lewat Supabase,
-# schema "6_Intellegence": audit_finding (temuan audit + risk/status/
+# schema "6_Intelligence": audit_finding (temuan audit + risk/status/
 # root cause/rekomendasi/tanggapan manajemen), audit_stage (progres
 # tahapan audit tahunan), audit_activity (log aktivitas per finding/
 # client -- auto-tercatat setiap ada perubahan finding/evidence), dan
@@ -8127,7 +8302,7 @@ def hapus_tax_task(client_id: str, task_id: str) -> Dict[str, Any]:
 
 class AuditFindingRow(Base):
     __tablename__ = "intelligence_audit_finding"
-    __table_args__ = {"schema": "6_Intellegence"}
+    __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
@@ -8152,7 +8327,7 @@ class AuditFindingRow(Base):
 
 class AuditStageRow(Base):
     __tablename__ = "intelligence_audit_stage"
-    __table_args__ = {"schema": "6_Intellegence"}
+    __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
@@ -8167,11 +8342,11 @@ class AuditStageRow(Base):
 
 class AuditActivityRow(Base):
     __tablename__ = "intelligence_audit_activity"
-    __table_args__ = {"schema": "6_Intellegence"}
+    __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.intelligence_audit_finding.id"), nullable=True)
+    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intelligence.intelligence_audit_finding.id"), nullable=True)
     user_name = Column(String, nullable=False)
     action = Column(String, nullable=False)
     activity_type = Column(String, nullable=False)
@@ -8181,11 +8356,11 @@ class AuditActivityRow(Base):
 
 class AuditEvidenceRow(Base):
     __tablename__ = "intelligence_audit_evidence"
-    __table_args__ = {"schema": "6_Intellegence"}
+    __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.intelligence_audit_finding.id"), nullable=False)
+    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intelligence.intelligence_audit_finding.id"), nullable=False)
     file_name = Column(String, nullable=False)
     file_size = Column(BigInteger, nullable=True)
     uploaded_by = Column(String, nullable=True)
@@ -8212,7 +8387,7 @@ def _audit_iso_dt(dt):
 def ambil_data_audit(client_id: str) -> Dict[str, Any]:
     """[BARU] Data mentah modul Audit (finding, stage, activity, evidence
     -- METADATA saja, isi file TIDAK diikutkan supaya payload ringan)
-    untuk satu client, schema "6_Intellegence". Dipetakan ke tipe
+    untuk satu client, schema "6_Intelligence". Dipetakan ke tipe
     AuditFinding/Stage/Activity/Evidence di frontend oleh
     src/app/audit/lib/auditBridge.ts. Dipakai GET
     /api/client/{client_id}/audit."""

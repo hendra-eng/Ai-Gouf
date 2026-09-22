@@ -35,10 +35,21 @@ export interface DocumentsData {
   companyName: string | null;
   documents: ReturnType<typeof useDocumentsDbData>['documents'];
   documentFolders: ReturnType<typeof useDocumentsDbData>['documentFolders'];
+  /** [BARU] ID client aktif -- dipakai untuk memutuskan apakah tombol
+   * "Upload" boleh ditekan (butuh client aktif dulu). */
+  activeClientId: ReturnType<typeof useDocumentsDbData>['activeClientId'];
+  /** [BARU] Catat metadata dokumen baru + refresh daftar. Lempar error
+   * kalau belum ada client aktif -- tangkap di pemanggil (toast.error). */
+  uploadDocuments: ReturnType<typeof useDocumentsDbData>['uploadDocuments'];
+  /** [BARU] Ubah status dokumen + refresh daftar. */
+  changeDocumentStatus: ReturnType<typeof useDocumentsDbData>['changeDocumentStatus'];
 }
 
 export function useDocumentsData(): DocumentsData {
-  const { loading, isSampleData, companyName, documents, documentFolders } = useDocumentsDbData();
+  const {
+    loading, isSampleData, companyName, documents, documentFolders,
+    activeClientId, uploadDocuments, changeDocumentStatus,
+  } = useDocumentsDbData();
 
   return {
     loading,
@@ -46,5 +57,8 @@ export function useDocumentsData(): DocumentsData {
     companyName,
     documents: isSampleData ? sampleDocuments : documents,
     documentFolders: isSampleData ? sampleDocumentFolders : documentFolders,
+    activeClientId,
+    uploadDocuments,
+    changeDocumentStatus,
   };
 }

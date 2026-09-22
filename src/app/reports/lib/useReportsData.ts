@@ -103,6 +103,11 @@ export interface ReportsData {
   isSampleData: boolean;
   companyName: string | null;
   reports: Report[];
+  /** [BARU] Catat laporan baru ke report_registry (tombol "Create Report").
+   * Menyambung ke tabel report_registry saja -- 3 sumber otomatis
+   * (Laporan Keuangan/CALK/PPh Badan) tetap dihasilkan lewat alur
+   * generate masing-masing, bukan lewat sini. */
+  addReport: ReturnType<typeof useReportRegistry>['addReport'];
 }
 
 export function useReportsData(): ReportsData {
@@ -111,7 +116,7 @@ export function useReportsData(): ReportsData {
   const [loading, setLoading] = useState(true);
   const [realReports, setRealReports] = useState<Report[] | null>(null);
   const requestIdRef = useRef(0);
-  const { reports: registryReports, loading: loadingRegistry } = useReportRegistry();
+  const { reports: registryReports, loading: loadingRegistry, addReport } = useReportRegistry();
 
   useEffect(() => {
     if (!hydrated) return;
@@ -161,6 +166,7 @@ export function useReportsData(): ReportsData {
     isSampleData: !adaDataReal,
     companyName: activeClientName,
     reports: adaDataReal ? [...semuaReal, ...contohUntukKategoriBelumAda] : sampleReports,
+    addReport,
   };
 }
 
@@ -168,18 +174,26 @@ export interface ReportScheduleViewData {
   loading: boolean;
   isSampleData: boolean;
   scheduledReports: ScheduledReport[];
+  /** [BARU] Buat jadwal baru + simpan ke report_schedule. */
+  addSchedule: ReturnType<typeof useReportSchedule>['addSchedule'];
+  /** [BARU] Ubah status jadwal ("Pause"/"Resume") + simpan ke report_schedule. */
+  changeScheduleStatus: ReturnType<typeof useReportSchedule>['changeScheduleStatus'];
 }
 
-/** [BARU] Jadwal laporan berkala (tab "Report Scheduler") dari tabel
- * report_schedule -- sebelumnya cuma state lokal browser
- * (scheduledReports di reportsMockData.tsx), tidak pernah tersimpan ke
- * database. Menambah/menghapus jadwal lewat UI saat ini MASIH lokal
- * (belum ada endpoint POST/DELETE) -- lihat ReportsPageClient.tsx. */
+/** [DIUBAH] Jadwal laporan berkala (tab "Report Scheduler") dari tabel
+ * report_schedule. Menambah jadwal & ubah status sekarang beneran
+ * tersimpan ke Supabase (addSchedule/changeScheduleStatus) -- sebelumnya
+ * cuma state lokal browser (scheduledReports di reportsMockData.tsx),
+ * hilang tiap reload. Menghapus jadwal lewat UI MASIH lokal saja (belum
+ * ada endpoint DELETE report_schedule di backend) -- lihat
+ * ReportsPageClient.tsx. */
 export function useScheduledReportsData(): ReportScheduleViewData {
-  const { loading, isSampleData, scheduledReports } = useReportSchedule();
+  const { loading, isSampleData, scheduledReports, addSchedule, changeScheduleStatus } = useReportSchedule();
   return {
     loading,
     isSampleData,
     scheduledReports: isSampleData ? sampleScheduledReports : scheduledReports,
+    addSchedule,
+    changeScheduleStatus,
   };
 }

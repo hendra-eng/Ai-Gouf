@@ -13,9 +13,13 @@
 // src/app/transactions/purchase/purchasebridge.ts.
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { reportRegistryClient, reportScheduleClient } from '@/app/agent-ai/lib/api';
+import {
+  reportRegistryClient, reportScheduleClient,
+  tambahReportRegistry, tambahReportSchedule, ubahStatusReportSchedule,
+} from '@/app/agent-ai/lib/api';
 import type {
   Report,
   ReportCategory,
@@ -108,15 +112,31 @@ function mapReportSchedule(raw: RawReportSchedule[]): ScheduledReport[] {
   }));
 }
 
+export interface AddReportInput {
+  name: string;
+  category: ReportCategory;
+  description?: string;
+  period?: string;
+  formats?: ReportFormat[];
+  tags?: string[];
+}
+
 export interface ReportRegistryData {
   loading: boolean;
   reports: Report[];
+  activeClientId: string | number | null;
+  /** [BARU] Catat laporan baru ke report_registry (tombol "Create Report").
+   * Backend: POST /api/v1/management/reports/registry
+   * -> dbc.tambah_report_registry(). Lempar error kalau belum ada client
+   * aktif -- tangkap di pemanggil (toast.error). */
+  addReport: (input: AddReportInput) => Promise<void>;
 }
 
 /** Daftar laporan dari report_registry (kategori APAPUN) -- digabung dengan
  * 3 sumber otomatis oleh useReportsData.ts, bukan pengganti. */
 export function useReportRegistry(): ReportRegistryData {
   const { activeClientId, hydrated } = useActiveClient();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['report-registry', activeClientId],
@@ -127,21 +147,56 @@ export function useReportRegistry(): ReportRegistryData {
     enabled: hydrated && !!activeClientId,
   });
 
-  return { loading: !hydrated || isLoading, reports: data || [] };
+  const addReport = useCallback(
+    async (input: AddReportInput) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await tambahReportRegistry(activeClientId, {
+        name: input.name,
+        category: input.category,
+        description: input.description,
+        period: input.period,
+        formats: input.formats,
+        tags: input.tags,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['report-registry', activeClientId] });
+    },
+    [activeClientId, queryClient]
+  );
+
+  return { loading: !hydrated || isLoading, reports: data || [], activeClientId: activeClientId ?? null, addReport };
+}
+
+export interface AddScheduleInput {
+  reportName: string;
+  frequency: ScheduledReport['frequency'];
+  recipients?: string | string[];
+  format?: ReportFormat;
+  nextRun?: string;
 }
 
 export interface ReportScheduleData {
   loading: boolean;
   isSampleData: boolean;
   scheduledReports: ScheduledReport[];
+  activeClientId: string | number | null;
+  /** [BARU] Buat jadwal laporan baru (tombol "Add Schedule"). Backend:
+   * POST /api/v1/management/reports/schedule -> dbc.tambah_report_schedule(). */
+  addSchedule: (input: AddScheduleInput) => Promise<void>;
+  /** [BARU] Ubah status jadwal (tombol "Pause"/"Resume"). Backend:
+   * PATCH /api/v1/management/reports/schedule/{id}/status
+   * -> dbc.ubah_status_report_schedule(). Hapus jadwal ("X") MASIH lokal
+   * saja -- belum ada endpoint DELETE report_schedule di backend. */
+  changeScheduleStatus: (scheduleId: string, status: ScheduledReport['status']) => Promise<void>;
 }
 
 /** Jadwal laporan berkala dari report_schedule -- dipakai sebagai nilai
- * awal tab "Report Scheduler". Menambah/menghapus jadwal lewat UI saat ini
- * MASIH lokal (belum ada endpoint POST/DELETE) -- lihat catatan di
- * ReportsPageClient.tsx. */
+ * awal tab "Report Scheduler". Menambah jadwal & ubah status sekarang
+ * beneran tersimpan ke Supabase (lihat addSchedule/changeScheduleStatus).
+ * Menghapus jadwal lewat UI MASIH lokal saja (belum ada endpoint DELETE)
+ * -- lihat catatan di ReportsPageClient.tsx. */
 export function useReportSchedule(): ReportScheduleData {
   const { activeClientId, hydrated } = useActiveClient();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['report-schedule', activeClientId],
@@ -152,10 +207,36 @@ export function useReportSchedule(): ReportScheduleData {
     enabled: hydrated && !!activeClientId,
   });
 
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['report-schedule', activeClientId] }),
+    [queryClient, activeClientId]
+  );
+
+  const addSchedule = useCallback(
+    async (input: AddScheduleInput) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await tambahReportSchedule(activeClientId, input);
+      await invalidate();
+    },
+    [activeClientId, invalidate]
+  );
+
+  const changeScheduleStatus = useCallback(
+    async (scheduleId: string, status: ScheduledReport['status']) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await ubahStatusReportSchedule(activeClientId, scheduleId, status);
+      await invalidate();
+    },
+    [activeClientId, invalidate]
+  );
+
   const adaDataReal = !!data && data.length > 0;
   return {
     loading: !hydrated || isLoading,
     isSampleData: !adaDataReal,
     scheduledReports: data || [],
+    activeClientId: activeClientId ?? null,
+    addSchedule,
+    changeScheduleStatus,
   };
 }
