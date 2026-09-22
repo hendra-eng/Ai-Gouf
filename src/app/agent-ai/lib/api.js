@@ -622,18 +622,19 @@ export async function riwayatHasilClient(clientId) {
  * src/app/transactions/purchase/purchasebridge.ts.
  */
 export async function purchaseDataClient(clientId) {
-  return request(`/api/client/${clientId}/purchase`);
+  return request(`/api/v1/transaction/getPurchase?client_id=${clientId}`);
 }
 
 /**
- * [BARU] Data mentah tabel Documents (schema "7_Management",
- * "Management_Documents_Documents") untuk satu client. Lihat main.py:
- * GET /api/client/{client_id}/documents, dipetakan ke tipe
+ * [DIUBAH] Data mentah tabel Documents (schema "7_Management",
+ * "management_documents") untuk satu client. Lihat main.py:
+ * GET /api/v1/management/getDocuments (dulu
+ * /api/client/{client_id}/documents), dipetakan ke tipe
  * FinancialDocument frontend oleh
  * src/app/documents/lib/documentsDbBridge.ts.
  */
 export async function documentsDataClient(clientId) {
-  return request(`/api/client/${clientId}/documents`);
+  return request(`/api/v1/management/getDocuments?client_id=${clientId}`);
 }
 
 /**
@@ -662,7 +663,7 @@ export async function reportScheduleClient(clientId) {
  * Invoice/Customer frontend oleh src/app/accounts-receivable/lib/arDbBridge.ts.
  */
 export async function arDataClient(clientId) {
-  return request(`/api/client/${clientId}/ar`);
+  return request(`/api/v1/finance/getReceivable?client_id=${clientId}`);
 }
 
 /**
@@ -672,7 +673,7 @@ export async function arDataClient(clientId) {
  * dengan pesan siap tampil (Error.message berisi pesan itu).
  */
 export async function catatPembayaranAr(clientId, invoiceId, paymentDate, amount, method, reference) {
-  return request(`/api/client/${clientId}/ar/payments`, {
+  return request(`/api/v1/finance/addReceivablePayment?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -690,7 +691,7 @@ export async function catatPembayaranAr(clientId, invoiceId, paymentDate, amount
  * customer. Backend: POST /api/client/{id}/ar/notes -> dbc.tambah_catatan_ar().
  */
 export async function tambahCatatanAr(clientId, customerId, content, invoiceId, noteType) {
-  return request(`/api/client/${clientId}/ar/notes`, {
+  return request(`/api/v1/finance/addReceivableNote?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -707,7 +708,7 @@ export async function tambahCatatanAr(clientId, customerId, content, invoiceId, 
  * (manualStatus = null). Backend: PATCH /api/client/{id}/ar/invoices/{invoiceId}/status.
  */
 export async function ubahStatusInvoiceAr(clientId, invoiceId, manualStatus, alasan) {
-  return request(`/api/client/${clientId}/ar/invoices/${invoiceId}/status`, {
+  return request(`/api/v1/finance/updateReceivableInvoiceStatus?client_id=${clientId}&invoice_id=${invoiceId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ manual_status: manualStatus || null, alasan: alasan || null }),
@@ -723,7 +724,7 @@ export async function ubahStatusInvoiceAr(clientId, invoiceId, manualStatus, ala
  * oleh src/app/accounts-payable/lib/apDbBridge.ts.
  */
 export async function apDataClient(clientId) {
-  return request(`/api/client/${clientId}/ap`);
+  return request(`/api/v1/finance/getPayable?client_id=${clientId}`);
 }
 
 /**
@@ -732,7 +733,7 @@ export async function apDataClient(clientId) {
  * @param {string} [status] 'Scheduled' | 'Paid' (default) | 'Cancelled'
  */
 export async function catatPembayaranAp(clientId, billId, paymentDate, amount, status, method, referenceNo) {
-  return request(`/api/client/${clientId}/ap/payments`, {
+  return request(`/api/v1/finance/addPayablePayment?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -751,7 +752,7 @@ export async function catatPembayaranAp(clientId, billId, paymentDate, amount, s
  * vendor. Backend: POST /api/client/{id}/ap/notes -> dbc.tambah_catatan_ap().
  */
 export async function tambahCatatanAp(clientId, vendorId, content, billId) {
-  return request(`/api/client/${clientId}/ap/notes`, {
+  return request(`/api/v1/finance/addPayableNote?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ vendor_id: vendorId, bill_id: billId || null, content }),
@@ -763,7 +764,7 @@ export async function tambahCatatanAp(clientId, vendorId, content, billId) {
  * (manualStatus = null). Backend: PATCH /api/client/{id}/ap/bills/{billId}/status.
  */
 export async function ubahStatusBillAp(clientId, billId, manualStatus, alasan) {
-  return request(`/api/client/${clientId}/ap/bills/${billId}/status`, {
+  return request(`/api/v1/finance/updatePayableBillStatus?client_id=${clientId}&bill_id=${billId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ manual_status: manualStatus || null, alasan: alasan || null }),
@@ -776,7 +777,7 @@ export async function ubahStatusBillAp(clientId, billId, manualStatus, alasan) {
  */
 export async function ambilForecastAssumption(clientId, tahun) {
   const query = tahun ? `?tahun=${tahun}` : "";
-  return request(`/api/client/${clientId}/forecast-assumption${query}`);
+  return request(`/api/v1/planning/getForecastAssumption?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 /**
@@ -787,7 +788,7 @@ export async function ambilForecastAssumption(clientId, tahun) {
  * diisi yang dikirim. Backend: POST /api/client/{id}/forecast-assumption.
  */
 export async function simpanForecastAssumption(clientId, tahun, nilai) {
-  return request(`/api/client/${clientId}/forecast-assumption`, {
+  return request(`/api/v1/planning/saveForecastAssumption?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tahun: tahun || null, ...nilai }),
@@ -800,7 +801,7 @@ export async function simpanForecastAssumption(clientId, tahun, nilai) {
  */
 export async function daftarScenario(clientId, tahun) {
   const query = tahun ? `?tahun=${tahun}` : "";
-  return request(`/api/client/${clientId}/scenarios${query}`);
+  return request(`/api/v1/planning/getScenarios?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 /**
@@ -808,7 +809,7 @@ export async function daftarScenario(clientId, tahun) {
  * ScenarioPlanning.tsx). Backend: POST /api/client/{id}/scenarios.
  */
 export async function tambahScenario(clientId, tahun, namaSkenario, nilai = {}) {
-  return request(`/api/client/${clientId}/scenarios`, {
+  return request(`/api/v1/planning/addScenario?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tahun: tahun || null, nama_skenario: namaSkenario, ...nilai }),
@@ -819,7 +820,7 @@ export async function tambahScenario(clientId, tahun, namaSkenario, nilai = {}) 
  * [BARU] Hapus 1 skenario custom. Backend: DELETE /api/client/{id}/scenarios/{scenarioId}.
  */
 export async function hapusScenario(clientId, scenarioId) {
-  return request(`/api/client/${clientId}/scenarios/${scenarioId}`, { method: "DELETE" });
+  return request(`/api/v1/planning/deleteScenario?client_id=${clientId}&scenario_id=${scenarioId}`, { method: "DELETE" });
 }
 
 /**
@@ -828,7 +829,7 @@ export async function hapusScenario(clientId, scenarioId) {
  */
 export async function ambilFiscalCorrection(clientId, tahun) {
   const query = tahun ? `?tahun=${tahun}` : "";
-  return request(`/api/client/${clientId}/fiscal-correction${query}`);
+  return request(`/api/v1/planning/getFiscalCorrection?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 /**
@@ -837,7 +838,7 @@ export async function ambilFiscalCorrection(clientId, tahun) {
  * Backend: GET /api/client/{id}/tax-compliance-tasks.
  */
 export async function daftarTaxTasks(clientId) {
-  return request(`/api/client/${clientId}/tax-compliance-tasks`);
+  return request(`/api/v1/planning/getTaxComplianceTasks?client_id=${clientId}`);
 }
 
 /**
@@ -845,7 +846,7 @@ export async function daftarTaxTasks(clientId) {
  * ComplianceTasks.tsx). Backend: POST /api/client/{id}/tax-compliance-tasks.
  */
 export async function tambahTaxTask(clientId, data) {
-  return request(`/api/client/${clientId}/tax-compliance-tasks`, {
+  return request(`/api/v1/planning/addTaxComplianceTask?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -857,7 +858,7 @@ export async function tambahTaxTask(clientId, data) {
  * status). Backend: PATCH /api/client/{id}/tax-compliance-tasks/{taskId}.
  */
 export async function ubahStatusTaxTask(clientId, taskId, status) {
-  return request(`/api/client/${clientId}/tax-compliance-tasks/${taskId}`, {
+  return request(`/api/v1/planning/updateTaxComplianceTaskStatus?client_id=${clientId}&task_id=${taskId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -869,7 +870,7 @@ export async function ubahStatusTaxTask(clientId, taskId, status) {
  * Backend: DELETE /api/client/{id}/tax-compliance-tasks/{taskId}.
  */
 export async function hapusTaxTask(clientId, taskId) {
-  return request(`/api/client/${clientId}/tax-compliance-tasks/${taskId}`, { method: "DELETE" });
+  return request(`/api/v1/planning/deleteTaxComplianceTask?client_id=${clientId}&task_id=${taskId}`, { method: "DELETE" });
 }
 
 /**
@@ -884,7 +885,7 @@ export async function hapusTaxTask(clientId, taskId) {
  * @param {string} [alasan]
  */
 export async function updatePurchaseStatus(clientId, purchaseRowId, status, alasan) {
-  return request(`/api/client/${clientId}/purchase/${purchaseRowId}/status`, {
+  return request(`/api/v1/transaction/updatePurchaseStatus?client_id=${clientId}&purchase_row_id=${purchaseRowId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status, alasan }),
@@ -900,7 +901,7 @@ export async function updatePurchaseStatus(clientId, purchaseRowId, status, alas
  * @param {string} [fromStatus] -- kalau diisi, baris yang statusnya bukan ini dilewati
  */
 export async function bulkUpdatePurchaseStatus(clientId, ids, targetStatus, fromStatus) {
-  return request(`/api/client/${clientId}/purchase/bulk-status`, {
+  return request(`/api/v1/transaction/bulkUpdatePurchaseStatus?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, target_status: targetStatus, from_status: fromStatus }),
@@ -915,7 +916,7 @@ export async function bulkUpdatePurchaseStatus(clientId, ids, targetStatus, from
  * @param {string} exceptionStatus
  */
 export async function updatePurchaseExceptionStatus(clientId, exceptionId, exceptionStatus) {
-  return request(`/api/client/${clientId}/purchase/exceptions/${exceptionId}/status`, {
+  return request(`/api/v1/transaction/updatePurchaseExceptionStatus?client_id=${clientId}&exception_id=${exceptionId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ exception_status: exceptionStatus }),
@@ -933,23 +934,24 @@ export async function auditLogClient(clientId, limit = 200) {
 }
 
 /**
- * [BARU] Data mentah modul Audit Center (finding, stage, activity,
+ * [DIUBAH] Data mentah modul Audit Center (finding, stage, activity,
  * evidence metadata -- tanpa isi file) untuk satu client, schema
- * "6_Intellegence". Lihat main.py: GET /api/client/{client_id}/audit,
- * dipetakan ke tipe AuditFinding/Stage/Activity/Evidence oleh
- * src/app/audit/lib/auditBridge.ts.
+ * "6_Intellegence". Lihat main.py: GET /api/v1/intelligence/getAudit
+ * (dulu /api/client/{client_id}/audit), dipetakan ke tipe
+ * AuditFinding/Stage/Activity/Evidence oleh src/app/audit/lib/auditBridge.ts.
  */
 export async function auditDataClient(clientId) {
-  return request(`/api/client/${clientId}/audit`);
+  return request(`/api/v1/intelligence/getAudit?client_id=${clientId}`);
 }
 
 /**
- * [BARU] Tambah 1 temuan audit baru (tombol "New Finding" di
+ * [DIUBAH] Tambah 1 temuan audit baru (tombol "New Finding" di
  * src/app/audit/page.tsx). Backend: POST
- * /api/client/{id}/audit/findings.
+ * /api/v1/intelligence/addAuditFinding (dulu
+ * /api/client/{id}/audit/findings).
  */
 export async function tambahAuditFinding(clientId, data) {
-  return request(`/api/client/${clientId}/audit/findings`, {
+  return request(`/api/v1/intelligence/addAuditFinding?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -957,13 +959,14 @@ export async function tambahAuditFinding(clientId, data) {
 }
 
 /**
- * [BARU] Ubah field temuan audit (status/risk/root cause/rekomendasi/
+ * [DIUBAH] Ubah field temuan audit (status/risk/root cause/rekomendasi/
  * tanggapan manajemen/dst) -- dipakai tombol Review/Resolve/Escalate
  * di FindingDrawer. Backend: PATCH
- * /api/client/{id}/audit/findings/{findingId}.
+ * /api/v1/intelligence/updateAuditFinding (dulu
+ * /api/client/{id}/audit/findings/{findingId}).
  */
 export async function ubahAuditFinding(clientId, findingId, fields) {
-  return request(`/api/client/${clientId}/audit/findings/${findingId}`, {
+  return request(`/api/v1/intelligence/updateAuditFinding?client_id=${clientId}&finding_id=${findingId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(fields),
@@ -971,42 +974,46 @@ export async function ubahAuditFinding(clientId, findingId, fields) {
 }
 
 /**
- * [BARU] Upload 1 file evidence utk 1 temuan (tombol "Add Evidence" di
+ * [DIUBAH] Upload 1 file evidence utk 1 temuan (tombol "Add Evidence" di
  * FindingDrawer). Backend: POST
- * /api/client/{id}/audit/findings/{findingId}/evidence.
+ * /api/v1/intelligence/addAuditEvidence (dulu
+ * /api/client/{id}/audit/findings/{findingId}/evidence).
  */
 export async function tambahAuditEvidence(clientId, findingId, file) {
   const formData = new FormData();
   formData.append("file", file);
-  return request(`/api/client/${clientId}/audit/findings/${findingId}/evidence`, {
+  return request(`/api/v1/intelligence/addAuditEvidence?client_id=${clientId}&finding_id=${findingId}`, {
     method: "POST",
     body: formData,
   });
 }
 
 /**
- * [BARU] URL untuk download/lihat 1 file evidence -- dipakai langsung
+ * [DIUBAH] URL untuk download/lihat 1 file evidence -- dipakai langsung
  * sbg `href` (bukan lewat request(), karena responnya bukan JSON).
- * Backend: GET /api/client/{id}/audit/evidence/{evidenceId}/file.
+ * Backend: GET /api/v1/intelligence/getAuditEvidenceFile (dulu
+ * /api/client/{id}/audit/evidence/{evidenceId}/file).
  */
 export function auditEvidenceFileUrl(clientId, evidenceId) {
-  return `${API_BASE_URL}/api/client/${clientId}/audit/evidence/${evidenceId}/file`;
+  return `${API_BASE_URL}/api/v1/intelligence/getAuditEvidenceFile?client_id=${clientId}&evidence_id=${evidenceId}`;
 }
 
 /**
- * [BARU] Hapus 1 file evidence. Backend: DELETE
- * /api/client/{id}/audit/evidence/{evidenceId}.
+ * [DIUBAH] Hapus 1 file evidence. Backend: DELETE
+ * /api/v1/intelligence/deleteAuditEvidence (dulu
+ * /api/client/{id}/audit/evidence/{evidenceId}).
  */
 export async function hapusAuditEvidence(clientId, evidenceId) {
-  return request(`/api/client/${clientId}/audit/evidence/${evidenceId}`, { method: "DELETE" });
+  return request(`/api/v1/intelligence/deleteAuditEvidence?client_id=${clientId}&evidence_id=${evidenceId}`, { method: "DELETE" });
 }
 
 /**
- * [BARU] Tandai 1 tahapan audit selesai/berjalan -- klik di Audit
- * Progress bar. Backend: PATCH /api/client/{id}/audit/stage/{stageId}.
+ * [DIUBAH] Tandai 1 tahapan audit selesai/berjalan -- klik di Audit
+ * Progress bar. Backend: PATCH /api/v1/intelligence/updateAuditStage
+ * (dulu /api/client/{id}/audit/stage/{stageId}).
  */
 export async function ubahAuditStage(clientId, stageId, fields) {
-  return request(`/api/client/${clientId}/audit/stage/${stageId}`, {
+  return request(`/api/v1/intelligence/updateAuditStage?client_id=${clientId}&stage_id=${stageId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(fields),
@@ -1154,7 +1161,7 @@ export async function ambilKpiBento(clientId, tahun /* optional */, cabang /* op
 // OverviewContent.tsx (Financial Overview), menggantikan opsi hardcoded
 // "Jakarta"/"Surabaya". Lihat main.py: GET /api/client/{client_id}/branches.
 export async function daftarBranches(clientId) {
-  return request(`/api/client/${clientId}/branches`);
+  return request(`/api/v1/overview/getBranches?client_id=${clientId}`);
 }
 
 // [BARU] Anggaran P&L (YTD s.d. bulan_sampai, opsional per cabang) untuk
@@ -1171,7 +1178,7 @@ export async function ambilFinancialBudget(clientId, tahun, bulanSampai = 12, br
   if (bulanSampai) params.set('bulan_sampai', bulanSampai);
   if (branchId) params.set('branch_id', branchId);
   const query = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/client/${clientId}/financial-budget${query}`);
+  return request(`/api/v1/overview/getFinancialBudget?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 // [BARU] Anggaran P&L untuk kolom "Budget" di kartu "Profitability vs
@@ -1184,7 +1191,7 @@ export async function ambilPlBudget(clientId, tahun, bulanSampai = 12) {
   if (tahun) params.set('tahun', tahun);
   if (bulanSampai) params.set('bulan_sampai', bulanSampai);
   const query = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/client/${clientId}/pl-budget${query}`);
+  return request(`/api/v1/finance/getProfitLossBudget?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 // [BARU] Insight P&L untuk panel "AI Performance Insights", sumber tabel
@@ -1194,7 +1201,7 @@ export async function ambilPlBudget(clientId, tahun, bulanSampai = 12) {
 export async function ambilPlInsights(clientId, modul = "profit_loss") {
   const params = new URLSearchParams();
   if (modul) params.set('modul', modul);
-  return request(`/api/client/${clientId}/pl-insights?${params.toString()}`);
+  return request(`/api/v1/finance/getProfitLossInsights?client_id=${clientId}&${params.toString()}`);
 }
 
 // [BARU] Proyeksi arus kas bulanan untuk halaman Cash Flow, sumber tabel
@@ -1204,7 +1211,7 @@ export async function ambilPlInsights(clientId, modul = "profit_loss") {
 // /api/client/{id}/cash-flow-forecast.
 export async function ambilCashFlowForecast(clientId, tahun) {
   const query = tahun ? `?tahun=${encodeURIComponent(tahun)}` : "";
-  return request(`/api/client/${clientId}/cash-flow-forecast${query}`);
+  return request(`/api/v1/finance/getCashFlowForecast?client_id=${clientId}${query ? `&${query.slice(1)}` : ""}`);
 }
 
 // [BARU] Register aset tetap per-unit (Fixed Asset Register & Depreciation
@@ -1213,7 +1220,7 @@ export async function ambilCashFlowForecast(clientId, tahun) {
 // "Aset Tetap" di public.hasil (lihat assetRegisterBridge.ts).
 // Backend: GET /api/client/{client_id}/assets -> dbc.ambil_fixed_assets().
 export async function ambilFixedAssets(clientId) {
-  return request(`/api/client/${clientId}/assets`);
+  return request(`/api/v1/asset/getFixedAssets?client_id=${clientId}`);
 }
 
 /**
@@ -1223,7 +1230,7 @@ export async function ambilFixedAssets(clientId) {
  * location/department (name & cost wajib).
  */
 export async function tambahFixedAsset(clientId, fields) {
-  return request(`/api/client/${clientId}/assets`, {
+  return request(`/api/v1/asset/addFixedAsset?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(fields),
@@ -1236,7 +1243,7 @@ export async function tambahFixedAsset(clientId, fields) {
  * PATCH /api/client/{id}/assets/{assetId} -> dbc.ubah_fixed_asset().
  */
 export async function ubahFixedAsset(clientId, assetId, fields) {
-  return request(`/api/client/${clientId}/assets/${assetId}`, {
+  return request(`/api/v1/asset/updateFixedAsset?client_id=${clientId}&asset_id=${assetId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(fields),
@@ -1248,7 +1255,7 @@ export async function ubahFixedAsset(clientId, assetId, fields) {
  * PATCH /api/client/{id}/assets/{assetId}/dispose -> dbc.disposisi_fixed_asset().
  */
 export async function disposisiFixedAsset(clientId, assetId, disposalDate, disposalValue) {
-  return request(`/api/client/${clientId}/assets/${assetId}/dispose`, {
+  return request(`/api/v1/asset/disposeFixedAsset?client_id=${clientId}&asset_id=${assetId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ disposal_date: disposalDate, disposal_value: disposalValue || 0 }),
@@ -1715,7 +1722,7 @@ export async function postingMassalByIds(clientId, postingIds) {
  * @param {string} status -- "" (default, semua status) | "draft" | "terposting" | "ditolak"
  */
 export async function daftarBankCash(clientId, status = "") {
-  return request(`/api/client/${clientId}/bank-cash?status=${encodeURIComponent(status)}`);
+  return request(`/api/v1/transaction/getBankCash?client_id=${clientId}&status=${encodeURIComponent(status)}`);
 }
 
 /**
@@ -1724,7 +1731,7 @@ export async function daftarBankCash(clientId, status = "") {
  * @param {Record<string, unknown>} perubahan
  */
 export async function updateBankCash(clientId, bankCashId, perubahan) {
-  return request(`/api/client/${clientId}/bank-cash/${bankCashId}`, {
+  return request(`/api/v1/transaction/updateBankCash?client_id=${clientId}&bank_cash_id=${bankCashId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(perubahan),
@@ -1737,7 +1744,7 @@ export async function updateBankCash(clientId, bankCashId, perubahan) {
  * @returns {Promise<{berhasil: boolean, bank_cash_id: number}>}
  */
 export async function buatBankCashManual(clientId, bankCashBaru) {
-  return request(`/api/client/${clientId}/bank-cash/manual`, {
+  return request(`/api/v1/transaction/addBankCashManual?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(bankCashBaru),
@@ -1749,7 +1756,7 @@ export async function buatBankCashManual(clientId, bankCashBaru) {
  * @param {number[]} ids
  */
 export async function postingMassalBankCashByIds(clientId, ids) {
-  return request(`/api/client/${clientId}/bank-cash/posting-massal-by-ids`, {
+  return request(`/api/v1/transaction/postBankCashBulk?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
@@ -1762,7 +1769,7 @@ export async function postingMassalBankCashByIds(clientId, ids) {
  * @param {string} [alasan]
  */
 export async function tolakBankCash(clientId, bankCashId, alasan) {
-  return request(`/api/client/${clientId}/bank-cash/${bankCashId}/tolak`, {
+  return request(`/api/v1/transaction/rejectBankCash?client_id=${clientId}&bank_cash_id=${bankCashId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ alasan }),
@@ -1782,7 +1789,7 @@ export async function tolakBankCash(clientId, bankCashId, alasan) {
  * @param {string} status -- "" (default, semua status) | "Unposted" | "Posted" | "Draft" | "Reconciled" | "Voided"
  */
 export async function daftarFinanceOther(clientId, status = "") {
-  return request(`/api/client/${clientId}/finance-other?status=${encodeURIComponent(status)}`);
+  return request(`/api/v1/transaction/getFinanceOther?client_id=${clientId}&status=${encodeURIComponent(status)}`);
 }
 
 /**
@@ -1791,7 +1798,7 @@ export async function daftarFinanceOther(clientId, status = "") {
  * @param {Record<string, unknown>} perubahan
  */
 export async function updateFinanceOther(clientId, jeId, perubahan) {
-  return request(`/api/client/${clientId}/finance-other/${encodeURIComponent(jeId)}`, {
+  return request(`/api/v1/transaction/updateFinanceOther?client_id=${clientId}&je_id=${encodeURIComponent(jeId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(perubahan),
@@ -1804,7 +1811,7 @@ export async function updateFinanceOther(clientId, jeId, perubahan) {
  * @returns {Promise<{berhasil: boolean, je_id: string}>}
  */
 export async function buatFinanceOtherManual(clientId, entriBaru) {
-  return request(`/api/client/${clientId}/finance-other/manual`, {
+  return request(`/api/v1/transaction/addFinanceOtherManual?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(entriBaru),
@@ -1816,7 +1823,7 @@ export async function buatFinanceOtherManual(clientId, entriBaru) {
  * @param {string[]} jeIds
  */
 export async function postingMassalFinanceOtherByJeIds(clientId, jeIds) {
-  return request(`/api/client/${clientId}/finance-other/posting-massal-by-je-ids`, {
+  return request(`/api/v1/transaction/postFinanceOtherBulk?client_id=${clientId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ je_ids: jeIds }),
@@ -1829,7 +1836,7 @@ export async function postingMassalFinanceOtherByJeIds(clientId, jeIds) {
  * @param {string} [alasan]
  */
 export async function tolakFinanceOther(clientId, jeId, alasan) {
-  return request(`/api/client/${clientId}/finance-other/${encodeURIComponent(jeId)}/tolak`, {
+  return request(`/api/v1/transaction/rejectFinanceOther?client_id=${clientId}&je_id=${encodeURIComponent(jeId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ alasan }),

@@ -185,7 +185,7 @@ class Client(Base):
     status = None
     # [DIUBAH] akuntan_penanggung_jawab sekarang uuid, merujuk ke
     # management_users.id_user (dulu varchar nama bebas).
-    assigned_accountant = Column("akuntan_penanggung_jawab", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
+    assigned_accountant = Column("akuntan_penanggung_jawab", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
     contact_name = Column("nama_pic", String(255), nullable=True)
     npwp = Column(String(20), nullable=True)
     address = Column("alamat", Text, nullable=True)
@@ -210,10 +210,10 @@ class Client(Base):
     status_kerjasama = Column("status", String(10), nullable=True)
     tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
     # [DIUBAH] created_by/edited_by/deleted_by sekarang uuid -> management_users
-    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
-    diperbarui_oleh = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
+    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    diperbarui_oleh = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
     # [BARU] hanya dipakai sementara untuk backfill migrasi -- lihat
     # migration_uuid_client_id.sql (old_client_id = id integer lama).
     old_client_id = Column(Integer, nullable=True)
@@ -308,7 +308,7 @@ class Coa(Base):
     __tablename__ = "coa"
     __table_args__ = {"schema": "1_app"}
 
-    id = Column(Integer, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     no_akun = Column(String(50), nullable=False)
     nama_akun = Column(String(200), nullable=False)
@@ -514,7 +514,7 @@ class CoaStandardMapping(Base):
 
     id = Column(Integer, primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    coa_id = Column(Integer, ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -535,7 +535,7 @@ class CompanyAccountRole(Base):
     id = Column(Integer, primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("account_roles.id"), nullable=False)
-    coa_id = Column(Integer, ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
     effective_to = Column(Date, nullable=True)
@@ -554,7 +554,7 @@ class JournalEntry(Base):
         {"schema": "1_app"},  # [SESUAI DB] tabel fisik ada di 1_app.journal_entries
     )
 
-    id = Column(Integer, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     journal_no = Column(String(80), nullable=False)
     source_module = Column(String(50), nullable=False, default="GENERAL_JOURNAL")
@@ -567,13 +567,13 @@ class JournalEntry(Base):
     status = Column(String(20), nullable=False, default="DRAFT")
     currency = Column(String(10), nullable=False, default="IDR")
     exchange_rate = Column(Numeric(20, 6), nullable=False, default=1)
-    created_by = Column(String(100), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     approved_by = Column(String(100), nullable=True)
     posted_by = Column(String(100), nullable=True)
     posted_at = Column(DateTime, nullable=True)
-    reversed_from_id = Column(Integer, ForeignKey("1_app.journal_entries.id"), nullable=True)
+    reversed_from_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.journal_entries.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column("edited_at", DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class JournalLine(Base):
@@ -592,11 +592,11 @@ class JournalLine(Base):
         {"schema": "1_app"},
     )
 
-    id = Column(Integer, primary_key=True)
-    journal_entry_id = Column(Integer, ForeignKey("1_app.journal_entries.id"), nullable=False)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.journal_entries.id"), nullable=False)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     line_no = Column(Integer, nullable=False)
-    coa_id = Column(Integer, ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     description = Column(Text, nullable=True)
     debit = Column(Numeric(24, 2), nullable=False, default=0)
     credit = Column(Numeric(24, 2), nullable=False, default=0)
@@ -607,7 +607,7 @@ class JournalLine(Base):
     cost_center = Column(String(100), nullable=True)
     project = Column(String(100), nullable=True)
     reconciliation_no = Column(String(100), nullable=True)
-    created_at = Column("dibuat_at", DateTime, default=datetime.now)
+    created_at = Column(DateTime(timezone=True), default=datetime.now)  # [SESUAI DB] dulu bernama dibuat_at, sudah distandarkan jadi created_at
 
     coa = relationship("Coa", lazy="joined", foreign_keys=[coa_id])
 
@@ -860,7 +860,7 @@ class AuditLog(Base):
     __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=False)
+    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=False)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
     # [DIUBAH] "user" (dulu: nama/username string bebas) TIDAK PUNYA
     # padanan kolom lagi -- management_audit_trails pakai id_user (uuid,
@@ -879,11 +879,11 @@ class AuditLog(Base):
     detail = None
     dibuat_at = Column("timestamp", DateTime, nullable=False, default=datetime.now)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=True)
-    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), server_default=text("now()"), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
-    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
 
 
 class User(Base):
@@ -904,7 +904,7 @@ class User(Base):
     # public.management_users lagi.
     __table_args__ = {"schema": "1_app"}
 
-    id_user = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    id_user = Column("id", PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))  # [SESUAI DB] kolom fisik sudah distandarkan jadi "id"
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     nama_user = Column(String(255), nullable=False)
@@ -917,13 +917,13 @@ class User(Base):
     role = Column(Integer, nullable=False, default=1)
     access = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    updated_at = Column("edited_at", DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     # [BARU] kolom audit & relasi client tunggal, ditambahkan di migrasi
     # management_users terbaru.
-    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
-    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
 
 
@@ -954,7 +954,7 @@ class UserClientAccess(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id_user"), nullable=False)
+    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=False)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
@@ -1137,25 +1137,25 @@ class ReminderDeadlineSpt(Base):
 
 class PurchaseVendor(Base):
     """Vendor/supplier khusus modul Purchase."""
-    __tablename__ = "financial_transaction_purchase_vendor"
+    __tablename__ = "finance_transaction_purchase_vendor"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     name = Column(String(200), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class PurchaseTransactionRow(Base):
     """Header transaksi Purchase (satu invoice/tagihan vendor)."""
-    __tablename__ = "financial_transaction_purchase_transaction"
+    __tablename__ = "finance_transaction_purchase_transaction"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     purchase_id = Column(String(100), nullable=False)  # mis. "PUR-2026-09-0001"
-    vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_transaction_purchase_vendor.id"), nullable=True)
+    vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_vendor.id"), nullable=True)
     invoice_no = Column(String(100), nullable=True)
     po_number = Column(String(100), nullable=True)
     category = Column(String(100), nullable=True)
@@ -1178,14 +1178,14 @@ class PurchaseTransactionRow(Base):
     posted_by = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
     # [SESUAI DB] kolom manual_status sudah ada di tabel fisik 3_Financial (nullable).
     manual_status = Column(String(30), nullable=True)
 
 
 class PurchaseLineItemRow(Base):
     """Rincian barang/jasa per purchase_id (banyak baris per transaksi)."""
-    __tablename__ = "financial_transaction_purchase_line_items"
+    __tablename__ = "finance_transaction_purchase_line_items"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1207,7 +1207,7 @@ class PurchaseLineItemRow(Base):
 
 class PurchaseSourceDataRow(Base):
     """Dokumen sumber (PO/invoice/dsb) sebelum dipetakan jadi purchase_transaction."""
-    __tablename__ = "financial_transaction_purchase_source_data"
+    __tablename__ = "finance_transaction_purchase_source_data"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1225,7 +1225,7 @@ class PurchaseSourceDataRow(Base):
     validation = Column(String(50), nullable=True)
     status = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class PurchaseJournalLineRow(Base):
@@ -1234,7 +1234,7 @@ class PurchaseJournalLineRow(Base):
     Nama tabel fisik "purchase_journal_lines" -- lihat catatan rename di
     atas modul ini (sebelumnya salah dibuat sebagai "journal_entries").
     """
-    __tablename__ = "financial_transaction_purchase_journal_lines"
+    __tablename__ = "finance_transaction_purchase_journal_lines"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1250,7 +1250,7 @@ class PurchaseJournalLineRow(Base):
 
 class PurchaseExceptionRow(Base):
     """Exception/pengecualian per purchase_id (butuh review akuntan)."""
-    __tablename__ = "financial_transaction_purchase_exceptions"
+    __tablename__ = "finance_transaction_purchase_exceptions"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1260,11 +1260,11 @@ class PurchaseExceptionRow(Base):
     severity = Column(String(30), nullable=True)
     exception_status = Column(String(30), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 # ============================================================
-# DOCUMENTS -- schema "7_Management", tabel "Management_Documents_Documents"
+# DOCUMENTS -- schema "7_Management", tabel "management_documents"
 # ============================================================
 # [BARU] Tabel khusus untuk halaman Documents (src/app/documents/*), dibuat
 # manual oleh user lewat Supabase SQL Editor -- sama pola dengan modul
@@ -1273,7 +1273,7 @@ class PurchaseExceptionRow(Base):
 # src/app/documents/lib/useDocumentsData.ts). Field di sini sudah 1:1
 # dengan tipe frontend FinancialDocument (src/lib/documentsMockData.tsx).
 class DocumentRow(Base):
-    __tablename__ = "Management_Documents_Documents"
+    __tablename__ = "management_documents"
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1288,7 +1288,7 @@ class DocumentRow(Base):
     tags = Column(String(255), nullable=True)  # disimpan sebagai 1 string dipisah koma, bukan array
     related_record = Column(String(200), nullable=True)  # mis. nomor invoice/PO terkait
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def ambil_data_documents(client_id: str) -> List[Dict[str, Any]]:
@@ -1342,7 +1342,7 @@ def ambil_data_documents(client_id: str) -> List[Dict[str, Any]]:
 # (tab "Report Scheduler"), sebelumnya cuma state lokal di browser
 # (initialScheduledReports), tidak pernah tersimpan ke database.
 class ReportRegistryRow(Base):
-    __tablename__ = "Management_Reports_report_registry"
+    __tablename__ = "management_report_registry"
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1351,17 +1351,17 @@ class ReportRegistryRow(Base):
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False)  # financial-statements/management/tax/ar-ap/budget/audit/custom
     period = Column(String(50), nullable=True)
-    created_by = Column(String(100), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     formats = Column(String(100), nullable=True)  # disimpan sebagai 1 string dipisah koma, bukan array
     status = Column(String(30), nullable=True)  # ready/generating/scheduled/error
     file_size = Column(String(30), nullable=True)
     tags = Column(String(255), nullable=True)  # disimpan sebagai 1 string dipisah koma, bukan array
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class ReportScheduleRow(Base):
-    __tablename__ = "Management_Reports_report_schedule"
+    __tablename__ = "management_report_schedule"
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1373,7 +1373,7 @@ class ReportScheduleRow(Base):
     next_run = Column(Date, nullable=True)
     status = Column(String(20), nullable=True)  # Active/Paused/Error
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def ambil_data_report_registry(client_id: str) -> List[Dict[str, Any]]:
@@ -1439,7 +1439,7 @@ def ambil_data_report_schedule(client_id: str) -> List[Dict[str, Any]]:
 # src/app/accounts-receivable/lib/arDbBridge.ts untuk sisi frontend.
 class ARCustomerRow(Base):
     """Customer master modul AR (bukan customer umum -- khusus piutang)."""
-    __tablename__ = "financial_account_receivable_ar_customer"
+    __tablename__ = "finance_account_receivable_ar_customer"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -1454,19 +1454,19 @@ class ARCustomerRow(Base):
     alamat = Column(Text, nullable=True)
     aktif = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class ARInvoiceRow(Base):
     """Invoice/tagihan ke customer. Sisa tagihan dihitung dari ar_payment,
     BUKAN kolom tersimpan -- lihat ambil_data_ar()."""
-    __tablename__ = "financial_account_receivable_ar_invoice"
+    __tablename__ = "finance_account_receivable_ar_invoice"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_account_receivable_ar_customer.id"), nullable=False)
-    journal_entry_id = Column(Integer, nullable=True)
+    customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_customer.id"), nullable=False)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     invoice_number = Column(String(100), nullable=False)
     invoice_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False)
@@ -1475,38 +1475,38 @@ class ARInvoiceRow(Base):
     # Overdue/Open/dst) dihitung otomatis dari due_date + ar_payment.
     manual_status = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class ARPaymentRow(Base):
     """Pembayaran invoice. Satu invoice boleh punya banyak baris (cicilan)."""
-    __tablename__ = "financial_account_receivable_ar_payment"
+    __tablename__ = "finance_account_receivable_ar_payment"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_account_receivable_ar_invoice.id"), nullable=False)
+    invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_invoice.id"), nullable=False)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(24, 2), nullable=False)
     method = Column(String(50), nullable=True)
     reference = Column(String(100), nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
-    created_by = Column(String(100), nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ARCollectionNoteRow(Base):
     """Catatan follow-up penagihan (telepon/email/kunjungan/dispute/dll)."""
-    __tablename__ = "financial_account_receivable_ar_collection_note"
+    __tablename__ = "finance_account_receivable_ar_collection_note"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_account_receivable_ar_customer.id"), nullable=False)
-    invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_account_receivable_ar_invoice.id"), nullable=True)
+    customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_customer.id"), nullable=False)
+    invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_invoice.id"), nullable=True)
     note_type = Column(String(50), nullable=False, default="general")
     content = Column(Text, nullable=False)
-    created_by = Column(String(100), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
@@ -2166,34 +2166,34 @@ class APPaymentRow(Base):
     """Pembayaran tagihan vendor. status='Scheduled' = rencana bayar saja
     (belum mengurangi sisa tagihan), status='Paid' = sudah benar-benar
     dibayar (baru dijumlahkan sbg `paid`)."""
-    __tablename__ = "financial_account_payable_ap_payment"
+    __tablename__ = "finance_account_payable_ap_payment"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_transaction_purchase_transaction.id"), nullable=False)
+    bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=False)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(24, 2), nullable=False)
     status = Column(String(20), nullable=False, default="Paid")
     method = Column(String(50), nullable=True)
     reference_no = Column(String(100), nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     recorded_by = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class APNoteRow(Base):
     """Catatan internal per vendor (atau per bill kalau bill_id diisi)."""
-    __tablename__ = "financial_account_payable_ap_note"
+    __tablename__ = "finance_account_payable_ap_note"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_transaction_purchase_vendor.id"), nullable=False)
-    bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_transaction_purchase_transaction.id"), nullable=True)
+    vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_vendor.id"), nullable=False)
+    bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=True)
     content = Column(Text, nullable=False)
-    created_by = Column(String(100), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
@@ -2478,7 +2478,7 @@ def ubah_status_bill_ap(
 class ForecastAssumptionRow(Base):
     """Asumsi budget per client per tahun (1 baris per client+tahun --
     'Apply' di ForecastAssumptions.tsx melakukan upsert ke baris ini)."""
-    __tablename__ = "Planning_Budget & Forecast_forecast_assumption"
+    __tablename__ = "planning_budget_forecast_assumption"
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -2498,7 +2498,7 @@ class ForecastAssumptionRow(Base):
 class ScenarioRow(Base):
     """Skenario planning custom yang disimpan user (tombol "New Scenario"
     di ScenarioPlanning.tsx) -- banyak baris per client/tahun."""
-    __tablename__ = "Planning_Budget & Forecast_scenario"
+    __tablename__ = "planning_budget_forecast_scenario"
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
@@ -2510,9 +2510,9 @@ class ScenarioRow(Base):
     opex_growth_pct = Column(Numeric, nullable=True)
     tax_rate_pct = Column(Numeric, nullable=True)
     is_base_case = Column(Boolean, nullable=False, default=False)
-    created_by = Column(String(100), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def _forecast_num(v):
@@ -2691,23 +2691,23 @@ def hapus_scenario(client_id: str, scenario_id: str) -> Dict[str, Any]:
 
 # ============================================================
 # MODUL OVERVIEW (BARU) -- 2 tabel dibuat manual oleh user lewat Supabase
-# di schema "2_Overview": overview_overview_management_branches (daftar
+# di schema "2_Overview": overview_management_branches (daftar
 # cabang per client, dipakai dropdown "Branch" di halaman Financial
-# Overview) dan overview_overview_financial_budget (angka Anggaran P&L
+# Overview) dan overview_financial_budget (angka Anggaran P&L
 # per client/cabang/tahun/bulan, dipakai mode "Budget" di KPIBentoGrid --
 # menggantikan konstanta hardcoded BUDGET di src/lib/financialData.tsx).
 # ============================================================
 
 class ManagementBranch(Base):
     """Daftar cabang per client -- sumber dropdown Branch di Financial Overview."""
-    __tablename__ = "overview_overview_management_branches"
+    __tablename__ = "overview_management_branches"
     __table_args__ = {"schema": "2_Overview"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     nama_cabang = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class OverviewFinancialBudget(Base):
@@ -2718,12 +2718,12 @@ class OverviewFinancialBudget(Base):
     dengan rumus yang SAMA: grossProfit = revenue - cogs,
     ebitda = grossProfit - op_ex, netProfit = revenue - (cogs+op_ex+da+interest+tax).
     """
-    __tablename__ = "overview_overview_financial_budget"
+    __tablename__ = "overview_financial_budget"
     __table_args__ = {"schema": "2_Overview"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    branch_id = Column(PG_UUID(as_uuid=False), ForeignKey("2_Overview.overview_overview_management_branches.id"), nullable=True)
+    branch_id = Column(PG_UUID(as_uuid=False), ForeignKey("2_Overview.overview_management_branches.id"), nullable=True)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
     revenue = Column(Numeric, nullable=True)
@@ -2733,7 +2733,7 @@ class OverviewFinancialBudget(Base):
     interest = Column(Numeric, nullable=True)
     tax = Column(Numeric, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def daftar_branches(client_id: str) -> List[Dict[str, Any]]:
@@ -2822,7 +2822,7 @@ def ambil_financial_budget(
 
 class PLBudgetLine(Base):
     """Anggaran P&L per bulan per kategori (satu baris = satu kategori)."""
-    __tablename__ = "financial_financial statement_profit and loss_finance_budget_li"
+    __tablename__ = "finance_financial_statement_profit_loss_budget_line"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
@@ -2831,14 +2831,14 @@ class PLBudgetLine(Base):
     bulan = Column(Integer, nullable=False)
     kategori = Column(String, nullable=False)
     nominal_budget = Column(Numeric, nullable=True)
-    dibuat_oleh = Column(String, nullable=True)
+    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class PLInsight(Base):
     """Insight P&L (teks) per client -- sumber AIInsightsPanel."""
-    __tablename__ = "financial_financial statement_profit and loss_finance_insights"
+    __tablename__ = "finance_financial_statement_profit_loss_insights"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
@@ -2849,12 +2849,12 @@ class PLInsight(Base):
     deskripsi = Column(Text, nullable=True)
     metric = Column(String, nullable=True)
     severity = Column(String, nullable=True)
-    dibuat_at = Column(DateTime(timezone=True), nullable=True)
+    dibuat_at = Column("created_at", DateTime(timezone=True), nullable=True)
 
 
 class CashFlowForecastRow(Base):
     """Proyeksi arus kas bulanan per client (nominal Rupiah penuh)."""
-    __tablename__ = "financial_financial statement_Cash Flow_cash_flow_forecast"
+    __tablename__ = "finance_financial_statement_cash_flow_forecast"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
@@ -2867,9 +2867,9 @@ class CashFlowForecastRow(Base):
     financing_cf = Column(Numeric, nullable=True)
     net_change = Column(Numeric, nullable=True)
     end_cash = Column(Numeric, nullable=True)
-    dibuat_oleh = Column(String, nullable=True)
+    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def ambil_pl_budget(client_id: str, tahun: int, bulan_sampai: int = 12) -> Dict[str, Any]:
@@ -2975,7 +2975,7 @@ def daftar_cash_flow_forecast(client_id: str, tahun: Optional[int] = None) -> Li
 
 
 # ============================================================
-# MODUL ASSETS (BARU) -- tabel "assets_equity_assets_fixed_assets" dibuat
+# MODUL ASSETS (BARU) -- tabel "asset_fixed_assets" dibuat
 # manual oleh user lewat Supabase, schema "4_Assets_Equity". Ini
 # menggantikan sumber lama Fixed Asset Register/Depreciation di halaman
 # Assets (dulu dari hasil upload file "Aset Tetap" di public.hasil --
@@ -2989,7 +2989,7 @@ def daftar_cash_flow_forecast(client_id: str, tahun: Optional[int] = None) -> Li
 # ============================================================
 
 class FixedAsset(Base):
-    __tablename__ = "assets_equity_assets_fixed_assets"
+    __tablename__ = "asset_fixed_assets"
     __table_args__ = {"schema": "4_Assets_Equity"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
@@ -3007,10 +3007,10 @@ class FixedAsset(Base):
     status = Column(String, nullable=True)
     disposal_date = Column(Date, nullable=True)
     disposal_value = Column(Numeric, nullable=True)
-    coa_id = Column(Integer, ForeignKey("1_app.coa.id"), nullable=True)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=True)
     needs_review = Column(Boolean, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def ambil_fixed_assets(client_id: str) -> Dict[str, Any]:
@@ -3275,7 +3275,7 @@ def disposisi_fixed_asset(
 
 
 # ============================================================
-# MODUL BANK & CASH (BARU) -- tabel "financial_transaction_bank_cash" dibuat
+# MODUL BANK & CASH (BARU) -- tabel "finance_transaction_bank_cash" dibuat
 # manual oleh user lewat Supabase SQL Editor (bukan lewat init_db()/
 # create_all()), skemanya SENGAJA dibuat identik dengan JurnalPosting di
 # atas (jurnal_posting) -- bedanya tabel ini KHUSUS menampung entri jurnal
@@ -3291,10 +3291,10 @@ JENIS_DOKUMEN_BANK_CASH_VALID = {"cash_payment", "cash_receipt"}
 
 class FinanceTransactionBankCash(Base):
     """Entri jurnal Cash Payment & Cash Receipt (satu baris = satu pasang debet+kredit)."""
-    __tablename__ = "financial_transaction_bank_cash"
+    __tablename__ = "finance_transaction_bank_cash"
     __table_args__ = {"schema": "3_Financial"}
 
-    id = Column(BigInteger, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=True)  # 'cash_payment' | 'cash_receipt'
@@ -3368,7 +3368,7 @@ def daftar_bank_cash(client_id: str, status: Optional[str] = None,
         session.close()
 
 
-def ambil_bank_cash_by_id(bank_cash_id: int, client_id: str) -> Optional[Dict[str, Any]]:
+def ambil_bank_cash_by_id(bank_cash_id: str, client_id: str) -> Optional[Dict[str, Any]]:
     session = SessionLocal()
     try:
         j = session.query(FinanceTransactionBankCash).filter(
@@ -3384,7 +3384,7 @@ def ambil_bank_cash_by_id(bank_cash_id: int, client_id: str) -> Optional[Dict[st
         session.close()
 
 
-def update_bank_cash(bank_cash_id: int, client_id: str, user: str, **fields) -> Optional[Dict[str, Any]]:
+def update_bank_cash(bank_cash_id: str, client_id: str, user: str, **fields) -> Optional[Dict[str, Any]]:
     """Edit satu baris Bank & Cash yang sudah ada -- pola identik
     update_jurnal_posting()."""
     KOLOM_BOLEH_DIUBAH = {
@@ -3557,7 +3557,7 @@ def posting_massal_bank_cash_by_ids(client_id: str, ids: List[int], user: str) -
         session.close()
 
 
-def tolak_bank_cash(bank_cash_id: int, client_id: str, user: str, alasan: Optional[str] = None) -> bool:
+def tolak_bank_cash(bank_cash_id: str, client_id: str, user: str, alasan: Optional[str] = None) -> bool:
     """Tandai satu baris Bank & Cash sebagai 'ditolak' (dipakai tombol
     Hapus, sama seperti tolak_posting_jurnal untuk jurnal_posting)."""
     session = SessionLocal()
@@ -3593,11 +3593,11 @@ def tolak_bank_cash(bank_cash_id: int, client_id: str, user: str, alasan: Option
 
 # ============================================================
 # [BARU] MODUL OTHER (JURNAL LAIN-LAIN) -- tabel
-# "financial_transaction_other" dibuat manual oleh user lewat Supabase SQL
+# "finance_transaction_other" dibuat manual oleh user lewat Supabase SQL
 # Editor (bukan lewat init_db()/create_all()), skemanya SUDAH mengikuti
 # bentuk final Transaction di frontend (satu baris = SATU KAKI/leg jurnal,
 # bukan sepasang debet+kredit dalam satu baris seperti
-# financial_transaction_bank_cash) -- dua baris dengan je_id yang sama adalah
+# finance_transaction_bank_cash) -- dua baris dengan je_id yang sama adalah
 # sepasang leg debet+kredit dari satu entri jurnal yang sama. Tabel ini
 # KHUSUS menampung entri jurnal kelompok "Other" (lihat halaman
 # src/app/transactions/other/page.tsx), menggantikan sumber lama yang lewat
@@ -3616,7 +3616,7 @@ STATUS_FINANCE_OTHER_VALID = {"Unposted", "Posted", "Draft", "Reconciled", "Void
 class FinanceTransactionOther(Base):
     """Satu baris = satu kaki (leg) jurnal kelompok Other. Kolom sudah 1:1
     dengan interface Transaction di frontend (snake_case <-> camelCase)."""
-    __tablename__ = "financial_transaction_other"
+    __tablename__ = "finance_transaction_other"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -3641,10 +3641,10 @@ class FinanceTransactionOther(Base):
     source_module = Column(String(50), nullable=True)
     standard_account_code = Column(String(50), nullable=True)
     account_role = Column(String(50), nullable=True)
-    core_journal_entry_id = Column(Integer, nullable=True)
-    core_journal_line_id = Column(Integer, nullable=True)
+    core_journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    core_journal_line_id = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=False, default=datetime.now, onupdate=datetime.now)
 
     client = relationship("Client")
 
@@ -3766,7 +3766,7 @@ def buat_finance_other_manual(
     balance (debet == kredit).
 
     [BARU] `user` dipakai untuk mencatat siapa yang membuat entri ini ke
-    financial_transaction_other_activity_log -- lihat _catat_log_finance_other()
+    finance_transaction_other_activity_log -- lihat _catat_log_finance_other()
     di bawah. Parameter opsional (default None -> dicatat sebagai 'System')
     supaya tetap kompatibel kalau ada pemanggil lama yang belum mengirim ini.
     """
@@ -3898,7 +3898,7 @@ def tolak_finance_other_by_je_id(je_id: str, client_id: str, user: str, alasan: 
 # skemanya SENGAJA dibuat mirip financial_transaction_sales_activity_log
 # (activity log modul Sales yang sudah ada lebih dulu) -- bedanya
 # masing-masing merujuk ke tabel sumbernya sendiri (financial_transaction_
-# bank_cash / financial_transaction_other), BUKAN ke sales invoice.
+# bank_cash / finance_transaction_other), BUKAN ke sales invoice.
 #
 # Satu baris di sini = SATU kejadian/event pada satu transaksi Bank &
 # Cash atau Other (dibuat, diedit, diposting, ditolak/di-void) --
@@ -3909,14 +3909,14 @@ def tolak_finance_other_by_je_id(je_id: str, client_id: str, user: str, alasan: 
 # ============================================================
 
 class FinanceTransactionBankCashActivityLog(Base):
-    """Log aktivitas satu baris financial_transaction_bank_cash (Cash
+    """Log aktivitas satu baris finance_transaction_bank_cash (Cash
     Payment/Cash Receipt) -- satu baris log per kejadian."""
-    __tablename__ = "financial_transaction_bank_cash_activity_log"
+    __tablename__ = "finance_transaction_bank_cash_activity_log"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
-    bank_cash_id = Column(BigInteger, ForeignKey("3_Financial.financial_transaction_bank_cash.id"), nullable=True)
+    bank_cash_id = Column(PG_UUID(as_uuid=False), ForeignKey("3_Financial.finance_transaction_bank_cash.id"), nullable=True)
     event_type = Column(String(50), nullable=False)  # "CREATED"/"UPDATED"/"POSTING"/"REJECTED"
     description = Column(Text, nullable=False)
     reference_no = Column(String(100), nullable=True)  # no_dokumen / voucher terkait
@@ -3931,10 +3931,10 @@ class FinanceTransactionBankCashActivityLog(Base):
 
 
 class FinanceTransactionOtherActivityLog(Base):
-    """Log aktivitas satu ENTRI financial_transaction_other (sepasang leg
+    """Log aktivitas satu ENTRI finance_transaction_other (sepasang leg
     debet+kredit yang berbagi je_id yang sama) -- satu baris log per
     kejadian per je_id, BUKAN per leg."""
-    __tablename__ = "financial_transaction_other_activity_log"
+    __tablename__ = "finance_transaction_other_activity_log"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -3958,14 +3958,14 @@ class PurchaseActivityLogRow(Base):
     transaction -- satu baris log per kejadian (submit for review/
     approve/reject/post to GL/exception status change dsb). Tabel dibuat
     manual oleh user lewat Supabase SQL Editor, skema mirip
-    financial_transaction_bank_cash_activity_log di atas -- lihat DDL yang
+    finance_transaction_bank_cash_activity_log di atas -- lihat DDL yang
     diberikan terpisah."""
-    __tablename__ = "financial_transaction_purchase_activity_log"
+    __tablename__ = "finance_transaction_purchase_activity_log"
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
-    purchase_row_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.financial_transaction_purchase_transaction.id"), nullable=True)
+    purchase_row_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=True)
     event_type = Column(String(50), nullable=False)  # "SUBMITTED"/"APPROVED"/"REJECTED"/"POSTED"/"RETURNED"/"EXCEPTION_UPDATED"
     description = Column(Text, nullable=False)
     reference_no = Column(String(100), nullable=True)  # purchase_id (mis. "PUR-2026-09-0001")
@@ -3974,7 +3974,7 @@ class PurchaseActivityLogRow(Base):
 
 
 def _catat_log_bank_cash(session, client_id, bank_cash_id, event_type, description, user, reference_no=None):
-    """Insert satu baris ke financial_transaction_bank_cash_activity_log.
+    """Insert satu baris ke finance_transaction_bank_cash_activity_log.
     WAJIB dipanggil di DALAM session yang sama dengan operasi utamanya,
     SEBELUM session.commit() -- lihat catatan modul di atas."""
     session.add(FinanceTransactionBankCashActivityLog(
@@ -3988,7 +3988,7 @@ def _catat_log_bank_cash(session, client_id, bank_cash_id, event_type, descripti
 
 
 def _catat_log_finance_other(session, client_id, je_id, event_type, description, user, reference_no=None):
-    """Insert satu baris ke financial_transaction_other_activity_log (SATU
+    """Insert satu baris ke finance_transaction_other_activity_log (SATU
     baris log per je_id per kejadian, bukan per leg). Sama seperti
     _catat_log_bank_cash, WAJIB dipanggil sebelum session.commit()."""
     session.add(FinanceTransactionOtherActivityLog(
@@ -4002,7 +4002,7 @@ def _catat_log_finance_other(session, client_id, je_id, event_type, description,
 
 
 def _catat_log_purchase(session, client_id, purchase_row_id, event_type, description, user, reference_no=None):
-    """[BARU] Insert satu baris ke financial_transaction_purchase_activity_log.
+    """[BARU] Insert satu baris ke finance_transaction_purchase_activity_log.
     WAJIB dipanggil di DALAM session yang sama dengan operasi utamanya,
     SEBELUM session.commit() -- pola identik _catat_log_bank_cash()."""
     session.add(PurchaseActivityLogRow(
@@ -7960,7 +7960,7 @@ def daftar_user_client_access(user_id: str) -> List[Dict[str, Any]]:
 # ============================================================
 
 class FiscalCorrection(Base):
-    __tablename__ = "Planning_Tax & Compliance_fiscal_correction"
+    __tablename__ = "planning_tax_compliance_fiscal_correction"
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
@@ -7972,11 +7972,11 @@ class FiscalCorrection(Base):
     tax_value = Column(Numeric, nullable=True)
     keterangan = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class TaxComplianceTask(Base):
-    __tablename__ = "Planning_Tax & Compliance_tax_compliance_task"
+    __tablename__ = "planning_tax_compliance_task"
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
@@ -7989,7 +7989,7 @@ class TaxComplianceTask(Base):
     status = Column(String, nullable=True)
     priority = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 def ambil_fiscal_correction(client_id: str, tahun: int) -> Dict[str, Any]:
@@ -8126,7 +8126,7 @@ def hapus_tax_task(client_id: str, task_id: str) -> Dict[str, Any]:
 # ============================================================
 
 class AuditFindingRow(Base):
-    __tablename__ = "Intellegence_Audit_audit_finding"
+    __tablename__ = "intelligence_audit_finding"
     __table_args__ = {"schema": "6_Intellegence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
@@ -8145,13 +8145,13 @@ class AuditFindingRow(Base):
     management_response = Column(Text, nullable=True)
     likelihood = Column(Integer, nullable=False)
     impact = Column(Integer, nullable=False)
-    created_by = Column(String, nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class AuditStageRow(Base):
-    __tablename__ = "Intellegence_Audit_audit_stage"
+    __tablename__ = "intelligence_audit_stage"
     __table_args__ = {"schema": "6_Intellegence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
@@ -8162,16 +8162,16 @@ class AuditStageRow(Base):
     is_current = Column(Boolean, nullable=False)
     sort_order = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
-    updated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
 
 
 class AuditActivityRow(Base):
-    __tablename__ = "Intellegence_Audit_audit_activity"
+    __tablename__ = "intelligence_audit_activity"
     __table_args__ = {"schema": "6_Intellegence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.Intellegence_Audit_audit_finding.id"), nullable=True)
+    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.intelligence_audit_finding.id"), nullable=True)
     user_name = Column(String, nullable=False)
     action = Column(String, nullable=False)
     activity_type = Column(String, nullable=False)
@@ -8180,12 +8180,12 @@ class AuditActivityRow(Base):
 
 
 class AuditEvidenceRow(Base):
-    __tablename__ = "Intellegence_Audit_audit_evidence"
+    __tablename__ = "intelligence_audit_evidence"
     __table_args__ = {"schema": "6_Intellegence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
-    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.Intellegence_Audit_audit_finding.id"), nullable=False)
+    finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intellegence.intelligence_audit_finding.id"), nullable=False)
     file_name = Column(String, nullable=False)
     file_size = Column(BigInteger, nullable=True)
     uploaded_by = Column(String, nullable=True)

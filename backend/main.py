@@ -144,11 +144,11 @@ app = FastAPI(
         },
         {
             "name": "bank-cash",
-            "description": "Halaman Bank & Cash: transaksi kas/bank client (financial_transaction_bank_cash, schema 3_Financial).",
+            "description": "Halaman Bank & Cash: transaksi kas/bank client (finance_transaction_bank_cash, schema 3_Financial).",
         },
         {
             "name": "other",
-            "description": "Halaman Other: entri jurnal umum di luar Purchase/Bank & Cash (financial_transaction_other, schema 3_Financial).",
+            "description": "Halaman Other: entri jurnal umum di luar Purchase/Bank & Cash (finance_transaction_other, schema 3_Financial).",
         },
         {
             "name": "ar",
@@ -180,11 +180,11 @@ app = FastAPI(
         },
         {
             "name": "assets",
-            "description": "Halaman Assets: register aset tetap & penyusutan (assets_equity_assets_fixed_assets, schema 4_Assets_Equity).",
+            "description": "Halaman Assets: register aset tetap & penyusutan (asset_fixed_assets, schema 4_Assets_Equity).",
         },
         {
             "name": "documents",
-            "description": "Halaman Documents: metadata dokumen client (Management_Documents_Documents, schema 7_Management).",
+            "description": "Halaman Documents: metadata dokumen client (management_documents, schema 7_Management).",
         },
         {
             "name": "reports",
@@ -866,7 +866,7 @@ class DataPurchaseResponse(BaseModel):
     exceptions: List[PurchaseExceptionSkema]
 
 
-@app.get("/api/client/{client_id}/purchase", tags=["purchase"], response_model=DataPurchaseResponse)
+@app.get("/api/v1/transaction/getPurchase", tags=["purchase"], response_model=DataPurchaseResponse)
 def api_data_purchase(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Data mentah modul Purchase (vendor, purchase_transaction,
@@ -896,14 +896,19 @@ class DataDocumentsResponse(BaseModel):
     documents: List[DocumentSkema]
 
 
-@app.get("/api/client/{client_id}/documents", tags=["documents"], response_model=DataDocumentsResponse)
+@app.get("/api/v1/management/getDocuments", tags=["documents"], response_model=DataDocumentsResponse)
 def api_data_documents(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
-    [BARU] Data mentah tabel Documents (schema "7_Management",
-    "Management_Documents_Documents") untuk satu client -- tabel dibuat
+    [DIUBAH] Data mentah tabel Documents (schema "7_Management",
+    "management_documents") untuk satu client -- tabel dibuat
     manual oleh user lewat Supabase SQL Editor, sama pola dengan modul
     Purchase. Frontend memetakan hasilnya ke tipe FinancialDocument lewat
     src/app/documents/lib/documentsDbBridge.ts.
+
+    Path diubah dari /api/client/{client_id}/documents ke pola standar
+    /api/[version]/[group]/[nama_fitur] -- client_id sekarang lewat query
+    string (?client_id=...), bukan path segment, karena pola baru tidak
+    menyisakan tempat untuk resource id di path.
     """
     return {"documents": dbc.ambil_data_documents(client_id)}
 
@@ -930,7 +935,7 @@ class ReportRegistryResponse(BaseModel):
 def api_data_reports_registry(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Data mentah tabel report_registry (schema "7_Management",
-    "Management_Reports_report_registry") untuk satu client -- laporan yang
+    "management_report_registry") untuk satu client -- laporan yang
     dicatat manual/oleh proses lain, di luar 3 sumber otomatis (Laporan
     Keuangan/CALK/PPh Badan). Digabung ke daftar reports oleh
     src/app/reports/lib/reportsDbBridge.ts.
@@ -955,7 +960,7 @@ class ReportScheduleResponse(BaseModel):
 def api_data_report_schedule(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Data mentah tabel report_schedule (schema "7_Management",
-    "Management_Reports_report_schedule") untuk satu client -- jadwal
+    "management_report_schedule") untuk satu client -- jadwal
     laporan berkala (tab "Report Scheduler"). Frontend memetakan hasilnya
     ke tipe ScheduledReport lewat src/app/reports/lib/reportsDbBridge.ts.
     """
@@ -1011,7 +1016,7 @@ class DataARResponse(BaseModel):
     collection_note: List[ARCollectionNoteSkema]
 
 
-@app.get("/api/client/{client_id}/ar", tags=["ar"], response_model=DataARResponse)
+@app.get("/api/v1/finance/getReceivable", tags=["ar"], response_model=DataARResponse)
 def api_data_ar(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Data mentah modul Account Receivable (customer, invoice, payment,
@@ -1061,7 +1066,7 @@ class CatatPembayaranArResponse(BaseModel):
     pembayaran: PembayaranArSkema
 
 
-@app.post("/api/client/{client_id}/ar/payments", tags=["ar"], response_model=CatatPembayaranArResponse)
+@app.post("/api/v1/finance/addReceivablePayment", tags=["ar"], response_model=CatatPembayaranArResponse)
 def api_catat_pembayaran_ar(
     client_id: str, req: CatatPembayaranArRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1097,7 +1102,7 @@ class TambahCatatanArResponse(BaseModel):
     catatan: CatatanArSkema
 
 
-@app.post("/api/client/{client_id}/ar/notes", tags=["ar"], response_model=TambahCatatanArResponse)
+@app.post("/api/v1/finance/addReceivableNote", tags=["ar"], response_model=TambahCatatanArResponse)
 def api_tambah_catatan_ar(
     client_id: str, req: TambahCatatanArRequest,
     user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
@@ -1129,7 +1134,7 @@ class UbahStatusInvoiceArResponse(BaseModel):
     invoice: StatusInvoiceArSkema
 
 
-@app.patch("/api/client/{client_id}/ar/invoices/{invoice_id}/status", tags=["ar"], response_model=UbahStatusInvoiceArResponse)
+@app.patch("/api/v1/finance/updateReceivableInvoiceStatus", tags=["ar"], response_model=UbahStatusInvoiceArResponse)
 def api_ubah_status_invoice_ar(
     client_id: str, invoice_id: str, req: UbahStatusInvoiceArRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1195,7 +1200,7 @@ class DataAPResponse(BaseModel):
     note: List[ApNoteSkema]
 
 
-@app.get("/api/client/{client_id}/ap", tags=["ap"], response_model=DataAPResponse)
+@app.get("/api/v1/finance/getPayable", tags=["ap"], response_model=DataAPResponse)
 def api_data_ap(client_id: str, user: dict = Depends(auth.get_current_user)):
     """[BARU] Data mentah modul Account Payable (vendor, bill, payment,
     note) untuk satu client. Frontend memetakan hasilnya ke tipe
@@ -1240,7 +1245,7 @@ class CatatPembayaranApResponse(BaseModel):
     pembayaran: PembayaranApSkema
 
 
-@app.post("/api/client/{client_id}/ap/payments", tags=["ap"], response_model=CatatPembayaranApResponse)
+@app.post("/api/v1/finance/addPayablePayment", tags=["ap"], response_model=CatatPembayaranApResponse)
 def api_catat_pembayaran_ap(
     client_id: str, req: CatatPembayaranApRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1272,7 +1277,7 @@ class TambahCatatanApResponse(BaseModel):
     catatan: CatatanApSkema
 
 
-@app.post("/api/client/{client_id}/ap/notes", tags=["ap"], response_model=TambahCatatanApResponse)
+@app.post("/api/v1/finance/addPayableNote", tags=["ap"], response_model=TambahCatatanApResponse)
 def api_tambah_catatan_ap(
     client_id: str, req: TambahCatatanApRequest,
     user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
@@ -1303,7 +1308,7 @@ class UbahStatusBillApResponse(BaseModel):
     bill: StatusBillApSkema
 
 
-@app.patch("/api/client/{client_id}/ap/bills/{bill_id}/status", tags=["ap"], response_model=UbahStatusBillApResponse)
+@app.patch("/api/v1/finance/updatePayableBillStatus", tags=["ap"], response_model=UbahStatusBillApResponse)
 def api_ubah_status_bill_ap(
     client_id: str, bill_id: str, req: UbahStatusBillApRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1351,7 +1356,7 @@ class AmbilForecastAssumptionResponse(BaseModel):
     assumption: Optional[ForecastAssumptionSkema] = None
 
 
-@app.get("/api/client/{client_id}/forecast-assumption", tags=["budget-forecast"], response_model=AmbilForecastAssumptionResponse)
+@app.get("/api/v1/planning/getForecastAssumption", tags=["budget-forecast"], response_model=AmbilForecastAssumptionResponse)
 def api_ambil_forecast_assumption(
     client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)
 ):
@@ -1368,7 +1373,7 @@ def api_ambil_forecast_assumption(
 
 
 class SimpanForecastAssumptionRequest(BaseModel):
-    """Body POST /api/client/{client_id}/forecast-assumption. Semua field
+    """Body POST /api/v1/planning/saveForecastAssumption. Semua field
     opsional -- hanya yang dikirim yang di-upsert."""
     tahun: Optional[int] = None
     revenue_growth_pct: Optional[float] = None
@@ -1386,7 +1391,7 @@ class SimpanForecastAssumptionResponse(BaseModel):
     assumption: ForecastAssumptionSkema
 
 
-@app.post("/api/client/{client_id}/forecast-assumption", tags=["budget-forecast"], response_model=SimpanForecastAssumptionResponse)
+@app.post("/api/v1/planning/saveForecastAssumption", tags=["budget-forecast"], response_model=SimpanForecastAssumptionResponse)
 def api_simpan_forecast_assumption(
     client_id: str, req: SimpanForecastAssumptionRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1420,7 +1425,7 @@ class DaftarScenarioResponse(BaseModel):
     scenarios: List[ScenarioSkema]
 
 
-@app.get("/api/client/{client_id}/scenarios", tags=["budget-forecast"], response_model=DaftarScenarioResponse)
+@app.get("/api/v1/planning/getScenarios", tags=["budget-forecast"], response_model=DaftarScenarioResponse)
 def api_daftar_scenario(client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)):
     """Daftar skenario custom tersimpan client utk 1 tahun."""
     tahun_dipakai = tahun or date.today().year
@@ -1428,7 +1433,7 @@ def api_daftar_scenario(client_id: str, tahun: Optional[int] = None, user: dict 
 
 
 class TambahScenarioRequest(BaseModel):
-    """Body POST /api/client/{client_id}/scenarios -> tombol "New Scenario"."""
+    """Body POST /api/v1/planning/addScenario -> tombol "New Scenario"."""
     tahun: Optional[int] = None
     nama_skenario: str
     revenue_growth_pct: Optional[float] = None
@@ -1447,7 +1452,7 @@ class TambahScenarioResponse(BaseModel):
     scenario: ScenarioRingkasSkema
 
 
-@app.post("/api/client/{client_id}/scenarios", tags=["budget-forecast"], response_model=TambahScenarioResponse)
+@app.post("/api/v1/planning/addScenario", tags=["budget-forecast"], response_model=TambahScenarioResponse)
 def api_tambah_scenario(
     client_id: str, req: TambahScenarioRequest,
     user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
@@ -1475,7 +1480,7 @@ class HapusScenarioResponse(BaseModel):
     dihapus: bool
 
 
-@app.delete("/api/client/{client_id}/scenarios/{scenario_id}", tags=["budget-forecast"], response_model=HapusScenarioResponse)
+@app.delete("/api/v1/planning/deleteScenario", tags=["budget-forecast"], response_model=HapusScenarioResponse)
 def api_hapus_scenario(
     client_id: str, scenario_id: str, user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
 ):
@@ -1536,21 +1541,21 @@ class UbahHapusTaxTaskResponse(BaseModel):
     pesan: Optional[str] = None
 
 
-@app.get("/api/client/{client_id}/fiscal-correction", tags=["tax-compliance"], response_model=FiscalCorrectionResponse)
+@app.get("/api/v1/planning/getFiscalCorrection", tags=["tax-compliance"], response_model=FiscalCorrectionResponse)
 def api_fiscal_correction(client_id: str, tahun: Optional[int] = None, user: dict = Depends(auth.get_current_user)):
     """Koreksi fiskal tersimpan -- sumber TaxReconciliation.tsx."""
     tahun_dipakai = tahun or date.today().year
     return dbc.ambil_fiscal_correction(client_id, tahun_dipakai)
 
 
-@app.get("/api/client/{client_id}/tax-compliance-tasks", tags=["tax-compliance"], response_model=DaftarTaxTasksResponse)
+@app.get("/api/v1/planning/getTaxComplianceTasks", tags=["tax-compliance"], response_model=DaftarTaxTasksResponse)
 def api_daftar_tax_tasks(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Daftar task kepatuhan pajak custom -- sumber ComplianceTasks.tsx."""
     return dbc.daftar_tax_tasks(client_id)
 
 
 class TambahTaxTaskRequest(BaseModel):
-    """Body POST /api/client/{client_id}/tax-compliance-tasks -> tombol "Add Task"."""
+    """Body POST /api/v1/planning/addTaxComplianceTask -> tombol "Add Task"."""
     taskName: str
     taxType: Optional[str] = None
     period: Optional[str] = None
@@ -1560,7 +1565,7 @@ class TambahTaxTaskRequest(BaseModel):
     priority: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/tax-compliance-tasks", tags=["tax-compliance"], response_model=TambahTaxTaskResponse)
+@app.post("/api/v1/planning/addTaxComplianceTask", tags=["tax-compliance"], response_model=TambahTaxTaskResponse)
 def api_tambah_tax_task(
     client_id: str, req: TambahTaxTaskRequest,
     user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
@@ -1574,11 +1579,11 @@ def api_tambah_tax_task(
 
 
 class UbahStatusTaxTaskRequest(BaseModel):
-    """Body PATCH /api/client/{client_id}/tax-compliance-tasks/{task_id}."""
+    """Body PATCH /api/v1/planning/updateTaxComplianceTaskStatus."""
     status: str
 
 
-@app.patch("/api/client/{client_id}/tax-compliance-tasks/{task_id}", tags=["tax-compliance"], response_model=UbahHapusTaxTaskResponse)
+@app.patch("/api/v1/planning/updateTaxComplianceTaskStatus", tags=["tax-compliance"], response_model=UbahHapusTaxTaskResponse)
 def api_ubah_status_tax_task(
     client_id: str, task_id: str, req: UbahStatusTaxTaskRequest,
     user: dict = Depends(auth.get_current_user),
@@ -1593,7 +1598,7 @@ def api_ubah_status_tax_task(
     return hasil
 
 
-@app.delete("/api/client/{client_id}/tax-compliance-tasks/{task_id}", tags=["tax-compliance"], response_model=UbahHapusTaxTaskResponse)
+@app.delete("/api/v1/planning/deleteTaxComplianceTask", tags=["tax-compliance"], response_model=UbahHapusTaxTaskResponse)
 def api_hapus_tax_task(
     client_id: str, task_id: str, user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
 ):
@@ -1709,11 +1714,13 @@ class UbahAuditStageResponse(BaseModel):
     stage: UbahAuditStageSkema
 
 
-@app.get("/api/client/{client_id}/audit", tags=["audit"], response_model=DataAuditResponse)
+@app.get("/api/v1/intelligence/getAudit", tags=["audit"], response_model=DataAuditResponse)
 def api_data_audit(client_id: str, user: dict = Depends(auth.get_current_user)):
-    """[BARU] Data mentah modul Audit (finding, stage, activity, evidence
+    """[DIUBAH] Data mentah modul Audit (finding, stage, activity, evidence
     metadata) utk satu client -- tabel dibuat manual oleh user lewat
-    Supabase SQL Editor, schema "6_Intellegence"."""
+    Supabase SQL Editor, schema "6_Intellegence". Path lama:
+    GET /api/client/{client_id}/audit -- client_id sekarang lewat query
+    string mengikuti pola /api/[version]/[group]/[nama_fitur]."""
     return dbc.ambil_data_audit(client_id)
 
 
@@ -1734,13 +1741,14 @@ class TambahAuditFindingRequest(BaseModel):
     impact: int = 3
 
 
-@app.post("/api/client/{client_id}/audit/findings", tags=["audit"], response_model=TambahAuditFindingResponse)
+@app.post("/api/v1/intelligence/addAuditFinding", tags=["audit"], response_model=TambahAuditFindingResponse)
 def api_tambah_audit_finding(
     client_id: str, req: TambahAuditFindingRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
-    """[BARU] Tambah temuan audit baru -- tombol "New Finding" di
-    src/app/audit/page.tsx."""
+    """[DIUBAH] Tambah temuan audit baru -- tombol "New Finding" di
+    src/app/audit/page.tsx. Path lama:
+    POST /api/client/{client_id}/audit/findings."""
     hasil = dbc.tambah_audit_finding(client_id, req.model_dump(), user.get("username", "unknown"))
     dbc.log_audit(
         client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_audit_finding",
@@ -1763,13 +1771,15 @@ class UbahAuditFindingRequest(BaseModel):
     impact: Optional[int] = None
 
 
-@app.patch("/api/client/{client_id}/audit/findings/{finding_id}", tags=["audit"], response_model=UbahAuditFindingResponse)
+@app.patch("/api/v1/intelligence/updateAuditFinding", tags=["audit"], response_model=UbahAuditFindingResponse)
 def api_ubah_audit_finding(
     client_id: str, finding_id: str, req: UbahAuditFindingRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
-    """[BARU] Ubah temuan audit -- dipakai tombol Review/Resolve/Escalate
-    di FindingDrawer (src/app/audit/page.tsx)."""
+    """[DIUBAH] Ubah temuan audit -- dipakai tombol Review/Resolve/Escalate
+    di FindingDrawer (src/app/audit/page.tsx). Path lama: PATCH
+    /api/client/{client_id}/audit/findings/{finding_id} -- finding_id
+    sekarang lewat query string."""
     fields = {k: v for k, v in req.model_dump().items() if v is not None}
     hasil = dbc.ubah_audit_finding(client_id, finding_id, fields, user.get("username", "unknown"))
     if hasil is None:
@@ -1781,14 +1791,17 @@ def api_ubah_audit_finding(
     return {"berhasil": True, "finding": hasil}
 
 
-@app.post("/api/client/{client_id}/audit/findings/{finding_id}/evidence", tags=["audit"], response_model=TambahAuditEvidenceResponse)
+@app.post("/api/v1/intelligence/addAuditEvidence", tags=["audit"], response_model=TambahAuditEvidenceResponse)
 async def api_tambah_audit_evidence(
     client_id: str, finding_id: str, file: UploadFile = File(...),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
-    """[BARU] Upload 1 file evidence utk 1 temuan -- tombol "Add
+    """[DIUBAH] Upload 1 file evidence utk 1 temuan -- tombol "Add
     Evidence" di FindingDrawer. File disimpan sbg bytea langsung di
-    Postgres (bukan Supabase Storage)."""
+    Postgres (bukan Supabase Storage). Path lama: POST
+    /api/client/{client_id}/audit/findings/{finding_id}/evidence --
+    client_id & finding_id sekarang lewat query string, file tetap lewat
+    multipart form body."""
     content = await file.read(dbc.AUDIT_EVIDENCE_MAX_BYTES + 1)
     try:
         hasil = dbc.tambah_audit_evidence(
@@ -1809,9 +1822,11 @@ async def api_tambah_audit_evidence(
     return {"berhasil": True, "evidence": hasil}
 
 
-@app.get("/api/client/{client_id}/audit/evidence/{evidence_id}/file", tags=["audit"])
+@app.get("/api/v1/intelligence/getAuditEvidenceFile", tags=["audit"])
 def api_ambil_audit_evidence_file(client_id: str, evidence_id: str, user: dict = Depends(auth.get_current_user)):
-    """[BARU] Download isi 1 file evidence."""
+    """[DIUBAH] Download isi 1 file evidence. Path lama: GET
+    /api/client/{client_id}/audit/evidence/{evidence_id}/file --
+    client_id & evidence_id sekarang lewat query string."""
     hasil = dbc.ambil_audit_evidence_file(evidence_id, client_id)
     if hasil is None:
         raise HTTPException(status_code=404, detail="Evidence tidak ditemukan.")
@@ -1821,11 +1836,12 @@ def api_ambil_audit_evidence_file(client_id: str, evidence_id: str, user: dict =
     )
 
 
-@app.delete("/api/client/{client_id}/audit/evidence/{evidence_id}", tags=["audit"], response_model=HapusAuditEvidenceResponse)
+@app.delete("/api/v1/intelligence/deleteAuditEvidence", tags=["audit"], response_model=HapusAuditEvidenceResponse)
 def api_hapus_audit_evidence(
     client_id: str, evidence_id: str, user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
-    """[BARU] Hapus 1 file evidence."""
+    """[DIUBAH] Hapus 1 file evidence. Path lama: DELETE
+    /api/client/{client_id}/audit/evidence/{evidence_id}."""
     # [FIX] Sebelumnya evidence yang tidak ditemukan tetap dibalas HTTP 200
     # ({"berhasil": False, ...}) dan tetap dicatat ke audit log seolah
     # berhasil dihapus. Sekarang: 404 kalau tidak ada, dan log HANYA ditulis
@@ -1847,13 +1863,14 @@ class UbahAuditStageRequest(BaseModel):
     current: Optional[bool] = None
 
 
-@app.patch("/api/client/{client_id}/audit/stage/{stage_id}", tags=["audit"], response_model=UbahAuditStageResponse)
+@app.patch("/api/v1/intelligence/updateAuditStage", tags=["audit"], response_model=UbahAuditStageResponse)
 def api_ubah_audit_stage(
     client_id: str, stage_id: str, req: UbahAuditStageRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
-    """[BARU] Tandai tahapan audit selesai/berjalan -- klik di Audit
-    Progress bar (src/app/audit/page.tsx)."""
+    """[DIUBAH] Tandai tahapan audit selesai/berjalan -- klik di Audit
+    Progress bar (src/app/audit/page.tsx). Path lama: PATCH
+    /api/client/{client_id}/audit/stage/{stage_id}."""
     fields = {k: v for k, v in req.model_dump().items() if v is not None}
     hasil = dbc.ubah_audit_stage(client_id, stage_id, fields)
     if hasil is None:
@@ -1893,7 +1910,7 @@ class UpdatePurchaseExceptionStatusResponse(BaseModel):
     exception: PurchaseExceptionStatusUpdateSkema
 
 
-@app.patch("/api/client/{client_id}/purchase/{purchase_row_id}/status", tags=["purchase"], response_model=UpdatePurchaseStatusResponse)
+@app.patch("/api/v1/transaction/updatePurchaseStatus", tags=["purchase"], response_model=UpdatePurchaseStatusResponse)
 def api_update_purchase_status(
     client_id: str, purchase_row_id: str, req: UpdatePurchaseStatusRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1926,7 +1943,7 @@ class BulkUpdatePurchaseStatusRequest(BaseModel):
     from_status: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/purchase/bulk-status", tags=["purchase"], response_model=BulkUpdatePurchaseStatusResponse)
+@app.post("/api/v1/transaction/bulkUpdatePurchaseStatus", tags=["purchase"], response_model=BulkUpdatePurchaseStatusResponse)
 def api_bulk_update_purchase_status(
     client_id: str, req: BulkUpdatePurchaseStatusRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1954,7 +1971,7 @@ class UpdatePurchaseExceptionStatusRequest(BaseModel):
     exception_status: str
 
 
-@app.patch("/api/client/{client_id}/purchase/exceptions/{exception_id}/status", tags=["purchase"], response_model=UpdatePurchaseExceptionStatusResponse)
+@app.patch("/api/v1/transaction/updatePurchaseExceptionStatus", tags=["purchase"], response_model=UpdatePurchaseExceptionStatusResponse)
 def api_update_purchase_exception_status(
     client_id: str, exception_id: str, req: UpdatePurchaseExceptionStatusRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -2226,8 +2243,8 @@ def api_kpi_bento_dashboard(
 
 # ============================================================
 # [BARU] MODUL OVERVIEW -- dropdown Branch & mode "Budget" di Financial
-# Overview, sumber tabel overview_overview_management_branches &
-# overview_overview_financial_budget (schema 2_Overview). Lihat
+# Overview, sumber tabel overview_management_branches &
+# overview_financial_budget (schema 2_Overview). Lihat
 # db_client.py::daftar_branches()/ambil_financial_budget() utk detail.
 # ============================================================
 
@@ -2239,7 +2256,7 @@ class DaftarBranchesResponse(BaseModel):
     branches: List[BranchSkema]
 
 
-@app.get("/api/client/{client_id}/branches", tags=["overview"], response_model=DaftarBranchesResponse)
+@app.get("/api/v1/overview/getBranches", tags=["overview"], response_model=DaftarBranchesResponse)
 def api_daftar_branches(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Daftar cabang milik client -- sumber dropdown "Branch" di
     OverviewContent.tsx (menggantikan opsi hardcoded Jakarta/Surabaya)."""
@@ -2261,7 +2278,7 @@ class FinancialBudgetResponse(BaseModel):
     netProfit: float
 
 
-@app.get("/api/client/{client_id}/financial-budget", tags=["overview"], response_model=FinancialBudgetResponse)
+@app.get("/api/v1/overview/getFinancialBudget", tags=["overview"], response_model=FinancialBudgetResponse)
 def api_financial_budget(
     client_id: str,
     tahun: Optional[int] = None,
@@ -2295,7 +2312,7 @@ class PLBudgetResponse(BaseModel):
     netProfit: float
 
 
-@app.get("/api/client/{client_id}/pl-budget", tags=["financial-statements"], response_model=PLBudgetResponse)
+@app.get("/api/v1/finance/getProfitLossBudget", tags=["financial-statements"], response_model=PLBudgetResponse)
 def api_pl_budget(
     client_id: str,
     tahun: Optional[int] = None,
@@ -2323,7 +2340,7 @@ class PLInsightsResponse(BaseModel):
     insights: List[PLInsightSkema]
 
 
-@app.get("/api/client/{client_id}/pl-insights", tags=["financial-statements"], response_model=PLInsightsResponse)
+@app.get("/api/v1/finance/getProfitLossInsights", tags=["financial-statements"], response_model=PLInsightsResponse)
 def api_pl_insights(
     client_id: str,
     modul: str = "profit_loss",
@@ -2348,7 +2365,7 @@ class CashFlowForecastResponse(BaseModel):
     forecast: List[CashFlowForecastItemSkema]
 
 
-@app.get("/api/client/{client_id}/cash-flow-forecast", tags=["financial-statements"], response_model=CashFlowForecastResponse)
+@app.get("/api/v1/finance/getCashFlowForecast", tags=["financial-statements"], response_model=CashFlowForecastResponse)
 def api_cash_flow_forecast(
     client_id: str,
     tahun: Optional[int] = None,
@@ -2361,7 +2378,7 @@ def api_cash_flow_forecast(
 
 # ============================================================
 # [BARU] MODUL ASSETS -- Fixed Asset Register & Depreciation di halaman
-# Assets, sumber tabel assets_equity_assets_fixed_assets (schema
+# Assets, sumber tabel asset_fixed_assets (schema
 # 4_Assets_Equity). Lihat db_client.py::ambil_fixed_assets() utk detail
 # perhitungan penyusutan. Tidak menggantikan KPI/grafik total Assets
 # (useAssetsData.ts) yang tetap dari saldo neraca/COA.
@@ -2423,7 +2440,7 @@ class DisposisiFixedAssetResponse(BaseModel):
     asset: DisposisiFixedAssetSkema
 
 
-@app.get("/api/client/{client_id}/assets", tags=["assets"], response_model=DataFixedAssetsResponse)
+@app.get("/api/v1/asset/getFixedAssets", tags=["assets"], response_model=DataFixedAssetsResponse)
 def api_fixed_assets(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Register aset tetap per-unit -- sumber Fixed Asset Register &
     Depreciation Section di assetRegisterBridge.ts (menggantikan sumber
@@ -2432,7 +2449,7 @@ def api_fixed_assets(client_id: str, user: dict = Depends(auth.get_current_user)
 
 
 class TambahFixedAssetRequest(BaseModel):
-    """Body POST /api/client/{client_id}/assets (tombol "Add Asset")."""
+    """Body POST /api/v1/asset/addFixedAsset (tombol "Add Asset")."""
     name: str
     category: Optional[str] = None
     purchase_date: Optional[str] = None  # YYYY-MM-DD
@@ -2444,7 +2461,7 @@ class TambahFixedAssetRequest(BaseModel):
     department: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/assets", tags=["assets"], response_model=TambahFixedAssetResponse)
+@app.post("/api/v1/asset/addFixedAsset", tags=["assets"], response_model=TambahFixedAssetResponse)
 def api_tambah_fixed_asset(
     client_id: str, req: TambahFixedAssetRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -2466,7 +2483,7 @@ def api_tambah_fixed_asset(
 
 
 class UbahFixedAssetRequest(BaseModel):
-    """Body PATCH /api/client/{client_id}/assets/{asset_id} (tombol "Edit").
+    """Body PATCH /api/v1/asset/updateFixedAsset (tombol "Edit").
     Semua field opsional -- hanya yang dikirim (bukan None) yang diubah."""
     name: Optional[str] = None
     category: Optional[str] = None
@@ -2481,7 +2498,7 @@ class UbahFixedAssetRequest(BaseModel):
     status: Optional[str] = None  # active/maintenance/inactive (bukan 'disposed' -- pakai endpoint /dispose)
 
 
-@app.patch("/api/client/{client_id}/assets/{asset_id}", tags=["assets"], response_model=UbahFixedAssetResponse)
+@app.patch("/api/v1/asset/updateFixedAsset", tags=["assets"], response_model=UbahFixedAssetResponse)
 def api_ubah_fixed_asset(
     client_id: str, asset_id: str, req: UbahFixedAssetRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -2500,12 +2517,12 @@ def api_ubah_fixed_asset(
 
 
 class DisposisiFixedAssetRequest(BaseModel):
-    """Body PATCH /api/client/{client_id}/assets/{asset_id}/dispose."""
+    """Body PATCH /api/v1/asset/disposeFixedAsset."""
     disposal_date: str  # YYYY-MM-DD
     disposal_value: Decimal = Decimal("0")
 
 
-@app.patch("/api/client/{client_id}/assets/{asset_id}/dispose", tags=["assets"], response_model=DisposisiFixedAssetResponse)
+@app.patch("/api/v1/asset/disposeFixedAsset", tags=["assets"], response_model=DisposisiFixedAssetResponse)
 def api_disposisi_fixed_asset(
     client_id: str, asset_id: str, req: DisposisiFixedAssetRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -6666,7 +6683,7 @@ class StandardMappingRequest(BaseModel):
 
 
 class CompanyAccountRoleRequest(BaseModel):
-    coa_id: int
+    coa_id: str
 
 
 class NativeJournalLineRequest(BaseModel):
@@ -6735,7 +6752,7 @@ def api_accounting_mapping_health(client_id: str, user: dict = Depends(auth.requ
 
 @app.put("/api/client/{client_id}/accounting/coa/{coa_id}/standard-mapping")
 def api_set_standard_mapping(
-    client_id: str, coa_id: int, req: StandardMappingRequest,
+    client_id: str, coa_id: str, req: StandardMappingRequest,
     user: dict = Depends(auth.require_level(4)),
 ):
     try:
@@ -6799,7 +6816,7 @@ def api_create_native_journal_entry(
 
 @app.post("/api/client/{client_id}/journal-entries/{journal_entry_id}/post")
 def api_post_native_journal_entry(
-    client_id: str, journal_entry_id: int,
+    client_id: str, journal_entry_id: str,
     user: dict = Depends(auth.require_level(3)),
 ):
     try:
@@ -7175,7 +7192,7 @@ def api_posting_massal_by_ids(
 
 # ============================================================
 # [BARU] MODUL BANK & CASH -- endpoint khusus tabel
-# financial_transaction_bank_cash, dipakai halaman Cash Payment & Cash
+# finance_transaction_bank_cash, dipakai halaman Cash Payment & Cash
 # Receipt (menggantikan sumber data lama yang lewat jurnal-posting umum).
 # Pola endpoint SENGAJA identik dengan jurnal-posting di atas (skema tabel
 # sama persis) -- lihat bankCashBridge.ts di frontend utk pemetaan balik
@@ -7184,7 +7201,7 @@ def api_posting_massal_by_ids(
 
 class BankCashRowSkema(BaseModel):
     """Satu baris Cash Payment/Cash Receipt -- lihat _bank_cash_ke_dict()."""
-    id: int
+    id: str
     hasil_id: Optional[int] = None
     jenis_dokumen: Optional[str] = None
     tanggal: Optional[str] = None
@@ -7218,7 +7235,7 @@ class UpdateBankCashResponse(BaseModel):
 
 class BuatBankCashManualResponse(BaseModel):
     berhasil: bool
-    bank_cash_id: int
+    bank_cash_id: str
 
 class PostingMassalHasilSkema(BaseModel):
     """Hasil operasi posting/update massal -- dipakai bank-cash & other."""
@@ -7236,7 +7253,7 @@ class TolakBankCashResponse(BaseModel):
     berhasil: bool
 
 
-@app.get("/api/client/{client_id}/bank-cash", tags=["bank-cash"], response_model=DaftarBankCashResponse)
+@app.get("/api/v1/transaction/getBankCash", tags=["bank-cash"], response_model=DaftarBankCashResponse)
 def api_daftar_bank_cash(
     client_id: str,
     status: Optional[str] = None,
@@ -7267,9 +7284,9 @@ class UpdateBankCashRequest(BaseModel):
     paid_amount: Optional[float] = None
 
 
-@app.patch("/api/client/{client_id}/bank-cash/{bank_cash_id}", tags=["bank-cash"], response_model=UpdateBankCashResponse)
+@app.patch("/api/v1/transaction/updateBankCash", tags=["bank-cash"], response_model=UpdateBankCashResponse)
 def api_update_bank_cash(
-    client_id: str, bank_cash_id: int, req: UpdateBankCashRequest,
+    client_id: str, bank_cash_id: str, req: UpdateBankCashRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """Edit satu baris Bank & Cash yang sudah ada -- dipakai TransactionEditModal
@@ -7313,7 +7330,7 @@ class BuatBankCashManualRequest(BaseModel):
     paid_amount: Optional[float] = None
 
 
-@app.post("/api/client/{client_id}/bank-cash/manual", tags=["bank-cash"], response_model=BuatBankCashManualResponse)
+@app.post("/api/v1/transaction/addBankCashManual", tags=["bank-cash"], response_model=BuatBankCashManualResponse)
 def api_buat_bank_cash_manual(
     client_id: str, req: BuatBankCashManualRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -7364,7 +7381,7 @@ class PostingMassalBankCashRequest(BaseModel):
     ids: List[int]
 
 
-@app.post("/api/client/{client_id}/bank-cash/posting-massal-by-ids", tags=["bank-cash"], response_model=PostingMassalBankCashResponse)
+@app.post("/api/v1/transaction/postBankCashBulk", tags=["bank-cash"], response_model=PostingMassalBankCashResponse)
 def api_posting_massal_bank_cash(
     client_id: str, req: PostingMassalBankCashRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -7384,9 +7401,9 @@ class TolakBankCashRequest(BaseModel):
     alasan: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/bank-cash/{bank_cash_id}/tolak", tags=["bank-cash"], response_model=TolakBankCashResponse)
+@app.post("/api/v1/transaction/rejectBankCash", tags=["bank-cash"], response_model=TolakBankCashResponse)
 def api_tolak_bank_cash(
-    client_id: str, bank_cash_id: int, req: TolakBankCashRequest,
+    client_id: str, bank_cash_id: str, req: TolakBankCashRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """Tolak (hapus) satu baris Bank & Cash -- dipakai tombol Hapus di
@@ -7403,7 +7420,7 @@ def api_tolak_bank_cash(
 
 # ============================================================
 # [BARU] MODUL OTHER (JURNAL LAIN-LAIN) -- endpoint khusus tabel
-# financial_transaction_other, dipakai halaman Other (menggantikan sumber
+# finance_transaction_other, dipakai halaman Other (menggantikan sumber
 # data lama yang lewat jurnal-posting umum + tebakan kategori/nama akun).
 # Pola endpoint identik modul Bank & Cash di atas, bedanya operasi
 # update/posting/tolak dikelompokkan per je_id (bukan per id baris) karena
@@ -7460,7 +7477,7 @@ class TolakFinanceOtherResponse(BaseModel):
     berhasil: bool
 
 
-@app.get("/api/client/{client_id}/finance-other", tags=["other"], response_model=DataFinanceOtherResponse)
+@app.get("/api/v1/transaction/getFinanceOther", tags=["other"], response_model=DataFinanceOtherResponse)
 def api_daftar_finance_other(
     client_id: str,
     status: Optional[str] = None,
@@ -7494,7 +7511,7 @@ class UpdateFinanceOtherRequest(BaseModel):
     credit_leg: Optional[FinanceOtherLegUpdate] = None
 
 
-@app.patch("/api/client/{client_id}/finance-other/{je_id}", tags=["other"], response_model=UpdateFinanceOtherResponse)
+@app.patch("/api/v1/transaction/updateFinanceOther", tags=["other"], response_model=UpdateFinanceOtherResponse)
 def api_update_finance_other(
     client_id: str, je_id: str, req: UpdateFinanceOtherRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -7540,7 +7557,7 @@ class BuatFinanceOtherManualRequest(BaseModel):
     status: str = "Unposted"
 
 
-@app.post("/api/client/{client_id}/finance-other/manual", tags=["other"], response_model=BuatFinanceOtherManualResponse)
+@app.post("/api/v1/transaction/addFinanceOtherManual", tags=["other"], response_model=BuatFinanceOtherManualResponse)
 def api_buat_finance_other_manual(
     client_id: str, req: BuatFinanceOtherManualRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -7556,7 +7573,7 @@ def api_buat_finance_other_manual(
             jml_kredit=req.jml_kredit,
             reference=req.reference, party=req.party, category=req.category,
             notes=req.notes, voucher_no=req.voucher_no, status=req.status,
-            user=user.get("username", "unknown"),  # [BARU] utk financial_transaction_other_activity_log
+            user=user.get("username", "unknown"),  # [BARU] utk finance_transaction_other_activity_log
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -7575,7 +7592,7 @@ class PostingMassalFinanceOtherRequest(BaseModel):
     je_ids: List[str]
 
 
-@app.post("/api/client/{client_id}/finance-other/posting-massal-by-je-ids", tags=["other"], response_model=PostingMassalFinanceOtherResponse)
+@app.post("/api/v1/transaction/postFinanceOtherBulk", tags=["other"], response_model=PostingMassalFinanceOtherResponse)
 def api_posting_massal_finance_other(
     client_id: str, req: PostingMassalFinanceOtherRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -7595,7 +7612,7 @@ class TolakFinanceOtherRequest(BaseModel):
     alasan: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/finance-other/{je_id}/tolak", tags=["other"], response_model=TolakFinanceOtherResponse)
+@app.post("/api/v1/transaction/rejectFinanceOther", tags=["other"], response_model=TolakFinanceOtherResponse)
 def api_tolak_finance_other(
     client_id: str, je_id: str, req: TolakFinanceOtherRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
