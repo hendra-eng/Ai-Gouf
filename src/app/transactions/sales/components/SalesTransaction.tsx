@@ -32,18 +32,7 @@ interface TrxItem {
   taxStatus: string;
 }
 
-const TRANSACTIONS: TrxItem[] = [
-  { id: 'INV-2024-0001', date: '02 Jan 2024', customer: 'PT Maju Bersama', desc: 'Penjualan barang elektronik', dpp: 50000000, ppn: 5500000, pph: 500000, gross: 55000000, paid: 55000000, outstanding: 0, dueDate: '16 Jan 2024', type: 'Penjualan Barang', journal: 'JR-2401-001', status: 'Paid', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0002', date: '05 Jan 2024', customer: 'PT Solusi Digital', desc: 'Implementasi software', dpp: 120000000, ppn: 13200000, pph: 1200000, gross: 132000000, paid: 66000000, outstanding: 66000000, dueDate: '04 Feb 2024', type: 'Penjualan Jasa', journal: 'JR-2401-002', status: 'Partial', project: 'PJT-002 - Implementasi ERP', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0003', date: '08 Jan 2024', customer: 'PT Nusantara Teknologi', desc: 'Lisensi tahunan', dpp: 75000000, ppn: 8250000, pph: 750000, gross: 82500000, paid: 0, outstanding: 82500000, dueDate: '22 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-003', status: 'Draft', project: 'PJT-003 - Lisensi Software', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0004', date: '10 Jan 2024', customer: 'CV Kreatif Indonesia', desc: 'Konsultasi manajemen', dpp: 40000000, ppn: 4400000, pph: 400000, gross: 44000000, paid: 44000000, outstanding: 0, dueDate: '24 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-003', status: 'Posted', project: 'PJT-004 - Konsultasi', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0005', date: '12 Jan 2024', customer: 'PT Global Solusi', desc: 'Perangkat keras IT', dpp: 200000000, ppn: 22000000, pph: 2000000, gross: 220000000, paid: 0, outstanding: 220000000, dueDate: '11 Feb 2024', type: 'Penjualan Barang', journal: 'JR-2401-004', status: 'Review', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0006', date: '15 Jan 2024', customer: 'PT Aneka Sarana', desc: 'Maintenance bulanan', dpp: 35000000, ppn: 3850000, pph: 350000, gross: 38500000, paid: 38500000, outstanding: 0, dueDate: '29 Jan 2024', type: 'Penjualan Jasa', journal: 'JR-2401-004', status: 'Posted', project: 'PJT-005 - Maintenance', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0007', date: '18 Jan 2024', customer: 'PT Citra Abadi', desc: 'Penjualan spare part', dpp: 90000000, ppn: 9900000, pph: 900000, gross: 99000000, paid: 49950000, outstanding: 49050000, dueDate: '01 Feb 2024', type: 'Penjualan Barang', journal: 'JR-2401-005', status: 'Approved', project: 'PJT-001 - Pengadaan IT', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0008', date: '22 Jan 2024', customer: 'PT Sentosa Makmur', desc: 'Jasa instalasi', dpp: 60000000, ppn: 6600000, pph: 600000, gross: 66000000, paid: 0, outstanding: 66000000, dueDate: '21 Feb 2024', type: 'Penjualan Jasa', journal: '', status: 'Draft', project: 'PJT-006 - Instalasi', taxStatus: 'Belum Terbit Faktur' },
-  { id: 'INV-2024-0009', date: '25 Jan 2024', customer: 'CV Prima Karya', desc: 'Pembuatan sistem', dpp: 110000000, ppn: 12100000, pph: 1100000, gross: 121000000, paid: 121000000, outstanding: 0, dueDate: '08 Feb 2024', type: 'Penjualan Jasa', journal: 'JR-2401-005', status: 'Paid', project: 'PJT-002 - Implementasi ERP', taxStatus: 'Sudah Terbit Faktur' },
-  { id: 'INV-2024-0010', date: '28 Jan 2024', customer: 'PT Berkah Sejahtera', desc: 'Training pengguna', dpp: 25000000, ppn: 2750000, pph: 250000, gross: 27500000, paid: 0, outstanding: 27500000, dueDate: '27 Feb 2024', type: 'Penjualan Jasa', journal: '', status: 'Review', project: 'PJT-004 - Konsultasi', taxStatus: 'Belum Terbit Faktur' },
-];
+const TRANSACTIONS: TrxItem[] = [];
 
 const STATUS_STYLE: Record<string, string> = {
   Paid: 'bg-emerald-100 text-emerald-700',
@@ -99,7 +88,7 @@ export default function SalesTransaction() {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Table selection / drawer
-  const [selectedId, setSelectedId] = useState<string | null>(TRANSACTIONS[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(TRANSACTIONS[0]?.id ?? null);
   const [drawerTab, setDrawerTab] = useState('detail');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -511,11 +500,11 @@ export default function SalesTransaction() {
               <div className="space-y-2 text-xs">
                 {[
                   ['Customer', selectedTrx.customer],
-                  ['NPWP', '01.234.567.8-901.000'],
+                  ['NPWP', '—'],
                   ['Tipe Transaksi', t(selectedTrx.type)],
                   ['Project', selectedTrx.project],
-                  ['Sales Person', 'Budi Santoso'],
-                  ['Term of Payment', 'Net 14'],
+                  ['Sales Person', '—'],
+                  ['Term of Payment', '—'],
                   ['Due Date', selectedTrx.dueDate],
                   ['Status Pajak', t(selectedTrx.taxStatus)],
                 ].map(([k, v]) => (

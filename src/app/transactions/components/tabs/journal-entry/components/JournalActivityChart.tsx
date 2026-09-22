@@ -12,15 +12,15 @@ import {
 } from 'recharts';
 
 const data = [
-  { month: 'Jan', posted: 38, pending: 8, rejected: 2 },
-  { month: 'Feb', posted: 44, pending: 12, rejected: 1 },
-  { month: 'Mar', posted: 41, pending: 7, rejected: 3 },
-  { month: 'Apr', posted: 52, pending: 9, rejected: 0 },
-  { month: 'May', posted: 47, pending: 14, rejected: 2 },
-  { month: 'Jun', posted: 55, pending: 6, rejected: 1 },
-  { month: 'Jul', posted: 43, pending: 11, rejected: 4 },
-  { month: 'Aug', posted: 52, pending: 8, rejected: 2 },
-  { month: 'Sep', posted: 48, pending: 11, rejected: 3 },
+  { month: 'Jan', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Feb', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Mar', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Apr', posted: 0, pending: 0, rejected: 0 },
+  { month: 'May', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Jun', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Jul', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Aug', posted: 0, pending: 0, rejected: 0 },
+  { month: 'Sep', posted: 0, pending: 0, rejected: 0 },
 ];
 
 function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {

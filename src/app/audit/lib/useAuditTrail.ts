@@ -1,27 +1,27 @@
 'use client';
-
-// [BARU] Sambungkan bagian "Audit Trail" di halaman Audit ke data ASLI
-// client aktif -- SATU-SATUNYA bagian di halaman Audit yang benar-benar
-// bisa diturunkan dari data transaksi (jurnal), karena isinya memang
-// sebuah LOG PERUBAHAN RECORD (siapa mengubah apa, kapan) -- bukan hasil
-// judgment/analisis auditor seperti Findings, Root Cause, Recommendation,
-// Management Response, atau Audit Stages/KPI completion yang TETAP data
-// contoh (lihat komentar di page.tsx) karena tidak ada sumber data
-// terstruktur utk itu di backend saat ini.
+// ─── JEMBATAN backend (jurnal_posting) → Audit Trail (halaman Audit) ──────
+// Sebelumnya file ini SALAH ISI (ketuker dengan hook Fixed Asset Register),
+// sehingga `useAuditTrail` yang diimpor page.tsx tidak pernah ada -> build
+// gagal ("is not exported"/"is not a function").
 //
-// Sumber data: GET /api/client/{id}/jurnal-posting (semua status), fungsi
-// daftarJurnalPosting() yang SAMA dipakai TransactionsContext.tsx
-// (halaman Transaksi) -- jadi tidak ada endpoint baru, dan baris yang
-// tampil di sini selalu konsisten dengan tabel Transaksi client yang sama.
-// Satu baris jurnal_posting (debet+kredit) dijadikan SATU baris Audit
-// Trail (bukan dipecah dua leg seperti jurnalBridge.ts), karena di sini
-// yang relevan adalah "record apa yang berubah", bukan sisi debet/kredit.
+// Sumber data: GET /api/client/{client_id}/jurnal-posting TANPA filter
+// status (daftarJurnalPosting(clientId, '') -- status kosong = semua
+// status: draft/terposting/ditolak), endpoint & fungsi yang SAMA dipakai
+// jurnalBridge.ts di halaman Transaksi. Ini juga yang dirujuk komentar di
+// agent-ai/lib/api.js dan clientActivityBridge.ts.
+//
+// [Keterbatasan yang SENGAJA dibiarkan jujur, bukan bug]
+// 1) Backend jurnal_posting TIDAK menyimpan histori before/after per field
+//    (beda dari audit_log admin generik) -- jadi "Previous Value"/"New
+//    Value" di tabel tidak bisa diisi dari data asli dan dibiarkan '—',
+//    bukan diisi angka karangan.
+// 2) "Module" diturunkan dari jenis_dokumen upload asal baris ini kalau
+//    ada; kalau tidak ada, fallback ke label generik "Jurnal".
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { daftarJurnalPosting } from '@/app/agent-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
-import { formatIDR } from '@/lib/financialData';
 
 export interface AuditTrailRow {
   id: string;
@@ -34,89 +34,89 @@ export interface AuditTrailRow {
   newValue?: string;
 }
 
-const SAMPLE_TRAIL: AuditTrailRow[] = [
-  { id: 't1', user: 'Budi S.', action: 'Posted', module: 'Accounts Receivable', record: 'INV-2026-089', timestamp: '2026-08-28 10:30', prevValue: 'Draft', newValue: 'Rp 45M' },
-  { id: 't2', user: 'Sari W.', action: 'Created', module: 'Audit Finding', record: 'AUD-002', timestamp: '2026-08-27 14:15', prevValue: '—', newValue: 'New Finding' },
-  { id: 't3', user: 'System', action: 'Posted', module: 'Revenue', record: 'JE-2026-445', timestamp: '2026-08-26 09:00', prevValue: '—', newValue: 'Anomaly detected' },
-  { id: 't4', user: 'Ahmad R.', action: 'Posted', module: 'Expenses', record: 'EXP-2026-440', timestamp: '2026-08-25 16:45', prevValue: 'Pending', newValue: 'Approved' },
-  { id: 't5', user: 'Dewi P.', action: 'Posted', module: 'Audit Finding', record: 'AUD-004', timestamp: '2026-08-25 11:20', prevValue: 'Open', newValue: 'Resolved' },
-];
-
 interface BackendJurnalRow {
   id: number;
-  tanggal?: string | null;
-  keterangan?: string | null;
+  jenis_dokumen?: string | null;
   no_dokumen?: string | null;
-  lawan_transaksi?: string | null;
-  nama_akun_debet?: string | null;
-  nama_akun_kredit?: string | null;
-  jml_debet?: number | null;
-  jml_kredit?: number | null;
   status?: string | null; // 'draft' | 'terposting' | 'ditolak'
   diposting_oleh?: string | null;
   diposting_at?: string | null;
   dibuat_at?: string | null;
 }
 
+// 'draft' backend = sudah masuk sistem tapi belum diposting ke buku besar
+// (lihat catatan sama di jurnalBridge.ts) -> ditampilkan sebagai "Created",
+// BUKAN "Draft", supaya konsisten dgn styling badge di page.tsx (hijau
+// utk Created, biru utk Posted, merah utk selain itu).
 const ACTION_MAP: Record<string, AuditTrailRow['action']> = {
-  terposting: 'Posted',
   draft: 'Created',
+  terposting: 'Posted',
   ditolak: 'Rejected',
 };
 
-function toRow(r: BackendJurnalRow): AuditTrailRow {
-  const amount = r.jml_debet || r.jml_kredit || 0;
-  const timestamp = r.diposting_at || r.dibuat_at || r.tanggal || '';
+function mapAction(status?: string | null): AuditTrailRow['action'] {
+  if (!status) return 'Created';
+  return ACTION_MAP[status] || 'Created';
+}
+
+function labelModule(jenis?: string | null): string {
+  if (!jenis) return 'Jurnal';
+  return jenis.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function fmtWaktu(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return `${d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}, ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function fromRow(row: BackendJurnalRow): AuditTrailRow {
+  const timestamp = row.diposting_at || row.dibuat_at || null;
   return {
-    id: `jp-${r.id}`,
-    user: r.diposting_oleh || 'System',
-    action: ACTION_MAP[r.status || ''] || 'Created',
-    module: r.nama_akun_debet || r.nama_akun_kredit || 'Jurnal',
-    record: r.no_dokumen || `JE-${r.id}`,
-    timestamp: timestamp ? timestamp.replace('T', ' ').slice(0, 16) : '—',
-    prevValue: r.status === 'terposting' ? 'Draft' : '—',
-    newValue: amount ? formatIDR(amount, true) : (r.keterangan || '—'),
+    id: `jp-${row.id}`,
+    user: row.diposting_oleh || 'System',
+    action: mapAction(row.status),
+    module: labelModule(row.jenis_dokumen),
+    record: row.no_dokumen || `JE-${row.id}`,
+    timestamp: fmtWaktu(timestamp),
   };
 }
 
-interface AuditTrailData {
+export interface AuditTrailData {
   loading: boolean;
   isSampleData: boolean;
   trail: AuditTrailRow[];
 }
 
 export function useAuditTrail(): AuditTrailData {
-  const { activeClientId } = useActiveClient();
-  const [loading, setLoading] = useState(false);
-  const [trail, setTrail] = useState<AuditTrailRow[] | null>(null);
+  const { activeClientId, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
+  const [trail, setTrail] = useState<AuditTrailRow[]>([]);
   const requestIdRef = useRef(0);
 
   const load = () => {
     if (!activeClientId) {
-      setTrail(null);
+      setTrail([]);
       setLoading(false);
       return;
     }
     const requestId = ++requestIdRef.current;
     setLoading(true);
-    daftarJurnalPosting(activeClientId, '') // '' -> semua status (draft + terposting + ditolak)
-      .then((res: { jurnal: BackendJurnalRow[] }) => {
+    daftarJurnalPosting(activeClientId, '')
+      .then((res: any) => {
         if (requestIdRef.current !== requestId) return;
-        const rows = res?.jurnal || [];
-        if (rows.length === 0) {
-          setTrail(null);
-        } else {
-          const sorted = [...rows].sort((a, b) => {
-            const ta = a.diposting_at || a.dibuat_at || a.tanggal || '';
-            const tb = b.diposting_at || b.dibuat_at || b.tanggal || '';
-            return tb.localeCompare(ta);
-          });
-          setTrail(sorted.slice(0, 25).map(toRow));
-        }
+        const rows: BackendJurnalRow[] = res?.jurnal || [];
+        const sorted = [...rows].sort((a, b) => {
+          const ta = a.diposting_at || a.dibuat_at || '';
+          const tb = b.diposting_at || b.dibuat_at || '';
+          return tb.localeCompare(ta);
+        });
+        setTrail(sorted.map(fromRow));
       })
       .catch(() => {
-        if (requestIdRef.current !== requestId) return;
-        setTrail(null);
+        if (requestIdRef.current === requestId) setTrail([]);
       })
       .finally(() => {
         if (requestIdRef.current === requestId) setLoading(false);
@@ -124,9 +124,10 @@ export function useAuditTrail(): AuditTrailData {
   };
 
   useEffect(() => {
+    if (!hydrated) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   useEffect(() => {
     return listenClientDataChanged((changedClientId) => {
@@ -135,6 +136,5 @@ export function useAuditTrail(): AuditTrailData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeClientId]);
 
-  if (trail) return { loading, isSampleData: false, trail };
-  return { loading, isSampleData: true, trail: SAMPLE_TRAIL };
+  return { loading, isSampleData: trail.length === 0, trail };
 }

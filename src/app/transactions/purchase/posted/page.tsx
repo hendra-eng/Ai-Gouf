@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { exportToCSV } from '@/app/transactions/components/tabs/shared/exportUtils';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -15,9 +17,6 @@ import {
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
-
-// Only posted transactions
-const postedPurchases = purchaseTransactions.filter(t => t.status === 'posted');
 
 const categoryColors: Record<string, string> = {
   Inventory: 'bg-emerald-100 text-emerald-700',
@@ -51,6 +50,12 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
+  const { purchaseTransactions } = usePurchaseData();
+  const postedPurchases = useMemo(
+    () => purchaseTransactions.filter(t => t.status === 'posted'),
+    [purchaseTransactions]
+  );
+
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -85,11 +90,37 @@ export default function PurchasePostedPage() {
       return 0;
     });
     return data;
-  }, [search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  }, [postedPurchases, search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+  };
+
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error('Tidak ada data untuk diekspor', { description: 'Ubah filter terlebih dahulu.' });
+      return;
+    }
+    exportToCSV(
+      filtered.map(r => ({
+        'Purchase ID': r.purchaseId,
+        'Posting Date': r.postingDate,
+        'Purchase Date': r.purchaseDate,
+        'Invoice No.': r.invoiceNumber,
+        Vendor: r.vendor,
+        Category: r.category,
+        Subtotal: r.subtotal,
+        Tax: r.taxAmount,
+        Total: r.total,
+        Payment: paymentLabels[r.paymentStatus],
+        Period: r.period,
+        'Posted By': r.postedBy,
+        'Approved By': r.approvedBy,
+      })),
+      'purchase_posted'
+    );
+    toast.success(`${filtered.length} posted purchases diekspor ke CSV`);
   };
 
   const summary = useMemo(() => ({
@@ -98,7 +129,7 @@ export default function PurchasePostedPage() {
     totalTax: postedPurchases.reduce((s, t) => s + t.taxAmount, 0),
     totalAP: postedPurchases.reduce((s, t) => s + t.accountsPayable, 0),
     periods: [...new Set(postedPurchases.map(t => t.period))].length,
-  }), []);
+  }), [postedPurchases]);
 
   return (
       <div className="space-y-6 fade-in">
@@ -153,7 +184,7 @@ export default function PurchasePostedPage() {
                 <option value="All">All Payment</option>
                 {Object.entries(paymentLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>

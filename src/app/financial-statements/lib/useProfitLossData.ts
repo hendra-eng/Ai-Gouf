@@ -42,14 +42,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
-import {
-  PL_CORE as MOCK_PL_CORE,
-  MARGINS as MOCK_MARGINS,
-  MONTHLY_PL as MOCK_MONTHLY_PL,
-  REVENUE_BY_CATEGORY as MOCK_REVENUE_BY_CATEGORY,
-  EXPENSE_BREAKDOWN as MOCK_EXPENSE_BREAKDOWN,
-  COMPANY,
-} from '@/lib/financialData';
+import { COMPANY } from '@/lib/financialData';
 
 export interface PLCoreValues {
   revenue: number; cogs: number; grossProfit: number; operatingExpenses: number;
@@ -76,7 +69,6 @@ interface ProfitLossData {
 }
 
 const NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true' || process.env.NODE_ENV !== 'production';
 
 type EmberBeban = 'cogs' | 'da' | 'interest' | 'tax' | 'opex';
 
@@ -244,12 +236,19 @@ export async function fetchMonthlyPLForYear(clientId: string, tahun: number): Pr
 }
 
 export function useProfitLossData(): ProfitLossData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default `true`: di render pertama kita belum tahu
+  // apakah ada client aktif tersimpan (localStorage belum sempat dibaca
+  // oleh ActiveClientProvider), jadi anggap "sedang memuat" dulu, bukan
+  // "tidak ada data" (yang sebelumnya tampil sbg ZERO_PL di bawah).
+  const [loading, setLoading] = useState(true);
   const [computed, setComputed] = useState<ReturnType<typeof hitungDataProfitLoss> | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    // Context masih membaca client aktif dari localStorage -- jangan
+    // simpulkan "tidak ada client" dulu, biarkan `loading` tetap true.
+    if (!hydrated) return;
     if (!activeClientId) {
       setComputed(null);
       setLoading(false);
@@ -279,7 +278,7 @@ export function useProfitLossData(): ProfitLossData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
   // client yang sedang aktif -- BEDA dari effect mount di atas (yang GET
@@ -321,22 +320,8 @@ export function useProfitLossData(): ProfitLossData {
       PL_CORE: computed.PL_CORE,
       MARGINS: computed.MARGINS,
       MONTHLY_PL: computed.MONTHLY_PL,
-      REVENUE_BY_CATEGORY: computed.REVENUE_BY_CATEGORY.length ? computed.REVENUE_BY_CATEGORY : (DEMO_MODE ? MOCK_REVENUE_BY_CATEGORY : []),
-      EXPENSE_BREAKDOWN: computed.EXPENSE_BREAKDOWN.length ? computed.EXPENSE_BREAKDOWN : (DEMO_MODE ? MOCK_EXPENSE_BREAKDOWN : []),
-    };
-  }
-
-  if (DEMO_MODE) {
-    return {
-      loading,
-      isSampleData: true,
-      companyName: COMPANY.name,
-      periodLabel: COMPANY.period,
-      PL_CORE: MOCK_PL_CORE,
-      MARGINS: MOCK_MARGINS,
-      MONTHLY_PL: MOCK_MONTHLY_PL,
-      REVENUE_BY_CATEGORY: MOCK_REVENUE_BY_CATEGORY,
-      EXPENSE_BREAKDOWN: MOCK_EXPENSE_BREAKDOWN,
+      REVENUE_BY_CATEGORY: computed.REVENUE_BY_CATEGORY,
+      EXPENSE_BREAKDOWN: computed.EXPENSE_BREAKDOWN,
     };
   }
 

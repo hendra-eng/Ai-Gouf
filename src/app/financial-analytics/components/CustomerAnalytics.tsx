@@ -4,16 +4,19 @@ import Icon from '@/components/ui/AppIcon';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
 
-const CUSTOMERS = [
-  { id: 'ca-1', name: 'PT Maju Bersama Digital', revenue: 1_840_000_000, growth: 18.4, outstandingAR: 240_000_000, collectionRate: 96.8, contribution: 21.8, profitability: 'High', dso: 47 },
-  { id: 'ca-2', name: 'CV Solusi Teknindo', revenue: 1_240_000_000, growth: 12.2, outstandingAR: 96_000_000, collectionRate: 94.2, contribution: 14.7, profitability: 'High', dso: 28 },
-  { id: 'ca-3', name: 'PT Artha Niaga Nusantara', revenue: 980_000_000, growth: 8.6, outstandingAR: 180_000_000, collectionRate: 88.4, contribution: 11.6, profitability: 'Medium', dso: 67 },
-  { id: 'ca-4', name: 'PT Kreasi Media Utama', revenue: 860_000_000, growth: 22.4, outstandingAR: 64_000_000, collectionRate: 97.2, contribution: 10.2, profitability: 'High', dso: 27 },
-  { id: 'ca-5', name: 'PT Sinergi Inovasi', revenue: 720_000_000, growth: 6.8, outstandingAR: 124_000_000, collectionRate: 91.8, contribution: 8.6, profitability: 'Medium', dso: 63 },
-  { id: 'ca-6', name: 'CV Mitra Digital Prima', revenue: 580_000_000, growth: -4.2, outstandingAR: 380_000_000, collectionRate: 72.4, contribution: 6.9, profitability: 'Low', dso: 239 },
-  { id: 'ca-7', name: 'PT Dinamika Solusi', revenue: 460_000_000, growth: 14.8, outstandingAR: 48_000_000, collectionRate: 98.1, contribution: 5.5, profitability: 'High', dso: 38 },
-  { id: 'ca-8', name: 'CV Teknologi Andalan', revenue: 380_000_000, growth: 9.2, outstandingAR: 72_000_000, collectionRate: 93.6, contribution: 4.5, profitability: 'Medium', dso: 69 },
-];
+// Belum ada dimensi per-customer di jurnal/GL backend — dikosongkan sampai
+// data real tersambung (lihat catatan proyek: butuh perubahan skema data).
+const CUSTOMERS: {
+  id: string;
+  name: string;
+  revenue: number;
+  growth: number;
+  outstandingAR: number;
+  collectionRate: number;
+  contribution: number;
+  profitability: string;
+  dso: number;
+}[] = [];
 
 const PROFITABILITY_STYLES: Record<string, string> = {
   High: 'bg-positive-subtle text-positive',
@@ -33,6 +36,9 @@ export default function CustomerAnalytics() {
     const bv = b[sortKey as keyof typeof b] as number;
     return sortDir === 'desc' ? bv - av : av - bv;
   });
+
+  const topCustomer = CUSTOMERS.length ? [...CUSTOMERS].sort((a, b) => b.revenue - a.revenue)[0] : null;
+  const highARCustomer = CUSTOMERS.length ? [...CUSTOMERS].sort((a, b) => b.outstandingAR - a.outstandingAR)[0] : null;
 
   const handleSort = (key: string) => {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -55,13 +61,17 @@ export default function CustomerAnalytics() {
           <p className="text-xs text-muted-foreground mt-0.5">Revenue contribution, AR health, and collection performance</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Highlight badges */}
-          <span className="text-2xs font-medium text-positive bg-positive-subtle px-2 py-1 rounded-full border border-positive/20 hidden md:block">
-            Top: PT Maju Bersama Digital
-          </span>
-          <span className="text-2xs font-medium text-negative bg-negative-subtle px-2 py-1 rounded-full border border-negative/20 hidden md:block">
-            High AR: CV Mitra Digital
-          </span>
+          {/* Highlight badges (muncul kalau ada data top/high-AR) */}
+          {topCustomer && (
+            <span className="text-2xs font-medium text-positive bg-positive-subtle px-2 py-1 rounded-full border border-positive/20 hidden md:block">
+              Top: {topCustomer.name}
+            </span>
+          )}
+          {highARCustomer && (
+            <span className="text-2xs font-medium text-negative bg-negative-subtle px-2 py-1 rounded-full border border-negative/20 hidden md:block">
+              High AR: {highARCustomer.name}
+            </span>
+          )}
           <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-2">
             <Icon name="MagnifyingGlassIcon" size={14} className="text-muted-foreground" />
             <input
@@ -104,6 +114,13 @@ export default function CustomerAnalytics() {
             </tr>
           </thead>
           <tbody>
+            {sorted.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  Belum ada data customer
+                </td>
+              </tr>
+            )}
             {sorted.map((customer) => {
               const isHighAR = customer.outstandingAR > 200_000_000;
               const isTopGrowth = customer.growth > 20;

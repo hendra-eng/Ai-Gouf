@@ -22,32 +22,32 @@ const DASH = '—';
 const rows: ERow[] = [
   // Share Capital
   { id: 'r-sc-h',  label: 'Share Capital',              indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-sc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '5,000,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '5,000,000' },
-  { id: 'r-sc-2',  label: 'Capital Contributions',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '500,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '500,000' },
-  { id: 'r-sc-t',  label: 'Total Share Capital',         indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '5,000,000', capital: '500,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '5,500,000' },
+  { id: 'r-sc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '0', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-sc-2',  label: 'Capital Contributions',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '0',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-sc-t',  label: 'Total Share Capital',         indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '0', capital: '0',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
   // APIC
   { id: 'r-ap-h',  label: 'Additional Paid-in Capital',  indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-ap-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '1,200,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,200,000' },
-  { id: 'r-ap-2',  label: 'Share Premium — New Issue',   indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '250,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '250,000' },
-  { id: 'r-ap-t',  label: 'Total APIC',                  indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '1,200,000', capital: '250,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,450,000' },
+  { id: 'r-ap-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '0', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-ap-2',  label: 'Share Premium — New Issue',   indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '0',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-ap-t',  label: 'Total APIC',                  indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '0', capital: '0',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
   // Retained Earnings
   { id: 'r-re-h',  label: 'Retained Earnings',           indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-re-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '1,980,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,980,000' },
-  { id: 'r-re-2',  label: 'Net Profit for Period',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: '1,840,000', dividends: DASH,        adj: DASH,       closing: '1,840,000' },
-  { id: 'r-re-3',  label: 'Dividends Declared',          indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: '(420,000)', adj: DASH,       closing: '(420,000)' },
-  { id: 'r-re-4',  label: 'Other Adjustments',           indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(35,000)', closing: '(35,000)' },
-  { id: 'r-re-t',  label: 'Total Retained Earnings',     indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '1,980,000', capital: DASH,       profit: '1,840,000', dividends: '(420,000)', adj: '(35,000)', closing: '3,365,000' },
+  { id: 'r-re-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '0', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-re-2',  label: 'Net Profit for Period',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: '0', dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-re-3',  label: 'Dividends Declared',          indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: '0', adj: DASH,       closing: '0' },
+  { id: 'r-re-4',  label: 'Other Adjustments',           indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '0', closing: '0' },
+  { id: 'r-re-t',  label: 'Total Retained Earnings',     indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '0', capital: DASH,       profit: '0', dividends: '0', adj: '0', closing: '0' },
   // OCI
   { id: 'r-oc-h',  label: 'Other Comprehensive Income',  indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-oc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '140,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '140,000' },
-  { id: 'r-oc-2',  label: 'FX Translation & Revaluation',indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(50,000)', closing: '(50,000)' },
-  { id: 'r-oc-t',  label: 'Total OCI',                   indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '140,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(50,000)', closing: '90,000' },
+  { id: 'r-oc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '0',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-oc-2',  label: 'FX Translation & Revaluation',indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '0', closing: '0' },
+  { id: 'r-oc-t',  label: 'Total OCI',                   indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '0',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: '0', closing: '0' },
   // Other Equity
   { id: 'r-oe-h',  label: 'Other Equity',                indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-oe-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '100,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '100,000' },
-  { id: 'r-oe-t',  label: 'Total Other Equity',          indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '100,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '100,000' },
+  { id: 'r-oe-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '0',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
+  { id: 'r-oe-t',  label: 'Total Other Equity',          indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '0',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '0' },
   // Grand
-  { id: 'r-grand', label: 'TOTAL EQUITY',                indent: false, isTotal: true,  isSection: false, isGrand: true,  opening: '8,420,000', capital: '750,000',  profit: '1,840,000', dividends: '(420,000)', adj: '(85,000)', closing: '10,505,000' },
+  { id: 'r-grand', label: 'TOTAL EQUITY',                indent: false, isTotal: true,  isSection: false, isGrand: true,  opening: '0', capital: '0',  profit: '0', dividends: '0', adj: '0', closing: '0' },
 ];
 
 const COL_HEADERS = [
@@ -75,7 +75,7 @@ export default function EquityMainTable() {
         <div>
           <h2 className="text-[14px] font-bold text-foreground">{t('Statement of Changes in Equity')}</h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            {t('PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD')}
+            {t('Statement period — all figures in USD')}
           </p>
         </div>
         <span className="text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded-md font-medium">USD</span>

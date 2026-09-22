@@ -6,17 +6,27 @@ import KPICard from '@/components/financial/KPICard';
 import AIInsightsPanel from '@/components/financial/AIInsightsPanel';
 import { ComposedChart, Area, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
-  REVENUE_BY_CUSTOMER, BUDGET_VS_ACTUAL, PL_AI_INSIGHTS,
+  REVENUE_BY_CUSTOMER, BUDGET_VS_ACTUAL,
 } from '@/lib/financialData';
 import InteractiveAgingDonut, { AgingLivePreview } from '../../components/InteractiveAgingDonut';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 // [BARU] Angka P&L (PL_CORE, MARGINS, MONTHLY_PL, REVENUE_BY_CATEGORY,
 // EXPENSE_BREAKDOWN) & nama/periode perusahaan sekarang REAL -- diambil
 // dari client aktif lewat useProfitLossData() (lihat lib/useProfitLossData.ts
-// utk detail sumber & keterbatasannya). REVENUE_BY_CUSTOMER/BUDGET_VS_ACTUAL/
-// PL_AI_INSIGHTS di atas TETAP data contoh (financialData.tsx) -- belum ada
-// sumber data backend utk itu.
+// utk detail sumber & keterbatasannya). REVENUE_BY_CUSTOMER di atas TETAP
+// data contoh (financialData.tsx) -- belum ada sumber data backend utk itu.
+// [FIX] Kolom "Budget" di bagian Budget vs Actual TIDAK LAGI pakai
+// BUDGET_VS_ACTUAL.budget (isinya 0 semua) -- sekarang disambungkan ke
+// tabel ..._profit and loss_finance_budget_li (schema 3_Financial) lewat
+// ambilPlBudget(). BUDGET_VS_ACTUAL tetap dipakai sbg daftar nama item
+// (row.item) saja.
+// [BARU] Panel "AI Performance Insights" sekarang dari tabel
+// ..._profit and loss_finance_insights lewat usePLInsights() (bukan lagi
+// PL_AI_INSIGHTS hardcoded).
 import { useProfitLossData, type MonthlyPLRow } from '../lib/useProfitLossData';
+import { useActiveClient } from '@/lib/activeClient';
+import { ambilPlBudget } from '@/app/agent-ai/lib/api';
+import { usePLInsights } from '../lib/usePLInsights';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import {
@@ -368,6 +378,7 @@ export default function ProfitLossPage() {
   } = useProfitLossData();
   const { currency } = useCurrency();
   const { t } = useLanguage();
+  const { activeClientId } = useActiveClient();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
 
   // ── [BARU] Import data P&L dari file CSV (fitur tahap awal) ─────────────
@@ -1037,19 +1048,50 @@ export default function ProfitLossPage() {
     );
   };
 
-  // [BARU] Kolom "Budget" tetap target ilustratif (belum ada modul Budget
-  // yang expose data lewat API) -- tapi kolom "Actual" & variance-nya
-  // sekarang disinkronkan ke PL_CORE ASLI, supaya tidak beda dengan angka
-  // Revenue/EBITDA/dst yang sudah ditampilkan di bagian lain halaman ini.
+  // [BARU] Anggaran P&L REAL untuk kolom "Budget" di tabel Budget vs Actual,
+  // sumber tabel ..._profit and loss_finance_budget_li (schema 3_Financial)
+  // lewat GET /api/client/{id}/pl-budget. Dijumlahkan YTD sebanyak bulan
+  // aktual yang tampil (MONTHLY_PL.length), supaya Budget & Actual sejajar.
+  // Diambil setiap ada client aktif (bukan hanya saat mode "Budget"),
+  // karena kartu Budget vs Actual selalu tampil. Flag `cancelled` mencegah
+  // hasil request lama menimpa data saat client/jumlah bulan berubah.
+  const elapsedMonthsUntukBudget = Math.max(1, MONTHLY_PL.length);
+  const anchorYearUntukBudget = new Date().getFullYear();
+  const [budgetDataPL, setBudgetDataPL] = useState<{
+    revenue: number; cogs: number; grossProfit: number;
+    operatingExpenses: number; ebitda: number; netProfit: number; ada_data: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (isSampleData || !activeClientId) { setBudgetDataPL(null); return; }
+    let cancelled = false;
+    ambilPlBudget(activeClientId, anchorYearUntukBudget, elapsedMonthsUntukBudget)
+      .then((res) => { if (!cancelled) setBudgetDataPL(res?.ada_data ? res : null); })
+      .catch(() => { if (!cancelled) setBudgetDataPL(null); });
+    return () => { cancelled = true; };
+  }, [isSampleData, activeClientId, anchorYearUntukBudget, elapsedMonthsUntukBudget]);
+  // [BARU] Insight P&L dari tabel ..._profit and loss_finance_insights.
+  const { insights: plInsights } = usePLInsights();
+
+  // Kolom "Actual" & variance-nya disinkronkan ke PL_CORE ASLI, supaya
+  // tidak beda dengan angka Revenue/EBITDA/dst yang sudah ditampilkan di
+  // bagian lain halaman ini. Kolom "Budget" sekarang dari budgetDataPL
+  // (Rupiah mentah -> dikonversi ke Jt supaya sejajar dengan PL_CORE);
+  // kalau belum ada data anggaran utk client ini, fallback ke 0 (bukan
+  // BUDGET_VS_ACTUAL.budget lama yang statis).
   const ACTUAL_DARI_PL_CORE: Record<string, number> = {
     Revenue: PL_CORE.revenue, COGS: PL_CORE.cogs, 'Gross Profit': PL_CORE.grossProfit,
     'Operating Expenses': PL_CORE.operatingExpenses, EBITDA: PL_CORE.ebitda, 'Net Profit': PL_CORE.netProfit,
   };
+  const BUDGET_DARI_REAL: Record<string, number> = budgetDataPL ? {
+    Revenue: budgetDataPL.revenue / 1e6, COGS: budgetDataPL.cogs / 1e6, 'Gross Profit': budgetDataPL.grossProfit / 1e6,
+    'Operating Expenses': budgetDataPL.operatingExpenses / 1e6, EBITDA: budgetDataPL.ebitda / 1e6, 'Net Profit': budgetDataPL.netProfit / 1e6,
+  } : {};
   const budgetVsActual = BUDGET_VS_ACTUAL.map(row => {
     const actual = ACTUAL_DARI_PL_CORE[row.item] ?? row.actual;
-    const variance = actual - row.budget;
-    const variancePct = row.budget ? (variance / Math.abs(row.budget)) * 100 : 0;
-    return { ...row, actual, variance, variancePct };
+    const budget = BUDGET_DARI_REAL[row.item] ?? 0;
+    const variance = actual - budget;
+    const variancePct = budget ? (variance / Math.abs(budget)) * 100 : 0;
+    return { ...row, budget, actual, variance, variancePct };
   });
 
   return (
@@ -1574,7 +1616,7 @@ export default function ProfitLossPage() {
         </div>
 
         {/* ── AI Insights ── */}
-        <AIInsightsPanel title="AI Performance Insights" insights={PL_AI_INSIGHTS} />
+        <AIInsightsPanel title="AI Performance Insights" insights={plInsights} />
 
       </div>
 

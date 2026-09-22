@@ -2,9 +2,11 @@
 import React from 'react';
 import { Printer, FileDown, Download, CheckCircle2, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
 
 export default function NotesHeader() {
   const { t } = useLanguage();
+  const { activeClientName } = useActiveClient();
   return (
     <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       <div>
@@ -27,7 +29,7 @@ export default function NotesHeader() {
         <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[11px]">
           <span className="text-primary font-semibold">{t('January 2026 – August 2026')}</span>
           <span className="text-muted-foreground/50">·</span>
-          <span className="text-muted-foreground font-medium">PT Nusantara Teknologi Indonesia</span>
+          <span className="text-muted-foreground font-medium">{activeClientName ?? t('No client selected')}</span>
           <span className="text-muted-foreground/50">·</span>
           <span className="text-muted-foreground">USD</span>
           <span className="text-muted-foreground/50">·</span>

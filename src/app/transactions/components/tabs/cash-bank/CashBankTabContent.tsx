@@ -43,40 +43,12 @@ interface CashBankTransaction {
 }
 
 // ─── Sample Data ──────────────────────────────────────────────────────────────
-const cashBankData: CashBankTransaction[] = [
-  { id: 'CB-2026-0148', date: '09/13/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'RCP-0921', description: 'Customer payment — INV-2026-0921', counterparty: 'Meridian Tech Solutions', txType: 'Receipt', inflow: 39349, outflow: 0, runningBalance: 412580, reconStatus: 'reconciled', source: 'INV-2026-0921', accountingPeriod: 'Sep 2026', createdBy: 'R. Holloway', postingStatus: 'posted', bankRef: 'BNK-TXN-88421' },
-  { id: 'CB-2026-0147', date: '09/12/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'PMT-0884', description: 'Vendor payment — Sigma Components Ltd.', counterparty: 'Sigma Components Ltd.', txType: 'Payment', inflow: 0, outflow: 28750, runningBalance: 373231, reconStatus: 'reconciled', source: 'PO-2026-0312', accountingPeriod: 'Sep 2026', createdBy: 'L. Chen', postingStatus: 'posted', bankRef: 'BNK-TXN-88390' },
-  { id: 'CB-2026-0146', date: '09/11/2026', account: 'Petty Cash', accountCode: '1020', accountType: 'Cash', reference: 'PCH-0091', description: 'Office supplies — petty cash disbursement', counterparty: 'Internal', txType: 'Withdrawal', inflow: 0, outflow: 340, runningBalance: 1660, reconStatus: 'reconciled', source: 'EXP-0091', accountingPeriod: 'Sep 2026', createdBy: 'M. Patel', postingStatus: 'posted' },
-  { id: 'CB-2026-0145', date: '09/11/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'TRF-0044', description: 'Transfer to Payroll Account', counterparty: 'Payroll Account', txType: 'Transfer', inflow: 0, outflow: 85000, runningBalance: 401981, reconStatus: 'reconciled', source: 'PAY-SEP-2026', accountingPeriod: 'Sep 2026', createdBy: 'R. Holloway', postingStatus: 'posted', bankRef: 'BNK-TXN-88301' },
-  { id: 'CB-2026-0144', date: '09/10/2026', account: 'Payroll Account', accountCode: '1015', accountType: 'Bank', reference: 'TRF-0044', description: 'Transfer from Main Operating Account', counterparty: 'Main Operating Account', txType: 'Transfer', inflow: 85000, outflow: 0, runningBalance: 85000, reconStatus: 'reconciled', source: 'PAY-SEP-2026', accountingPeriod: 'Sep 2026', createdBy: 'R. Holloway', postingStatus: 'posted', bankRef: 'BNK-TXN-88302' },
-  { id: 'CB-2026-0143', date: '09/10/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'RCP-0920', description: 'Customer payment — INV-2026-0918', counterparty: 'Cascade Logistics Ltd.', txType: 'Receipt', inflow: 12348, outflow: 0, runningBalance: 486981, reconStatus: 'reconciled', source: 'INV-2026-0918', accountingPeriod: 'Sep 2026', createdBy: 'L. Chen', postingStatus: 'posted', bankRef: 'BNK-TXN-88288' },
-  { id: 'CB-2026-0142', date: '09/09/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'BCH-0018', description: 'Monthly bank service fee', counterparty: 'First National Bank', txType: 'Bank Charge', inflow: 0, outflow: 125, runningBalance: 474633, reconStatus: 'reconciled', source: 'BANK-STMT-SEP', accountingPeriod: 'Sep 2026', createdBy: 'System', postingStatus: 'posted', bankRef: 'BNK-TXN-88201' },
-  { id: 'CB-2026-0141', date: '09/08/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'INT-0009', description: 'Interest earned — Sep 2026', counterparty: 'First National Bank', txType: 'Interest', inflow: 820, outflow: 0, runningBalance: 474758, reconStatus: 'reconciled', source: 'BANK-STMT-SEP', accountingPeriod: 'Sep 2026', createdBy: 'System', postingStatus: 'posted', bankRef: 'BNK-TXN-88199' },
-  { id: 'CB-2026-0140', date: '09/07/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'PMT-0881', description: 'Vendor payment — Vertex Supplies Inc.', counterparty: 'Vertex Supplies Inc.', txType: 'Payment', inflow: 0, outflow: 14200, runningBalance: 473938, reconStatus: 'unreconciled', source: 'PO-2026-0308', accountingPeriod: 'Sep 2026', createdBy: 'M. Patel', postingStatus: 'posted', bankRef: 'BNK-TXN-88140' },
-  { id: 'CB-2026-0139', date: '09/06/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'RCP-0919', description: 'Partial payment — INV-2026-0919', counterparty: 'Horizon Retail Group', txType: 'Receipt', inflow: 9470, outflow: 0, runningBalance: 488138, reconStatus: 'reconciled', source: 'INV-2026-0919', accountingPeriod: 'Sep 2026', createdBy: 'R. Holloway', postingStatus: 'posted', bankRef: 'BNK-TXN-88088' },
-  { id: 'CB-2026-0138', date: '09/05/2026', account: 'Petty Cash', accountCode: '1020', accountType: 'Cash', reference: 'PCH-0090', description: 'Petty cash replenishment', counterparty: 'Internal', txType: 'Deposit', inflow: 2000, outflow: 0, runningBalance: 2000, reconStatus: 'reconciled', source: 'PCH-REP-SEP', accountingPeriod: 'Sep 2026', createdBy: 'M. Patel', postingStatus: 'posted' },
-  { id: 'CB-2026-0137', date: '09/04/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'PMT-0879', description: 'Rent payment — Sep 2026', counterparty: 'Westfield Properties', txType: 'Payment', inflow: 0, outflow: 22000, runningBalance: 478668, reconStatus: 'reconciled', source: 'LEASE-2026', accountingPeriod: 'Sep 2026', createdBy: 'L. Chen', postingStatus: 'posted', bankRef: 'BNK-TXN-88001' },
-  { id: 'CB-2026-0136', date: '09/03/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'RCP-0918', description: 'Customer payment — INV-2026-0916', counterparty: 'Summit Capital Group', txType: 'Receipt', inflow: 21464, outflow: 0, runningBalance: 500668, reconStatus: 'review', source: 'INV-2026-0916', accountingPeriod: 'Sep 2026', createdBy: 'R. Holloway', postingStatus: 'posted', bankRef: 'BNK-TXN-87940' },
-  { id: 'CB-2026-0135', date: '09/02/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'ADJ-0011', description: 'Bank reconciliation adjustment', counterparty: 'First National Bank', txType: 'Adjustment', inflow: 0, outflow: 45, runningBalance: 479204, reconStatus: 'reconciled', source: 'RECON-AUG-2026', accountingPeriod: 'Sep 2026', createdBy: 'L. Chen', postingStatus: 'posted', bankRef: 'BNK-TXN-87901' },
-  { id: 'CB-2026-0134', date: '09/01/2026', account: 'Main Operating Account', accountCode: '1010', accountType: 'Bank', reference: 'PMT-0877', description: 'Utility payment — electricity & internet', counterparty: 'City Utilities Corp.', txType: 'Payment', inflow: 0, outflow: 3840, runningBalance: 479249, reconStatus: 'unreconciled', source: 'UTIL-SEP-2026', accountingPeriod: 'Sep 2026', createdBy: 'M. Patel', postingStatus: 'pending' },
-];
+const cashBankData: CashBankTransaction[] = [];
 
 // ─── Chart Data ───────────────────────────────────────────────────────────────
-const cashFlowTrend = [
-  { month: 'Apr', inflow: 142000, outflow: 118000 },
-  { month: 'May', inflow: 158000, outflow: 131000 },
-  { month: 'Jun', inflow: 171000, outflow: 144000 },
-  { month: 'Jul', inflow: 163000, outflow: 152000 },
-  { month: 'Aug', inflow: 189000, outflow: 161000 },
-  { month: 'Sep', inflow: 168451, outflow: 154300 },
-];
+const cashFlowTrend: { month: string; inflow: number; outflow: number }[] = [];
 
-const accountBalances = [
-  { account: 'Main Operating', balance: 412580 },
-  { account: 'Payroll Acct', balance: 85000 },
-  { account: 'Petty Cash', balance: 1660 },
-  { account: 'Reserve Fund', balance: 95000 },
-];
+const accountBalances: { account: string; balance: number }[] = [];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -285,15 +257,7 @@ const cashBankCSVRows = cashBankData.map((r) => ({
   'Bank Reference': r.bankRef ?? '—',
 }));
 
-const cashBankGLEntries = [
-  { accountCode: '1010', accountName: 'Main Operating Account', openingBalance: 379231, totalDebits: 168451, totalCredits: 135102, closingBalance: 412580, period: 'Sep 2026' },
-  { accountCode: '1015', accountName: 'Payroll Account', openingBalance: 0, totalDebits: 85000, totalCredits: 0, closingBalance: 85000, period: 'Sep 2026' },
-  { accountCode: '1020', accountName: 'Petty Cash', openingBalance: 0, totalDebits: 2000, totalCredits: 340, closingBalance: 1660, period: 'Sep 2026' },
-  { accountCode: '1100', accountName: 'Accounts Receivable', openingBalance: 148200, totalDebits: 0, totalCredits: 83131, closingBalance: 65069, period: 'Sep 2026' },
-  { accountCode: '2000', accountName: 'Accounts Payable', openingBalance: 68400, totalDebits: 65090, totalCredits: 0, closingBalance: 3310, period: 'Sep 2026' },
-  { accountCode: '4900', accountName: 'Interest Income', openingBalance: 0, totalDebits: 0, totalCredits: 820, closingBalance: 820, period: 'Sep 2026' },
-  { accountCode: '6500', accountName: 'Bank Charges / Expense', openingBalance: 0, totalDebits: 125, totalCredits: 0, closingBalance: 125, period: 'Sep 2026' },
-];
+const cashBankGLEntries: { accountCode: string; accountName: string; openingBalance: number; totalDebits: number; totalCredits: number; closingBalance: number; period: string }[] = [];
 
 // ─── Main Content ─────────────────────────────────────────────────────────────
 export default function CashBankTabContent() {
@@ -404,10 +368,10 @@ export default function CashBankTabContent() {
       <div className="space-y-5">
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          <KpiCard label="Main Bank Balance" value="$412,580" subValue="Main Operating Account" trend={3.2} trendLabel="vs Aug 2026" icon={<Landmark size={18} />} variant="positive" />
-          <KpiCard label="Total Cash Balance" value="$1,660" subValue="Petty Cash on hand" trend={-14.8} trendLabel="vs prior period" icon={<Banknote size={18} />} variant="info" />
-          <KpiCard label="Total Receipts (Sep)" value="$168,451" subValue="Inflows this period" trend={8.4} trendLabel="vs Aug 2026" icon={<ArrowDownLeft size={18} />} variant="positive" />
-          <KpiCard label="Total Payments (Sep)" value="$154,300" subValue="Outflows this period" trend={-2.1} trendLabel="vs Aug 2026" icon={<ArrowUpRight size={18} />} variant="warning" />
+          <KpiCard label="Main Bank Balance" value="$0" subValue="Main Operating Account" trend={0} trendLabel="vs Aug 2026" icon={<Landmark size={18} />} variant="positive" />
+          <KpiCard label="Total Cash Balance" value="$0" subValue="Petty Cash on hand" trend={0} trendLabel="vs prior period" icon={<Banknote size={18} />} variant="info" />
+          <KpiCard label="Total Receipts (Sep)" value="$0" subValue="Inflows this period" trend={0} trendLabel="vs Aug 2026" icon={<ArrowDownLeft size={18} />} variant="positive" />
+          <KpiCard label="Total Payments (Sep)" value="$0" subValue="Outflows this period" trend={0} trendLabel="vs Aug 2026" icon={<ArrowUpRight size={18} />} variant="warning" />
           <KpiCard label="Unreconciled Items" value={String(unreconciledCount + reviewCount)} subValue={`${unreconciledCount} unmatched, ${reviewCount} in review`} icon={<AlertCircle size={18} />} variant="negative" />
         </div>
 

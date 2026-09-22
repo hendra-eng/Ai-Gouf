@@ -16,9 +16,14 @@
 // Tanggal jatuh tempo dihitung dari ATURAN PERPAJAKAN INDONESIA yang resmi
 // (bukan data mock): PPh 21/23 tanggal 10 bulan berikutnya, PPh 25 tanggal
 // 15 bulan berikutnya, PPN Masa akhir bulan berikutnya.
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useActiveClient } from '@/lib/activeClient';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 import type { Transaction } from '@/app/transactions/components/transactionData';
+import {
+  ambilFiscalCorrection, daftarTaxTasks, tambahTaxTask, ubahStatusTaxTask, hapusTaxTask,
+} from '@/app/agent-ai/lib/api';
 
 export type TaxType = 'PPN' | 'PPh 21' | 'PPh 23' | 'PPh 25' | 'PPh 29';
 
@@ -47,9 +52,19 @@ export interface TaxObligation {
   daysUntilDue: number; // negative = overdue
 }
 
-// Referensi "hari ini" dipakai konsisten dengan modul lain (AP/AR) supaya
-// perhitungan Overdue/Due Soon selaras di seluruh dashboard.
-export const TAX_REFERENCE_DATE = new Date('2026-08-26T00:00:00');
+// [DIPERBAIKI] Sebelumnya di-hardcode ke '2026-08-26' dgn komentar "konsisten
+// dengan modul lain (AP/AR)" -- padahal apBridge.ts/arDbBridge.ts memakai
+// `new Date()` (hari ini yang sebenarnya), BUKAN tanggal tetap. Tanggal
+// tetap yang basi bikin status Overdue/Due Soon salah begitu tanggal
+// sekarang lewat dari tanggal yang di-hardcode itu (obligasi yang
+// sebenarnya sudah lewat jatuh tempo bisa saja masih tampil "Due Soon").
+// Disamakan ke pola AP/AR: pakai tanggal hari ini yang sebenarnya.
+export function getTaxReferenceDate(): Date {
+  return new Date();
+}
+/** @deprecated Pakai getTaxReferenceDate() -- dipertahankan sbg alias
+ * supaya kode lain yang masih mengimpor TAX_REFERENCE_DATE tidak patah. */
+export const TAX_REFERENCE_DATE = getTaxReferenceDate();
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -116,7 +131,7 @@ function obligationStatus(tx: Transaction, dueDate: Date, refDate: Date): Obliga
 /** Ubah seluruh transaksi kelompok Tax jadi daftar TaxObligation, satu per baris jurnal pajak. */
 export function obligationsFromTransactions(
   transactions: Transaction[],
-  refDate: Date = TAX_REFERENCE_DATE
+  refDate: Date = getTaxReferenceDate()
 ): TaxObligation[] {
   const rows: TaxObligation[] = [];
   transactions
@@ -294,12 +309,13 @@ export function useTaxComplianceData(): TaxComplianceData {
   const { transactions, loading, isSampleData } = useTransactions();
 
   return useMemo(() => {
-    const obligations = obligationsFromTransactions(transactions);
+    const refDate = getTaxReferenceDate();
+    const obligations = obligationsFromTransactions(transactions, refDate);
     return {
       loading,
       isSampleData,
       companyName: null,
-      referenceDate: TAX_REFERENCE_DATE,
+      referenceDate: refDate,
       obligations,
       byType: summarizeByTaxType(obligations),
       ppn: summarizePPN(transactions, obligations),
@@ -308,4 +324,97 @@ export function useTaxComplianceData(): TaxComplianceData {
       exposure: computeExposure(obligations),
     };
   }, [transactions, loading, isSampleData]);
+}
+
+// ── [BARU] Koreksi fiskal tersimpan (tabel fiscal_correction, schema ──
+// 5_Planning) -- sumber TaxReconciliation.tsx. Kalau client aktif belum
+// punya baris apapun utk tahun ini, `corrections` kosong dan komponen
+// tetap pakai placeholder lama (akuntansi = fiskal, status "Reconciled").
+export interface FiscalCorrectionRow {
+  id: string;
+  bulan: number;
+  kategori: string;
+  accountingValue: number;
+  taxValue: number;
+  keterangan: string | null;
+}
+
+export function useFiscalCorrections() {
+  const { activeClientId, hydrated } = useActiveClient();
+  const tahun = new Date().getFullYear();
+  const { data, isLoading } = useQuery({
+    queryKey: ['fiscal-correction', activeClientId, tahun],
+    queryFn: async () => {
+      const res = (await ambilFiscalCorrection(activeClientId as string, tahun)) as { ada_data: boolean; corrections: FiscalCorrectionRow[] };
+      return res?.ada_data ? res.corrections : [];
+    },
+    enabled: hydrated && !!activeClientId,
+  });
+  return { corrections: data ?? [], loading: !hydrated || isLoading };
+}
+
+// ── [BARU] Task kepatuhan pajak CUSTOM tersimpan (tabel ──
+// tax_compliance_task, schema 5_Planning) -- sumber ComplianceTasks.tsx.
+// Task yang AUTO-GENERATED dari obligasi belum lunas (lihat `obligations`
+// di atas) TETAP dihitung transien di komponen, TIDAK disimpan lewat hook
+// ini -- hanya task custom (ditambah manual lewat "Add Task") yang
+// dipersist ke database supaya tidak hilang saat refresh.
+export interface TaxComplianceTaskRow {
+  id: string;
+  taskName: string;
+  taxType: string | null;
+  period: string | null;
+  owner: string | null;
+  dueDate: string | null;
+  status: string | null;
+  priority: string | null;
+}
+
+export function useTaxComplianceTasks() {
+  const { activeClientId, hydrated } = useActiveClient();
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => ['tax-compliance-tasks', activeClientId], [activeClientId]);
+
+  const { data, isLoading } = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const res = (await daftarTaxTasks(activeClientId as string)) as { tasks: TaxComplianceTaskRow[] };
+      return res?.tasks ?? [];
+    },
+    enabled: hydrated && !!activeClientId,
+  });
+
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey }),
+    [queryClient, queryKey],
+  );
+
+  const addTask = useCallback(
+    async (input: { taskName: string; taxType?: string; period?: string; owner?: string; dueDate?: string; status?: string; priority?: string }) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await tambahTaxTask(activeClientId, input);
+      await invalidate();
+    },
+    [activeClientId, invalidate],
+  );
+
+  const advanceTaskStatus = useCallback(
+    async (id: string, status: string) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await ubahStatusTaxTask(activeClientId, id, status);
+      await invalidate();
+    },
+    [activeClientId, invalidate],
+  );
+
+  const removeTask = useCallback(
+    async (id: string) => {
+      if (!activeClientId) throw new Error('Belum ada client yang dipilih.');
+      await hapusTaxTask(activeClientId, id);
+      await invalidate();
+    },
+    [activeClientId, invalidate],
+  );
+
+  return { tasks: data ?? [], loading: !hydrated || isLoading, addTask, advanceTaskStatus, removeTask };
 }

@@ -11033,7 +11033,7 @@ def proses_dataframe_penilaian(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 _FOLDER_POLA = Path(__file__).parent / "pola_data"
 
 
-def _path_pola(nama_dasar: str, client_id: Optional[int] = None) -> str:
+def _path_pola(nama_dasar: str, client_id: Optional[str] = None) -> str:
     """Path file pola: per-client kalau client_id dikasih, else pola global bersama."""
     _FOLDER_POLA.mkdir(exist_ok=True)
     nama = f"{nama_dasar}_client_{client_id}.json" if client_id else f"{nama_dasar}_global.json"
@@ -11076,7 +11076,7 @@ def simpan_histori_gaji(histori: Dict[str, dict], path: str):
 
 
 def proses_file_rekening_koran(
-    file_like, nama_file: str = None, client_id: Optional[int] = None, pakai_ai: bool = True
+    file_like, nama_file: str = None, client_id: Optional[str] = None, pakai_ai: bool = True
 ) -> dict:
     """
     "Jurnal Koran" -- mutasi rekening koran/bank (multi-sheet, multi-bank)
@@ -11211,7 +11211,7 @@ def proses_file_rekening_koran(
 
 
 def proses_file_bootstrap_pola_bank(
-    file_like, nama_file: str = None, client_id: Optional[int] = None,
+    file_like, nama_file: str = None, client_id: Optional[str] = None,
     min_samples: int = 2,
 ) -> dict:
     """
@@ -11319,7 +11319,7 @@ def proses_file_bootstrap_pola_bank(
 
 
 def proses_file_penjualan(
-    file_like, nama_file: str = None, client_id: Optional[int] = None, pakai_ai: bool = True
+    file_like, nama_file: str = None, client_id: Optional[str] = None, pakai_ai: bool = True
 ) -> dict:
     """
     Data Penjualan (invoice-style) + ringkasan POS/kasir digabung jadi satu
@@ -11717,7 +11717,7 @@ def _ekstrak_pdf_jual_kasir_berbasis_posisi(file_like, nama_file: str = None) ->
 
 
 def proses_file_jurnal_penjualan_kasir(
-    file_like, nama_file: str = None, client_id: Optional[int] = None, pakai_ai: bool = True,
+    file_like, nama_file: str = None, client_id: Optional[str] = None, pakai_ai: bool = True,
     df_coa_client: Optional[pd.DataFrame] = None,
 ) -> dict:
     """
@@ -13807,7 +13807,7 @@ def bangun_pola_dari_feedback_klarifikasi(
     augmentasi_rows: list[dict],
     jenis: str,
     df_coa: Optional[pd.DataFrame] = None,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
 ) -> Tuple[Pola, dict]:
     """
     Ubah feedback yang sudah terkumpul di tabel pola_augmentasi (hasil jawab
@@ -13869,7 +13869,7 @@ def bangun_pola_dari_feedback_klarifikasi(
 def latih_ulang_pola_dari_feedback(
     augmentasi_rows: list[dict],
     jenis: str,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     df_coa: Optional[pd.DataFrame] = None,
 ) -> dict:
     """
@@ -13978,7 +13978,7 @@ def _split_train_test_augmentasi(
 
 def evaluasi_pola_sebelum_commit(
     augmentasi_rows: list[dict], jenis: str,
-    client_id: Optional[int] = None, df_coa: Optional[pd.DataFrame] = None,
+    client_id: Optional[str] = None, df_coa: Optional[pd.DataFrame] = None,
     ambang_akurasi_minimal: float = 0.6, ambang_regresi: float = 0.05,
     rasio_test: float = 0.2,
 ) -> dict:
@@ -14084,7 +14084,7 @@ def evaluasi_pola_sebelum_commit(
 
 def latih_ulang_pola_dengan_staging(
     augmentasi_rows: list[dict], jenis: str,
-    client_id: Optional[int] = None, df_coa: Optional[pd.DataFrame] = None,
+    client_id: Optional[str] = None, df_coa: Optional[pd.DataFrame] = None,
     paksa_commit: bool = False,
     ambang_akurasi_minimal: float = 0.6, ambang_regresi: float = 0.05,
 ) -> dict:
@@ -14144,14 +14144,14 @@ def latih_ulang_pola_dengan_staging(
 # pernah disimpan -- cuma dikembalikan sekali ke caller lalu hilang.
 # ============================================================
 
-def _path_metrik_akurasi(client_id: Optional[int] = None) -> str:
+def _path_metrik_akurasi(client_id: Optional[str] = None) -> str:
     """Path file log metrik akurasi, 1 file per client (mirip _path_pola)."""
     nama = f"metrik_akurasi_client_{client_id}.json" if client_id is not None else "metrik_akurasi_default.json"
     return str(Path("data") / nama)
 
 
 def catat_metrik_akurasi(
-    client_id: Optional[int],
+    client_id: Optional[str],
     jenis: str,
     jumlah_konfirmasi: int,
     jumlah_koreksi: int,
@@ -14192,7 +14192,7 @@ def catat_metrik_akurasi(
         logger.exception(f"Gagal mencatat metrik akurasi (client_id={client_id}, jenis={jenis})")
 
 
-def muat_riwayat_metrik_akurasi(client_id: Optional[int], jenis: Optional[str] = None) -> list[dict]:
+def muat_riwayat_metrik_akurasi(client_id: Optional[str], jenis: Optional[str] = None) -> list[dict]:
     """Baca semua entri histori akurasi, opsional difilter per jenis (rekening_koran/penjualan)."""
     path = Path(_path_metrik_akurasi(client_id))
     if not path.exists():
@@ -14208,7 +14208,7 @@ def muat_riwayat_metrik_akurasi(client_id: Optional[int], jenis: Optional[str] =
     return histori
 
 
-def hitung_tren_akurasi(client_id: Optional[int], jenis: Optional[str] = None, n_bulan_terakhir: int = 6) -> dict:
+def hitung_tren_akurasi(client_id: Optional[str], jenis: Optional[str] = None, n_bulan_terakhir: int = 6) -> dict:
     """
     Agregasi histori akurasi per bulan (YYYY-MM), supaya bisa dijawab
     langsung: "AI makin akurat atau makin ngaco?" -- bukan cuma angka
@@ -14269,7 +14269,7 @@ def hitung_tren_akurasi(client_id: Optional[int], jenis: Optional[str] = None, n
 
 
 def hitung_confidence_aktual(
-    client_id: Optional[int], jenis: str, jalur: str = "koreksi_akuntan",
+    client_id: Optional[str], jenis: str, jalur: str = "koreksi_akuntan",
     minimal_sample: int = 10, default_jika_kurang_data: float = 0.85,
 ) -> float:
     """
@@ -14337,7 +14337,7 @@ def _normalisasi_kode_akun_lokal(nilai) -> Optional[str]:
 
 
 def proses_file_hasil_koreksi_akuntan(
-    file_like, nama_file: str = None, client_id: Optional[int] = None, min_samples: int = 1,
+    file_like, nama_file: str = None, client_id: Optional[str] = None, min_samples: int = 1,
 ) -> dict:
     """
     [BARU - Prioritas #6, jalur LANGSUNG dari file] Pelajari pola dari file

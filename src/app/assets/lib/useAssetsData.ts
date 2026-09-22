@@ -176,11 +176,18 @@ export function useAssetsData(): AssetsData {
     const top = sorted.slice(0, 6);
     const restTotal = sorted.slice(6).reduce((s, [, v]) => s + v, 0);
     const compositionRows = restTotal > 1 ? [...top, ['Other Assets', restTotal] as [string, number]] : top;
-    const compTotal = compositionRows.reduce((s, [, v]) => s + v, 0) || 1;
+    // Pakai total besaran (magnitude), bukan total bersih, sebagai penyebut.
+    // Kalau ada kategori dengan saldo negatif (mis. akun kontra-aset atau
+    // piutang minus karena retur), total bersih bisa lebih kecil dari salah
+    // satu komponennya sendiri -- itu yang tadinya bikin persentase komposisi
+    // meleset jauh dari wajar (>100% di satu sisi, negatif ekstrem di sisi
+    // lain) dan merusak tampilan donut chart-nya. Tanda asli tiap nilai tetap
+    // dipertahankan supaya kategori negatif tetap terlihat sebagai negatif.
+    const compMagnitudeTotal = compositionRows.reduce((s, [, v]) => s + Math.abs(v), 0) || 1;
     const compositionData: AssetsCompositionSlice[] = compositionRows.map(([name, v], i) => ({
       name,
       value: bulatkanJuta(v),
-      pct: Math.round((v / compTotal) * 1000) / 10,
+      pct: Math.round((v / compMagnitudeTotal) * 1000) / 10,
       color: COMPOSITION_COLORS[i % COMPOSITION_COLORS.length],
     }));
 

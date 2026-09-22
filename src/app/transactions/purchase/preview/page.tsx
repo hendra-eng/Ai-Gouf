@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
-import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { updatePurchaseStatus } from '@/app/agent-ai/lib/api';
+import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -56,7 +59,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 // Accounting impact for a purchase transaction
-function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
+function getAccountingEntries(tx: PurchaseTransaction) {
   const entries: { account: string; code: string; debit: number; credit: number; description: string }[] = [];
 
   // Group lines by account
@@ -85,10 +88,62 @@ function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
 }
 
 export default function PurchasePreviewPage() {
-  const [selectedId, setSelectedId] = useState(purchaseTransactions[0].id);
+  const { purchaseTransactions, activeClientId, refetch } = usePurchaseData();
+  const router = useRouter();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAccounting, setShowAccounting] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const changeStatus = async (
+    tx: PurchaseTransaction,
+    status: PurchaseStatus,
+    successMsg: string,
+    alasan?: string,
+  ) => {
+    if (!activeClientId) {
+      toast.error('Belum ada client aktif', { description: 'Pilih company di Topbar terlebih dahulu.' });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await updatePurchaseStatus(activeClientId, tx.id, status, alasan);
+      toast.success(successMsg, { description: `${tx.purchaseId} · ${tx.vendor}` });
+      refetch();
+    } catch (err) {
+      toast.error('Gagal memperbarui status', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = (tx: PurchaseTransaction) => {
+    const alasan = window.prompt('Alasan penolakan (opsional):') || undefined;
+    changeStatus(tx, 'rejected', 'Transaksi ditolak', alasan);
+  };
+
+  // Data datang async dari Supabase -- begitu daftar transaksi terisi,
+  // pilih transaksi pertama sebagai default kalau belum ada yang dipilih.
+  useEffect(() => {
+    if (!selectedId && purchaseTransactions.length > 0) {
+      setSelectedId(purchaseTransactions[0].id);
+    }
+  }, [purchaseTransactions, selectedId]);
 
   const tx = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+
+  if (!tx) {
+    return (
+      <div className="space-y-6 fade-in">
+        <PurchaseTabs />
+        <div className="je-card p-10 flex flex-col items-center justify-center text-center gap-2">
+          <DocumentTextIcon className="w-8 h-8 text-muted-foreground" />
+          <p className="text-sm font-semibold text-foreground">No purchase transactions yet</p>
+          <p className="text-xs text-muted-foreground">Once purchase transactions are recorded, you'll be able to preview them here.</p>
+        </div>
+      </div>
+    );
+  }
+
   const accountingEntries = getAccountingEntries(tx);
   const totalDebit = accountingEntries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = accountingEntries.reduce((s, e) => s + e.credit, 0);
@@ -339,20 +394,44 @@ export default function PurchasePreviewPage() {
                 <div className="flex gap-2 flex-wrap">
                   {tx.status === 'draft' && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5">Save Draft</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Submit for Review</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5"
+                        disabled={actionLoading}
+                        onClick={() => toast.success('Belum ada perubahan untuk disimpan', { description: 'Draft ini belum diedit.' })}
+                      >Save Draft</button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+                        disabled={actionLoading}
+                        onClick={() => changeStatus(tx, 'pending_review', 'Diajukan untuk review')}
+                      >Submit for Review</button>
                     </>
                   )}
                   {tx.status === 'pending_review' && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200">Reject</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Approve</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200 disabled:opacity-50"
+                        disabled={actionLoading}
+                        onClick={() => handleReject(tx)}
+                      >Reject</button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+                        disabled={actionLoading}
+                        onClick={() => changeStatus(tx, 'approved', 'Transaksi disetujui')}
+                      >Approve</button>
                     </>
                   )}
                   {tx.status === 'approved' && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5">Return for Correction</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Post to GL</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50"
+                        disabled={actionLoading}
+                        onClick={() => changeStatus(tx, 'pending_review', 'Dikembalikan untuk perbaikan')}
+                      >Return for Correction</button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+                        disabled={actionLoading}
+                        onClick={() => changeStatus(tx, 'posted', 'Transaksi diposting ke General Ledger')}
+                      >Post to GL</button>
                     </>
                   )}
                   {tx.status === 'posted' && (
@@ -361,9 +440,15 @@ export default function PurchasePreviewPage() {
                     </span>
                   )}
                   {tx.status === 'exception' && (
-                    <button className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200">View Exception</button>
+                    <button
+                      className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200"
+                      onClick={() => router.push(`/transactions/purchase/exceptions?purchaseId=${encodeURIComponent(tx.purchaseId)}`)}
+                    >View Exception</button>
                   )}
-                  <button className="je-btn-secondary text-xs px-3 py-1.5">View Source</button>
+                  <button
+                    className="je-btn-secondary text-xs px-3 py-1.5"
+                    onClick={() => router.push(`/transactions/purchase/source-data?purchaseId=${encodeURIComponent(tx.purchaseId)}`)}
+                  >View Source</button>
                 </div>
               </div>
             </div>

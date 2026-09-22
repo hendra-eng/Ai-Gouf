@@ -15,38 +15,38 @@ const BSDonutChart = dynamic(() => import('./BSDonutChart'), {
 const bsData = {
   assets: {
     current: [
-      { label: 'Kas & Bank', value: 2960 },
-      { label: 'Piutang Usaha', value: 1240 },
-      { label: 'Persediaan', value: 380 },
-      { label: 'Biaya Dibayar Dimuka', value: 145 },
-      { label: 'Aset Lancar Lainnya', value: 82 },
+      { label: 'Kas & Bank', value: 0 },
+      { label: 'Piutang Usaha', value: 0 },
+      { label: 'Persediaan', value: 0 },
+      { label: 'Biaya Dibayar Dimuka', value: 0 },
+      { label: 'Aset Lancar Lainnya', value: 0 },
     ],
     nonCurrent: [
-      { label: 'Properti & Bangunan', value: 1850 },
-      { label: 'Peralatan & Mesin', value: 920 },
-      { label: 'Kendaraan', value: 340 },
-      { label: 'Aset Tak Berwujud', value: 480 },
-      { label: 'Investasi Jangka Panjang', value: 620 },
+      { label: 'Properti & Bangunan', value: 0 },
+      { label: 'Peralatan & Mesin', value: 0 },
+      { label: 'Kendaraan', value: 0 },
+      { label: 'Aset Tak Berwujud', value: 0 },
+      { label: 'Investasi Jangka Panjang', value: 0 },
     ],
   },
   liabilities: {
     current: [
-      { label: 'Hutang Usaha', value: 860 },
-      { label: 'Hutang Pajak', value: 182 },
-      { label: 'Hutang Jangka Pendek', value: 450 },
-      { label: 'Pendapatan Diterima Dimuka', value: 240 },
-      { label: 'Kewajiban Lancar Lainnya', value: 96 },
+      { label: 'Hutang Usaha', value: 0 },
+      { label: 'Hutang Pajak', value: 0 },
+      { label: 'Hutang Jangka Pendek', value: 0 },
+      { label: 'Pendapatan Diterima Dimuka', value: 0 },
+      { label: 'Kewajiban Lancar Lainnya', value: 0 },
     ],
     nonCurrent: [
-      { label: 'Hutang Bank Jangka Panjang', value: 1280 },
-      { label: 'Kewajiban Sewa (Lease)', value: 420 },
-      { label: 'Kewajiban Imbalan Kerja', value: 185 },
+      { label: 'Hutang Bank Jangka Panjang', value: 0 },
+      { label: 'Kewajiban Sewa (Lease)', value: 0 },
+      { label: 'Kewajiban Imbalan Kerja', value: 0 },
     ],
   },
   equity: [
-    { label: 'Modal Disetor', value: 3000 },
-    { label: 'Laba Ditahan', value: 2944 },
-    { label: 'Laba Tahun Berjalan', value: 1840 },
+    { label: 'Modal Disetor', value: 0 },
+    { label: 'Laba Ditahan', value: 0 },
+    { label: 'Laba Tahun Berjalan', value: 0 },
   ],
 };
 
@@ -150,10 +150,10 @@ export default function BalanceSheetStatement() {
           <div className="card-elevated-md rounded-xl p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">{t('Key Ratios')}</p>
             {[
-              { label: 'Current Ratio', value: (currentAssetsTotal / currentLiabTotal).toFixed(2), good: currentAssetsTotal / currentLiabTotal > 1.5 },
-              { label: 'Debt-to-Equity', value: (totalLiabilities / totalEquity).toFixed(2), good: totalLiabilities / totalEquity < 1.5 },
-              { label: 'Asset Turnover', value: '1.84×', good: true },
-              { label: 'Equity Ratio', value: `${((totalEquity / totalAssets) * 100).toFixed(1)}%`, good: true },
+              { label: 'Current Ratio', value: (currentLiabTotal ? currentAssetsTotal / currentLiabTotal : 0).toFixed(2), good: currentLiabTotal ? currentAssetsTotal / currentLiabTotal > 1.5 : false },
+              { label: 'Debt-to-Equity', value: (totalEquity ? totalLiabilities / totalEquity : 0).toFixed(2), good: totalEquity ? totalLiabilities / totalEquity < 1.5 : false },
+              { label: 'Asset Turnover', value: '0.00×', good: false },
+              { label: 'Equity Ratio', value: `${(totalAssets ? (totalEquity / totalAssets) * 100 : 0).toFixed(1)}%`, good: false },
             ].map((r) => (
               <div key={`bsratio-${r.label}`} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <span className="text-xs text-muted-foreground">{t(r.label)}</span>

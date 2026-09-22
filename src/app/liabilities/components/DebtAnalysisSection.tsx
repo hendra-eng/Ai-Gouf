@@ -10,25 +10,26 @@ import type { DebtMetrics, LiabilityObligation, MaturityBucket } from '../lib/li
 const DEBT_SPRING_DURATION_MS = 420;
 const debtEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang semua nilai 0.
 const SAMPLE_MATURITY: MaturityBucket[] = [
-  { bucket: '\u226430 days', amount: 182, color: '#dc2626' },
-  { bucket: '31\u201390 days', amount: 340, color: '#d97706' },
-  { bucket: '3\u20136 months', amount: 280, color: '#f59e0b' },
-  { bucket: '6\u201312 months', amount: 458, color: '#2563eb' },
-  { bucket: '1\u20133 years', amount: 520, color: '#7c3aed' },
-  { bucket: '3+ years', amount: 360, color: '#16a34a' },
+  { bucket: '\u226430 days', amount: 0, color: '#dc2626' },
+  { bucket: '31\u201390 days', amount: 0, color: '#d97706' },
+  { bucket: '3\u20136 months', amount: 0, color: '#f59e0b' },
+  { bucket: '6\u201312 months', amount: 0, color: '#2563eb' },
+  { bucket: '1\u20133 years', amount: 0, color: '#7c3aed' },
+  { bucket: '3+ years', amount: 0, color: '#16a34a' },
 ];
 
 const SAMPLE_METRICS: DebtMetrics = {
-  totalDebt: 860_000_000,
-  shortTermDebt: 240_000_000,
-  longTermDebt: 620_000_000,
-  shortTermPct: 27.9,
-  longTermPct: 72.1,
-  debtToEquity: 0.18,
-  interestExpenseYtd: 48_200_000,
-  interestCoverage: 12.7,
+  totalDebt: 0,
+  shortTermDebt: 0,
+  longTermDebt: 0,
+  shortTermPct: 0,
+  longTermPct: 0,
+  debtToEquity: 0,
+  interestExpenseYtd: 0,
+  interestCoverage: 0,
 };
 
 interface DebtAnalysisSectionProps {
@@ -267,13 +268,7 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
             <span className="text-[11px] text-muted-foreground ml-1 truncate">— {nearestObligation.liability} ({nearestObligation.creditor})</span>
           </div>
         )}
-        {isSampleData && (
-          <div className="flex items-center gap-2 bg-negative-subtle border border-red-200 rounded-lg px-3 py-2 mb-4">
-            <span className="w-2 h-2 rounded-full bg-negative inline-block" />
-            <span className="text-[12px] font-600 text-negative">{fx('Rp 182M due within 30 days')}</span>
-            <span className="text-[11px] text-muted-foreground ml-1">— Sample: Tax payable</span>
-          </div>
-        )}
+
 
         {!isSampleData && !hasAnyDebt ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">

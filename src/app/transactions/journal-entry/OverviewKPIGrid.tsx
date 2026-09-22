@@ -11,27 +11,23 @@ export default function OverviewKPIGrid() {
     <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 gap-4">
       <KpiCard
         title="Total Journal Entries"
-        value="42"
-        subLabel="Sep 2026 period"
-        change="+8 vs Aug 2026"
-        changePositive={true}
+        value="0"
+        subLabel="No data yet"
         icon="BookOpenIcon"
         iconBg="bg-blue-50"
         iconColor="text-blue-600"
       />
       <KpiCard
         title="Posted"
-        value="24"
-        subLabel="57% of total"
-        change="+6 this week"
-        changePositive={true}
+        value="0"
+        subLabel="No data yet"
         icon="CheckCircleIcon"
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"
       />
       <KpiCard
         title="Pending Review"
-        value="8"
+        value="0"
         subLabel="Awaiting action"
         icon="ClockIcon"
         iconBg="bg-amber-50"
@@ -39,7 +35,7 @@ export default function OverviewKPIGrid() {
       />
       <KpiCard
         title="Draft"
-        value="5"
+        value="0"
         subLabel="In progress"
         icon="PencilSquareIcon"
         iconBg="bg-slate-100"
@@ -47,16 +43,15 @@ export default function OverviewKPIGrid() {
       />
       <KpiCard
         title="Unbalanced Entries"
-        value="3"
+        value="0"
         subLabel="Require correction"
         icon="ExclamationTriangleIcon"
         iconBg="bg-red-100"
         iconColor="text-red-600"
-        alert
       />
       <KpiCard
         title="Exceptions"
-        value="7"
+        value="0"
         subLabel="Open issues"
         icon="XCircleIcon"
         iconBg="bg-orange-100"
@@ -64,24 +59,19 @@ export default function OverviewKPIGrid() {
       />
       <KpiCard
         title="Total Debits"
-        value="$2.84M"
-        subLabel="Sep 2026 period"
-        change="+12.4% vs Aug"
-        changePositive={true}
+        value="$0"
+        subLabel="No data yet"
         icon="ArrowTrendingUpIcon"
         iconBg="bg-sky-50"
         iconColor="text-sky-600"
       />
       <KpiCard
         title="Total Credits"
-        value="$2.81M"
-        subLabel="Sep 2026 period"
-        change="$30K imbalance"
-        changePositive={false}
+        value="$0"
+        subLabel="No data yet"
         icon="ArrowTrendingDownIcon"
         iconBg="bg-rose-50"
         iconColor="text-rose-600"
-        alert
       />
     </div>
   );

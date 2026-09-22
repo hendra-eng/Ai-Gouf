@@ -182,7 +182,7 @@ PDF_PARALEL_MAKS = int(os.environ.get("KERTAS_KERJA_PDF_PARALEL_MAKS", "4"))
 _FOLDER_CACHE_EKSTRAKSI_PDF = Path(__file__).parent / "cache_ekstraksi_pdf"
 
 
-def _path_cache_ekstraksi_pdf(hash_file: str, client_id: Optional[int] = None) -> str:
+def _path_cache_ekstraksi_pdf(hash_file: str, client_id: Optional[str] = None) -> str:
     _FOLDER_CACHE_EKSTRAKSI_PDF.mkdir(exist_ok=True)
     prefix = f"client_{client_id}" if client_id else "global"
     return str(_FOLDER_CACHE_EKSTRAKSI_PDF / f"{prefix}__{hash_file}.pkl")
@@ -487,7 +487,7 @@ def _status_dari_hasil_ekstraksi(hasil: Dict[str, Any]) -> Tuple[str, Optional[s
 def susun_gl_dari_pdf_rekening_koran(
     daftar_file_pdf: List[Tuple[Any, str]],
     nama_bank_per_file: Optional[Dict[str, str]] = None,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     progress_callback: Optional[Any] = None,
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, Dict[str, Any]]]:
     """
@@ -1633,7 +1633,7 @@ def _terapkan_hasil_review_claude(
 def perbaiki_gl_dengan_claude_review(
     df_gl: pd.DataFrame,
     df_coa: pd.DataFrame,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str]]:
     """Titik masuk utama. Kirim baris GL confidence non-High ke Claude API
     secara batch (lewat panggil_claude_terstruktur, structured output),
@@ -2777,7 +2777,7 @@ def _terapkan_kata_kunci_kertas_kerja(
 def generate_kertas_kerja(
     daftar_file_pdf: List[Tuple[Any, str]],
     df_coa: pd.DataFrame,
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     pakai_ai: bool = True,
     pakai_claude_review: bool = False,
     pakai_claude_review_final: bool = False,

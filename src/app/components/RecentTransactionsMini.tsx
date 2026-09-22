@@ -1,21 +1,13 @@
 'use client';
 import React from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, ArrowDownLeft, ArrowRight } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, ArrowRight, Inbox } from 'lucide-react';
 import { useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import EmptyState from '@/components/ui/EmptyState';
 
 // Backend integration point: replace with /api/transactions/recent?limit=8
-const recentTxs = [
-  { id: 'tx-001', date: '25 Aug', txId: 'TXN-2026-08502', description: 'Pembayaran Invoice #INV-2026-0342', party: 'PT Teknindo Maju', amount: 'Rp 320.000.000', type: 'credit' as const, category: 'Revenue', status: 'Posted' },
-  { id: 'tx-002', date: '25 Aug', txId: 'TXN-2026-08498', description: 'Pembayaran Gaji Agustus 2026', party: 'Payroll', amount: 'Rp 485.000.000', type: 'debit' as const, category: 'Payroll', status: 'Posted' },
-  { id: 'tx-003', date: '24 Aug', txId: 'TXN-2026-08491', description: 'Pembelian Software License Q3', party: 'PT Mitra Digital', amount: 'Rp 42.500.000', type: 'debit' as const, category: 'Software', status: 'Posted' },
-  { id: 'tx-004', date: '24 Aug', txId: 'TXN-2026-08488', description: 'Pembayaran Sewa Kantor Jakarta', party: 'PT Graha Sentosa', amount: 'Rp 95.000.000', type: 'debit' as const, category: 'Rent', status: 'Posted' },
-  { id: 'tx-005', date: '23 Aug', txId: 'TXN-2026-08475', description: 'Penerimaan DP Proyek #PRJ-0088', party: 'PT Cahaya Nusantara', amount: 'Rp 180.000.000', type: 'credit' as const, category: 'Revenue', status: 'Posted' },
-  { id: 'tx-006', date: '23 Aug', txId: 'TXN-2026-08469', description: 'Pembayaran PPN Masa Juli 2026', party: 'Direktorat Pajak', amount: 'Rp 28.400.000', type: 'debit' as const, category: 'Tax', status: 'Posted' },
-  { id: 'tx-007', date: '22 Aug', txId: 'TXN-2026-08455', description: 'Biaya Iklan & Promosi Agustus', party: 'Meta Ads Indonesia', amount: 'Rp 38.000.000', type: 'debit' as const, category: 'Marketing', status: 'Posted' },
-  { id: 'tx-008', date: '22 Aug', txId: 'TXN-2026-08448', description: 'Pembayaran Invoice #INV-2026-0339', party: 'CV Solusi Kreatif', amount: 'Rp 75.000.000', type: 'credit' as const, category: 'Revenue', status: 'Posted' },
-];
+const recentTxs: { id: string; date: string; txId: string; description: string; party: string; amount: string; type: 'credit' | 'debit'; category: string; status: string }[] = [];
 
 const categoryColors: Record<string, string> = {
   Revenue: 'badge-positive',
@@ -43,6 +35,13 @@ export default function RecentTransactionsMini() {
         </Link>
       </div>
 
+      {recentTxs.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title={t('No transactions yet')}
+          description={t('Posted journal entries will show up here once you start recording transactions.')}
+        />
+      ) : (
       <div className="overflow-x-auto scrollbar-thin">
         <table className="w-full">
           <thead>
@@ -92,6 +91,7 @@ export default function RecentTransactionsMini() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

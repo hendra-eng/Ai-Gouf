@@ -272,7 +272,7 @@ def kelompokkan_draf_jurnal(draf_jurnal: List[Dict[str, Any]]) -> Dict[Tuple[str
 
 
 def evaluasi_upload_rekening_koran(
-    client_id: int,
+    client_id: str,
     draf_jurnal: List[Dict[str, Any]],
     file_hash: str,
 ) -> HasilEvaluasiDuplikasi:

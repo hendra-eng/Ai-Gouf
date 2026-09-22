@@ -133,10 +133,22 @@ export default function InteractiveDonutChart({
 }: Props) {
   const { t } = useLanguage();
   const { currency } = useCurrency();
-  const total = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+  // Nilai bisa negatif (mis. akun kontra-aset seperti Akumulasi Penyusutan,
+  // atau Piutang minus karena retur/kelebihan bayar). Sudut tiap segmen HARUS
+  // selalu dihitung dari besaran (magnitude), bukan nilai mentah -- kalau tidak,
+  // satu nilai negatif bisa bikin total jadi lebih kecil dari salah satu
+  // komponennya sendiri, menghasilkan sudut negatif / >360° yang bikin path SVG
+  // saling tumpang-tindih ("meleber" jadi blob, bukan potongan pie yang rapi).
+  const total = useMemo(() => data.reduce((s, d) => s + Math.abs(d.value), 0), [data]);
   const N = data.length;
 
-  const baseSizes = useMemo(() => (total > 0 ? data.map((d) => (d.value / total) * 360) : data.map(() => 0)), [data, total]);
+  const baseSizes = useMemo(
+    () => (total > 0 ? data.map((d) => (Math.abs(d.value) / total) * 360) : data.map(() => 0)),
+    [data, total]
+  );
+  // Tanda asli tiap segmen (positif/negatif), dipakai untuk menampilkan nilai
+  // & memilih gaya render (hatch) -- terpisah dari geometri sudut di atas.
+  const signs = useMemo(() => data.map((d) => (d.value < 0 ? -1 : 1)), [data]);
   const baseBoundaries = useMemo(() => {
     const arr: number[] = [];
     let acc = 0;
@@ -301,8 +313,8 @@ export default function InteractiveDonutChart({
     onLiveChange?.(
       data.map((d, i) => ({
         name: d.name,
-        pct: (liveSizes[i] / 360) * 100,
-        value: (total * liveSizes[i]) / 360,
+        pct: signs[i] * ((liveSizes[i] / 360) * 100),
+        value: signs[i] * ((total * liveSizes[i]) / 360),
       }))
     );
     // liveSizes is derived fresh each render from pulledIndex/pulledSize/data/total,
@@ -319,8 +331,8 @@ export default function InteractiveDonutChart({
       ? {
           name: data[calloutIndex].name,
           color: data[calloutIndex].color,
-          pct: (liveSizes[calloutIndex] / 360) * 100,
-          value: (total * liveSizes[calloutIndex]) / 360,
+          pct: signs[calloutIndex] * ((liveSizes[calloutIndex] / 360) * 100),
+          value: signs[calloutIndex] * ((total * liveSizes[calloutIndex]) / 360),
           isPreview: pulledIndex !== null,
         }
       : null;
@@ -343,15 +355,38 @@ export default function InteractiveDonutChart({
       height={height}
       style={{ touchAction: 'none', overflow: 'visible' }}
     >
+      <defs>
+        {/* Pola garis-garis untuk segmen bernilai negatif (mis. akun kontra-aset)
+            supaya tetap kelihatan beda secara visual dari segmen positif,
+            tanpa mengubah geometri arc-nya sama sekali. */}
+        {segments.map((seg) =>
+          signs[seg.index] < 0 ? (
+            <pattern
+              key={`donut-hatch-${seg.index}`}
+              id={`donut-hatch-${seg.index}`}
+              width={6}
+              height={6}
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width={6} height={6} fill={seg.color} fillOpacity={0.25} />
+              <line x1={0} y1={0} x2={0} y2={6} stroke={seg.color} strokeWidth={2.5} />
+            </pattern>
+          ) : null
+        )}
+      </defs>
       {segments.map((seg) => {
         const isActive = activeIndex === seg.index;
         const isDimmed = activeIndex !== null && !isActive;
         const outer = isActive ? R_OUTER + 6 : R_OUTER;
+        const isNegative = signs[seg.index] < 0;
         return (
           <path
             key={`donut-seg-${seg.index}`}
             d={arcPath(CX, CY, outer, R_INNER, seg.start, seg.end)}
-            fill={seg.color}
+            fill={isNegative ? `url(#donut-hatch-${seg.index})` : seg.color}
+            stroke={isNegative ? seg.color : undefined}
+            strokeWidth={isNegative ? 1 : undefined}
             opacity={isDimmed ? 0.35 : 1}
             style={{ cursor: 'pointer', transition: 'opacity 150ms ease, filter 150ms ease' }}
             filter={hoverIndex === seg.index ? 'brightness(1.08)' : undefined}

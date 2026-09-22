@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
-import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { bulkUpdatePurchaseStatus } from '@/app/agent-ai/lib/api';
+import { exportToCSV } from '@/app/transactions/components/tabs/shared/exportUtils';
+import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -54,6 +57,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
+  const { purchaseTransactions, activeClientId, refetch } = usePurchaseData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -61,8 +65,9 @@ export default function PurchaseTransactionPage() {
   const [vendorFilter, setVendorFilter] = useState('All');
   const [sortField, setSortField] = useState('purchaseDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
+  const [selectedRow, setSelectedRow] = useState<PurchaseTransaction | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
 
   const uniqueVendors = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.vendor)))];
   const uniqueCategories = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.category)))];
@@ -88,7 +93,7 @@ export default function PurchaseTransactionPage() {
       return 0;
     });
     return data;
-  }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  }, [purchaseTransactions, search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -103,6 +108,59 @@ export default function PurchaseTransactionPage() {
     });
   };
 
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error('Tidak ada data untuk diekspor', { description: 'Ubah filter terlebih dahulu.' });
+      return;
+    }
+    exportToCSV(
+      filtered.map(r => ({
+        'Purchase ID': r.purchaseId,
+        Date: r.purchaseDate,
+        'Invoice No.': r.invoiceNumber,
+        'PO Number': r.poNumber,
+        Vendor: r.vendor,
+        Category: r.category,
+        Subtotal: r.subtotal,
+        Tax: r.taxAmount,
+        Total: r.total,
+        Payment: paymentLabels[r.paymentStatus],
+        'Due Date': r.dueDate,
+        Status: statusLabels[r.status],
+        Period: r.period,
+      })),
+      'purchase_transactions'
+    );
+    toast.success(`${filtered.length} transaksi diekspor ke CSV`);
+  };
+
+  const handleBulkApprove = async () => {
+    if (!activeClientId) {
+      toast.error('Belum ada client aktif', { description: 'Pilih company di Topbar terlebih dahulu.' });
+      return;
+    }
+    const eligibleIds = filtered
+      .filter(r => selectedIds.has(r.id) && r.status === 'pending_review')
+      .map(r => r.id);
+    if (eligibleIds.length === 0) {
+      toast.error('Tidak ada transaksi yang bisa disetujui', { description: 'Bulk Approve hanya berlaku untuk transaksi berstatus Pending Review.' });
+      return;
+    }
+    setBulkApproving(true);
+    try {
+      const hasil = await bulkUpdatePurchaseStatus(activeClientId, eligibleIds, 'approved', 'pending_review');
+      toast.success(`${hasil.diperbarui} transaksi disetujui`, {
+        description: hasil.dilewati > 0 ? `${hasil.dilewati} dilewati (bukan Pending Review)` : undefined,
+      });
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      toast.error('Gagal menyetujui transaksi', { description: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBulkApproving(false);
+    }
+  };
+
   const summary = useMemo(() => ({
     total: purchaseTransactions.length,
     pendingReview: purchaseTransactions.filter(t => t.status === 'pending_review').length,
@@ -110,7 +168,7 @@ export default function PurchaseTransactionPage() {
     posted: purchaseTransactions.filter(t => t.status === 'posted').length,
     exceptions: purchaseTransactions.filter(t => t.status === 'exception').length,
     totalAmount: purchaseTransactions.reduce((s, t) => s + t.total, 0),
-  }), []);
+  }), [purchaseTransactions]);
 
   return (
       <div className="space-y-6 fade-in">
@@ -163,7 +221,7 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>
@@ -173,7 +231,9 @@ export default function PurchaseTransactionPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-                <button className="je-btn-primary text-xs px-3 py-1.5">Bulk Approve</button>
+                <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" disabled={bulkApproving} onClick={handleBulkApprove}>
+                  {bulkApproving ? 'Approving…' : 'Bulk Approve'}
+                </button>
                 <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             )}

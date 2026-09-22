@@ -5,12 +5,13 @@ import { useLanguage } from '@/lib/language';
 import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
 
 // Backend integration point: replace with /api/ar/aging-summary
+// [UBAH] Data contoh dikosongkan -- semua nilai 0 sampai ada data AR asli.
 const agingData = [
-  { name: 'Current', value: 620, color: 'var(--positive)', pct: 50.0 },
-  { name: '1–30 Days', value: 248, color: 'var(--info)', pct: 20.0 },
-  { name: '31–60 Days', value: 186, color: 'var(--warning)', pct: 15.0 },
-  { name: '61–90 Days', value: 124, color: '#F97316', pct: 10.0 },
-  { name: '90+ Days', value: 62, color: 'var(--negative)', pct: 5.0 },
+  { name: 'Current', value: 0, color: 'var(--positive)', pct: 0 },
+  { name: '1–30 Days', value: 0, color: 'var(--info)', pct: 0 },
+  { name: '31–60 Days', value: 0, color: 'var(--warning)', pct: 0 },
+  { name: '61–90 Days', value: 0, color: '#F97316', pct: 0 },
+  { name: '90+ Days', value: 0, color: 'var(--negative)', pct: 0 },
 ];
 
 export default function ARAgingDonutInner() {
@@ -22,7 +23,7 @@ export default function ARAgingDonutInner() {
     <div className="card-elevated-md rounded-xl p-5 h-full flex flex-col">
       <div className="mb-4">
         <h2 className="text-base font-bold text-foreground">{t('AR Aging Analysis')}</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">{fx(t('Total AR: Rp 1,24M outstanding'))}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{fx(t('Total AR: Rp 0 outstanding'))}</p>
       </div>
 
       <div className="flex-1 min-h-[200px] flex justify-center">
@@ -64,8 +65,8 @@ export default function ARAgingDonutInner() {
 
       {/* Alert */}
       <div className="mt-4 p-3 rounded-lg bg-negative-subtle border border-negative/20">
-        <p className="text-xs font-semibold text-negative">{fx(t('⚠ Rp 320Jt overdue 60+ days'))}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{t('3 customers require immediate follow-up')}</p>
+        <p className="text-xs font-semibold text-negative">{fx(t('⚠ Rp 0 overdue 60+ days'))}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{t('0 customers require immediate follow-up')}</p>
       </div>
     </div>
   );

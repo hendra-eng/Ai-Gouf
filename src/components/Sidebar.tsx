@@ -6,6 +6,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
+import { useAuth, userInitials } from '@/lib/auth';
 
 
 interface SidebarProps {
@@ -107,15 +108,14 @@ function getBadgeClasses(variant?: string) {
 export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileOpen, onMobileClose }: SidebarProps) {
   const router = useRouter();
   const { t } = useLanguage();
+  const { user, logout } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const displayName = user?.nama || user?.username || 'Pengguna';
 
   const goToSettings = () => router.push('/settings');
 
   const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('gouf_auth');
-    }
-    router.push('/');
+    logout();
   };
 
   useEffect(() => {
@@ -297,11 +297,11 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
               className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer mb-1"
             >
               <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-primary">RW</span>
+                <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">Rizky Wardana</p>
-                <p className="text-xs text-muted-foreground truncate">{t('Finance Manager')}</p>
+                <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.role_label || '—'}</p>
               </div>
             </div>
             <div className="flex gap-1">
@@ -324,7 +324,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         ) : (
           <>
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">RW</span>
+              <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
             </div>
             <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors" aria-label={t('Settings')}>
               <Settings size={16} />

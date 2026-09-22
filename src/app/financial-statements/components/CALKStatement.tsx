@@ -45,9 +45,9 @@ const counts = {
 
 // A few notes worth surfacing directly in the summary tab
 const highlights = [
-  { num: '02', title: 'Basis of Preparation', desc: 'Disusun berdasarkan PSAK, biaya historis, mata uang penyajian USD.' },
-  { num: '15', title: 'Commitments & Contingencies', desc: 'Komitmen sewa operasi Jakarta, Surabaya, Bali — tidak ada kontinjensi material.' },
-  { num: '16', title: 'Subsequent Events', desc: 'Dividen final disetujui & kontrak cloud 3 tahun baru setelah tanggal neraca.' },
+  { num: '02', title: 'Basis of Preparation', desc: '' },
+  { num: '15', title: 'Commitments & Contingencies', desc: '' },
+  { num: '16', title: 'Subsequent Events', desc: '' },
 ];
 
 export default function CALKStatement() {

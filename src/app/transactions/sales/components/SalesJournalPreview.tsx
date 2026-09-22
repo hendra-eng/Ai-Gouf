@@ -16,16 +16,7 @@ interface Invoice {
   status: InvoiceStatus;
 }
 
-const INITIAL_INVOICES: Invoice[] = [
-  { id: 'INV-2024-0185', customer: 'PT Maju Bersama', date: '14 Nov 2024', amount: 620000000, status: 'Diproses' },
-  { id: 'INV-2024-0184', customer: 'PT Solusi Digital', date: '14 Nov 2024', amount: 480000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0183', customer: 'PT Nusantara Teknologi', date: '12 Nov 2024', amount: 350000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0182', customer: 'CV Kreatif Indonesia', date: '10 Nov 2024', amount: 287500000, status: 'Diproses' },
-  { id: 'INV-2024-0181', customer: 'PT Global Solusi', date: '08 Nov 2024', amount: 225000000, status: 'Diposting' },
-  { id: 'INV-2024-0180', customer: 'PT Sejahtera Abadi', date: '06 Nov 2024', amount: 150000000, status: 'Diposting' },
-  { id: 'INV-2024-0179', customer: 'PT Inovasi Mandiri', date: '02 Nov 2024', amount: 175000000, status: 'Siap Posting' },
-  { id: 'INV-2024-0178', customer: 'CV Mitra Usaha', date: '01 Nov 2024', amount: 98000000, status: 'Diproses' },
-];
+const INITIAL_INVOICES: Invoice[] = [];
 
 const STATUS_BADGE: Record<InvoiceStatus, string> = {
   'Diproses': 'bg-blue-100 text-blue-700',
@@ -93,7 +84,7 @@ export default function SalesJournalPreview() {
 
   const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
   const [mappings, setMappings] = useState<Record<string, Mapping>>({});
-  const [selectedId, setSelectedId] = useState(INITIAL_INVOICES[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(INITIAL_INVOICES[0]?.id ?? null);
 
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -114,6 +105,19 @@ export default function SalesJournalPreview() {
   const pagedInvoices = filteredInvoices.slice(pageStart, pageStart + ITEMS_PER_PAGE);
 
   const selectedInvoice = invoices.find(inv => inv.id === selectedId) ?? invoices[0];
+
+  if (!selectedInvoice) {
+    return (
+      <div className="flex items-center justify-center h-64 card">
+        <div className="text-center">
+          <Search size={20} className="mx-auto mb-2 text-muted-foreground" />
+          <p className="text-sm font-semibold text-foreground">{t('Belum ada invoice penjualan')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{t('Preview jurnal akan muncul di sini setelah ada invoice penjualan.')}</p>
+        </div>
+      </div>
+    );
+  }
+
   const mapping = mappings[selectedInvoice.id] ?? DEFAULT_MAPPING;
 
   // Angka jurnal dihitung ulang dari nominal invoice yang sedang dipilih (bukan statis lagi).

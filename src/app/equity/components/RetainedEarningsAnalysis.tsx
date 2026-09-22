@@ -4,15 +4,10 @@ import Icon from '@/components/ui/AppIcon';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import type { RetainedEarningsStep } from '../lib/equityBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_STEPS: RetainedEarningsStep[] = [
-  { label: 'Beginning Retained Earnings', amount: 1_080_000_000, description: '1 Jan 2026 opening balance', type: 'base' },
-  { label: 'Net Profit (YTD)', amount: 1_840_000_000, description: 'Per P&L Jan\u2013Aug 2026', type: 'positive' },
-  { label: 'Dividends Paid', amount: -880_000_000, description: 'Final dividend FY2025 paid Mar 2026', type: 'negative' },
-  { label: 'Prior Year Adjustments', amount: 0, description: 'No retrospective adjustments', type: 'neutral' },
-  { label: 'Ending Retained Earnings', amount: 2_040_000_000, description: '26 Aug 2026 balance', type: 'result' },
-];
-const SAMPLE_PERIOD_LABEL = 'Jan\u2013Aug 2026';
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 langkah.
+const SAMPLE_STEPS: RetainedEarningsStep[] = [];
+const SAMPLE_PERIOD_LABEL = '';
 
 interface RetainedEarningsAnalysisProps {
   isSampleData: boolean;
@@ -31,11 +26,11 @@ export default function RetainedEarningsAnalysis({ isSampleData, steps, periodLa
       <div className="flex items-center gap-2 mb-4">
         <div>
           <div className="text-[14px] font-600 text-foreground">Retained Earnings Analysis</div>
-          <div className="text-[11px] text-muted-foreground">Movement from beginning to ending balance \u2014 {period}</div>
+          <div className="text-[11px] text-muted-foreground">Movement from beginning to ending balance{period ? ` \u2014 ${period}` : ''}</div>
         </div>
       </div>
 
-      {!isSampleData && source.length === 0 ? (
+      {source.length === 0 ? (
         <div className="text-[12px] text-muted-foreground py-6 text-center">
           No retained earnings movement found for this client yet.
         </div>

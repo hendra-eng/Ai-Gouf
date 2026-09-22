@@ -16,14 +16,14 @@ const LPEBridgeChart = dynamic(() => import('./LPEBridgeChart'), {
 // Same period totals as the full Statement of Changes in Equity page — summarized
 // to component-level totals only (no opening/capital/profit/dividend/adj split per row).
 const lpeRows = [
-  { label: 'Share Capital', opening: 5000, movement: 500, closing: 5500 },
-  { label: 'Additional Paid-in Capital', opening: 1200, movement: 250, closing: 1450 },
-  { label: 'Retained Earnings', opening: 1980, movement: 1385, closing: 3365 },
-  { label: 'Other Comprehensive Income', opening: 140, movement: -50, closing: 90 },
-  { label: 'Other Equity', opening: 100, movement: 0, closing: 100 },
+  { label: 'Share Capital', opening: 0, movement: 0, closing: 0 },
+  { label: 'Additional Paid-in Capital', opening: 0, movement: 0, closing: 0 },
+  { label: 'Retained Earnings', opening: 0, movement: 0, closing: 0 },
+  { label: 'Other Comprehensive Income', opening: 0, movement: 0, closing: 0 },
+  { label: 'Other Equity', opening: 0, movement: 0, closing: 0 },
 ];
 
-const totals = { opening: 8420, movement: 2085, closing: 10505 };
+const totals = { opening: 0, movement: 0, closing: 0 };
 const summaryCards = [
   { label: 'Opening Equity', value: totals.opening, color: 'text-foreground' },
   { label: 'Net Movement', value: totals.movement, color: 'text-positive', prefix: '+' },
@@ -34,7 +34,7 @@ export default function LPEStatement() {
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
-  const growthPct = ((totals.movement / totals.opening) * 100).toFixed(1);
+  const growthPct = (totals.opening ? (totals.movement / totals.opening) * 100 : 0).toFixed(1);
 
   return (
     <div className="space-y-6">

@@ -29,10 +29,6 @@ const translations: Dict = {
   },
   'Last updated': { en: 'Last updated', id: 'Terakhir diperbarui', zh: '最后更新' },
   'All Branches': { en: 'All Branches', id: 'Semua Cabang', zh: '所有分公司' },
-  'Actual': { en: 'Actual', id: 'Aktual', zh: '实际' },
-  'Budget': { en: 'Budget', id: 'Anggaran', zh: '预算' },
-  'Previous Year': { en: 'Previous Year', id: 'Tahun Sebelumnya', zh: '去年' },
-  'Export': { en: 'Export', id: 'Ekspor', zh: '导出' },
   'Export dimulai': { en: 'Export started', id: 'Export dimulai', zh: '导出已开始' },
   'Laporan dashboard akan diunduh sebagai Excel': {
     en: 'The dashboard report will be downloaded as Excel',
@@ -46,14 +42,7 @@ const translations: Dict = {
   },
 
   // ─── KPIBentoGrid ───
-  'Total Revenue': { en: 'Total Revenue', id: 'Total Pendapatan', zh: '总收入' },
-  'Net Profit': { en: 'Net Profit', id: 'Laba Bersih', zh: '净利润' },
-  'Gross Profit': { en: 'Gross Profit', id: 'Laba Kotor', zh: '毛利润' },
   'Cash & Bank': { en: 'Cash & Bank', id: 'Kas & Bank', zh: '现金与银行' },
-  'Accounts Receivable': { en: 'Accounts Receivable', id: 'Piutang Usaha', zh: '应收账款' },
-  'Accounts Payable': { en: 'Accounts Payable', id: 'Utang Usaha', zh: '应付账款' },
-  'EBITDA': { en: 'EBITDA', id: 'EBITDA', zh: 'EBITDA' },
-  'Tax Payable': { en: 'Tax Payable', id: 'Utang Pajak', zh: '应付税款' },
   'vs Jan–Aug 2025': { en: 'vs Jan–Aug 2025', id: 'vs Jan–Ags 2025', zh: '较2025年1-8月' },
   'vs prev period': { en: 'vs prev period', id: 'vs periode sebelumnya', zh: '较上期' },
   'Jan–Aug 2026 YTD': { en: 'Jan–Aug 2026 YTD', id: 'Jan–Ags 2026 YTD', zh: '2026年1-8月至今' },
@@ -66,16 +55,12 @@ const translations: Dict = {
   'Due in 14 days — 8 Sep 2026': { en: 'Due in 14 days — 8 Sep 2026', id: 'Jatuh tempo 14 hari lagi — 8 Sep 2026', zh: '14天后到期 — 2026年9月8日' },
 
   // ─── RevenueExpenseChartInner ───
-  'Revenue vs Expenses vs Net Profit': { en: 'Revenue vs Expenses vs Net Profit', id: 'Pendapatan vs Beban vs Laba Bersih', zh: '收入与支出与净利润对比' },
-  'Net Margin': { en: 'Net Margin', id: 'Margin Bersih', zh: '净利润率' },
-  'Revenue': { en: 'Revenue', id: 'Pendapatan', zh: '收入' },
   'Expenses': { en: 'Expenses', id: 'Beban', zh: '支出' },
 
   // ─── ARAgingDonutInner ───
   'AR Aging Analysis': { en: 'AR Aging Analysis', id: 'Analisis Umur Piutang', zh: '应收账款账龄分析' },
   'Total AR: Rp 1,24M outstanding': { en: 'Total AR: Rp 1,24M outstanding', id: 'Total Piutang: Rp 1,24M belum tertagih', zh: '应收账款总额：Rp 1,24M 未结' },
   'of total AR': { en: 'of total AR', id: 'dari total piutang', zh: '占应收账款总额' },
-  'Current': { en: 'Current', id: 'Lancar', zh: '未逾期' },
   '1–30 Days': { en: '1–30 Days', id: '1–30 Hari', zh: '1-30天' },
   '31–60 Days': { en: '31–60 Days', id: '31–60 Hari', zh: '31-60天' },
   '61–90 Days': { en: '61–90 Days', id: '61–90 Hari', zh: '61-90天' },
@@ -98,11 +83,6 @@ const translations: Dict = {
   '+Rp 85M vs budget': { en: '+Rp 85M vs budget', id: '+Rp 85Jt vs anggaran', zh: '+Rp 85M 较预算' },
   'Analyze Expenses': { en: 'Analyze Expenses', id: 'Analisis Beban', zh: '分析费用' },
   'Receivable Collection Risk': { en: 'Receivable Collection Risk', id: 'Risiko Penagihan Piutang', zh: '应收账款回收风险' },
-  'Rp 320M of receivables are more than 60 days overdue across 3 customers. PT Garuda Solusi (Rp 185M) has not responded to 2 reminders.': {
-    en: 'Rp 320M of receivables are more than 60 days overdue across 3 customers. PT Garuda Solusi (Rp 185M) has not responded to 2 reminders.',
-    id: 'Piutang senilai Rp 320Jt telah jatuh tempo lebih dari 60 hari dari 3 pelanggan. PT Garuda Solusi (Rp 185Jt) belum merespons 2 pengingat.',
-    zh: '共Rp 320M的应收账款已逾期超过60天，涉及3位客户。PT Garuda Solusi（Rp 185M）尚未回应2次提醒。',
-  },
   'Rp 320M at risk': { en: 'Rp 320M at risk', id: 'Rp 320Jt berisiko', zh: 'Rp 320M 面临风险' },
   'Review AR': { en: 'Review AR', id: 'Tinjau Piutang', zh: '查看应收账款' },
   'Cash Position Healthy': { en: 'Cash Position Healthy', id: 'Posisi Kas Sehat', zh: '现金状况良好' },
@@ -119,7 +99,6 @@ const translations: Dict = {
     id: 'Pendapatan naik 12,8% YoY, dengan Q3 2026 berada 15,4% di atas Q3 2025. Segmen enterprise menyumbang 68% dari pendapatan baru.',
     zh: '收入同比增长12.8%，2026年第三季度较2025年第三季度高出15.4%。企业客户群贡献了68%的新增收入。',
   },
-  '+12.8% YoY': { en: '+12.8% YoY', id: '+12,8% YoY', zh: '同比+12.8%' },
   'Revenue Analysis': { en: 'Revenue Analysis', id: 'Analisis Pendapatan', zh: '收入分析' },
 
   // ─── AnomalyDetection ───
@@ -134,7 +113,6 @@ const translations: Dict = {
   'Medium': { en: 'Medium', id: 'Sedang', zh: '中' },
   'Low': { en: 'Low', id: 'Rendah', zh: '低' },
   'Risk': { en: 'Risk', id: 'Risiko', zh: '风险' },
-  'Amount': { en: 'Amount', id: 'Jumlah', zh: '金额' },
   'Expected': { en: 'Expected', id: 'Perkiraan', zh: '预期范围' },
   'Review': { en: 'Review', id: 'Tinjau', zh: '查看' },
   'History': { en: 'History', id: 'Riwayat', zh: '历史记录' },
@@ -147,16 +125,11 @@ const translations: Dict = {
   'Recent Transactions': { en: 'Recent Transactions', id: 'Transaksi Terbaru', zh: '近期交易' },
   'Latest 8 posted journal entries': { en: 'Latest 8 posted journal entries', id: '8 entri jurnal terbaru yang telah diposting', zh: '最新8条已过账分录' },
   'View All': { en: 'View All', id: 'Lihat Semua', zh: '查看全部' },
-  'Date': { en: 'Date', id: 'Tanggal', zh: '日期' },
   'TX ID': { en: 'TX ID', id: 'ID Transaksi', zh: '交易编号' },
-  'Description': { en: 'Description', id: 'Keterangan', zh: '描述' },
-  'Party': { en: 'Party', id: 'Pihak', zh: '往来方' },
   'Category': { en: 'Category', id: 'Kategori', zh: '类别' },
-  'Type': { en: 'Type', id: 'Jenis', zh: '类型' },
   'Payroll': { en: 'Payroll', id: 'Penggajian', zh: '薪资' },
   'Software': { en: 'Software', id: 'Perangkat Lunak', zh: '软件' },
   'Rent': { en: 'Rent', id: 'Sewa', zh: '租金' },
-  'Tax': { en: 'Tax', id: 'Pajak', zh: '税务' },
   'Marketing': { en: 'Marketing', id: 'Pemasaran', zh: '营销' },
   'Posted': { en: 'Posted', id: 'Diposting', zh: '已过账' },
   'Credit': { en: 'Credit', id: 'Kredit', zh: '贷方' },
@@ -184,11 +157,6 @@ const translations: Dict = {
   // ─── FinancialStatementsContent (hub / tabbed view) ───
   'Profit & Loss Statement': { en: 'Profit & Loss Statement', id: 'Laporan Laba Rugi', zh: '损益表' },
   'Cash Flow Statement': { en: 'Cash Flow Statement', id: 'Laporan Arus Kas', zh: '现金流量表' },
-  'PT Nusantara Teknologi Indonesia · Jan 2026 – Aug 2026': {
-    en: 'PT Nusantara Teknologi Indonesia · Jan 2026 – Aug 2026',
-    id: 'PT Nusantara Teknologi Indonesia · Jan 2026 – Ags 2026',
-    zh: 'PT Nusantara Teknologi Indonesia · 2026年1月–8月',
-  },
   'PSAK Compliant': { en: 'PSAK Compliant', id: 'Sesuai PSAK', zh: '符合PSAK准则' },
   'Balanced ✓': { en: 'Balanced ✓', id: 'Seimbang ✓', zh: '已平衡 ✓' },
   'Last reconciled: 25 Aug 2026': { en: 'Last reconciled: 25 Aug 2026', id: 'Terakhir direkonsiliasi: 25 Agu 2026', zh: '最近对账：2026年8月25日' },
@@ -214,7 +182,6 @@ const translations: Dict = {
   'Amount': { en: 'Amount', id: 'Jumlah', zh: '金额' },
   '% Revenue': { en: '% Revenue', id: '% Pendapatan', zh: '占收入%' },
   'Visual': { en: 'Visual', id: 'Visual', zh: '图示' },
-  'Operating': { en: 'Operating', id: 'Operasional', zh: '经营' },
   'Below the Line': { en: 'Below the Line', id: 'Di Bawah Garis', zh: '线下项目' },
   'Total Revenue': { en: 'Total Revenue', id: 'Total Pendapatan', zh: '总收入' },
   'Layanan Konsultasi IT': { en: 'IT Consulting Services', id: 'Layanan Konsultasi IT', zh: 'IT咨询服务' },
@@ -245,7 +212,6 @@ const translations: Dict = {
   'Net Margin': { en: 'Net Margin', id: 'Margin Bersih', zh: '净利率' },
   'Tax Rate Effective': { en: 'Effective Tax Rate', id: 'Tarif Pajak Efektif', zh: '实际税率' },
 
-  'Asset Composition': { en: 'Asset Composition', id: 'Komposisi Aset', zh: '资产构成' },
   'Assets = Liabilities + Equity': { en: 'Assets = Liabilities + Equity', id: 'Aset = Kewajiban + Ekuitas', zh: '资产 = 负债 + 权益' },
   'Balance Sheet Balanced': { en: 'Balance Sheet Balanced', id: 'Neraca Seimbang', zh: '资产负债表平衡' },
   'Balance Sheet Error': { en: 'Balance Sheet Error', id: 'Neraca Tidak Seimbang', zh: '资产负债表错误' },
@@ -305,9 +271,6 @@ const translations: Dict = {
 
   'Cash Flow by Activity': { en: 'Cash Flow by Activity', id: 'Arus Kas per Aktivitas', zh: '各活动现金流' },
   'Jan–Aug 2026 monthly breakdown': { en: 'Jan–Aug 2026 monthly breakdown', id: 'Rincian bulanan Jan–Ags 2026', zh: '2026年1-8月月度明细' },
-  'Beginning Cash': { en: 'Beginning Cash', id: 'Kas Awal', zh: '期初现金' },
-  'Net Change': { en: 'Net Change', id: 'Perubahan Bersih', zh: '净变动' },
-  'Ending Cash': { en: 'Ending Cash', id: 'Kas Akhir', zh: '期末现金' },
   'Cash Runway': { en: 'Cash Runway', id: 'Cash Runway', zh: '现金可维持期' },
   'Cash Runway: 4.8 Months': { en: 'Cash Runway: 4.8 Months', id: 'Cash Runway: 4,8 Bulan', zh: '现金可维持期：4.8个月' },
   'Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).': {
@@ -753,11 +716,6 @@ const translations: Dict = {
   'Opening': { en: 'Opening', id: 'Awal', zh: '期初' },
   'Net change': { en: 'Net change', id: 'Perubahan bersih', zh: '净变动' },
   'Closing': { en: 'Closing', id: 'Akhir', zh: '期末' },
-  'PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD': {
-    en: 'PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD',
-    id: 'PT Nusantara Teknologi Indonesia · Januari – Agustus 2026 · Semua angka dalam USD',
-    zh: 'PT Nusantara Teknologi Indonesia · 2026年1月–8月 · 所有数字以美元计',
-  },
   'Equity Component': { en: 'Equity Component', id: 'Komponen Ekuitas', zh: '权益组成' },
   'Opening Balance': { en: 'Opening Balance', id: 'Saldo Awal', zh: '期初余额' },
   'Capital Contributions': { en: 'Capital Contributions', id: 'Setoran Modal', zh: '资本投入' },
@@ -877,11 +835,6 @@ const translations: Dict = {
   'Material events after the balance sheet date.': { en: 'Material events after the balance sheet date.', id: 'Peristiwa material setelah tanggal laporan posisi keuangan.', zh: '资产负债表日后的重大事项。' },
 
   // Note intros
-  'PT Nusantara Teknologi Indonesia ("the Company") was incorporated in Indonesia and is domiciled in Jakarta. The Company is primarily engaged in the development and distribution of enterprise technology solutions, cloud infrastructure services, and software licensing. The Company\'s shares are held by PT Nusantara Group (67%) and institutional investors (33%). These financial statements cover the period from 1 January 2026 to 31 August 2026 and were authorized for issue by the Board of Directors on 5 September 2026.': {
-    en: 'PT Nusantara Teknologi Indonesia ("the Company") was incorporated in Indonesia and is domiciled in Jakarta. The Company is primarily engaged in the development and distribution of enterprise technology solutions, cloud infrastructure services, and software licensing. The Company\'s shares are held by PT Nusantara Group (67%) and institutional investors (33%). These financial statements cover the period from 1 January 2026 to 31 August 2026 and were authorized for issue by the Board of Directors on 5 September 2026.',
-    id: 'PT Nusantara Teknologi Indonesia ("Perusahaan") didirikan di Indonesia dan berdomisili di Jakarta. Perusahaan bergerak terutama di bidang pengembangan dan distribusi solusi teknologi perusahaan, layanan infrastruktur cloud, dan lisensi perangkat lunak. Saham Perusahaan dimiliki oleh PT Nusantara Group (67%) dan investor institusi (33%). Laporan keuangan ini mencakup periode 1 Januari 2026 sampai dengan 31 Agustus 2026 dan telah disahkan untuk diterbitkan oleh Dewan Direksi pada 5 September 2026.',
-    zh: 'PT Nusantara Teknologi Indonesia（"本公司"）在印度尼西亚注册成立，住所位于雅加达。本公司主要从事企业技术解决方案、云基础设施服务及软件授权的开发与分销。本公司股份由PT Nusantara Group持有67%，机构投资者持有33%。本财务报表涵盖2026年1月1日至2026年8月31日期间，并已于2026年9月5日由董事会批准发布。',
-  },
   'These financial statements have been prepared in accordance with Indonesian Financial Accounting Standards (PSAK) issued by the Indonesian Institute of Accountants (IAI). The statements are prepared on a historical cost basis, except for certain financial instruments measured at fair value. The presentation currency is United States Dollars (USD) and all amounts are rounded to the nearest dollar unless otherwise stated. The going concern assumption has been applied in preparing these statements.': {
     en: 'These financial statements have been prepared in accordance with Indonesian Financial Accounting Standards (PSAK) issued by the Indonesian Institute of Accountants (IAI). The statements are prepared on a historical cost basis, except for certain financial instruments measured at fair value. The presentation currency is United States Dollars (USD) and all amounts are rounded to the nearest dollar unless otherwise stated. The going concern assumption has been applied in preparing these statements.',
     id: 'Laporan keuangan ini disusun sesuai dengan Standar Akuntansi Keuangan Indonesia (PSAK) yang diterbitkan oleh Ikatan Akuntan Indonesia (IAI). Laporan disusun berdasarkan biaya historis, kecuali untuk instrumen keuangan tertentu yang diukur pada nilai wajar. Mata uang penyajian adalah Dolar Amerika Serikat (USD) dan seluruh nilai dibulatkan ke dolar terdekat kecuali dinyatakan lain. Asumsi kelangsungan usaha telah diterapkan dalam penyusunan laporan ini.',
@@ -941,11 +894,6 @@ const translations: Dict = {
     en: 'The Company is subject to Indonesian corporate income tax at 22%. Deferred tax is recognized for temporary differences between financial reporting and tax carrying amounts.',
     id: 'Perusahaan dikenakan pajak penghasilan badan Indonesia sebesar 22%. Pajak tangguhan diakui atas perbedaan temporer antara pelaporan keuangan dan nilai tercatat pajak.',
     zh: '本公司须缴纳22%的印尼企业所得税。对财务报告与税务账面金额之间的暂时性差异确认递延所得税。',
-  },
-  'The Company has transactions with PT Nusantara Group (parent), PT Nusantara Digital (sister company), and key management personnel. All transactions are conducted on arm\'s length terms.': {
-    en: 'The Company has transactions with PT Nusantara Group (parent), PT Nusantara Digital (sister company), and key management personnel. All transactions are conducted on arm\'s length terms.',
-    id: 'Perusahaan melakukan transaksi dengan PT Nusantara Group (induk perusahaan), PT Nusantara Digital (perusahaan afiliasi), dan personil manajemen kunci. Seluruh transaksi dilakukan dengan persyaratan wajar (arm\'s length).',
-    zh: '本公司与PT Nusantara Group（母公司）、PT Nusantara Digital（关联公司）及关键管理人员存在交易，所有交易均按公平交易原则进行。',
   },
   'The Company has operating lease commitments for office premises in Jakarta, Surabaya, and Bali. No material contingent liabilities have been identified as at the reporting date.': {
     en: 'The Company has operating lease commitments for office premises in Jakarta, Surabaya, and Bali. No material contingent liabilities have been identified as at the reporting date.',
@@ -1051,8 +999,6 @@ const translations: Dict = {
   'Total Trade Payables': { en: 'Total Trade Payables', id: 'Total Utang Usaha', zh: '应付账款合计' },
 
   // Borrowings
-  'Revolving Credit — PT Bank Mandiri (6.5% p.a.)': { en: 'Revolving Credit — PT Bank Mandiri (6.5% p.a.)', id: 'Kredit Bergulir — PT Bank Mandiri (6,5% p.a.)', zh: '循环信贷 — PT Bank Mandiri（年利率6.5%）' },
-  'Term Loan — PT Bank BRI (7.2% p.a.)': { en: 'Term Loan — PT Bank BRI (7.2% p.a.)', id: 'Pinjaman Berjangka — PT Bank BRI (7,2% p.a.)', zh: '定期贷款 — PT Bank BRI（年利率7.2%）' },
   'Total Borrowings': { en: 'Total Borrowings', id: 'Total Pinjaman', zh: '借款合计' },
   'Current portion (due within 12 months)': { en: 'Current portion (due within 12 months)', id: 'Bagian jangka pendek (jatuh tempo dalam 12 bulan)', zh: '流动部分（12个月内到期）' },
   'Non-current portion': { en: 'Non-current portion', id: 'Bagian jangka panjang', zh: '非流动部分' },
@@ -1097,7 +1043,6 @@ const translations: Dict = {
 
   // Subsequent events
   'Board approved final dividend of $0.04 per share': { en: 'Board approved final dividend of $0.04 per share', id: 'Direksi menyetujui dividen final sebesar $0,04 per saham', zh: '董事会批准每股0.04美元的末期股息' },
-  'New 3-year cloud services contract — PT Astra International': { en: 'New 3-year cloud services contract — PT Astra International', id: 'Kontrak layanan cloud baru 3 tahun — PT Astra International', zh: '与PT Astra International签订的新3年期云服务合同' },
   'No other material subsequent events identified': { en: 'No other material subsequent events identified', id: 'Tidak ada peristiwa material lain yang teridentifikasi setelah tanggal pelaporan', zh: '未发现其他重大期后事项' },
 
   // ─── FinancialStatementsContent hub — LPE (Changes in Equity) summary tab ───

@@ -10,8 +10,8 @@ import LoginForm from './LoginForm';
 
 function LoginFallback() {
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-      <div className="text-sm text-slate-400">Memuat...</div>
+    <main className="min-h-screen bg-background flex items-center justify-center px-4">
+      <div className="text-sm text-muted-foreground">Memuat...</div>
     </main>
   );
 }

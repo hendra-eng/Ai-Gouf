@@ -79,9 +79,13 @@ import openpyxl
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import akuntansi_ai as ak
 import db_client as dbc
@@ -100,6 +104,20 @@ from modules.kertas_kerja_router import router as kertas_kerja_router  # [BARU] 
 from modules.tax_router import router as tax_router
 from modules.tax_case_router import router as tax_case_router
 from modules import tax_scheduler
+from modules.auth import v1 as auth_v1  # [BARU] Fitur Auth REST API standar: /api/v1/auth/...
+from modules.management import documents_v1 as management_documents_v1  # [BARU] /api/v1/management/documents/...
+from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
+from modules.overview import overview_v1  # [BARU] /api/v1/overview/... + /api/client/{id}/kpi-bento (halaman Financial Overview)
+from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
+from modules.finance import purchase_v1 as finance_purchase_v1  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus (halaman Purchase) -- pindahan apa adanya dari main.py
+from modules.finance import bank_cash_v1 as finance_bank_cash_v1  # [DIPINDAH] /api/v1/transaction/getBankCash|updateBankCash|addBankCashManual|postBankCashBulk|rejectBankCash (halaman Bank & Cash) -- pindahan apa adanya dari main.py
+from modules.finance import other_v1 as finance_other_v1  # [DIPINDAH] /api/v1/transaction/getFinanceOther|updateFinanceOther|addFinanceOtherManual|postFinanceOtherBulk|rejectFinanceOther (halaman Other) -- pindahan apa adanya dari main.py
+from modules.finance import profit_loss_v1 as finance_profit_loss_v1  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights (halaman Profit & Loss) -- pindahan apa adanya dari main.py
+from modules.finance import cash_flow_v1 as finance_cash_flow_v1  # [DIPINDAH] /api/v1/finance/getCashFlowForecast (halaman Cash Flow) -- pindahan apa adanya dari main.py
+from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # [DIPINDAH] /api/v1/planning/... (halaman Tax & Compliance) -- pindahan apa adanya dari main.py
+from modules.planning import budget_forecast_v1 as planning_budget_forecast_v1  # [DIPINDAH] /api/v1/planning/... (halaman Budget & Forecast) -- pindahan apa adanya dari main.py
+from modules.intelligence import audit_v1 as intelligence_audit_v1  # [DIPINDAH] /api/v1/intelligence/... (halaman Audit) -- pindahan apa adanya dari main.py
+from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
 # [FIX v5] Konfirmasi eksplisit di terminal, database mana yang BENAR-BENAR
 # kepakai saat startup -- supaya "diam-diam jatuh ke sqlite lokal" tidak
@@ -114,7 +132,78 @@ else:
     _bagian_setelah_at = _db_url_terpakai.split("@")[-1] if "@" in _db_url_terpakai else "(format tidak dikenali)"
     print(f"[DB] Memakai Postgres/Supabase, host: {_bagian_setelah_at}")
 
-app = FastAPI(title="AI Gouf Consulting API")
+app = FastAPI(
+    title="AI Gouf Consulting API",
+    openapi_tags=[
+        {
+            "name": "auth-v1",
+            "description": (
+                "REST API standar untuk autentikasi (/api/v1/auth/...): "
+                "register (khusus Partner/Admin), login (dapat JWT), dan "
+                "profil user yang sedang login. Endpoint selain /login "
+                "wajib header `Authorization: Bearer <token>` -- klik "
+                "tombol Authorize di atas untuk mengisi token sekali, lalu "
+                "otomatis dipakai di semua percobaan endpoint di grup ini."
+            ),
+        },
+        {
+            "name": "clients",
+            "description": "CRUD daftar client (management_clients) -- dipakai selector client aktif di seluruh halaman.",
+        },
+        {
+            "name": "purchase",
+            "description": "Halaman Purchase: vendor, tagihan, source data, line items, exceptions, activity log (schema 3_Financial).",
+        },
+        {
+            "name": "bank-cash",
+            "description": "Halaman Bank & Cash: transaksi kas/bank client (finance_transaction_bank_cash, schema 3_Financial).",
+        },
+        {
+            "name": "other",
+            "description": "Halaman Other: entri jurnal umum di luar Purchase/Bank & Cash (finance_transaction_other, schema 3_Financial).",
+        },
+        {
+            "name": "ar",
+            "description": "Halaman Accounts Receivable: customer, invoice, pembayaran, catatan penagihan (schema 3_Financial).",
+        },
+        {
+            "name": "ap",
+            "description": "Halaman Accounts Payable: vendor & bill (dipakai ulang dari modul Purchase) + pembayaran & catatan AP (schema 3_Financial).",
+        },
+        {
+            "name": "overview",
+            "description": "Halaman Financial Overview: daftar cabang & Anggaran (Budget) P&L per cabang/bulan (schema 2_Overview).",
+        },
+        {
+            "name": "budget-forecast",
+            "description": "Halaman Budget & Forecast: asumsi budget tahunan & skenario custom tersimpan (schema 5_Planning).",
+        },
+        {
+            "name": "tax-compliance",
+            "description": "Halaman Tax & Compliance: koreksi fiskal & tugas kepatuhan pajak (fiscal_correction, tax_compliance_task).",
+        },
+        {
+            "name": "audit",
+            "description": "Halaman Audit: temuan, bukti (evidence), dan tahapan audit trail (4 tabel Intelligence_Audit_*).",
+        },
+        {
+            "name": "financial-statements",
+            "description": "Halaman Financial Statements: Anggaran P&L, insight AI, dan proyeksi cash flow (3 tabel \"financial statement\" schema 3_Financial).",
+        },
+        {
+            "name": "assets",
+            "description": "Halaman Assets: register aset tetap & penyusutan (asset_fixed_assets, schema 4_Assets_Equity).",
+        },
+        {
+            "name": "documents",
+            "description": "Halaman Documents: metadata dokumen client (management_documents, schema 7_Management).",
+        },
+        {
+            "name": "reports",
+            "description": "Halaman Reports: daftar laporan tercatat & jadwal laporan berkala (report_registry, report_schedule, schema 7_Management).",
+        },
+    ],
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,6 +235,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# [BARU] Gerbang autentikasi JWT untuk grup REST API standar /api/v1/**
+# (fitur auth baru -- lihat modules/auth_v1.py). Endpoint LAMA (/api/login,
+# /api/client, /tax/..., dst) tidak disentuh middleware ini sama sekali,
+# tetap jalan seperti sebelumnya lewat Depends(auth.get_current_user)/
+# require_level masing-masing.
+app.add_middleware(BaseHTTPMiddleware, dispatch=auth_v1.jwt_v1_middleware)
+
 
 @app.middleware("http")
 async def _enforce_client_data_isolation(request: Request, call_next):
@@ -160,8 +256,18 @@ async def _enforce_client_data_isolation(request: Request, call_next):
     if path.startswith("/api/client/"):
         parts = [x for x in path.split("/") if x]
         # /api/client/<id>/... => parts = [api, client, <id>, ...]
-        if len(parts) >= 3 and parts[2].isdigit():
-            client_id = int(parts[2])
+        # [DIPERBAIKI] Sebelumnya cek ini pakai `parts[2].isdigit()` --
+        # peninggalan dari zaman client_id masih integer. Semua client_id
+        # sekarang UUID (lihat management_clients.id), jadi .isdigit() SELALU
+        # False dan blok pengecekan akses di bawah ini TIDAK PERNAH jalan --
+        # setiap request ke ~60 endpoint /api/client/{id}/... lolos tanpa
+        # user_has_client_access() sama sekali. Diganti jadi: selama ada
+        # segmen ke-3 di path (ID apapun bentuknya), selalu jalankan
+        # pengecekan -- user_has_client_access() sendiri menerima client_id
+        # sebagai string apa adanya (lihat db_client.py), jadi tidak perlu
+        # int(...) atau validasi format UUID di sini.
+        if len(parts) >= 3 and parts[2]:
+            client_id = parts[2]
             user = auth.user_from_authorization_header(request.headers.get("Authorization"))
             if user is None:
                 return JSONResponse(
@@ -175,6 +281,24 @@ async def _enforce_client_data_isolation(request: Request, call_next):
                     content={"detail": "User tidak memiliki akses ke client ini."},
                 )
     return await call_next(request)
+
+
+# [BARU] Normalisasi error ke amplop standar {status,message,data,errors}
+# TAPI HANYA untuk path /api/v1/... (fitur auth baru). Endpoint lama tetap
+# dapat bentuk error bawaan FastAPI seperti sebelumnya (frontend yang sudah
+# ada mem-parsing bentuk lama itu, mengubahnya di luar scope permintaan ini).
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler_v1(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/api/v1/"):
+        return _gagal_v1(message="Data yang dikirim tidak valid.", errors=exc.errors(), status_code=422)
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler_v1(request: Request, exc: StarletteHTTPException):
+    if request.url.path.startswith("/api/v1/"):
+        return _gagal_v1(message=str(exc.detail), status_code=exc.status_code)
+    return await http_exception_handler(request, exc)
 
 
 FOLDER_HASIL = Path(__file__).parent / "hasil_output"
@@ -214,7 +338,7 @@ _LOCK_CACHE_EXPORT_18_SHEET = threading.Lock()
 _BATAS_ENTRI_CACHE_EXPORT_18_SHEET = 200
 
 
-def _kunci_cache_export_18_sheet(client_id: int, req: "Export18SheetRequest") -> str:
+def _kunci_cache_export_18_sheet(client_id: str, req: "Export18SheetRequest") -> str:
     """
     Kunci cache = client_id + SEMUA parameter request yang memengaruhi
     hasil (bukan cuma tahun) -- req.tahun_sebelumnya, metode_penyusutan,
@@ -253,6 +377,20 @@ def _simpan_cache_export_18_sheet(kunci: str, signature_saat_ini: str, hasil: An
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
+app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
+app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
+app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
+app.include_router(overview_v1.router)  # [BARU] /api/v1/overview/getBranches & getFinancialBudget
+app.include_router(overview_v1.router_legacy)  # [BARU] /api/client/{id}/kpi-bento (path lama, dipindah lokasi doang)
+app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
+app.include_router(finance_purchase_v1.router)  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus
+app.include_router(finance_bank_cash_v1.router)  # [DIPINDAH] /api/v1/transaction/getBankCash|updateBankCash|addBankCashManual|postBankCashBulk|rejectBankCash
+app.include_router(finance_other_v1.router)  # [DIPINDAH] /api/v1/transaction/getFinanceOther|updateFinanceOther|addFinanceOtherManual|postFinanceOtherBulk|rejectFinanceOther
+app.include_router(finance_profit_loss_v1.router)  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights
+app.include_router(finance_cash_flow_v1.router)  # [DIPINDAH] /api/v1/finance/getCashFlowForecast
+app.include_router(planning_tax_compliance_v1.router)  # [DIPINDAH] /api/v1/planning/getFiscalCorrection|getTaxComplianceTasks|addTaxComplianceTask|updateTaxComplianceTaskStatus|deleteTaxComplianceTask
+app.include_router(planning_budget_forecast_v1.router)  # [DIPINDAH] /api/v1/planning/getForecastAssumption|saveForecastAssumption|getScenarios|addScenario|deleteScenario
+app.include_router(intelligence_audit_v1.router)  # [DIPINDAH] /api/v1/intelligence/getAudit|addAuditFinding|updateAuditFinding|addAuditEvidence|getAuditEvidenceFile|deleteAuditEvidence|updateAuditStage
 
 
 @app.on_event("startup")
@@ -358,7 +496,7 @@ class ChatRequest(BaseModel):
     # jumlah pola & temuan mencurigakan MILIK CLIENT ITU dari file pola
     # yang sudah tersimpan (lihat akuntansi_ai.muat_pola/_path_pola).
     ringkasan_data: Optional[List[str]] = None
-    client_id: Optional[int] = None
+    client_id: Optional[str] = None
     # [BARU] Isi kalau percakapan ini di jalur "esb_account" (spesifik soal
     # 1 akun ESB) -- dipakai untuk kasih AI konteks detail akun itu (nama,
     # tipe, status aktif), bukan cuma status ESB client secara umum.
@@ -402,7 +540,33 @@ def login(username: str = Form(...), password: str = Form(...)):
     }
 
 
-@app.get("/api/client")
+class ClientSkema(BaseModel):
+    """Satu client -- lihat daftar_client(). `dibuat_at`/`jumlah_akun_esb`
+    kosong di respons POST (endpoint tambah client tidak mengembalikan
+    keduanya, cukup echo data yang baru disimpan)."""
+    id: str
+    nama: str
+    lokasi: Optional[str] = None
+    tipe: Optional[str] = None
+    nomor_wa: Optional[str] = None
+    email: Optional[str] = None
+    industry: Optional[str] = None
+    status: Optional[str] = None
+    assigned_accountant: Optional[str] = None
+    contact_name: Optional[str] = None
+    npwp: Optional[str] = None
+    address: Optional[str] = None
+    dibuat_at: Optional[str] = None
+    jumlah_akun_esb: Optional[int] = None
+
+class DaftarClientResponse(BaseModel):
+    clients: List[ClientSkema]
+
+class HapusClientResponse(BaseModel):
+    berhasil: bool
+
+
+@app.get("/api/client", tags=["clients"], response_model=DaftarClientResponse)
 def api_daftar_client(
     tipe: Optional[str] = None,
     punya_esb: Optional[bool] = None,
@@ -414,19 +578,26 @@ def api_daftar_client(
         GET /api/client?punya_esb=false  -> client yang belum ada akun ESB
     """
     clients = dbc.daftar_client(tipe, punya_esb=punya_esb)
-    # tahap_5 adalah administrator lintas client. Role di bawahnya hanya
-    # boleh melihat client yang secara eksplisit diberikan melalui tabel
-    # user_client_access. Ini mencegah user menebak client_id atau melihat
-    # metadata semua client dari company switcher.
-    if user.get("role") != "tahap_5":
+    # tahap_5 & super_admin (lihat RBAC.md) adalah administrator lintas
+    # client. Role di bawahnya hanya boleh melihat client yang secara
+    # eksplisit diberikan melalui tabel user_client_access. Ini mencegah
+    # user menebak client_id atau melihat metadata semua client dari
+    # company switcher.
+    #
+    # [FIX -- crash 500 utk semua role non-admin] client_id SEKARANG UUID
+    # (management_clients.id), bukan integer lagi -- `int(...)` di sini
+    # akan melempar ValueError utk UUID apapun ("invalid literal for
+    # int()"), jadi endpoint ini SELALU 500 utk siapapun yang bukan
+    # tahap_5/super_admin. Dibandingkan sebagai string apa adanya.
+    if user.get("role") not in ("tahap_5", "super_admin"):
         allowed_ids = {
-            int(x["client_id"]) for x in dbc.daftar_user_client_access(int(user.get("id") or 0))
+            str(x["client_id"]) for x in dbc.daftar_user_client_access(str(user.get("id") or ""))
         }
-        clients = [c for c in clients if int(c.get("id") or 0) in allowed_ids]
+        clients = [c for c in clients if str(c.get("id") or "") in allowed_ids]
     return {"clients": clients}
 
 
-@app.post("/api/client")
+@app.post("/api/client", tags=["clients"], response_model=ClientSkema)
 def api_tambah_client(
     nama: str = Form(...),
     lokasi: Optional[str] = Form(None),
@@ -453,8 +624,11 @@ def api_tambah_client(
     )
     if client_id is None:
         raise HTTPException(status_code=500, detail="Gagal menambah client.")
-    if user.get("role") != "tahap_5" and user.get("id") is not None:
-        dbc.set_user_client_access(int(user["id"]), int(client_id), active=True, access_role="owner")
+    if user.get("role") not in ("tahap_5", "super_admin") and user.get("id") is not None:
+        # "client_lv_1" (org_owner) = level paling senior di CLIENT_LEVELS
+        # (lihat RBAC.md & modules/auth/core.py) -- staf yang bikin client
+        # ini otomatis jadi pemegang akses penuh KHUSUS untuk client tsb.
+        dbc.set_user_client_access(str(user["id"]), client_id, active=True, access_role="client_lv_1")
     return {
         "id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe,
         "nomor_wa": nomor_wa, "email": email, "industry": industry, "status": status,
@@ -474,7 +648,7 @@ class UpdateProfilClientRequest(BaseModel):
 
 @app.put("/api/client/{client_id}/profil")
 def api_update_profil_client(
-    client_id: int,
+    client_id: str,
     req: UpdateProfilClientRequest,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -497,7 +671,7 @@ class UpdateKontakClientRequest(BaseModel):
 
 @app.put("/api/client/{client_id}/kontak")
 def api_update_kontak_client(
-    client_id: int,
+    client_id: str,
     req: UpdateKontakClientRequest,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -510,9 +684,9 @@ def api_update_kontak_client(
     return {"berhasil": True}
 
 
-@app.delete("/api/client/{client_id}")
+@app.delete("/api/client/{client_id}", tags=["clients"], response_model=HapusClientResponse)
 def api_hapus_client(
-    client_id: int,
+    client_id: str,
     user: dict = Depends(auth.require_level(3)),
 ):
     """[BARU] Hapus client -- dipakai menu titik-3 (Edit/Delete) di
@@ -541,7 +715,7 @@ class TambahEsbAccountRequest(BaseModel):
 
 
 @app.get("/api/client/{client_id}/esb-accounts")
-def api_esb_accounts_client(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_esb_accounts_client(client_id: str, user: dict = Depends(auth.get_current_user)):
     """List akun ESB milik satu client. consumer_secret dikirim ter-mask
     (mis. '••••6321'), TIDAK PERNAH dalam bentuk asli -- lihat
     db_client._mask_secret()."""
@@ -550,7 +724,7 @@ def api_esb_accounts_client(client_id: int, user: dict = Depends(auth.get_curren
 
 @app.post("/api/client/{client_id}/esb-accounts")
 def api_tambah_esb_account(
-    client_id: int,
+    client_id: str,
     req: TambahEsbAccountRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -566,7 +740,7 @@ def api_tambah_esb_account(
 
 
 @app.delete("/api/client/{client_id}/esb-accounts/{esb_account_id}")
-def api_hapus_esb_account(client_id: int, esb_account_id: int, user: dict = Depends(auth.get_current_user)):
+def api_hapus_esb_account(client_id: str, esb_account_id: int, user: dict = Depends(auth.get_current_user)):
     berhasil = dbc.hapus_esb_account(esb_account_id)
     if not berhasil:
         raise HTTPException(status_code=404, detail="Akun ESB tidak ditemukan.")
@@ -574,7 +748,7 @@ def api_hapus_esb_account(client_id: int, esb_account_id: int, user: dict = Depe
 
 
 @app.get("/api/client/{client_id}/riwayat")
-def api_riwayat_client(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_riwayat_client(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Riwayat hasil UMUM CLIENT (tabel 'hasil'). Untuk riwayat akun ESB,
     pakai /api/esb-account/{esb_account_id}/riwayat."""
     hasil = dbc.ambil_hasil_client(client_id)
@@ -610,7 +784,7 @@ def api_riwayat_esb_account(esb_account_id: int, user: dict = Depends(auth.get_c
 
 @app.get("/api/client/{client_id}/audit-log")
 def api_audit_log_client(
-    client_id: int,
+    client_id: str,
     limit: int = 200,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -624,8 +798,502 @@ def api_audit_log_client(
     return {"audit_log": history.ambil_riwayat(client_id=client_id, limit=limit)}
 
 
+# ============================================================
+# [DIPINDAH] MODUL PURCHASE -- kini di modules/finance/purchase_v1.py
+# (lihat modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_purchase_v1.router) di bawah -- path, auth,
+# & response TIDAK berubah.
+#
+# VendorSkema tetap dipakai di modul Accounts Payable (DataAPResponse di
+# bawah, Vendor & Bill dipakai ulang dari Purchase) -- di-import dari
+# modules.finance.purchase_v1, BUKAN didefinisikan ulang.
+# ============================================================
+
+
+class DocumentSkema(BaseModel):
+    id: str
+    name: str
+    category: Optional[str] = None
+    file_format: Optional[str] = None
+    file_size: Optional[str] = None
+    storage_url: Optional[str] = None
+    uploaded_by: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[str] = None
+    related_record: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class DataDocumentsResponse(BaseModel):
+    documents: List[DocumentSkema]
+
+
+@app.get("/api/v1/management/getDocuments", tags=["documents"], response_model=DataDocumentsResponse)
+def api_data_documents(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [DIUBAH] Data mentah tabel Documents (schema "7_Management",
+    "management_documents") untuk satu client -- tabel dibuat
+    manual oleh user lewat Supabase SQL Editor, sama pola dengan modul
+    Purchase. Frontend memetakan hasilnya ke tipe FinancialDocument lewat
+    src/app/documents/lib/documentsDbBridge.ts.
+
+    Path diubah dari /api/client/{client_id}/documents ke pola standar
+    /api/[version]/[group]/[nama_fitur] -- client_id sekarang lewat query
+    string (?client_id=...), bukan path segment, karena pola baru tidak
+    menyisakan tempat untuk resource id di path.
+    """
+    return {"documents": dbc.ambil_data_documents(client_id)}
+
+
+class ReportRegistryItemSkema(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    period: Optional[str] = None
+    created_by: Optional[str] = None
+    formats: Optional[str] = None
+    status: Optional[str] = None
+    file_size: Optional[str] = None
+    tags: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class ReportRegistryResponse(BaseModel):
+    report_registry: List[ReportRegistryItemSkema]
+
+
+@app.get("/api/client/{client_id}/reports-registry", tags=["reports"], response_model=ReportRegistryResponse)
+def api_data_reports_registry(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_registry (schema "7_Management",
+    "management_report_registry") untuk satu client -- laporan yang
+    dicatat manual/oleh proses lain, di luar 3 sumber otomatis (Laporan
+    Keuangan/CALK/PPh Badan). Digabung ke daftar reports oleh
+    src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_registry": dbc.ambil_data_report_registry(client_id)}
+
+
+class ReportScheduleItemSkema(BaseModel):
+    id: str
+    report_name: str
+    frequency: Optional[str] = None
+    recipients: Optional[str] = None
+    format: Optional[str] = None
+    next_run: Optional[str] = None
+    status: Optional[str] = None
+
+class ReportScheduleResponse(BaseModel):
+    report_schedule: List[ReportScheduleItemSkema]
+
+
+@app.get("/api/client/{client_id}/report-schedule", tags=["reports"], response_model=ReportScheduleResponse)
+def api_data_report_schedule(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_schedule (schema "7_Management",
+    "management_report_schedule") untuk satu client -- jadwal
+    laporan berkala (tab "Report Scheduler"). Frontend memetakan hasilnya
+    ke tipe ScheduledReport lewat src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_schedule": dbc.ambil_data_report_schedule(client_id)}
+
+
+class ARCustomerSkema(BaseModel):
+    id: str
+    customer_key: Optional[str] = None
+    name: str
+    industry: Optional[str] = None
+    credit_limit: float = 0
+    account_manager: Optional[str] = None
+    payment_terms_days: Optional[int] = None
+    npwp: Optional[str] = None
+    alamat: Optional[str] = None
+    aktif: bool = True
+
+class ARInvoiceSkema(BaseModel):
+    id: str
+    customer_id: str
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[str] = None
+    due_date: Optional[str] = None
+    amount: float = 0
+    manual_status: Optional[str] = None
+    journal_entry_id: Optional[int] = None
+
+class ARPaymentSkema(BaseModel):
+    id: str
+    invoice_id: str
+    payment_date: Optional[str] = None
+    amount: float = 0
+    method: Optional[str] = None
+    reference: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+    journal_entry_id: Optional[int] = None
+
+class ARCollectionNoteSkema(BaseModel):
+    id: str
+    customer_id: str
+    invoice_id: Optional[str] = None
+    note_type: Optional[str] = None
+    content: str
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+
+class DataARResponse(BaseModel):
+    customer: List[ARCustomerSkema]
+    invoice: List[ARInvoiceSkema]
+    payment: List[ARPaymentSkema]
+    collection_note: List[ARCollectionNoteSkema]
+
+
+@app.get("/api/v1/finance/getReceivable", tags=["ar"], response_model=DataARResponse)
+def api_data_ar(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah modul Account Receivable (customer, invoice, payment,
+    collection_note) untuk satu client -- tabel dibuat manual oleh user
+    lewat Supabase (schema "3_Financial"). Frontend memetakan hasilnya ke
+    tipe Invoice/Customer lewat
+    src/app/accounts-receivable/lib/arDbBridge.ts.
+    """
+    return dbc.ambil_data_ar(client_id)
+
+
+class CatatPembayaranArRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ar/payments."""
+    invoice_id: str
+    payment_date: str  # YYYY-MM-DD
+    amount: Decimal
+    method: Optional[str] = None
+    reference: Optional[str] = None
+
+
+class TambahCatatanArRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ar/notes (invoice_id kosong = catatan level customer)."""
+    customer_id: str
+    invoice_id: Optional[str] = None
+    content: str
+    note_type: Optional[str] = None
+
+
+class UbahStatusInvoiceArRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/ar/invoices/{invoice_id}/status.
+    manual_status: 'Disputed' | 'Written Off' | null (hapus penanda)."""
+    manual_status: Optional[str] = None
+    alasan: Optional[str] = None
+
+
+class PembayaranArSkema(BaseModel):
+    id: str
+    invoice_id: str
+    invoice_number: Optional[str] = None
+    payment_date: str
+    amount: float
+    sisa_tagihan: float
+    lunas: bool
+
+class CatatPembayaranArResponse(BaseModel):
+    berhasil: bool
+    pembayaran: PembayaranArSkema
+
+
+@app.post("/api/v1/finance/addReceivablePayment", tags=["ar"], response_model=CatatPembayaranArResponse)
+def api_catat_pembayaran_ar(
+    client_id: str, req: CatatPembayaranArRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Catat pembayaran invoice AR (tombol Record Payment di halaman
+    Accounts Receivable). Aturan validasi ada di dbc.catat_pembayaran_ar()."""
+    try:
+        hasil = dbc.catat_pembayaran_ar(
+            client_id=client_id, invoice_id=req.invoice_id, payment_date=req.payment_date,
+            amount=req.amount, method=req.method, reference=req.reference,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="catat_pembayaran_ar",
+        detail={"invoice_id": req.invoice_id, "amount": float(req.amount), "payment_date": req.payment_date},
+    )
+    return {"berhasil": True, "pembayaran": hasil}
+
+
+class CatatanArSkema(BaseModel):
+    id: str
+    customer_id: str
+    invoice_id: Optional[str] = None
+    note_type: Optional[str] = None
+    content: str
+    created_by: Optional[str] = None
+    created_at: str
+
+class TambahCatatanArResponse(BaseModel):
+    berhasil: bool
+    catatan: CatatanArSkema
+
+
+@app.post("/api/v1/finance/addReceivableNote", tags=["ar"], response_model=TambahCatatanArResponse)
+def api_tambah_catatan_ar(
+    client_id: str, req: TambahCatatanArRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    """[BARU] Tambah catatan penagihan (per customer / per invoice)."""
+    try:
+        hasil = dbc.tambah_catatan_ar(
+            client_id=client_id, customer_id=req.customer_id, content=req.content,
+            invoice_id=req.invoice_id, note_type=req.note_type,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_catatan_ar",
+        detail={"customer_id": req.customer_id, "invoice_id": req.invoice_id, "note_type": req.note_type},
+    )
+    return {"berhasil": True, "catatan": hasil}
+
+
+class StatusInvoiceArSkema(BaseModel):
+    id: str
+    invoice_number: Optional[str] = None
+    manual_status: Optional[str] = None
+    status_lama: Optional[str] = None
+
+class UbahStatusInvoiceArResponse(BaseModel):
+    berhasil: bool
+    invoice: StatusInvoiceArSkema
+
+
+@app.patch("/api/v1/finance/updateReceivableInvoiceStatus", tags=["ar"], response_model=UbahStatusInvoiceArResponse)
+def api_ubah_status_invoice_ar(
+    client_id: str, invoice_id: str, req: UbahStatusInvoiceArRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai invoice Disputed / Written Off, atau hapus penandanya."""
+    try:
+        hasil = dbc.ubah_status_invoice_ar(
+            client_id=client_id, invoice_id=invoice_id, manual_status=req.manual_status,
+            alasan=req.alasan, created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_status_invoice_ar",
+        detail={"invoice_id": invoice_id, "manual_status": req.manual_status, "alasan": req.alasan},
+    )
+    return {"berhasil": True, "invoice": hasil}
+
+
+# ============================================================
+# [BARU] MODUL ACCOUNTS PAYABLE -- pola endpoint SAMA persis dengan AR di
+# atas. Vendor & bill dipakai ulang dari modul Purchase; payment & note
+# adalah 2 tabel baru khusus AP. Lihat db_client.py::ambil_data_ap() dkk.
+# ============================================================
+
+class ApBillSkema(BaseModel):
+    id: str
+    purchase_id: Optional[str] = None
+    vendor_id: Optional[str] = None
+    invoice_no: Optional[str] = None
+    category: Optional[str] = None
+    purchase_date: Optional[str] = None
+    due_date: Optional[str] = None
+    total_payable: float = 0
+    payment_status: Optional[str] = None
+    status: Optional[str] = None
+    manual_status: Optional[str] = None
+
+class ApPaymentSkema(BaseModel):
+    id: str
+    bill_id: str
+    payment_date: Optional[str] = None
+    amount: float = 0
+    status: Optional[str] = None
+    method: Optional[str] = None
+    reference_no: Optional[str] = None
+    recorded_by: Optional[str] = None
+    created_at: Optional[str] = None
+    journal_entry_id: Optional[int] = None
+
+class ApNoteSkema(BaseModel):
+    id: str
+    vendor_id: str
+    bill_id: Optional[str] = None
+    content: str
+    created_by: Optional[str] = None
+    created_at: Optional[str] = None
+
+class DataAPResponse(BaseModel):
+    vendor: List[finance_purchase_v1.VendorSkema]
+    bill: List[ApBillSkema]
+    payment: List[ApPaymentSkema]
+    note: List[ApNoteSkema]
+
+
+@app.get("/api/v1/finance/getPayable", tags=["ap"], response_model=DataAPResponse)
+def api_data_ap(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """[BARU] Data mentah modul Account Payable (vendor, bill, payment,
+    note) untuk satu client. Frontend memetakan hasilnya ke tipe
+    Bill/Vendor lewat src/app/accounts-payable/lib/apDbBridge.ts."""
+    return dbc.ambil_data_ap(client_id)
+
+
+class CatatPembayaranApRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ap/payments."""
+    bill_id: str
+    payment_date: str  # YYYY-MM-DD
+    amount: Decimal
+    status: Optional[str] = "Paid"  # 'Scheduled' | 'Paid' | 'Cancelled'
+    method: Optional[str] = None
+    reference_no: Optional[str] = None
+
+
+class TambahCatatanApRequest(BaseModel):
+    """Body POST /api/client/{client_id}/ap/notes (bill_id kosong = catatan level vendor)."""
+    vendor_id: str
+    bill_id: Optional[str] = None
+    content: str
+
+
+class UbahStatusBillApRequest(BaseModel):
+    """Body PATCH /api/client/{client_id}/ap/bills/{bill_id}/status.
+    manual_status: 'Disputed' | 'On Hold' | null (hapus penanda)."""
+    manual_status: Optional[str] = None
+    alasan: Optional[str] = None
+
+
+class PembayaranApSkema(BaseModel):
+    id: str
+    bill_id: str
+    purchase_id: Optional[str] = None
+    payment_date: str
+    amount: float
+    status: str
+
+class CatatPembayaranApResponse(BaseModel):
+    berhasil: bool
+    pembayaran: PembayaranApSkema
+
+
+@app.post("/api/v1/finance/addPayablePayment", tags=["ap"], response_model=CatatPembayaranApResponse)
+def api_catat_pembayaran_ap(
+    client_id: str, req: CatatPembayaranApRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Catat/jadwalkan pembayaran tagihan vendor (tombol Mark Paid /
+    Schedule Payment di halaman Accounts Payable)."""
+    try:
+        hasil = dbc.catat_pembayaran_ap(
+            client_id=client_id, bill_id=req.bill_id, payment_date=req.payment_date,
+            amount=req.amount, status=req.status, method=req.method, reference_no=req.reference_no,
+            recorded_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="catat_pembayaran_ap",
+        detail={"bill_id": req.bill_id, "amount": float(req.amount), "status": req.status},
+    )
+    return {"berhasil": True, "pembayaran": hasil}
+
+
+class CatatanApSkema(BaseModel):
+    id: str
+    vendor_id: str
+    created_at: str
+
+class TambahCatatanApResponse(BaseModel):
+    berhasil: bool
+    catatan: CatatanApSkema
+
+
+@app.post("/api/v1/finance/addPayableNote", tags=["ap"], response_model=TambahCatatanApResponse)
+def api_tambah_catatan_ap(
+    client_id: str, req: TambahCatatanApRequest,
+    user: dict = Depends(auth.require_level(2)),  # Senior Staff ke atas
+):
+    """[BARU] Tambah catatan internal (per vendor / per bill)."""
+    try:
+        hasil = dbc.tambah_catatan_ap(
+            client_id=client_id, vendor_id=req.vendor_id, content=req.content, bill_id=req.bill_id,
+            created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="tambah_catatan_ap",
+        detail={"vendor_id": req.vendor_id, "bill_id": req.bill_id},
+    )
+    return {"berhasil": True, "catatan": hasil}
+
+
+class StatusBillApSkema(BaseModel):
+    id: str
+    purchase_id: Optional[str] = None
+    manual_status: Optional[str] = None
+    status_lama: Optional[str] = None
+
+class UbahStatusBillApResponse(BaseModel):
+    berhasil: bool
+    bill: StatusBillApSkema
+
+
+@app.patch("/api/v1/finance/updatePayableBillStatus", tags=["ap"], response_model=UbahStatusBillApResponse)
+def api_ubah_status_bill_ap(
+    client_id: str, bill_id: str, req: UbahStatusBillApRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Tandai bill Disputed / On Hold, atau hapus penandanya."""
+    try:
+        hasil = dbc.ubah_status_bill_ap(
+            client_id=client_id, bill_id=bill_id, manual_status=req.manual_status,
+            alasan=req.alasan, created_by=user.get("nama") or user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"), aksi="ubah_status_bill_ap",
+        detail={"bill_id": bill_id, "manual_status": req.manual_status, "alasan": req.alasan},
+    )
+    return {"berhasil": True, "bill": hasil}
+
+
+# ============================================================
+# [DIPINDAH] MODUL BUDGET & FORECAST -- kini di
+# modules/planning/budget_forecast_v1.py (lihat modules/planning/__init__.py).
+# Router didaftarkan lewat app.include_router(planning_budget_forecast_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL TAX & COMPLIANCE -- kini di
+# modules/planning/tax_compliance_v1.py (lihat modules/planning/__init__.py).
+# Router didaftarkan lewat app.include_router(planning_tax_compliance_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL AUDIT -- kini di modules/intelligence/audit_v1.py
+# (lihat modules/intelligence/__init__.py). Router didaftarkan lewat
+# app.include_router(intelligence_audit_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL PURCHASE (lanjutan: update status, bulk update,
+# exception status) -- kini di modules/finance/purchase_v1.py (lihat
+# modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_purchase_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
 @app.get("/api/client/{client_id}/dashboard")
-def api_dashboard_client(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_dashboard_client(client_id: str, user: dict = Depends(auth.get_current_user)):
     """[BARU] Live Dashboard per client -- dihitung dari riwayat hasil proses
     yang sudah tersimpan di database (lihat modules/dashboard.py::
     ringkas_dashboard_dari_riwayat untuk penjelasan kenapa tidak memakai
@@ -640,7 +1308,7 @@ def api_dashboard_client(client_id: int, user: dict = Depends(auth.get_current_u
 
 @app.get("/api/client/{client_id}/rekonsiliasi-lintas-dokumen")
 def api_rekonsiliasi_lintas_dokumen(
-    client_id: int,
+    client_id: str,
     npwp_perusahaan: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -666,7 +1334,7 @@ class DeteksiKesalahanPembelianRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/deteksi-kesalahan-pembelian")
 def api_deteksi_kesalahan_pembelian(
-    client_id: int,
+    client_id: str,
     req: DeteksiKesalahanPembelianRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -691,7 +1359,7 @@ def api_deteksi_kesalahan_pembelian(
 
 @app.post("/api/client/{client_id}/analisis-ai")
 def api_buat_analisis_ai(
-    client_id: int,
+    client_id: str,
     esb_account_id: Optional[int] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -738,7 +1406,7 @@ def api_buat_analisis_ai(
 
 @app.get("/api/client/{client_id}/analisis-ai")
 def api_riwayat_analisis_ai(
-    client_id: int,
+    client_id: str,
     jenis_analisis: Optional[str] = None,
     esb_account_id: Optional[int] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -762,7 +1430,7 @@ def api_riwayat_analisis_ai(
 # ringkasan_eksekutif kalau suatu saat dibutuhkan, tanpa endpoint terpisah.
 # ============================================================
 
-def _hitung_angka_ringkasan_eksekutif(client_id: int) -> dict:
+def _hitung_angka_ringkasan_eksekutif(client_id: str) -> dict:
     hasil = dbc.ambil_hasil_client(client_id)
     riwayat = [
         {"jenis_dokumen": h["jenis"], "hasil": h["data"], "tanggal": h["dibuat_at"]}
@@ -772,7 +1440,7 @@ def _hitung_angka_ringkasan_eksekutif(client_id: int) -> dict:
 
 
 @app.get("/api/client/{client_id}/ringkasan-eksekutif")
-def api_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_ringkasan_eksekutif(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Kartu angka utama, dihitung real-time dari data tersimpan (tanpa
     panggil AI, jadi selalu boleh diakses berkali-kali) + narasi AI
     TERAKHIR yang pernah digenerate (kalau ada), supaya klien tetap lihat
@@ -786,7 +1454,7 @@ def api_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_curren
 
 
 @app.post("/api/client/{client_id}/ringkasan-eksekutif")
-def api_buat_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_buat_ringkasan_eksekutif(client_id: str, user: dict = Depends(auth.get_current_user)):
     """[UBAH -- pindah DeepSeek ke Claude] Generate ULANG narasi AI dari
     angka terkini & simpan sbg riwayat baru. Dipisah dari GET di atas krn
     ini yang benar-benar memanggil Claude (ada biaya/kuota) -- jadi harus
@@ -831,42 +1499,31 @@ def api_buat_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_c
 
 # ============================================================
 # [BARU] KPI BENTO DASHBOARD (8 kartu utama halaman Dashboard --
-# KPIBentoGrid.tsx) -- BEDA dari ringkasan-eksekutif di atas (itu utk
-# kartu ringkas non-akuntan + narasi AI opsional). Ini murni angka
-# akuntansi (Revenue/Net Profit/Gross Profit/Cash & Bank/AR/AP/EBITDA/
-# Tax Payable) dgn perubahan % dan sparkline bulanan, dihitung
-# real-time dari jurnal+COA (TANPA panggil AI, GET biasa) -- lihat
-# lapkeu.susun_kpi_bento_dashboard() utk detail & keterbatasan
-# (heuristik nama akun utk AP/Tax Payable, pendekatan EBITDA, dst).
+# KPIBentoGrid.tsx) -- endpoint ini, GET /api/v1/overview/getBranches, dan
+# GET /api/v1/overview/getFinancialBudget SUDAH DIPINDAH ke
+# modules/overview/overview_v1.py (router & router_legacy, didaftarkan di
+# bawah lewat app.include_router). Logic hitungnya (lapkeu.
+# susun_kpi_bento_dashboard) TETAP di modules/laporan_keuangan.py.
 # ============================================================
 
-@app.get("/api/client/{client_id}/kpi-bento")
-def api_kpi_bento_dashboard(
-    client_id: int,
-    tahun: Optional[int] = None,
-    cabang: Optional[str] = None,
-    user: dict = Depends(auth.get_current_user),
-):
-    """Angka 8 kartu KPIBentoGrid.tsx, dihitung real-time dari jurnal
-    terposting + COA client tahun berjalan (atau `tahun` kalau diisi).
 
-    [BARU - filter Cabang Financial Overview] `cabang` opsional (mis.
-    "Jakarta"/"Surabaya", cocok dgn dropdown OverviewContent.tsx) --
-    kalau diisi, jurnal disaring dulu lewat
-    lapkeu.filter_jurnal_per_cabang() berdasarkan tag Coa.cabang per akun
-    SEBELUM dihitung ke 8 kartu. Kosong/None/"All Branches" = tidak
-    difilter (semua cabang digabung, perilaku lama)."""
-    tahun_dipakai = tahun or date.today().year
-    # Accounting Core V2: Dashboard Actual hanya memakai journal lines POSTED.
-    jurnal = accounting_core.list_posted_lines(
-        client_id,
-        tanggal_mulai=f"{tahun_dipakai}-01-01",
-        tanggal_akhir=f"{tahun_dipakai}-12-31",
-    )
-    coa = dbc.ambil_coa_client(client_id)
-    jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
-    hasil = lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
-    return hasil
+# ============================================================
+# [DIPINDAH] MODUL FINANCIAL STATEMENTS -- kini di
+# modules/finance/profit_loss_v1.py (getProfitLossBudget,
+# getProfitLossInsights) & modules/finance/cash_flow_v1.py
+# (getCashFlowForecast). Lihat modules/finance/__init__.py. Router
+# didaftarkan lewat app.include_router(finance_profit_loss_v1.router) &
+# app.include_router(finance_cash_flow_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL ASSETS -- Fixed Asset Register & Depreciation, kini
+# di modules/asset/fixed_assets_v1.py (lihat modules/asset/__init__.py).
+# Router didaftarkan lewat app.include_router(asset_fixed_assets_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
 
 
 # ============================================================
@@ -874,7 +1531,7 @@ def api_kpi_bento_dashboard(
 # ============================================================
 
 class BuatPercakapanRequest(BaseModel):
-    client_id: Optional[int] = None
+    client_id: Optional[str] = None
     # [BARU] Isi ini kalau percakapan spesifik soal 1 akun ESB tertentu --
     # jalurnya otomatis kepisah dari percakapan umum client (lihat jalur
     # di api_daftar_percakapan di bawah).
@@ -900,7 +1557,7 @@ def api_buat_percakapan(req: BuatPercakapanRequest, user: dict = Depends(auth.ge
 
 @app.get("/api/percakapan")
 def api_daftar_percakapan(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     esb_account_id: Optional[int] = None,
     jalur: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -1617,7 +2274,7 @@ _POLA_PER_JENIS = {
 }
 
 
-def _coba_simpan_sebagai_coa(isi: bytes, nama_file: str, client_id: Optional[int]) -> Optional[dict]:
+def _coba_simpan_sebagai_coa(isi: bytes, nama_file: str, client_id: Optional[str]) -> Optional[dict]:
     """
     [BARU] Coba baca file sbg sheet COA (ak.muat_coa) & langsung simpan ke
     COA permanen client (dbc.simpan_coa_bulk) -- supaya file COA yang
@@ -1691,7 +2348,7 @@ def _proses_semua_jenis(
     isi: bytes,
     nama_file: str,
     jenis_dokumen: Optional[str],
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     on_progress: Optional[Callable[..., None]] = None,
     pakai_ai: bool = True,
 ):
@@ -1827,7 +2484,7 @@ def _proses_dan_simpan_satu_file(
     isi: bytes,
     nama_file: str,
     jenis_dokumen: Optional[str],
-    client_id: Optional[int],
+    client_id: Optional[str],
     conv_id: Optional[str],
     esb_account_id: Optional[int],
     konfirmasi_duplikat: bool,
@@ -2069,7 +2726,7 @@ async def proses_file(
     # di UI ("tidak menampilkan apa-apa"). Form(None) memaksa FastAPI
     # membaca field ini dari body form-data yang sama dengan file.
     jenis_dokumen: Optional[str] = Form(None),
-    client_id: Optional[int] = Form(None),
+    client_id: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     esb_account_id: Optional[int] = Form(None),
     # [BARU - dedup upload] Kalau True, akuntan SUDAH melihat
@@ -2266,7 +2923,7 @@ _JENIS_DOKUMEN_18_SHEET: Dict[str, str] = {
 _AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET = 3
 
 
-def _cek_kelengkapan_dokumen_18_sheet(client_id: int) -> Dict[str, Any]:
+def _cek_kelengkapan_dokumen_18_sheet(client_id: str) -> Dict[str, Any]:
     """
     [BARU] Mengecek berapa dari 7 jenis dokumen (lihat
     _JENIS_DOKUMEN_18_SHEET) yang sudah tersedia untuk client ini di
@@ -2301,7 +2958,7 @@ def _cek_kelengkapan_dokumen_18_sheet(client_id: int) -> Dict[str, Any]:
 
 
 def _auto_generate_laporan_18_sheet(
-    client_id: Optional[int], tahun_set: set, user: dict,
+    client_id: Optional[str], tahun_set: set, user: dict,
     on_progress: Optional[Callable[..., None]] = None,
 ) -> List[dict]:
     """
@@ -2382,7 +3039,7 @@ def _auto_generate_laporan_18_sheet(
 
 @app.post("/api/client/{client_id}/proses-file-batch")
 async def proses_file_batch(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
@@ -2627,7 +3284,7 @@ async def proses_file_batch(
 # perlu disesuaikan.
 @app.post("/api/client/{client_id}/proses-file-batch/stream")
 async def proses_file_batch_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
@@ -3049,7 +3706,7 @@ async def konfirmasi_upload_batch(
 
 @app.get("/api/client/{client_id}/upload-batch")
 async def daftar_upload_batch(
-    client_id: int,
+    client_id: str,
     limit: int = 100,
     user: dict = Depends(auth.get_current_user),
 ):
@@ -3061,7 +3718,7 @@ async def daftar_upload_batch(
 
 @app.post("/api/client/{client_id}/bootstrap-pola-bank")
 async def api_bootstrap_pola_bank(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     min_samples: int = Form(2),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -3167,7 +3824,7 @@ async def api_bootstrap_pola_bank(
 # ============================================================
 
 def _siapkan_df_coa_untuk_kertas_kerja(
-    client_id: int, coa_bytes: Optional[bytes], nama_coa_file: Optional[str],
+    client_id: str, coa_bytes: Optional[bytes], nama_coa_file: Optional[str],
 ) -> Tuple[pd.DataFrame, List[str]]:
     """
     [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini punya
@@ -3209,7 +3866,7 @@ def _siapkan_df_coa_untuk_kertas_kerja(
 
 @app.post("/api/client/{client_id}/generate-kertas-kerja")
 async def api_generate_kertas_kerja(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     pakai_ai: bool = Form(True),
@@ -3317,7 +3974,7 @@ async def api_generate_kertas_kerja(
 # keduanya cuma beda cara mengirim hasil balik ke browser (JSON sekali vs
 # event SSE bertahap).
 def _jalankan_generate_kertas_kerja(
-    client_id: int,
+    client_id: str,
     daftar_file_pdf: List[Tuple[Any, str]],
     df_coa: pd.DataFrame,
     peringatan_coa: List[str],
@@ -3387,7 +4044,7 @@ def _jalankan_generate_kertas_kerja(
 
 @app.post("/api/client/{client_id}/generate-kertas-kerja/stream")
 async def api_generate_kertas_kerja_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     pakai_ai: bool = Form(True),
@@ -3528,7 +4185,7 @@ async def api_generate_kertas_kerja_stream(
 # kertas_kerja.generate_kertas_kerja() masih berjalan di thread terpisah.
 @app.post("/api/client/{client_id}/kertas-kerja/generate/stream")
 async def api_generate_kertas_kerja_per_file_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     tahun: Optional[int] = Form(None),
@@ -3744,7 +4401,7 @@ class KonfirmasiKertasKerjaKe18SheetRequest(BaseModel):
 
 
 def _bangun_data_export_18_sheet_dari_kertas_kerja(
-    client_id: int, isi_file: bytes, nama_file: str,
+    client_id: str, isi_file: bytes, nama_file: str,
     req: "KonfirmasiKertasKerjaKe18SheetRequest", user: dict,
 ) -> Tuple[dict, List[str]]:
     """Badan logic bareng utk endpoint Excel & JSON di bawah -- baca file,
@@ -3767,7 +4424,7 @@ def _bangun_data_export_18_sheet_dari_kertas_kerja(
 
 @app.post("/api/client/{client_id}/kertas-kerja/konfirmasi-ke-18-sheet")
 async def api_konfirmasi_kertas_kerja_ke_18_sheet(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     nama_perusahaan: Optional[str] = Form(None),
     prive_atau_dividen: float = Form(0),
@@ -3857,7 +4514,7 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet(
 
 @app.post("/api/client/{client_id}/kertas-kerja/konfirmasi-ke-18-sheet-json")
 async def api_konfirmasi_kertas_kerja_ke_18_sheet_json(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     nama_perusahaan: Optional[str] = Form(None),
     prive_atau_dividen: float = Form(0),
@@ -3915,7 +4572,7 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet_json(
 
 @app.post("/api/client/{client_id}/upload-hasil-koreksi")
 async def api_upload_hasil_koreksi(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     min_samples: int = Form(1),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -3968,7 +4625,7 @@ async def api_upload_hasil_koreksi(
 
 @app.get("/api/client/{client_id}/hasil/{hasil_id}/metrik-kategorisasi")
 def api_metrik_kategorisasi(
-    client_id: int, hasil_id: int,
+    client_id: str, hasil_id: int,
     user: dict = Depends(auth.get_current_user),
 ):
     """
@@ -3989,7 +4646,7 @@ def api_metrik_kategorisasi(
 
 
 @app.get("/api/client/{client_id}/pola-bank")
-def api_lihat_pola_bank(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_lihat_pola_bank(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Lihat isi pola_bank_client_{client_id}.json apa adanya -- untuk
     verifikasi hasil bootstrap (item di atas) atau pola yang terkumpul dari
@@ -4027,7 +4684,7 @@ def api_lihat_pola_bank(client_id: int, user: dict = Depends(auth.get_current_us
 
 @app.post("/api/client/{client_id}/retrain-pola")
 def api_retrain_pola(
-    client_id: int,
+    client_id: str,
     jenis: Optional[str] = None,  # "rekening_koran" | "penjualan" | None (proses keduanya)
     limit: int = 500,
     paksa_commit: bool = False,  # [BARU] lanjutkan commit walau evaluasi staging menyarankan review manual
@@ -4111,7 +4768,7 @@ def api_retrain_pola(
 
 @app.get("/api/client/{client_id}/pola/{jenis}/riwayat")
 def api_riwayat_pola(
-    client_id: int,
+    client_id: str,
     jenis: str,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -4145,7 +4802,7 @@ class RollbackPolaRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/pola/{jenis}/rollback")
 def api_rollback_pola(
-    client_id: int,
+    client_id: str,
     jenis: str,
     req: RollbackPolaRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama dgn retrain-pola
@@ -4210,7 +4867,7 @@ def api_rollback_pola(
 
 @app.get("/api/client/{client_id}/metrik-akurasi")
 def api_metrik_akurasi(
-    client_id: int,
+    client_id: str,
     jenis: Optional[str] = None,  # "rekening_koran" | "penjualan" | None (gabungan keduanya)
     n_bulan_terakhir: int = 6,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama seperti retrain-pola
@@ -4295,7 +4952,7 @@ def _format_sse_progress(**kwargs) -> str:
 async def proses_file_stream(
     file: UploadFile = File(...),
     jenis_dokumen: Optional[str] = Form(None),
-    client_id: Optional[int] = Form(None),
+    client_id: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     esb_account_id: Optional[int] = Form(None),
     user: dict = Depends(auth.require_level(3)),
@@ -4562,7 +5219,7 @@ async def proses_file_stream(
 
 @app.get("/api/klarifikasi")
 def api_daftar_klarifikasi(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     status: Optional[str] = "pending",
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -4610,7 +5267,7 @@ def api_jawab_klarifikasi(
 
 @app.get("/api/client/{client_id}/reminder-spt")
 def api_reminder_spt_client(
-    client_id: int,
+    client_id: str,
     hanya_belum_selesai: bool = True,
     user: dict = Depends(auth.get_current_user),
 ):
@@ -4630,7 +5287,7 @@ def api_jalankan_reminder_sekarang(user: dict = Depends(auth.require_level(3))):
 
 @app.get("/api/alert-anomali")
 def api_daftar_alert_anomali(
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     status: Optional[str] = "baru",
     tipe_alert: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -4741,7 +5398,7 @@ async def proses_dan_buat_excel(
 
 @app.get("/api/client/{client_id}/rekening-koran/export-format-akuntan/{hasil_id}")
 async def api_export_rekening_koran_format_akuntan(
-    client_id: int,
+    client_id: str,
     hasil_id: int,
     file_piutang: Optional[UploadFile] = File(None),
     user: dict = Depends(auth.get_current_user),
@@ -4860,7 +5517,7 @@ async def api_export_rekening_koran_format_akuntan(
 
 @app.post("/api/client/{client_id}/jurnal-posting/hasil/{hasil_id}/konfirmasi-semua")
 async def api_konfirmasi_posting_massal(
-    client_id: int,
+    client_id: str,
     hasil_id: int,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas, sama seperti /api/proses-file
 ):
@@ -4916,13 +5573,13 @@ class CoaBulkRequest(BaseModel):
 
 
 @app.get("/api/client/{client_id}/coa")
-def api_ambil_coa(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_ambil_coa(client_id: str, user: dict = Depends(auth.get_current_user)):
     """Ambil seluruh Chart of Accounts (COA) permanen milik satu client."""
     return {"coa": dbc.ambil_coa_client(client_id)}
 
 
 @app.post("/api/client/{client_id}/coa")
-def api_simpan_coa_bulk(client_id: int, req: CoaBulkRequest, user: dict = Depends(auth.get_current_user)):
+def api_simpan_coa_bulk(client_id: str, req: CoaBulkRequest, user: dict = Depends(auth.get_current_user)):
     """
     Simpan COA client sekaligus (dari form input manual atau hasil impor
     sheet 'COA' file Excel yang sudah diparse frontend). Default
@@ -4941,7 +5598,7 @@ def api_simpan_coa_bulk(client_id: int, req: CoaBulkRequest, user: dict = Depend
 
 
 @app.post("/api/client/{client_id}/coa/akun")
-def api_tambah_akun_coa(client_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
+def api_tambah_akun_coa(client_id: str, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
     """Tambah satu akun COA baru untuk client."""
     berhasil = dbc.tambah_akun_coa(
         client_id, req.no_akun, req.nama_akun, req.kategori,
@@ -4961,7 +5618,7 @@ def api_tambah_akun_coa(client_id: int, req: AkunCoaRequest, user: dict = Depend
 
 
 @app.put("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_update_akun_coa(client_id: int, akun_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
+def api_update_akun_coa(client_id: str, akun_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
     """Perbarui satu akun COA (mis. mengisi kategori yang tadinya kosong)."""
     sebelum = dbc.ambil_akun_coa_by_id(akun_id)
     berhasil = dbc.update_akun_coa(
@@ -4986,7 +5643,7 @@ def api_update_akun_coa(client_id: int, akun_id: int, req: AkunCoaRequest, user:
 
 
 @app.delete("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_hapus_akun_coa(client_id: int, akun_id: int, user: dict = Depends(auth.get_current_user)):
+def api_hapus_akun_coa(client_id: str, akun_id: int, user: dict = Depends(auth.get_current_user)):
     """Nonaktifkan (soft-delete) satu akun COA."""
     sebelum = dbc.ambil_akun_coa_by_id(akun_id)
     berhasil = dbc.hapus_akun_coa(akun_id)
@@ -5010,7 +5667,7 @@ class StandardMappingRequest(BaseModel):
 
 
 class CompanyAccountRoleRequest(BaseModel):
-    coa_id: int
+    coa_id: str
 
 
 class NativeJournalLineRequest(BaseModel):
@@ -5073,13 +5730,13 @@ def api_account_roles(user: dict = Depends(auth.get_current_user)):
 
 
 @app.get("/api/client/{client_id}/accounting/mapping-health")
-def api_accounting_mapping_health(client_id: int, user: dict = Depends(auth.require_level(3))):
+def api_accounting_mapping_health(client_id: str, user: dict = Depends(auth.require_level(3))):
     return accounting_core.mapping_health(client_id)
 
 
 @app.put("/api/client/{client_id}/accounting/coa/{coa_id}/standard-mapping")
 def api_set_standard_mapping(
-    client_id: int, coa_id: int, req: StandardMappingRequest,
+    client_id: str, coa_id: str, req: StandardMappingRequest,
     user: dict = Depends(auth.require_level(4)),
 ):
     try:
@@ -5092,7 +5749,7 @@ def api_set_standard_mapping(
 
 @app.put("/api/client/{client_id}/accounting/account-role/{role_code}")
 def api_set_company_account_role(
-    client_id: int, role_code: str, req: CompanyAccountRoleRequest,
+    client_id: str, role_code: str, req: CompanyAccountRoleRequest,
     user: dict = Depends(auth.require_level(4)),
 ):
     try:
@@ -5105,7 +5762,7 @@ def api_set_company_account_role(
 
 @app.get("/api/client/{client_id}/journal-entries")
 def api_list_journal_entries(
-    client_id: int,
+    client_id: str,
     status: Optional[str] = None,
     limit: Optional[int] = None,
     user: dict = Depends(auth.require_level(3)),
@@ -5119,7 +5776,7 @@ def api_list_journal_entries(
 
 @app.post("/api/client/{client_id}/journal-entries")
 def api_create_native_journal_entry(
-    client_id: int, req: NativeJournalEntryRequest,
+    client_id: str, req: NativeJournalEntryRequest,
     user: dict = Depends(auth.require_level(3)),
 ):
     try:
@@ -5143,7 +5800,7 @@ def api_create_native_journal_entry(
 
 @app.post("/api/client/{client_id}/journal-entries/{journal_entry_id}/post")
 def api_post_native_journal_entry(
-    client_id: int, journal_entry_id: int,
+    client_id: str, journal_entry_id: str,
     user: dict = Depends(auth.require_level(3)),
 ):
     try:
@@ -5156,7 +5813,7 @@ def api_post_native_journal_entry(
 
 @app.get("/api/client/{client_id}/general-ledger")
 def api_general_ledger_core(
-    client_id: int,
+    client_id: str,
     tanggal_mulai: Optional[str] = None,
     tanggal_akhir: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),
@@ -5165,19 +5822,40 @@ def api_general_ledger_core(
 
 
 class UserClientAccessRequest(BaseModel):
-    user_id: int
+    user_id: str
     active: bool = True
     access_role: Optional[str] = None
 
 
-@app.post("/api/client/{client_id}/access")
-def api_set_client_access(
-    client_id: int, req: UserClientAccessRequest,
+@app.get("/api/client/{client_id}/access")
+def api_daftar_client_access(
+    client_id: str,
     user: dict = Depends(auth.require_roles(["tahap_5"])),
 ):
+    """[BARU] Siapa saja yang punya akses ke client ini & access_role
+    (org_owner..viewer, lihat RBAC.md) apa -- simetris dengan POST di bawah."""
+    akses = dbc.daftar_akses_client(client_id)
+    for a in akses:
+        a["access_role_label"] = auth.client_role_label(a.get("access_role"))
+    return {"client_id": client_id, "akses": akses}
+
+
+@app.post("/api/client/{client_id}/access")
+def api_set_client_access(
+    client_id: str, req: UserClientAccessRequest,
+    user: dict = Depends(auth.require_roles(["tahap_5"])),
+):
+    if req.access_role is not None and req.access_role not in auth.CLIENT_ROLE_CODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"access_role tidak dikenal. Pilihan valid: {', '.join(auth.CLIENT_ROLE_CODES)}",
+        )
     if not dbc.set_user_client_access(req.user_id, client_id, active=req.active, access_role=req.access_role):
         raise HTTPException(status_code=500, detail="Gagal memperbarui akses user-client.")
-    return {"berhasil": True, "client_id": client_id, "user_id": req.user_id, "active": req.active}
+    return {
+        "berhasil": True, "client_id": client_id, "user_id": req.user_id,
+        "active": req.active, "access_role": req.access_role,
+    }
 
 
 # ============================================================
@@ -5186,7 +5864,7 @@ def api_set_client_access(
 
 @app.get("/api/client/{client_id}/jurnal-posting")
 def api_daftar_jurnal_posting(
-    client_id: int,
+    client_id: str,
     status: Optional[str] = "draft",
     # [FIX -- baris hilang setelah import besar] Sebelumnya endpoint ini
     # TIDAK meneruskan parameter limit sama sekali ke dbc.daftar_jurnal_posting(),
@@ -5231,7 +5909,7 @@ class KonfirmasiPostingRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/jurnal-posting/{posting_id}/konfirmasi")
 def api_konfirmasi_posting(
-    client_id: int, posting_id: int, req: KonfirmasiPostingRequest,
+    client_id: str, posting_id: int, req: KonfirmasiPostingRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5282,7 +5960,7 @@ class TolakPostingRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/jurnal-posting/{posting_id}/tolak")
 def api_tolak_posting(
-    client_id: int, posting_id: int, req: TolakPostingRequest,
+    client_id: str, posting_id: int, req: TolakPostingRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """Tolak satu baris jurnal (mis. duplikat/salah deteksi) -- tidak akan masuk laporan keuangan."""
@@ -5354,7 +6032,7 @@ class UpdateJurnalPostingRequest(BaseModel):
 
 @app.patch("/api/client/{client_id}/jurnal-posting/{posting_id}")
 def api_update_jurnal_posting(
-    client_id: int, posting_id: int, req: UpdateJurnalPostingRequest,
+    client_id: str, posting_id: int, req: UpdateJurnalPostingRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5422,7 +6100,7 @@ class BuatJurnalManualRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/jurnal-posting/manual")
 def api_buat_jurnal_manual(
-    client_id: int, req: BuatJurnalManualRequest,
+    client_id: str, req: BuatJurnalManualRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5471,7 +6149,7 @@ class PostingMassalByIdsRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/jurnal-posting/posting-massal-by-ids")
 def api_posting_massal_by_ids(
-    client_id: int, req: PostingMassalByIdsRequest,
+    client_id: str, req: PostingMassalByIdsRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5497,6 +6175,22 @@ def api_posting_massal_by_ids(
 
 
 # ============================================================
+# [DIPINDAH] MODUL BANK & CASH -- kini di modules/finance/bank_cash_v1.py
+# (lihat modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_bank_cash_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL OTHER (JURNAL LAIN-LAIN) -- kini di
+# modules/finance/other_v1.py (lihat modules/finance/__init__.py).
+# Router didaftarkan lewat app.include_router(finance_other_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
 # [BARU] 5 LAPORAN KEUANGAN STANDAR
 # ============================================================
 
@@ -5511,7 +6205,7 @@ class GenerateLaporanKeuanganRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/laporan-keuangan/generate")
 def api_generate_laporan_keuangan(
-    client_id: int, req: GenerateLaporanKeuanganRequest,
+    client_id: str, req: GenerateLaporanKeuanganRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5552,7 +6246,7 @@ def api_generate_laporan_keuangan(
 
 @app.get("/api/client/{client_id}/laporan-keuangan")
 def api_ambil_laporan_keuangan(
-    client_id: int, periode: Optional[str] = None,
+    client_id: str, periode: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5575,7 +6269,7 @@ def api_ambil_laporan_keuangan(
 
 @app.get("/api/client/{client_id}/laporan-keuangan/{periode}/lampiran-spt")
 def api_lampiran_spt(
-    client_id: int,
+    client_id: str,
     periode: str,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -5625,7 +6319,7 @@ class GeneratePPhBadanRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/pph-badan/generate")
 def api_generate_pph_badan(
-    client_id: int,
+    client_id: str,
     req: GeneratePPhBadanRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -5747,7 +6441,7 @@ def api_generate_pph_badan(
 
 @app.get("/api/client/{client_id}/pph-badan/riwayat")
 def api_riwayat_pph_badan(
-    client_id: int,
+    client_id: str,
     tahun_pajak: Optional[int] = None,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -5766,7 +6460,7 @@ def api_riwayat_pph_badan(
 
 @app.get("/api/client/{client_id}/pph-badan/export/{analisis_id}")
 def api_export_pph_badan_excel(
-    client_id: int,
+    client_id: str,
     analisis_id: int,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -5899,7 +6593,7 @@ class CalkProfilRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/calk/profil")
 def api_simpan_calk_profil(
-    client_id: int, req: CalkProfilRequest,
+    client_id: str, req: CalkProfilRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -5926,7 +6620,7 @@ def api_simpan_calk_profil(
 
 @app.get("/api/client/{client_id}/calk/profil")
 def api_ambil_calk_profil(
-    client_id: int, user: dict = Depends(auth.require_level(3)),
+    client_id: str, user: dict = Depends(auth.require_level(3)),
 ):
     """Ambil profil CALK TERBARU client ini. Balik dict kosong (BUKAN
     404) kalau belum pernah diisi -- supaya frontend bisa langsung
@@ -5938,7 +6632,7 @@ def api_ambil_calk_profil(
 
 
 def _ambil_atau_generate_laporan_keuangan(
-    client_id: int, periode: str,
+    client_id: str, periode: str,
     tanggal_mulai: Optional[str], tanggal_akhir: Optional[str],
     user: dict,
 ) -> Dict[str, Any]:
@@ -5984,7 +6678,7 @@ def _ambil_atau_generate_laporan_keuangan(
 
 
 def _ambil_aset_tetap_untuk_calk(
-    client_id: int, tanggal_lalu: date, tanggal_now: date,
+    client_id: str, tanggal_lalu: date, tanggal_now: date,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     [FASE 5] Ambil upload Aset Tetap TERBARU client ini (tabel `hasil`,
@@ -6068,7 +6762,7 @@ class CalkGenerateRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/calk/generate")
 def api_generate_calk(
-    client_id: int, req: CalkGenerateRequest,
+    client_id: str, req: CalkGenerateRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """
@@ -6228,7 +6922,7 @@ def api_generate_calk(
 
 @app.get("/api/client/{client_id}/calk/riwayat")
 def api_riwayat_calk(
-    client_id: int, user: dict = Depends(auth.require_level(3)),
+    client_id: str, user: dict = Depends(auth.require_level(3)),
 ):
     """[FASE 5 poin 15] Riwayat semua CALK yang pernah digenerate client
     ini, terbaru dulu -- pola sama dgn GET .../pph-badan/riwayat."""
@@ -6237,7 +6931,7 @@ def api_riwayat_calk(
 
 @app.get("/api/client/{client_id}/calk/{calk_id}/download")
 def api_download_calk(
-    client_id: int, calk_id: int, format: str = "pdf",
+    client_id: str, calk_id: int, format: str = "pdf",
     user: dict = Depends(auth.get_current_user),
 ):
     """
@@ -6284,7 +6978,7 @@ class GenerateLaporanBulananRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/laporan-bulanan/generate")
 def api_generate_laporan_bulanan(
-    client_id: int,
+    client_id: str,
     req: GenerateLaporanBulananRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -6353,7 +7047,7 @@ def api_generate_laporan_bulanan(
 
 @app.get("/api/client/{client_id}/riwayat-saldo")
 def api_ambil_riwayat_saldo(
-    client_id: int,
+    client_id: str,
     tahun: int,
     no_akun: Optional[str] = None,
     kategori: Optional[str] = None,
@@ -6372,7 +7066,7 @@ def api_ambil_riwayat_saldo(
 
 @app.get("/api/client/{client_id}/riwayat-saldo/tren")
 def api_ambil_tren_saldo(
-    client_id: int,
+    client_id: str,
     tahun: int,
     pola_no_akun: Optional[str] = None,
     kategori: Optional[str] = None,
@@ -6389,7 +7083,7 @@ def api_ambil_tren_saldo(
 
 @app.get("/api/client/{client_id}/riwayat-saldo/ringkasan")
 def api_ringkasan_riwayat_saldo(
-    client_id: int,
+    client_id: str,
     tahun: int,
     user: dict = Depends(auth.get_current_user),
 ):
@@ -6414,7 +7108,7 @@ def api_ringkasan_riwayat_saldo(
 
 @app.get("/api/client/{client_id}/laporan-bulanan/{tahun}")
 def api_ambil_laporan_bulanan(
-    client_id: int,
+    client_id: str,
     tahun: int,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -6434,7 +7128,7 @@ def api_ambil_laporan_bulanan(
 
 @app.get("/api/client/{client_id}/jadwal-penyusutan/export")
 def api_export_jadwal_penyusutan(
-    client_id: int,
+    client_id: str,
     tahun: int,
     metode: str = "komersial",  # "komersial" atau "fiskal"
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -6535,7 +7229,7 @@ class Export18SheetRequest(BaseModel):
 
 
 def _bangun_export_18_sheet(
-    client_id: int, req: "Export18SheetRequest", user: dict,
+    client_id: str, req: "Export18SheetRequest", user: dict,
     on_progress: Optional[Callable[..., None]] = None,
 ) -> bytes:
     """
@@ -6603,7 +7297,7 @@ def _bangun_export_18_sheet(
     return isi_excel
 
 
-def _bangun_preview_18_sheet_json(client_id: int, req: "Export18SheetRequest", user: dict) -> dict:
+def _bangun_preview_18_sheet_json(client_id: str, req: "Export18SheetRequest", user: dict) -> dict:
     """
     [BARU] Versi JSON dari _bangun_export_18_sheet() -- dipakai endpoint
     GET .../export-18-sheet-json supaya ke-18 sheet bisa ditampilkan
@@ -6651,7 +7345,7 @@ def _lengkapi_narasi_ai_export_18_sheet(
     asumsi: Dict[str, Any],
     neraca: Dict[str, Any],
     laba_rugi: Dict[str, Any],
-    client_id: int,
+    client_id: str,
 ) -> Dict[str, Any]:
     """
     [BARU] Lengkapi data export 18-sheet dengan narasi hasil Claude API:
@@ -6710,7 +7404,7 @@ def _lengkapi_narasi_ai_export_18_sheet(
 
 
 def _susun_data_export_18_sheet(
-    client_id: int, req: "Export18SheetRequest", user: dict,
+    client_id: str, req: "Export18SheetRequest", user: dict,
     on_progress: Optional[Callable[..., None]] = None,
 ) -> dict:
     """
@@ -6980,7 +7674,7 @@ def _susun_data_export_18_sheet(
 
 @app.post("/api/client/{client_id}/export-18-sheet")
 def api_export_18_sheet(
-    client_id: int,
+    client_id: str,
     req: Export18SheetRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -6996,7 +7690,7 @@ def api_export_18_sheet(
 
 @app.post("/api/client/{client_id}/export-18-sheet-json")
 def api_export_18_sheet_json(
-    client_id: int,
+    client_id: str,
     req: Export18SheetRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama seperti versi Excel
 ):

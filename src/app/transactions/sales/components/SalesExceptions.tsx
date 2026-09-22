@@ -25,18 +25,7 @@ interface ExceptionItem {
   priority: Priority;
 }
 
-const EXCEPTIONS: ExceptionItem[] = [
-  { id: 'INV-2024-0185', date: '14 Nov 2024', customer: 'PT Maju Bersama', type: 'Tax status unclear', aiConf: 32, assignedTo: 'Dewi Lestari', status: 'Open', priority: 'High' },
-  { id: 'INV-2024-0181', date: '14 Nov 2024', customer: 'PT Solusi Digital', type: 'Duplicate invoice', aiConf: 28, assignedTo: 'Budi Santoso', status: 'In Review', priority: 'High' },
-  { id: 'INV-2024-0176', date: '13 Nov 2024', customer: 'PT Nusantara Teknologi', type: 'Customer not mapped', aiConf: 45, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0172', date: '12 Nov 2024', customer: 'CV Kreatif Indonesia', type: 'Amount mismatch', aiConf: 38, assignedTo: 'Sari Dewi', status: 'In Review', priority: 'High' },
-  { id: 'INV-2024-0170', date: '12 Nov 2024', customer: 'PT Global Solusi', type: 'Missing due date', aiConf: 52, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0168', date: '11 Nov 2024', customer: 'PT Anugerah Jaya', type: 'Unbalanced journal', aiConf: 68, assignedTo: 'Rizky Pratama', status: 'Open', priority: 'Low' },
-  { id: 'INV-2024-0165', date: '10 Nov 2024', customer: 'PT Solusi Digital', type: 'Tax status unclear', aiConf: 56, assignedTo: null, status: 'In Review', priority: 'Medium' },
-  { id: 'INV-2024-0162', date: '09 Nov 2024', customer: 'PT Maju Bersama', type: 'Customer not mapped', aiConf: 72, assignedTo: 'Maya Putri', status: 'Resolved', priority: 'Low' },
-  { id: 'INV-2024-0159', date: '08 Nov 2024', customer: 'CV Kreatif Indonesia', type: 'Duplicate invoice', aiConf: 49, assignedTo: null, status: 'Open', priority: 'Medium' },
-  { id: 'INV-2024-0156', date: '07 Nov 2024', customer: 'PT Nusantara Teknologi', type: 'Amount mismatch', aiConf: 65, assignedTo: 'Dewi Lestari', status: 'Resolved', priority: 'Low' },
-];
+const EXCEPTIONS: ExceptionItem[] = [];
 
 const EXCEPTION_TYPES = Array.from(new Set(EXCEPTIONS.map(e => e.type)));
 const CUSTOMERS = Array.from(new Set(EXCEPTIONS.map(e => e.customer)));
@@ -81,9 +70,9 @@ export default function SalesExceptions() {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Selection / detail
-  const [selectedId, setSelectedId] = useState<string | null>(EXCEPTIONS[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(EXCEPTIONS[0]?.id ?? null);
   const [drawerTab, setDrawerTab] = useState('source');
-  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set([EXCEPTIONS[0].id]));
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set(EXCEPTIONS[0] ? [EXCEPTIONS[0].id] : []));
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Edit form (drawer)
@@ -205,11 +194,11 @@ export default function SalesExceptions() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {[
-          { label: 'Total Exceptions', value: String(exceptions.length), change: 26.3, icon: 'ExclamationTriangleIcon', iconColor: 'text-amber-600', iconBg: 'bg-amber-50' },
-          { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length), change: 50.0, icon: 'ExclamationCircleIcon', iconColor: 'text-red-600', iconBg: 'bg-red-50' },
-          { label: 'Missing Tax Info', value: String(exceptions.filter(e => e.type === 'Tax status unclear').length), change: -12.5, icon: 'DocumentTextIcon', iconColor: 'text-orange-600', iconBg: 'bg-orange-50' },
-          { label: 'Low Confidence', value: String(exceptions.filter(e => e.aiConf < 40).length), change: 20.0, icon: 'CpuChipIcon', iconColor: 'text-purple-600', iconBg: 'bg-purple-50' },
-          { label: 'Duplicate Invoice', value: String(exceptions.filter(e => e.type === 'Duplicate invoice').length), change: -28.6, icon: 'DocumentDuplicateIcon', iconColor: 'text-blue-600', iconBg: 'bg-blue-50' },
+          { label: 'Total Exceptions', value: String(exceptions.length), change: 0, icon: 'ExclamationTriangleIcon', iconColor: 'text-amber-600', iconBg: 'bg-amber-50' },
+          { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length), change: 0, icon: 'ExclamationCircleIcon', iconColor: 'text-red-600', iconBg: 'bg-red-50' },
+          { label: 'Missing Tax Info', value: String(exceptions.filter(e => e.type === 'Tax status unclear').length), change: 0, icon: 'DocumentTextIcon', iconColor: 'text-orange-600', iconBg: 'bg-orange-50' },
+          { label: 'Low Confidence', value: String(exceptions.filter(e => e.aiConf < 40).length), change: 0, icon: 'CpuChipIcon', iconColor: 'text-purple-600', iconBg: 'bg-purple-50' },
+          { label: 'Duplicate Invoice', value: String(exceptions.filter(e => e.type === 'Duplicate invoice').length), change: 0, icon: 'DocumentDuplicateIcon', iconColor: 'text-blue-600', iconBg: 'bg-blue-50' },
         ].map(k => (
           <KpiCard
             key={k.label}
@@ -443,8 +432,8 @@ export default function SalesExceptions() {
                   ['Tanggal', selected.date],
                   ['Customer', selected.customer],
                   ['Transaction ID', selected.id],
-                  ['No. Invoice (Source)', 'SI-001238'],
-                  ['Amount', formatIDR(620000000)],
+                  ['No. Invoice (Source)', '—'],
+                  ['Amount', formatIDR(0)],
                   ['AI Confidence', <span key="c" className={`font-bold ${selected.aiConf < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.aiConf}%</span>],
                   ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status]}`}>{t(selected.status)}</span>],
                 ].map(([k, v]) => (
@@ -503,11 +492,11 @@ export default function SalesExceptions() {
                       <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('Lihat File Asli ↗')}</button>
                     </div>
                     <div className="bg-muted/40 rounded-lg p-3 font-mono text-[11px] text-foreground space-y-0.5">
-                      <p>{t('Invoice No')} : SI-001238</p>
-                      <p>{t('Date')}       : 14/11/2024</p>
-                      <p>{t('Customer')}   : PT Maju Bersama</p>
-                      <p>{t('Amount')}     : Rp 620.000.000</p>
-                      <p>{t('Notes')}      : {t('Penjualan software')}</p>
+                      <p>{t('Invoice No')} : —</p>
+                      <p>{t('Date')}       : —</p>
+                      <p>{t('Customer')}   : —</p>
+                      <p>{t('Amount')}     : —</p>
+                      <p>{t('Notes')}      : —</p>
                     </div>
                   </div>
                 )}

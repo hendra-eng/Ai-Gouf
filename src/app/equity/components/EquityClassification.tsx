@@ -4,42 +4,11 @@ import Icon from '@/components/ui/AppIcon';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import type { EquityTreeItem } from '../lib/equityBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_TREE: EquityTreeItem[] = [
-  {
-    id: 'share-capital',
-    label: 'Share Capital',
-    amount: 3_000_000_000,
-    pct: 63.8,
-    children: [
-      { id: 'paid-in', label: 'Paid-in Capital', amount: 2_500_000_000, pct: 53.2 },
-      { id: 'additional', label: 'Additional Paid-in Capital', amount: 500_000_000, pct: 10.6 },
-    ],
-  },
-  {
-    id: 'retained-earnings',
-    label: 'Retained Earnings',
-    amount: 2_040_000_000,
-    pct: 43.4,
-    children: [
-      { id: 'prior-retained', label: 'Prior Year Retained Earnings', amount: 1_080_000_000, pct: 23.0 },
-      { id: 'current-profit', label: 'Current Year Profit', amount: 1_840_000_000, pct: 39.1 },
-      { id: 'dividends', label: 'Dividends Paid', amount: -880_000_000, pct: -18.7 },
-    ],
-  },
-  {
-    id: 'other-equity',
-    label: 'Other Equity',
-    amount: 460_000_000,
-    pct: 9.8,
-    children: [
-      { id: 'oci', label: 'Other Comprehensive Income', amount: 280_000_000, pct: 6.0 },
-      { id: 'reval', label: 'Revaluation Reserve', amount: 180_000_000, pct: 3.8 },
-    ],
-  },
-];
-const SAMPLE_TOTAL = 4_700_000_000;
-const SAMPLE_GROWTH = 9.6;
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap kosong/0.
+const SAMPLE_TREE: EquityTreeItem[] = [];
+const SAMPLE_TOTAL = 0;
+const SAMPLE_GROWTH = 0;
 
 function EquityTreeRow({ item, depth = 0 }: { item: EquityTreeItem; depth?: number }) {
   const { fx } = useCurrency();

@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useActiveClient } from '@/lib/activeClient';
 
 type SeriesKey = 'revenue' | 'expenses' | 'netProfit';
 
@@ -13,32 +14,11 @@ const SERIES_COLOR_VAR: Record<SeriesKey, string> = {
 };
 
 // Backend integration point: replace with /api/financial/revenue-trend?period=&company=
-const monthlyData = [
-  { month: 'Jan', revenue: 920, expenses: 748, grossProfit: 408, netProfit: 172, margin: 18.7 },
-  { month: 'Feb', expenses: 772, revenue: 985, grossProfit: 435, netProfit: 213, margin: 21.6 },
-  { month: 'Mar', revenue: 1042, expenses: 818, grossProfit: 462, netProfit: 224, margin: 21.5 },
-  { month: 'Apr', revenue: 1108, expenses: 862, grossProfit: 492, netProfit: 246, margin: 22.2 },
-  { month: 'May', revenue: 1075, expenses: 884, grossProfit: 476, netProfit: 191, margin: 17.8 },
-  { month: 'Jun', revenue: 1154, expenses: 908, grossProfit: 514, netProfit: 246, margin: 21.3 },
-  { month: 'Jul', revenue: 1198, expenses: 924, grossProfit: 534, netProfit: 274, margin: 22.9 },
-  { month: 'Aug', revenue: 1242, expenses: 948, grossProfit: 552, netProfit: 294, margin: 23.7 },
-];
+const monthlyData: { month: string; revenue: number; expenses: number; grossProfit: number; netProfit: number; margin: number }[] = [];
 
-const quarterlyData = [
-  { month: 'Q1 2025', revenue: 2640, expenses: 2148, grossProfit: 1168, netProfit: 492, margin: 18.6 },
-  { month: 'Q2 2025', revenue: 2820, expenses: 2284, grossProfit: 1248, netProfit: 536, margin: 19.0 },
-  { month: 'Q3 2025', revenue: 3050, expenses: 2440, grossProfit: 1352, netProfit: 610, margin: 20.0 },
-  { month: 'Q4 2025', revenue: 3280, expenses: 2596, grossProfit: 1452, netProfit: 684, margin: 20.9 },
-  { month: 'Q1 2026', revenue: 2947, expenses: 2338, grossProfit: 1305, netProfit: 609, margin: 20.7 },
-  { month: 'Q2 2026', revenue: 3337, expenses: 2654, grossProfit: 1482, netProfit: 683, margin: 20.5 },
-];
+const quarterlyData: typeof monthlyData = [];
 
-const yearlyData = [
-  { month: '2022', revenue: 5840, expenses: 4880, grossProfit: 2580, netProfit: 960, margin: 16.4 },
-  { month: '2023', revenue: 7240, expenses: 5920, grossProfit: 3200, netProfit: 1320, margin: 18.2 },
-  { month: '2024', revenue: 9180, expenses: 7380, grossProfit: 4060, netProfit: 1800, margin: 19.6 },
-  { month: '2025', revenue: 11790, expenses: 9468, grossProfit: 5220, netProfit: 2322, margin: 19.7 },
-];
+const yearlyData: typeof monthlyData = [];
 
 const periods = ['6M', 'YTD', '12M', '3Y'];
 
@@ -101,6 +81,7 @@ const SPRING_DURATION_MS = 420;
 const easeOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 export default function RevenueExpenseChartInner() {
+  const { activeClientName } = useActiveClient();
   const [activePeriod, setActivePeriod] = useState('YTD');
   const { currency } = useCurrency();
   const { t } = useLanguage();
@@ -270,7 +251,7 @@ export default function RevenueExpenseChartInner() {
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <h2 className="text-base font-bold text-foreground">{t('Revenue vs Expenses vs Net Profit')}</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">PT Nusantara Teknologi Indonesia · Jan–Aug 2026</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{activeClientName ?? t('No client selected')}</p>
         </div>
         <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border flex-shrink-0">
           {periods.map((p) => (

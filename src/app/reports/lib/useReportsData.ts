@@ -1,10 +1,10 @@
 'use client';
 
-// [BARU] Sambungkan halaman Reports ke data ASLI client aktif -- pola SAMA
+// [DIUBAH] Sambungkan halaman Reports ke data ASLI client aktif -- pola SAMA
 // dengan halaman lain yang sudah tersambung (lihat src/lib/neracaBridge.ts /
 // src/app/documents/lib/useDocumentsData.ts).
 //
-// SUMBER BACKEND (3 sumber digabung jadi 1 daftar Report[]):
+// SUMBER BACKEND (4 sumber digabung jadi 1 daftar Report[]):
 //   1. GET /api/client/{id}/laporan-keuangan -> tiap snapshot = 1 kali
 //      generate 5 Laporan Keuangan Standar sekaligus (Neraca, Laba Rugi,
 //      Perubahan Ekuitas, Arus Kas, CALK ringkas). category='financial-statements'.
@@ -12,25 +12,30 @@
 //      (docx+pdf, 15+ note). category='financial-statements'.
 //   3. GET /api/client/{id}/pph-badan/riwayat -> perhitungan PPh Badan
 //      Pasal 31E. category='tax'.
+//   4. [BARU] GET /api/client/{id}/reports-registry (tabel
+//      "7_Management"."Management_Reports_report_registry", lihat
+//      src/app/reports/lib/reportsDbBridge.ts) -> laporan APAPUN
+//      kategorinya yang dicatat manual/proses lain. Ini yang mengisi
+//      kategori 'management'/'ar-ap'/'budget'/'audit'/'custom' yang
+//      sebelumnya SAMA SEKALI tidak punya sumber backend.
 //
 // KETERBATASAN (jujur, bukan tebakan pasti benar):
-//  - Kategori 'management', 'ar-ap', 'budget', 'audit', 'custom' BELUM
-//    punya sumber backend sama sekali (tidak ada endpoint generate/riwayat
-//    utk itu) -- report contoh (reportsMockData.tsx) dipertahankan APA
-//    ADANYA untuk kategori2 itu, digabung dgn data real yg sudah ada.
-//  - 'size' (ukuran file) tidak pernah dihitung backend -> selalu '-'.
-//  - `status` selalu 'ready' utk data real (histori hanya menyimpan hasil
-//    yang SUDAH selesai digenerate; tidak ada rekaman 'generating'/
-//    'scheduled'/'error' di backend).
+//  - Kategori yang MASIH belum ada baris real sama sekali (baik dari 3
+//    sumber otomatis maupun dari report_registry) tetap fallback ke data
+//    contoh utk kategori itu saja, supaya UI tidak mendadak kosong.
+//  - 'size' (ukuran file) dari 3 sumber otomatis tidak pernah dihitung
+//    backend -> selalu '-' (khusus baris dari report_registry, 'size'
+//    ikut apa yang diisi manual di kolom file_size).
+//  - `status` dari 3 sumber otomatis selalu 'ready' (histori hanya
+//    menyimpan hasil yang SUDAH selesai digenerate; tidak ada rekaman
+//    'generating'/'scheduled'/'error' di backend). Baris dari
+//    report_registry ikut kolom `status` aslinya.
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanKeuangan, riwayatCalk, riwayatPphBadan } from '@/app/agent-ai/lib/api';
-import { reports as sampleReports, type Report } from '@/lib/reportsMockData';
-
-// Kategori2 yang di data contoh TIDAK punya sumber backend sama sekali --
-// baris contohnya dipertahankan apa adanya (lihat catatan keterbatasan di atas).
-const KATEGORI_TANPA_BACKEND = new Set(['management', 'ar-ap', 'budget', 'audit', 'custom']);
+import { useReportRegistry, useReportSchedule } from './reportsDbBridge';
+import { reports as sampleReports, scheduledReports as sampleScheduledReports, type Report, type ReportCategory, type ScheduledReport } from '@/lib/reportsMockData';
 
 function formatTanggal(iso: string | null | undefined): string {
   if (!iso) return '-';
@@ -98,15 +103,23 @@ export interface ReportsData {
   isSampleData: boolean;
   companyName: string | null;
   reports: Report[];
+  /** [BARU] Catat laporan baru ke report_registry (tombol "Create Report").
+   * Menyambung ke tabel report_registry saja -- 3 sumber otomatis
+   * (Laporan Keuangan/CALK/PPh Badan) tetap dihasilkan lewat alur
+   * generate masing-masing, bukan lewat sini. */
+  addReport: ReturnType<typeof useReportRegistry>['addReport'];
 }
 
 export function useReportsData(): ReportsData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [realReports, setRealReports] = useState<Report[] | null>(null);
   const requestIdRef = useRef(0);
+  const { reports: registryReports, loading: loadingRegistry, addReport } = useReportRegistry();
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!activeClientId) {
       setRealReports(null);
       setLoading(false);
@@ -137,18 +150,50 @@ export function useReportsData(): ReportsData {
         if (requestIdRef.current === requestId) setLoading(false);
       }
     })();
-  }, [activeClientId, activeClientName]);
+  }, [hydrated, activeClientId, activeClientName]);
 
-  const adaDataReal = !!realReports && realReports.length > 0;
-  // Kategori tanpa sumber backend tetap dipertahankan dari data contoh,
-  // supaya UI tidak mendadak kosong untuk kategori yang memang belum
-  // disambungkan -- lihat KATEGORI_TANPA_BACKEND di atas.
-  const contohUntukKategoriBelumAda = sampleReports.filter((r) => KATEGORI_TANPA_BACKEND.has(r.category));
+  // Gabung 3 sumber otomatis + report_registry (kategori apapun).
+  const semuaReal = [...(realReports || []), ...registryReports];
+  const adaDataReal = semuaReal.length > 0;
+
+  // Kategori yang MASIH belum ada baris real sama sekali (dari sumber
+  // manapun) tetap fallback ke data contoh utk kategori itu saja.
+  const kategoriReal = new Set(semuaReal.map((r) => r.category));
+  const contohUntukKategoriBelumAda = sampleReports.filter((r) => !kategoriReal.has(r.category));
 
   return {
-    loading,
+    loading: loading || loadingRegistry,
     isSampleData: !adaDataReal,
     companyName: activeClientName,
-    reports: adaDataReal ? [...(realReports as Report[]), ...contohUntukKategoriBelumAda] : sampleReports,
+    reports: adaDataReal ? [...semuaReal, ...contohUntukKategoriBelumAda] : sampleReports,
+    addReport,
+  };
+}
+
+export interface ReportScheduleViewData {
+  loading: boolean;
+  isSampleData: boolean;
+  scheduledReports: ScheduledReport[];
+  /** [BARU] Buat jadwal baru + simpan ke report_schedule. */
+  addSchedule: ReturnType<typeof useReportSchedule>['addSchedule'];
+  /** [BARU] Ubah status jadwal ("Pause"/"Resume") + simpan ke report_schedule. */
+  changeScheduleStatus: ReturnType<typeof useReportSchedule>['changeScheduleStatus'];
+}
+
+/** [DIUBAH] Jadwal laporan berkala (tab "Report Scheduler") dari tabel
+ * report_schedule. Menambah jadwal & ubah status sekarang beneran
+ * tersimpan ke Supabase (addSchedule/changeScheduleStatus) -- sebelumnya
+ * cuma state lokal browser (scheduledReports di reportsMockData.tsx),
+ * hilang tiap reload. Menghapus jadwal lewat UI MASIH lokal saja (belum
+ * ada endpoint DELETE report_schedule di backend) -- lihat
+ * ReportsPageClient.tsx. */
+export function useScheduledReportsData(): ReportScheduleViewData {
+  const { loading, isSampleData, scheduledReports, addSchedule, changeScheduleStatus } = useReportSchedule();
+  return {
+    loading,
+    isSampleData,
+    scheduledReports: isSampleData ? sampleScheduledReports : scheduledReports,
+    addSchedule,
+    changeScheduleStatus,
   };
 }

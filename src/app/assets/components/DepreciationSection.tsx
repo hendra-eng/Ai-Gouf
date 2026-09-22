@@ -12,31 +12,26 @@ import { useAssetRegisterData } from '../lib/assetRegisterBridge';
 const DEPR_SPRING_DURATION_MS = 420;
 const deprEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-// Data contoh -- HANYA dipakai kalau client aktif belum upload file "Aset Tetap".
+// [UBAH] Data contoh dikosongkan -- HANYA dipakai kalau client aktif belum
+// upload file "Aset Tetap". Semua nilai 0 / array kosong sampai ada data asli.
 const SAMPLE_MONTHLY_DEPRECIATION = [
-  { month: 'Jan', amount: 44.2 },
-  { month: 'Feb', amount: 44.2 },
-  { month: 'Mar', amount: 47.8 },
-  { month: 'Apr', amount: 47.8 },
-  { month: 'May', amount: 52.4 },
-  { month: 'Jun', amount: 52.4 },
-  { month: 'Jul', amount: 56.1 },
-  { month: 'Aug', amount: 56.1 },
+  { month: 'Jan', amount: 0 },
+  { month: 'Feb', amount: 0 },
+  { month: 'Mar', amount: 0 },
+  { month: 'Apr', amount: 0 },
+  { month: 'May', amount: 0 },
+  { month: 'Jun', amount: 0 },
+  { month: 'Jul', amount: 0 },
+  { month: 'Aug', amount: 0 },
 ];
 
-const SAMPLE_NEARLY_DEPRECIATED = [
-  { id: 'FA-2024-010', name: 'Printer Xerox C8000', nbv: 'Rp 9.6M', remaining: '8 months', pct: 88 },
-  { id: 'FA-2024-004', name: 'Laptop MacBook Pro M3', nbv: 'Rp 18.2M', remaining: '14 months', pct: 76 },
-  { id: 'FA-2024-005', name: 'Mesin Produksi CNC-X200', nbv: 'Rp 106M', remaining: '16 months', pct: 67 },
-  { id: 'FA-2024-012', name: 'CCTV System 48 kamera', nbv: 'Rp 39M', remaining: '22 months', pct: 60 },
-  { id: 'FA-2024-007', name: 'Honda CRV 2021', nbv: 'Rp 370M', remaining: '38 months', pct: 23 },
-];
+const SAMPLE_NEARLY_DEPRECIATED: { id: string; name: string; nbv: string; remaining: string; pct: number }[] = [];
 
 const SAMPLE_SUMMARY_STATS = [
-  { label: 'Depreciation This Period', value: 'Rp 56.1M', sub: 'Aug 2026' },
-  { label: 'Accumulated Depreciation', value: 'Rp 410M', sub: 'All fixed assets' },
-  { label: 'Remaining Book Value', value: 'Rp 1.85M', sub: 'Net book value' },
-  { label: 'Assets Near Full Depr.', value: '7 assets', sub: 'Within 24 months' },
+  { label: 'Depreciation This Period', value: 'Rp 0', sub: '' },
+  { label: 'Accumulated Depreciation', value: 'Rp 0', sub: 'All fixed assets' },
+  { label: 'Remaining Book Value', value: 'Rp 0', sub: 'Net book value' },
+  { label: 'Assets Near Full Depr.', value: '0 assets', sub: 'Within 24 months' },
 ];
 
 export default function DepreciationSection() {
@@ -239,7 +234,7 @@ export default function DepreciationSection() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="text-[14px] font-600 text-foreground">Depreciation Analysis</div>
-            <div className="text-[11px] text-muted-foreground">Monthly depreciation expense — Jan–Aug 2026</div>
+            <div className="text-[11px] text-muted-foreground">Monthly depreciation expense</div>
           </div>
         </div>
 

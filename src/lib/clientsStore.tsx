@@ -42,7 +42,7 @@ function notifyClientsChanged() {
 
 /** Bentuk baris client yang dikembalikan backend (lihat db_client.py::daftar_client). */
 interface BackendClient {
-  id: number;
+  id: string;
   nama: string;
   lokasi: string | null;
   tipe: string;

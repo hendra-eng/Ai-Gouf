@@ -10,20 +10,9 @@ const WF_SPRING_DURATION_MS = 420;
 const wfEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 const WF_AXIS_WIDTH = 52;
 
-// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat EquityContent.tsx
-// (useEquityData()) untuk sumber data ASLI client aktif. Versi ASLI cuma
-// punya 2 komponen (Net Profit + Other Equity Movements digabung) karena
-// trial_balance_bulanan tidak menyimpan jenis mutasi ekuitas per transaksi
-// (dividen/setoran modal/revaluasi/OCI) -- lihat komentar di useEquityData.ts.
-const mockWaterfallData: EquityWaterfallStep[] = [
-  { name: 'Beginning Equity', value: 4290, type: 'base' },
-  { name: 'Net Profit', value: 1840, type: 'positive' },
-  { name: 'Capital Injection', value: 0, type: 'neutral' },
-  { name: 'Dividends Paid', value: -880, type: 'negative' },
-  { name: 'Revaluation Gain', value: 50, type: 'positive' },
-  { name: 'OCI Adjustments', value: -600, type: 'negative' },
-  { name: 'Ending Equity', value: 4700, type: 'base' },
-];
+// [UBAH] Fallback kosong -- lihat EquityContent.tsx (useEquityData())
+// untuk sumber data ASLI client aktif.
+const mockWaterfallData: EquityWaterfallStep[] = [];
 
 const TYPE_COLOR: Record<EquityWaterfallStep['type'], string> = {
   base: '#2563eb',
@@ -292,7 +281,7 @@ export default function EquityMovementChart({ steps, periodLabel }: EquityMoveme
     <div className="fin-card p-5">
       <div className="mb-4">
         <div className="text-[14px] font-600 text-foreground">Equity Movement (Waterfall)</div>
-        <div className="text-[11px] text-muted-foreground">Beginning to ending equity{periodLabel ? ` — ${periodLabel}` : ' — Jan–Aug 2026'}</div>
+        <div className="text-[11px] text-muted-foreground">Beginning to ending equity{periodLabel ? ` — ${periodLabel}` : ''}</div>
       </div>
 
       <div className="relative">

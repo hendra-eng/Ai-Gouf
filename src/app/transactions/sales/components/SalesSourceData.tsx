@@ -28,22 +28,9 @@ const SOURCE_COLUMN_OPTIONS = [
   'Tax / VAT', 'PPN 11%', 'Grand Total', 'Nilai Akhir', 'Tidak Dipetakan',
 ];
 
-const SOURCE_FILES = [
-  { id: 1, uploadDate: '14 Des 2024, 10:32', file: 'Penjualan_Dec2024.xlsx', type: 'Excel', customer: 'PT Maju Bersama', period: 'Des 2024', rows: 248, statusEkstraksi: 'Berhasil', statusMapping: 'Berhasil', confidence: 98, processedBy: 'Andi Setiawan' },
-  { id: 2, uploadDate: '14 Des 2024, 09:17', file: 'Sales_Q4_2024.csv', type: 'CSV', customer: 'PT Solusi Digital', period: 'Okt – Des 2024', rows: 1234, statusEkstraksi: 'Berhasil', statusMapping: 'Berhasil', confidence: 96, processedBy: 'Siti Rahayu' },
-  { id: 3, uploadDate: '14 Des 2024, 16:45', file: 'Faktur_Penjualan_Nov.pdf', type: 'PDF', customer: 'PT Nusantara Teknologi', period: 'Nov 2024', rows: 87, statusEkstraksi: 'Diproses', statusMapping: 'Diproses', confidence: 92, processedBy: 'Budi Santoso' },
-  { id: 4, uploadDate: '13 Des 2024, 14:20', file: 'Sales_Store_JKT.txt', type: 'TXT', customer: 'CV Kreatif Indonesia', period: 'Des 2024', rows: 156, statusEkstraksi: 'Butuh Review', statusMapping: 'Butuh Review', confidence: 78, processedBy: 'Andi Setiawan' },
-  { id: 5, uploadDate: '12 Des 2024, 11:03', file: 'Penjualan_Nov2024.xlsx', type: 'Excel', customer: 'PT Global Solusi', period: 'Nov 2024', rows: 342, statusEkstraksi: 'Berhasil', statusMapping: 'Berhasil', confidence: 97, processedBy: 'Rina Marlina' },
-  { id: 6, uploadDate: '11 Des 2024, 15:28', file: 'Invoice_Customer.pdf', type: 'PDF', customer: 'PT Sejahtera Abadi', period: 'Okt 2024', rows: 45, statusEkstraksi: 'Gagal', statusMapping: '—', confidence: 0, processedBy: 'Budi Santoso' },
-];
+const SOURCE_FILES: any[] = [];
 
-const PREVIEW_ROWS = [
-  { no: 1, tanggal: '01/12/2024', invoice: 'INV-2024-001', customer: 'PT Maju Bersama', dpp: 10000000, ppn: 1100000, total: 11100000 },
-  { no: 2, tanggal: '01/12/2024', invoice: 'INV-2024-002', customer: 'PT Cipta Mandiri', dpp: 5000000, ppn: 550000, total: 5550000 },
-  { no: 3, tanggal: '02/12/2024', invoice: 'INV-2024-003', customer: 'PT Sinar Abadi', dpp: 12750000, ppn: 1402500, total: 14152500 },
-  { no: 4, tanggal: '02/12/2024', invoice: 'INV-2024-004', customer: 'PT Karya Utama', dpp: 8200000, ppn: 902000, total: 9102000 },
-  { no: 5, tanggal: '03/12/2024', invoice: 'INV-2024-005', customer: 'PT Maju Bersama', dpp: 15000000, ppn: 1650000, total: 16650000 },
-];
+const PREVIEW_ROWS: any[] = [];
 
 const statusBadge = (s: string) => {
   const map: Record<string, string> = {
@@ -120,8 +107,8 @@ export default function SalesSourceData() {
   };
 
   // ── Template Excel: bikin file .xlsx kosong dengan kolom yang sistem
-  // harapkan (sama seperti kolom di "File Preview" di bawah), lengkap
-  // dengan 1 baris contoh, supaya user tinggal isi & upload balik. ──
+  // harapkan (sama seperti kolom di "File Preview" di bawah), berisi header
+  // saja supaya user tinggal isi & upload balik. ──
   const handleDownloadTemplate = async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Template Penjualan');
@@ -134,7 +121,6 @@ export default function SalesSourceData() {
       { header: 'Total (IDR)', key: 'total', width: 16 },
     ];
     sheet.getRow(1).font = { bold: true };
-    sheet.addRow({ tanggal: '01/12/2024', invoice: 'INV-2024-001', customer: 'PT Contoh Sejahtera', dpp: 10000000, ppn: 1100000, total: 11100000 });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     downloadBlob(blob, 'Template_Data_Penjualan.xlsx');
@@ -203,32 +189,32 @@ export default function SalesSourceData() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard
           title={t('Total File Upload')}
-          value="24"
-          change={t('+33,3% vs periode sebelumnya')}
+          value="0"
+          change={t('0% vs periode sebelumnya')}
           icon="ArrowUpTrayIcon"
           iconColor="text-blue-600"
           iconBg="bg-blue-50"
         />
         <KpiCard
           title={t('Menunggu Diproses')}
-          value="6"
-          change={t('+20,0% vs periode sebelumnya')}
+          value="0"
+          change={t('0% vs periode sebelumnya')}
           icon="ClockIcon"
           iconColor="text-amber-600"
           iconBg="bg-amber-50"
         />
         <KpiCard
           title={t('Berhasil Diproses')}
-          value="15"
-          change={t('+50,0% vs periode sebelumnya')}
+          value="0"
+          change={t('0% vs periode sebelumnya')}
           icon="CheckCircleIcon"
           iconColor="text-emerald-600"
           iconBg="bg-emerald-50"
         />
         <KpiCard
           title={t('Butuh Review')}
-          value="3"
-          change={t('+200,0% vs periode sebelumnya')}
+          value="0"
+          change={t('0% vs periode sebelumnya')}
           icon="ExclamationTriangleIcon"
           iconColor="text-red-600"
           iconBg="bg-red-50"
@@ -274,7 +260,7 @@ export default function SalesSourceData() {
                 <tr
                   key={f.id}
                   onClick={() => setSelectedFile(f)}
-                  className={`border-b border-border/50 cursor-pointer transition-colors ${selectedFile.id === f.id ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                  className={`border-b border-border/50 cursor-pointer transition-colors ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
                 >
                   <td className="py-2.5 px-3 text-xs text-muted-foreground">{f.id}</td>
                   <td className="py-2.5 px-3 text-xs text-foreground whitespace-nowrap">{f.uploadDate}</td>
@@ -328,8 +314,8 @@ export default function SalesSourceData() {
           <div className="flex items-center gap-2 mb-3 p-2 bg-emerald-50 rounded-lg">
             <div className="w-8 h-8 bg-emerald-100 rounded flex items-center justify-center text-[10px] font-bold text-emerald-700">XLS</div>
             <div>
-              <p className="text-xs font-semibold text-foreground">{selectedFile.file}</p>
-              <p className="text-[11px] text-muted-foreground">{selectedFile.rows} {t('baris')} · {t('Diunggah')} {selectedFile.uploadDate}</p>
+              <p className="text-xs font-semibold text-foreground">{selectedFile?.file ?? t('Belum ada file')}</p>
+              <p className="text-[11px] text-muted-foreground">{selectedFile ? `${selectedFile.rows} ${t('baris')} · ${t('Diunggah')} ${selectedFile.uploadDate}` : t('Belum ada data yang diunggah.')}</p>
             </div>
           </div>
           <div className="flex gap-2 mb-3">
@@ -373,13 +359,13 @@ export default function SalesSourceData() {
           <p className="text-xs text-muted-foreground mb-3">{t('Hasil ekstraksi data menggunakan AI dari file sumber.')}</p>
           <div className="space-y-2 text-xs">
             {[
-              ['Total Baris Terdeteksi', '248'],
-              ['Baris Valid', '245 (98,8%)'],
-              ['Baris Tidak Valid', '3 (1,2%)'],
-              ['Duplikat Potensial', '2'],
-              ['Nilai Transaksi (DPP)', 'Rp 2.847.500.000'],
-              ['Nilai PPN', 'Rp 313.225.000'],
-              ['Nilai Total', 'Rp 3.160.725.000'],
+              ['Total Baris Terdeteksi', '0'],
+              ['Baris Valid', '0 (0%)'],
+              ['Baris Tidak Valid', '0 (0%)'],
+              ['Duplikat Potensial', '0'],
+              ['Nilai Transaksi (DPP)', 'Rp 0'],
+              ['Nilai PPN', 'Rp 0'],
+              ['Nilai Total', 'Rp 0'],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between">
                 <span className="text-muted-foreground">{t(k)}</span>
@@ -388,7 +374,7 @@ export default function SalesSourceData() {
             ))}
           </div>
           <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-[11px] text-muted-foreground">ℹ {t('Ekstraksi selesai dalam 12 detik · Menggunakan model Gouf AI v2.1')}</p>
+            <p className="text-[11px] text-muted-foreground">ℹ {t('Belum ada file sumber yang diekstraksi')}</p>
           </div>
         </div>
 
@@ -400,12 +386,12 @@ export default function SalesSourceData() {
           </div>
           <div className="space-y-2 text-xs">
             {[
-              { label: 'Format tanggal valid', val: '248 / 248', ok: true },
-              { label: 'No. invoice ditemukan', val: '246 / 248', ok: true },
-              { label: 'Nama customer valid', val: '245 / 248', ok: true },
-              { label: 'Nilai transaksi valid', val: '248 / 248', ok: true },
-              { label: 'PPN sesuai (11%)', val: '248 / 248', ok: true },
-              { label: 'Duplikat data', val: '2', ok: false },
+              { label: 'Format tanggal valid', val: '0 / 0', ok: true },
+              { label: 'No. invoice ditemukan', val: '0 / 0', ok: true },
+              { label: 'Nama customer valid', val: '0 / 0', ok: true },
+              { label: 'Nilai transaksi valid', val: '0 / 0', ok: true },
+              { label: 'PPN sesuai (11%)', val: '0 / 0', ok: true },
+              { label: 'Duplikat data', val: '0', ok: true },
               { label: 'Data kosong', val: '0', ok: true },
             ].map(item => (
               <div key={item.label} className="flex items-center justify-between">

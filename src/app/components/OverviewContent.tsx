@@ -28,6 +28,13 @@ import type { Transaction } from '@/app/transactions/components/transactionData'
 // sample data" kalau belum ada client aktif / client belum ada jurnal sama
 // sekali -- jadi halaman tidak pernah kosong.
 import KPIBentoGrid from './KPIBentoGrid';
+// [BARU] Dropdown "Branch" sekarang REAL: diambil dari tabel
+// overview_overview_management_branches (schema 2_Overview) lewat
+// daftarBranches(), menggantikan opsi hardcoded "Jakarta"/"Surabaya" --
+// sama seperti pola KPIBentoGrid (ambilKpiBento) di atas: fallback ke
+// hanya "All Branches" kalau belum ada client aktif / client belum
+// punya data cabang, supaya dropdown tidak pernah kosong.
+import { daftarBranches } from '@/app/agent-ai/lib/api';
 
 const formatDateForFilename = () => new Date().toISOString().slice(0, 10);
 
@@ -66,8 +73,26 @@ export default function OverviewContent() {
   const [branch, setBranch] = useState('All Branches');
   const { t } = useLanguage();
   const { currency, setCurrency, fx } = useCurrency();
-  const { activeClientName } = useActiveClient();
+  const { activeClientId, activeClientName } = useActiveClient();
   const companyName = activeClientName || COMPANY.name;
+
+  // [BARU] Daftar cabang REAL milik client aktif (lihat import
+  // daftarBranches di atas). branchOptions selalu diawali "All Branches";
+  // branchId (UUID) dicari dari nama yang lagi dipilih di dropdown, lalu
+  // diteruskan ke KPIBentoGrid utk filter mode Budget
+  // (overview_overview_financial_budget.branch_id).
+  const [branchOptions, setBranchOptions] = useState<{ id: string; nama_cabang: string }[]>([]);
+  useEffect(() => {
+    if (!activeClientId) { setBranchOptions([]); return; }
+    let cancelled = false;
+    daftarBranches(activeClientId)
+      .then((res: { branches?: { id: string; nama_cabang: string }[] }) => {
+        if (!cancelled) setBranchOptions(res?.branches || []);
+      })
+      .catch(() => { if (!cancelled) setBranchOptions([]); });
+    return () => { cancelled = true; };
+  }, [activeClientId]);
+  const branchId = branchOptions.find((b) => b.nama_cabang === branch)?.id;
 
   // [BARU] Kartu "Accounts Receivable"/"Accounts Payable" di bawah SEBELUMNYA
   // teks hardcoded ("Rp 1.24M", "Rp 320M overdue", dst) -- sekarang dihitung
@@ -147,8 +172,9 @@ export default function OverviewContent() {
             className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
           >
             <option>{t('All Branches')}</option>
-            <option>Jakarta</option>
-            <option>Surabaya</option>
+            {branchOptions.map((b) => (
+              <option key={b.id}>{b.nama_cabang}</option>
+            ))}
           </select>
           <select
             value={currency}
@@ -205,11 +231,12 @@ export default function OverviewContent() {
       {/* KPI Grid — sekarang REAL, ambil dari backend untuk client aktif (lihat import KPIBentoGrid di atas) */}
       {/* [BARU] branch diteruskan supaya dropdown "All Branches"/"Jakarta"/"Surabaya" di atas benar2 memfilter 8 kartu ini (lihat Coa.cabang di backend/db_client.py) */}
       {/* [BARU] key={refreshKey} -> remount paksa saat tombol reload ditekan, supaya useEffect fetch (ambilKpiBento) di dalamnya jalan ulang. */}
-      <KPIBentoGrid key={`kpi-${refreshKey}`} viewMode={viewMode} branch={branch} />
+      <KPIBentoGrid key={`kpi-${refreshKey}`} viewMode={viewMode} branch={branch} branchId={branchId} />
 
       {/* Charts */}
-      {/* [BARU] key={refreshKey} -> sama seperti KPIBentoGrid di atas, supaya fetchMonthlyPLForYear di dalam OverviewCharts ikut jalan ulang saat reload. */}
-      <OverviewCharts key={`charts-${refreshKey}`} viewMode={viewMode} />
+      {/* [BARU] key={refreshKey} -> sama seperti KPIBentoGrid di atas, supaya fetchMonthlyPLForYear di dalam OverviewCharts ikut jalan ulang saat reload.
+          [FIX] branchId diteruskan supaya chart "Actual vs Budget" (mode Anggaran) ikut memfilter overview_overview_financial_budget per cabang, konsisten dengan KPIBentoGrid di atas. */}
+      <OverviewCharts key={`charts-${refreshKey}`} viewMode={viewMode} branchId={branchId} />
 
       {/* Quick links */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -225,8 +252,8 @@ export default function OverviewContent() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 1.24M')}</p>
-              <p className="text-xs text-danger mt-0.5">{fx(t('Rp 320M overdue'))} — action required</p>
+              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
@@ -242,8 +269,8 @@ export default function OverviewContent() {
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 860M')}</p>
-              <p className="text-xs text-warning mt-0.5">{fx(t('Rp 142M due this week'))}</p>
+              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
@@ -252,7 +279,7 @@ export default function OverviewContent() {
             <span className="text-sm font-600 text-ai-purple">AI Financial Analyst</span>
             <Icon name="ArrowRightIcon" size={14} className="text-ai-purple group-hover:text-purple-700 transition-colors" />
           </div>
-          <p className="text-sm text-ai-purple-foreground">5 analyses ready</p>
+          <p className="text-sm text-ai-purple-foreground">0 analyses ready</p>
           <p className="text-xs text-ai-purple mt-0.5">Ask a financial question →</p>
         </Link>
       </div>

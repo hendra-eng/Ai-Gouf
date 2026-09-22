@@ -5,28 +5,11 @@ import type { AssetsTrendRow, AssetsCompositionSlice } from '../lib/useAssetsDat
 import InteractiveDonutChart, { DonutLivePreview as AgingLivePreview } from '@/components/shared/InteractiveDonutChart';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat AssetsContent.tsx
-// (useAssetsData()) untuk sumber data ASLI client aktif.
-const mockCompositionData: AssetsCompositionSlice[] = [
-  { name: 'Cash & Bank', value: 2960, pct: 43.3, color: '#2563eb' },
-  { name: 'Accounts Receivable', value: 1240, pct: 18.1, color: '#7c3aed' },
-  { name: 'Inventory', value: 420, pct: 6.1, color: '#16a34a' },
-  { name: 'Property & Equipment', value: 1200, pct: 17.5, color: '#d97706' },
-  { name: 'Vehicles', value: 420, pct: 6.1, color: '#0891b2' },
-  { name: 'Intangible Assets', value: 230, pct: 3.4, color: '#be185d' },
-  { name: 'Other Assets', value: 370, pct: 5.4, color: '#64748b' },
-];
+// [UBAH] Fallback kosong -- lihat AssetsContent.tsx (useAssetsData())
+// untuk sumber data ASLI client aktif.
+const mockCompositionData: AssetsCompositionSlice[] = [];
 
-const mockTrendData: AssetsTrendRow[] = [
-  { month: 'Jan', total: 5200, current: 3100, nonCurrent: 2100 },
-  { month: 'Feb', total: 5450, current: 3250, nonCurrent: 2200 },
-  { month: 'Mar', total: 5680, current: 3380, nonCurrent: 2300 },
-  { month: 'Apr', total: 5820, current: 3450, nonCurrent: 2370 },
-  { month: 'May', total: 6050, current: 3620, nonCurrent: 2430 },
-  { month: 'Jun', total: 6280, current: 3750, nonCurrent: 2530 },
-  { month: 'Jul', total: 6560, current: 3920, nonCurrent: 2640 },
-  { month: 'Aug', total: 6840, current: 4120, nonCurrent: 2720 },
-];
+const mockTrendData: AssetsTrendRow[] = [];
 
 const periodOptions = ['6M', 'YTD', '12M', '3Y'];
 
@@ -65,7 +48,7 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
   const [compLivePreview, setCompLivePreview] = useState<AgingLivePreview[] | null>(null);
   const trend = trendData && trendData.length > 0 ? trendData : mockTrendData;
   const composition = compositionData && compositionData.length > 0 ? compositionData : mockCompositionData;
-  const subtitle = companyName ? `Monthly asset values — ${companyName}` : 'Monthly asset values — PT Nusantara Teknologi Indonesia';
+  const subtitle = companyName ? `Monthly asset values — ${companyName}` : 'Monthly asset values';
 
   // ── Fitur 1: Drag-zoom skala sumbu Y (harga) — tarik naik/turun di area
   // label sumbu Y buat zoom in/out skala, double-click buat reset. Data
@@ -364,7 +347,7 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
       {/* Composition */}
       <div className="fin-card p-5">
         <div className="text-[14px] font-600 text-foreground mb-0.5">Asset Composition</div>
-        <div className="text-[11px] text-muted-foreground mb-4">By category{periodLabel ? ` — ${periodLabel}` : ' — Aug 2026'}</div>
+        <div className="text-[11px] text-muted-foreground mb-4">By category{periodLabel ? ` — ${periodLabel}` : ''}</div>
         <div className="flex justify-center">
           <InteractiveDonutChart
             data={composition}
