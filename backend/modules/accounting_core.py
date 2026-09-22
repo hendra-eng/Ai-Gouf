@@ -14,11 +14,13 @@ Hanya JournalEntry berstatus POSTED yang boleh dipakai laporan Actual.
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from sqlalchemy import cast, func, literal, String
 from sqlalchemy.orm import Session
 
 import db_client as dbc
@@ -362,6 +364,74 @@ MODULE_SYNC_MARK = "module-sync"
 _MODULE_SOURCES = ("BANK_CASH", "OTHER", "PURCHASE")
 _OTHER_POSTED_STATUS = {"posted", "reconciled"}
 
+# [BARU -- FIX PERFORMA] Lihat penjelasan lengkap di sync_all_to_core().
+# Cache di memori proses: client_id -> (signature_terakhir, waktu_unix).
+# Kalau backend dijalankan multi-worker/multi-proses, tiap proses punya
+# cache sendiri -- itu wajar (paling buruk sync penuh jalan lagi sekali
+# per proses, bukan jadi salah/basi selamanya).
+_sync_cache: Dict[str, Tuple[str, float]] = {}
+_SYNC_CACHE_MAX_AGE_SECONDS = 300  # jaring pengaman: paksa cek ulang min. tiap 5 menit
+
+
+def _compute_core_source_signature(session: Session, client_id: str) -> str:
+    """[BARU -- FIX PERFORMA] Tanda tangan RINGAN (jumlah baris + waktu
+    terakhir diubah, semuanya query agregat COUNT/MAX -- bukan SELECT *)
+    dari semua sumber yang di-mirror sync_all_to_core(). Dipakai utk
+    mendeteksi "adakah perubahan sejak sync terakhir?" tanpa harus
+    menjalankan sync penuh, yang harganya ~1+ query PER BARIS transaksi
+    (lihat catatan performa di sync_all_to_core()).
+
+    [FIX PERFORMA -- lanjutan] Awalnya ini 4 query TERPISAH (1 round-trip
+    tiap tabel, berurutan) -- tiap round-trip ke Supabase lewat internet
+    makan waktu ratusan ms, jadi 4 query berurutan = tambahan ~0.5-1 detik
+    di SETIAP pemanggilan kpi-bento/list_posted_lines walau ujung-ujungnya
+    cuma dipakai buat cek "ada yang berubah tidak". Sekarang digabung jadi
+    SATU query lewat UNION ALL -- 1 round-trip, bukan 4."""
+    jp_tbl, bc_tbl, oth_tbl, pur_tbl = (
+        dbc.JurnalPosting, dbc.FinanceTransactionBankCash, dbc.FinanceTransactionOther, dbc.PurchaseTransactionRow,
+    )
+    # [PENTING] di-cast ke text sebelum UNION ALL: kolom timestamp
+    # jurnal_posting/bank_cash itu naive (tanpa timezone) sedangkan
+    # other/purchase timezone-aware -- PostgreSQL menolak UNION dua tipe
+    # timestamp yang berbeda ("cannot be matched"). Karena nilai ini cuma
+    # dipakai sebagai bagian string tanda tangan (bukan dihitung ulang),
+    # cast ke text aman dan menghindari error itu.
+    #
+    # [PENTING] Tiap subquery diberi label sumber eksplisit (`src`) dan
+    # hasilnya dicocokkan lewat label itu, BUKAN lewat posisi/urutan baris
+    # -- UNION ALL tanpa ORDER BY TIDAK menjamin urutan baris kembali
+    # sesuai urutan penulisan query.
+    q_jp = session.query(
+        literal("jp").label("src"), func.count(jp_tbl.id).label("n"),
+        cast(func.max(func.coalesce(jp_tbl.diposting_at, jp_tbl.dibuat_at)), String).label("t"),
+    ).filter(jp_tbl.client_id == client_id)
+    q_bc = session.query(
+        literal("bc").label("src"), func.count(bc_tbl.id).label("n"),
+        cast(func.max(func.coalesce(bc_tbl.diposting_at, bc_tbl.dibuat_at)), String).label("t"),
+    ).filter(bc_tbl.client_id == client_id)
+    q_oth = session.query(
+        literal("oth").label("src"), func.count(oth_tbl.id).label("n"),
+        cast(func.max(oth_tbl.updated_at), String).label("t"),
+    ).filter(oth_tbl.client_id == client_id)
+    q_pur = session.query(
+        literal("pur").label("src"), func.count(pur_tbl.id).label("n"),
+        cast(func.max(pur_tbl.updated_at), String).label("t"),
+    ).filter(pur_tbl.client_id == client_id)
+
+    by_src = {row.src: (row.n, row.t) for row in q_jp.union_all(q_bc, q_oth, q_pur).all()}
+    jp, bc, oth, pur = by_src["jp"], by_src["bc"], by_src["oth"], by_src["pur"]
+    return f"jp:{jp[0]}:{jp[1]}|bc:{bc[0]}:{bc[1]}|oth:{oth[0]}:{oth[1]}|pur:{pur[0]}:{pur[1]}"
+
+
+def invalidate_core_sync_cache(client_id: str) -> None:
+    """[BARU -- FIX PERFORMA] Panggil ini setelah operasi tulis yang tahu
+    persis datanya berubah (opsional -- signature check di sync_all_to_core
+    akan otomatis mendeteksi perubahan juga, ini murni supaya baris yang
+    baru saja ditulis langsung ke-mirror di request BERIKUTNYA tanpa
+    menunggu MAX(updated_at) tergenapkan, yang seharusnya sudah otomatis
+    tapi ini jaring pengaman tambahan)."""
+    _sync_cache.pop(client_id, None)
+
 
 def _mirror_module_entry(session: Session, client_id: str, coa_ids: Dict[str, int], *,
                          source_module: str, key: str, posting_date: Any, description: Optional[str],
@@ -535,12 +605,45 @@ def sync_all_to_core(client_id: str) -> None:
     """Sinkronkan SEMUA sumber ke core: tabel legacy (jurnal_posting) + tabel modul 3_Financial.
 
     Kegagalan mirror modul TIDAK boleh menjatuhkan laporan, jadi hanya dicatat di log.
+
+    [FIX -- PERFORMA, dashboard Financial Overview lambat ~30 detik]
+    Fungsi ini dipanggil di AWAL SETIAP request yang baca data Actual
+    (list_posted_lines dipanggil dari kpi-bento, financial statements, GL,
+    dst). sync_legacy_to_core()/sync_module_transactions_to_core() sendiri
+    memang HARUS jalan minimal 1x per baris transaksi yang berubah (cek
+    existing + tulis ulang baris jurnal), tapi SEBELUM fix ini keduanya
+    dijalankan PENUH pada SETIAP pemanggilan -- termasuk saat tidak ada
+    satu baris pun yang berubah sejak load sebelumnya (kasus paling
+    umum: user cuma buka ulang/refresh halaman). Dengan puluhan transaksi
+    dan tiap query round-trip ke Supabase (lewat internet, bukan
+    localhost) makan waktu ratusan ms, totalnya bisa puluhan detik --
+    inilah penyebab loading Financial Overview yang sangat lama.
+    Sekarang: hitung dulu tanda tangan RINGAN (4 query agregat COUNT/MAX,
+    lihat _compute_core_source_signature()) dari semua sumber. Kalau sama
+    dengan hasil sync TERAKHIR untuk client ini (berarti tidak ada
+    transaksi yang berubah/baru), sync penuh DILEWATI sepenuhnya --
+    list_posted_lines() lanjut langsung ke query journal_entries/
+    journal_lines yang sudah ter-sync, jauh lebih cepat. Kalau ada
+    perubahan (signature beda), sync penuh tetap jalan seperti biasa,
+    jadi tidak ada risiko data basi.
     """
+    session = dbc.SessionLocal()
+    try:
+        signature = _compute_core_source_signature(session, client_id)
+    finally:
+        session.close()
+
+    cached = _sync_cache.get(client_id)
+    if cached is not None and cached[0] == signature and (time.time() - cached[1]) < _SYNC_CACHE_MAX_AGE_SECONDS:
+        return  # Tidak ada perubahan sejak sync terakhir -> lewati sync penuh.
+
     sync_legacy_to_core(client_id)
     try:
         sync_module_transactions_to_core(client_id)
     except Exception:
         _log.exception("sync_module_transactions_to_core gagal untuk client %s", client_id)
+
+    _sync_cache[client_id] = (signature, time.time())
 
 
 def _entry_dict(entry: "dbc.JournalEntry", lines: Sequence["dbc.JournalLine"],
@@ -613,8 +716,21 @@ def list_journal_entries(client_id: str, status: Optional[str] = None, limit: Op
 
 
 def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
-                      tanggal_akhir: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Flat journal lines untuk GL/TB/FS. Hanya POSTED."""
+                      tanggal_akhir: Optional[str] = None,
+                      coa: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Flat journal lines untuk GL/TB/FS. Hanya POSTED.
+
+    [FIX PERFORMA] Parameter `coa` opsional: kalau pemanggil SUDAH
+    memanggil dbc.ambil_coa_client(client_id) sendiri sebelum ini (mis.
+    endpoint /kpi-bento, yang butuh `coa` juga utk filter cabang & susun
+    KPI), hasil itu bisa dioper ke sini lewat `coa=` supaya fungsi ini
+    TIDAK query ULANG standard_account_mapping & company_account_role
+    (2 query) yang isinya SAMA PERSIS dengan yang sudah di-enrich ke
+    dalam `coa` oleh ambil_coa_client() -- sebelumnya kedua data itu
+    ditarik 2 KALI (sekali di sini lewat _standard_meta_bulk, sekali lagi
+    di ambil_coa_client) pada setiap panggilan /kpi-bento. Pemanggil lain
+    yang tidak/tidak sempat prefetch COA cukup biarkan `coa=None` (default,
+    perilaku lama tetap jalan, 2 query ekstra itu)."""
     sync_all_to_core(client_id)
     session = dbc.SessionLocal()
     try:
@@ -631,7 +747,17 @@ def list_posted_lines(client_id: str, tanggal_mulai: Optional[str] = None,
         if d2:
             query = query.filter(dbc.JournalEntry.posting_date <= d2)
         rows = query.order_by(dbc.JournalEntry.posting_date, dbc.JournalEntry.id, dbc.JournalLine.line_no).all()
-        meta = _standard_meta_bulk(session, client_id, [line.coa_id for line, _ in rows])
+        if coa is not None:
+            # Bangun meta langsung dari `coa` yg sudah di-enrich (0 query tambahan).
+            meta = {
+                c["id"]: {
+                    "standard_account_code": c.get("standard_account_code"),
+                    "account_role": (c.get("account_roles") or [None])[0],
+                }
+                for c in coa
+            }
+        else:
+            meta = _standard_meta_bulk(session, client_id, [line.coa_id for line, _ in rows])
         result = []
         for line, entry in rows:
             _m = meta.get(line.coa_id, {})

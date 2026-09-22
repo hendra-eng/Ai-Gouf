@@ -43,16 +43,22 @@ interface ActiveClientContextValue {
   error: string | null;
   refresh: () => void;
   /**
-   * [BARU -- FIX flash-ke-0] false SEBENTAR saja di render pertama, sebelum
-   * context ini sempat selesai proses inisialisasi awal (dulu: baca
-   * localStorage; sekarang: cuma menunggu satu tick render pertama).
-   * Semua hook data (useProfitLossData, useBalanceSheetData, KPIBentoGrid,
-   * dst) HARUS menunggu `hydrated === true` sebelum menyimpulkan
-   * "activeClientId null = memang tidak ada client dipilih". Sebelum fix
-   * ini, hook-hook tsb langsung menganggap activeClientId null di render
-   * pertama sebagai "kosong" dan menampilkan angka 0 -- padahal
-   * sebenarnya baru "belum sempat di-set ke client pertama", bukan
-   * "memang kosong".
+   * [BARU -- FIX flash-ke-0, versi diperbaiki] Awalnya `hydrated` diset
+   * `true` setelah "satu tick render pertama" TANPA menunggu daftar
+   * client (GET /api/client) selesai dimuat. Akibatnya, selama daftar
+   * client masih loading (biasa 1-2 detik, bisa lebih), `hydrated` sudah
+   * keburu `true` sementara `activeClientId` masih `null` -- semua hook
+   * data (KPIBentoGrid, useProfitLossData, dst) langsung menyimpulkan
+   * "tidak ada client aktif" dan merender ANGKA 0 ASLI (bukan skeleton),
+   * baru diganti data sungguhan begitu client pertama selesai di-resolve.
+   * Inilah "flash ke 0 lalu baru muncul data" yang dikeluhkan user.
+   *
+   * Sekarang: `hydrated` HANYA jadi `true` setelah `clients` (dari
+   * useClientsList()) selesai loading DAN activeClientId sudah pasti
+   * ter-resolve (ke client pertama, atau `null` kalau memang tidak ada
+   * client sama sekali) -- lihat effect resolusi di bawah. Konsumen yang
+   * sudah menunggu `hydrated === true` (pola `if (!hydrated) return;`)
+   * otomatis ikut diperbaiki tanpa perlu diubah satu-satu.
    */
   hydrated: boolean;
 }
@@ -65,15 +71,12 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
   const [activeClientName, setActiveClientName] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // [DIUBAH] Sengaja tidak lagi membaca localStorage di sini -- setiap
-  // halaman dibuka baru, client aktif SELALU jatuh ke client pertama di
-  // database (lihat effect di bawah), bukan client terakhir yang dipilih
-  // sebelumnya. Effect ini sekarang cuma menandai bahwa render pertama
-  // sudah lewat, supaya effect fallback-ke-client-pertama di bawah boleh
-  // mulai jalan.
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  // [FIX flash-ke-0] Effect ini DULU cuma `setHydrated(true)` tanpa syarat
+  // apapun (jalan sekali di render pertama, tidak peduli daftar client
+  // sudah siap atau belum) -- itu sebabnya `hydrated` tidak benar-benar
+  // berarti "activeClientId sudah pasti final". Sekarang dihapus dari sini
+  // dan digabung ke effect resolusi client di bawah, supaya `hydrated`
+  // HANYA jadi true setelah resolusi activeClientId betul-betul selesai.
 
   // Begitu daftar client (asli, dari backend) sudah siap: pastikan client
   // yang aktif masih valid (belum dihapus). Kalau tidak valid / belum ada
@@ -81,12 +84,17 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
   // jatuhkan ke client pertama di daftar -- konsisten dengan perilaku
   // dropdown "Switch Company" yang lama di Topbar.
   useEffect(() => {
-    if (!hydrated || loading) return;
+    // [FIX flash-ke-0] `loading` di sini adalah status GET /api/client itu
+    // SENDIRI (dari useClientsList()) -- selama masih true, kita BELUM TAHU
+    // apakah bakal ada client atau tidak, jadi `hydrated` harus tetap false
+    // (biar semua hook data tetap tampilkan skeleton, bukan angka 0).
+    if (loading) return;
     if (clients.length === 0) {
       if (activeClientId !== null) {
         setActiveClientId(null);
         setActiveClientName(null);
       }
+      setHydrated(true); // resolusi selesai: memang tidak ada client sama sekali
       return;
     }
     const stillValid = activeClientId !== null && clients.some((c) => c.id === activeClientId);
@@ -95,11 +103,12 @@ export function ActiveClientProvider({ children }: { children: ReactNode }) {
       setActiveClientId(first.id);
       setActiveClientName(first.companyName);
     }
+    setHydrated(true); // resolusi selesai: activeClientId sudah pasti (baru di-set atau sudah valid)
     // Sengaja tidak include activeClientId di deps -- efek ini cuma perlu
     // jalan ulang saat DAFTAR client berubah (mis. client dihapus), bukan
     // tiap kali user pilih client baru (itu sudah ditangani setActiveClient).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, loading, hydrated]);
+  }, [clients, loading]);
 
   // [DIUBAH] Tidak lagi menulis ke localStorage -- pilihan lewat Switch
   // Company ini hanya berlaku untuk sesi/halaman yang sedang berjalan.

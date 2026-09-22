@@ -8194,6 +8194,9 @@ class AuditEvidenceRow(Base):
     file_content = Column(LargeBinary, nullable=True)
 
 
+AUDIT_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024  # [BARU] batas ukuran 1 file evidence
+
+
 def _audit_num(v):
     return float(v) if v is not None else 0.0
 
@@ -8364,6 +8367,14 @@ def tambah_audit_evidence(client_id: str, finding_id: str, file_name: str, file_
         ).first()
         if not finding:
             raise ValueError("Temuan audit tidak ditemukan untuk client ini.")
+        # [BARU] Validasi sebelum disimpan sbg bytea -- file kosong/tanpa nama
+        # atau file terlalu besar (>10 MB) TIDAK ditulis ke database.
+        if not (file_name or "").strip():
+            raise ValueError("Nama file tidak valid.")
+        if not file_content:
+            raise ValueError("File kosong.")
+        if file_size > AUDIT_EVIDENCE_MAX_BYTES:
+            raise ValueError(f"Ukuran file melebihi batas {AUDIT_EVIDENCE_MAX_BYTES // (1024 * 1024)} MB.")
         now = datetime.utcnow()
         row = AuditEvidenceRow(
             id=str(uuid.uuid4()), client_id=client_id, finding_id=finding_id,
@@ -8415,7 +8426,7 @@ def hapus_audit_evidence(evidence_id: str, client_id: str) -> Dict[str, Any]:
             AuditEvidenceRow.id == evidence_id, AuditEvidenceRow.client_id == client_id,
         ).first()
         if not row:
-            return {"berhasil": False, "pesan": "Evidence tidak ditemukan"}
+            raise LookupError("Evidence tidak ditemukan untuk client ini.")
         session.delete(row)
         session.commit()
         return {"berhasil": True}
