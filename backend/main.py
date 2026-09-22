@@ -123,7 +123,13 @@ from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {s
 # kepakai saat startup -- supaya "diam-diam jatuh ke sqlite lokal" tidak
 # bisa lolos tanpa ketahuan lagi. Password/detail koneksi disensor,
 # cukup tunjukkan jenis DB + host-nya saja.
-_db_url_terpakai = os.environ.get("DATABASE_URL", "sqlite:///ai_gouf.db")
+#
+# [FIX v6] Kalau DATABASE_URL benar-benar tidak diset, `import db_client
+# as dbc` di atas SUDAH raise RuntimeError duluan (lihat get_database_url()
+# di db_client.py) -- baris-baris di bawah ini cuma jalan kalau
+# DATABASE_URL memang ada isinya (baik itu Postgres/Supabase, ATAU
+# sqlite:///... yang SENGAJA diset eksplisit di .env).
+_db_url_terpakai = os.environ.get("DATABASE_URL", "")
 if _db_url_terpakai.startswith("sqlite"):
     print(f"[DB] Memakai SQLite LOKAL: {_db_url_terpakai}  <-- BUKAN Supabase! Cek .env kalau ini tidak diinginkan.")
 else:
