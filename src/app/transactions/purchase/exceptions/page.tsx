@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseExceptions } from '@/data/purchaseData';
 import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -43,6 +45,11 @@ function StatusBadge({ status }: { status: ExceptionStatus }) {
 }
 
 export default function PurchaseExceptionsPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
+  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -70,7 +77,7 @@ export default function PurchaseExceptionsPage() {
     if (typeFilter !== 'All') data = data.filter(r => r.exceptionType === typeFilter);
     if (vendorFilter !== 'All') data = data.filter(r => r.vendor === vendorFilter);
     return data;
-  }, [search, severityFilter, statusFilter, typeFilter, vendorFilter, resolveMap]);
+  }, [purchaseExceptions, search, severityFilter, statusFilter, typeFilter, vendorFilter, resolveMap]);
 
   const summary = useMemo(() => ({
     total: purchaseExceptions.length,
@@ -78,11 +85,14 @@ export default function PurchaseExceptionsPage() {
     critical: purchaseExceptions.filter(e => e.severity === 'Critical').length,
     underReview: purchaseExceptions.filter(e => (resolveMap[e.id] || e.status) === 'Under Review').length,
     resolved: purchaseExceptions.filter(e => (resolveMap[e.id] || e.status) === 'Resolved').length,
-  }), [resolveMap]);
+  }), [purchaseExceptions, resolveMap]);
 
   const handleStatusChange = (id: string, status: ExceptionStatus) => {
     setResolveMap(prev => ({ ...prev, [id]: status }));
     if (selectedExc?.id === id) setSelectedExc(prev => prev ? { ...prev, status } : null);
+    updatePurchaseException(id, { status }).catch(err => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update exception status.');
+    });
   };
 
   return (

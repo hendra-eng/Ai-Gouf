@@ -5,6 +5,7 @@ import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs'
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
 import { useJeSourceRecords, useJeDrafts, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type SyncStatus = 'Synced' | 'Pending Sync' | 'Sync Failed' | 'Manual';
@@ -116,6 +117,7 @@ export default function SourceDataPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortField, setSortField] = useState<keyof SourceRecord>('sourceDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedRow, setSelectedRow] = useState<SourceRecord | null>(null);
 
   const sourceTypes = ['All', 'Sales', 'Purchase', 'Payroll', 'Bank', 'Cash', 'Expense', 'Inventory', 'Fixed Assets', 'Tax', 'Manual'];
@@ -136,9 +138,14 @@ export default function SourceDataPage() {
     return data;
   }, [sourceData, search, typeFilter, statusFilter, sortField, sortDir]);
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
   const handleSort = (field: keyof SourceRecord) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
+    setCurrentPage(1);
   };
 
   const summaryStats = useMemo(() => ({
@@ -149,7 +156,7 @@ export default function SourceDataPage() {
     totalAmount: sourceData.reduce((s, r) => s + r.amount, 0),
   }), [sourceData]);
 
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
   return (
       <div className="space-y-6 fade-in">
@@ -179,16 +186,16 @@ export default function SourceDataPage() {
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input className="je-input pl-9" placeholder="Search by source ID, description, or vendor…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="je-input pl-9" placeholder="Search by source ID, description, or vendor…" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
             <div className="flex gap-2 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                <select className="je-select text-sm" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}>
                   {sourceTypes.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
-              <select className="je-select text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <select className="je-select text-sm" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
                 {statuses.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
@@ -222,10 +229,10 @@ export default function SourceDataPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Memuat source records…</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading source records…</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
                     <td className="px-4 py-3 font-mono text-xs font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -258,6 +265,7 @@ export default function SourceDataPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
         </div>
 
         {/* Detail Panel */}

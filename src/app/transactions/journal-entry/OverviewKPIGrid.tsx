@@ -5,8 +5,8 @@ import KpiCard from '@/components/shared/KpiCard';
 import { useAuth } from '@/lib/auth';
 import { useJeDrafts } from '@/lib/journalEntryStore';
 
-const fmtUsd = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 }).format(n);
+const fmtIdr = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', notation: 'compact', maximumFractionDigits: 2 }).format(n);
 
 export default function OverviewKPIGrid() {
   const { user } = useAuth();
@@ -44,7 +44,7 @@ export default function OverviewKPIGrid() {
       <KpiCard
         title="Total Journal Entries"
         value={String(stats.total)}
-        subLabel="Seluruh periode"
+        subLabel="All periods"
         icon="BookOpenIcon"
         iconBg="bg-blue-50"
         iconColor="text-blue-600"
@@ -93,16 +93,16 @@ export default function OverviewKPIGrid() {
       />
       <KpiCard
         title="Total Debits"
-        value={fmtUsd(stats.totalDebit)}
-        subLabel="Seluruh periode"
+        value={fmtIdr(stats.totalDebit)}
+        subLabel="All periods"
         icon="ArrowTrendingUpIcon"
         iconBg="bg-sky-50"
         iconColor="text-sky-600"
       />
       <KpiCard
         title="Total Credits"
-        value={fmtUsd(stats.totalCredit)}
-        subLabel={Math.abs(stats.imbalance) > 0.01 ? `${fmtUsd(Math.abs(stats.imbalance))} imbalance` : 'Balanced'}
+        value={fmtIdr(stats.totalCredit)}
+        subLabel={Math.abs(stats.imbalance) > 0.01 ? `${fmtIdr(Math.abs(stats.imbalance))} imbalance` : 'Balanced'}
         icon="ArrowTrendingDownIcon"
         iconBg="bg-rose-50"
         iconColor="text-rose-600"

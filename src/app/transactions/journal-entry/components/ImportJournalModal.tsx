@@ -7,19 +7,29 @@ import {
   XMarkIcon, ArrowUpTrayIcon, DocumentArrowDownIcon, CheckCircleIcon,
   ExclamationTriangleIcon, XCircleIcon,
 } from '@heroicons/react/24/outline';
-import { createJeDraftWithLines, type JeDraftLineInput } from '@/lib/journalEntryStore';
+import { createJeDraftWithLines, uploadJeSourceFile, type JeDraftLineInput } from '@/lib/journalEntryStore';
+import { useActiveClient } from '@/lib/activeClient';
 
 // ============================================================
-// Import Journal (frontend) -- upload CSV/Excel, parse di browser (SheetJS),
-// kelompokkan baris per JE Number jadi journal entry multi-baris, lalu
-// simpan lewat POST /drafts/full yang SUDAH ada (1 panggilan atomik per JE)
-// -- BUKAN pipeline AI/deteksi-kolom backend seperti Sales
-// (sales_import_v1.py); pemetaan kolom di sini murni pencocokan nama
-// header yang fleksibel (case/spasi-insensitive), dijalankan di frontend.
+// Import Journal (frontend) -- 2 jalur, dicoba berurutan tiap file:
+//
+//   1. Backend Journal Entry Import Template (journal_entry_import_v1.py):
+//      file MENTAH dikirim ke backend, dicocokkan ke pola kolom yang sudah
+//      "dipelajari" untuk klien aktif (dropdown Switch Company) + format
+//      file ini (lihat root/SALES_IMPORT_TEMPLATES.md -- versi Journal
+//      Entry-nya). Kalau cocok, backend LANGSUNG membuat draft + baris
+//      debit/kreditnya (tidak ada tahap preview manual di sini -- pola
+//      kolom sudah dikenal & tervalidasi sebelumnya). Cocok untuk laporan
+//      klien yang formatnya baku/berulang (mis. Jurnal Kas Kasir SAU).
+//   2. Fallback: kalau backend bilang belum ada template yang cocok
+//      (template_matched=false) -- parse di browser (SheetJS), kelompokkan
+//      baris per JE Number lewat pencocokan nama header yang fleksibel
+//      (case/spasi-insensitive), tampilkan preview, baru simpan manual
+//      lewat POST /drafts/full begitu user klik Import. Cocok untuk file
+//      ad-hoc yang belum punya template tersimpan.
 // ============================================================
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 interface ParsedLine {
   account_code: string;
@@ -115,12 +125,12 @@ function parseFileToGroups(rows: Record<string, unknown>[]): { groups: ParsedGro
     const totalDebit = g.lines.reduce((s, l) => s + l.debit, 0);
     const totalCredit = g.lines.reduce((s, l) => s + l.credit, 0);
     const errors: string[] = [];
-    if (!g.entry_date) errors.push('Tanggal kosong/tidak valid.');
-    if (g.lines.length < 2) errors.push('Minimal 2 baris per journal entry.');
-    if (g.lines.some(l => !l.account_code)) errors.push('Ada baris tanpa Account Code.');
-    if (g.lines.some(l => l.debit > 0 && l.credit > 0)) errors.push('Ada baris dengan Debit & Credit sekaligus.');
+    if (!g.entry_date) errors.push('Date is empty/invalid.');
+    if (g.lines.length < 2) errors.push('Minimum 2 lines per journal entry.');
+    if (g.lines.some(l => !l.account_code)) errors.push('There is a line without an Account Code.');
+    if (g.lines.some(l => l.debit > 0 && l.credit > 0)) errors.push('There is a line with both Debit & Credit filled in.');
     const balanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
-    if (!balanced) errors.push(`Tidak balance (Debit ${fmt(totalDebit)} ≠ Credit ${fmt(totalCredit)}).`);
+    if (!balanced) errors.push(`Not balanced (Debit ${fmt(totalDebit)} ≠ Credit ${fmt(totalCredit)}).`);
     return { ...g, totalDebit, totalCredit, balanced: balanced && errors.length === 0, errors };
   });
 
@@ -156,11 +166,13 @@ export default function ImportJournalModal({
   const [groups, setGroups] = useState<ParsedGroup[]>([]);
   const [missingColumns, setMissingColumns] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
+  const [checkingTemplate, setCheckingTemplate] = useState(false);
   const [results, setResults] = useState<ImportResult[]>([]);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { activeClientId } = useActiveClient();
 
-  const handleFile = async (file: File) => {
-    setFileName(file.name);
+  const parseLokal = async (file: File) => {
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
@@ -170,19 +182,52 @@ export default function ImportJournalModal({
       if (missing.length > 0) {
         setMissingColumns(missing);
         setGroups([]);
-        toast.error('Format file tidak sesuai', { description: `Kolom wajib tidak ditemukan: ${missing.join(', ')}` });
+        toast.error('File format not supported', { description: `Required columns not found: ${missing.join(', ')}` });
         return;
       }
       if (parsedGroups.length === 0) {
-        toast.error('Tidak ada baris valid yang bisa dibaca dari file ini.');
+        toast.error('No valid rows could be read from this file.');
         return;
       }
       setMissingColumns([]);
       setGroups(parsedGroups);
       setStep('preview');
     } catch (err) {
-      toast.error(err instanceof Error ? `Gagal membaca file: ${err.message}` : 'Gagal membaca file.');
+      toast.error(err instanceof Error ? `Failed to read file: ${err.message}` : 'Failed to read file.');
     }
+  };
+
+  const handleFile = async (file: File) => {
+    setFileName(file.name);
+
+    // Jalur 1: coba template backend dulu (kalau klien aktif sudah dipilih
+    // di dropdown Switch Company) -- lihat catatan alur di kepala file.
+    if (activeClientId) {
+      setCheckingTemplate(true);
+      try {
+        const hasil = await uploadJeSourceFile(file, activeClientId);
+        if (hasil.template_matched) {
+          setResults(hasil.drafts);
+          setResultMessage(
+            `This file's column pattern is already recognized (template) -- ${hasil.created} of ${hasil.groups_detected} journal entries imported directly.`,
+          );
+          setStep('result');
+          return;
+        }
+        // template_matched=false -> belum ada pola yang cocok, lanjut ke jalur 2 (parsing lokal) di bawah tanpa error ke user.
+      } catch (err) {
+        // Upload backend gagal (mis. network/auth) -- jangan blokir user, tetap coba jalur 2.
+        toast.info('Failed to check server template, trying local column mapping…', {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      } finally {
+        setCheckingTemplate(false);
+      }
+    }
+
+    // Jalur 2: parsing lokal (alias kolom fleksibel) -- lihat parseFileToGroups di atas.
+    setResultMessage(null);
+    await parseLokal(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -213,20 +258,20 @@ export default function ImportJournalModal({
           period_label: (() => {
             try {
               const d = new Date(g.entry_date + 'T00:00:00');
-              const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+              const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
               return `${names[d.getMonth()]} ${d.getFullYear()}`;
             } catch { return ''; }
           })(),
           description: g.description || undefined,
           source_type: g.source_type,
-          currency: 'USD',
+          currency: 'IDR',
           status: 'draft',
           created_by_name: createdByName,
           lines,
         });
-        hasil.push({ je_number: g.je_number, ok: true, message: 'Berhasil diimpor.' });
+        hasil.push({ je_number: g.je_number, ok: true, message: 'Successfully imported.' });
       } catch (err) {
-        hasil.push({ je_number: g.je_number, ok: false, message: err instanceof Error ? err.message : 'Gagal diimpor.' });
+        hasil.push({ je_number: g.je_number, ok: false, message: err instanceof Error ? err.message : 'Failed to import.' });
       }
     }
     invalidGroups.forEach(g => hasil.push({ je_number: g.je_number, ok: false, message: g.errors.join(' ') }));
@@ -249,32 +294,35 @@ export default function ImportJournalModal({
           <div className="space-y-4">
             <div
               onDragOver={e => e.preventDefault()}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border rounded-lg py-12 text-center cursor-pointer hover:bg-muted/40 transition-colors"
+              onDrop={checkingTemplate ? undefined : handleDrop}
+              onClick={() => !checkingTemplate && fileInputRef.current?.click()}
+              className={`border-2 border-dashed border-border rounded-lg py-12 text-center transition-colors ${checkingTemplate ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-muted/40'}`}
             >
               <ArrowUpTrayIcon className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm font-medium text-foreground">Drag & drop file di sini, atau klik untuk pilih file</p>
+              <p className="text-sm font-medium text-foreground">
+                {checkingTemplate ? 'Checking for a known column pattern…' : 'Drag & drop a file here, or click to choose a file'}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">Format: .csv, .xlsx, .xls</p>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".csv,.xlsx,.xls"
                 className="hidden"
+                disabled={checkingTemplate}
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
             </div>
             {missingColumns.length > 0 && (
               <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
                 <ExclamationTriangleIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>Kolom wajib tidak ditemukan di file: <strong>{missingColumns.join(', ')}</strong>. Minimal harus ada JE Number, Date, dan Account Code.</span>
+                <span>Required columns not found in file: <strong>{missingColumns.join(', ')}</strong>. At minimum you need JE Number, Date, and Account Code.</span>
               </div>
             )}
             <button onClick={unduhTemplate} type="button" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
               <DocumentArrowDownIcon className="w-3.5 h-3.5" /> Download template CSV
             </button>
             <p className="text-xs text-muted-foreground">
-              Setiap baris = 1 journal line. Baris dengan JE Number yang sama otomatis digabung jadi 1 journal entry multi-baris. Kolom wajib: JE Number, Date, Account Code, Debit/Credit.
+              Each row = 1 journal line. Rows with the same JE Number are automatically grouped into 1 multi-line journal entry. Required columns: JE Number, Date, Account Code, Debit/Credit.
             </p>
           </div>
         )}
@@ -282,9 +330,9 @@ export default function ImportJournalModal({
         {step === 'preview' && (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              File <strong className="text-foreground">{fileName}</strong>: {groups.length} journal entry terbaca &mdash;{' '}
-              <span className="text-green-700 font-medium">{balancedGroups.length} siap diimpor</span>
-              {invalidGroups.length > 0 && <span className="text-red-700 font-medium">, {invalidGroups.length} bermasalah (dilewati)</span>}.
+              File <strong className="text-foreground">{fileName}</strong>: {groups.length} journal entries read &mdash;{' '}
+              <span className="text-green-700 font-medium">{balancedGroups.length} ready to import</span>
+              {invalidGroups.length > 0 && <span className="text-red-700 font-medium">, {invalidGroups.length} problematic (skipped)</span>}.
             </p>
             <div className="border border-border rounded-lg overflow-hidden max-h-[420px] overflow-y-auto scrollbar-thin">
               <table className="w-full text-xs">
@@ -338,7 +386,7 @@ export default function ImportJournalModal({
           <div className="space-y-4">
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
               <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
-              {successCount} dari {results.length} journal entry berhasil diimpor.
+              {resultMessage || `${successCount} of ${results.length} journal entries imported successfully.`}
             </div>
             <div className="border border-border rounded-lg overflow-hidden max-h-[360px] overflow-y-auto scrollbar-thin">
               <table className="w-full text-xs">
@@ -346,7 +394,7 @@ export default function ImportJournalModal({
                   <tr className="bg-muted/40 border-b border-border">
                     <th className="px-3 py-2 text-left font-semibold text-muted-foreground">JE Number</th>
                     <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Status</th>
-                    <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Keterangan</th>
+                    <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Notes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -355,9 +403,9 @@ export default function ImportJournalModal({
                       <td className="px-3 py-2 font-mono text-primary font-medium whitespace-nowrap">{r.je_number}</td>
                       <td className="px-3 py-2">
                         {r.ok ? (
-                          <span className="inline-flex items-center gap-1 text-green-700"><CheckCircleIcon className="w-3.5 h-3.5" /> Berhasil</span>
+                          <span className="inline-flex items-center gap-1 text-green-700"><CheckCircleIcon className="w-3.5 h-3.5" /> Success</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-red-700"><XCircleIcon className="w-3.5 h-3.5" /> Gagal</span>
+                          <span className="inline-flex items-center gap-1 text-red-700"><XCircleIcon className="w-3.5 h-3.5" /> Failed</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{r.message}</td>

@@ -10,3 +10,7 @@
 10-create_financial_transaction_journal_entry_tables.py
 seed_template_nbm_multi_format.sql
 seed_template_npi_sales_recapitulation_excel.sql
+seed_template_sau_detail_penjualan_csv.sql
+11-create_journal_entry_import_templates.py
+seed_template_sau_jurnal_kas_kasir_excel.sql
+12-create_financial_transaction_purchase_tables.py

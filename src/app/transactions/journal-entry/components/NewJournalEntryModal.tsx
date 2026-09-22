@@ -31,7 +31,7 @@ function baris_kosong(key: number): LineDraft {
 function periodeDariTanggal(iso: string): string {
   try {
     const d = new Date(iso + 'T00:00:00');
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${names[d.getMonth()]} ${d.getFullYear()}`;
   } catch {
     return '';
@@ -46,8 +46,7 @@ function nomorJeDefault(): string {
   return `JE-${yyyy}-${mm}-${rand}`;
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 export default function NewJournalEntryModal({
   clientId,
@@ -110,7 +109,7 @@ export default function NewJournalEntryModal({
         },
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal membuat PDF journal entry');
+      toast.error(err instanceof Error ? err.message : 'Failed to generate journal entry PDF');
     } finally {
       setPrinting(false);
     }
@@ -118,7 +117,7 @@ export default function NewJournalEntryModal({
 
   const submit = async () => {
     if (!jeNumber.trim() || !entryDate || !periodLabel.trim()) {
-      toast.error('Lengkapi JE Number, Entry Date, dan Period terlebih dahulu.');
+      toast.error('Please fill in JE Number, Entry Date, and Period first.');
       return;
     }
     const cleanedLines: JeDraftLineInput[] = [];
@@ -127,15 +126,15 @@ export default function NewJournalEntryModal({
       const debit = Number(l.debit) || 0;
       const credit = Number(l.credit) || 0;
       if (!l.account_code.trim()) {
-        toast.error(`Baris ${i + 1}: Account Code wajib diisi.`);
+        toast.error(`Line ${i + 1}: Account Code is required.`);
         return;
       }
       if (debit > 0 && credit > 0) {
-        toast.error(`Baris ${i + 1}: tidak boleh mengisi Debit dan Credit sekaligus.`);
+        toast.error(`Line ${i + 1}: cannot fill both Debit and Credit.`);
         return;
       }
       if (debit === 0 && credit === 0) {
-        toast.error(`Baris ${i + 1}: Debit atau Credit wajib diisi.`);
+        toast.error(`Line ${i + 1}: Debit or Credit is required.`);
         return;
       }
       cleanedLines.push({
@@ -147,7 +146,7 @@ export default function NewJournalEntryModal({
       });
     }
     if (!totals.balanced) {
-      toast.error(`Journal entry belum balance. Debit ${fmt(totals.debit)} ≠ Credit ${fmt(totals.credit)}.`);
+      toast.error(`Journal entry is not balanced. Debit ${fmt(totals.debit)} ≠ Credit ${fmt(totals.credit)}.`);
       return;
     }
 
@@ -161,16 +160,16 @@ export default function NewJournalEntryModal({
         description: description.trim() || undefined,
         source_type: sourceType,
         source_reference: sourceReference.trim() || undefined,
-        currency: 'USD',
+        currency: 'IDR',
         status: 'draft',
         created_by_name: createdByName,
         notes: notes.trim() || undefined,
         lines: cleanedLines,
       });
-      toast.success('Journal entry berhasil dibuat', { description: dibuat.je_number });
+      toast.success('Journal entry created successfully', { description: dibuat.je_number });
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal membuat journal entry');
+      toast.error(err instanceof Error ? err.message : 'Failed to create journal entry');
     } finally {
       setSubmitting(false);
     }
@@ -205,10 +204,10 @@ export default function NewJournalEntryModal({
           </div>
           <div className="col-span-2">
             <label className="text-[11px] text-muted-foreground">Description</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Deskripsi journal entry" className="je-input w-full mt-0.5" />
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Journal entry description" className="je-input w-full mt-0.5" />
           </div>
           <div className="col-span-2">
-            <label className="text-[11px] text-muted-foreground">Source Reference (opsional)</label>
+            <label className="text-[11px] text-muted-foreground">Source Reference (optional)</label>
             <input value={sourceReference} onChange={e => setSourceReference(e.target.value)} placeholder="mis. INV-2026-1847" className="je-input w-full mt-0.5" />
           </div>
         </div>
@@ -265,7 +264,7 @@ export default function NewJournalEntryModal({
         </div>
 
         <div>
-          <label className="text-[11px] text-muted-foreground">Notes (opsional)</label>
+          <label className="text-[11px] text-muted-foreground">Notes (optional)</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="je-input w-full mt-0.5" />
         </div>
 

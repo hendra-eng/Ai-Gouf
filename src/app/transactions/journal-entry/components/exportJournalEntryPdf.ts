@@ -51,8 +51,7 @@ const OK_TEXT: [number, number, number] = [21, 128, 61];
 const BAD_FILL: [number, number, number] = [254, 242, 242];
 const BAD_TEXT: [number, number, number] = [185, 28, 28];
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 const fmtCell = (v: string) => {
   const n = Number(v) || 0;
@@ -169,7 +168,7 @@ export async function exportJournalEntryPdf(data: JournalEntryPdfData, options: 
 
   const row2 = [
     drawField(doc, 'Description', data.description, colX(0), y, colW * 2 + gap),
-    drawField(doc, 'Source Reference (opsional)', data.sourceReference, colX(2), y, colW * 2 + gap),
+    drawField(doc, 'Source Reference (optional)', data.sourceReference, colX(2), y, colW * 2 + gap),
   ];
   y += Math.max(...row2) + 7;
 
@@ -234,7 +233,7 @@ export async function exportJournalEntryPdf(data: JournalEntryPdfData, options: 
   }
   doc.setFontSize(7);
   doc.setTextColor(...GRAY_TEXT);
-  doc.text('Notes (opsional)', MARGIN, notesY);
+  doc.text('Notes (optional)', MARGIN, notesY);
   doc.setDrawColor(...BORDER);
   doc.setLineWidth(0.25);
   doc.roundedRect(MARGIN, notesY + 1.5, contentWidth, notesBoxH, 1, 1, 'S');

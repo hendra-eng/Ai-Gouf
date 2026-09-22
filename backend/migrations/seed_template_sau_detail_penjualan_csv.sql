@@ -43,7 +43,16 @@
 -- klien tujuan di bawah ("SAU"). Diasumsikan SAU adalah nama akun/brand di
 -- platform ini untuk entitas yang sama (sesuai nama folder dataset), tapi
 -- mohon dipastikan sebelum dieksekusi -- kalau ternyata salah, cukup ganti
--- nilai client_id di bawah ke management_clients.id yang benar.
+-- nama_client yang dicari di blok DO di bawah.
+--
+-- KLIEN: dicari lewat nama_client ('SAU', tidak peka huruf besar/kecil) dan
+-- GAGAL dengan pesan jelas kalau klien belum ada di management_clients --
+-- buat dulu lewat halaman Clients. client_id & client_code diambil otomatis
+-- dari baris klien itu, TIDAK di-hardcode. [FIX] Sebelumnya client_id
+-- di-hardcode ('8f44dfee-...') -> di database lain (mis. VPS, tempat klien
+-- SAU dibuat terpisah dan UUID-nya beda) template menempel ke klien yang
+-- tidak ada, sehingga upload file SAU selalu berstatus 'Butuh Review'
+-- (template tidak pernah cocok).
 --
 -- Semua baris footer "Pajak :" di file contoh ini bernilai 0 (tidak ada
 -- transaksi berPPN untuk divalidasi) -- field_mapping.ppn tetap diarahkan
@@ -57,19 +66,34 @@
 -- ORM), nilainya NULL dan gagal kena NOT NULL constraint -- sudah
 -- divalidasi (dijalankan lalu di-ROLLBACK) sebelum file ini diberikan.
 --
--- Cara pakai: jalankan file ini SEKALI langsung ke database (psql, atau
--- tool SQL client apa pun) -- BUKAN lewat script migration Python, karena
--- ini data seed (1 baris konfigurasi), bukan perubahan skema.
---   psql "$DATABASE_URL" -f backend/migrations/seed_template_sau_detail_penjualan_csv.sql
+-- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
+--   cd backend
+--   venv\Scripts\python migrations\run_seed.py seed_template_sau_detail_penjualan_csv.sql
+-- (jalur psql tetap bisa, tapi tidak tercatat di history-migration.md)
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT DO NOTHING supaya kesalahan run-2x
 -- kelihatan jelas (gagal karena UNIQUE constraint uq_sales_import_templates_
 -- signature), bukan diam-diam ke-skip. Kalau memang perlu dijalankan ulang
 -- (mis. setelah mapping_rules direvisi), hapus dulu barisnya:
 --   DELETE FROM financial_transaction_sales_import_templates
---   WHERE client_id = '6ccf0c66-36a4-4c45-8a97-db36e7a5a59d'
---     AND file_type = 'CSV'
+--   WHERE file_type = 'CSV'
 --     AND column_signature_hash = '9d847b64d3b87a44a6b002ec1ff2734558ad901e1886fd84cc66f1ebac8f2f06';
+
+DO $do$
+DECLARE
+    v_client_id   UUID;
+    v_client_code VARCHAR(50);
+BEGIN
+    SELECT id, client_code INTO v_client_id, v_client_code
+    FROM management_clients
+    WHERE deleted_at IS NULL
+      AND upper(trim(nama_client)) in ('SAU', 'CV SUMBER ALODIE UTAMA')
+    ORDER BY created_at
+    LIMIT 1;
+
+    IF v_client_id IS NULL THEN
+        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari nama_client = SAU). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+    END IF;
 
 INSERT INTO financial_transaction_sales_import_templates (
     client_id,
@@ -84,8 +108,8 @@ INSERT INTO financial_transaction_sales_import_templates (
     is_active,
     usage_count
 ) VALUES (
-    '8f44dfee-d107-4e7f-a400-ceb6b19455ee',
-    'CLT-001',
+    v_client_id,
+    v_client_code,
     'CSV',
     8,
     11,
@@ -96,9 +120,12 @@ INSERT INTO financial_transaction_sales_import_templates (
     true,
     0
 );
+END
+$do$;
 
 -- Verifikasi setelah dijalankan:
--- SELECT id, client_code, file_type, header_row_index, data_start_row_index,
---        column_signature_hash, detected_by, is_active, created_at
--- FROM financial_transaction_sales_import_templates
--- WHERE client_id = '6ccf0c66-36a4-4c45-8a97-db36e7a5a59d';
+-- SELECT t.id, t.client_id, m.nama_client, t.client_code, t.file_type, t.header_row_index,
+--        t.data_start_row_index, t.column_signature_hash, t.detected_by, t.is_active, t.created_at
+-- FROM financial_transaction_sales_import_templates t
+-- JOIN management_clients m ON m.id = t.client_id
+-- WHERE m.nama_client = 'SAU';

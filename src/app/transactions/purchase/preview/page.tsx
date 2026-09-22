@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
-import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -56,7 +57,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 // Accounting impact for a purchase transaction
-function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
+function getAccountingEntries(tx: PurchaseTransaction) {
   const entries: { account: string; code: string; debit: number; credit: number; description: string }[] = [];
 
   // Group lines by account
@@ -85,10 +86,37 @@ function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
 }
 
 export default function PurchasePreviewPage() {
-  const [selectedId, setSelectedId] = useState(purchaseTransactions[0].id);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAccounting, setShowAccounting] = useState(true);
 
-  const tx = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+  // Begitu daftar transaksi datang, pilih yang pertama secara default
+  // (dulu purchaseTransactions[0] selalu ada karena mock statis -- sekarang
+  // baru terisi setelah fetch API selesai).
+  useEffect(() => {
+    if (!selectedId && purchaseTransactions.length > 0) setSelectedId(purchaseTransactions[0].id);
+  }, [selectedId, purchaseTransactions]);
+
+  const txHeader = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+  const { lines: selectedLines } = usePurchaseTransactionLines(txHeader?.id);
+  const tx = useMemo(
+    () => (txHeader ? { ...txHeader, lines: selectedLines.map(mapTransactionLineToUi) } : null),
+    [txHeader, selectedLines],
+  );
+
+  if (!tx) {
+    return (
+      <div className="space-y-6 fade-in">
+        <PurchaseTabs />
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">No purchase transactions yet.</div>
+      </div>
+    );
+  }
+
   const accountingEntries = getAccountingEntries(tx);
   const totalDebit = accountingEntries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = accountingEntries.reduce((s, e) => s + e.credit, 0);

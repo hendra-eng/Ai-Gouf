@@ -538,3 +538,210 @@ CREATE TABLE financial_transaction_journal_entry_activity_log (
 );
 
 CREATE INDEX idx_je_activity_log_draft ON financial_transaction_journal_entry_activity_log(draft_id);
+
+-- ============================================================
+-- FITUR TRANSACTIONS > PURCHASE (frontend: src/app/transactions/purchase/*)
+-- ============================================================
+-- 4 tabel di bawah menampung SELURUH data yang sekarang masih mock/local
+-- state di src/data/purchaseData.ts (dipakai 6 tab: Overview, Source Data,
+-- Purchase Transaction, Purchase Preview, Exceptions, Posted). Polanya
+-- gabungan dari Sales & Journal Entry di atas:
+--   - Entitas inti (financial_transaction_purchase_transactions) SATU
+--     tabel dipakai bersama tab Purchase Transaction/Preview/Posted, sama
+--     seperti financial_transaction_sales_invoices -- BUKAN 3 tabel
+--     terpisah per tab.
+--   - TAPI beda dari Sales (yang klasifikasi akunnya 1 baris mapping per
+--     invoice), 1 purchase transaction di sini multi-baris (lihat
+--     interface PurchaseLine di purchaseData.ts, tiap baris punya
+--     accountCode/accountName sendiri) -- makanya butuh 1 tabel child
+--     baris terpisah, pola sama seperti financial_transaction_journal_
+--     entry_draft_lines.
+--   - Tab "Source Data" isinya REGISTRI transaksi sumber (PO/Vendor
+--     Invoice/Goods Receipt/dst), BUKAN upload file mentah -- sama seperti
+--     financial_transaction_journal_entry_source_records (bukan pola
+--     *_source_files + *_source_rows seperti Sales), lihat interface
+--     PurchaseSourceRecord.
+--   - Tab "Exceptions" PUNYA tabel tersendiri (beda dari Journal Entry
+--     yang exception-nya hasil query) -- interface PurchaseException di
+--     purchaseData.ts punya field severity/assignedTo/resolution yang
+--     SUNGGUHAN dipakai UI (bukan fabrikasi), jadi diberi tabel sendiri
+--     seperti financial_transaction_sales_exceptions, dengan snapshot
+--     kolom (vendor/invoiceNumber/purchaseDate/amount) supaya exception
+--     lama tetap utuh ditampilkan walau transaksi sumbernya kelak diubah/
+--     dihapus.
+--
+-- client_id memakai UUID -> management_users(id_user), pola sama seperti
+-- Sales & Journal Entry di atas (akun client_lv_1..9, lihat RBAC.md).
+--
+-- Tidak ada tabel vendor master terpisah -- UI saat ini (purchaseData.ts::
+-- vendors) belum punya layar kelola master vendor sendiri, vendor cuma
+-- teks bebas (vendor_name) + kode referensi (vendor_code, mis. "VND-001")
+-- disimpan langsung di transaksi (denormalized), sama alasannya dengan
+-- customer_name di financial_transaction_sales_invoices. Tabel master
+-- vendor bisa ditambah belakangan kalau fitur itu benar-benar dibangun.
+--
+-- journal_entry_id/posted_at disiapkan sebagai pointer ke jurnal native
+-- (Accounting Core V2) begitu tombol "Post to GL" di tab Preview
+-- sungguhan disambungkan -- pola sama persis dengan financial_transaction_
+-- sales_invoices.journal_entry_id & financial_transaction_journal_entry_
+-- drafts.journal_entry_id. Modul ini (spt Sales/JE) TIDAK menyimpan ulang
+-- baris jurnal resmi, baris jurnal tetap di journal_entries+journal_lines.
+
+-- 1) Registri transaksi sumber (PO/Vendor Invoice/Goods Receipt/Service
+--    Receipt/dst) yang berpotensi/sudah dijadikan Purchase Transaction --
+--    tab "Source Data" (lihat interface PurchaseSourceRecord).
+CREATE TABLE financial_transaction_purchase_source_records (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    source_code             VARCHAR(100) NOT NULL,                 -- mis. "APEX-INV-7821", "PO-2026-0921" (kolom "Source ID" di UI)
+    source_type             VARCHAR(30) NOT NULL,                  -- Purchase Order/Vendor Invoice/Goods Receipt/Service Receipt/Supplier Bill/Expense Claim/Recurring Purchase/Manual
+    vendor_name              VARCHAR(255) NOT NULL,
+    vendor_code              VARCHAR(50),                           -- kode referensi teks bebas, mis. "VND-001" (lihat catatan "tidak ada tabel vendor master" di atas)
+    source_date              DATE,
+    invoice_number           VARCHAR(100),                          -- boleh kosong (mis. PO yang belum ada invoice vendor-nya)
+    po_number                VARCHAR(100),
+    description               TEXT,
+    amount                     NUMERIC(24,2) NOT NULL DEFAULT 0,      -- net, belum termasuk pajak
+    tax_amount                 NUMERIC(24,2) NOT NULL DEFAULT 0,
+    total_amount                NUMERIC(24,2) NOT NULL DEFAULT 0,
+    currency                    VARCHAR(10) NOT NULL DEFAULT 'USD',
+    status                      VARCHAR(20) NOT NULL DEFAULT 'Imported', -- Mapped/Pending Mapping/Validation Error/Imported
+    validation_status            VARCHAR(20) NOT NULL DEFAULT 'Pending Validation', -- Valid/Pending Validation/Invalid
+    -- [FIX] relatedPurchaseId (interface PurchaseSourceRecord) SENGAJA
+    -- TIDAK disimpan sebagai kolom FK di sini -- kalau begitu akan
+    -- sirkular dengan financial_transaction_purchase_transactions.
+    -- source_record_id di bawah (2 tabel saling FK). Dicari via reverse
+    -- query "SELECT ... FROM financial_transaction_purchase_transactions
+    -- WHERE source_record_id = <id ini>", pola sama persis dengan alasan
+    -- last_used_at di financial_transaction_sales_import_templates
+    -- (hindari referensi melingkar antar 2 tabel).
+    period_label                 VARCHAR(50) NOT NULL,                  -- mis. "Sep 2026"
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_purchase_source_records_client_code UNIQUE (client_id, source_code)
+);
+
+CREATE INDEX idx_purchase_source_records_client_status ON financial_transaction_purchase_source_records(client_id, status);
+
+-- 2) Entitas inti: header Purchase Transaction. Dipakai bersama oleh tab
+--    Purchase Transaction, Purchase Preview, dan Posted.
+CREATE TABLE financial_transaction_purchase_transactions (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    purchase_no             VARCHAR(100) NOT NULL,                 -- mis. "PUR-2026-09-0042"
+    purchase_date            DATE NOT NULL,
+    invoice_date              DATE,
+    invoice_number            VARCHAR(100),
+    po_number                 VARCHAR(100),
+    vendor_name                VARCHAR(255) NOT NULL,
+    vendor_code                VARCHAR(50),
+    source_doc_type            VARCHAR(30) NOT NULL DEFAULT 'Manual', -- sama daftar nilai dengan source_type di atas
+    source_ref                 VARCHAR(100),                          -- salinan (denormalized) source_code -- tetap dipertahankan meski source_record_id diedit/dihapus
+    source_record_id           UUID REFERENCES financial_transaction_purchase_source_records(id), -- NULL kalau dibuat manual (bukan hasil mapping dari tab Source Data)
+    description                 TEXT,
+    category                    VARCHAR(50),                           -- Inventory/Office Supplies/IT Equipment/dst (PurchaseCategory)
+    subtotal                    NUMERIC(24,2) NOT NULL DEFAULT 0,      -- didenormalisasi dari SUM(lines.subtotal) -- lihat create_purchase_transaction_with_lines() di db_client.py
+    discount                    NUMERIC(24,2) NOT NULL DEFAULT 0,
+    tax_amount                  NUMERIC(24,2) NOT NULL DEFAULT 0,
+    total                       NUMERIC(24,2) NOT NULL DEFAULT 0,
+    accounts_payable             NUMERIC(24,2) NOT NULL DEFAULT 0,
+    currency                     VARCHAR(10) NOT NULL DEFAULT 'USD',
+    payment_status                VARCHAR(20) NOT NULL DEFAULT 'unpaid', -- unpaid/partially_paid/paid/overdue/on_hold (PaymentStatus)
+    payment_terms                 VARCHAR(50),                           -- mis. "Net 30"
+    due_date                      DATE,
+    status                        VARCHAR(20) NOT NULL DEFAULT 'draft',  -- draft/pending_review/approved/pending_posting/posted/rejected/exception/cancelled (PurchaseStatus)
+    period_label                  VARCHAR(50) NOT NULL,                  -- mis. "Sep 2026"
+    created_by_name                VARCHAR(255),                         -- nama pembuat tampilan (mis. "James Okafor") -- BEDA dari created_by (UUID audit teknis) di bawah, pola sama dgn JE draft
+    approved_by_name               VARCHAR(255),
+    posted_by_name                 VARCHAR(255),
+    notes                          TEXT,
+    journal_entry_id               INTEGER REFERENCES journal_entries(id), -- diisi begitu transaksi ini disinkronkan ke jurnal native (Accounting Core V2)
+    posting_date                   DATE,
+    posted_at                      TIMESTAMPTZ,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_purchase_transactions_client_no UNIQUE (client_id, purchase_no)
+);
+
+CREATE INDEX idx_purchase_transactions_client_status ON financial_transaction_purchase_transactions(client_id, status);
+CREATE INDEX idx_purchase_transactions_client_date ON financial_transaction_purchase_transactions(client_id, purchase_date);
+CREATE INDEX idx_purchase_transactions_client_vendor ON financial_transaction_purchase_transactions(client_id, vendor_name);
+
+-- 3) Baris item/jasa per transaksi (tab Purchase Transaction detail panel,
+--    Purchase Preview line items, Posted detail). Begitu transaksi
+--    diposting, baris ini DICERMINKAN jadi journal_lines resmi (Accounting
+--    Core V2), bukan dipindah/dihapus -- pola sama seperti financial_
+--    transaction_journal_entry_draft_lines.
+CREATE TABLE financial_transaction_purchase_transaction_lines (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id            UUID NOT NULL REFERENCES financial_transaction_purchase_transactions(id) ON DELETE CASCADE,
+    client_id                 UUID REFERENCES management_users(id_user),
+    line_no                    INTEGER NOT NULL,
+    item_code                  VARCHAR(50),
+    description                 TEXT NOT NULL,
+    quantity                    NUMERIC(18,4) NOT NULL DEFAULT 0,
+    unit                        VARCHAR(20),
+    unit_price                  NUMERIC(24,2) NOT NULL DEFAULT 0,
+    discount                    NUMERIC(24,2) NOT NULL DEFAULT 0,
+    tax_rate                    NUMERIC(5,2) NOT NULL DEFAULT 0,
+    tax_amount                  NUMERIC(24,2) NOT NULL DEFAULT 0,
+    subtotal                    NUMERIC(24,2) NOT NULL DEFAULT 0,
+    total                       NUMERIC(24,2) NOT NULL DEFAULT 0,
+    account_code                 VARCHAR(50) NOT NULL,
+    account_name                 VARCHAR(200),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID,
+    CONSTRAINT uq_purchase_transaction_lines_tx_no UNIQUE (transaction_id, line_no)
+);
+
+CREATE INDEX idx_purchase_transaction_lines_tx ON financial_transaction_purchase_transaction_lines(transaction_id);
+CREATE INDEX idx_purchase_transaction_lines_client_account ON financial_transaction_purchase_transaction_lines(client_id, account_code);
+
+-- 4) Antrean review tab "Exceptions" -- transaksi/source record pembelian
+--    yang perlu ditinjau manusia sebelum lanjut diposting. Kolom
+--    vendor_name/invoice_number/purchase_date/amount/currency SENGAJA
+--    disalin (denormalized snapshot), bukan join ke transaction_id --
+--    supaya exception lama tetap utuh ditampilkan walau transaksi
+--    sumbernya kelak diedit/dihapus (pola sama alasannya dengan
+--    source_reference di tabel #2).
+CREATE TABLE financial_transaction_purchase_exceptions (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES management_users(id_user),
+    transaction_id           UUID REFERENCES financial_transaction_purchase_transactions(id), -- NULL kalau exception masih di level source_record (belum jadi transaksi)
+    source_record_id         UUID REFERENCES financial_transaction_purchase_source_records(id),
+    exception_type            VARCHAR(100) NOT NULL,                  -- "Missing Invoice Number"/"Duplicate Invoice"/"Purchase Order Mismatch"/dst (ExceptionType)
+    severity                   VARCHAR(10) NOT NULL DEFAULT 'Medium',  -- Critical/High/Medium/Low
+    status                     VARCHAR(30) NOT NULL DEFAULT 'Open',    -- Open/Under Review/Requires Correction/Resolved/Ignored (ExceptionStatus)
+    vendor_name                 VARCHAR(255),                          -- snapshot, lihat catatan di atas
+    invoice_number               VARCHAR(100),
+    purchase_date                DATE,
+    amount                       NUMERIC(24,2) NOT NULL DEFAULT 0,
+    currency                     VARCHAR(10) NOT NULL DEFAULT 'USD',
+    description                  TEXT NOT NULL,
+    detected_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    assigned_to                  VARCHAR(255),                          -- nama user (teks bebas, pola sama dgn created_by_name di tabel #2) -- BUKAN UUID FK, exception ini bisa ditugaskan ke siapa saja bukan cuma akun client login
+    resolution                   TEXT,
+    resolved_at                  TIMESTAMPTZ,
+    period_label                 VARCHAR(50) NOT NULL,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                  UUID,
+    edited_at                   TIMESTAMPTZ,
+    edited_by                   UUID,
+    deleted_at                  TIMESTAMPTZ,
+    deleted_by                  UUID
+);
+
+CREATE INDEX idx_purchase_exceptions_client_status ON financial_transaction_purchase_exceptions(client_id, status);
+CREATE INDEX idx_purchase_exceptions_transaction ON financial_transaction_purchase_exceptions(transaction_id);

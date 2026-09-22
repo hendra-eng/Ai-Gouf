@@ -33,7 +33,7 @@ const STATUS_META: Record<string, { name: string; color: string }> = {
 function formatTanggalPendek(iso: string): string {
   try {
     const d = new Date(iso + 'T00:00:00');
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${names[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`;
   } catch {
     return iso;
@@ -91,7 +91,7 @@ export default function OverviewCharts() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-700 text-foreground">Journal Entry Volume</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Entries created vs posted per tanggal entri</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Entries created vs posted per entry date</p>
           </div>
         </div>
         <EntryTrendChart data={trendData} />
@@ -111,7 +111,7 @@ export default function OverviewCharts() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-700 text-foreground">Exception Breakdown</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Entri yang perlu ditinjau sebelum period close</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Entries that need review before period close</p>
           </div>
           <a href="/transactions/journal-entry/exceptions" className="text-xs text-primary font-600 hover:underline">View All Exceptions →</a>
         </div>

@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -15,9 +16,6 @@ import {
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
-
-// Only posted transactions
-const postedPurchases = purchaseTransactions.filter(t => t.status === 'posted');
 
 const categoryColors: Record<string, string> = {
   Inventory: 'bg-emerald-100 text-emerald-700',
@@ -51,6 +49,11 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId, 'posted');
+  const postedPurchases = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -59,6 +62,10 @@ export default function PurchasePostedPage() {
   const [sortField, setSortField] = useState('postingDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Baris item/jasa dimuat lazy, cuma untuk baris yang sedang di-expand.
+  const { lines: expandedLines } = usePurchaseTransactionLines(expandedId);
+  const mappedExpandedLines = useMemo(() => expandedLines.map(mapTransactionLineToUi), [expandedLines]);
 
   const periods = ['All', ...Array.from(new Set(postedPurchases.map(t => t.period)))];
   const categories = ['All', ...Array.from(new Set(postedPurchases.map(t => t.category)))];
@@ -85,7 +92,7 @@ export default function PurchasePostedPage() {
       return 0;
     });
     return data;
-  }, [search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  }, [postedPurchases, search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -98,7 +105,7 @@ export default function PurchasePostedPage() {
     totalTax: postedPurchases.reduce((s, t) => s + t.taxAmount, 0),
     totalAP: postedPurchases.reduce((s, t) => s + t.accountsPayable, 0),
     periods: [...new Set(postedPurchases.map(t => t.period))].length,
-  }), []);
+  }), [postedPurchases]);
 
   return (
       <div className="space-y-6 fade-in">
@@ -261,7 +268,7 @@ export default function PurchasePostedPage() {
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
-                                  {row.lines.map(line => (
+                                  {mappedExpandedLines.map(line => (
                                     <tr key={line.id}>
                                       <td className="px-3 py-2 text-foreground">{line.description}</td>
                                       <td className="px-3 py-2 text-right tabular-nums">{line.quantity} {line.unit}</td>

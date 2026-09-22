@@ -47,9 +47,9 @@ export default function OverviewSourceTable() {
       </div>
       <div className="p-5 space-y-4">
         {loading ? (
-          <p className="text-xs text-muted-foreground">Memuat…</p>
+          <p className="text-xs text-muted-foreground">Loading…</p>
         ) : sourceDistribution.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Belum ada journal entry.</p>
+          <p className="text-xs text-muted-foreground">No journal entries yet.</p>
         ) : sourceDistribution.map((item) => (
           <div key={`src-${item.source}`}>
             <div className="flex items-center justify-between mb-1.5">
@@ -59,7 +59,7 @@ export default function OverviewSourceTable() {
               </div>
               <div className="text-right">
                 <span className="text-sm font-700 text-foreground tabular-nums">
-                  ${(item.totalAmount / 1000).toFixed(0)}K
+                  Rp{(item.totalAmount / 1000).toFixed(0)}K
                 </span>
                 <span className="text-[11px] text-muted-foreground ml-1">({item.percentOfTotal}%)</span>
               </div>
@@ -77,7 +77,7 @@ export default function OverviewSourceTable() {
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted-foreground font-500">Period Total</span>
           <span className="font-800 text-foreground tabular-nums">
-            ${(periodTotal / 1000000).toFixed(2)}M
+            Rp{(periodTotal / 1000000).toFixed(2)}M
           </span>
         </div>
       </div>

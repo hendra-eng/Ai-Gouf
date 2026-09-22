@@ -1124,7 +1124,7 @@ class JournalEntrySourceRecord(Base):
     source_date = Column(Date, nullable=True)
     description = Column(Text, nullable=True)
     amount = Column(Numeric(24, 2), nullable=False, default=0)
-    currency = Column(String(10), nullable=False, default="USD")
+    currency = Column(String(10), nullable=False, default="IDR")
     related_account_code = Column(String(50), nullable=True)
     related_account_name = Column(String(200), nullable=True)
     party_name = Column(String(255), nullable=True)
@@ -1163,7 +1163,7 @@ class JournalEntryDraft(Base):
     source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_source_records.id"), nullable=True)
     total_debit = Column(Numeric(24, 2), nullable=False, default=0)
     total_credit = Column(Numeric(24, 2), nullable=False, default=0)
-    currency = Column(String(10), nullable=False, default="USD")
+    currency = Column(String(10), nullable=False, default="IDR")
     status = Column(String(20), nullable=False, default="draft")
     created_by_name = Column(String(255), nullable=True)
     reviewed_by_name = Column(String(255), nullable=True)
@@ -1226,6 +1226,220 @@ class JournalEntryActivityLog(Base):
     description = Column(Text, nullable=False)
     status_snapshot = Column(String(20), nullable=True)
     performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntryImportTemplate(Base):
+    """Pola kolom file laporan jurnal (CSV/Excel) yang sudah "dipelajari"
+    untuk 1 klien -- dipakai ulang otomatis (tanpa mengulang analisis
+    manual) begitu file berikutnya dari klien+format yang sama diupload.
+    Bentuk & peran PERSIS sama dengan SalesImportTemplate (lihat
+    SALES_IMPORT_TEMPLATES.md di root untuk alur lengkapnya), cuma versi
+    Journal Entry -- sengaja tabel TERPISAH (bukan dipakai bersama dengan
+    financial_transaction_sales_import_templates) supaya pola kolom Sales
+    dan Journal Entry tidak saling bentrok/mencemari pencocokan satu sama
+    lain walau kebetulan sama-sama milik klien yang sama.
+
+    client_id di sini SENGAJA reference ke management_clients (BUKAN
+    management_users seperti 4 tabel Journal Entry lain) -- pola kolom
+    laporan adalah properti PERUSAHAAN klien itu sendiri, bukan akun yang
+    kebetulan login & upload. Alasan sama persis dengan SalesImportTemplate.
+    """
+    __tablename__ = "financial_transaction_journal_entry_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_je_import_templates_signature"),
+        Index("idx_je_import_templates_client", "client_id"),
+        Index("idx_je_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# ============================================================
+# FITUR TRANSACTIONS > PURCHASE (DDL: root/ddl-table bagian "FITUR
+# TRANSACTIONS > PURCHASE", frontend: src/app/transactions/purchase/*).
+# Pola gabungan Sales (entitas inti 1 tabel dipakai lintas-tab) & Journal
+# Entry (source record registri + child lines + exceptions bertabel
+# sendiri) -- lihat komentar lengkap di kepala bagian DDL-nya.
+# ============================================================
+
+class PurchaseSourceRecord(Base):
+    """Registri transaksi sumber (PO/Vendor Invoice/Goods Receipt/dst)
+    yang berpotensi/sudah dijadikan Purchase Transaction -- tab "Source
+    Data"."""
+    __tablename__ = "financial_transaction_purchase_source_records"
+    __table_args__ = (
+        UniqueConstraint("client_id", "source_code", name="uq_purchase_source_records_client_code"),
+        Index("idx_purchase_source_records_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    source_code = Column(String(100), nullable=False)
+    source_type = Column(String(30), nullable=False)
+    vendor_name = Column(String(255), nullable=False)
+    vendor_code = Column(String(50), nullable=True)
+    source_date = Column(Date, nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    total_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    status = Column(String(20), nullable=False, default="Imported")
+    validation_status = Column(String(20), nullable=False, default="Pending Validation")
+    period_label = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseTransaction(Base):
+    """Entitas inti: header Purchase Transaction. Dipakai bersama oleh tab
+    Purchase Transaction, Purchase Preview, dan Posted."""
+    __tablename__ = "financial_transaction_purchase_transactions"
+    __table_args__ = (
+        UniqueConstraint("client_id", "purchase_no", name="uq_purchase_transactions_client_no"),
+        Index("idx_purchase_transactions_client_status", "client_id", "status"),
+        Index("idx_purchase_transactions_client_date", "client_id", "purchase_date"),
+        Index("idx_purchase_transactions_client_vendor", "client_id", "vendor_name"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    purchase_no = Column(String(100), nullable=False)
+    purchase_date = Column(Date, nullable=False)
+    invoice_date = Column(Date, nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    vendor_name = Column(String(255), nullable=False)
+    vendor_code = Column(String(50), nullable=True)
+    source_doc_type = Column(String(30), nullable=False, default="Manual")
+    source_ref = Column(String(100), nullable=True)
+    source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_records.id"), nullable=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)
+    subtotal = Column(Numeric(24, 2), nullable=False, default=0)
+    discount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    accounts_payable = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    payment_status = Column(String(20), nullable=False, default="unpaid")
+    payment_terms = Column(String(50), nullable=True)
+    due_date = Column(Date, nullable=True)
+    status = Column(String(20), nullable=False, default="draft")
+    period_label = Column(String(50), nullable=False)
+    created_by_name = Column(String(255), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    posting_date = Column(Date, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseTransactionLine(Base):
+    """Baris item/jasa per transaksi (tab Purchase Transaction detail
+    panel, Purchase Preview line items, Posted detail). Begitu transaksi
+    diposting, baris ini DICERMINKAN jadi journal_lines resmi (Accounting
+    Core V2), bukan dipindah/dihapus."""
+    __tablename__ = "financial_transaction_purchase_transaction_lines"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", "line_no", name="uq_purchase_transaction_lines_tx_no"),
+        Index("idx_purchase_transaction_lines_tx", "transaction_id"),
+        Index("idx_purchase_transaction_lines_client_account", "client_id", "account_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    line_no = Column(Integer, nullable=False)
+    item_code = Column(String(50), nullable=True)
+    description = Column(Text, nullable=False)
+    quantity = Column(Numeric(18, 4), nullable=False, default=0)
+    unit = Column(String(20), nullable=True)
+    unit_price = Column(Numeric(24, 2), nullable=False, default=0)
+    discount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    subtotal = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseException(Base):
+    """Antrean review tab "Exceptions" -- transaksi/source record
+    pembelian yang perlu ditinjau manusia sebelum lanjut diposting.
+    vendor_name/invoice_number/purchase_date/amount/currency adalah
+    snapshot (denormalized), bukan join -- lihat catatan di DDL."""
+    __tablename__ = "financial_transaction_purchase_exceptions"
+    __table_args__ = (
+        Index("idx_purchase_exceptions_client_status", "client_id", "status"),
+        Index("idx_purchase_exceptions_transaction", "transaction_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_records.id"), nullable=True)
+    exception_type = Column(String(100), nullable=False)
+    severity = Column(String(10), nullable=False, default="Medium")
+    status = Column(String(30), nullable=False, default="Open")
+    vendor_name = Column(String(255), nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    purchase_date = Column(Date, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    description = Column(Text, nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    assigned_to = Column(String(255), nullable=True)
+    resolution = Column(Text, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    period_label = Column(String(50), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
@@ -3007,6 +3221,66 @@ def list_je_activity_logs(client_id: Optional[str] = None, draft_id: Optional[st
     )
 
 
+# --- 5) financial_transaction_journal_entry_import_templates ---
+# Pola sama persis dengan financial_transaction_sales_import_templates
+# (lihat SALES_IMPORT_TEMPLATES.md) -- client_id reference ke
+# management_clients (BEDA dari 4 tabel Journal Entry lain di atas yang
+# reference ke management_users), jadi TIDAK dipakaikan _je_crud_list biasa
+# (list_sales_import_templates juga custom, ordering by usage_count).
+
+CRUD_FIELDS_JE_IMPORT_TEMPLATE = [
+    "client_id", "client_code", "file_type", "sheet_name",
+    "header_row_index", "data_start_row_index", "column_signature_hash",
+    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
+    "ai_confidence", "is_active",
+]
+
+def create_je_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntryImportTemplate, CRUD_FIELDS_JE_IMPORT_TEMPLATE, data, created_by)
+
+def get_je_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntryImportTemplate, CRUD_FIELDS_JE_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
+
+def list_je_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    """Daftar template pola kolom Journal Entry -- dipakai untuk mencocokkan
+    file baru (lihat _cocokkan_template di modules/transactions/
+    journal_entry_import_v1.py)."""
+    session = SessionLocal()
+    try:
+        query = session.query(JournalEntryImportTemplate).filter(JournalEntryImportTemplate.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(JournalEntryImportTemplate.client_id == client_id)
+        if file_type is not None:
+            query = query.filter(JournalEntryImportTemplate.file_type == file_type)
+        if hanya_aktif:
+            query = query.filter(JournalEntryImportTemplate.is_active.is_(True))
+        return [_je_row_ke_dict(obj, CRUD_FIELDS_JE_IMPORT_TEMPLATE) for obj in query.order_by(JournalEntryImportTemplate.usage_count.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def touch_je_import_template_usage(template_id: str) -> bool:
+    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
+    kali template ini berhasil dipakai mencocokkan file baru."""
+    session = SessionLocal()
+    try:
+        obj = session.query(JournalEntryImportTemplate).filter(JournalEntryImportTemplate.id == template_id).first()
+        if not obj:
+            return False
+        obj.usage_count = (obj.usage_count or 0) + 1
+        obj.last_used_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error touch usage je_import_template: {e}")
+        return False
+    finally:
+        session.close()
+
+
 def create_je_draft_with_lines(
     draft_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
@@ -3072,6 +3346,353 @@ def create_je_draft_with_lines(
     except Exception as e:
         session.rollback()
         print(f"Error create draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return None
+    finally:
+        session.close()
+
+
+# ============================================================
+# FITUR TRANSACTIONS > PURCHASE -- CRUD 4 tabel
+# financial_transaction_purchase_* (DDL: root/ddl-table). Bentuk kolom
+# audit SAMA persis dengan Sales/Journal Entry (id, created_at/by,
+# edited_at/by, deleted_at/by), helper generic-nya juga pola yang sama --
+# sengaja dipisah nama (_purchase_crud_*, bukan dipakai ulang lintas
+# fitur) supaya tiap fitur tetap berdiri sendiri, sama alasannya dengan
+# _je_crud_* vs _sales_crud_*.
+
+def _purchase_row_ke_dict(obj, fields: List[str]) -> Dict[str, Any]:
+    data = {kolom: getattr(obj, kolom) for kolom in fields}
+    data.update({
+        "id": obj.id,
+        "created_at": obj.created_at,
+        "created_by": obj.created_by,
+        "edited_at": obj.edited_at,
+        "edited_by": obj.edited_by,
+        "aktif": obj.deleted_at is None,
+    })
+    return data
+
+
+def _purchase_crud_create(model, fields: List[str], data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = model(**{k: v for k, v in data.items() if k in fields}, created_by=created_by)
+        session.add(obj)
+        session.flush()
+        hasil = _purchase_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model).filter(model.id == row_id)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        obj = query.first()
+        return _purchase_row_ke_dict(obj, fields) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model)
+        for kolom, nilai in (filters or {}).items():
+            if nilai is not None:
+                query = query.filter(getattr(model, kolom) == nilai)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        return [_purchase_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def _purchase_crud_update(model, fields: List[str], row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in fields:
+                setattr(obj, kolom, nilai)
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _purchase_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_soft_delete(model, row_id: str, deleted_by: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return False
+        obj.deleted_at = datetime.now()
+        obj.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete {model.__tablename__}: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# --- 1) financial_transaction_purchase_source_records ---
+
+CRUD_FIELDS_PURCHASE_SOURCE_RECORD = [
+    "client_id", "source_code", "source_type", "vendor_name", "vendor_code",
+    "source_date", "invoice_number", "po_number", "description", "amount",
+    "tax_amount", "total_amount", "currency", "status", "validation_status",
+    "period_label",
+]
+
+def create_purchase_source_record(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, data, created_by)
+
+def get_purchase_source_record_by_id(source_record_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, source_record_id, termasuk_nonaktif)
+
+def get_purchase_source_record_by_client_and_code(client_id: Optional[str], source_code: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, source_code) sebelum insert,
+    pola sama seperti get_je_source_record_by_client_and_code()."""
+    session = SessionLocal()
+    try:
+        obj = session.query(PurchaseSourceRecord).filter(
+            PurchaseSourceRecord.client_id == client_id,
+            PurchaseSourceRecord.source_code == source_code,
+            PurchaseSourceRecord.deleted_at.is_(None),
+        ).first()
+        return _purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_SOURCE_RECORD) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_purchase_source_records(client_id: Optional[str] = None, source_type: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    hasil = _purchase_crud_list(
+        PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD,
+        {"client_id": client_id, "source_type": source_type, "status": status},
+        termasuk_nonaktif,
+    )
+    # relatedPurchaseId (frontend) TIDAK disimpan sebagai kolom (hindari FK
+    # sirkular, lihat catatan di DDL) -- dicari lewat reverse query 1x per
+    # panggilan, bukan per-baris (N+1), lalu ditempel ke tiap record.
+    if hasil:
+        session = SessionLocal()
+        try:
+            ids = [r["id"] for r in hasil]
+            baris = session.query(PurchaseTransaction.id, PurchaseTransaction.source_record_id).filter(
+                PurchaseTransaction.source_record_id.in_(ids),
+                PurchaseTransaction.deleted_at.is_(None),
+            ).all()
+            peta = {src_id: tx_id for tx_id, src_id in baris}
+            for r in hasil:
+                r["related_transaction_id"] = peta.get(r["id"])
+        except Exception:
+            session.rollback()
+            for r in hasil:
+                r["related_transaction_id"] = None
+        finally:
+            session.close()
+    return hasil
+
+def update_purchase_source_record(source_record_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, source_record_id, data, updated_by)
+
+def soft_delete_purchase_source_record(source_record_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseSourceRecord, source_record_id, deleted_by)
+
+
+# --- 2) financial_transaction_purchase_transactions ---
+
+CRUD_FIELDS_PURCHASE_TRANSACTION = [
+    "client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
+    "po_number", "vendor_name", "vendor_code", "source_doc_type", "source_ref",
+    "source_record_id", "description", "category", "subtotal", "discount",
+    "tax_amount", "total", "accounts_payable", "currency", "payment_status",
+    "payment_terms", "due_date", "status", "period_label", "created_by_name",
+    "approved_by_name", "posted_by_name", "notes", "journal_entry_id",
+    "posting_date", "posted_at",
+]
+
+def create_purchase_transaction(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, data, created_by)
+
+def get_purchase_transaction_by_id(transaction_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, transaction_id, termasuk_nonaktif)
+
+def get_purchase_transaction_by_client_and_no(client_id: Optional[str], purchase_no: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, purchase_no) sebelum insert,
+    pola sama seperti get_sales_invoice_by_client_and_no()."""
+    session = SessionLocal()
+    try:
+        obj = session.query(PurchaseTransaction).filter(
+            PurchaseTransaction.client_id == client_id,
+            PurchaseTransaction.purchase_no == purchase_no,
+            PurchaseTransaction.deleted_at.is_(None),
+        ).first()
+        return _purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_TRANSACTION) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_purchase_transactions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION,
+        {"client_id": client_id, "status": status},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_transaction(transaction_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, transaction_id, data, updated_by)
+
+def soft_delete_purchase_transaction(transaction_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseTransaction, transaction_id, deleted_by)
+
+
+# --- 3) financial_transaction_purchase_transaction_lines ---
+
+CRUD_FIELDS_PURCHASE_TRANSACTION_LINE = [
+    "transaction_id", "client_id", "line_no", "item_code", "description",
+    "quantity", "unit", "unit_price", "discount", "tax_rate", "tax_amount",
+    "subtotal", "total", "account_code", "account_name",
+]
+
+def create_purchase_transaction_line(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, data, created_by)
+
+def get_purchase_transaction_line_by_id(line_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, line_id, termasuk_nonaktif)
+
+def list_purchase_transaction_lines(transaction_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE,
+        {"transaction_id": transaction_id, "client_id": client_id},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_transaction_line(line_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, line_id, data, updated_by)
+
+def soft_delete_purchase_transaction_line(line_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseTransactionLine, line_id, deleted_by)
+
+
+# --- 4) financial_transaction_purchase_exceptions ---
+
+CRUD_FIELDS_PURCHASE_EXCEPTION = [
+    "client_id", "transaction_id", "source_record_id", "exception_type",
+    "severity", "status", "vendor_name", "invoice_number", "purchase_date",
+    "amount", "currency", "description", "detected_at", "assigned_to",
+    "resolution", "resolved_at", "period_label",
+]
+
+def create_purchase_exception(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, data, created_by)
+
+def get_purchase_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, exception_id, termasuk_nonaktif)
+
+def list_purchase_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION,
+        {"client_id": client_id, "status": status},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, exception_id, data, updated_by)
+
+def soft_delete_purchase_exception(exception_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseException, exception_id, deleted_by)
+
+
+def create_purchase_transaction_with_lines(
+    transaction_data: Dict[str, Any],
+    lines_data: List[Dict[str, Any]],
+    created_by: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Buat 1 Purchase Transaction + SELURUH baris item/jasa-nya dalam SATU
+    transaksi (atomik) -- pola sama persis alasannya dengan
+    create_je_draft_with_lines() (supaya tidak ada transaksi "yatim" tanpa
+    baris kalau salah satu insert baris gagal di tengah jalan).
+
+    subtotal/discount/tax_amount/total di transaction_data DIABAIKAN kalau
+    ada -- dihitung ULANG dari SUM(lines) di sini supaya header tidak bisa
+    "bohong" beda dari baris aslinya (pola sama dengan total_debit/
+    total_credit di create_je_draft_with_lines). accounts_payable default
+    ikut total kalau tidak dikirim eksplisit."""
+    session = SessionLocal()
+    try:
+        subtotal = sum(Decimal(str(l.get("subtotal") or 0)) for l in lines_data)
+        discount = sum(Decimal(str(l.get("discount") or 0)) for l in lines_data)
+        tax_amount = sum(Decimal(str(l.get("tax_amount") or 0)) for l in lines_data)
+        total = sum(Decimal(str(l.get("total") or 0)) for l in lines_data)
+        accounts_payable = Decimal(str(transaction_data.get("accounts_payable"))) if transaction_data.get("accounts_payable") is not None else total
+
+        tx = PurchaseTransaction(
+            **{k: v for k, v in transaction_data.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION and k not in ("subtotal", "discount", "tax_amount", "total", "accounts_payable")},
+            subtotal=subtotal,
+            discount=discount,
+            tax_amount=tax_amount,
+            total=total,
+            accounts_payable=accounts_payable,
+            created_by=created_by,
+        )
+        session.add(tx)
+        session.flush()  # isi tx.id sebelum dipakai FK baris di bawah
+
+        for idx, line in enumerate(lines_data, start=1):
+            session.add(PurchaseTransactionLine(
+                **{k: v for k, v in line.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION_LINE and k != "line_no"},
+                transaction_id=tx.id,
+                client_id=tx.client_id,
+                line_no=line.get("line_no") or idx,
+                created_by=created_by,
+            ))
+
+        session.commit()
+        session.refresh(tx)
+        hasil = _purchase_row_ke_dict(tx, CRUD_FIELDS_PURCHASE_TRANSACTION)
+        hasil["lines"] = [
+            _purchase_row_ke_dict(l, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE)
+            for l in session.query(PurchaseTransactionLine)
+                .filter(PurchaseTransactionLine.transaction_id == tx.id)
+                .order_by(PurchaseTransactionLine.line_no)
+                .all()
+        ]
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create transaction+lines financial_transaction_purchase_transactions: {e}")
         return None
     finally:
         session.close()

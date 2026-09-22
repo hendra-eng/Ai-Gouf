@@ -2,7 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseSourceRecords } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
@@ -47,6 +48,11 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 }
 
 export default function PurchaseSourceDataPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { records: backendRecords } = usePurchaseSourceRecords(clientId);
+  const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -79,7 +85,7 @@ export default function PurchaseSourceDataPage() {
       return 0;
     });
     return data;
-  }, [search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  }, [purchaseSourceRecords, search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -92,7 +98,7 @@ export default function PurchaseSourceDataPage() {
     pending: purchaseSourceRecords.filter(r => r.status === 'Pending Mapping').length,
     errors: purchaseSourceRecords.filter(r => r.status === 'Validation Error').length,
     totalAmount: purchaseSourceRecords.reduce((s, r) => s + r.totalAmount, 0),
-  }), []);
+  }), [purchaseSourceRecords]);
 
   return (
       <div className="space-y-6 fade-in">

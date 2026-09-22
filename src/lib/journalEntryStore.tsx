@@ -40,7 +40,7 @@ interface ApiEnvelope<T> {
 async function baca<T>(res: Response): Promise<T> {
   const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
   if (!res.ok || !json || json.status !== 'success') {
-    throw new Error(json?.message || `Request gagal (${res.status})`);
+    throw new Error(json?.message || `Request failed (${res.status})`);
   }
   return json.data as T;
 }
@@ -243,6 +243,54 @@ export interface JeDraftWithLinesInput {
 export async function createJeDraftWithLines(payload: JeDraftWithLinesInput): Promise<BackendJeDraft & { lines: BackendJeDraftLine[] }> {
   const row = await post<BackendJeDraft & { lines: BackendJeDraftLine[] }>(`${JE_BASE_URL}/drafts/full`, payload);
   notifyJeChanged();
+  return row;
+}
+
+/** Ringkasan hasil 1 journal entry yang dicoba diimpor lewat template --
+ *  lihat backend/modules/transactions/journal_entry_import_v1.py. */
+export interface JeImportDraftResult {
+  je_number: string;
+  ok: boolean;
+  message: string;
+}
+
+/** Ringkasan hasil POST /import/upload -- lihat backend/modules/
+ *  transactions/journal_entry_import_v1.py::upload_journal_entry_import. */
+export interface UploadJeSourceFileResult {
+  template_matched: boolean;
+  groups_detected: number;
+  skipped_no_key_rows?: number;
+  created: number;
+  skipped_unbalanced?: number;
+  skipped_duplicate?: number;
+  drafts: JeImportDraftResult[];
+}
+
+/**
+ * Upload file laporan jurnal (CSV/Excel) SUNGGUHAN ke backend -- backend
+ * yang mendeteksi pola kolom, mencocokkan ke Journal Entry Import Template
+ * yang sudah pernah dipelajari untuk klien+format ini, lalu langsung
+ * membuat draft + baris debit/kreditnya (lewat dbc.create_je_draft_with_
+ * lines) tanpa tahap staging terpisah. BEDA dari createJeDraftWithLines()
+ * (yang kirim journal entry yang SUDAH diparse/dikelompokkan) -- fungsi
+ * ini yang kirim FILE MENTAH, dipakai ImportJournalModal.tsx sebagai jalur
+ * pertama (fallback ke parsing alias kolom generik di browser kalau
+ * template_matched=false, mis. klien yang belum punya template).
+ *
+ * managementClientId WAJIB -- ID management_clients (klien aktif di
+ * dropdown "Switch Company"), BUKAN client_id akun yang login (pola sama
+ * seperti uploadSalesSourceFile() di salesStore.tsx).
+ */
+export async function uploadJeSourceFile(file: File, managementClientId: string): Promise<UploadJeSourceFileResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('management_client_id', managementClientId);
+  const res = await authenticatedFetch(`${JE_BASE_URL}/import/upload`, {
+    method: 'POST',
+    body: form, // JANGAN set Content-Type manual -- browser yang mengisi boundary multipart-nya
+  });
+  const row = await baca<UploadJeSourceFileResult>(res);
+  if (row.created > 0) notifyJeChanged();
   return row;
 }
 

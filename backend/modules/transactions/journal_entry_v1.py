@@ -261,7 +261,7 @@ class JeActivityLogCreateRequest(BaseModel):
     "/source-records",
     summary="Registrasi transaksi sumber tab Source Data (khusus Supervisor ke atas)",
     responses={
-        201: {"description": "Source record berhasil dibuat."},
+        201: {"description": "Source record created successfully."},
         401: {"description": "Token tidak dikirim / tidak valid."},
         403: {"description": "Akun tidak memenuhi level minimal (Tahap 3 / Supervisor)."},
         409: {"description": "source_code sudah dipakai untuk client_id ini."},
@@ -274,14 +274,14 @@ def buat_source_record(
 ):
     if dbc.get_je_source_record_by_client_and_code(payload.client_id, payload.source_code):
         return gagal(
-            message="source_code ini sudah dipakai untuk client_id ini.",
+            message="This source_code is already used for this client_id.",
             errors={"code": "DUPLICATE_SOURCE_CODE", "field": "source_code"},
             status_code=409,
         )
     dibuat = dbc.create_je_source_record(payload.model_dump(), created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal membuat source record (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Source record berhasil dibuat.", status_code=201)
+        return gagal(message="Failed to create source record (database error).", status_code=500)
+    return sukses(data=dibuat, message="Source record created successfully.", status_code=201)
 
 
 @router.get(
@@ -314,7 +314,7 @@ def detail_source_record(
 ):
     data = dbc.get_je_source_record_by_id(source_record_id, termasuk_nonaktif=termasuk_nonaktif)
     if data is None:
-        return gagal(message="Source record tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        return gagal(message="Source record not found.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=data, message="OK")
 
 
@@ -330,8 +330,8 @@ def update_source_record(
 ):
     diupdate = dbc.update_je_source_record(source_record_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
     if diupdate is None:
-        return gagal(message="Source record tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=diupdate, message="Source record berhasil diupdate.")
+        return gagal(message="Source record not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Source record updated successfully.")
 
 
 @router.delete(
@@ -345,8 +345,8 @@ def hapus_source_record(
 ):
     berhasil = dbc.soft_delete_je_source_record(source_record_id, deleted_by=current_user.get("id"))
     if not berhasil:
-        return gagal(message="Source record tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(message="Source record berhasil dinonaktifkan.")
+        return gagal(message="Source record not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Source record deactivated successfully.")
 
 
 # ============================================================
@@ -371,14 +371,14 @@ def buat_draft(
 ):
     if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number):
         return gagal(
-            message="je_number ini sudah dipakai untuk client_id ini.",
+            message="This je_number is already used for this client_id.",
             errors={"code": "DUPLICATE_JE_NUMBER", "field": "je_number"},
             status_code=409,
         )
     dibuat = dbc.create_je_draft(payload.model_dump(), created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal membuat draft Journal Entry (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Draft Journal Entry berhasil dibuat.", status_code=201)
+        return gagal(message="Failed to create Journal Entry draft (database error).", status_code=500)
+    return sukses(data=dibuat, message="Journal Entry draft created successfully.", status_code=201)
 
 
 @router.post(
@@ -404,7 +404,7 @@ def buat_draft_dengan_baris(
     baris kalau salah satu insert baris gagal di tengah jalan."""
     if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number):
         return gagal(
-            message="je_number ini sudah dipakai untuk client_id ini.",
+            message="This je_number is already used for this client_id.",
             errors={"code": "DUPLICATE_JE_NUMBER", "field": "je_number"},
             status_code=409,
         )
@@ -413,20 +413,20 @@ def buat_draft_dengan_baris(
     total_credit = sum(l.credit for l in payload.lines)
     if abs(total_debit - total_credit) > 0.01:
         return gagal(
-            message=f"Journal entry tidak balance: total debit {total_debit:,.2f} != total credit {total_credit:,.2f}.",
+            message=f"Journal entry is not balanced: total debit {total_debit:,.2f} != total credit {total_credit:,.2f}.",
             errors={"code": "UNBALANCED_ENTRY", "total_debit": total_debit, "total_credit": total_credit},
             status_code=422,
         )
     for idx, line in enumerate(payload.lines, start=1):
         if line.debit > 0 and line.credit > 0:
             return gagal(
-                message=f"Baris {idx}: tidak boleh mengisi debit dan credit sekaligus.",
+                message=f"Line {idx}: cannot fill both debit and credit.",
                 errors={"code": "INVALID_LINE", "line_no": idx},
                 status_code=422,
             )
         if line.debit == 0 and line.credit == 0:
             return gagal(
-                message=f"Baris {idx}: debit atau credit wajib diisi (tidak boleh keduanya 0).",
+                message=f"Line {idx}: debit or credit is required (both cannot be 0).",
                 errors={"code": "INVALID_LINE", "line_no": idx},
                 status_code=422,
             )
@@ -435,8 +435,8 @@ def buat_draft_dengan_baris(
     lines_data = [l.model_dump() for l in payload.lines]
     dibuat = dbc.create_je_draft_with_lines(draft_data, lines_data, created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal membuat draft Journal Entry (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Journal Entry berhasil dibuat.", status_code=201)
+        return gagal(message="Failed to create Journal Entry draft (database error).", status_code=500)
+    return sukses(data=dibuat, message="Journal Entry created successfully.", status_code=201)
 
 
 @router.get(
@@ -466,7 +466,7 @@ def detail_draft(
 ):
     data = dbc.get_je_draft_by_id(draft_id, termasuk_nonaktif=termasuk_nonaktif)
     if data is None:
-        return gagal(message="Draft Journal Entry tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        return gagal(message="Journal Entry draft not found.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=data, message="OK")
 
 
@@ -482,8 +482,8 @@ def update_draft(
 ):
     diupdate = dbc.update_je_draft(draft_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
     if diupdate is None:
-        return gagal(message="Draft Journal Entry tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=diupdate, message="Draft Journal Entry berhasil diupdate.")
+        return gagal(message="Journal Entry draft not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Journal Entry draft updated successfully.")
 
 
 @router.delete(
@@ -497,8 +497,8 @@ def hapus_draft(
 ):
     berhasil = dbc.soft_delete_je_draft(draft_id, deleted_by=current_user.get("id"))
     if not berhasil:
-        return gagal(message="Draft Journal Entry tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(message="Draft Journal Entry berhasil dinonaktifkan.")
+        return gagal(message="Journal Entry draft not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Journal Entry draft deactivated successfully.")
 
 
 # ============================================================
@@ -517,8 +517,8 @@ def buat_draft_line(
 ):
     dibuat = dbc.create_je_draft_line(payload.model_dump(), created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal membuat baris draft (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Baris draft berhasil dibuat.", status_code=201)
+        return gagal(message="Failed to create draft line (database error).", status_code=500)
+    return sukses(data=dibuat, message="Draft line created successfully.", status_code=201)
 
 
 @router.get(
@@ -548,7 +548,7 @@ def detail_draft_line(
 ):
     data = dbc.get_je_draft_line_by_id(line_id, termasuk_nonaktif=termasuk_nonaktif)
     if data is None:
-        return gagal(message="Baris draft tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        return gagal(message="Draft line not found.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=data, message="OK")
 
 
@@ -564,8 +564,8 @@ def update_draft_line(
 ):
     diupdate = dbc.update_je_draft_line(line_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
     if diupdate is None:
-        return gagal(message="Baris draft tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=diupdate, message="Baris draft berhasil diupdate.")
+        return gagal(message="Draft line not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Draft line updated successfully.")
 
 
 @router.delete(
@@ -579,8 +579,8 @@ def hapus_draft_line(
 ):
     berhasil = dbc.soft_delete_je_draft_line(line_id, deleted_by=current_user.get("id"))
     if not berhasil:
-        return gagal(message="Baris draft tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(message="Baris draft berhasil dinonaktifkan.")
+        return gagal(message="Draft line not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Draft line deactivated successfully.")
 
 
 # ============================================================
@@ -601,8 +601,8 @@ def buat_activity_log(
     (jejak aktivitas tidak boleh diubah/dihapus setelah tercatat)."""
     dibuat = dbc.create_je_activity_log(payload.model_dump(), created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal mencatat activity log (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Activity log berhasil dicatat.", status_code=201)
+        return gagal(message="Failed to record activity log (database error).", status_code=500)
+    return sukses(data=dibuat, message="Activity log recorded successfully.", status_code=201)
 
 
 @router.get(
@@ -630,5 +630,5 @@ def detail_activity_log(
 ):
     data = dbc.get_je_activity_log_by_id(log_id)
     if data is None:
-        return gagal(message="Activity log tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        return gagal(message="Activity log not found.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=data, message="OK")
