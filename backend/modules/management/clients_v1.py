@@ -25,9 +25,10 @@ untuk alasan detailnya):
       /api/v1/auth/me & /api/v1/auth/roles.
 
 Data disimpan di tabel `management_clients` (DDL: root/ddl-table, ORM:
-db_client.py::ManagementClient) -- TERPISAH dari tabel `clients` (lama,
-dipakai modul akuntansi/upload). Soft-delete lewat kolom deleted_at/
-deleted_by (pola sama seperti management_users), bukan DELETE permanen.
+db_client.py::Client -- class lama yang sudah dialiaskan ke skema
+management_clients, lihat docstring-nya). Soft-delete lewat kolom
+deleted_at/deleted_by (pola sama seperti management_users), bukan DELETE
+permanen.
 """
 
 from __future__ import annotations

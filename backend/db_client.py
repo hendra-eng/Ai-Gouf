@@ -192,7 +192,6 @@ class Client(Base):
     # kolom fisik dan tipe primary key (uuid, bukan integer lagi). Lihat
     # migration_uuid_client_id.sql untuk migrasi datanya.
     __tablename__ = "management_clients"
-    __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_code = Column(String(50), nullable=True)
@@ -241,6 +240,9 @@ class Client(Base):
     # [BARU] hanya dipakai sementara untuk backfill migrasi -- lihat
     # migration_uuid_client_id.sql (old_client_id = id integer lama).
     old_client_id = Column(Integer, nullable=True)
+    # [BARU] logo perusahaan (data URL base64, maks ~400KB) untuk kop
+    # dokumen cetak -- lihat root/ddl-table & clients_v1.py.
+    logo = Column(Text, nullable=True)
 
     hasil = relationship("Hasil", back_populates="client")
     # [BARU] Akun integrasi ESB (POS/kasir) milik client ini -- lihat
@@ -330,7 +332,6 @@ class Coa(Base):
     Laba Rugi, dan di sisi Neraca yang mana. Divalidasi di modules/coa.py.
     """
     __tablename__ = "coa"
-    __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
@@ -538,7 +539,7 @@ class CoaStandardMapping(Base):
 
     id = Column(Integer, primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("coa.id"), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -559,7 +560,7 @@ class CompanyAccountRole(Base):
     id = Column(Integer, primary_key=True)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("account_roles.id"), nullable=False)
-    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("coa.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
     effective_to = Column(Date, nullable=True)
@@ -575,7 +576,6 @@ class JournalEntry(Base):
         UniqueConstraint("client_id", "journal_no", name="uq_journal_entry_client_no"),
         UniqueConstraint("client_id", "legacy_posting_id", name="uq_journal_entry_legacy_posting"),
         Index("idx_journal_entry_client_status_date", "client_id", "status", "posting_date"),
-        {"schema": "1_app"},  # [SESUAI DB] tabel fisik ada di 1_app.journal_entries
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -595,7 +595,7 @@ class JournalEntry(Base):
     approved_by = Column(String(100), nullable=True)
     posted_by = Column(String(100), nullable=True)
     posted_at = Column(DateTime, nullable=True)
-    reversed_from_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.journal_entries.id"), nullable=True)
+    reversed_from_id = Column(PG_UUID(as_uuid=False), ForeignKey("journal_entries.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column("edited_at", DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -603,7 +603,7 @@ class JournalEntry(Base):
 class JournalLine(Base):
     """Baris debit/kredit resmi. Nilai uang memakai NUMERIC, bukan Float.
 
-    [SESUAI DB] Tabel fisik 1_app.journal_lines TIDAK punya kolom account_code,
+    [SESUAI DB] Tabel fisik journal_lines TIDAK punya kolom account_code,
     account_name, standard_account_id, standard_account_code, account_role, dan
     kolom waktunya bernama `dibuat_at`. Akun kini selalu lewat `coa_id`
     (NOT NULL). Atribut lama (account_code/account_name/...) tetap tersedia
@@ -613,14 +613,13 @@ class JournalLine(Base):
     __tablename__ = "journal_lines"
     __table_args__ = (
         UniqueConstraint("journal_entry_id", "line_no", name="uq_journal_line_entry_no"),
-        {"schema": "1_app"},
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.journal_entries.id"), nullable=False)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("journal_entries.id"), nullable=False)
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     line_no = Column(Integer, nullable=False)
-    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("coa.id"), nullable=False)
     description = Column(Text, nullable=True)
     debit = Column(Numeric(24, 2), nullable=False, default=0)
     credit = Column(Numeric(24, 2), nullable=False, default=0)
@@ -881,7 +880,6 @@ class AuditLog(Base):
     # dipertahankan lewat aliasing supaya kode lama yang memanggil
     # catat_audit_log(...) tidak perlu diubah semua.
     __tablename__ = "management_audit_trails"
-    __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     id_user = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
@@ -945,72 +943,12 @@ class User(Base):
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
 
 
-class ManagementClient(Base):
-    """[BARU] Data profil klien (badan usaha, PIC, alamat, dst) -- DDL di
-    root/ddl-table, ditulis manual oleh user. Terpisah dari tabel `clients`
-    (lama, dipakai modul akuntansi/upload) -- `management_clients` dipakai
-    untuk sisi manajemen/administrasi klien (RBAC client_id, profil
-    perusahaan), belum disatukan dengan `clients` supaya tidak menyentuh
-    alur akuntansi yang sudah jalan.
-    """
-    __tablename__ = "management_clients"
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_code = Column(String(50), nullable=True)
-    nama_client = Column(String(255), nullable=True)
-    tipe_badan_usaha = Column(String(255), nullable=True)
-    npwp = Column(String(20), nullable=True)
-    nomor_akta_nib = Column(String(255), nullable=True)
-    status_pkp = Column(Boolean, nullable=True)
-    klasifikasi_lapangan_usaha = Column(String(255), nullable=True)
-    email = Column(String(255), nullable=True)
-    no_telepon = Column(String(255), nullable=True)
-    no_handphone = Column(String(255), nullable=True)
-    nama_pic = Column(String(255), nullable=True)
-    jabatan_pic = Column(String(255), nullable=True)
-    alamat = Column(Text, nullable=True)
-    kota = Column(String(50), nullable=True)
-    provinsi = Column(String(50), nullable=True)
-    kode_pos = Column(String(255), nullable=True)
-    industry = Column(String(255), nullable=True)
-    tahun_buku_mulai = Column(String(10), nullable=True)
-    mata_uang_default = Column(String(10), nullable=True)
-    status = Column(String(10), nullable=True)
-    akuntan_penanggung_jawab = Column(PG_UUID(as_uuid=False), nullable=True)
-    tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
-    # Logo perusahaan klien, disimpan sebagai data URL gambar ("data:image/png;base64,...")
-    # supaya tidak butuh storage file terpisah. Dipakai untuk kop dokumen cetak (mis. PDF
-    # Journal Entry). Ditambahkan lewat migrations/add_logo_to_management_clients.py.
-    logo = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    edited_at = Column(DateTime(timezone=True), nullable=True)
-    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-class ManagementAuditTrail(Base):
-    """[BARU] Log aktivitas user manajemen (login, buka menu, dst) -- DDL
-    di root/ddl-table. Terpisah dari `audit_log` (lama, dipakai modul
-    akuntansi) -- tabel ini FK ke management_users, bukan ke clients.
-    """
-    __tablename__ = "management_audit_trails"
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user", ondelete="CASCADE"), nullable=False)
-    timestamp = Column(DateTime, nullable=False)
-    ip = Column(String(255), nullable=True)
-    action = Column(String(255), nullable=True)
-    menu = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
-    updated_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-    user = relationship("User")
+# [DIHAPUS] class ManagementClient & ManagementAuditTrail (dari playground-willi)
+# duplikat pemetaan ke tabel yang sama dengan Client (di atas) & AuditLog (di
+# bawah) -- dikonsolidasikan ke Client/AuditLog karena keduanya jauh lebih
+# terintegrasi (dipakai main.py + 16 relationship lain). Fungsi CRUD
+# create_management_client/list_management_clients/dst di bawah sekarang
+# jalan di atas Client, bukan class terpisah lagi.
 
 
 # ============================================================
@@ -3861,7 +3799,7 @@ class FixedAsset(Base):
     status = Column(String, nullable=True)
     disposal_date = Column(Date, nullable=True)
     disposal_value = Column(Numeric, nullable=True)
-    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=True)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("coa.id"), nullable=True)
     needs_review = Column(Boolean, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
@@ -5526,15 +5464,14 @@ def _user_ke_dict(user: "User") -> Dict[str, Any]:
     management_users (id/nama/aktif), supaya modules/auth/*.py & pemanggil
     lain tidak perlu ikut berubah. `id` sekarang UUID (str), bukan int.
 
-    [DIUBAH] `role` di DB sekarang integer (1-5) -- dikonversi balik ke
-    string "tahap_N" di sini (lewat role_int_ke_tahap()) supaya SEMUA
-    logic RBAC lama di modules/auth/core.py (LEVELS, dict "tahap_1".."tahap_5")
-    tidak perlu diubah sama sekali."""
+    `role` di DB tersimpan langsung sebagai string ("tahap_N"/"super_admin"/
+    "client_lv_N", lihat modules/auth/core.py LEVELS/CLIENT_LEVELS) -- tidak
+    ada konversi int<->string lagi."""
     return {
         "id": user.id_user,
         "username": user.username,
         "password_hash": user.password_hash,
-        "role": role_int_ke_tahap(user.role),
+        "role": user.role,
         "nama": user.nama_user,
         "aktif": user.deleted_at is None,
     }
@@ -5543,15 +5480,14 @@ def _user_ke_dict(user: "User") -> Dict[str, Any]:
 def create_user(username: str, password_hash: str, role: str, nama: Optional[str] = None) -> bool:
     """Buat user baru. `nama_user` wajib diisi di DB -- fallback ke username kalau nama tidak dikirim.
 
-    [DIUBAH] `role` parameter tetap string "tahap_N" seperti sebelumnya
-    (supaya pemanggil lama tidak perlu berubah) -- dikonversi ke integer
-    di sini sebelum disimpan (lihat role_tahap_ke_int())."""
+    `role` disimpan apa adanya sebagai string ("tahap_N"/"super_admin"/
+    "client_lv_N")."""
     session = SessionLocal()
     try:
         user = User(
             username=username,
             password_hash=password_hash,
-            role=role_tahap_ke_int(role),
+            role=role,
             nama_user=nama or username,
         )
         session.add(user)
@@ -5600,7 +5536,7 @@ def update_user_role(username: str, role: str) -> bool:
         user = session.query(User).filter(User.username == username).first()
         if not user:
             return False
-        user.role = role_tahap_ke_int(role)
+        user.role = role
         session.commit()
         return True
     except Exception:
@@ -5698,15 +5634,37 @@ CRUD_FIELDS_MANAGEMENT_CLIENT = [
     "akuntan_penanggung_jawab", "tanggal_mulai_kerjasama", "logo",
 ]
 
+# CRUD_FIELDS_MANAGEMENT_CLIENT dipakai sejak fitur ini dibuat di atas class
+# ManagementClient (dihapus, lihat catatan dekat class Client) yang atribut
+# Python-nya = nama kolom fisik apa adanya. Sekarang jalan di atas class
+# Client yang atributnya DIALIASKAN (lihat docstring class Client) -- map di
+# bawah menerjemahkan nama field CRUD_FIELDS_MANAGEMENT_CLIENT (dipakai
+# clients_v1.py & response API) ke nama atribut Python di Client, HANYA
+# untuk yang namanya beda. Field yang tidak disebut di sini namanya identik
+# di Client.
+_CLIENT_FIELD_ALIAS = {
+    "nama_client": "nama",
+    "no_handphone": "nomor_wa",
+    "nama_pic": "contact_name",
+    "alamat": "address",
+    "kota": "lokasi",
+    "status": "status_kerjasama",
+    "akuntan_penanggung_jawab": "assigned_accountant",
+}
 
-def _management_client_ke_dict(mc: "ManagementClient") -> Dict[str, Any]:
-    data = {kolom: getattr(mc, kolom) for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT}
+
+def _client_attr(kolom: str) -> str:
+    return _CLIENT_FIELD_ALIAS.get(kolom, kolom)
+
+
+def _management_client_ke_dict(mc: "Client") -> Dict[str, Any]:
+    data = {kolom: getattr(mc, _client_attr(kolom)) for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT}
     data.update({
         "id": mc.id,
-        "created_at": mc.created_at,
-        "created_by": mc.created_by,
-        "edited_at": mc.edited_at,
-        "edited_by": mc.edited_by,
+        "created_at": mc.dibuat_at,
+        "created_by": mc.dibuat_oleh,
+        "edited_at": mc.diperbarui_at,
+        "edited_by": mc.diperbarui_oleh,
         "aktif": mc.deleted_at is None,
     })
     return data
@@ -5716,10 +5674,8 @@ def create_management_client(data: Dict[str, Any], created_by: Optional[str] = N
     """Buat client baru. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
     session = SessionLocal()
     try:
-        mc = ManagementClient(
-            **{k: v for k, v in data.items() if k in CRUD_FIELDS_MANAGEMENT_CLIENT},
-            created_by=created_by,
-        )
+        kwargs = {_client_attr(k): v for k, v in data.items() if k in CRUD_FIELDS_MANAGEMENT_CLIENT}
+        mc = Client(**kwargs, dibuat_oleh=created_by)
         session.add(mc)
         session.flush()  # kirim INSERT & isi id/created_at (server_default) ke objek TANPA expire attribute lain (beda dari commit)
         hasil = _management_client_ke_dict(mc)
@@ -5737,9 +5693,9 @@ def get_management_client_by_id(client_id: str, termasuk_nonaktif: bool = False)
     """Ambil 1 management_client berdasarkan id. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
     session = SessionLocal()
     try:
-        query = session.query(ManagementClient).filter(ManagementClient.id == client_id)
+        query = session.query(Client).filter(Client.id == client_id)
         if not termasuk_nonaktif:
-            query = query.filter(ManagementClient.deleted_at.is_(None))
+            query = query.filter(Client.deleted_at.is_(None))
         mc = query.first()
         return _management_client_ke_dict(mc) if mc else None
     except Exception:
@@ -5753,10 +5709,10 @@ def list_management_clients(termasuk_nonaktif: bool = False) -> List[Dict[str, A
     """Daftar semua management_client. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
     session = SessionLocal()
     try:
-        query = session.query(ManagementClient)
+        query = session.query(Client)
         if not termasuk_nonaktif:
-            query = query.filter(ManagementClient.deleted_at.is_(None))
-        return [_management_client_ke_dict(mc) for mc in query.order_by(ManagementClient.created_at.desc()).all()]
+            query = query.filter(Client.deleted_at.is_(None))
+        return [_management_client_ke_dict(mc) for mc in query.order_by(Client.dibuat_at.desc()).all()]
     except Exception:
         session.rollback()
         return []
@@ -5768,16 +5724,16 @@ def update_management_client(client_id: str, data: Dict[str, Any], updated_by: O
     """Update sebagian/semua kolom management_client. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
     session = SessionLocal()
     try:
-        mc = session.query(ManagementClient).filter(
-            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        mc = session.query(Client).filter(
+            Client.id == client_id, Client.deleted_at.is_(None)
         ).first()
         if not mc:
             return None
         for kolom, nilai in data.items():
             if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT:
-                setattr(mc, kolom, nilai)
-        mc.edited_at = datetime.now()
-        mc.edited_by = updated_by
+                setattr(mc, _client_attr(kolom), nilai)
+        mc.diperbarui_at = datetime.now()
+        mc.diperbarui_oleh = updated_by
         # Dibaca SEBELUM commit -- expire_on_commit bikin akses attribute
         # SETELAH commit perlu reload dari DB, dan reload itu (session.refresh
         # atau akses expired attribute) kena bug tipe UUID di beberapa dialect.
@@ -5798,8 +5754,8 @@ def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = No
     """Nonaktifkan (soft-delete) management_client -- data tidak dihapus permanen."""
     session = SessionLocal()
     try:
-        mc = session.query(ManagementClient).filter(
-            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        mc = session.query(Client).filter(
+            Client.id == client_id, Client.deleted_at.is_(None)
         ).first()
         if not mc:
             return False

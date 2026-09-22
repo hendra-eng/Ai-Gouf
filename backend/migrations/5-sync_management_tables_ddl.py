@@ -7,7 +7,7 @@ manajemen (`management_users`, `management_audit_trails`,
 
 1. `management_clients` -- tabel BARU (belum pernah dibuat). Dibuat kalau
    belum ada (CREATE TABLE IF NOT EXISTS, lewat ORM
-   `ManagementClient.__table__`).
+   `Client.__table__`).
 2. `management_audit_trails` -- sudah ada di DDL sebelumnya tapi belum
    pernah punya model ORM. Dibuat kalau belum ada di DB (untuk instalasi
    yang belum sempat membuatnya manual di Supabase).
@@ -133,17 +133,20 @@ def main() -> int:
     print("🔄 MIGRATION: sinkronisasi management_users / management_audit_trails / management_clients dengan ddl-table")
     print("=" * 60)
 
-    from db_client import ManagementClient, ManagementAuditTrail
+    # [DIUBAH] ManagementClient/ManagementAuditTrail sudah dihapus dari
+    # db_client.py (duplikat pemetaan tabel dengan Client/AuditLog) --
+    # dikonsolidasikan ke Client/AuditLog, lihat catatan di db_client.py.
+    from db_client import Client, AuditLog
 
     hasil = {}
     with engine.connect() as connection:
         # 1) Tabel baru management_clients HARUS dibuat duluan -- kolom
         #    management_users.client_id di bawah punya FK ke tabel ini.
         hasil["buat tabel management_clients"] = _buat_tabel_jika_belum_ada(
-            connection, "management_clients", ManagementClient
+            connection, "management_clients", Client
         )
         hasil["buat tabel management_audit_trails"] = _buat_tabel_jika_belum_ada(
-            connection, "management_audit_trails", ManagementAuditTrail
+            connection, "management_audit_trails", AuditLog
         )
 
         # 2) Kolom baru di management_users
