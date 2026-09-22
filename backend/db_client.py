@@ -33,8 +33,29 @@ from sqlalchemy.orm import sessionmaker, relationship
 # konfigurasi cukup dibaca langsung dari environment variable. Nilainya
 # datang dari file .env yang di-load oleh load_dotenv() di main.py,
 # SEBELUM modul ini di-import -- lihat catatan di main.py.
+#
+# [FIX v6] SEBELUMNYA baris ini fallback diam-diam ke
+# "sqlite:///ai_gouf.db" kalau DATABASE_URL tidak ke-set (mis. file .env
+# belum dibuat, salah lokasi, atau load_dotenv() gagal). Akibatnya
+# backend tetap START NORMAL tanpa error apa pun, tapi diam-diam nulis
+# semua data ke file SQLite lokal, bukan ke Supabase -- baru ketahuan
+# belakangan setelah data "hilang"/tidak sinkron. Sekarang kalau
+# DATABASE_URL tidak ada, langsung raise di sini supaya backend GAGAL
+# START dengan jelas, bukan jalan diam-diam pakai config yang salah.
+#
+# Kalau memang mau sengaja pakai SQLite lokal (mis. dev tanpa server
+# Postgres), set eksplisit di .env: DATABASE_URL=sqlite:///ai_gouf.db
+# -- itu tetap didukung, yang dihapus cuma fallback DIAM-DIAMnya.
 def get_database_url():
-    return os.environ.get("DATABASE_URL", "sqlite:///ai_gouf.db")
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL tidak diset! Backend tidak lagi fallback diam-diam "
+            "ke SQLite lokal. Buat file backend/.env (contoh di "
+            "backend/.env.example) dan isi DATABASE_URL ke Supabase, atau "
+            "set eksplisit ke sqlite:///ai_gouf.db kalau memang mau lokal."
+        )
+    return url
 
 DATABASE_URL = get_database_url()
 Base = declarative_base()
