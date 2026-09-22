@@ -1,18 +1,28 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
-import type { JEStatus } from '@/data/journalEntryData';
+import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
+import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
+import { exportJournalEntriesToPdf, exportJournalEntriesToExcel, type JeExportRow } from '@/app/transactions/journal-entry/components/exportJournalEntry';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
+  PlusIcon,
+  ArrowUpTrayIcon,
+  DocumentTextIcon,
+  TableCellsIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, listJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry, type JeUiStatus } from '@/lib/journalEntryStore';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+type JEStatus = JeUiStatus;
+
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 const statusColors: Record<JEStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -33,13 +43,25 @@ const statusLabels: Record<JEStatus, string> = {
 };
 
 export default function JournalEntryTransactionPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState('All');
   const [periodFilter, setPeriodFilter] = useState('All');
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedRow, setSelectedRow] = useState<typeof journalEntries[0] | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedRow, setSelectedRow] = useState<JeUiEntry | null>(null);
+  const { lines: selectedLines } = useJeDraftLines(selectedRow?.id);
+  const mappedLines = useMemo(() => selectedLines.map(mapJeDraftLineToUi), [selectedLines]);
+
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
   const sourceTypes = ['All', ...Array.from(new Set(journalEntries.map(t => t.sourceType)))];
   const periods = ['All', ...Array.from(new Set(journalEntries.map(t => t.period)))];
@@ -62,11 +84,37 @@ export default function JournalEntryTransactionPage() {
       return 0;
     });
     return data;
-  }, [search, statusFilter, sourceFilter, periodFilter, sortField, sortDir]);
+  }, [journalEntries, search, statusFilter, sourceFilter, periodFilter, sortField, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+    setCurrentPage(1);
+  };
+
+  const runExport = async (format: 'pdf' | 'excel') => {
+    if (filtered.length === 0) {
+      toast.error('No journal entries to export.');
+      return;
+    }
+    setExporting(format);
+    try {
+      const rows: JeExportRow[] = await Promise.all(filtered.map(async (je) => ({
+        ...je,
+        lines: (await listJeDraftLines(je.id)).map(mapJeDraftLineToUi),
+      })));
+      if (format === 'pdf') exportJournalEntriesToPdf(rows);
+      else await exportJournalEntriesToExcel(rows);
+      toast.success('Export successful', { description: `${rows.length} journal entries exported.` });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to export journal entries.');
+    } finally {
+      setExporting(null);
+    }
   };
 
   const summary = useMemo(() => ({
@@ -76,11 +124,41 @@ export default function JournalEntryTransactionPage() {
     posted: journalEntries.filter(t => t.status === 'posted').length,
     exceptions: journalEntries.filter(t => t.status === 'exception').length,
     totalDebit: journalEntries.reduce((s, t) => s + t.totalDebit, 0),
-  }), []);
+  }), [journalEntries]);
 
   return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="transaction" />
+
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            onClick={() => runExport('excel')}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <TableCellsIcon className="w-4 h-4" /> {exporting === 'excel' ? 'Exporting…' : 'Export Excel'}
+          </button>
+          <button
+            onClick={() => runExport('pdf')}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <DocumentTextIcon className="w-4 h-4" /> {exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
+          >
+            <ArrowUpTrayIcon className="w-4 h-4" /> Import
+          </button>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-3 py-2 hover:opacity-90 transition-colors"
+          >
+            <PlusIcon className="w-4 h-4" /> New Journal Entry
+          </button>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -108,22 +186,22 @@ export default function JournalEntryTransactionPage() {
                 className="je-input pl-9"
                 placeholder="Search by JE number, description, or source reference…"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
               />
             </div>
             <div className="flex gap-2 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <select className="je-select text-sm" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
                   {['All', 'draft', 'pending', 'approved', 'posted', 'rejected', 'exception'].map(s => (
                     <option key={s} value={s}>{s === 'All' ? 'All' : statusLabels[s as JEStatus]}</option>
                   ))}
                 </select>
               </div>
-              <select className="je-select text-sm" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+              <select className="je-select text-sm" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setCurrentPage(1); }}>
                 {sourceTypes.map(t => <option key={t}>{t}</option>)}
               </select>
-              <select className="je-select text-sm" value={periodFilter} onChange={e => setPeriodFilter(e.target.value)}>
+              <select className="je-select text-sm" value={periodFilter} onChange={e => { setPeriodFilter(e.target.value); setCurrentPage(1); }}>
                 {periods.map(p => <option key={p}>{p}</option>)}
               </select>
             </div>
@@ -156,9 +234,11 @@ export default function JournalEntryTransactionPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading journal entries…</td></tr>
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No journal entries match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr
                     key={row.id}
                     className="table-row-hover cursor-pointer"
@@ -187,6 +267,7 @@ export default function JournalEntryTransactionPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="journal entries" />
         </div>
 
         {/* Detail Panel */}
@@ -232,7 +313,7 @@ export default function JournalEntryTransactionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {selectedRow.lines.map(line => (
+                  {mappedLines.map(line => (
                     <tr key={line.id} className="table-row-hover">
                       <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
                       <td className="px-3 py-2 text-foreground">{line.description}</td>
@@ -256,6 +337,21 @@ export default function JournalEntryTransactionPage() {
               </div>
             )}
           </div>
+        )}
+
+        {showNewModal && clientId && (
+          <NewJournalEntryModal
+            clientId={clientId}
+            createdByName={user?.nama || user?.username || 'System'}
+            onClose={() => setShowNewModal(false)}
+          />
+        )}
+        {showImportModal && clientId && (
+          <ImportJournalModal
+            clientId={clientId}
+            createdByName={user?.nama || user?.username || 'System'}
+            onClose={() => setShowImportModal(false)}
+          />
         )}
       </div>
   );

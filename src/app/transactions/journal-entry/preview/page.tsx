@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
-import type { JEStatus } from '@/data/journalEntryData';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   DocumentTextIcon,
   CalendarIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiStatus } from '@/lib/journalEntryStore';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+type JEStatus = JeUiStatus;
+
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 const statusColors: Record<JEStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -33,26 +35,45 @@ const statusLabels: Record<JEStatus, string> = {
 };
 
 export default function JournalPreviewPage() {
-  const [selectedId, setSelectedId] = useState(journalEntries[0]?.id ?? null);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedId && journalEntries.length > 0) setSelectedId(journalEntries[0].id);
+  }, [journalEntries, selectedId]);
+
+  const [selectorPage, setSelectorPage] = useState(1);
+  const selectorTotalPages = Math.max(1, Math.ceil(journalEntries.length / JE_PAGE_SIZE));
+  const selectorPageSafe = Math.min(selectorPage, selectorTotalPages);
+  const paginatedEntries = journalEntries.slice((selectorPageSafe - 1) * JE_PAGE_SIZE, selectorPageSafe * JE_PAGE_SIZE);
 
   const je = journalEntries.find(t => t.id === selectedId) || journalEntries[0];
+  const { lines: backendLines } = useJeDraftLines(je?.id);
+  const lines = useMemo(() => backendLines.map(mapJeDraftLineToUi), [backendLines]);
+  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+  if (loading) {
+    return (
+      <div className="space-y-6 fade-in">
+        <JournalEntryTabs activeTab="preview" />
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">Loading journal entries…</div>
+      </div>
+    );
+  }
 
   if (!je) {
     return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="preview" />
-        <div className="je-card p-10 flex flex-col items-center justify-center text-center gap-2">
-          <DocumentTextIcon className="w-8 h-8 text-muted-foreground" />
-          <p className="text-sm font-semibold text-foreground">No journal entries yet</p>
-          <p className="text-xs text-muted-foreground">Once journal entries are posted, you'll be able to preview them here.</p>
-        </div>
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">No journal entries to preview yet.</div>
       </div>
     );
   }
-
-  const totalDebit = je.lines.reduce((s, l) => s + l.debit, 0);
-  const totalCredit = je.lines.reduce((s, l) => s + l.credit, 0);
-  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
 
   return (
       <div className="space-y-6 fade-in">
@@ -63,7 +84,7 @@ export default function JournalPreviewPage() {
           <div className="je-card p-4 lg:col-span-1">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Select Journal Entry</h3>
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-thin">
-              {journalEntries.map(t => (
+              {paginatedEntries.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setSelectedId(t.id)}
@@ -82,6 +103,7 @@ export default function JournalPreviewPage() {
                 </button>
               ))}
             </div>
+            <JePagination page={selectorPageSafe} pageSize={JE_PAGE_SIZE} total={journalEntries.length} onPageChange={setSelectorPage} itemLabel="journal entries" />
           </div>
 
           {/* Preview Document */}
@@ -149,7 +171,7 @@ export default function JournalPreviewPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {je.lines.map(line => (
+                    {lines.map(line => (
                       <tr key={line.id} className="table-row-hover">
                         <td className="px-4 py-2.5 font-medium text-foreground whitespace-nowrap">{line.accountCode} · {line.accountName}</td>
                         <td className="px-4 py-2.5 text-foreground max-w-[240px] truncate">{line.description}</td>

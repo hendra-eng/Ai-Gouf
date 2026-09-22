@@ -15,6 +15,7 @@ import {
   LineChart, Line, Tooltip,
 } from 'recharts';
 import { useCurrency } from '@/lib/currency';
+import { fileToLogoDataUrl } from '@/lib/imageUtils';
 
 const PAGE_SIZE = 8;
 
@@ -89,6 +90,7 @@ function parseClientsCsv(text: string): Client[] {
     const joinDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
     return {
       id: `client-imported-${Date.now()}-${i}`,
+      clientCode: '',
       companyName,
       industry: (industryIdx >= 0 && cols[industryIdx]) || 'General',
       status: 'Stable',
@@ -704,6 +706,7 @@ function AddClientModal({
   initialClient?: Client;
 }) {
   const isEditMode = !!initialClient;
+  const [clientCode, setClientCode] = useState(initialClient?.clientCode ?? '');
   const [companyName, setCompanyName] = useState(initialClient?.companyName ?? '');
   const [industry, setIndustry] = useState(initialClient?.industry ?? '');
   const [contactName, setContactName] = useState(initialClient?.contactName ?? '');
@@ -711,8 +714,21 @@ function AddClientModal({
   const [contactPhone, setContactPhone] = useState(initialClient?.contactPhone ?? '');
   const [npwp, setNpwp] = useState(initialClient?.npwp ?? '');
   const [address, setAddress] = useState(initialClient?.address ?? '');
-  const [assignedAccountant, setAssignedAccountant] = useState(initialClient?.assignedAccountant ?? '');
   const [status, setStatus] = useState<ClientStatus>(initialClient?.status ?? 'Stable');
+  // Logo perusahaan: string = data URL gambar, null = tidak ada/dihapus.
+  const [logo, setLogo] = useState<string | null>(initialClient?.logo ?? null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleLogoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setLogo(await fileToLogoDataUrl(file));
+    } catch (err) {
+      toast.error('Logo upload failed', { description: err instanceof Error ? err.message : 'The image could not be processed.' });
+    }
+  }
   // [FIX] Sebelumnya tombol submit tidak pernah di-nonaktifkan selama
   // request ke backend masih berjalan -- klik ganda (double-click) yang
   // cepat akan memicu handleSubmit 2x sebelum request pertama selesai,
@@ -720,29 +736,33 @@ function AddClientModal({
   // mengunci form begitu submit pertama mulai.
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isValid = companyName.trim() && industry.trim() && assignedAccountant.trim();
+  const isValid = companyName.trim() && industry.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isSubmitting) return; // [FIX] cegah submit ganda
     if (!isValid) {
-      toast.error('Lengkapi data wajib', { description: 'Nama perusahaan, industri, dan akuntan wajib diisi.' });
+      toast.error('Lengkapi data wajib', { description: 'Nama perusahaan dan industri wajib diisi.' });
       return;
     }
     setIsSubmitting(true);
     try {
       await onSubmit({
+        clientCode: clientCode.trim(),
         companyName: companyName.trim(),
         industry: industry.trim(),
         status,
         taxStatus: 'Pending',
         accountingStatus: 'Pending Review',
-        assignedAccountant: assignedAccountant.trim(),
+        assignedAccountant: initialClient?.assignedAccountant ?? '',
         contactName: contactName.trim(),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
         npwp: npwp.trim(),
         address: address.trim(),
+        // Mode edit: kirim logo hanya kalau berubah (payload logo cukup besar,
+        // dan undefined = "jangan diubah" di backend).
+        logo: isEditMode && logo === (initialClient?.logo ?? null) ? undefined : logo,
       });
     } finally {
       setIsSubmitting(false);
@@ -759,19 +779,49 @@ function AddClientModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-lg border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logo} alt="Company logo" className="max-w-full max-h-full object-contain" />
+              ) : (
+                <Building2 size={22} className="text-muted-foreground" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">Company Logo</p>
+              <p className="text-[11px] text-muted-foreground mb-1.5">PNG, JPEG, or WebP · max 2 MB. Used on printed documents (e.g. Journal Entry PDF).</p>
+              <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoSelected} />
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => logoInputRef.current?.click()} disabled={isSubmitting} className="text-xs px-2.5 py-1 rounded-md border border-border hover:bg-muted/40 transition-colors disabled:opacity-50">
+                  {logo ? 'Change logo' : 'Upload logo'}
+                </button>
+                {logo && (
+                  <button type="button" onClick={() => setLogo(null)} disabled={isSubmitting} className="text-xs px-2.5 py-1 rounded-md text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div>
+              <label className="block text-xs font-medium text-foreground mb-1">Client Code</label>
+              <input
+                value={clientCode}
+                onChange={e => setClientCode(e.target.value)}
+                placeholder="CLT-0001"
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-medium text-foreground mb-1">Company Name *</label>
               <input
                 value={companyName}
                 onChange={e => setCompanyName(e.target.value)}
                 placeholder="PT Contoh Sejahtera"
-                disabled={isEditMode}
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-muted/40 disabled:text-muted-foreground"
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-              {isEditMode && (
-                <p className="text-[10px] text-muted-foreground mt-1">Nama perusahaan tidak bisa diubah.</p>
-              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Industry *</label>
@@ -797,15 +847,6 @@ function AddClientModal({
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-foreground mb-1">Assigned Accountant *</label>
-              <input
-                value={assignedAccountant}
-                onChange={e => setAssignedAccountant(e.target.value)}
-                placeholder="Sari Dewi"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Contact Name</label>

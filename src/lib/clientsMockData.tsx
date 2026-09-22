@@ -26,6 +26,7 @@ export interface ClientHealthScore {
 
 export interface Client {
   id: string;
+  clientCode: string;
   companyName: string;
   industry: string;
   status: ClientStatus;
@@ -41,6 +42,8 @@ export interface Client {
   contactPhone: string;
   npwp: string;
   address: string;
+  /** Logo perusahaan (data URL gambar). null/undefined = belum ada logo. */
+  logo?: string | null;
   aiInsight: string;
 }
 

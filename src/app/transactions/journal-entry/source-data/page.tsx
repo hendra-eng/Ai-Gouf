@@ -3,6 +3,9 @@
 import React, { useState, useMemo } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeSourceRecords, useJeDrafts, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type SyncStatus = 'Synced' | 'Pending Sync' | 'Sync Failed' | 'Manual';
@@ -25,7 +28,30 @@ interface SourceRecord {
   vendor?: string;
 }
 
-const sourceData: SourceRecord[] = [];
+/** jeReference TIDAK disimpan sebagai kolom di source_records (hindari FK
+ *  balik/data yang bisa tidak sinkron) -- di-derive dengan mencari draft
+ *  yang source_record_id-nya menunjuk ke baris ini, pola sama dengan
+ *  last_used_at di financial_transaction_sales_import_templates. */
+function petakanDariBackend(r: BackendJeSourceRecord, draftByLastUpdated: Map<string, BackendJeDraft>): SourceRecord {
+  const draft = draftByLastUpdated.get(r.id);
+  return {
+    id: r.id,
+    sourceId: r.source_code,
+    sourceType: r.source_type,
+    sourceDate: r.source_date || '',
+    description: r.description || '',
+    amount: r.amount,
+    currency: r.currency,
+    relatedAccount: r.related_account_name || '-',
+    accountCode: r.related_account_code || '-',
+    sourceStatus: (r.mapping_status as SourceStatus) || 'Imported',
+    jeReference: draft ? draft.je_number : null,
+    createdDate: (r.created_at || '').slice(0, 10),
+    syncStatus: (r.sync_status as SyncStatus) || 'Manual',
+    mappingStatus: (r.mapping_status as SourceStatus) || 'Imported',
+    vendor: r.party_name || undefined,
+  };
+}
 
 const sourceTypeColors: Record<string, string> = {
   Sales: 'bg-emerald-100 text-emerald-700',
@@ -70,11 +96,28 @@ function SyncStatusBadge({ status }: { status: SyncStatus }) {
 }
 
 export default function SourceDataPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { records: backendRecords, loading } = useJeSourceRecords(clientId);
+  const { drafts } = useJeDrafts(clientId);
+
+  const draftBySourceRecordId = useMemo(() => {
+    const map = new Map<string, BackendJeDraft>();
+    drafts.forEach(d => { if (d.source_record_id) map.set(d.source_record_id, d); });
+    return map;
+  }, [drafts]);
+
+  const sourceData = useMemo(
+    () => backendRecords.map(r => petakanDariBackend(r, draftBySourceRecordId)),
+    [backendRecords, draftBySourceRecordId],
+  );
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortField, setSortField] = useState<keyof SourceRecord>('sourceDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedRow, setSelectedRow] = useState<SourceRecord | null>(null);
 
   const sourceTypes = ['All', 'Sales', 'Purchase', 'Payroll', 'Bank', 'Cash', 'Expense', 'Inventory', 'Fixed Assets', 'Tax', 'Manual'];
@@ -93,11 +136,16 @@ export default function SourceDataPage() {
       return 0;
     });
     return data;
-  }, [search, typeFilter, statusFilter, sortField, sortDir]);
+  }, [sourceData, search, typeFilter, statusFilter, sortField, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
 
   const handleSort = (field: keyof SourceRecord) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
+    setCurrentPage(1);
   };
 
   const summaryStats = useMemo(() => ({
@@ -106,9 +154,9 @@ export default function SourceDataPage() {
     pending: sourceData.filter(r => r.sourceStatus === 'Pending Mapping' || r.sourceStatus === 'Imported').length,
     errors: sourceData.filter(r => r.sourceStatus === 'Validation Error').length,
     totalAmount: sourceData.reduce((s, r) => s + r.amount, 0),
-  }), []);
+  }), [sourceData]);
 
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
   return (
       <div className="space-y-6 fade-in">
@@ -118,7 +166,7 @@ export default function SourceDataPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Total Sources', value: summaryStats.total, sub: 'All source records', color: 'text-slate-700', bg: 'bg-slate-50' },
-            { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${Math.round(summaryStats.mapped / summaryStats.total * 100)}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
+            { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${summaryStats.total > 0 ? Math.round(summaryStats.mapped / summaryStats.total * 100) : 0}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
             { label: 'Pending / Imported', value: summaryStats.pending, sub: 'Awaiting mapping', color: 'text-amber-700', bg: 'bg-amber-50' },
             { label: 'Validation Errors', value: summaryStats.errors, sub: 'Require attention', color: 'text-red-700', bg: 'bg-red-50' },
           ].map(card => (
@@ -138,16 +186,16 @@ export default function SourceDataPage() {
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input className="je-input pl-9" placeholder="Search by source ID, description, or vendor…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="je-input pl-9" placeholder="Search by source ID, description, or vendor…" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
             </div>
             <div className="flex gap-2 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                <select className="je-select text-sm" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}>
                   {sourceTypes.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
-              <select className="je-select text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <select className="je-select text-sm" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
                 {statuses.map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
@@ -180,9 +228,11 @@ export default function SourceDataPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading source records…</td></tr>
+                ) : filtered.length === 0 ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
                     <td className="px-4 py-3 font-mono text-xs font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -215,6 +265,7 @@ export default function SourceDataPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
         </div>
 
         {/* Detail Panel */}

@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { journalEntries } from '@/data/journalEntryData';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -10,17 +9,19 @@ import {
   ExclamationCircleIcon,
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
+import { useAuth } from '@/lib/auth';
+import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry } from '@/lib/journalEntryStore';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 interface FlaggedEntry {
-  entry: typeof journalEntries[0];
+  entry: JeUiEntry;
   reasons: string[];
 }
 
 // Real, derivable exception detection — no fabricated severity/assignee fields.
-function detectExceptions(): FlaggedEntry[] {
+function detectExceptions(journalEntries: JeUiEntry[]): FlaggedEntry[] {
   const flagged: FlaggedEntry[] = [];
   journalEntries.forEach(je => {
     const reasons: string[] = [];
@@ -34,11 +35,19 @@ function detectExceptions(): FlaggedEntry[] {
 }
 
 export default function JournalEntryExceptionsPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
+
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { lines: expandedBackendLines } = useJeDraftLines(expandedId);
+  const expandedLines = useMemo(() => expandedBackendLines.map(mapJeDraftLineToUi), [expandedBackendLines]);
 
-  const flaggedEntries = useMemo(() => detectExceptions(), []);
+  const flaggedEntries = useMemo(() => detectExceptions(journalEntries), [journalEntries]);
   const sourceTypes = ['All', ...Array.from(new Set(flaggedEntries.map(f => f.entry.sourceType)))];
 
   const filtered = useMemo(() => {
@@ -50,6 +59,10 @@ export default function JournalEntryExceptionsPage() {
     if (sourceFilter !== 'All') data = data.filter(f => f.entry.sourceType === sourceFilter);
     return data;
   }, [flaggedEntries, search, sourceFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
 
   const summary = useMemo(() => ({
     total: flaggedEntries.length,
@@ -86,12 +99,12 @@ export default function JournalEntryExceptionsPage() {
                 className="je-input pl-9"
                 placeholder="Search by JE number or description…"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
               />
             </div>
             <div className="flex items-center gap-1.5">
               <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-              <select className="je-select text-sm" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+              <select className="je-select text-sm" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setCurrentPage(1); }}>
                 {sourceTypes.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
@@ -101,13 +114,15 @@ export default function JournalEntryExceptionsPage() {
 
         {/* Exception Cards */}
         <div className="space-y-3">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="je-card p-12 text-center text-sm text-muted-foreground">Loading journal entries…</div>
+          ) : filtered.length === 0 ? (
             <div className="je-card p-12 text-center">
               <CheckCircleIcon className="w-10 h-10 text-green-400 mx-auto mb-3" />
               <p className="text-sm font-medium text-foreground">No exceptions match your filters</p>
               <p className="text-xs text-muted-foreground mt-1">Adjust your filters or clear the search to see all flagged entries.</p>
             </div>
-          ) : filtered.map(({ entry, reasons }) => (
+          ) : paginated.map(({ entry, reasons }) => (
             <div
               key={entry.id}
               className={`je-card p-5 cursor-pointer transition-all ${expandedId === entry.id ? 'ring-2 ring-primary/30' : ''}`}
@@ -155,7 +170,7 @@ export default function JournalEntryExceptionsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {entry.lines.map(line => (
+                        {expandedLines.map(line => (
                           <tr key={line.id}>
                             <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
                             <td className="px-3 py-2 text-foreground">{line.description}</td>
@@ -176,6 +191,11 @@ export default function JournalEntryExceptionsPage() {
             </div>
           ))}
         </div>
+        {!loading && filtered.length > 0 && (
+          <div className="je-card overflow-hidden">
+            <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="flagged entries" />
+          </div>
+        )}
       </div>
   );
 }

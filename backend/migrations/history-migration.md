@@ -1,0 +1,16 @@
+1-add_columns_for_14_sheets.py
+2-add_management_users_auth.py
+3-create_financial_transaction_sales_tables.py
+4-create_sales_import_templates.py
+5-sync_management_tables_ddl.py
+6-update_template_sau_cabang_dari_nama_file.sql
+7-add_cabang_to_sales_source_rows.py
+8-add_cabang_to_sales_invoices.py
+9-add_logo_to_management_clients.py
+10-create_financial_transaction_journal_entry_tables.py
+seed_template_nbm_multi_format.sql
+seed_template_npi_sales_recapitulation_excel.sql
+seed_template_sau_detail_penjualan_csv.sql
+11-create_journal_entry_import_templates.py
+seed_template_sau_jurnal_kas_kasir_excel.sql
+12-create_financial_transaction_purchase_tables.py

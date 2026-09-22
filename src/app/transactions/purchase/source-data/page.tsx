@@ -1,10 +1,9 @@
 'use client';
 
-import React, { Suspense, useEffect, useState, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import type { PurchaseSourceRecord } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
@@ -48,23 +47,19 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${map[status]}`}>{status}</span>;
 }
 
-function PurchaseSourceDataPageInner() {
-  const { purchaseSourceRecords } = usePurchaseData();
-  const searchParams = useSearchParams();
+export default function PurchaseSourceDataPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { records: backendRecords } = usePurchaseSourceRecords(clientId);
+  const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [vendorFilter, setVendorFilter] = useState('All');
   const [sortField, setSortField] = useState('sourceDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedRow, setSelectedRow] = useState<PurchaseSourceRecord | null>(null);
-
-  // Deep-link dari tombol "View Source" di halaman Journal Preview
-  // (?purchaseId=PUR-2026-09-0001) -- langsung isi kolom pencarian.
-  useEffect(() => {
-    const purchaseId = searchParams.get('purchaseId');
-    if (purchaseId) setSearch(purchaseId);
-  }, [searchParams]);
+  const [selectedRow, setSelectedRow] = useState<typeof purchaseSourceRecords[0] | null>(null);
 
   const sourceTypes = ['All', 'Purchase Order', 'Vendor Invoice', 'Goods Receipt', 'Service Receipt'];
   const statuses = ['All', 'Mapped', 'Pending Mapping', 'Validation Error', 'Imported'];
@@ -77,8 +72,7 @@ function PurchaseSourceDataPageInner() {
       r.description.toLowerCase().includes(search.toLowerCase()) ||
       r.vendor.toLowerCase().includes(search.toLowerCase()) ||
       r.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
-      r.poNumber.toLowerCase().includes(search.toLowerCase()) ||
-      (r.relatedPurchaseId || '').toLowerCase().includes(search.toLowerCase())
+      r.poNumber.toLowerCase().includes(search.toLowerCase())
     );
     if (typeFilter !== 'All') data = data.filter(r => r.sourceType === typeFilter);
     if (statusFilter !== 'All') data = data.filter(r => r.status === statusFilter);
@@ -114,7 +108,7 @@ function PurchaseSourceDataPageInner() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
             { label: 'Total Sources', value: summary.total, sub: 'All source documents', color: 'text-slate-700', bg: 'bg-slate-50' },
-            { label: 'Mapped', value: summary.mapped, sub: `${summary.total > 0 ? Math.round(summary.mapped / summary.total * 100) : 0}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
+            { label: 'Mapped', value: summary.mapped, sub: `${Math.round(summary.mapped / summary.total * 100)}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
             { label: 'Pending Mapping', value: summary.pending, sub: 'Awaiting transaction', color: 'text-amber-700', bg: 'bg-amber-50' },
             { label: 'Validation Errors', value: summary.errors, sub: 'Require correction', color: 'text-red-700', bg: 'bg-red-50' },
             { label: 'Total Source Value', value: fmt(summary.totalAmount), sub: 'Gross incl. tax', color: 'text-blue-700', bg: 'bg-blue-50' },
@@ -285,13 +279,5 @@ function PurchaseSourceDataPageInner() {
           </div>
         )}
       </div>
-  );
-}
-
-export default function PurchaseSourceDataPage() {
-  return (
-    <Suspense fallback={<div className="space-y-6 fade-in"><PurchaseTabs /></div>}>
-      <PurchaseSourceDataPageInner />
-    </Suspense>
   );
 }

@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { exportToCSV } from '@/app/transactions/components/tabs/shared/exportUtils';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -50,11 +49,10 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
-  const { purchaseTransactions } = usePurchaseData();
-  const postedPurchases = useMemo(
-    () => purchaseTransactions.filter(t => t.status === 'posted'),
-    [purchaseTransactions]
-  );
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId, 'posted');
+  const postedPurchases = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
@@ -64,6 +62,10 @@ export default function PurchasePostedPage() {
   const [sortField, setSortField] = useState('postingDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Baris item/jasa dimuat lazy, cuma untuk baris yang sedang di-expand.
+  const { lines: expandedLines } = usePurchaseTransactionLines(expandedId);
+  const mappedExpandedLines = useMemo(() => expandedLines.map(mapTransactionLineToUi), [expandedLines]);
 
   const periods = ['All', ...Array.from(new Set(postedPurchases.map(t => t.period)))];
   const categories = ['All', ...Array.from(new Set(postedPurchases.map(t => t.category)))];
@@ -95,32 +97,6 @@ export default function PurchasePostedPage() {
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
-  };
-
-  const handleExport = () => {
-    if (filtered.length === 0) {
-      toast.error('Tidak ada data untuk diekspor', { description: 'Ubah filter terlebih dahulu.' });
-      return;
-    }
-    exportToCSV(
-      filtered.map(r => ({
-        'Purchase ID': r.purchaseId,
-        'Posting Date': r.postingDate,
-        'Purchase Date': r.purchaseDate,
-        'Invoice No.': r.invoiceNumber,
-        Vendor: r.vendor,
-        Category: r.category,
-        Subtotal: r.subtotal,
-        Tax: r.taxAmount,
-        Total: r.total,
-        Payment: paymentLabels[r.paymentStatus],
-        Period: r.period,
-        'Posted By': r.postedBy,
-        'Approved By': r.approvedBy,
-      })),
-      'purchase_posted'
-    );
-    toast.success(`${filtered.length} posted purchases diekspor ke CSV`);
   };
 
   const summary = useMemo(() => ({
@@ -184,7 +160,7 @@ export default function PurchasePostedPage() {
                 <option value="All">All Payment</option>
                 {Object.entries(paymentLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>
@@ -292,7 +268,7 @@ export default function PurchasePostedPage() {
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border">
-                                  {row.lines.map(line => (
+                                  {mappedExpandedLines.map(line => (
                                     <tr key={line.id}>
                                       <td className="px-3 py-2 text-foreground">{line.description}</td>
                                       <td className="px-3 py-2 text-right tabular-nums">{line.quantity} {line.unit}</td>

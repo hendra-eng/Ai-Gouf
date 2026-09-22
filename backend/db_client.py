@@ -10,15 +10,18 @@ import json
 import os
 import uuid
 from datetime import datetime, date, timedelta
+from decimal import Decimal
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
 from sqlalchemy import (
     create_engine, Column, Integer, BigInteger, String, DateTime,
     Text, Float, Boolean, ForeignKey, ForeignKeyConstraint, text, UniqueConstraint, Index,
-    Numeric, Date, func, JSON, LargeBinary,  # LargeBinary dipakai AuditEvidenceRow.file_content (bytea)
+    Numeric, Date, func, JSON,  # dipakai hitung_signature_data_laporan() (MAX/COUNT agregat)
+    LargeBinary,  # dipakai AuditEvidenceRow.file_content (bytea)
+    Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -185,7 +188,7 @@ class Client(Base):
     status = None
     # [DIUBAH] akuntan_penanggung_jawab sekarang uuid, merujuk ke
     # management_users.id_user (dulu varchar nama bebas).
-    assigned_accountant = Column("akuntan_penanggung_jawab", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    assigned_accountant = Column("akuntan_penanggung_jawab", PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     contact_name = Column("nama_pic", String(255), nullable=True)
     npwp = Column(String(20), nullable=True)
     address = Column("alamat", Text, nullable=True)
@@ -210,10 +213,10 @@ class Client(Base):
     status_kerjasama = Column("status", String(10), nullable=True)
     tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
     # [DIUBAH] created_by/edited_by/deleted_by sekarang uuid -> management_users
-    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    diperbarui_oleh = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    dibuat_oleh = Column("created_by", PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    diperbarui_oleh = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     # [BARU] hanya dipakai sementara untuk backfill migrasi -- lihat
     # migration_uuid_client_id.sql (old_client_id = id integer lama).
     old_client_id = Column(Integer, nullable=True)
@@ -233,7 +236,7 @@ class EsbAccount(Base):
     __tablename__ = "esb_accounts"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     account_name = Column(String(200), nullable=False)
     esb_type = Column(String(50), nullable=True)
     api_base_url = Column(String(500), nullable=True)
@@ -264,7 +267,7 @@ class Hasil(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "bank", "jual", "penilaian", "piutang"
     conv_id = Column(String(50), nullable=True)
     data = Column(Text, nullable=True)  # JSON string
@@ -282,7 +285,7 @@ class HasilEsb(Base):
     __tablename__ = "hasil_esb"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     esb_account_id = Column(Integer, ForeignKey("esb_accounts.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "bank", "jual", "penilaian", "piutang"
     conv_id = Column(String(50), nullable=True)
@@ -309,7 +312,7 @@ class Coa(Base):
     __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     no_akun = Column(String(50), nullable=False)
     nama_akun = Column(String(200), nullable=False)
     kategori = Column(String(20), nullable=True)   # ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN
@@ -389,7 +392,7 @@ class JurnalPosting(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=True)
     tanggal = Column(String(20), nullable=True)
@@ -513,7 +516,7 @@ class CoaStandardMapping(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
@@ -533,7 +536,7 @@ class CompanyAccountRole(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("account_roles.id"), nullable=False)
     coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
@@ -555,7 +558,7 @@ class JournalEntry(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     journal_no = Column(String(80), nullable=False)
     source_module = Column(String(50), nullable=False, default="GENERAL_JOURNAL")
     source_transaction_id = Column(String(100), nullable=True)
@@ -594,7 +597,7 @@ class JournalLine(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.journal_entries.id"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     line_no = Column(Integer, nullable=False)
     coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.coa.id"), nullable=False)
     description = Column(Text, nullable=True)
@@ -673,7 +676,7 @@ class RiwayatSaldoBulanan(Base):
     __tablename__ = "riwayat_saldo_bulanan"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     no_akun = Column(String(50), nullable=False)
     nama_akun = Column(String(200), nullable=False)
     kategori = Column(String(20), nullable=True)
@@ -724,7 +727,7 @@ class VoucherCounter(Base):
     __tablename__ = "voucher_counter"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     kode_bank = Column(String(20), nullable=False)   # mis. "BRI", "MANDIRI", "BCA"
     periode = Column(String(10), nullable=False)     # format "MMYY", mis. "0726"
     nomor_terakhir = Column(Integer, nullable=False, default=0)
@@ -794,7 +797,7 @@ class UploadBatch(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=False, default="rekening_koran")
     kode_bank = Column(String(20), nullable=False)
@@ -836,7 +839,7 @@ class LaporanKeuangan(Base):
     __tablename__ = "laporan_keuangan"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     periode = Column(String(20), nullable=False)  # mis. "2026-07"
     tanggal_mulai = Column(String(20), nullable=True)
     tanggal_akhir = Column(String(20), nullable=True)
@@ -860,8 +863,8 @@ class AuditLog(Base):
     __table_args__ = {"schema": "1_app"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [DIUBAH] "user" (dulu: nama/username string bebas) TIDAK PUNYA
     # padanan kolom lagi -- management_audit_trails pakai id_user (uuid,
     # FK ke management_users) sebagai identitas pelaku, bukan string
@@ -881,9 +884,9 @@ class AuditLog(Base):
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=True)
     updated_at = Column("edited_at", DateTime(timezone=True), server_default=text("now()"), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
 
 
 class User(Base):
@@ -898,51 +901,706 @@ class User(Base):
     tabel ini dipakai untuk login. Lihat migrations/xxx_management_users_auth.sql.
     """
     __tablename__ = "management_users"
-    # [DIUBAH] Tabel dipindah dari schema public ke schema app (lihat
-    # move_management_tables_to_app_schema.sql) -- ditambahkan di sini
-    # supaya ORM ikut mencari/menyimpan ke app.management_users, bukan
-    # public.management_users lagi.
-    __table_args__ = {"schema": "1_app"}
 
-    id_user = Column("id", PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))  # [SESUAI DB] kolom fisik sudah distandarkan jadi "id"
+    id_user = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     nama_user = Column(String(255), nullable=False)
     alamat_user = Column(String(255), nullable=True)
     telp_user = Column(String(255), nullable=True)
-    # [DIUBAH] role sekarang INTEGER (1-5, dulu "tahap_N" varchar) --
-    # lihat helper role_int_ke_tahap()/role_tahap_ke_int() di bawah dan
-    # adapter di modules/auth/core.py yang tetap memakai string "tahap_N"
-    # supaya logic RBAC lama tidak perlu diubah semua.
-    role = Column(Integer, nullable=False, default=1)
+    role = Column(String(50), nullable=False, default="tahap_1")
     access = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    updated_at = Column("edited_at", DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    updated_by = Column(PG_UUID(as_uuid=False), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    # [BARU] kolom audit & relasi client tunggal, ditambahkan di migrasi
-    # management_users terbaru.
-    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    # [BARU] client_id -- lihat root/ddl-table. Dipakai untuk user yang
+    # scope-nya 1 client tertentu (mis. akun client_lv_N yang login
+    # langsung sebagai representasi klien), BEDA dari akses multi-client
+    # lewat tabel user_client_access. NULL = user internal (tahap_1..5,
+    # super_admin) yang tidak terikat 1 client.
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
 
 
-def role_int_ke_tahap(role_int: int) -> str:
-    """Adapter: integer DB (1-5) -> string "tahap_N" yang dipakai LEVELS di
-    modules/auth/core.py. Dipanggil setiap kali User.role dibaca untuk JWT/RBAC."""
-    if role_int is None:
-        return "tahap_1"
-    return f"tahap_{int(role_int)}"
+class ManagementClient(Base):
+    """[BARU] Data profil klien (badan usaha, PIC, alamat, dst) -- DDL di
+    root/ddl-table, ditulis manual oleh user. Terpisah dari tabel `clients`
+    (lama, dipakai modul akuntansi/upload) -- `management_clients` dipakai
+    untuk sisi manajemen/administrasi klien (RBAC client_id, profil
+    perusahaan), belum disatukan dengan `clients` supaya tidak menyentuh
+    alur akuntansi yang sudah jalan.
+    """
+    __tablename__ = "management_clients"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_code = Column(String(50), nullable=True)
+    nama_client = Column(String(255), nullable=True)
+    tipe_badan_usaha = Column(String(255), nullable=True)
+    npwp = Column(String(20), nullable=True)
+    nomor_akta_nib = Column(String(255), nullable=True)
+    status_pkp = Column(Boolean, nullable=True)
+    klasifikasi_lapangan_usaha = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    no_telepon = Column(String(255), nullable=True)
+    no_handphone = Column(String(255), nullable=True)
+    nama_pic = Column(String(255), nullable=True)
+    jabatan_pic = Column(String(255), nullable=True)
+    alamat = Column(Text, nullable=True)
+    kota = Column(String(50), nullable=True)
+    provinsi = Column(String(50), nullable=True)
+    kode_pos = Column(String(255), nullable=True)
+    industry = Column(String(255), nullable=True)
+    tahun_buku_mulai = Column(String(10), nullable=True)
+    mata_uang_default = Column(String(10), nullable=True)
+    status = Column(String(10), nullable=True)
+    akuntan_penanggung_jawab = Column(PG_UUID(as_uuid=False), nullable=True)
+    tanggal_mulai_kerjasama = Column(DateTime, nullable=True)
+    # Logo perusahaan klien, disimpan sebagai data URL gambar ("data:image/png;base64,...")
+    # supaya tidak butuh storage file terpisah. Dipakai untuk kop dokumen cetak (mis. PDF
+    # Journal Entry). Ditambahkan lewat migrations/add_logo_to_management_clients.py.
+    logo = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
-def role_tahap_ke_int(role_tahap: str) -> int:
-    """Kebalikan role_int_ke_tahap() -- dipakai saat menyimpan role ke DB."""
-    if not role_tahap:
-        return 1
-    try:
-        return int(str(role_tahap).split("_")[-1])
-    except (ValueError, IndexError):
-        return 1
+class ManagementAuditTrail(Base):
+    """[BARU] Log aktivitas user manajemen (login, buka menu, dst) -- DDL
+    di root/ddl-table. Terpisah dari `audit_log` (lama, dipakai modul
+    akuntansi) -- tabel ini FK ke management_users, bukan ke clients.
+    """
+    __tablename__ = "management_audit_trails"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    id_user = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user", ondelete="CASCADE"), nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    ip = Column(String(255), nullable=True)
+    action = Column(String(255), nullable=True)
+    menu = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.now, nullable=False)
+    updated_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+    user = relationship("User")
+
+
+# ============================================================
+# TRANSACTIONS > SALES -- DDL: root/ddl-table (bagian
+# "FITUR TRANSACTIONS > SALES"), lihat komentar panjang di sana untuk
+# alasan desain (kenapa 1 tabel invoice dipakai 3 tab sekaligus, kenapa
+# tidak ada tabel customer master, dst). client_id di SELURUH tabel di
+# bawah reference ke management_users(id_user) -- BUKAN management_clients
+# ataupun clients(id) lama -- karena akun client (client_lv_1..9, lihat
+# RBAC.md) direpresentasikan sebagai baris management_users itu sendiri.
+# ============================================================
+
+class SalesSourceFile(Base):
+    """File yang diupload di tab "Source Data" + hasil ekstraksi/mapping AI."""
+    __tablename__ = "financial_transaction_sales_source_files"
+    __table_args__ = (
+        Index("idx_sales_source_files_client", "client_id"),
+        Index("idx_sales_source_files_management_client", "management_client_id"),
+        Index("idx_sales_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    # [BARU] Klien (perusahaan) yang laporannya sedang diupload -- WAJIB
+    # diisi user lewat dropdown saat upload (lihat SALES_IMPORT_TEMPLATES.md
+    # di root). BEDA dari client_id di atas (management_users, akun yang
+    # login/upload) -- ini dipakai sebagai key pencocokan/pembuatan
+    # template di SalesImportTemplate.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    storage_path = Column(Text, nullable=True)
+    period_label = Column(String(50), nullable=True)
+    customer_hint = Column(String(255), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Diproses")
+    status_mapping = Column(String(20), nullable=False, default="Diproses")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    dpp_total = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn_total = Column(Numeric(24, 2), nullable=False, default=0)
+    grand_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    # [BARU] Template pola kolom yang dipakai/cocok untuk file ini (lihat
+    # SalesImportTemplate di bawah) -- NULL kalau belum ada template yang
+    # cocok, atau kalau file jenis ini (mis. PDF) belum didukung
+    # pembelajaran pola.
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesSourceRow(Base):
+    """Baris mentah per file (hasil parsing sebelum jadi invoice resmi)."""
+    __tablename__ = "financial_transaction_sales_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_sales_source_rows_file_row"),
+        Index("idx_sales_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    no_invoice = Column(String(100), nullable=True)
+    nama_customer = Column(String(255), nullable=True)
+    cabang = Column(String(100), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesInvoice(Base):
+    """Entitas inti: satu baris = satu invoice/transaksi penjualan. Dipakai
+    bersama oleh tab Sales Transaction, Journal Preview, dan Posted."""
+    __tablename__ = "financial_transaction_sales_invoices"
+    __table_args__ = (
+        UniqueConstraint("client_id", "invoice_no", name="uq_sales_invoices_client_no"),
+        Index("idx_sales_invoices_client_status", "client_id", "posting_status"),
+        Index("idx_sales_invoices_client_date", "client_id", "invoice_date"),
+        Index("idx_sales_invoices_client_cabang", "client_id", "cabang"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_no = Column(String(100), nullable=False)
+    invoice_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
+    customer_name = Column(String(255), nullable=False)
+    customer_npwp = Column(String(30), nullable=True)
+    description = Column(Text, nullable=True)
+    transaction_type = Column(String(50), nullable=True)
+    project_name = Column(String(255), nullable=True)
+    sales_person = Column(String(255), nullable=True)
+    term_of_payment = Column(String(50), nullable=True)
+    # Cabang tempat transaksi terjadi (teks bebas, mis. "Jakarta"). NULL =
+    # belum ditentukan. Ditambahkan lewat migrations/add_cabang_to_sales_invoices.py.
+    cabang = Column(String(100), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    pph = Column(Numeric(24, 2), nullable=False, default=0)
+    gross_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    paid_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    outstanding_amount = Column(Numeric(24, 2), Computed("gross_amount - paid_amount", persisted=True))
+    tax_invoice_status = Column(String(30), nullable=False, default="Belum Terbit Faktur")
+    posting_status = Column(String(20), nullable=False, default="Draft")
+    reconcile_status = Column(String(20), nullable=False, default="Unreconciled")
+    journal_sync_status = Column(String(20), nullable=False, default="Pending")
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesAccountMapping(Base):
+    """Pemetaan akun (Piutang/Pendapatan/PPN/PPh) per invoice -- 1:1, tab
+    "Accounting Classification" di Journal Preview."""
+    __tablename__ = "financial_transaction_sales_account_mappings"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False, unique=True)
+    piutang_account_code = Column(String(50), nullable=False)
+    piutang_account_name = Column(String(200), nullable=True)
+    pendapatan_account_code = Column(String(50), nullable=False)
+    pendapatan_account_name = Column(String(200), nullable=True)
+    ppn_account_code = Column(String(50), nullable=True)
+    ppn_account_name = Column(String(200), nullable=True)
+    pph_account_code = Column(String(50), nullable=True)
+    pph_account_name = Column(String(200), nullable=True)
+    is_ai_suggested = Column(Boolean, nullable=False, default=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    mapped_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    mapped_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesException(Base):
+    """Antrean review tab "Exceptions" -- transaksi/baris sumber yang
+    perlu ditinjau manusia sebelum lanjut diposting."""
+    __tablename__ = "financial_transaction_sales_exceptions"
+    __table_args__ = (
+        Index("idx_sales_exceptions_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
+    exception_type = Column(String(100), nullable=False)
+    priority = Column(String(10), nullable=False, default="Medium")
+    status = Column(String(20), nullable=False, default="Open")
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    ai_suggestion = Column(Text, nullable=True)
+    source_snippet = Column(JSONB, nullable=True)
+    assigned_to = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesActivityLog(Base):
+    """Jejak aktivitas khusus modul Sales (mis. "Aktivitas Posting
+    Terbaru" di tab Posted) -- levelnya per-invoice/per-jurnal, beda dari
+    management_audit_trails yang levelnya per-user/menu."""
+    __tablename__ = "financial_transaction_sales_activity_log"
+    __table_args__ = (
+        Index("idx_sales_activity_log_invoice", "invoice_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    event_type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=False)
+    reference_no = Column(String(100), nullable=True)
+    performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesImportTemplate(Base):
+    """Pola kolom file laporan penjualan (CSV/Excel) yang sudah "dipelajari"
+    untuk 1 klien -- dipakai ulang otomatis (tanpa panggil AI lagi) begitu
+    file berikutnya dari klien+format yang sama diupload. Lihat
+    SALES_IMPORT_TEMPLATES.md di root untuk alur lengkapnya.
+
+    client_id di sini SENGAJA reference ke management_clients (BUKAN
+    management_users seperti tabel Sales lain) -- pola kolom laporan
+    adalah properti PERUSAHAAN klien itu sendiri, bukan akun yang
+    kebetulan login & upload.
+    """
+    __tablename__ = "financial_transaction_sales_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_sales_import_templates_signature"),
+        Index("idx_sales_import_templates_client", "client_id"),
+        Index("idx_sales_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# ============================================================
+# FITUR TRANSACTIONS > JOURNAL ENTRY (DDL: root/ddl-table bagian "FITUR
+# TRANSACTIONS > JOURNAL ENTRY", frontend: src/app/transactions/
+# journal-entry/*). Pola sama persis dengan 6 tabel Sales di atas --
+# client_id reference ke management_users(id_user), audit columns
+# created_at/by, edited_at/by, deleted_at/by.
+# ============================================================
+
+class JournalEntrySourceRecord(Base):
+    """Registri transaksi dari modul lain (Sales/Purchase/Payroll/Bank/
+    Cash/Expense/Inventory/Fixed Assets/Tax/Manual) yang berpotensi/sudah
+    dijadikan Journal Entry -- tab "Source Data"."""
+    __tablename__ = "financial_transaction_journal_entry_source_records"
+    __table_args__ = (
+        UniqueConstraint("client_id", "source_code", name="uq_je_source_records_client_code"),
+        Index("idx_je_source_records_client_status", "client_id", "mapping_status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    source_code = Column(String(100), nullable=False)
+    source_type = Column(String(20), nullable=False)
+    source_date = Column(Date, nullable=True)
+    description = Column(Text, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="IDR")
+    related_account_code = Column(String(50), nullable=True)
+    related_account_name = Column(String(200), nullable=True)
+    party_name = Column(String(255), nullable=True)
+    mapping_status = Column(String(20), nullable=False, default="Imported")
+    sync_status = Column(String(20), nullable=False, default="Manual")
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntryDraft(Base):
+    """Entitas inti: header Journal Entry (draft sampai benar-benar
+    diposting ke journal_entries native/Accounting Core V2). Dipakai
+    bersama oleh tab JE Transaction, Journal Preview, Exceptions (via
+    query), dan Posted."""
+    __tablename__ = "financial_transaction_journal_entry_drafts"
+    __table_args__ = (
+        UniqueConstraint("client_id", "je_number", name="uq_je_drafts_client_number"),
+        Index("idx_je_drafts_client_status", "client_id", "status"),
+        Index("idx_je_drafts_client_date", "client_id", "entry_date"),
+        Index("idx_je_drafts_source_record", "source_record_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    je_number = Column(String(100), nullable=False)
+    entry_date = Column(Date, nullable=False)
+    posting_date = Column(Date, nullable=True)
+    period_label = Column(String(50), nullable=False)
+    description = Column(Text, nullable=True)
+    source_type = Column(String(20), nullable=False, default="Manual")
+    source_reference = Column(String(100), nullable=True)
+    source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_source_records.id"), nullable=True)
+    total_debit = Column(Numeric(24, 2), nullable=False, default=0)
+    total_credit = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="IDR")
+    status = Column(String(20), nullable=False, default="draft")
+    created_by_name = Column(String(255), nullable=True)
+    reviewed_by_name = Column(String(255), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntryDraftLine(Base):
+    """Baris debit/kredit per draft (tab Journal Preview & detail panel).
+    Begitu draft diposting, baris ini DICERMINKAN jadi journal_lines resmi
+    (Accounting Core V2), bukan dipindah/dihapus -- draft tetap tersimpan
+    sbg riwayat."""
+    __tablename__ = "financial_transaction_journal_entry_draft_lines"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "line_no", name="uq_je_draft_lines_draft_no"),
+        Index("idx_je_draft_lines_draft", "draft_id"),
+        Index("idx_je_draft_lines_client_account", "client_id", "account_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    line_no = Column(Integer, nullable=False)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(200), nullable=True)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0)
+    credit = Column(Numeric(24, 2), nullable=False, default=0)
+    cost_center = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntryActivityLog(Base):
+    """Jejak aktivitas khusus modul Journal Entry (tab Overview -> "Recent
+    Activity"). Sama perannya dgn SalesActivityLog -- append-only."""
+    __tablename__ = "financial_transaction_journal_entry_activity_log"
+    __table_args__ = (
+        Index("idx_je_activity_log_draft", "draft_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    je_number = Column(String(100), nullable=True)
+    event_type = Column(String(50), nullable=False)
+    description = Column(Text, nullable=False)
+    status_snapshot = Column(String(20), nullable=True)
+    performed_by = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntryImportTemplate(Base):
+    """Pola kolom file laporan jurnal (CSV/Excel) yang sudah "dipelajari"
+    untuk 1 klien -- dipakai ulang otomatis (tanpa mengulang analisis
+    manual) begitu file berikutnya dari klien+format yang sama diupload.
+    Bentuk & peran PERSIS sama dengan SalesImportTemplate (lihat
+    SALES_IMPORT_TEMPLATES.md di root untuk alur lengkapnya), cuma versi
+    Journal Entry -- sengaja tabel TERPISAH (bukan dipakai bersama dengan
+    financial_transaction_sales_import_templates) supaya pola kolom Sales
+    dan Journal Entry tidak saling bentrok/mencemari pencocokan satu sama
+    lain walau kebetulan sama-sama milik klien yang sama.
+
+    client_id di sini SENGAJA reference ke management_clients (BUKAN
+    management_users seperti 4 tabel Journal Entry lain) -- pola kolom
+    laporan adalah properti PERUSAHAAN klien itu sendiri, bukan akun yang
+    kebetulan login & upload. Alasan sama persis dengan SalesImportTemplate.
+    """
+    __tablename__ = "financial_transaction_journal_entry_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_je_import_templates_signature"),
+        Index("idx_je_import_templates_client", "client_id"),
+        Index("idx_je_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# ============================================================
+# FITUR TRANSACTIONS > PURCHASE (DDL: root/ddl-table bagian "FITUR
+# TRANSACTIONS > PURCHASE", frontend: src/app/transactions/purchase/*).
+# Pola gabungan Sales (entitas inti 1 tabel dipakai lintas-tab) & Journal
+# Entry (source record registri + child lines + exceptions bertabel
+# sendiri) -- lihat komentar lengkap di kepala bagian DDL-nya.
+# ============================================================
+
+class PurchaseSourceRecord(Base):
+    """Registri transaksi sumber (PO/Vendor Invoice/Goods Receipt/dst)
+    yang berpotensi/sudah dijadikan Purchase Transaction -- tab "Source
+    Data"."""
+    __tablename__ = "financial_transaction_purchase_source_records"
+    __table_args__ = (
+        UniqueConstraint("client_id", "source_code", name="uq_purchase_source_records_client_code"),
+        Index("idx_purchase_source_records_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    source_code = Column(String(100), nullable=False)
+    source_type = Column(String(30), nullable=False)
+    vendor_name = Column(String(255), nullable=False)
+    vendor_code = Column(String(50), nullable=True)
+    source_date = Column(Date, nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    total_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    status = Column(String(20), nullable=False, default="Imported")
+    validation_status = Column(String(20), nullable=False, default="Pending Validation")
+    period_label = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseTransaction(Base):
+    """Entitas inti: header Purchase Transaction. Dipakai bersama oleh tab
+    Purchase Transaction, Purchase Preview, dan Posted."""
+    __tablename__ = "financial_transaction_purchase_transactions"
+    __table_args__ = (
+        UniqueConstraint("client_id", "purchase_no", name="uq_purchase_transactions_client_no"),
+        Index("idx_purchase_transactions_client_status", "client_id", "status"),
+        Index("idx_purchase_transactions_client_date", "client_id", "purchase_date"),
+        Index("idx_purchase_transactions_client_vendor", "client_id", "vendor_name"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    purchase_no = Column(String(100), nullable=False)
+    purchase_date = Column(Date, nullable=False)
+    invoice_date = Column(Date, nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    po_number = Column(String(100), nullable=True)
+    vendor_name = Column(String(255), nullable=False)
+    vendor_code = Column(String(50), nullable=True)
+    source_doc_type = Column(String(30), nullable=False, default="Manual")
+    source_ref = Column(String(100), nullable=True)
+    source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_records.id"), nullable=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(50), nullable=True)
+    subtotal = Column(Numeric(24, 2), nullable=False, default=0)
+    discount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    accounts_payable = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    payment_status = Column(String(20), nullable=False, default="unpaid")
+    payment_terms = Column(String(50), nullable=True)
+    due_date = Column(Date, nullable=True)
+    status = Column(String(20), nullable=False, default="draft")
+    period_label = Column(String(50), nullable=False)
+    created_by_name = Column(String(255), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
+    posting_date = Column(Date, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseTransactionLine(Base):
+    """Baris item/jasa per transaksi (tab Purchase Transaction detail
+    panel, Purchase Preview line items, Posted detail). Begitu transaksi
+    diposting, baris ini DICERMINKAN jadi journal_lines resmi (Accounting
+    Core V2), bukan dipindah/dihapus."""
+    __tablename__ = "financial_transaction_purchase_transaction_lines"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", "line_no", name="uq_purchase_transaction_lines_tx_no"),
+        Index("idx_purchase_transaction_lines_tx", "transaction_id"),
+        Index("idx_purchase_transaction_lines_client_account", "client_id", "account_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    line_no = Column(Integer, nullable=False)
+    item_code = Column(String(50), nullable=True)
+    description = Column(Text, nullable=False)
+    quantity = Column(Numeric(18, 4), nullable=False, default=0)
+    unit = Column(String(20), nullable=True)
+    unit_price = Column(Numeric(24, 2), nullable=False, default=0)
+    discount = Column(Numeric(24, 2), nullable=False, default=0)
+    tax_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
+    subtotal = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseException(Base):
+    """Antrean review tab "Exceptions" -- transaksi/source record
+    pembelian yang perlu ditinjau manusia sebelum lanjut diposting.
+    vendor_name/invoice_number/purchase_date/amount/currency adalah
+    snapshot (denormalized), bukan join -- lihat catatan di DDL."""
+    __tablename__ = "financial_transaction_purchase_exceptions"
+    __table_args__ = (
+        Index("idx_purchase_exceptions_client_status", "client_id", "status"),
+        Index("idx_purchase_exceptions_transaction", "transaction_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_records.id"), nullable=True)
+    exception_type = Column(String(100), nullable=False)
+    severity = Column(String(10), nullable=False, default="Medium")
+    status = Column(String(30), nullable=False, default="Open")
+    vendor_name = Column(String(255), nullable=True)
+    invoice_number = Column(String(100), nullable=True)
+    purchase_date = Column(Date, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    description = Column(Text, nullable=False)
+    detected_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    assigned_to = Column(String(255), nullable=True)
+    resolution = Column(Text, nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    period_label = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
 class UserClientAccess(Base):
@@ -954,8 +1612,8 @@ class UserClientAccess(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_users.id"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    user_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -969,7 +1627,7 @@ class Percakapan(Base):
 
     id = Column(Integer, primary_key=True)
     username = Column(String(100), nullable=False)  # pemilik percakapan
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Kalau diisi, percakapan ini spesifik soal 1 akun ESB tertentu
     # (jalur terpisah dari percakapan umum soal client) -- lihat
     # daftar_percakapan(jalur=...) di bawah.
@@ -1002,7 +1660,7 @@ class HasilAnalisis(Base):
     __tablename__ = "hasil_analisis"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     # Isi kalau analisis ini spesifik 1 akun ESB, sama seperti pola di
     # tabel 'hasil' dan 'percakapan'. None -> analisis umum seluruh client.
     esb_account_id = Column(Integer, ForeignKey("esb_accounts.id"), nullable=True)
@@ -1025,7 +1683,7 @@ class PolaAugmentasi(Base):
     __tablename__ = "pola_augmentasi"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     jenis = Column(String(50), nullable=True)  # "bank", "jual", dst -- jenis dokumen terkait
     data_asli = Column(Text, nullable=True)  # JSON: prediksi/kategori asli dari sistem
     koreksi = Column(Text, nullable=True)  # JSON: koreksi dari user
@@ -1050,7 +1708,7 @@ class PertanyaanKlarifikasi(Base):
     __tablename__ = "pertanyaan_klarifikasi"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     conv_id = Column(String(50), nullable=True)
     jenis = Column(String(50), nullable=False)  # "rekening_koran", "penjualan", dst
     baris_index = Column(Integer, nullable=True)  # index baris asli di df, utk update balik
@@ -1078,7 +1736,7 @@ class AlertAnomali(Base):
     __tablename__ = "alert_anomali"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     jenis = Column(String(50), nullable=False)  # "rekening_koran", "penjualan", "spt_masa", dst
     tipe_alert = Column(String(50), nullable=False)  # "nominal_ekstrim" / "pola_mencurigakan" /
                                                       # "deadline_lapor_spt" / "deadline_setor_spt"
@@ -1106,7 +1764,7 @@ class ReminderDeadlineSpt(Base):
     __tablename__ = "reminder_deadline_spt"
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     npwp = Column(String(30), nullable=True)
     kategori_spt = Column(String(50), nullable=True)  # kode dari KATEGORI_SPT
     jenis_spt_label = Column(String(200), nullable=True)  # label utk ditampilkan/dikirim
@@ -1141,7 +1799,7 @@ class PurchaseVendor(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     name = Column(String(200), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
@@ -1153,7 +1811,7 @@ class PurchaseTransactionRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     purchase_id = Column(String(100), nullable=False)  # mis. "PUR-2026-09-0001"
     vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_vendor.id"), nullable=True)
     invoice_no = Column(String(100), nullable=True)
@@ -1189,7 +1847,7 @@ class PurchaseLineItemRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     purchase_id = Column(String(100), nullable=False)
     item_code = Column(String(100), nullable=True)
     item_name = Column(String(200), nullable=True)
@@ -1211,7 +1869,7 @@ class PurchaseSourceDataRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     source_id = Column(String(100), nullable=True)
     type = Column(String(50), nullable=True)
     vendor = Column(String(200), nullable=True)
@@ -1238,7 +1896,7 @@ class PurchaseJournalLineRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     purchase_id = Column(String(100), nullable=False)
     account_code = Column(String(50), nullable=True)
     account_name = Column(String(200), nullable=True)
@@ -1254,7 +1912,7 @@ class PurchaseExceptionRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     purchase_id = Column(String(100), nullable=True)
     reason = Column(String(255), nullable=True)
     severity = Column(String(30), nullable=True)
@@ -1277,7 +1935,7 @@ class DocumentRow(Base):
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     name = Column(String(200), nullable=False)
     category = Column(String(50), nullable=True)  # DocumentType: Invoice/Receipt/Bank Statement/dst
     file_format = Column(String(20), nullable=True)  # PDF/Excel/Image/CSV/Word
@@ -1346,7 +2004,7 @@ class ReportRegistryRow(Base):
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(50), nullable=False)  # financial-statements/management/tax/ar-ap/budget/audit/custom
@@ -1365,7 +2023,7 @@ class ReportScheduleRow(Base):
     __table_args__ = {"schema": "7_Management"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     report_name = Column(String(200), nullable=False)
     frequency = Column(String(20), nullable=False)  # Daily/Weekly/Monthly/Quarterly/Yearly
     recipients = Column(Text, nullable=True)  # 1 string dipisah koma (daftar email)
@@ -1618,7 +2276,7 @@ class ARCustomerRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     customer_key = Column(String(100), nullable=False)
     name = Column(String(200), nullable=False)
     industry = Column(String(100), nullable=True)
@@ -1639,7 +2297,7 @@ class ARInvoiceRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_customer.id"), nullable=False)
     journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     invoice_number = Column(String(100), nullable=False)
@@ -1659,7 +2317,7 @@ class ARPaymentRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_invoice.id"), nullable=False)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(24, 2), nullable=False)
@@ -1676,7 +2334,7 @@ class ARCollectionNoteRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_customer.id"), nullable=False)
     invoice_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_account_receivable_ar_invoice.id"), nullable=True)
     note_type = Column(String(50), nullable=False, default="general")
@@ -2345,7 +3003,7 @@ class APPaymentRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=False)
     payment_date = Column(Date, nullable=False)
     amount = Column(Numeric(24, 2), nullable=False)
@@ -2364,7 +3022,7 @@ class APNoteRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_vendor.id"), nullable=False)
     bill_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=True)
     content = Column(Text, nullable=False)
@@ -2657,7 +3315,7 @@ class ForecastAssumptionRow(Base):
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     revenue_growth_pct = Column(Numeric, nullable=True)
     cogs_pct = Column(Numeric, nullable=True)
@@ -2677,7 +3335,7 @@ class ScenarioRow(Base):
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=True), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     nama_skenario = Column(String(100), nullable=False)
     revenue_growth_pct = Column(Numeric, nullable=True)
@@ -2879,7 +3537,7 @@ class ManagementBranch(Base):
     __table_args__ = {"schema": "2_Overview"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     nama_cabang = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
@@ -2897,7 +3555,7 @@ class OverviewFinancialBudget(Base):
     __table_args__ = {"schema": "2_Overview"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     branch_id = Column(PG_UUID(as_uuid=False), ForeignKey("2_Overview.overview_management_branches.id"), nullable=True)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
@@ -3001,7 +3659,7 @@ class PLBudgetLine(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
     kategori = Column(String, nullable=False)
@@ -3017,7 +3675,7 @@ class PLInsight(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     modul = Column(String, nullable=False)
     periode = Column(String, nullable=True)
     judul = Column(String, nullable=False)
@@ -3033,7 +3691,7 @@ class CashFlowForecastRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
     begin_cash = Column(Numeric, nullable=True)
@@ -3168,7 +3826,7 @@ class FixedAsset(Base):
     __table_args__ = {"schema": "4_Assets_Equity"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     asset_code = Column(String, nullable=True)
     name = Column(String, nullable=False)
     category = Column(String, nullable=True)
@@ -3470,7 +4128,7 @@ class FinanceTransactionBankCash(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     hasil_id = Column(Integer, nullable=True)
     jenis_dokumen = Column(String(50), nullable=True)  # 'cash_payment' | 'cash_receipt'
     tanggal = Column(String(20), nullable=True)
@@ -3795,7 +4453,7 @@ class FinanceTransactionOther(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tx_id = Column(String(50), nullable=True)
     je_id = Column(String(50), nullable=True)
     date = Column(Date, nullable=True)
@@ -4090,7 +4748,7 @@ class FinanceTransactionBankCashActivityLog(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     bank_cash_id = Column(PG_UUID(as_uuid=False), ForeignKey("3_Financial.finance_transaction_bank_cash.id"), nullable=True)
     event_type = Column(String(50), nullable=False)  # "CREATED"/"UPDATED"/"POSTING"/"REJECTED"
     description = Column(Text, nullable=False)
@@ -4113,7 +4771,7 @@ class FinanceTransactionOtherActivityLog(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     je_id = Column(String(50), nullable=True)  # bukan FK -- je_id tidak unik (2 baris/leg per je_id)
     event_type = Column(String(50), nullable=False)  # "CREATED"/"UPDATED"/"POSTING"/"VOIDED"
     description = Column(Text, nullable=False)
@@ -4139,7 +4797,7 @@ class PurchaseActivityLogRow(Base):
     __table_args__ = {"schema": "3_Financial"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     purchase_row_id = Column(PG_UUID(as_uuid=True), ForeignKey("3_Financial.finance_transaction_purchase_transaction.id"), nullable=True)
     event_type = Column(String(50), nullable=False)  # "SUBMITTED"/"APPROVED"/"REJECTED"/"POSTED"/"RETURNED"/"EXCEPTION_UPDATED"
     description = Column(Text, nullable=False)
@@ -4999,13 +5657,1310 @@ def delete_user(username: str) -> bool:
         session.rollback()
         print(f"Error delete user: {e}")
         return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# FUNGSI MANAGEMENT_CLIENTS -- profil klien (RBAC client_id, data
+# perusahaan). Lihat root/ddl-table & modules/management/clients_v1.py.
+# Kolom yang di-set SERVER SENDIRI (created_by/edited_by/created_at/
+# edited_at/deleted_at/deleted_by) SENGAJA tidak diterima dari payload
+# CRUD_FIELDS -- lihat clients_v1.py.
+# ============================================================
+
+CRUD_FIELDS_MANAGEMENT_CLIENT = [
+    "client_code", "nama_client", "tipe_badan_usaha", "npwp", "nomor_akta_nib",
+    "status_pkp", "klasifikasi_lapangan_usaha", "email", "no_telepon",
+    "no_handphone", "nama_pic", "jabatan_pic", "alamat", "kota", "provinsi",
+    "kode_pos", "industry", "tahun_buku_mulai", "mata_uang_default", "status",
+    "akuntan_penanggung_jawab", "tanggal_mulai_kerjasama", "logo",
+]
+
+
+def _management_client_ke_dict(mc: "ManagementClient") -> Dict[str, Any]:
+    data = {kolom: getattr(mc, kolom) for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT}
+    data.update({
+        "id": mc.id,
+        "created_at": mc.created_at,
+        "created_by": mc.created_by,
+        "edited_at": mc.edited_at,
+        "edited_by": mc.edited_by,
+        "aktif": mc.deleted_at is None,
+    })
+    return data
+
+
+def create_management_client(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Buat client baru. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
+    session = SessionLocal()
+    try:
+        mc = ManagementClient(
+            **{k: v for k, v in data.items() if k in CRUD_FIELDS_MANAGEMENT_CLIENT},
+            created_by=created_by,
+        )
+        session.add(mc)
+        session.flush()  # kirim INSERT & isi id/created_at (server_default) ke objek TANPA expire attribute lain (beda dari commit)
+        hasil = _management_client_ke_dict(mc)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create management_client: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def get_management_client_by_id(client_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    """Ambil 1 management_client berdasarkan id. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
+    session = SessionLocal()
+    try:
+        query = session.query(ManagementClient).filter(ManagementClient.id == client_id)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClient.deleted_at.is_(None))
+        mc = query.first()
+        return _management_client_ke_dict(mc) if mc else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def list_management_clients(termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    """Daftar semua management_client. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
+    session = SessionLocal()
+    try:
+        query = session.query(ManagementClient)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClient.deleted_at.is_(None))
+        return [_management_client_ke_dict(mc) for mc in query.order_by(ManagementClient.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def update_management_client(client_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Update sebagian/semua kolom management_client. `data` hanya boleh berisi key dari CRUD_FIELDS_MANAGEMENT_CLIENT."""
+    session = SessionLocal()
+    try:
+        mc = session.query(ManagementClient).filter(
+            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        ).first()
+        if not mc:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT:
+                setattr(mc, kolom, nilai)
+        mc.edited_at = datetime.now()
+        mc.edited_by = updated_by
+        # Dibaca SEBELUM commit -- expire_on_commit bikin akses attribute
+        # SETELAH commit perlu reload dari DB, dan reload itu (session.refresh
+        # atau akses expired attribute) kena bug tipe UUID di beberapa dialect.
+        # Semua nilai di bawah sudah final di memory (tidak ada onupdate= di
+        # level DB untuk tabel ini), jadi aman dibaca sebelum commit.
+        hasil = _management_client_ke_dict(mc)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update management_client: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = None) -> bool:
+    """Nonaktifkan (soft-delete) management_client -- data tidak dihapus permanen."""
+    session = SessionLocal()
+    try:
+        mc = session.query(ManagementClient).filter(
+            ManagementClient.id == client_id, ManagementClient.deleted_at.is_(None)
+        ).first()
+        if not mc:
+            return False
+        mc.deleted_at = datetime.now()
+        mc.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete management_client: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# TRANSACTIONS > SALES -- CRUD (lihat model di atas & DDL root/ddl-table)
+# ============================================================
+# Ke-6 tabel Sales sengaja punya bentuk kolom audit yang SAMA persis
+# (id, created_at/created_by, edited_at/edited_by, deleted_at/deleted_by)
+# -- beda dengan management_users/management_audit_trails yang pakai
+# updated_at/updated_by. Daripada menulis ulang create/get/list/update/
+# soft-delete 6x (30 fungsi hampir identik), dipakai helper generic di
+# bawah (pola yang sama seperti _bulk_upsert() di atas), lalu tiap tabel
+# tetap punya fungsi bernama sendiri (dipanggil dari modules/transactions)
+# supaya pemanggil tidak perlu tahu soal model/fields secara langsung.
+
+def _sales_row_ke_dict(obj, fields: List[str]) -> Dict[str, Any]:
+    data = {kolom: getattr(obj, kolom) for kolom in fields}
+    data.update({
+        "id": obj.id,
+        "created_at": obj.created_at,
+        "created_by": obj.created_by,
+        "edited_at": obj.edited_at,
+        "edited_by": obj.edited_by,
+        "aktif": obj.deleted_at is None,
+    })
+    return data
+
+
+def _sales_crud_create(model, fields: List[str], data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = model(**{k: v for k, v in data.items() if k in fields}, created_by=created_by)
+        session.add(obj)
+        session.flush()  # kirim INSERT & isi id/created_at (server_default) tanpa expire attribute lain
+        hasil = _sales_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model).filter(model.id == row_id)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        obj = query.first()
+        return _sales_row_ke_dict(obj, fields) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model)
+        for kolom, nilai in (filters or {}).items():
+            if nilai is not None:
+                query = query.filter(getattr(model, kolom) == nilai)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        return [_sales_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def _sales_crud_update(model, fields: List[str], row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in fields:
+                setattr(obj, kolom, nilai)
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _sales_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _sales_crud_soft_delete(model, row_id: str, deleted_by: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return False
+        obj.deleted_at = datetime.now()
+        obj.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete {model.__tablename__}: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# --- 1) financial_transaction_sales_source_files ---
+
+CRUD_FIELDS_SALES_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "storage_path", "period_label",
+    "customer_hint", "rows_detected", "rows_valid", "rows_invalid",
+    "duplicate_count", "status_ekstraksi", "status_mapping", "confidence_score",
+    "dpp_total", "ppn_total", "grand_total", "extraction_duration_ms",
+    "ai_model_version", "mapping_rules", "template_id", "processed_by", "uploaded_at", "uploaded_by",
+]
+
+def create_sales_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, data, created_by)
+
+def get_sales_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_sales_source_files(client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, {"client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesSourceFile, CRUD_FIELDS_SALES_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_sales_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesSourceFile, source_file_id, deleted_by)
+
+
+# --- 2) financial_transaction_sales_source_rows ---
+
+CRUD_FIELDS_SALES_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "no_invoice",
+    "nama_customer", "cabang", "dpp", "ppn", "total", "is_valid", "validation_notes",
+    "is_duplicate_candidate",
+]
+
+def create_sales_source_row(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, data, created_by)
+
+def get_sales_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, termasuk_nonaktif)
+
+def list_sales_source_rows(source_file_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, {"source_file_id": source_file_id, "client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, data, updated_by)
+
+def soft_delete_sales_source_row(source_row_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesSourceRow, source_row_id, deleted_by)
+
+
+# --- 3) financial_transaction_sales_invoices ---
+
+CRUD_FIELDS_SALES_INVOICE = [
+    "client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
+    "customer_npwp", "description", "transaction_type", "project_name",
+    "sales_person", "term_of_payment", "cabang", "dpp", "ppn", "pph", "gross_amount",
+    "paid_amount", "tax_invoice_status", "posting_status", "reconcile_status",
+    "journal_sync_status", "journal_entry_id", "source_row_id", "posted_at", "posted_by",
+]
+
+def _sales_invoice_ke_dict(obj: "SalesInvoice") -> Dict[str, Any]:
+    data = _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_INVOICE)
+    data["outstanding_amount"] = obj.outstanding_amount
+    return data
+
+def create_sales_invoice(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        invoice = SalesInvoice(
+            **{k: v for k, v in data.items() if k in CRUD_FIELDS_SALES_INVOICE},
+            created_by=created_by,
+        )
+        session.add(invoice)
+        session.commit()  # butuh commit (bukan sekadar flush) supaya outstanding_amount (GENERATED) ikut dihitung DB
+        session.refresh(invoice)
+        return _sales_invoice_ke_dict(invoice)
+    except Exception as e:
+        session.rollback()
+        print(f"Error create financial_transaction_sales_invoices: {e}")
+        return None
+    finally:
+        session.close()
+
+def get_sales_invoice_by_id(invoice_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(SalesInvoice).filter(SalesInvoice.id == invoice_id)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesInvoice.deleted_at.is_(None))
+        invoice = query.first()
+        return _sales_invoice_ke_dict(invoice) if invoice else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def get_sales_invoice_by_source_row_id(source_row_id: str) -> Optional[Dict[str, Any]]:
+    """Cek apakah 1 source_row SUDAH pernah "dinaikkan" jadi invoice --
+    dipakai endpoint promote-to-invoices (modules/transactions/
+    sales_import_v1.py) supaya idempoten (aman dipanggil ulang, tidak
+    membuat invoice dobel utk baris yang sama)."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesInvoice).filter(
+            SalesInvoice.source_row_id == source_row_id,
+            SalesInvoice.deleted_at.is_(None),
+        ).first()
+        return _sales_invoice_ke_dict(obj) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def get_sales_invoice_by_client_and_no(client_id: Optional[str], invoice_no: str) -> Optional[Dict[str, Any]]:
+    """Dipakai untuk pre-check UniqueConstraint(client_id, invoice_no) SEBELUM
+    insert, supaya endpoint bisa membalas 409 yang jelas (pola sama seperti
+    dbc.get_user_by_username() di POST /api/v1/auth/register), bukan
+    menunggu IntegrityError generik dari database."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesInvoice).filter(
+            SalesInvoice.client_id == client_id,
+            SalesInvoice.invoice_no == invoice_no,
+            SalesInvoice.deleted_at.is_(None),
+        ).first()
+        return _sales_invoice_ke_dict(obj) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def list_sales_invoices(client_id: Optional[str] = None, posting_status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(SalesInvoice)
+        if client_id is not None:
+            query = query.filter(SalesInvoice.client_id == client_id)
+        if posting_status is not None:
+            query = query.filter(SalesInvoice.posting_status == posting_status)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesInvoice.deleted_at.is_(None))
+        return [_sales_invoice_ke_dict(obj) for obj in query.order_by(SalesInvoice.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def update_sales_invoice(invoice_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        invoice = session.query(SalesInvoice).filter(
+            SalesInvoice.id == invoice_id, SalesInvoice.deleted_at.is_(None)
+        ).first()
+        if not invoice:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_SALES_INVOICE:
+                setattr(invoice, kolom, nilai)
+        invoice.edited_at = datetime.now()
+        invoice.edited_by = updated_by
+        session.commit()  # commit dulu (bukan flush) supaya outstanding_amount ikut dihitung ulang DB
+        session.refresh(invoice)
+        return _sales_invoice_ke_dict(invoice)
+    except Exception as e:
+        session.rollback()
+        print(f"Error update financial_transaction_sales_invoices: {e}")
+        return None
+    finally:
+        session.close()
+
+def soft_delete_sales_invoice(invoice_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesInvoice, invoice_id, deleted_by)
+
+
+# --- 4) financial_transaction_sales_account_mappings ---
+
+CRUD_FIELDS_SALES_ACCOUNT_MAPPING = [
+    "client_id", "invoice_id", "piutang_account_code", "piutang_account_name",
+    "pendapatan_account_code", "pendapatan_account_name", "ppn_account_code",
+    "ppn_account_name", "pph_account_code", "pph_account_name",
+    "is_ai_suggested", "ai_confidence", "mapped_by", "mapped_at",
+]
+
+def create_sales_account_mapping(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, data, created_by)
+
+def get_sales_account_mapping_by_id(mapping_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, mapping_id, termasuk_nonaktif)
+
+def get_sales_account_mapping_by_invoice(invoice_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    """Ambil mapping akun milik 1 invoice (relasinya 1:1, lihat UniqueConstraint invoice_id)."""
+    session = SessionLocal()
+    try:
+        query = session.query(SalesAccountMapping).filter(SalesAccountMapping.invoice_id == invoice_id)
+        if not termasuk_nonaktif:
+            query = query.filter(SalesAccountMapping.deleted_at.is_(None))
+        obj = query.first()
+        return _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_ACCOUNT_MAPPING) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_sales_account_mappings(client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, {"client_id": client_id}, termasuk_nonaktif)
+
+def update_sales_account_mapping(mapping_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesAccountMapping, CRUD_FIELDS_SALES_ACCOUNT_MAPPING, mapping_id, data, updated_by)
+
+def soft_delete_sales_account_mapping(mapping_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesAccountMapping, mapping_id, deleted_by)
+
+
+# --- 5) financial_transaction_sales_exceptions ---
+
+CRUD_FIELDS_SALES_EXCEPTION = [
+    "client_id", "invoice_id", "source_row_id", "exception_type", "priority",
+    "status", "ai_confidence", "ai_suggestion", "source_snippet",
+    "assigned_to", "resolved_at", "resolved_by",
+]
+
+def create_sales_exception(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesException, CRUD_FIELDS_SALES_EXCEPTION, data, created_by)
+
+def get_sales_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesException, CRUD_FIELDS_SALES_EXCEPTION, exception_id, termasuk_nonaktif)
+
+def list_sales_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesException, CRUD_FIELDS_SALES_EXCEPTION, {"client_id": client_id, "status": status}, termasuk_nonaktif)
+
+def update_sales_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(SalesException, CRUD_FIELDS_SALES_EXCEPTION, exception_id, data, updated_by)
+
+def soft_delete_sales_exception(exception_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(SalesException, exception_id, deleted_by)
+
+
+# --- 6) financial_transaction_sales_activity_log ---
+# Append-only (tidak ada update/soft-delete -- jejak aktivitas seharusnya
+# tidak diubah/dihapus setelah tercatat).
+
+CRUD_FIELDS_SALES_ACTIVITY_LOG = [
+    "client_id", "invoice_id", "event_type", "description", "reference_no", "performed_by",
+]
+
+def create_sales_activity_log(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, data, created_by)
+
+def get_sales_activity_log_by_id(log_id: str) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, log_id, termasuk_nonaktif=True)
+
+def list_sales_activity_logs(client_id: Optional[str] = None, invoice_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    return _sales_crud_list(SalesActivityLog, CRUD_FIELDS_SALES_ACTIVITY_LOG, {"client_id": client_id, "invoice_id": invoice_id}, termasuk_nonaktif=True)
+
+
+# --- 7) financial_transaction_sales_import_templates ---
+# Lihat SALES_IMPORT_TEMPLATES.md (root) untuk alur lengkapnya. client_id
+# di sini reference ke management_clients (BEDA dari 6 tabel Sales lain
+# yang reference ke management_users) -- lihat catatan di ORM model.
+
+CRUD_FIELDS_SALES_IMPORT_TEMPLATE = [
+    "client_id", "client_code", "file_type", "sheet_name",
+    "header_row_index", "data_start_row_index", "column_signature_hash",
+    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
+    "ai_confidence", "is_active",
+]
+
+def create_sales_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(SalesImportTemplate, CRUD_FIELDS_SALES_IMPORT_TEMPLATE, data, created_by)
+
+def get_sales_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(SalesImportTemplate, CRUD_FIELDS_SALES_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
+
+def list_sales_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    """Daftar template pola kolom -- dipakai untuk mencocokkan file baru
+    (lihat _cocokkan_template di modules/transactions/sales_import_v1.py)
+    dan untuk halaman kelola template (kalau dibangun nanti)."""
+    session = SessionLocal()
+    try:
+        query = session.query(SalesImportTemplate).filter(SalesImportTemplate.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(SalesImportTemplate.client_id == client_id)
+        if file_type is not None:
+            query = query.filter(SalesImportTemplate.file_type == file_type)
+        if hanya_aktif:
+            query = query.filter(SalesImportTemplate.is_active.is_(True))
+        return [_sales_row_ke_dict(obj, CRUD_FIELDS_SALES_IMPORT_TEMPLATE) for obj in query.order_by(SalesImportTemplate.usage_count.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def touch_sales_import_template_usage(template_id: str) -> bool:
+    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
+    kali template ini berhasil dipakai mencocokkan file baru."""
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesImportTemplate).filter(SalesImportTemplate.id == template_id).first()
+        if not obj:
+            return False
+        obj.usage_count = (obj.usage_count or 0) + 1
+        obj.last_used_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error touch usage sales_import_template: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# FITUR TRANSACTIONS > JOURNAL ENTRY -- CRUD 4 tabel
+# financial_transaction_journal_entry_* (DDL: root/ddl-table). Bentuk
+# kolom audit SAMA persis dengan 6 tabel Sales (id, created_at/by,
+# edited_at/by, deleted_at/by), jadi helper generic-nya juga sama polanya
+# dengan _sales_crud_* di atas -- sengaja dipisah nama (bukan dipakai
+# ulang lintas fitur) supaya tiap fitur tetap berdiri sendiri kalau salah
+# satunya perlu berubah bentuk kolom audit-nya belakangan.
+
+def _je_row_ke_dict(obj, fields: List[str]) -> Dict[str, Any]:
+    data = {kolom: getattr(obj, kolom) for kolom in fields}
+    data.update({
+        "id": obj.id,
+        "created_at": obj.created_at,
+        "created_by": obj.created_by,
+        "edited_at": obj.edited_at,
+        "edited_by": obj.edited_by,
+        "aktif": obj.deleted_at is None,
+    })
+    return data
+
+
+def _je_crud_create(model, fields: List[str], data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = model(**{k: v for k, v in data.items() if k in fields}, created_by=created_by)
+        session.add(obj)
+        session.flush()
+        hasil = _je_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _je_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model).filter(model.id == row_id)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        obj = query.first()
+        return _je_row_ke_dict(obj, fields) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def _je_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model)
+        for kolom, nilai in (filters or {}).items():
+            if nilai is not None:
+                query = query.filter(getattr(model, kolom) == nilai)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        return [_je_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def _je_crud_update(model, fields: List[str], row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in fields:
+                setattr(obj, kolom, nilai)
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _je_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _je_crud_soft_delete(model, row_id: str, deleted_by: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return False
+        obj.deleted_at = datetime.now()
+        obj.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete {model.__tablename__}: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# --- 1) financial_transaction_journal_entry_source_records ---
+
+CRUD_FIELDS_JE_SOURCE_RECORD = [
+    "client_id", "source_code", "source_type", "source_date", "description",
+    "amount", "currency", "related_account_code", "related_account_name",
+    "party_name", "mapping_status", "sync_status",
+]
+
+def create_je_source_record(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntrySourceRecord, CRUD_FIELDS_JE_SOURCE_RECORD, data, created_by)
+
+def get_je_source_record_by_id(source_record_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntrySourceRecord, CRUD_FIELDS_JE_SOURCE_RECORD, source_record_id, termasuk_nonaktif)
+
+def get_je_source_record_by_client_and_code(client_id: Optional[str], source_code: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, source_code) sebelum insert,
+    pola sama seperti get_sales_invoice_by_client_and_no()."""
+    session = SessionLocal()
+    try:
+        obj = session.query(JournalEntrySourceRecord).filter(
+            JournalEntrySourceRecord.client_id == client_id,
+            JournalEntrySourceRecord.source_code == source_code,
+            JournalEntrySourceRecord.deleted_at.is_(None),
+        ).first()
+        return _je_row_ke_dict(obj, CRUD_FIELDS_JE_SOURCE_RECORD) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_je_source_records(client_id: Optional[str] = None, source_type: Optional[str] = None, mapping_status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _je_crud_list(
+        JournalEntrySourceRecord, CRUD_FIELDS_JE_SOURCE_RECORD,
+        {"client_id": client_id, "source_type": source_type, "mapping_status": mapping_status},
+        termasuk_nonaktif,
+    )
+
+def update_je_source_record(source_record_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntrySourceRecord, CRUD_FIELDS_JE_SOURCE_RECORD, source_record_id, data, updated_by)
+
+def soft_delete_je_source_record(source_record_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _je_crud_soft_delete(JournalEntrySourceRecord, source_record_id, deleted_by)
+
+
+# --- 2) financial_transaction_journal_entry_drafts ---
+
+CRUD_FIELDS_JE_DRAFT = [
+    "client_id", "je_number", "entry_date", "posting_date", "period_label",
+    "description", "source_type", "source_reference", "source_record_id",
+    "total_debit", "total_credit", "currency", "status", "created_by_name",
+    "reviewed_by_name", "approved_by_name", "notes", "journal_entry_id",
+    "posted_at", "posted_by",
+]
+
+def create_je_draft(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntryDraft, CRUD_FIELDS_JE_DRAFT, data, created_by)
+
+def get_je_draft_by_id(draft_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntryDraft, CRUD_FIELDS_JE_DRAFT, draft_id, termasuk_nonaktif)
+
+def get_je_draft_by_client_and_number(client_id: Optional[str], je_number: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, je_number) sebelum insert."""
+    session = SessionLocal()
+    try:
+        obj = session.query(JournalEntryDraft).filter(
+            JournalEntryDraft.client_id == client_id,
+            JournalEntryDraft.je_number == je_number,
+            JournalEntryDraft.deleted_at.is_(None),
+        ).first()
+        return _je_row_ke_dict(obj, CRUD_FIELDS_JE_DRAFT) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_je_drafts(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _je_crud_list(
+        JournalEntryDraft, CRUD_FIELDS_JE_DRAFT,
+        {"client_id": client_id, "status": status},
+        termasuk_nonaktif,
+    )
+
+def update_je_draft(draft_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntryDraft, CRUD_FIELDS_JE_DRAFT, draft_id, data, updated_by)
+
+def soft_delete_je_draft(draft_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _je_crud_soft_delete(JournalEntryDraft, draft_id, deleted_by)
+
+
+# --- 3) financial_transaction_journal_entry_draft_lines ---
+
+CRUD_FIELDS_JE_DRAFT_LINE = [
+    "draft_id", "client_id", "line_no", "account_code", "account_name",
+    "description", "debit", "credit", "cost_center",
+]
+
+def create_je_draft_line(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntryDraftLine, CRUD_FIELDS_JE_DRAFT_LINE, data, created_by)
+
+def get_je_draft_line_by_id(line_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntryDraftLine, CRUD_FIELDS_JE_DRAFT_LINE, line_id, termasuk_nonaktif)
+
+def list_je_draft_lines(draft_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _je_crud_list(
+        JournalEntryDraftLine, CRUD_FIELDS_JE_DRAFT_LINE,
+        {"draft_id": draft_id, "client_id": client_id},
+        termasuk_nonaktif,
+    )
+
+def update_je_draft_line(line_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntryDraftLine, CRUD_FIELDS_JE_DRAFT_LINE, line_id, data, updated_by)
+
+def soft_delete_je_draft_line(line_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _je_crud_soft_delete(JournalEntryDraftLine, line_id, deleted_by)
+
+
+# --- 4) financial_transaction_journal_entry_activity_log ---
+# Append-only (tidak ada update/soft-delete -- jejak aktivitas seharusnya
+# tidak diubah/dihapus setelah tercatat), pola sama seperti
+# SalesActivityLog.
+
+CRUD_FIELDS_JE_ACTIVITY_LOG = [
+    "client_id", "draft_id", "je_number", "event_type", "description",
+    "status_snapshot", "performed_by",
+]
+
+def create_je_activity_log(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntryActivityLog, CRUD_FIELDS_JE_ACTIVITY_LOG, data, created_by)
+
+def get_je_activity_log_by_id(log_id: str) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntryActivityLog, CRUD_FIELDS_JE_ACTIVITY_LOG, log_id, termasuk_nonaktif=True)
+
+def list_je_activity_logs(client_id: Optional[str] = None, draft_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    return _je_crud_list(
+        JournalEntryActivityLog, CRUD_FIELDS_JE_ACTIVITY_LOG,
+        {"client_id": client_id, "draft_id": draft_id},
+        termasuk_nonaktif=True,
+    )
+
+
+# --- 5) financial_transaction_journal_entry_import_templates ---
+# Pola sama persis dengan financial_transaction_sales_import_templates
+# (lihat SALES_IMPORT_TEMPLATES.md) -- client_id reference ke
+# management_clients (BEDA dari 4 tabel Journal Entry lain di atas yang
+# reference ke management_users), jadi TIDAK dipakaikan _je_crud_list biasa
+# (list_sales_import_templates juga custom, ordering by usage_count).
+
+CRUD_FIELDS_JE_IMPORT_TEMPLATE = [
+    "client_id", "client_code", "file_type", "sheet_name",
+    "header_row_index", "data_start_row_index", "column_signature_hash",
+    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
+    "ai_confidence", "is_active",
+]
+
+def create_je_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntryImportTemplate, CRUD_FIELDS_JE_IMPORT_TEMPLATE, data, created_by)
+
+def get_je_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntryImportTemplate, CRUD_FIELDS_JE_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
+
+def list_je_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    """Daftar template pola kolom Journal Entry -- dipakai untuk mencocokkan
+    file baru (lihat _cocokkan_template di modules/transactions/
+    journal_entry_import_v1.py)."""
+    session = SessionLocal()
+    try:
+        query = session.query(JournalEntryImportTemplate).filter(JournalEntryImportTemplate.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(JournalEntryImportTemplate.client_id == client_id)
+        if file_type is not None:
+            query = query.filter(JournalEntryImportTemplate.file_type == file_type)
+        if hanya_aktif:
+            query = query.filter(JournalEntryImportTemplate.is_active.is_(True))
+        return [_je_row_ke_dict(obj, CRUD_FIELDS_JE_IMPORT_TEMPLATE) for obj in query.order_by(JournalEntryImportTemplate.usage_count.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def touch_je_import_template_usage(template_id: str) -> bool:
+    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
+    kali template ini berhasil dipakai mencocokkan file baru."""
+    session = SessionLocal()
+    try:
+        obj = session.query(JournalEntryImportTemplate).filter(JournalEntryImportTemplate.id == template_id).first()
+        if not obj:
+            return False
+        obj.usage_count = (obj.usage_count or 0) + 1
+        obj.last_used_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error touch usage je_import_template: {e}")
+        return False
+    finally:
+        session.close()
+
+
+def create_je_draft_with_lines(
+    draft_data: Dict[str, Any],
+    lines_data: List[Dict[str, Any]],
+    created_by: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Buat 1 draft Journal Entry + SELURUH baris debit/kredit-nya dalam SATU
+    transaksi (atomik) -- dipakai tombol "New Journal Entry" (input manual)
+    di JE Transaction, supaya tidak ada draft "yatim" tanpa baris kalau
+    request kedua (buat baris) gagal di tengah jalan seperti yang bisa
+    terjadi kalau dipanggil sebagai 2 request terpisah (POST /drafts lalu
+    N x POST /draft-lines). Juga sekalian mencatat activity_log "Created"
+    (event yang sama yang WAJIB muncul di tab Overview -> Recent Activity
+    begitu user membuat JE baru lewat UI).
+
+    total_debit/total_credit di draft_data DIABAIKAN kalau ada -- dihitung
+    ULANG dari SUM(lines) di sini supaya header tidak bisa "bohong" beda
+    dari baris aslinya."""
+    session = SessionLocal()
+    try:
+        total_debit = sum(Decimal(str(l.get("debit") or 0)) for l in lines_data)
+        total_credit = sum(Decimal(str(l.get("credit") or 0)) for l in lines_data)
+
+        draft = JournalEntryDraft(
+            **{k: v for k, v in draft_data.items() if k in CRUD_FIELDS_JE_DRAFT and k not in ("total_debit", "total_credit")},
+            total_debit=total_debit,
+            total_credit=total_credit,
+            created_by=created_by,
+        )
+        session.add(draft)
+        session.flush()  # isi draft.id sebelum dipakai FK baris di bawah
+
+        for idx, line in enumerate(lines_data, start=1):
+            session.add(JournalEntryDraftLine(
+                **{k: v for k, v in line.items() if k in CRUD_FIELDS_JE_DRAFT_LINE and k != "line_no"},
+                draft_id=draft.id,
+                client_id=draft.client_id,
+                line_no=line.get("line_no") or idx,
+                created_by=created_by,
+            ))
+
+        session.add(JournalEntryActivityLog(
+            client_id=draft.client_id,
+            draft_id=draft.id,
+            je_number=draft.je_number,
+            event_type="Created",
+            description=f"Journal entry {draft.je_number} dibuat manual.",
+            status_snapshot=draft.status,
+            performed_by=draft_data.get("created_by_name") or "System",
+            created_by=created_by,
+        ))
+
+        session.commit()
+        session.refresh(draft)
+        hasil = _je_row_ke_dict(draft, CRUD_FIELDS_JE_DRAFT)
+        hasil["lines"] = [
+            _je_row_ke_dict(l, CRUD_FIELDS_JE_DRAFT_LINE)
+            for l in session.query(JournalEntryDraftLine)
+                .filter(JournalEntryDraftLine.draft_id == draft.id)
+                .order_by(JournalEntryDraftLine.line_no)
+                .all()
+        ]
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return None
+    finally:
+        session.close()
+
+
+# ============================================================
+# FITUR TRANSACTIONS > PURCHASE -- CRUD 4 tabel
+# financial_transaction_purchase_* (DDL: root/ddl-table). Bentuk kolom
+# audit SAMA persis dengan Sales/Journal Entry (id, created_at/by,
+# edited_at/by, deleted_at/by), helper generic-nya juga pola yang sama --
+# sengaja dipisah nama (_purchase_crud_*, bukan dipakai ulang lintas
+# fitur) supaya tiap fitur tetap berdiri sendiri, sama alasannya dengan
+# _je_crud_* vs _sales_crud_*.
+
+def _purchase_row_ke_dict(obj, fields: List[str]) -> Dict[str, Any]:
+    data = {kolom: getattr(obj, kolom) for kolom in fields}
+    data.update({
+        "id": obj.id,
+        "created_at": obj.created_at,
+        "created_by": obj.created_by,
+        "edited_at": obj.edited_at,
+        "edited_by": obj.edited_by,
+        "aktif": obj.deleted_at is None,
+    })
+    return data
+
+
+def _purchase_crud_create(model, fields: List[str], data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = model(**{k: v for k, v in data.items() if k in fields}, created_by=created_by)
+        session.add(obj)
+        session.flush()
+        hasil = _purchase_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model).filter(model.id == row_id)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        obj = query.first()
+        return _purchase_row_ke_dict(obj, fields) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        query = session.query(model)
+        for kolom, nilai in (filters or {}).items():
+            if nilai is not None:
+                query = query.filter(getattr(model, kolom) == nilai)
+        if not termasuk_nonaktif:
+            query = query.filter(model.deleted_at.is_(None))
+        return [_purchase_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+
+def _purchase_crud_update(model, fields: List[str], row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in fields:
+                setattr(obj, kolom, nilai)
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _purchase_row_ke_dict(obj, fields)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error update {model.__tablename__}: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _purchase_crud_soft_delete(model, row_id: str, deleted_by: Optional[str] = None) -> bool:
+    session = SessionLocal()
+    try:
+        obj = session.query(model).filter(model.id == row_id, model.deleted_at.is_(None)).first()
+        if not obj:
+            return False
+        obj.deleted_at = datetime.now()
+        obj.deleted_by = deleted_by
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error soft-delete {model.__tablename__}: {e}")
+        return False
+    finally:
+        session.close()
+
+
+# --- 1) financial_transaction_purchase_source_records ---
+
+CRUD_FIELDS_PURCHASE_SOURCE_RECORD = [
+    "client_id", "source_code", "source_type", "vendor_name", "vendor_code",
+    "source_date", "invoice_number", "po_number", "description", "amount",
+    "tax_amount", "total_amount", "currency", "status", "validation_status",
+    "period_label",
+]
+
+def create_purchase_source_record(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, data, created_by)
+
+def get_purchase_source_record_by_id(source_record_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, source_record_id, termasuk_nonaktif)
+
+def get_purchase_source_record_by_client_and_code(client_id: Optional[str], source_code: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, source_code) sebelum insert,
+    pola sama seperti get_je_source_record_by_client_and_code()."""
+    session = SessionLocal()
+    try:
+        obj = session.query(PurchaseSourceRecord).filter(
+            PurchaseSourceRecord.client_id == client_id,
+            PurchaseSourceRecord.source_code == source_code,
+            PurchaseSourceRecord.deleted_at.is_(None),
+        ).first()
+        return _purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_SOURCE_RECORD) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_purchase_source_records(client_id: Optional[str] = None, source_type: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    hasil = _purchase_crud_list(
+        PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD,
+        {"client_id": client_id, "source_type": source_type, "status": status},
+        termasuk_nonaktif,
+    )
+    # relatedPurchaseId (frontend) TIDAK disimpan sebagai kolom (hindari FK
+    # sirkular, lihat catatan di DDL) -- dicari lewat reverse query 1x per
+    # panggilan, bukan per-baris (N+1), lalu ditempel ke tiap record.
+    if hasil:
+        session = SessionLocal()
+        try:
+            ids = [r["id"] for r in hasil]
+            baris = session.query(PurchaseTransaction.id, PurchaseTransaction.source_record_id).filter(
+                PurchaseTransaction.source_record_id.in_(ids),
+                PurchaseTransaction.deleted_at.is_(None),
+            ).all()
+            peta = {src_id: tx_id for tx_id, src_id in baris}
+            for r in hasil:
+                r["related_transaction_id"] = peta.get(r["id"])
+        except Exception:
+            session.rollback()
+            for r in hasil:
+                r["related_transaction_id"] = None
+        finally:
+            session.close()
+    return hasil
+
+def update_purchase_source_record(source_record_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD, source_record_id, data, updated_by)
+
+def soft_delete_purchase_source_record(source_record_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseSourceRecord, source_record_id, deleted_by)
+
+
+# --- 2) financial_transaction_purchase_transactions ---
+
+CRUD_FIELDS_PURCHASE_TRANSACTION = [
+    "client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
+    "po_number", "vendor_name", "vendor_code", "source_doc_type", "source_ref",
+    "source_record_id", "description", "category", "subtotal", "discount",
+    "tax_amount", "total", "accounts_payable", "currency", "payment_status",
+    "payment_terms", "due_date", "status", "period_label", "created_by_name",
+    "approved_by_name", "posted_by_name", "notes", "journal_entry_id",
+    "posting_date", "posted_at",
+]
+
+def create_purchase_transaction(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, data, created_by)
+
+def get_purchase_transaction_by_id(transaction_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, transaction_id, termasuk_nonaktif)
+
+def get_purchase_transaction_by_client_and_no(client_id: Optional[str], purchase_no: str) -> Optional[Dict[str, Any]]:
+    """Pre-check UniqueConstraint(client_id, purchase_no) sebelum insert,
+    pola sama seperti get_sales_invoice_by_client_and_no()."""
+    session = SessionLocal()
+    try:
+        obj = session.query(PurchaseTransaction).filter(
+            PurchaseTransaction.client_id == client_id,
+            PurchaseTransaction.purchase_no == purchase_no,
+            PurchaseTransaction.deleted_at.is_(None),
+        ).first()
+        return _purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_TRANSACTION) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+def list_purchase_transactions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION,
+        {"client_id": client_id, "status": status},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_transaction(transaction_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION, transaction_id, data, updated_by)
+
+def soft_delete_purchase_transaction(transaction_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseTransaction, transaction_id, deleted_by)
+
+
+# --- 3) financial_transaction_purchase_transaction_lines ---
+
+CRUD_FIELDS_PURCHASE_TRANSACTION_LINE = [
+    "transaction_id", "client_id", "line_no", "item_code", "description",
+    "quantity", "unit", "unit_price", "discount", "tax_rate", "tax_amount",
+    "subtotal", "total", "account_code", "account_name",
+]
+
+def create_purchase_transaction_line(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, data, created_by)
+
+def get_purchase_transaction_line_by_id(line_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, line_id, termasuk_nonaktif)
+
+def list_purchase_transaction_lines(transaction_id: Optional[str] = None, client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE,
+        {"transaction_id": transaction_id, "client_id": client_id},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_transaction_line(line_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseTransactionLine, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE, line_id, data, updated_by)
+
+def soft_delete_purchase_transaction_line(line_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseTransactionLine, line_id, deleted_by)
+
+
+# --- 4) financial_transaction_purchase_exceptions ---
+
+CRUD_FIELDS_PURCHASE_EXCEPTION = [
+    "client_id", "transaction_id", "source_record_id", "exception_type",
+    "severity", "status", "vendor_name", "invoice_number", "purchase_date",
+    "amount", "currency", "description", "detected_at", "assigned_to",
+    "resolution", "resolved_at", "period_label",
+]
+
+def create_purchase_exception(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, data, created_by)
+
+def get_purchase_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, exception_id, termasuk_nonaktif)
+
+def list_purchase_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(
+        PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION,
+        {"client_id": client_id, "status": status},
+        termasuk_nonaktif,
+    )
+
+def update_purchase_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, exception_id, data, updated_by)
+
+def soft_delete_purchase_exception(exception_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseException, exception_id, deleted_by)
+
+
+def create_purchase_transaction_with_lines(
+    transaction_data: Dict[str, Any],
+    lines_data: List[Dict[str, Any]],
+    created_by: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Buat 1 Purchase Transaction + SELURUH baris item/jasa-nya dalam SATU
+    transaksi (atomik) -- pola sama persis alasannya dengan
+    create_je_draft_with_lines() (supaya tidak ada transaksi "yatim" tanpa
+    baris kalau salah satu insert baris gagal di tengah jalan).
+
+    subtotal/discount/tax_amount/total di transaction_data DIABAIKAN kalau
+    ada -- dihitung ULANG dari SUM(lines) di sini supaya header tidak bisa
+    "bohong" beda dari baris aslinya (pola sama dengan total_debit/
+    total_credit di create_je_draft_with_lines). accounts_payable default
+    ikut total kalau tidak dikirim eksplisit."""
+    session = SessionLocal()
+    try:
+        subtotal = sum(Decimal(str(l.get("subtotal") or 0)) for l in lines_data)
+        discount = sum(Decimal(str(l.get("discount") or 0)) for l in lines_data)
+        tax_amount = sum(Decimal(str(l.get("tax_amount") or 0)) for l in lines_data)
+        total = sum(Decimal(str(l.get("total") or 0)) for l in lines_data)
+        accounts_payable = Decimal(str(transaction_data.get("accounts_payable"))) if transaction_data.get("accounts_payable") is not None else total
+
+        tx = PurchaseTransaction(
+            **{k: v for k, v in transaction_data.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION and k not in ("subtotal", "discount", "tax_amount", "total", "accounts_payable")},
+            subtotal=subtotal,
+            discount=discount,
+            tax_amount=tax_amount,
+            total=total,
+            accounts_payable=accounts_payable,
+            created_by=created_by,
+        )
+        session.add(tx)
+        session.flush()  # isi tx.id sebelum dipakai FK baris di bawah
+
+        for idx, line in enumerate(lines_data, start=1):
+            session.add(PurchaseTransactionLine(
+                **{k: v for k, v in line.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION_LINE and k != "line_no"},
+                transaction_id=tx.id,
+                client_id=tx.client_id,
+                line_no=line.get("line_no") or idx,
+                created_by=created_by,
+            ))
+
+        session.commit()
+        session.refresh(tx)
+        hasil = _purchase_row_ke_dict(tx, CRUD_FIELDS_PURCHASE_TRANSACTION)
+        hasil["lines"] = [
+            _purchase_row_ke_dict(l, CRUD_FIELDS_PURCHASE_TRANSACTION_LINE)
+            for l in session.query(PurchaseTransactionLine)
+                .filter(PurchaseTransactionLine.transaction_id == tx.id)
+                .order_by(PurchaseTransactionLine.line_no)
+                .all()
+        ]
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error create transaction+lines financial_transaction_purchase_transactions: {e}")
+        return None
+    finally:
+        session.close()
 
 
 # ============================================================
 # FUNGSI TAMBAHAN CLIENT
 # ============================================================
-    finally:
-        session.close()
 
 def get_client_by_nama(nama: str) -> Optional[Dict[str, Any]]:
     """Cari client berdasarkan nama persis."""
@@ -8139,7 +10094,7 @@ class FiscalCorrection(Base):
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
     kategori = Column(String, nullable=False)
@@ -8155,7 +10110,7 @@ class TaxComplianceTask(Base):
     __table_args__ = {"schema": "5_Planning"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     task_name = Column(String, nullable=False)
     tax_type = Column(String, nullable=True)
     period = Column(String, nullable=True)
@@ -8305,7 +10260,7 @@ class AuditFindingRow(Base):
     __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     finding_no = Column(Integer, nullable=False)
     area = Column(String, nullable=True)
     description = Column(Text, nullable=False)
@@ -8330,7 +10285,7 @@ class AuditStageRow(Base):
     __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     label = Column(String, nullable=False)
     stage_date = Column(Date, nullable=True)
     done = Column(Boolean, nullable=False)
@@ -8345,7 +10300,7 @@ class AuditActivityRow(Base):
     __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intelligence.intelligence_audit_finding.id"), nullable=True)
     user_name = Column(String, nullable=False)
     action = Column(String, nullable=False)
@@ -8359,7 +10314,7 @@ class AuditEvidenceRow(Base):
     __table_args__ = {"schema": "6_Intelligence"}
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("1_app.management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     finding_id = Column(PG_UUID(as_uuid=False), ForeignKey("6_Intelligence.intelligence_audit_finding.id"), nullable=False)
     file_name = Column(String, nullable=False)
     file_size = Column(BigInteger, nullable=True)

@@ -1,12 +1,10 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { bulkUpdatePurchaseStatus } from '@/app/agent-ai/lib/api';
-import { exportToCSV } from '@/app/transactions/components/tabs/shared/exportUtils';
-import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
+import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -57,7 +55,11 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
-  const { purchaseTransactions, activeClientId, refetch } = usePurchaseData();
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -65,9 +67,17 @@ export default function PurchaseTransactionPage() {
   const [vendorFilter, setVendorFilter] = useState('All');
   const [sortField, setSortField] = useState('purchaseDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedRow, setSelectedRow] = useState<PurchaseTransaction | null>(null);
+  const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkApproving, setBulkApproving] = useState(false);
+
+  // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
+  // di detail panel (bukan seluruh daftar) -- pola sama seperti
+  // useJeDraftLines() di journalEntryStore.tsx.
+  const { lines: selectedLines } = usePurchaseTransactionLines(selectedRow?.id);
+  const selectedRowWithLines = useMemo(
+    () => (selectedRow ? { ...selectedRow, lines: selectedLines.map(mapTransactionLineToUi) } : null),
+    [selectedRow, selectedLines],
+  );
 
   const uniqueVendors = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.vendor)))];
   const uniqueCategories = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.category)))];
@@ -106,59 +116,6 @@ export default function PurchaseTransactionPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  };
-
-  const handleExport = () => {
-    if (filtered.length === 0) {
-      toast.error('Tidak ada data untuk diekspor', { description: 'Ubah filter terlebih dahulu.' });
-      return;
-    }
-    exportToCSV(
-      filtered.map(r => ({
-        'Purchase ID': r.purchaseId,
-        Date: r.purchaseDate,
-        'Invoice No.': r.invoiceNumber,
-        'PO Number': r.poNumber,
-        Vendor: r.vendor,
-        Category: r.category,
-        Subtotal: r.subtotal,
-        Tax: r.taxAmount,
-        Total: r.total,
-        Payment: paymentLabels[r.paymentStatus],
-        'Due Date': r.dueDate,
-        Status: statusLabels[r.status],
-        Period: r.period,
-      })),
-      'purchase_transactions'
-    );
-    toast.success(`${filtered.length} transaksi diekspor ke CSV`);
-  };
-
-  const handleBulkApprove = async () => {
-    if (!activeClientId) {
-      toast.error('Belum ada client aktif', { description: 'Pilih company di Topbar terlebih dahulu.' });
-      return;
-    }
-    const eligibleIds = filtered
-      .filter(r => selectedIds.has(r.id) && r.status === 'pending_review')
-      .map(r => r.id);
-    if (eligibleIds.length === 0) {
-      toast.error('Tidak ada transaksi yang bisa disetujui', { description: 'Bulk Approve hanya berlaku untuk transaksi berstatus Pending Review.' });
-      return;
-    }
-    setBulkApproving(true);
-    try {
-      const hasil = await bulkUpdatePurchaseStatus(activeClientId, eligibleIds, 'approved', 'pending_review');
-      toast.success(`${hasil.diperbarui} transaksi disetujui`, {
-        description: hasil.dilewati > 0 ? `${hasil.dilewati} dilewati (bukan Pending Review)` : undefined,
-      });
-      setSelectedIds(new Set());
-      refetch();
-    } catch (err) {
-      toast.error('Gagal menyetujui transaksi', { description: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBulkApproving(false);
-    }
   };
 
   const summary = useMemo(() => ({
@@ -221,7 +178,7 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>
@@ -231,9 +188,7 @@ export default function PurchaseTransactionPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-                <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" disabled={bulkApproving} onClick={handleBulkApprove}>
-                  {bulkApproving ? 'Approving…' : 'Bulk Approve'}
-                </button>
+                <button className="je-btn-primary text-xs px-3 py-1.5">Bulk Approve</button>
                 <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             )}
@@ -322,30 +277,30 @@ export default function PurchaseTransactionPage() {
         </div>
 
         {/* Detail Panel */}
-        {selectedRow && (
+        {selectedRowWithLines && (
           <div className="je-card p-6">
             <div className="flex items-start justify-between mb-5">
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="font-mono text-sm font-bold text-primary">{selectedRow.purchaseId}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedRow.status]}`}>{statusLabels[selectedRow.status]}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentColors[selectedRow.paymentStatus]}`}>{paymentLabels[selectedRow.paymentStatus]}</span>
+                  <span className="font-mono text-sm font-bold text-primary">{selectedRowWithLines.purchaseId}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedRowWithLines.status]}`}>{statusLabels[selectedRowWithLines.status]}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentColors[selectedRowWithLines.paymentStatus]}`}>{paymentLabels[selectedRowWithLines.paymentStatus]}</span>
                 </div>
-                <p className="text-sm text-foreground font-medium">{selectedRow.description}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{selectedRow.vendor} · {selectedRow.category}</p>
+                <p className="text-sm text-foreground font-medium">{selectedRowWithLines.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{selectedRowWithLines.vendor} · {selectedRowWithLines.category}</p>
               </div>
               <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
-                { label: 'Invoice Number', value: selectedRow.invoiceNumber },
-                { label: 'PO Number', value: selectedRow.poNumber },
-                { label: 'Invoice Date', value: selectedRow.invoiceDate },
-                { label: 'Due Date', value: selectedRow.dueDate },
-                { label: 'Payment Terms', value: selectedRow.paymentTerms },
-                { label: 'Period', value: selectedRow.period },
-                { label: 'Created By', value: selectedRow.createdBy },
-                { label: 'Approved By', value: selectedRow.approvedBy || '—' },
+                { label: 'Invoice Number', value: selectedRowWithLines.invoiceNumber },
+                { label: 'PO Number', value: selectedRowWithLines.poNumber },
+                { label: 'Invoice Date', value: selectedRowWithLines.invoiceDate },
+                { label: 'Due Date', value: selectedRowWithLines.dueDate },
+                { label: 'Payment Terms', value: selectedRowWithLines.paymentTerms },
+                { label: 'Period', value: selectedRowWithLines.period },
+                { label: 'Created By', value: selectedRowWithLines.createdBy },
+                { label: 'Approved By', value: selectedRowWithLines.approvedBy || '—' },
               ].map(item => (
                 <div key={item.label}>
                   <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -368,7 +323,7 @@ export default function PurchaseTransactionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {selectedRow.lines.map(line => (
+                  {selectedRowWithLines.lines.map(line => (
                     <tr key={line.id} className="table-row-hover">
                       <td className="px-3 py-2">
                         <p className="font-medium text-foreground">{line.description}</p>
@@ -386,30 +341,30 @@ export default function PurchaseTransactionPage() {
                 <tfoot>
                   <tr className="bg-muted/40 border-t border-border">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Subtotal</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRow.subtotal)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRowWithLines.subtotal)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-muted/40">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Discount</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-red-600">-{fmt(selectedRow.discount)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-red-600">-{fmt(selectedRowWithLines.discount)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-muted/40">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Tax (Input VAT)</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRow.taxAmount)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRowWithLines.taxAmount)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-blue-50">
                     <td colSpan={4} className="px-3 py-2 text-right font-bold text-blue-700">Total Payable</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums text-blue-700 text-sm">{fmt(selectedRow.total)}</td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-blue-700 text-sm">{fmt(selectedRowWithLines.total)}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
               </table>
             </div>
-            {selectedRow.notes && (
+            {selectedRowWithLines.notes && (
               <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5">
-                <p className="text-xs text-amber-700">{selectedRow.notes}</p>
+                <p className="text-xs text-amber-700">{selectedRowWithLines.notes}</p>
               </div>
             )}
           </div>

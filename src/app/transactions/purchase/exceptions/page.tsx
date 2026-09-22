@@ -1,12 +1,11 @@
 'use client';
 
-import React, { Suspense, useEffect, useState, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { updatePurchaseExceptionStatus } from '@/app/agent-ai/lib/api';
-import type { ExceptionSeverity, ExceptionStatus, PurchaseException } from '@/data/purchaseData';
+import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -45,29 +44,24 @@ function StatusBadge({ status }: { status: ExceptionStatus }) {
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{icon}{status}</span>;
 }
 
-function PurchaseExceptionsPageInner() {
-  const { purchaseExceptions, activeClientId, refetch } = usePurchaseData();
-  const searchParams = useSearchParams();
+export default function PurchaseExceptionsPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
+  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
   const [vendorFilter, setVendorFilter] = useState('All');
-  const [selectedExc, setSelectedExc] = useState<PurchaseException | null>(null);
+  const [selectedExc, setSelectedExc] = useState<typeof purchaseExceptions[0] | null>(null);
   const [resolveMap, setResolveMap] = useState<Record<string, ExceptionStatus>>({});
-  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
-
-  // Deep-link dari tombol "View Exception" di halaman Journal Preview
-  // (?purchaseId=PUR-2026-09-0001) -- langsung isi kolom pencarian.
-  useEffect(() => {
-    const purchaseId = searchParams.get('purchaseId');
-    if (purchaseId) setSearch(purchaseId);
-  }, [searchParams]);
 
   const exceptionTypes = ['All', ...Array.from(new Set(purchaseExceptions.map(e => e.exceptionType)))];
   const uniqueVendors = ['All', ...Array.from(new Set(purchaseExceptions.map(e => e.vendor)))];
 
-  const getStatus = (exc: PurchaseException): ExceptionStatus => resolveMap[exc.id] || exc.status;
+  const getStatus = (exc: typeof purchaseExceptions[0]): ExceptionStatus => resolveMap[exc.id] || exc.status;
 
   const filtered = useMemo(() => {
     let data = purchaseExceptions.map(e => ({ ...e, status: resolveMap[e.id] || e.status }));
@@ -93,35 +87,12 @@ function PurchaseExceptionsPageInner() {
     resolved: purchaseExceptions.filter(e => (resolveMap[e.id] || e.status) === 'Resolved').length,
   }), [purchaseExceptions, resolveMap]);
 
-  const handleStatusChange = async (id: string, status: ExceptionStatus) => {
-    if (!activeClientId) {
-      toast.error('Belum ada client aktif', { description: 'Pilih company di Topbar terlebih dahulu.' });
-      return;
-    }
-    const previous = resolveMap[id];
-    // Optimistic update supaya badge langsung berubah, dibalik lagi kalau gagal.
+  const handleStatusChange = (id: string, status: ExceptionStatus) => {
     setResolveMap(prev => ({ ...prev, [id]: status }));
     if (selectedExc?.id === id) setSelectedExc(prev => prev ? { ...prev, status } : null);
-    setUpdatingIds(prev => new Set(prev).add(id));
-    try {
-      await updatePurchaseExceptionStatus(activeClientId, id, status);
-      toast.success('Status exception diperbarui', { description: status });
-      refetch();
-    } catch (err) {
-      setResolveMap(prev => {
-        const next = { ...prev };
-        if (previous) next[id] = previous; else delete next[id];
-        return next;
-      });
-      if (selectedExc?.id === id) setSelectedExc(prev => prev ? { ...prev, status: previous || prev.status } : null);
-      toast.error('Gagal memperbarui status exception', { description: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setUpdatingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
+    updatePurchaseException(id, { status }).catch(err => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update exception status.');
+    });
   };
 
   return (
@@ -228,15 +199,15 @@ function PurchaseExceptionsPageInner() {
                 <div className="flex gap-2 flex-shrink-0 flex-wrap">
                   {getStatus(exc) === 'Open' && (
                     <>
-                      <button disabled={updatingIds.has(exc.id)} className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Under Review'); }}>Start Review</button>
-                      <button disabled={updatingIds.has(exc.id)} className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200 disabled:opacity-50" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Requires Correction'); }}>Flag</button>
+                      <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Under Review'); }}>Start Review</button>
+                      <button className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Requires Correction'); }}>Flag</button>
                     </>
                   )}
                   {getStatus(exc) === 'Under Review' && (
-                    <button disabled={updatingIds.has(exc.id)} className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Resolved'); }}>Mark Resolved</button>
+                    <button className="je-btn-primary text-xs px-3 py-1.5" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Resolved'); }}>Mark Resolved</button>
                   )}
                   {getStatus(exc) === 'Requires Correction' && (
-                    <button disabled={updatingIds.has(exc.id)} className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Under Review'); }}>Begin Correction</button>
+                    <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Under Review'); }}>Begin Correction</button>
                   )}
                   {getStatus(exc) === 'Resolved' && (
                     <span className="inline-flex items-center gap-1 text-xs text-green-700 font-medium"><CheckCircleIcon className="w-4 h-4" />Resolved</span>
@@ -276,7 +247,7 @@ function PurchaseExceptionsPageInner() {
                       )}
                       <div className="mt-3 flex gap-2">
                         {getStatus(exc) !== 'Resolved' && getStatus(exc) !== 'Ignored' && (
-                          <button disabled={updatingIds.has(exc.id)} className="je-btn-secondary text-xs px-3 py-1.5 text-slate-500 disabled:opacity-50" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Ignored'); }}>Ignore</button>
+                          <button className="je-btn-secondary text-xs px-3 py-1.5 text-slate-500" onClick={e => { e.stopPropagation(); handleStatusChange(exc.id, 'Ignored'); }}>Ignore</button>
                         )}
                       </div>
                     </div>
@@ -287,13 +258,5 @@ function PurchaseExceptionsPageInner() {
           ))}
         </div>
       </div>
-  );
-}
-
-export default function PurchaseExceptionsPage() {
-  return (
-    <Suspense fallback={<div className="space-y-6 fade-in"><PurchaseTabs /></div>}>
-      <PurchaseExceptionsPageInner />
-    </Suspense>
   );
 }

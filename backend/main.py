@@ -109,7 +109,7 @@ from modules.management import documents_v1 as management_documents_v1  # [BARU]
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
 from modules.overview import overview_v1  # [BARU] /api/v1/overview/... + /api/client/{id}/kpi-bento (halaman Financial Overview)
 from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
-from modules.finance import purchase_v1 as finance_purchase_v1  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus (halaman Purchase) -- pindahan apa adanya dari main.py
+from modules.finance import purchase_v1 as finance_purchase_v1  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus (halaman Purchase) -- pindahan apa adanya dari main.py -- [TIDAK DIPAKAI FRONTEND, lihat modules.transactions.purchase_v1] TODO cleanup
 from modules.finance import bank_cash_v1 as finance_bank_cash_v1  # [DIPINDAH] /api/v1/transaction/getBankCash|updateBankCash|addBankCashManual|postBankCashBulk|rejectBankCash (halaman Bank & Cash) -- pindahan apa adanya dari main.py
 from modules.finance import other_v1 as finance_other_v1  # [DIPINDAH] /api/v1/transaction/getFinanceOther|updateFinanceOther|addFinanceOtherManual|postFinanceOtherBulk|rejectFinanceOther (halaman Other) -- pindahan apa adanya dari main.py
 from modules.finance import profit_loss_v1 as finance_profit_loss_v1  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights (halaman Profit & Loss) -- pindahan apa adanya dari main.py
@@ -117,6 +117,12 @@ from modules.finance import cash_flow_v1 as finance_cash_flow_v1  # [DIPINDAH] /
 from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # [DIPINDAH] /api/v1/planning/... (halaman Tax & Compliance) -- pindahan apa adanya dari main.py
 from modules.planning import budget_forecast_v1 as planning_budget_forecast_v1  # [DIPINDAH] /api/v1/planning/... (halaman Budget & Forecast) -- pindahan apa adanya dari main.py
 from modules.intelligence import audit_v1 as intelligence_audit_v1  # [DIPINDAH] /api/v1/intelligence/... (halaman Audit) -- pindahan apa adanya dari main.py
+from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
+from modules.transactions import sales_v1 as transactions_sales_v1  # [BARU] CRUD financial_transaction_sales_*: /api/v1/transactions/sales/...
+from modules.transactions import sales_import_v1 as transactions_sales_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Sales Import Template
+from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
+from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
+from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
 from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
 # [FIX v5] Konfirmasi eksplisit di terminal, database mana yang BENAR-BENAR
@@ -383,7 +389,7 @@ app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/re
 app.include_router(overview_v1.router)  # [BARU] /api/v1/overview/getBranches & getFinancialBudget
 app.include_router(overview_v1.router_legacy)  # [BARU] /api/client/{id}/kpi-bento (path lama, dipindah lokasi doang)
 app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
-app.include_router(finance_purchase_v1.router)  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus
+app.include_router(finance_purchase_v1.router)  # [DIPINDAH] /api/v1/transaction/getPurchase|updatePurchaseStatus|bulkUpdatePurchaseStatus|updatePurchaseExceptionStatus -- [TIDAK DIPAKAI FRONTEND] TODO cleanup
 app.include_router(finance_bank_cash_v1.router)  # [DIPINDAH] /api/v1/transaction/getBankCash|updateBankCash|addBankCashManual|postBankCashBulk|rejectBankCash
 app.include_router(finance_other_v1.router)  # [DIPINDAH] /api/v1/transaction/getFinanceOther|updateFinanceOther|addFinanceOtherManual|postFinanceOtherBulk|rejectFinanceOther
 app.include_router(finance_profit_loss_v1.router)  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights
@@ -391,6 +397,12 @@ app.include_router(finance_cash_flow_v1.router)  # [DIPINDAH] /api/v1/finance/ge
 app.include_router(planning_tax_compliance_v1.router)  # [DIPINDAH] /api/v1/planning/getFiscalCorrection|getTaxComplianceTasks|addTaxComplianceTask|updateTaxComplianceTaskStatus|deleteTaxComplianceTask
 app.include_router(planning_budget_forecast_v1.router)  # [DIPINDAH] /api/v1/planning/getForecastAssumption|saveForecastAssumption|getScenarios|addScenario|deleteScenario
 app.include_router(intelligence_audit_v1.router)  # [DIPINDAH] /api/v1/intelligence/getAudit|addAuditFinding|updateAuditFinding|addAuditEvidence|getAuditEvidenceFile|deleteAuditEvidence|updateAuditStage
+app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
+app.include_router(transactions_sales_v1.router)  # [BARU] /api/v1/transactions/sales/... -- prefix sudah di router-nya sendiri
+app.include_router(transactions_sales_import_v1.router)  # [BARU] /api/v1/transactions/sales/source-files/upload
+app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
+app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
+app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
 
 
 @app.on_event("startup")

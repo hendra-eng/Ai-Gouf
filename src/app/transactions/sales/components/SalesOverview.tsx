@@ -1,16 +1,15 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import KpiCard from '@/components/shared/KpiCard';
-import TransactionDrawer from '../../components/TransactionDrawer';
-import TransactionsGroupPanel from '../../components/TransactionsGroupPanel';
-import { Transaction, tambahHariISO } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
-import { formatIDR, txAmount, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, formatDate, transactionsMissingJeId, unbalancedJournals, paidJournalTotal, overdueJournals } from '../../lib/groupAnalytics';
+import { formatIDR, CHART_COLORS } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useLanguage } from '@/lib/language';
+import { useAuth } from '@/lib/auth';
+import { useSalesInvoices, formatTanggalSingkat, type BackendSalesInvoice } from '@/lib/salesStore';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Financial
 // Overview / Balance Sheet): width YAxis (65) + margin.left AreaChart (10). ──
@@ -43,84 +42,143 @@ function SalesTrendTooltip({
     <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
       <p className="font-semibold text-slate-800 mb-1">{label}</p>
       <p className="text-teal-600">
-        {entry.name}: {isDragged ? 'Estimasi · ' : ''}
+        {entry.name}: {isDragged ? 'Estimated · ' : ''}
         {formatIDR(value)}
       </p>
     </div>
   );
 }
 
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Status invoice (taksonomi financial_transaction_sales_invoices.posting_status):
+// Draft/Review/Approved = belum diposting; Posted/Partial/Paid = sudah diposting.
+const POSTED_STATUSES = ['Posted', 'Partial', 'Paid'];
+const isPosted = (inv: BackendSalesInvoice) => POSTED_STATUSES.includes(inv.posting_status);
+
 const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
+  Draft: 'warning', Review: 'warning', Approved: 'info', Posted: 'info', Partial: 'warning', Paid: 'positive',
 };
 
-// [BARU] Tab "Overview" halaman Sales. Murni turunan dari data di halaman
-// Transaksi utama: seluruh baris yang tergolong kelompok 'sales' (lihat
-// getTransactionGroup() di components/transactionData.ts — akun Pendapatan/
-// Piutang, atau category 'Revenue') diambil lewat getByGroup('sales') dari
-// TransactionsContext, lalu dianalisa & ditabelkan di sini. Tidak ada data
-// dummy — semuanya dari state transaksi asli aplikasi.
+const num = (v: unknown) => Number(v) || 0;
+const sumBy = (rows: BackendSalesInvoice[], pick: (r: BackendSalesInvoice) => unknown) => rows.reduce((s, r) => s + num(pick(r)), 0);
+const yearOf = (iso: string | null | undefined) => {
+  const y = Number((iso || '').slice(0, 4));
+  return Number.isFinite(y) && y > 0 ? y : null;
+};
+
+const TABLE_PAGE_SIZE = 10;
+
+// Tab "Overview" halaman Transactions > Sales. Seluruh angkanya dihitung dari
+// invoice di financial_transaction_sales_invoices (useSalesInvoices, sumber
+// yang SAMA dengan tab Sales Transaction / Journal Preview / Posted) --
+// bukan lagi dari TransactionsContext (pipeline jurnal-posting lama Agent AI).
+// Jadi invoice hasil "Create Invoice" dari Source Data maupun input manual di
+// Sales Transaction langsung tampil di sini.
 //
-// [DIPINDAH] Konten ini sebelumnya adalah seluruh isi sales/page.tsx.
-// Sekarang page.tsx cuma memanggil <SalesClient /> yang punya 6 tab
-// (Overview, Source Data, Sales Transaction, Journal Preview, Exceptions,
-// Posted) — komponen ini jadi isi tab "Overview"-nya.
+// clientId = akun yang login (user.id), sama seperti tab Sales lainnya --
+// invoices.client_id memang mengacu ke management_users, bukan ke perusahaan
+// aktif di dropdown "Switch Company".
+//
+// Definisi angka:
+//  - Total Sales / Invoices / DPP / VAT / PPh : SEMUA invoice (Draft s/d Paid),
+//    supaya invoice yang baru diimport langsung terlihat.
+//  - Posted / Reconciliation                  : hanya invoice berstatus Posted/Partial/Paid.
+//  - Paid / Accounts Receivable / Overdue     : hanya invoice yang sudah diposting
+//    (piutang baru sah setelah diposting; sama dengan kolom AR di tab Posted).
 export default function SalesOverview() {
   const { t } = useLanguage();
-  const { getByGroup } = useTransactions();
-  const salesTx = useMemo(() => getByGroup('sales'), [getByGroup]);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { invoices: allInvoices, loading, error } = useSalesInvoices(clientId);
+  const invoices = useMemo(() => allInvoices.filter((i) => i.aktif !== false), [allInvoices]);
 
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const postedInvoices = useMemo(() => invoices.filter(isPosted), [invoices]);
+  const pendingInvoices = useMemo(() => invoices.filter((i) => !isPosted(i)), [invoices]);
 
-  // ── KPI (dihitung langsung dari salesTx, bukan angka statis) ──
-  const grossSales = uniqueJournalTotal(salesTx);
-  const txCount = uniqueJournalCount(salesTx);
+  // ── KPI baris 1 ──
+  const grossSales = sumBy(invoices, (i) => i.gross_amount);
+  const txCount = invoices.length;
   const avgTxValue = txCount > 0 ? grossSales / txCount : 0;
-  const unpostedCount = countJournalsByStatus(salesTx, 'Unposted');
-  const reconciledCount = countJournalsByStatus(salesTx, 'Reconciled');
-  const reconciledPct = txCount > 0 ? (reconciledCount / txCount) * 100 : 0;
-  const draftCount = countJournalsByStatus(salesTx, 'Draft');
-  const draftTotal = draftJournalTotal(salesTx);
+  const pendingCount = pendingInvoices.length;
+  const pendingTotal = sumBy(pendingInvoices, (i) => i.gross_amount);
+  const postedTotal = sumBy(postedInvoices, (i) => i.gross_amount);
+  const reconciledCount = postedInvoices.filter((i) => i.reconcile_status === 'Reconciled').length;
+  const reconciledPct = postedInvoices.length > 0 ? (reconciledCount / postedInvoices.length) * 100 : 0;
 
-  // [BARU] KPI turunan dari kolom pajak & piutang di tabel Sales di bawah
-  // (DPP, PPN, PPh, Paid, Outstanding, Due Date) — rumusnya SAMA PERSIS
-  // dengan render() masing-masing kolom (lihat definisi `columns` di bawah),
-  // cuma dijumlahkan di level agregat (grossSales) alih-alih per baris,
-  // hasilnya identik karena rumusnya linear terhadap Gross.
-  const totalDPP = grossSales / 1.11;
-  const totalPPN = grossSales - totalDPP;
-  const totalPPh = totalDPP * 0.01;
-  const totalPaid = paidJournalTotal(salesTx);
-  const totalOutstanding = grossSales - totalPaid;
-  const overdue = useMemo(() => overdueJournals(salesTx), [salesTx]);
+  // ── KPI baris 2 ──
+  const totalDPP = sumBy(invoices, (i) => i.dpp);
+  const totalPPN = sumBy(invoices, (i) => i.ppn);
+  const totalPPh = sumBy(invoices, (i) => i.pph);
+  const totalPaid = sumBy(postedInvoices, (i) => i.paid_amount);
+  const totalOutstanding = sumBy(postedInvoices, (i) => i.outstanding_amount);
+  const overdue = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = postedInvoices.filter((i) => !!i.due_date && (i.due_date as string).slice(0, 10) < today && num(i.outstanding_amount) > 0);
+    return { count: rows.length, total: sumBy(rows, (i) => i.outstanding_amount) };
+  }, [postedInvoices]);
 
-  // [BARU] Peringatan integritas data: baris Sales yang tidak punya jeId.
-  const missingJeIdCount = useMemo(() => transactionsMissingJeId(salesTx).length, [salesTx]);
+  // ── Tren bulanan (per tahun, berdasarkan invoice_date) ──
+  const availableYears = useMemo(() => {
+    const ys = new Set<number>();
+    invoices.forEach((i) => { const y = yearOf(i.invoice_date); if (y) ys.add(y); });
+    return Array.from(ys).sort((a, b) => b - a);
+  }, [invoices]);
+  const [pickedYear, setPickedYear] = useState<number | null>(null);
+  const trendYear = pickedYear && availableYears.includes(pickedYear) ? pickedYear : (availableYears[0] ?? new Date().getFullYear());
 
-  // [BARU] Peringatan integritas data — jurnal (jeId) yang total debit &
-  // kreditnya tidak sama.
-  const unbalanced = useMemo(() => unbalancedJournals(salesTx), [salesTx]);
+  const trend = useMemo(() => {
+    const totals = Array.from({ length: 12 }, () => ({ total: 0, count: 0 }));
+    invoices.forEach((i) => {
+      if (yearOf(i.invoice_date) !== trendYear) return;
+      const m = Number((i.invoice_date || '').slice(5, 7)) - 1;
+      if (m < 0 || m > 11) return;
+      totals[m].total += num(i.gross_amount);
+      totals[m].count += 1;
+    });
+    return MONTH_LABELS.map((month, i) => ({ month, total: totals[i].total, count: totals[i].count }));
+  }, [invoices, trendYear]);
 
-  const trend = useMemo(() => monthlyTrendFor(salesTx), [salesTx]);
-  // [DIUBAH] Sales per Kategori sekarang HANYA berisi akun Pendapatan (kode
-  // 4xxx) — mis. Consulting Revenue, Software Development Revenue,
-  // Maintenance Revenue. Sebelumnya jurnal Sales yang tidak punya kaki akun
-  // 4xxx (mis. hasil import yang belum berpasangan) jatuh ke fallback "kaki
-  // bernilai terbesar", yang bisa jadi akun NERACA seperti "Kas & Bank —
-  // BCA/Mandiri" atau "Piutang Usaha" — itu bukan jenis pendapatan, cuma
-  // sisi pasangan jurnal, jadi salah kalau muncul sebagai "kategori sales".
-  // Sekarang jurnal seperti itu dikelompokkan eksplisit ke satu bucket
-  // "Pendapatan Lain-lain (Belum Teridentifikasi)" supaya tetap kelihatan &
-  // bisa ditinjau, tanpa mencemari daftar kategori dengan akun neraca.
-  const byCategory = useMemo(
-    () =>
-      categoryBreakdown(salesTx, {
-        requireAccountCodePrefix: '4',
-        fallbackLabel: 'Pendapatan Lain-lain (Belum Teridentifikasi)',
-      }).slice(0, 6),
-    [salesTx]
+  // ── Sales per cabang & top customer ──
+  const byBranch = useMemo(() => {
+    const map = new Map<string, number>();
+    invoices.forEach((i) => {
+      const key = (i.cabang || '').trim() || 'Unassigned';
+      map.set(key, (map.get(key) || 0) + num(i.gross_amount));
+    });
+    return Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
+  }, [invoices]);
+
+  const topCustomers = useMemo(() => {
+    const map = new Map<string, number>();
+    invoices.forEach((i) => {
+      const key = (i.customer_name || '').trim() || '-';
+      map.set(key, (map.get(key) || 0) + num(i.gross_amount));
+    });
+    return Array.from(map, ([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  }, [invoices]);
+
+  // ── Tabel invoice (cari + filter cabang + paging) ──
+  const [search, setSearch] = useState('');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [tablePage, setTablePage] = useState(1);
+  const branches = useMemo(
+    () => Array.from(new Set(invoices.map((i) => (i.cabang || '').trim()).filter(Boolean))).sort(),
+    [invoices]
   );
-  const topCustomers = useMemo(() => topParties(salesTx, 5), [salesTx]);
+  const tableRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return invoices
+      .filter((i) => {
+        if (branchFilter !== 'all' && (i.cabang || '') !== branchFilter) return false;
+        if (!q) return true;
+        return [i.invoice_no, i.customer_name, i.cabang, i.description].some((v) => (v || '').toLowerCase().includes(q));
+      })
+      .sort((a, b) => (b.invoice_date || '').localeCompare(a.invoice_date || ''));
+  }, [invoices, search, branchFilter]);
+  const tableTotalPages = Math.max(1, Math.ceil(tableRows.length / TABLE_PAGE_SIZE));
+  const tablePageSafe = Math.min(tablePage, tableTotalPages);
+  const pagedRows = tableRows.slice((tablePageSafe - 1) * TABLE_PAGE_SIZE, tablePageSafe * TABLE_PAGE_SIZE);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama seperti chart
   // Financial Overview / Balance Sheet. ──
@@ -291,122 +349,24 @@ export default function SalesOverview() {
     );
   };
 
-  // [DIUBAH] Susunan & judul kolom disamakan dengan acuan baru: Date, Invoice,
-  // Customer, Description, DPP, PPN, PPh, Gross, Paid, Outstanding, Due Date,
-  // Journal, Status. Kolom yang datanya sudah ada di model Transaction (date,
-  // txId, party, description, status) tetap memakai data asli — cuma judulnya
-  // yang disesuaikan (mis. "TX ID" -> "Invoice"). Kolom yang belum ada
-  // sumber datanya di model Transaction saat ini (DPP, PPN, PPh, Gross, Paid,
-  // Outstanding, Due Date, Journal) SENGAJA dikosongkan dulu ('—') sesuai
-  // permintaan — isi datanya menyusul, fokus dulu ke struktur kolom.
-  // [DIUBAH] Kolom yang tadinya kosong (DPP, PPN, PPh, Gross, Paid,
-  // Outstanding, Due Date, Journal) sekarang diisi data TURUNAN dari
-  // transaksi asli (bukan angka acak) — supaya format & perhitungannya
-  // sudah benar duluan, tinggal gampang disambungkan ke sumber data pajak
-  // yang sebenarnya nanti kalau sudah ada:
-  //  - Gross  = txAmount(r) → nilai baris (debit+kredit)
-  //  - DPP    = Gross ÷ 1,11 (asumsi tarif PPN 11%)
-  //  - PPN    = Gross − DPP
-  //  - PPh    = 1% dari DPP (placeholder, belum ada aturan tarif riil)
-  //  - Paid   = Gross kalau status Posted/Reconciled (dianggap lunas),
-  //             0 kalau masih Unposted/Draft/Voided
-  //  - Outstanding = Gross − Paid
-  //  - Due Date = tanggal transaksi + 14 hari (termin standar)
-  //  - Journal  = jeId, fallback ke reference kalau jeId kosong
-  const columns = [
-    { key: 'date', label: t('Date'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap', render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'txId', label: t('Invoice'), headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap', render: (r: Transaction) => <span className="font-mono text-xs text-teal-600">{r.txId}</span> },
-    { key: 'party', label: t('Customer'), headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap', render: (r: Transaction) => <span className="font-medium text-xs">{r.party}</span> },
-    // [DIUBAH] Description sebelumnya truncate/wrap (max-w-xs truncate block)
-    // — sekarang whitespace-nowrap juga, sesuai permintaan: biar tabel
-    // melebar ke kanan & discroll, bukan ada isi sel yang menurun.
-    { key: 'description', label: t('Description'), headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap', render: (r: Transaction) => <span className="text-xs text-muted-foreground">{r.description}</span> },
-    {
-      key: 'dpp', label: t('DPP'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => <span className="font-mono text-xs">{formatIDR(txAmount(r) / 1.11, true)}</span>,
-    },
-    {
-      key: 'ppn', label: t('PPN'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => {
-        const gross = txAmount(r);
-        const dpp = gross / 1.11;
-        return <span className="font-mono text-xs">{formatIDR(gross - dpp, true)}</span>;
-      },
-    },
-    {
-      key: 'pph', label: t('PPh'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => {
-        const dpp = txAmount(r) / 1.11;
-        return <span className="font-mono text-xs">{formatIDR(dpp * 0.01, true)}</span>;
-      },
-    },
-    {
-      key: 'gross', label: t('Gross'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => <span className="font-mono text-xs font-semibold">{formatIDR(txAmount(r), true)}</span>,
-    },
-    {
-      key: 'paid', label: t('Paid'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => {
-        const lunas = r.status === 'Posted' || r.status === 'Reconciled';
-        return <span className="font-mono text-xs">{lunas ? formatIDR(txAmount(r), true) : formatIDR(0, true)}</span>;
-      },
-    },
-    {
-      key: 'outstanding', label: t('Outstanding'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => {
-        const gross = txAmount(r);
-        const lunas = r.status === 'Posted' || r.status === 'Reconciled';
-        const outstanding = lunas ? 0 : gross;
-        return <span className={`font-mono text-xs ${outstanding > 0 ? 'text-amber-600 font-semibold' : ''}`}>{formatIDR(outstanding, true)}</span>;
-      },
-    },
-    {
-      key: 'dueDate', label: t('Due Date'), sortable: true, headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(tambahHariISO(r.date, 14))}</span>,
-    },
-    {
-      key: 'journal', label: t('Journal'), headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap',
-      render: (r: Transaction) => <span className="font-mono text-xs text-muted-foreground">{r.jeId || r.reference || '—'}</span>,
-    },
-    { key: 'status', label: t('Status'), headerClassName: 'text-center whitespace-nowrap', className: 'whitespace-nowrap', render: (r: Transaction) => <StatusBadge variant={statusVariant[r.status] || 'neutral'} label={t(r.status)} dot /> },
-  ];
+  const thClass = 'text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap';
 
   return (
     <div className="space-y-5">
-      {/* [DIHAPUS] Judul "Sales" + subjudul dihapus dari sini — sudah
-          ditampilkan oleh SalesClient (header halaman + tab). */}
-
-      {/* Peringatan integritas data — cuma tampil kalau ada baris Sales
-          tanpa jeId, yang berarti akurasi KPI di bawah (terutama Total
-          Sales) bergantung pada fallback pencocokan `reference`. */}
-      {missingJeIdCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">{t('Perhatian:')}</span>
-          <span>
-            {missingJeIdCount} {t('baris transaksi Sales tidak memiliki nomor jurnal (jeId). KPI di bawah tetap dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.')}
-          </span>
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          <span className="font-semibold">{t('Error:')}</span>
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Peringatan integritas data — jurnal dengan 2+ baris yang total
-          debit & kreditnya tidak sama. */}
-      {unbalanced.length > 0 && (
+      {/* Invoice yang belum diposting tetap dihitung di Total Sales, tapi
+          diberi peringatan supaya jelas mana yang belum resmi masuk jurnal. */}
+      {pendingCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <span className="font-semibold">{t('Perhatian:')}</span>
           <span>
-            {unbalanced.length} {t('jurnal Sales tidak balance (total debit ≠ total kredit) — contoh:')} {unbalanced[0].jeId}
-            {' '}({t('selisih')} {formatIDR(unbalanced[0].diff, true)}). {t('Total Sales tetap dihitung dari sisi yang lebih besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.')}
-          </span>
-        </div>
-      )}
-
-      {/* Peringatan: transaksi Draft (pending approval) sengaja dikeluarkan
-          dari Total Sales. */}
-      {draftCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">{t('Perhatian:')}</span>
-          <span>
-            {draftCount} {t('transaksi Sales senilai')} {formatIDR(draftTotal, true)} {t('masih berstatus Draft (menunggu approval) — belum termasuk dalam Total Sales di bawah sampai disetujui.')}
+            {pendingCount} {t('invoices worth')} {formatIDR(pendingTotal, true)} {t('are not posted yet (Draft / Review / Approved) — they are included in Total Sales, but not in Paid, Accounts Receivable, or Overdue.')}
           </span>
         </div>
       )}
@@ -419,25 +379,14 @@ export default function SalesOverview() {
           icon="ShoppingCartIcon"
           iconColor="text-teal-600"
           iconBg="bg-teal-50"
-          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} ${t('pending approval')}` : undefined}
+          subLabel={txCount > 0 ? `${formatIDR(postedTotal, true)} ${t('posted')}` : undefined}
         />
         <KpiCard title={t('Number of Transactions')} value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title={t('Average per Transaction')} value={avgTxValue} icon="CalculatorIcon" iconColor="text-orange-600" iconBg="bg-orange-50" />
-        <KpiCard title={t('Unposted')} value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />
+        <KpiCard title={t('Not Posted')} value={String(pendingCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={pendingCount > 0} />
         <KpiCard title={t('Reconciliation')} value={`${reconciledPct.toFixed(0)}%`} icon="CheckCircleIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
       </div>
 
-      {/* [BARU] KPI baris ke-2 — melengkapi kolom tabel Sales (DPP, PPN, PPh,
-          Paid, Outstanding, Due Date) yang sebelumnya belum punya KPI card
-          sendiri. Semua nilai turunan langsung dari salesTx, rumus sama
-          persis dengan kolom terkait di tabel di bawah.
-          [DIUBAH] 3 judul disamakan dengan istilah akuntansi standar sesuai
-          permintaan: "Total Outstanding" → "Accounts Receivable" (pakai key
-          terjemahan yang sudah ada, dipakai juga di Financial Overview),
-          "Total PPN" → "VAT Output", "Total Dibayar" → "Paid". Semua judul
-          & sublabel di baris ini sekarang ikut berubah sesuai fitur bahasa
-          di header (lihat useLanguage()/t() di atas), bukan lagi teks
-          statis Bahasa Indonesia. */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <KpiCard title={t('Total Tax Base (DPP)')} value={totalDPP} icon="ScaleIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
         <KpiCard title={t('VAT Output')} value={totalPPN} icon="ReceiptPercentIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
@@ -465,12 +414,23 @@ export default function SalesOverview() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4">
-            <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{t('Berdasarkan transaksi yang tercatat di halaman Transaksi')}</p>
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('Based on invoice date, gross amount')}</p>
+            </div>
+            {availableYears.length > 1 && (
+              <select
+                value={trendYear}
+                onChange={(e) => setPickedYear(Number(e.target.value))}
+                className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground"
+              >
+                {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            )}
           </div>
           {trend.every(pt => pt.total === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">{t('Belum ada transaksi Sales untuk ditampilkan.')}</p>
+            <p className="text-xs text-muted-foreground py-10 text-center">{loading ? t('Loading...') : t('No sales invoices to display yet.')}</p>
           ) : (
             <div className="relative">
               <ResponsiveContainer width="100%" height={220}>
@@ -520,19 +480,19 @@ export default function SalesOverview() {
         </div>
 
         <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">{t('Sales per Kategori')}</h2>
-          <p className="text-xs text-muted-foreground mb-3">{t('Breakdown pendapatan')}</p>
-          {byCategory.length === 0 ? (
+          <h2 className="text-sm font-bold text-foreground mb-1">{t('Sales per Branch')}</h2>
+          <p className="text-xs text-muted-foreground mb-3">{t('Gross sales by branch')}</p>
+          {byBranch.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada data.')}</p>
           ) : (
             <div className="space-y-2.5">
-              {byCategory.map((cat, i) => {
-                const total = byCategory.reduce((s, c) => s + c.value, 0);
+              {byBranch.map((cat, i) => {
+                const total = byBranch.reduce((s, c) => s + c.value, 0);
                 const pct = total > 0 ? (cat.value / total) * 100 : 0;
                 return (
                   <div key={cat.name}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{t(cat.name)}</span>
+                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name === 'Unassigned' ? t('Unassigned') : cat.name}</span>
                       <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 rounded-full">
@@ -575,20 +535,82 @@ export default function SalesOverview() {
         )}
       </div>
 
-      {/* Aksi & Upload Data + Tabel Transaksi Sales — digabung jadi 1 kolom,
-          aksi & filter di atas tabel. searchPlaceholder disesuaikan dengan
-          istilah kolom Sales yang baru (Invoice/Customer), khusus halaman
-          ini saja — halaman Expense/Purchase/dst tetap pakai teks default. */}
-      <TransactionsGroupPanel
-        group="sales"
-        groupLabel={t('Sales')}
-        defaultCategory="Revenue"
-        columns={columns}
-        onRowClick={setSelectedTx}
-        searchPlaceholder={t('Cari Invoice, deskripsi, customer, no. jurnal...')}
-      />
-
-      {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
+      {/* Tabel invoice Sales (read-only ringkasan -- edit/approve/posting ada di tab Sales Transaction) */}
+      {invoices.length === 0 ? (
+        <div className="card-elevated-md rounded-xl p-8 text-center text-xs text-muted-foreground">
+          {loading ? t('Loading...') : t('No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.')}
+        </div>
+      ) : (
+        <div className="card-elevated-md rounded-xl">
+          <div className="p-3 flex flex-wrap items-center gap-2 border-b border-border">
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setTablePage(1); }}
+              placeholder={t('Cari Invoice, deskripsi, customer, no. jurnal...')}
+              className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground w-full sm:w-72"
+            />
+            <select
+              value={branchFilter}
+              onChange={(e) => { setBranchFilter(e.target.value); setTablePage(1); }}
+              className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            >
+              <option value="all">{t('All Branches')}</option>
+              {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full min-w-[1300px]">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  {['Date', 'Invoice', 'Customer', 'Cabang', 'DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Journal', 'Status'].map((h) => (
+                    <th key={h} className={thClass}>{t(h)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.length === 0 && (
+                  <tr>
+                    <td colSpan={13} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td>
+                  </tr>
+                )}
+                {pagedRows.map((r) => (
+                  <tr key={r.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors text-xs">
+                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{formatTanggalSingkat(r.invoice_date)}</td>
+                    <td className="py-2.5 px-2 font-mono text-teal-600 whitespace-nowrap">{r.invoice_no}</td>
+                    <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{r.customer_name}</td>
+                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{r.cabang || '—'}</td>
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">{formatIDR(num(r.dpp))}</td>
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">{formatIDR(num(r.ppn))}</td>
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">{formatIDR(num(r.pph))}</td>
+                    <td className="py-2.5 px-2 text-right font-mono font-semibold whitespace-nowrap">{formatIDR(num(r.gross_amount))}</td>
+                    <td className="py-2.5 px-2 text-right font-mono whitespace-nowrap">{formatIDR(num(r.paid_amount))}</td>
+                    <td className={`py-2.5 px-2 text-right font-mono whitespace-nowrap ${isPosted(r) && num(r.outstanding_amount) > 0 ? 'text-amber-600 font-semibold' : ''}`}>{formatIDR(num(r.outstanding_amount))}</td>
+                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{r.due_date ? formatTanggalSingkat(r.due_date) : '—'}</td>
+                    <td className="py-2.5 px-2 font-mono text-muted-foreground whitespace-nowrap">{r.journal_entry_id ? `JE-${r.journal_entry_id}` : '—'}</td>
+                    <td className="py-2.5 px-2 whitespace-nowrap"><StatusBadge variant={statusVariant[r.posting_status] || 'neutral'} label={t(r.posting_status)} dot /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {tableRows.length === 0
+                ? t('Menampilkan 0 dari 0 transaksi')
+                : `${t('Menampilkan')} ${(tablePageSafe - 1) * TABLE_PAGE_SIZE + 1} - ${Math.min(tablePageSafe * TABLE_PAGE_SIZE, tableRows.length)} ${t('dari')} ${tableRows.length} ${t('transaksi')}`}
+            </span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setTablePage(tablePageSafe - 1)} disabled={tablePageSafe <= 1} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronLeft size={14} />
+              </button>
+              <span>{tablePageSafe} / {tableTotalPages}</span>
+              <button onClick={() => setTablePage(tablePageSafe + 1)} disabled={tablePageSafe >= tableTotalPages} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
