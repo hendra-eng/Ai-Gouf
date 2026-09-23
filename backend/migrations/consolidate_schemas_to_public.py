@@ -1,266 +1,160 @@
 """
 migrations/consolidate_schemas_to_public.py
 ============================================
-Migration untuk konsolidasi seluruh tabel yang sebelumnya tersebar di 7
-schema bernomor (dibuat manual lewat Supabase Table Editor) menjadi satu
-schema `public` saja:
+[REVISI] Versi awal file ini untuk MEMINDAHKAN tabel dari 7 schema
+bernomor (1_app..7_Management) ke schema public (ALTER TABLE ... SET
+SCHEMA) -- dipakai untuk database LAMA yang tabelnya sudah pernah
+dibuat manual lewat Supabase Table Editor di schema bernomor.
 
-    1_app            -> public   (7 tabel:  coa, journal_lines,
-                                   journal_entries, management_users,
-                                   management_audit_trails,
-                                   management_clients, core_sync_state)
-    2_Overview       -> public   (2 tabel:  overview_management_branches,
-                                   overview_financial_budget)
-    3_Financial      -> public   (20 tabel: seluruh finance_transaction_*,
-                                   finance_account_receivable_*,
-                                   finance_account_payable_*,
-                                   finance_financial_statement_*)
-    4_Assets_Equity  -> public   (1 tabel:  asset_fixed_assets)
-    5_Planning       -> public   (4 tabel:  planning_budget_forecast_*,
-                                   planning_tax_compliance_*)
-    6_Intelligence   -> public   (4 tabel:  intelligence_audit_*)
-    7_Management     -> public   (3 tabel:  management_report_registry,
-                                   management_report_schedule,
-                                   management_documents)
+Untuk database BARU / KOSONG (mis. project Supabase baru yang mau
+ditanam di cloud dan belum punya tabel sama sekali), migration "pindah
+schema" itu tidak relevan -- tidak ada apa pun untuk dipindah. Yang
+dibutuhkan justru MEMBUAT seluruh struktur tabel dari nol, langsung di
+schema public, mengikuti definisi model SQLAlchemy di db_client.py
+(satu-satunya sumber kebenaran struktur tabel aplikasi ini).
 
-Latar belakang: db_client.py sudah diubah supaya SEMUA model SQLAlchemy
-tidak lagi menunjuk ke schema bernomor (lihat __table_args__ /
-ForeignKey yang sudah tidak ada prefix "1_app."/"3_Financial."/dst) --
-sekarang semuanya mengasumsikan tabel ada di `public`. Migration ini
-yang menyesuaikan struktur database SUPABASE-nya supaya cocok dengan
-kode tersebut. Kalau migration ini belum dijalankan di database kamu,
-backend akan error "relation does not exist" begitu db_client.py versi
-baru dipakai.
+File ini sekarang membuat SELURUH 60 tabel aplikasi yang benar-benar
+dipakai kode (mencakup semua fitur/halaman: Overview, Transactions
+[Bank & Cash/Other/Purchase], AR/AP, Budget & Forecast, Tax &
+Compliance, Audit, Financial Statements, Assets, Documents/Reports,
+Agent AI, Core Accounting, dst) langsung di schema public, lewat
+SQLAlchemy Base.metadata.create_all -- urutan CREATE TABLE (mis. tabel
+yang direferensikan foreign key harus dibuat lebih dulu) DIHITUNG
+OTOMATIS oleh SQLAlchemy, tidak perlu ditulis manual satu-satu.
 
-CATATAN KHUSUS constraint name collision:
-    Tabel "3_Financial".finance_transaction_purchase_journal_lines
-    ternyata primary key-nya salah diberi nama "journal_entries_pkey"
-    (bentrok persis dengan pkey asli tabel journal_entries). Kalau
-    dua-duanya dipindah ke schema yang sama, Postgres menolak karena
-    nama constraint harus unik per-schema. Migration ini rename pkey
-    journal_entries -> "journal_entries_pkey_app" dulu sebelum
-    memindahkan tabelnya (aman, sekadar ganti nama constraint, tidak
-    menyentuh data).
+SENGAJA tidak memakai Base.metadata.create_all() TANPA filter, karena
+db_client.py juga masih menyimpan beberapa model lama/duplikat (prefix
+"financial_transaction_*" untuk Sales/Purchase/Journal Entry) yang
+sudah digantikan model baru (prefix "finance_transaction_*") dan tidak
+lagi dipakai kode -- daftar TABEL_APLIKASI di bawah cuma yang aktif.
 
-Operasi yang dipakai: ALTER TABLE ... SET SCHEMA public. Ini murni
-operasi metadata Postgres -- TIDAK menyalin ulang baris data, TIDAK
-mengubah isi tabel, dan foreign key antar tabel tetap valid apa pun
-schema-nya. Setelah semua tabel dipindah, ketujuh schema lama (yang
-jadi kosong) ikut dihapus.
+AMAN DIPANGGIL BERKALI-KALI (idempoten) -- checkfirst=True, tabel yang
+sudah ada otomatis di-skip, tidak ada data yang dihapus/ditimpa.
 
-AMAN DIPANGGIL BERKALI-KALI (idempoten):
-    - Tabel yang sudah ada di public (baik karena memang sudah dipindah
-      duluan, atau memang dari awal sudah di public) otomatis di-skip.
-    - Schema yang sudah tidak ada (sudah pernah dihapus run sebelumnya)
-      juga di-skip, tidak dianggap error.
-
-Cara pakai:
+Cara pakai (di database/project Supabase baru yang masih kosong):
     cd backend
     python migrations/consolidate_schemas_to_public.py
-    (atau di Windows: venv\\Scripts\\python migrations\\consolidate_schemas_to_public.py)
+    (Windows: venv\\Scripts\\python migrations\\consolidate_schemas_to_public.py)
 """
 
 import sys
 from pathlib import Path
 
-# Bisa dijalankan langsung dari root backend (file ini sejajar dengan
-# db_client.py) ATAU dari dalam folder migrations/ -- kedua kasus
-# ditangani dengan menambahkan folder parent ke sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import text
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
+from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from db_client import engine
+from db_client import engine, Base
 
 
-# (schema_lama, nama_tabel) -> akan dipindah ke public
-TABEL_YANG_DIPINDAH = [
-    # 1_app
-    ("1_app", "coa"),
-    ("1_app", "journal_lines"),
-    ("1_app", "journal_entries"),
-    ("1_app", "management_users"),
-    ("1_app", "management_audit_trails"),
-    ("1_app", "management_clients"),
-    ("1_app", "core_sync_state"),
-    # 2_Overview
-    ("2_Overview", "overview_management_branches"),
-    ("2_Overview", "overview_financial_budget"),
-    # 3_Financial
-    ("3_Financial", "finance_transaction_purchase_vendor"),
-    ("3_Financial", "finance_transaction_purchase_transaction"),
-    ("3_Financial", "finance_transaction_purchase_source_data"),
-    ("3_Financial", "finance_transaction_purchase_line_items"),
-    ("3_Financial", "finance_transaction_purchase_journal_lines"),
-    ("3_Financial", "finance_transaction_purchase_exceptions"),
-    ("3_Financial", "finance_transaction_purchase_activity_log"),
-    ("3_Financial", "finance_transaction_bank_cash"),
-    ("3_Financial", "finance_transaction_bank_cash_activity_log"),
-    ("3_Financial", "finance_transaction_other"),
-    ("3_Financial", "finance_transaction_other_activity_log"),
-    ("3_Financial", "finance_account_receivable_ar_customer"),
-    ("3_Financial", "finance_account_receivable_ar_invoice"),
-    ("3_Financial", "finance_account_receivable_ar_payment"),
-    ("3_Financial", "finance_account_receivable_ar_collection_note"),
-    ("3_Financial", "finance_account_payable_ap_payment"),
-    ("3_Financial", "finance_account_payable_ap_note"),
-    ("3_Financial", "finance_financial_statement_profit_loss_insights"),
-    ("3_Financial", "finance_financial_statement_cash_flow_forecast"),
-    ("3_Financial", "finance_financial_statement_profit_loss_budget_line"),
-    # 4_Assets_Equity
-    ("4_Assets_Equity", "asset_fixed_assets"),
-    # 5_Planning
-    ("5_Planning", "planning_budget_forecast_assumption"),
-    ("5_Planning", "planning_budget_forecast_scenario"),
-    ("5_Planning", "planning_tax_compliance_fiscal_correction"),
-    ("5_Planning", "planning_tax_compliance_task"),
-    # 6_Intelligence
-    ("6_Intelligence", "intelligence_audit_finding"),
-    ("6_Intelligence", "intelligence_audit_stage"),
-    ("6_Intelligence", "intelligence_audit_activity"),
-    ("6_Intelligence", "intelligence_audit_evidence"),
-    # 7_Management
-    ("7_Management", "management_report_registry"),
-    ("7_Management", "management_report_schedule"),
-    ("7_Management", "management_documents"),
-]
-
-SCHEMA_LAMA = [
-    "1_app", "2_Overview", "3_Financial",
-    "4_Assets_Equity", "5_Planning", "6_Intelligence", "7_Management",
+# Daftar tabel aplikasi yang benar-benar dipanggil kode (hasil audit
+# terhadap database produksi), dikelompokkan per fitur/halaman supaya
+# gampang ditelusuri.
+TABEL_APLIKASI = [
+    # --- Core accounting ---
+    "management_clients", "management_users", "user_client_access",
+    "management_audit_trails",
+    "coa", "standard_accounts", "account_roles", "coa_standard_mapping",
+    "company_account_roles",
+    "journal_entries", "journal_lines", "jurnal_posting",
+    "riwayat_saldo_bulanan", "voucher_counter", "upload_batches",
+    "laporan_keuangan",
+    # --- Overview ---
+    "overview_management_branches", "overview_financial_budget",
+    # --- Sales/ESB lama ---
+    "esb_accounts", "hasil_esb",
+    # --- Transaksi: Bank & Cash ---
+    "finance_transaction_bank_cash", "finance_transaction_bank_cash_activity_log",
+    # --- Transaksi: Other ---
+    "finance_transaction_other", "finance_transaction_other_activity_log",
+    # --- Transaksi: Purchase ---
+    "finance_transaction_purchase_vendor", "finance_transaction_purchase_transaction",
+    "finance_transaction_purchase_line_items", "finance_transaction_purchase_source_data",
+    "finance_transaction_purchase_journal_lines", "finance_transaction_purchase_exceptions",
+    "finance_transaction_purchase_activity_log",
+    # --- AR / AP ---
+    "finance_account_receivable_ar_customer", "finance_account_receivable_ar_invoice",
+    "finance_account_receivable_ar_payment", "finance_account_receivable_ar_collection_note",
+    "finance_account_payable_ap_payment", "finance_account_payable_ap_note",
+    # --- Budget & Forecast ---
+    "planning_budget_forecast_assumption", "planning_budget_forecast_scenario",
+    # --- Tax & Compliance ---
+    "planning_tax_compliance_fiscal_correction", "planning_tax_compliance_task",
+    # --- Audit (Intelligence) ---
+    "intelligence_audit_finding", "intelligence_audit_stage",
+    "intelligence_audit_activity", "intelligence_audit_evidence",
+    # --- Financial Statements ---
+    "finance_financial_statement_profit_loss_insights",
+    "finance_financial_statement_cash_flow_forecast",
+    "finance_financial_statement_profit_loss_budget_line",
+    # --- Assets ---
+    "asset_fixed_assets",
+    # --- Documents / Reports ---
+    "management_documents", "management_report_registry", "management_report_schedule",
+    # --- Agent AI / chat ---
+    "percakapan", "pesan_chat", "hasil_analisis", "pola_augmentasi",
+    "pertanyaan_klarifikasi", "alert_anomali", "reminder_deadline_spt",
+    # --- Laporan lama ---
+    "hasil",
 ]
 
 
-def _tabel_ada_di_schema(connection, schema: str, table: str) -> bool:
-    row = connection.execute(
-        text(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = :schema AND table_name = :table"
-        ),
-        {"schema": schema, "table": table},
-    ).first()
-    return row is not None
-
-
-def _constraint_ada(connection, schema: str, conname: str) -> bool:
-    row = connection.execute(
-        text(
-            "SELECT 1 FROM pg_constraint con "
-            "JOIN pg_class c ON c.oid = con.conrelid "
-            "JOIN pg_namespace n ON n.oid = c.relnamespace "
-            "WHERE n.nspname = :schema AND con.conname = :conname"
-        ),
-        {"schema": schema, "conname": conname},
-    ).first()
-    return row is not None
-
-
-def _fix_pkey_collision(connection) -> None:
-    """Rename pkey journal_entries di 1_app sebelum dipindah, supaya
-    tidak bentrok dengan pkey (yang salah nama) milik
-    finance_transaction_purchase_journal_lines saat keduanya jadi satu
-    schema."""
-    if not _tabel_ada_di_schema(connection, "1_app", "journal_entries"):
-        return  # sudah dipindah / tidak ada -> tidak relevan lagi
-    if _constraint_ada(connection, "1_app", "journal_entries_pkey_app"):
-        return  # rename sudah pernah dijalankan
-    if not _constraint_ada(connection, "1_app", "journal_entries_pkey"):
-        return  # nama constraint sudah berbeda dari asumsi -- skip, jangan tebak
-    try:
-        connection.execute(
-            text('ALTER TABLE "1_app".journal_entries RENAME CONSTRAINT journal_entries_pkey TO journal_entries_pkey_app')
-        )
-        connection.commit()
-        print("✅ Rename constraint 'journal_entries_pkey' -> 'journal_entries_pkey_app' (hindari bentrok nama).")
-    except (OperationalError, ProgrammingError) as e:
-        connection.rollback()
-        print(f"⚠️  Gagal rename constraint journal_entries_pkey: {e}")
-
-
-def _pindahkan_tabel(connection, schema: str, table: str) -> bool:
-    if _tabel_ada_di_schema(connection, "public", table) and not _tabel_ada_di_schema(connection, schema, table):
-        print(f"⏭️  '{table}' sudah di public, skip.")
-        return True
-    if not _tabel_ada_di_schema(connection, schema, table):
-        print(f"⏭️  '{schema}.{table}' tidak ditemukan (mungkin sudah dipindah atau memang tidak ada), skip.")
-        return True
-    try:
-        connection.execute(text(f'ALTER TABLE "{schema}".{table} SET SCHEMA public'))
-        connection.commit()
-        print(f"✅ '{schema}.{table}' -> 'public.{table}'")
-        return True
-    except (OperationalError, ProgrammingError) as e:
-        connection.rollback()
-        print(f"❌ Gagal pindahkan '{schema}.{table}': {e}")
-        return False
-
-
-def _hapus_schema_kosong(connection, schema: str) -> bool:
-    row = connection.execute(
-        text("SELECT 1 FROM information_schema.schemata WHERE schema_name = :schema"),
-        {"schema": schema},
-    ).first()
-    if row is None:
-        print(f"⏭️  Schema '{schema}' sudah tidak ada, skip.")
-        return True
-    sisa = connection.execute(
-        text("SELECT count(*) FROM information_schema.tables WHERE table_schema = :schema"),
-        {"schema": schema},
-    ).scalar()
-    if sisa and sisa > 0:
-        print(f"⚠️  Schema '{schema}' masih punya {sisa} tabel tersisa, TIDAK dihapus (cek manual).")
-        return False
-    try:
-        connection.execute(text(f'DROP SCHEMA "{schema}" RESTRICT'))
-        connection.commit()
-        print(f"✅ Schema '{schema}' dihapus (sudah kosong).")
-        return True
-    except (OperationalError, ProgrammingError) as e:
-        connection.rollback()
-        print(f"⚠️  Gagal hapus schema '{schema}' (mungkin masih ada objek lain seperti sequence/view): {e}")
-        return False
+def _tabel_ada(connection, table: str) -> bool:
+    return table in inspect(connection).get_table_names()
 
 
 def main() -> int:
     print("=" * 70)
-    print("🔄 MIGRATION: Konsolidasi schema 1_app..7_Management -> public")
+    print("🔄 MIGRATION: buat seluruh struktur tabel aplikasi di schema public")
     print("=" * 70)
 
-    hasil_pindah = {}
-    with engine.connect() as connection:
-        _fix_pkey_collision(connection)
-        for schema, table in TABEL_YANG_DIPINDAH:
-            hasil_pindah[f"{schema}.{table}"] = _pindahkan_tabel(connection, schema, table)
+    tabel_objek = []
+    tidak_ditemukan = []
+    for nama in TABEL_APLIKASI:
+        if nama in Base.metadata.tables:
+            tabel_objek.append(Base.metadata.tables[nama])
+        else:
+            tidak_ditemukan.append(nama)
 
+    if tidak_ditemukan:
+        print(f"⚠️  {len(tidak_ditemukan)} nama tabel tidak ditemukan modelnya di db_client.py, dilewati: {tidak_ditemukan}")
+
+    with engine.connect() as connection:
+        sudah_ada = [t.name for t in tabel_objek if _tabel_ada(connection, t.name)]
+        belum_ada = [t.name for t in tabel_objek if t.name not in sudah_ada]
+
+        print(f"⏭️  {len(sudah_ada)} tabel sudah ada, di-skip.")
+        print(f"🆕 {len(belum_ada)} tabel akan dibuat...")
         print()
-        print("-" * 70)
-        print("🗑️  Menghapus schema lama yang sudah kosong...")
-        print("-" * 70)
-        hasil_hapus = {}
-        for schema in SCHEMA_LAMA:
-            hasil_hapus[schema] = _hapus_schema_kosong(connection, schema)
+
+        try:
+            # create_all otomatis meng-urutkan tabel sesuai foreign key
+            # dependency antar tabel dalam daftar ini -- tidak perlu
+            # ditulis urut manual.
+            Base.metadata.create_all(bind=connection.engine, tables=tabel_objek, checkfirst=True)
+            connection.commit()
+            for nama in belum_ada:
+                print(f"✅ Tabel '{nama}' berhasil dibuat.")
+        except (OperationalError, ProgrammingError) as e:
+            connection.rollback()
+            print(f"❌ Gagal membuat sebagian/seluruh tabel: {e}")
+            print("   Jalankan ulang script ini -- tabel yang sudah sempat dibuat akan otomatis di-skip.")
+            return 1
 
     print()
     print("=" * 70)
-    print("📋 RINGKASAN MIGRATION")
+    print(f"📋 RINGKASAN: {len(tabel_objek)} tabel target | {len(sudah_ada)} sudah ada sebelumnya | {len(belum_ada)} baru dibuat")
     print("=" * 70)
-    gagal_pindah = [k for k, v in hasil_pindah.items() if not v]
-    gagal_hapus = [k for k, v in hasil_hapus.items() if not v]
-    print(f"Tabel dipindah  : {len(hasil_pindah) - len(gagal_pindah)}/{len(hasil_pindah)} berhasil")
-    print(f"Schema dihapus  : {len(hasil_hapus) - len(gagal_hapus)}/{len(hasil_hapus)} berhasil")
-    if gagal_pindah:
-        print(f"❌ Tabel gagal dipindah: {gagal_pindah}")
-    if gagal_hapus:
-        print(f"⚠️  Schema belum terhapus: {gagal_hapus}")
-    print("=" * 70)
-
-    if not gagal_pindah and not gagal_hapus:
-        print("✅ SEMUA migration berhasil!")
-        return 0
-    print("⚠️  Ada langkah yang gagal/perlu dicek manual. Lihat log di atas.")
-    return 1
+    print("✅ SEMUA migration berhasil!")
+    return 0
 
 
 if __name__ == "__main__":
