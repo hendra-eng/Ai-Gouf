@@ -13,20 +13,22 @@ dibutuhkan justru MEMBUAT seluruh struktur tabel dari nol, langsung di
 schema public, mengikuti definisi model SQLAlchemy di db_client.py
 (satu-satunya sumber kebenaran struktur tabel aplikasi ini).
 
-File ini sekarang membuat SELURUH 60 tabel aplikasi yang benar-benar
-dipakai kode (mencakup semua fitur/halaman: Overview, Transactions
-[Bank & Cash/Other/Purchase], AR/AP, Budget & Forecast, Tax &
-Compliance, Audit, Financial Statements, Assets, Documents/Reports,
-Agent AI, Core Accounting, dst) langsung di schema public, lewat
-SQLAlchemy Base.metadata.create_all -- urutan CREATE TABLE (mis. tabel
-yang direferensikan foreign key harus dibuat lebih dulu) DIHITUNG
-OTOMATIS oleh SQLAlchemy, tidak perlu ditulis manual satu-satu.
+File ini membuat 36 tabel FITUR (bukan tabel core/sistem) -- cuma yang
+dikerjakan Hendra: Overview, Transactions [Bank & Cash/Other/
+Purchase], AR/AP, Budget & Forecast, Tax & Compliance, Audit,
+Financial Statements, Assets, Documents/Reports -- langsung di schema
+public, lewat SQLAlchemy Base.metadata.create_all -- urutan CREATE
+TABLE (tabel yang direferensikan foreign key dibuat lebih dulu)
+DIHITUNG OTOMATIS oleh SQLAlchemy.
 
-SENGAJA tidak memakai Base.metadata.create_all() TANPA filter, karena
-db_client.py juga masih menyimpan beberapa model lama/duplikat (prefix
-"financial_transaction_*" untuk Sales/Purchase/Journal Entry) yang
-sudah digantikan model baru (prefix "finance_transaction_*") dan tidak
-lagi dipakai kode -- daftar TABEL_APLIKASI di bawah cuma yang aktif.
+⚠️  ASUMSI PENTING: SELURUH 36 tabel di bawah punya foreign key ke
+    management_clients(id) (dan finance_transaction_purchase_
+    activity_log juga FK ke finance_transaction_purchase_transaction).
+    Tabel management_clients (dan tabel core/sistem lain: management_
+    users, coa, journal_entries, dst) TIDAK dibuat oleh file ini --
+    HARUS sudah ada lebih dulu di database target, kalau belum,
+    CREATE TABLE bakal gagal dengan error "relation management_clients
+    does not exist".
 
 AMAN DIPANGGIL BERKALI-KALI (idempoten) -- checkfirst=True, tabel yang
 sudah ada otomatis di-skip, tidak ada data yang dihapus/ditimpa.
@@ -55,18 +57,9 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from db_client import engine, Base
 
 
-# Daftar tabel aplikasi yang benar-benar dipanggil kode (hasil audit
-# terhadap database produksi), dikelompokkan per fitur/halaman supaya
-# gampang ditelusuri.
+# Daftar tabel FITUR (bukan core/sistem) yang dikerjakan Hendra --
+# 36 tabel, dikelompokkan per fitur/halaman supaya gampang ditelusuri.
 TABEL_APLIKASI = [
-    # --- Core accounting ---
-    "management_clients", "management_users", "user_client_access",
-    "management_audit_trails",
-    "coa", "standard_accounts", "account_roles", "coa_standard_mapping",
-    "company_account_roles",
-    "journal_entries", "journal_lines", "jurnal_posting",
-    "riwayat_saldo_bulanan", "voucher_counter", "upload_batches",
-    "laporan_keuangan",
     # --- Overview ---
     "overview_management_branches", "overview_financial_budget",
     # --- Sales/ESB lama ---
@@ -99,11 +92,6 @@ TABEL_APLIKASI = [
     "asset_fixed_assets",
     # --- Documents / Reports ---
     "management_documents", "management_report_registry", "management_report_schedule",
-    # --- Agent AI / chat ---
-    "percakapan", "pesan_chat", "hasil_analisis", "pola_augmentasi",
-    "pertanyaan_klarifikasi", "alert_anomali", "reminder_deadline_spt",
-    # --- Laporan lama ---
-    "hasil",
 ]
 
 
@@ -113,7 +101,7 @@ def _tabel_ada(connection, table: str) -> bool:
 
 def main() -> int:
     print("=" * 70)
-    print("🔄 MIGRATION: buat seluruh struktur tabel aplikasi di schema public")
+    print("🔄 MIGRATION: buat 36 tabel fitur (Overview..Documents/Reports) di schema public")
     print("=" * 70)
 
     tabel_objek = []
