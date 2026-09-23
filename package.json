@@ -1,5 +1,5 @@
 {
-  "name": "finovaai",
+  "name": "GoufApp",
   "version": "0.1.0",
   "private": true,
   "rocketCritical": {
@@ -42,6 +42,7 @@
     "dev": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:dev:frontend\" \"npm:dev:backend\"",
     "build": "next build",
     "start": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:start:frontend\" \"npm:start:backend\"",
+    "start:full": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:dev:frontend\" \"npm:dev:backend\"",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",

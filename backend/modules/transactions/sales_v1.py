@@ -346,7 +346,7 @@ def buat_source_file(
     responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}},
 )
 def daftar_source_file(
-    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id_user)."),
+    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id)."),
     termasuk_nonaktif: bool = Query(False, description="Sertakan yang sudah di-soft-delete."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):

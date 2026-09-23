@@ -136,7 +136,7 @@ export default function TaxObligationTable() {
             {paginated.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  No tax obligations found. They appear here once tax payment journals (category "Tax") are posted for this client.
+                  No tax obligations found. They appear here once tax payment journals (category &quot;Tax&quot;) are posted for this client.
                 </td>
               </tr>
             )}

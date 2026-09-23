@@ -635,7 +635,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
             <>
               <AlertTriangle size={12} className="flex-shrink-0" />
               Belum ada client aktif — hasil upload ini tidak akan tersimpan ke riwayat client mana pun.
-              Pilih client dulu lewat "Switch Company" di header.
+              Pilih client dulu lewat &quot;Switch Company&quot; di header.
             </>
           )}
         </div>
@@ -721,7 +721,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   <p className="text-2xs text-muted-foreground mt-0.5">
                     Kalau dimatikan (default), kategorisasi hanya dari pola historis &amp; kata kunci COA —
                     tanpa API key, tanpa panggilan ke server AI pihak ketiga. Baris yang tidak cocok akan
-                    ditandai "Belum Terkategori" untuk direview manual. Toggle ini juga dipakai untuk
+                    ditandai &quot;Belum Terkategori&quot; untuk direview manual. Toggle ini juga dipakai untuk
                     bantuan Claude mengenali kode bank pada nomor voucher kalau nama sheet/banknya tidak
                     baku — kalau dimatikan, kode bank yang ambigu akan ditebak dari kata terakhir saja
                     dan ditandai untuk dicek manual.
@@ -857,7 +857,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 <p className="text-xs text-foreground">
                   Seluruh transaksi hasil import ini akan masuk dengan status{' '}
                   <span className="font-600">Unposted</span>. Tinjau datanya, lalu posting semua
-                  sekaligus lewat tombol <span className="font-600">"Posting Semua"</span> di
+                  sekaligus lewat tombol <span className="font-600">&quot;Posting Semua&quot;</span> di
                   sebelah Filter Lanjutan pada halaman Transaksi.
                 </p>
               </div>

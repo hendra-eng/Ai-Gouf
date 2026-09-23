@@ -290,7 +290,7 @@ def buat_source_record(
     responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}},
 )
 def daftar_source_record(
-    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id_user)."),
+    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id)."),
     source_type: Optional[str] = Query(None, description="Sales/Purchase/Payroll/Bank/Cash/Expense/Inventory/Fixed Assets/Tax/Manual"),
     mapping_status: Optional[str] = Query(None, description="Mapped/Pending Mapping/Validation Error/Imported"),
     termasuk_nonaktif: bool = Query(False, description="Sertakan yang sudah di-soft-delete."),
