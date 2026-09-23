@@ -3221,6 +3221,21 @@ def _panggil_ai_batch_json(items: list, api_key: str, buat_prompt, model: str = 
     return hasil_total, log_kegagalan
 
 
+def ambil_teks_dari_response(response) -> str:
+    """[BARU -- FIX] Ambil teks jawaban dari response Anthropic Messages
+    API. response.content adalah list of content block (bisa lebih dari
+    1 kalau ada extended thinking/tool use) -- ambil blok pertama yang
+    tipenya "text". Sebelumnya fungsi ini dipanggil di
+    _proses_satu_chunk_ai_claude() tapi belum pernah didefinisikan
+    (NameError setiap kali fungsi itu dipanggil)."""
+    for block in getattr(response, "content", []) or []:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    # Fallback: struktur lama/tak terduga -- tetap coba akses langsung
+    # supaya error yang muncul (kalau ada) lebih jelas dari NameError.
+    return response.content[0].text
+
+
 def _proses_satu_chunk_ai_claude(
     chunk: list, chunk_index: int, client, model: str, buat_prompt,
     token_dasar: int, token_per_item: int, max_percobaan: int,
