@@ -16,7 +16,11 @@ import { getNiceTicksFromZero } from '@/lib/chartTicks';
 // utk detail sumber & keterbatasannya). REVENUE_BY_CUSTOMER/BUDGET_VS_ACTUAL/
 // PL_AI_INSIGHTS di atas TETAP data contoh (financialData.tsx) -- belum ada
 // sumber data backend utk itu.
-import { useProfitLossData, type MonthlyPLRow } from '../lib/useProfitLossData';
+// [UPDATE] Sumber data sekarang API /api/v1/financial-statements (transaksi
+// POSTED fitur Transactions) lewat useProfitLossStatement() -- bentuk data
+// sama dengan useProfitLossData() lama.
+import { type MonthlyPLRow } from '../lib/useProfitLossData';
+import { useProfitLossStatement } from '../lib/useStatementData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import {
@@ -365,7 +369,7 @@ export default function ProfitLossPage() {
     loading, isSampleData, companyName, periodLabel,
     PL_CORE: hookPLCore, MARGINS: hookMargins, MONTHLY_PL: hookMonthlyPL,
     REVENUE_BY_CATEGORY, EXPENSE_BREAKDOWN,
-  } = useProfitLossData();
+  } = useProfitLossStatement();
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);

@@ -7,48 +7,51 @@ import {
 import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-/* Waterfall data: base = invisible stack, bar = visible portion */
-const raw = [
-  { id: 'w-open',    name: 'Opening\nEquity',         absolute: 8420,   type: 'base',     display: '$8.42M'  },
-  { id: 'w-capital', name: 'Capital\nContributions',  absolute: 750,    type: 'positive', display: '+$750K'  },
-  { id: 'w-profit',  name: 'Net\nProfit',             absolute: 1840,   type: 'positive', display: '+$1.84M' },
-  { id: 'w-div',     name: 'Dividends',               absolute: -420,   type: 'negative', display: '($420K)' },
-  { id: 'w-adj',     name: 'Other\nAdjustments',      absolute: -85,    type: 'negative', display: '($85K)'  },
-  { id: 'w-close',   name: 'Closing\nEquity',         absolute: 10505,  type: 'base',     display: '$10.51M' },
-];
-
 const COLORS = {
   base:     'var(--primary)',
   positive: 'var(--positive)',
   negative: 'var(--negative)',
 };
 
-/* Compute base (transparent stack) and visible bar */
-const data = raw.map((item, idx) => {
-  if (item.type === 'base') return { ...item, base: 0, bar: item.absolute };
-  let running = 8420;
-  for (let i = 1; i < idx; i++) running += raw[i].absolute;
-  if (item.absolute >= 0) return { ...item, base: running, bar: item.absolute };
-  return { ...item, base: running + item.absolute, bar: Math.abs(item.absolute) };
-});
+export interface EquityBridgeValues { opening: number; capital: number; profit: number; dividends: number; adjustments: number }
 
-type EquityRow = typeof data[0];
+/* Waterfall data (juta rupiah): base = invisible stack, bar = visible portion */
+function buatData(v: EquityBridgeValues) {
+  const langkah = [
+    { id: 'w-capital', name: 'Capital\nContributions', absolute: v.capital },
+    { id: 'w-profit', name: 'Net\nProfit', absolute: v.profit },
+    { id: 'w-div', name: 'Dividends', absolute: v.dividends },
+    { id: 'w-adj', name: 'Other\nAdjustments', absolute: v.adjustments },
+  ];
+  const hasil = [{ id: 'w-open', name: 'Opening\nEquity', absolute: v.opening, type: 'base', display: formatLabel(v.opening, 'base'), base: 0, bar: Math.abs(v.opening) }];
+  let running = v.opening;
+  for (const l of langkah) {
+    const type = l.absolute < 0 ? 'negative' : 'positive';
+    const base = Math.max(0, l.absolute >= 0 ? running : running + l.absolute);
+    hasil.push({ ...l, type, display: formatLabel(l.absolute, type), base, bar: Math.abs(l.absolute) });
+    running += l.absolute;
+  }
+  hasil.push({ id: 'w-close', name: 'Closing\nEquity', absolute: running, type: 'base', display: formatLabel(running, 'base'), base: 0, bar: Math.abs(running) });
+  return hasil;
+}
+
+type EquityRow = ReturnType<typeof buatData>[number];
 
 const AXIS_WIDTH = 52;
 const AXIS_OVERLAY_WIDTH = AXIS_WIDTH + 4; // + margin.left dari BarChart
 const SPRING_DURATION_MS = 380;
 const easeOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-/** Format nilai jadi teks label sama gaya dgn data contoh ($8.42M / +$750K / ($420K)). */
+/** Format nilai (juta rupiah) jadi teks label: Rp 8,42M (miliar) / +Rp 750Jt / (Rp 420Jt). */
 function formatLabel(value: number, type: string) {
   const abs = Math.abs(value);
-  const num = abs >= 1000 ? `$${(abs / 1000).toFixed(2)}M` : `$${Math.round(abs)}K`;
+  const num = abs >= 1000 ? `Rp ${(abs / 1000).toFixed(2)}M` : abs < 10 ? `Rp ${abs.toFixed(2)}Jt` : `Rp ${Math.round(abs)}Jt`;
   if (type === 'positive') return `+${num}`;
-  if (type === 'negative') return `(${num})`;
+  if (type === 'negative' || value < 0) return `(${num})`;
   return num;
 }
 
-const fmtY = (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}M` : `$${v}K`;
+const fmtY = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}M` : `${v}Jt`;
 
 interface TooltipProps {
   active?: boolean;
@@ -77,12 +80,15 @@ function CustomTooltip({ active, payload, t, dragPreview }: TooltipProps) {
   );
 }
 
-export default function EquityBridgeChartInner() {
+const DEFAULT_VALUES: EquityBridgeValues = { opening: 8420, capital: 750, profit: 1840, dividends: -420, adjustments: -85 };
+
+export default function EquityBridgeChartInner({ values = DEFAULT_VALUES, periodLabel }: { values?: EquityBridgeValues; periodLabel?: string }) {
   const { t } = useLanguage();
+  const data = useMemo(() => buatData(values), [values]);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — pola sama seperti chart
   // Financial Position / PL & Cash Waterfall. ──
-  const baseMax = useMemo(() => Math.max(1, ...data.map((d) => d.base + d.bar)) * 1.15, []);
+  const baseMax = useMemo(() => Math.max(1, ...data.map((d) => d.base + d.bar)) * 1.15, [data]);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
@@ -206,7 +212,7 @@ export default function EquityBridgeChartInner() {
       }
       return { ...d, bar: dragPreview.value, display: formatLabel(dragPreview.value, d.type) };
     });
-  }, [dragPreview, t]);
+  }, [dragPreview, t, data]);
 
   // Custom bar shape: seluruh badan bar bisa digenggam & ditarik, plus label
   // angka di atasnya (menggantikan LabelList statis, supaya ikut update saat
@@ -251,7 +257,7 @@ export default function EquityBridgeChartInner() {
         <div>
           <h2 className="text-[14px] font-bold text-foreground">{t('Equity Movement Bridge')}</h2>
           <p className="text-[12px] text-muted-foreground mt-0.5">
-            {t('How opening equity changed to closing equity — Jan to Aug 2026')}
+            {t('How opening equity changed to closing equity')}{periodLabel ? ` — ${periodLabel}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-4 text-[11px] flex-wrap">
@@ -304,9 +310,9 @@ export default function EquityBridgeChartInner() {
       </div>
 
       <div className="flex items-center justify-between mt-2 pt-3 border-t border-border text-[11px]">
-        <span className="font-medium text-foreground">{t('Opening')}: $8,420,000</span>
-        <span className="font-semibold text-positive">{t('Net change')}: +$2,085,000</span>
-        <span className="font-medium text-foreground">{t('Closing')}: $10,505,000</span>
+        <span className="font-medium text-foreground">{t('Opening')}: {formatLabel(values.opening, 'base')}</span>
+        <span className={`font-semibold ${values.opening <= data[data.length - 1].absolute ? 'text-positive' : 'text-negative'}`}>{t('Net change')}: {formatLabel(data[data.length - 1].absolute - values.opening, data[data.length - 1].absolute - values.opening < 0 ? 'negative' : 'positive')}</span>
+        <span className="font-medium text-foreground">{t('Closing')}: {formatLabel(data[data.length - 1].absolute, 'base')}</span>
       </div>
     </div>
   );

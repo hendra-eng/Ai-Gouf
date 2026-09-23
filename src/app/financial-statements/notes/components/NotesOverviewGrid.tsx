@@ -4,25 +4,18 @@ import { Search, ExternalLink, FileText, Scale, TrendingUp, Activity,
   Wallet, Package, Building2, ShoppingCart, CreditCard, Layers,
   BarChart3, Receipt, Users, AlertCircle, Clock, BookOpen } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useNotesStatement } from '../../lib/useStatementData';
 
-const notesMeta = [
-  { id: 'nm-01', num: '01', title: 'General Information',         desc: 'Company profile, legal structure, and principal activities.',           statement: 'All Statements',  tag: 'Policy Note',         icon: <FileText size={13} /> },
-  { id: 'nm-02', num: '02', title: 'Basis of Preparation',        desc: 'Framework, going concern, and presentation currency.',                  statement: 'All Statements',  tag: 'Policy Note',         icon: <Scale size={13} /> },
-  { id: 'nm-03', num: '03', title: 'Material Accounting Policies',desc: 'Significant accounting policies applied in these statements.',          statement: 'All Statements',  tag: 'Policy Note',         icon: <BookOpen size={13} /> },
-  { id: 'nm-04', num: '04', title: 'Cash & Cash Equivalents',     desc: 'Cash on hand and bank balances available for operations.',              statement: 'Balance Sheet',   tag: 'Disclosed',           icon: <Wallet size={13} /> },
-  { id: 'nm-05', num: '05', title: 'Trade Receivables',           desc: 'Gross receivables, ECL allowance, and aging analysis.',                 statement: 'Balance Sheet',   tag: 'Disclosed',           icon: <Receipt size={13} /> },
-  { id: 'nm-06', num: '06', title: 'Inventories',                 desc: 'Raw materials, WIP, finished goods, and write-downs.',                  statement: 'Balance Sheet',   tag: 'Supporting Schedule', icon: <Package size={13} /> },
-  { id: 'nm-07', num: '07', title: 'Property & Equipment',        desc: 'PPE movements, depreciation, and carrying amounts.',                    statement: 'Balance Sheet',   tag: 'Supporting Schedule', icon: <Building2 size={13} /> },
-  { id: 'nm-08', num: '08', title: 'Trade Payables',              desc: 'Trade payables, accrued expenses, and other payables.',                 statement: 'Balance Sheet',   tag: 'Disclosed',           icon: <ShoppingCart size={13} /> },
-  { id: 'nm-09', num: '09', title: 'Borrowings',                  desc: 'Short and long-term debt obligations and maturity schedule.',           statement: 'Balance Sheet',   tag: 'Disclosed',           icon: <CreditCard size={13} /> },
-  { id: 'nm-10', num: '10', title: 'Equity',                      desc: 'Share capital, APIC, retained earnings, and other equity.',             statement: 'Equity Statement',tag: 'Disclosed',           icon: <Layers size={13} /> },
-  { id: 'nm-11', num: '11', title: 'Revenue',                     desc: 'Revenue breakdown by product, service, and income stream.',             statement: 'Profit & Loss',   tag: 'Disclosed',           icon: <TrendingUp size={13} /> },
-  { id: 'nm-12', num: '12', title: 'Operating Expenses',          desc: 'Selling, G&A, personnel, depreciation, and other costs.',               statement: 'Profit & Loss',   tag: 'Disclosed',           icon: <BarChart3 size={13} /> },
-  { id: 'nm-13', num: '13', title: 'Income Tax',                  desc: 'Current and deferred tax expense, effective tax rate.',                 statement: 'Profit & Loss',   tag: 'Disclosed',           icon: <Activity size={13} /> },
-  { id: 'nm-14', num: '14', title: 'Related Parties',             desc: 'Transactions and balances with related parties.',                       statement: 'All Statements',  tag: 'Disclosed',           icon: <Users size={13} /> },
-  { id: 'nm-15', num: '15', title: 'Commitments & Contingencies', desc: 'Lease commitments, contingent liabilities, and legal matters.',         statement: 'Balance Sheet',   tag: 'Disclosed',           icon: <AlertCircle size={13} /> },
-  { id: 'nm-16', num: '16', title: 'Subsequent Events',           desc: 'Material events after the balance sheet date.',                         statement: 'All Statements',  tag: 'Disclosed',           icon: <Clock size={13} /> },
-];
+// Ikon per catatan (key dari API /api/v1/financial-statements/notes).
+const ICON_CATATAN: Record<string, React.ReactNode> = {
+  general_information: <FileText size={13} />, basis_of_preparation: <Scale size={13} />,
+  accounting_policies: <BookOpen size={13} />, cash: <Wallet size={13} />, receivables: <Receipt size={13} />,
+  inventories: <Package size={13} />, prepayments: <Clock size={13} />, fixed_assets: <Building2 size={13} />,
+  trade_payables: <ShoppingCart size={13} />, tax_payables: <Activity size={13} />, accruals: <AlertCircle size={13} />,
+  borrowings: <CreditCard size={13} />, equity: <Layers size={13} />, revenue: <TrendingUp size={13} />,
+  cost_of_sales: <BarChart3 size={13} />, operating_expenses: <BarChart3 size={13} />,
+  finance_costs_tax: <Activity size={13} />, related_parties: <Users size={13} />,
+};
 
 const TAG_STYLE: Record<string, string> = {
   'Policy Note':         'bg-violet-50 text-violet-600 border border-violet-200',
@@ -33,6 +26,12 @@ const TAG_STYLE: Record<string, string> = {
 export default function NotesOverviewGrid() {
   const { t } = useLanguage();
   const [search, setSearch] = useState('');
+  // Data dari API /api/v1/financial-statements (transaksi posted).
+  const { notes } = useNotesStatement();
+  const notesMeta = notes.map((n) => ({
+    id: `nm-${n.no}`, num: n.no, title: n.title, desc: n.narasi, statement: n.statement, tag: n.tag,
+    icon: ICON_CATATAN[n.key] ?? <FileText size={13} />,
+  }));
 
   const filtered = notesMeta.filter(n =>
     n.num.includes(search) ||

@@ -8,8 +8,7 @@ import LPEStatement from './LPEStatement';
 import CALKStatement from './CALKStatement';
 import { Download, Printer, FileText } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
-import { useActiveClient } from '@/lib/activeClient';
-import { COMPANY } from '@/lib/financialData';
+import { useStatementMeta } from '../lib/useStatementData';
 
 const tabs = [
   { id: 'tab-pl', label: 'Profit & Loss', short: 'P&L' },
@@ -29,8 +28,9 @@ const tabNames: Record<string, string> = {
 
 export default function FinancialStatementsContent() {
   const { t } = useLanguage();
-  const { activeClientName } = useActiveClient();
-  const companyName = activeClientName || COMPANY.name;
+  // Data dari API /api/v1/financial-statements (transaksi posted).
+  const { companyName, periodLabel, asOfLabel, data, loading, error, adaData } = useStatementMeta();
+  const seimbang = data ? data.balance_sheet.seimbang && data.trial_balance.seimbang : null;
   const [activeTab, setActiveTab] = useState('tab-pl');
 
   function handlePrint() {
@@ -53,12 +53,16 @@ export default function FinancialStatementsContent() {
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Financial Statements')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {companyName} · {t('Jan 2026 – Aug 2026')}
+            {companyName} · {periodLabel}
           </p>
           <div className="flex items-center gap-2 mt-2">
-            <span className="badge-info">{t('PSAK Compliant')}</span>
-            <span className="badge-positive">{t('Balanced ✓')}</span>
-            <span className="text-xs text-muted-foreground">{t('Last reconciled: 25 Aug 2026')}</span>
+            <span className="badge-info">{t('Posted transactions only')}</span>
+            {seimbang !== null && (
+              <span className={seimbang ? 'badge-positive' : 'badge-negative'}>{seimbang ? t('Balanced ✓') : t('Not balanced')}</span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {loading ? t('Memuat...') : error ? `${t('Gagal memuat')}: ${error}` : adaData ? `${asOfLabel} · ${data?.periode.jumlah_jurnal ?? 0} ${t('journals')}` : t('Belum ada transaksi posted')}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">

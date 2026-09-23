@@ -5,62 +5,12 @@ import { ChevronDown, ChevronRight, CheckCircle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useBalanceSheetStatement, useProfitLossStatement } from '../lib/useStatementData';
 
 const BSDonutChart = dynamic(() => import('./BSDonutChart'), {
   ssr: false,
   loading: () => <Skeleton className="h-[260px] w-full rounded-xl" />,
 });
-
-// Backend integration point: replace with /api/statements/balance-sheet?company=&period=
-const bsData = {
-  assets: {
-    current: [
-      { label: 'Kas & Bank', value: 2960 },
-      { label: 'Piutang Usaha', value: 1240 },
-      { label: 'Persediaan', value: 380 },
-      { label: 'Biaya Dibayar Dimuka', value: 145 },
-      { label: 'Aset Lancar Lainnya', value: 82 },
-    ],
-    nonCurrent: [
-      { label: 'Properti & Bangunan', value: 1850 },
-      { label: 'Peralatan & Mesin', value: 920 },
-      { label: 'Kendaraan', value: 340 },
-      { label: 'Aset Tak Berwujud', value: 480 },
-      { label: 'Investasi Jangka Panjang', value: 620 },
-    ],
-  },
-  liabilities: {
-    current: [
-      { label: 'Hutang Usaha', value: 860 },
-      { label: 'Hutang Pajak', value: 182 },
-      { label: 'Hutang Jangka Pendek', value: 450 },
-      { label: 'Pendapatan Diterima Dimuka', value: 240 },
-      { label: 'Kewajiban Lancar Lainnya', value: 96 },
-    ],
-    nonCurrent: [
-      { label: 'Hutang Bank Jangka Panjang', value: 1280 },
-      { label: 'Kewajiban Sewa (Lease)', value: 420 },
-      { label: 'Kewajiban Imbalan Kerja', value: 185 },
-    ],
-  },
-  equity: [
-    { label: 'Modal Disetor', value: 3000 },
-    { label: 'Laba Ditahan', value: 2944 },
-    { label: 'Laba Tahun Berjalan', value: 1840 },
-  ],
-};
-
-const currentAssetsTotal = bsData.assets.current.reduce((s, i) => s + i.value, 0);
-const nonCurrentAssetsTotal = bsData.assets.nonCurrent.reduce((s, i) => s + i.value, 0);
-const totalAssets = currentAssetsTotal + nonCurrentAssetsTotal;
-
-const currentLiabTotal = bsData.liabilities.current.reduce((s, i) => s + i.value, 0);
-const nonCurrentLiabTotal = bsData.liabilities.nonCurrent.reduce((s, i) => s + i.value, 0);
-const totalLiabilities = currentLiabTotal + nonCurrentLiabTotal;
-
-const totalEquity = bsData.equity.reduce((s, i) => s + i.value, 0);
-const totalLiabEquity = totalLiabilities + totalEquity;
-const isBalanced = Math.abs(totalAssets - totalLiabEquity) < 1;
 
 interface BSSection {
   title: string;
@@ -102,10 +52,37 @@ function BSSectionTable({ title, items, subtotalLabel, subtotal, accent = 'text-
   );
 }
 
+// Rasio aman dari pembagian nol -- null kalau penyebut 0.
+function rasio(a: number, b: number): number | null {
+  return b ? a / b : null;
+}
+
 export default function BalanceSheetStatement() {
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const bs = useBalanceSheetStatement();
+  const { PL_CORE } = useProfitLossStatement();
+  const keItems = (items: { name: string; current: number }[]) => items.map((i) => ({ label: i.name, value: i.current }));
+  const bsData = {
+    assets: { current: keItems(bs.currentAssets.items), nonCurrent: keItems(bs.nonCurrentAssets.items) },
+    liabilities: { current: keItems(bs.currentLiabilities.items), nonCurrent: keItems(bs.nonCurrentLiabilities.items) },
+    equity: keItems(bs.equity.items),
+  };
+  const currentAssetsTotal = bs.currentAssets.total;
+  const nonCurrentAssetsTotal = bs.nonCurrentAssets.total;
+  const totalAssets = bs.totalAssets;
+  const currentLiabTotal = bs.currentLiabilities.total;
+  const nonCurrentLiabTotal = bs.nonCurrentLiabilities.total;
+  const totalLiabilities = bs.totalLiabilities;
+  const totalEquity = bs.totalEquity;
+  const totalLiabEquity = Math.round((totalLiabilities + totalEquity) * 100) / 100;
+  const isBalanced = bs.isBalanced;
+  const currentRatio = rasio(currentAssetsTotal, currentLiabTotal);
+  const debtToEquity = rasio(totalLiabilities, totalEquity);
+  const assetTurnover = rasio(PL_CORE.revenue, totalAssets);
+  const equityRatio = rasio(totalEquity, totalAssets);
   return (
     <div className="space-y-6">
       {/* Chart + Balance validation */}
@@ -128,7 +105,7 @@ export default function BalanceSheetStatement() {
             <div className="flex items-center gap-2 mb-3">
               <CheckCircle size={18} className={isBalanced ? 'text-positive' : 'text-negative'} />
               <span className={`text-sm font-bold ${isBalanced ? 'text-positive' : 'text-negative'}`}>
-                {isBalanced ? t('Balance Sheet Balanced') : t('Balance Sheet Error')}
+                {isBalanced ? t('Balance Sheet Balanced') : `${t('Balance Sheet Error')} (${formatRp(bs.difference)})`}
               </span>
             </div>
             <div className="space-y-2">
@@ -150,10 +127,10 @@ export default function BalanceSheetStatement() {
           <div className="card-elevated-md rounded-xl p-5">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">{t('Key Ratios')}</p>
             {[
-              { label: 'Current Ratio', value: (currentAssetsTotal / currentLiabTotal).toFixed(2), good: currentAssetsTotal / currentLiabTotal > 1.5 },
-              { label: 'Debt-to-Equity', value: (totalLiabilities / totalEquity).toFixed(2), good: totalLiabilities / totalEquity < 1.5 },
-              { label: 'Asset Turnover', value: '1.84×', good: true },
-              { label: 'Equity Ratio', value: `${((totalEquity / totalAssets) * 100).toFixed(1)}%`, good: true },
+              { label: 'Current Ratio', value: currentRatio == null ? '—' : currentRatio.toFixed(2), good: (currentRatio ?? 0) > 1.5 },
+              { label: 'Debt-to-Equity', value: debtToEquity == null ? '—' : debtToEquity.toFixed(2), good: debtToEquity != null && debtToEquity >= 0 && debtToEquity < 1.5 },
+              { label: 'Asset Turnover', value: assetTurnover == null ? '—' : `${assetTurnover.toFixed(2)}×`, good: (assetTurnover ?? 0) > 0 },
+              { label: 'Equity Ratio', value: equityRatio == null ? '—' : `${(equityRatio * 100).toFixed(1)}%`, good: (equityRatio ?? 0) > 0 },
             ].map((r) => (
               <div key={`bsratio-${r.label}`} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                 <span className="text-xs text-muted-foreground">{t(r.label)}</span>
@@ -170,7 +147,7 @@ export default function BalanceSheetStatement() {
         <div className="card-elevated-md rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-base font-bold text-foreground">{t('ASET')}</h3>
-            <p className="text-xs text-muted-foreground">{t('Per 31 Agustus 2026')}</p>
+            <p className="text-xs text-muted-foreground">{bs.periodLabelId}</p>
           </div>
           <BSSectionTable
             title="Aset Lancar (Current Assets)"
@@ -196,7 +173,7 @@ export default function BalanceSheetStatement() {
         <div className="card-elevated-md rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h3 className="text-base font-bold text-foreground">{t('KEWAJIBAN & EKUITAS')}</h3>
-            <p className="text-xs text-muted-foreground">{t('Per 31 Agustus 2026')}</p>
+            <p className="text-xs text-muted-foreground">{bs.periodLabelId}</p>
           </div>
           <BSSectionTable
             title="Kewajiban Lancar (Current Liabilities)"

@@ -3699,6 +3699,159 @@ def create_purchase_transaction_with_lines(
 
 
 # ============================================================
+# FITUR FINANCIAL STATEMENTS -- sumber data buku besar (GL)
+# ============================================================
+# Laporan keuangan (modules/financial_statements/) dibangun dari tabel
+# fitur Transactions yang SUDAH POSTED saja (aturan Accounting Core V2:
+# draft tidak boleh bocor ke laporan Actual). 3 sumber dijadikan satu
+# daftar baris jurnal datar {tanggal, account_code, debit, kredit, ...}:
+#
+#   1. Journal Entry  -- draft status 'posted' + draft_lines apa adanya.
+#   2. Sales          -- invoice posting_status 'Posted', baris jurnalnya
+#                        disusun PERSIS seperti tab Journal Preview Sales
+#                        (SalesJournalPreview.tsx): Dr Piutang = gross,
+#                        Cr Pendapatan = DPP, Cr PPN Keluaran = PPN, akun
+#                        dari financial_transaction_sales_account_mappings
+#                        (fallback ke akun default FE kalau belum dimapping).
+#   3. Purchase       -- transaksi status 'posted', disusun PERSIS seperti
+#                        tab Purchase Preview (purchase/preview/page.tsx):
+#                        Dr akun tiap baris = subtotal - diskon, Dr PPN
+#                        Masukan = tax_amount, Cr Hutang Usaha = accounts_payable.
+#
+# Posting Sales/Purchase TIDAK membuat draft Journal Entry, jadi ketiga
+# sumber ini tidak saling dobel.
+
+# Akun default -- harus sinkron dengan konstanta di FE yang disebut di atas.
+_AKUN_DEFAULT_SALES = {
+    "piutang": ("1120-01", "Piutang Usaha - IDR"),
+    "pendapatan": ("4100-01", "Pendapatan Jasa Konsultasi"),
+    "ppn": ("2100-01", "PPN Keluaran"),
+}
+_AKUN_DEFAULT_PURCHASE = {
+    "ppn_masukan": ("1300", "VAT Recoverable (Input Tax)"),
+    "hutang": ("2100", "Accounts Payable"),
+}
+
+
+def _angka_gl(v: Any) -> float:
+    return float(v) if v is not None else 0.0
+
+
+def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal: Optional[date] = None) -> List[Dict[str, Any]]:
+    """Semua baris jurnal POSTED milik `client_id` (id_user management_users,
+    sama dengan filter tab Transactions) s.d. `sampai_tanggal` (inklusif,
+    None = semua). Tiap baris: sumber, jurnal_id, nomor, tanggal (date),
+    keterangan, pihak, account_code, account_name, debit, kredit."""
+    session = SessionLocal()
+    hasil: List[Dict[str, Any]] = []
+    try:
+        # --- 1) Journal Entry ---
+        q = session.query(JournalEntryDraft, JournalEntryDraftLine).join(
+            JournalEntryDraftLine, JournalEntryDraftLine.draft_id == JournalEntryDraft.id
+        ).filter(
+            JournalEntryDraft.client_id == client_id,
+            func.lower(JournalEntryDraft.status) == "posted",
+            JournalEntryDraft.deleted_at.is_(None),
+            JournalEntryDraftLine.deleted_at.is_(None),
+        )
+        if sampai_tanggal:
+            q = q.filter(JournalEntryDraft.entry_date <= sampai_tanggal)
+        for draft, line in q.order_by(JournalEntryDraft.entry_date, JournalEntryDraftLine.line_no).all():
+            hasil.append({
+                "sumber": "journal_entry",
+                "jurnal_id": f"je:{draft.id}",
+                "nomor": draft.je_number,
+                "tanggal": draft.entry_date,
+                "keterangan": line.description or draft.description,
+                "pihak": draft.source_reference,
+                "account_code": line.account_code,
+                "account_name": line.account_name,
+                "debit": _angka_gl(line.debit),
+                "kredit": _angka_gl(line.credit),
+            })
+
+        # --- 2) Sales ---
+        q = session.query(SalesInvoice, SalesAccountMapping).outerjoin(
+            SalesAccountMapping,
+            (SalesAccountMapping.invoice_id == SalesInvoice.id) & SalesAccountMapping.deleted_at.is_(None),
+        ).filter(
+            SalesInvoice.client_id == client_id,
+            func.lower(SalesInvoice.posting_status) == "posted",
+            SalesInvoice.deleted_at.is_(None),
+        )
+        if sampai_tanggal:
+            q = q.filter(SalesInvoice.invoice_date <= sampai_tanggal)
+        for inv, mapping in q.order_by(SalesInvoice.invoice_date).all():
+            gross = _angka_gl(inv.gross_amount)
+            dpp = _angka_gl(inv.dpp) or round(gross / 1.11)
+            ppn = _angka_gl(inv.ppn) or (gross - dpp)
+            akun = {
+                "piutang": (mapping.piutang_account_code, mapping.piutang_account_name) if mapping else None,
+                "pendapatan": (mapping.pendapatan_account_code, mapping.pendapatan_account_name) if mapping else None,
+                "ppn": (mapping.ppn_account_code, mapping.ppn_account_name) if mapping and mapping.ppn_account_code else None,
+            }
+            akun = {k: v or _AKUN_DEFAULT_SALES[k] for k, v in akun.items()}
+            dasar = {
+                "sumber": "sales",
+                "jurnal_id": f"sales:{inv.id}",
+                "nomor": inv.invoice_no,
+                "tanggal": inv.invoice_date,
+                "keterangan": inv.description or f"Penjualan {inv.invoice_no}",
+                "pihak": inv.customer_name,
+            }
+            for kunci, debit, kredit in (("piutang", gross, 0.0), ("pendapatan", 0.0, dpp), ("ppn", 0.0, ppn)):
+                if debit or kredit:
+                    hasil.append({**dasar, "account_code": akun[kunci][0], "account_name": akun[kunci][1], "debit": debit, "kredit": kredit})
+
+        # --- 3) Purchase ---
+        q = session.query(PurchaseTransaction).filter(
+            PurchaseTransaction.client_id == client_id,
+            func.lower(PurchaseTransaction.status) == "posted",
+            PurchaseTransaction.deleted_at.is_(None),
+        )
+        if sampai_tanggal:
+            q = q.filter(PurchaseTransaction.purchase_date <= sampai_tanggal)
+        transaksi = q.order_by(PurchaseTransaction.purchase_date).all()
+        baris_per_tx: Dict[str, List[PurchaseTransactionLine]] = {}
+        if transaksi:
+            for line in session.query(PurchaseTransactionLine).filter(
+                PurchaseTransactionLine.transaction_id.in_([t.id for t in transaksi]),
+                PurchaseTransactionLine.deleted_at.is_(None),
+            ).order_by(PurchaseTransactionLine.line_no).all():
+                baris_per_tx.setdefault(line.transaction_id, []).append(line)
+        for tx in transaksi:
+            dasar = {
+                "sumber": "purchase",
+                "jurnal_id": f"purchase:{tx.id}",
+                "nomor": tx.purchase_no,
+                "tanggal": tx.purchase_date,
+                "keterangan": tx.description or f"Pembelian {tx.purchase_no}",
+                "pihak": tx.vendor_name,
+            }
+            per_akun: Dict[str, List[Any]] = {}
+            for line in baris_per_tx.get(tx.id, []):
+                entri = per_akun.setdefault(line.account_code, [line.account_name, 0.0])
+                entri[1] += _angka_gl(line.subtotal) - _angka_gl(line.discount)
+            for kode, (nama, nilai) in per_akun.items():
+                if nilai:
+                    hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": nilai, "kredit": 0.0})
+            if _angka_gl(tx.tax_amount) > 0:
+                kode, nama = _AKUN_DEFAULT_PURCHASE["ppn_masukan"]
+                hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": _angka_gl(tx.tax_amount), "kredit": 0.0})
+            if _angka_gl(tx.accounts_payable):
+                kode, nama = _AKUN_DEFAULT_PURCHASE["hutang"]
+                hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": 0.0, "kredit": _angka_gl(tx.accounts_payable)})
+
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error ambil baris jurnal posted (financial statements): {e}")
+        raise
+    finally:
+        session.close()
+
+
+# ============================================================
 # FUNGSI TAMBAHAN CLIENT
 # ============================================================
 

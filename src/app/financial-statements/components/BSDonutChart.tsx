@@ -41,7 +41,7 @@ export default function BSDonutChart({ totalAssets, currentAssets, nonCurrentAss
     data.map((item, index) => {
       const preview = livePreview?.[index];
       const displayValue = preview ? preview.value : item.value;
-      const displayPct = preview ? preview.pct : (item.value / total) * 100;
+      const displayPct = preview ? preview.pct : (total ? (item.value / total) * 100 : 0);
       return (
         <div
           key={`bs-legend-${item.name}`}

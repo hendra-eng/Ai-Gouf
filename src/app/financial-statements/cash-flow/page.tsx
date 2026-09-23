@@ -18,8 +18,9 @@ import {
 // CF_FORECAST & CF_AI_INSIGHTS di atas TETAP data contoh -- backend belum
 // punya modul proyeksi/AI-insight utk Cash Flow (sama seperti
 // BUDGET_VS_ACTUAL & PL_AI_INSIGHTS di halaman Profit & Loss).
-import { useCashFlowData } from '../lib/useCashFlowData';
-import { useProfitLossData } from '../lib/useProfitLossData';
+// [UPDATE] Sumber data sekarang API /api/v1/financial-statements (transaksi
+// POSTED fitur Transactions) -- bentuk data sama dengan hook lama.
+import { useCashFlowStatement, useProfitLossStatement } from '../lib/useStatementData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
@@ -170,12 +171,12 @@ export default function CashFlowPage() {
   const {
     loading, isSampleData, companyName, periodLabel,
     CF_CORE, CF_MONTHLY, OPERATING_ITEMS, INVESTING_ITEMS, FINANCING_ITEMS, RECENT_TRANSACTIONS,
-  } = useCashFlowData();
+  } = useCashFlowStatement();
   // [BARU] Net Profit (utk rasio Cash Conversion) diambil dari hook Profit
   // & Loss yang SUDAH tersambung ke client aktif -- bukan lagi PL_CORE
   // hardcoded dari financialData.tsx, supaya rasio ini konsisten dengan
   // angka Net Profit ASLI yang tampil di halaman Profit & Loss.
-  const { PL_CORE } = useProfitLossData();
+  const { PL_CORE } = useProfitLossStatement();
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);

@@ -1,6 +1,7 @@
 'use client';
 import React from 'react';
 import { useLanguage } from '@/lib/language';
+import { useEquityStatement } from '../../lib/useStatementData';
 
 interface ERow {
   id: string;
@@ -19,43 +20,53 @@ interface ERow {
 
 const DASH = '—';
 
-const rows: ERow[] = [
-  // Share Capital
-  { id: 'r-sc-h',  label: 'Share Capital',              indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-sc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '5,000,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '5,000,000' },
-  { id: 'r-sc-2',  label: 'Capital Contributions',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '500,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '500,000' },
-  { id: 'r-sc-t',  label: 'Total Share Capital',         indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '5,000,000', capital: '500,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '5,500,000' },
-  // APIC
-  { id: 'r-ap-h',  label: 'Additional Paid-in Capital',  indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-ap-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '1,200,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,200,000' },
-  { id: 'r-ap-2',  label: 'Share Premium — New Issue',   indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: '250,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '250,000' },
-  { id: 'r-ap-t',  label: 'Total APIC',                  indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '1,200,000', capital: '250,000',  profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,450,000' },
-  // Retained Earnings
-  { id: 'r-re-h',  label: 'Retained Earnings',           indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-re-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '1,980,000', capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '1,980,000' },
-  { id: 'r-re-2',  label: 'Net Profit for Period',       indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: '1,840,000', dividends: DASH,        adj: DASH,       closing: '1,840,000' },
-  { id: 'r-re-3',  label: 'Dividends Declared',          indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: '(420,000)', adj: DASH,       closing: '(420,000)' },
-  { id: 'r-re-4',  label: 'Other Adjustments',           indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(35,000)', closing: '(35,000)' },
-  { id: 'r-re-t',  label: 'Total Retained Earnings',     indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '1,980,000', capital: DASH,       profit: '1,840,000', dividends: '(420,000)', adj: '(35,000)', closing: '3,365,000' },
-  // OCI
-  { id: 'r-oc-h',  label: 'Other Comprehensive Income',  indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-oc-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '140,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '140,000' },
-  { id: 'r-oc-2',  label: 'FX Translation & Revaluation',indent: true,  isTotal: false, isSection: false, isGrand: false, opening: DASH,       capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(50,000)', closing: '(50,000)' },
-  { id: 'r-oc-t',  label: 'Total OCI',                   indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '140,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: '(50,000)', closing: '90,000' },
-  // Other Equity
-  { id: 'r-oe-h',  label: 'Other Equity',                indent: false, isTotal: false, isSection: true,  isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null },
-  { id: 'r-oe-1',  label: 'Opening Balance',             indent: true,  isTotal: false, isSection: false, isGrand: false, opening: '100,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '100,000' },
-  { id: 'r-oe-t',  label: 'Total Other Equity',          indent: false, isTotal: true,  isSection: false, isGrand: false, opening: '100,000',  capital: DASH,       profit: DASH,        dividends: DASH,        adj: DASH,       closing: '100,000' },
-  // Grand
-  { id: 'r-grand', label: 'TOTAL EQUITY',                indent: false, isTotal: true,  isSection: false, isGrand: true,  opening: '8,420,000', capital: '750,000',  profit: '1,840,000', dividends: '(420,000)', adj: '(85,000)', closing: '10,505,000' },
-];
+// Angka dalam JUTA rupiah (2 desimal), negatif dalam kurung.
+function fmt(v: number): string {
+  if (Math.abs(v) < 0.005) return DASH;
+  const teks = Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v < 0 ? `(${teks})` : teks;
+}
+
+const KOLOM_MUTASI = [
+  { key: 'capital', label: 'Capital Contributions' },
+  { key: 'profit', label: 'Net Profit for Period' },
+  { key: 'dividends', label: 'Dividends / Drawings' },
+  { key: 'adj', label: 'Other Adjustments' },
+] as const;
+
+type BarisEkuitas = ReturnType<typeof useEquityStatement>['rows'][number];
+
+/** Susun baris tabel: per komponen -> header, saldo awal, mutasi, total. */
+function susunBaris(komponen: BarisEkuitas[], totals: ReturnType<typeof useEquityStatement>['totals']): ERow[] {
+  const baris: ERow[] = [];
+  const kosong = { opening: DASH, capital: DASH, profit: DASH, dividends: DASH, adj: DASH };
+  for (const k of komponen) {
+    baris.push({ id: `${k.key}-h`, label: k.label, indent: false, isTotal: false, isSection: true, isGrand: false, opening: null, capital: null, profit: null, dividends: null, adj: null, closing: null });
+    if (Math.abs(k.opening) >= 0.005) {
+      baris.push({ id: `${k.key}-open`, label: 'Opening Balance', indent: true, isTotal: false, isSection: false, isGrand: false, ...kosong, opening: fmt(k.opening), closing: fmt(k.opening) });
+    }
+    for (const kol of KOLOM_MUTASI) {
+      if (Math.abs(k[kol.key]) < 0.005) continue;
+      baris.push({ id: `${k.key}-${kol.key}`, label: kol.label, indent: true, isTotal: false, isSection: false, isGrand: false, ...kosong, [kol.key]: fmt(k[kol.key]), closing: fmt(k[kol.key]) });
+    }
+    baris.push({
+      id: `${k.key}-t`, label: `Total ${k.label}`, indent: false, isTotal: true, isSection: false, isGrand: false,
+      opening: fmt(k.opening), capital: fmt(k.capital), profit: fmt(k.profit), dividends: fmt(k.dividends), adj: fmt(k.adj), closing: fmt(k.closing),
+    });
+  }
+  baris.push({
+    id: 'grand', label: 'TOTAL EQUITY', indent: false, isTotal: true, isSection: false, isGrand: true,
+    opening: fmt(totals.opening), capital: fmt(totals.capital), profit: fmt(totals.profit), dividends: fmt(totals.dividends), adj: fmt(totals.adj), closing: fmt(totals.closing),
+  });
+  return baris;
+}
 
 const COL_HEADERS = [
   { id: 'ch-comp',  label: 'Equity Component',       align: 'left'  },
   { id: 'ch-open',  label: 'Opening Balance',         align: 'right' },
   { id: 'ch-cap',   label: 'Capital Contributions',   align: 'right' },
   { id: 'ch-prof',  label: 'Net Profit / (Loss)',     align: 'right' },
-  { id: 'ch-div',   label: 'Dividends',               align: 'right' },
+  { id: 'ch-div',   label: 'Dividends / Drawings',    align: 'right' },
   { id: 'ch-adj',   label: 'Other Adjustments',       align: 'right' },
   { id: 'ch-close', label: 'Closing Balance',         align: 'right' },
 ];
@@ -69,16 +80,19 @@ function renderCell(val: string | null) {
 
 export default function EquityMainTable() {
   const { t } = useLanguage();
+  // Data dari API /api/v1/financial-statements (transaksi posted).
+  const eq = useEquityStatement();
+  const rows = susunBaris(eq.rows, eq.totals);
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-border flex items-center justify-between">
         <div>
           <h2 className="text-[14px] font-bold text-foreground">{t('Statement of Changes in Equity')}</h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            {t('PT Nusantara Teknologi Indonesia · January – August 2026 · All figures in USD')}
+            {eq.companyName} · {eq.periodLabel} · {t('All figures in IDR millions')}
           </p>
         </div>
-        <span className="text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded-md font-medium">USD</span>
+        <span className="text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded-md font-medium">IDR (Jt)</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -133,8 +147,8 @@ export default function EquityMainTable() {
       </div>
 
       <div className="px-5 py-2.5 bg-muted/30 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{t('Amounts in United States Dollars (USD)')}</span>
-        <span>{t('Prepared in accordance with PSAK')}</span>
+        <span>{t('Amounts in millions of Indonesian Rupiah (IDR)')}</span>
+        <span>{t('Source: posted transactions')}</span>
       </div>
     </div>
   );

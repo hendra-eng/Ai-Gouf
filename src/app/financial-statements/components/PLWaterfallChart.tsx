@@ -10,28 +10,44 @@ import { getNiceTicksFromZero, formatAxisValue } from '@/lib/chartTicks';
 // type: 'total' | 'subtotal' -> biru/hijau, drag ke ATAS = nilai membesar
 //       'negative'           -> merah, drag ke BAWAH = potongan makin dalam (arah drag dibalik)
 //       'adjustable'         -> orange, bisa ditarik ATAS & BAWAH secara natural (tidak dibalik)
-const waterfallRaw = [
-  { name: 'Revenue', value: 8420, start: 0, end: 8420, type: 'total' },
-  { name: 'COGS', value: -4700, start: 3720, end: 8420, type: 'negative' },
-  { name: 'Gross Profit', value: 3720, start: 0, end: 3720, type: 'subtotal' },
-  { name: 'OpEx', value: -1180, start: 2540, end: 3720, type: 'adjustable' },
-  { name: 'EBITDA', value: 2540, start: 0, end: 2540, type: 'subtotal' },
-  { name: 'D&A', value: -210, start: 2330, end: 2540, type: 'adjustable' },
-  { name: 'EBIT', value: 2330, start: 0, end: 2330, type: 'subtotal' },
-  { name: 'Interest', value: -148, start: 2182, end: 2330, type: 'adjustable' },
-  { name: 'EBT', value: 2182, start: 0, end: 2182, type: 'subtotal' },
-  { name: 'Tax', value: -436, start: 1746, end: 2182, type: 'negative' },
-  { name: 'Net Profit', value: 1746, start: 0, end: 1746, type: 'total' },
-];
+// Nilai contoh (juta) -- dipakai kalau komponen tidak diberi prop `values`.
+const DEFAULT_VALUES: PLWaterfallValues = { revenue: 8420, cogs: 4700, opex: 1180, da: 210, interest: 148, tax: 436 };
+
+export interface PLWaterfallValues { revenue: number; cogs: number; opex: number; da: number; interest: number; tax: number }
+
+function buatWaterfallRaw(v: PLWaterfallValues) {
+  const gross = v.revenue - v.cogs;
+  const ebitda = gross - v.opex;
+  const ebit = ebitda - v.da;
+  const ebt = ebit - v.interest;
+  const net = ebt - v.tax;
+  return [
+    { name: 'Revenue', value: v.revenue, start: 0, end: v.revenue, type: 'total' },
+    { name: 'COGS', value: -v.cogs, start: gross, end: v.revenue, type: 'negative' },
+    { name: 'Gross Profit', value: gross, start: 0, end: gross, type: 'subtotal' },
+    { name: 'OpEx', value: -v.opex, start: ebitda, end: gross, type: 'adjustable' },
+    { name: 'EBITDA', value: ebitda, start: 0, end: ebitda, type: 'subtotal' },
+    { name: 'D&A', value: -v.da, start: ebit, end: ebitda, type: 'adjustable' },
+    { name: 'EBIT', value: ebit, start: 0, end: ebit, type: 'subtotal' },
+    { name: 'Interest', value: -v.interest, start: ebt, end: ebit, type: 'adjustable' },
+    { name: 'EBT', value: ebt, start: 0, end: ebt, type: 'subtotal' },
+    { name: 'Tax', value: -v.tax, start: net, end: ebt, type: 'negative' },
+    { name: 'Net Profit', value: net, start: 0, end: net, type: 'total' },
+  ];
+}
 
 // Build invisible base + visible bar for each item
-const baseChartData = waterfallRaw.map((d) => ({
-  name: d.name,
-  base: d.type === 'total' || d.type === 'subtotal' ? 0 : Math.min(d.start, d.end),
-  bar: Math.abs(d.value),
-  type: d.type,
-  value: d.value,
-}));
+function buatChartData(v: PLWaterfallValues) {
+  return buatWaterfallRaw(v).map((d) => ({
+    name: d.name,
+    base: d.type === 'total' || d.type === 'subtotal' ? 0 : Math.max(0, Math.min(d.start, d.end)),
+    bar: Math.abs(d.value),
+    type: d.type,
+    value: d.value,
+  }));
+}
+
+type ChartDatum = ReturnType<typeof buatChartData>[number];
 
 function getColor(type: string) {
   if (type === 'total') return 'var(--primary)';
@@ -40,7 +56,7 @@ function getColor(type: string) {
   return 'var(--negative)';
 }
 
-function CustomTooltip({ active, payload, label, t }: { active?: boolean; payload?: { payload: typeof baseChartData[0] }[]; label?: string; t: (text: string) => string }) {
+function CustomTooltip({ active, payload, label, t }: { active?: boolean; payload?: { payload: ChartDatum }[]; label?: string; t: (text: string) => string }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -62,11 +78,12 @@ const CHART_HEIGHT = 280;
 const CHART_MARGIN_TOP = 20;
 const CHART_MARGIN_BOTTOM = 4;
 
-export default function PLWaterfallChart() {
+export default function PLWaterfallChart({ values = DEFAULT_VALUES }: { values?: PLWaterfallValues }) {
   const { t } = useLanguage();
+  const baseChartData = useMemo(() => buatChartData(values), [values]);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y, sama seperti chart Financial Overview) ──
-  const baseMax = useMemo(() => Math.max(0, ...baseChartData.map((d) => d.base + d.bar)) * 1.15 || 1, []);
+  const baseMax = useMemo(() => Math.max(0, ...baseChartData.map((d) => d.base + d.bar)) * 1.15 || 1, [baseChartData]);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
   // Tick "nice" (angka bulat) untuk label sumbu — domain chart tetap kontinu
@@ -219,7 +236,7 @@ export default function PLWaterfallChart() {
       }
       return { ...d, bar: dragBar.liveValue, value: dragBar.liveValue };
     });
-  }, [dragBar]);
+  }, [dragBar, baseChartData]);
 
   // Badan bar custom: seluruh kotak bisa digenggam & ditarik naik/turun (bukan cuma strip tipis)
   const renderInteractiveBar = (props: any) => {

@@ -7,28 +7,19 @@ import {
   Activity, Users, AlertCircle, Clock,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useCurrency, formatMoney } from '@/lib/currency';
+import { useNotesStatement } from '../lib/useStatementData';
 
-// Backend integration point: replace with /api/statements/notes?company=&period=
-// Condensed metadata only — full policy text, breakdown tables, and accordions
-// live on the standalone Notes to Financial Statements page.
-const notesSummary = [
-  { num: '01', title: 'General Information', statement: 'All Statements', tag: 'Policy Note', icon: <FileText size={13} /> },
-  { num: '02', title: 'Basis of Preparation', statement: 'All Statements', tag: 'Policy Note', icon: <Scale size={13} /> },
-  { num: '03', title: 'Material Accounting Policies', statement: 'All Statements', tag: 'Policy Note', icon: <BookOpen size={13} /> },
-  { num: '04', title: 'Cash & Cash Equivalents', statement: 'Balance Sheet', tag: 'Disclosed', icon: <Wallet size={13} /> },
-  { num: '05', title: 'Trade Receivables', statement: 'Balance Sheet', tag: 'Disclosed', icon: <Receipt size={13} /> },
-  { num: '06', title: 'Inventories', statement: 'Balance Sheet', tag: 'Supporting Schedule', icon: <Package size={13} /> },
-  { num: '07', title: 'Property & Equipment', statement: 'Balance Sheet', tag: 'Supporting Schedule', icon: <Building2 size={13} /> },
-  { num: '08', title: 'Trade Payables', statement: 'Balance Sheet', tag: 'Disclosed', icon: <ShoppingCart size={13} /> },
-  { num: '09', title: 'Borrowings', statement: 'Balance Sheet', tag: 'Disclosed', icon: <CreditCard size={13} /> },
-  { num: '10', title: 'Equity', statement: 'Equity Statement', tag: 'Disclosed', icon: <Layers size={13} /> },
-  { num: '11', title: 'Revenue', statement: 'Profit & Loss', tag: 'Disclosed', icon: <TrendingUp size={13} /> },
-  { num: '12', title: 'Operating Expenses', statement: 'Profit & Loss', tag: 'Disclosed', icon: <BarChart3 size={13} /> },
-  { num: '13', title: 'Income Tax', statement: 'Profit & Loss', tag: 'Disclosed', icon: <Activity size={13} /> },
-  { num: '14', title: 'Related Parties', statement: 'All Statements', tag: 'Disclosed', icon: <Users size={13} /> },
-  { num: '15', title: 'Commitments & Contingencies', statement: 'Balance Sheet', tag: 'Disclosed', icon: <AlertCircle size={13} /> },
-  { num: '16', title: 'Subsequent Events', statement: 'All Statements', tag: 'Disclosed', icon: <Clock size={13} /> },
-];
+// Ikon per catatan (key dari API /api/v1/financial-statements/notes).
+const ICON_CATATAN: Record<string, React.ReactNode> = {
+  general_information: <FileText size={13} />, basis_of_preparation: <Scale size={13} />,
+  accounting_policies: <BookOpen size={13} />, cash: <Wallet size={13} />, receivables: <Receipt size={13} />,
+  inventories: <Package size={13} />, prepayments: <Clock size={13} />, fixed_assets: <Building2 size={13} />,
+  trade_payables: <ShoppingCart size={13} />, tax_payables: <Activity size={13} />, accruals: <AlertCircle size={13} />,
+  borrowings: <CreditCard size={13} />, equity: <Layers size={13} />, revenue: <TrendingUp size={13} />,
+  cost_of_sales: <BarChart3 size={13} />, operating_expenses: <BarChart3 size={13} />,
+  finance_costs_tax: <Activity size={13} />, related_parties: <Users size={13} />,
+};
 
 const TAG_STYLE: Record<string, string> = {
   'Policy Note': 'bg-violet-50 text-violet-600 border border-violet-200',
@@ -36,22 +27,18 @@ const TAG_STYLE: Record<string, string> = {
   'Supporting Schedule': 'bg-primary/8 text-primary border border-primary/20',
 };
 
-const counts = {
-  total: notesSummary.length,
-  policy: notesSummary.filter((n) => n.tag === 'Policy Note').length,
-  disclosed: notesSummary.filter((n) => n.tag === 'Disclosed').length,
-  schedule: notesSummary.filter((n) => n.tag === 'Supporting Schedule').length,
-};
-
-// A few notes worth surfacing directly in the summary tab
-const highlights = [
-  { num: '02', title: 'Basis of Preparation', desc: 'Disusun berdasarkan PSAK, biaya historis, mata uang penyajian USD.' },
-  { num: '15', title: 'Commitments & Contingencies', desc: 'Komitmen sewa operasi Jakarta, Surabaya, Bali — tidak ada kontinjensi material.' },
-  { num: '16', title: 'Subsequent Events', desc: 'Dividen final disetujui & kontrak cloud 3 tahun baru setelah tanggal neraca.' },
-];
-
 export default function CALKStatement() {
   const { t } = useLanguage();
+  const { currency } = useCurrency();
+  const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const { notes, counts, periodLabel } = useNotesStatement();
+  const notesSummary = notes.map((n) => ({ num: n.no, title: n.title, statement: n.statement, tag: n.tag, icon: ICON_CATATAN[n.key] ?? <FileText size={13} />, total: n.total }));
+  // Sorotan: catatan kebijakan dasar penyusunan + 2 pos bersaldo terbesar.
+  const highlights = [
+    ...notes.filter((n) => n.key === 'basis_of_preparation'),
+    ...notes.filter((n) => n.total != null).sort((a, b) => Math.abs(b.total ?? 0) - Math.abs(a.total ?? 0)).slice(0, 2),
+  ].map((n) => ({ num: n.no, title: n.title, desc: n.total != null ? `${n.narasi} ${t('Saldo')}: ${formatRp(n.total)}.` : n.narasi }));
 
   return (
     <div className="space-y-6">
@@ -91,7 +78,7 @@ export default function CALKStatement() {
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h3 className="text-base font-bold text-foreground">{t('Catatan atas Laporan Keuangan')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026 · Daftar ringkas 16 catatan')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode')}: {periodLabel} · {t('Daftar ringkas')} {counts.total} {t('catatan')}</p>
         </div>
         <div className="divide-y divide-border/50">
           {notesSummary.map((n) => (
