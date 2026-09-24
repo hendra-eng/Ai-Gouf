@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { vendors } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
-import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, mapExceptionToUi } from '@/lib/purchaseStore';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
 import {
   ExclamationTriangleIcon,
   BuildingStorefrontIcon,
@@ -14,47 +13,50 @@ import Icon from '@/components/ui/AppIcon';
 import KpiCard from '@/components/shared/KpiCard';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
+import type { PurchaseTransaction } from '@/data/purchaseData';
+import { useCurrency } from '@/lib/currency';
+import { formatRupiah } from '@/lib/mockData';
 
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
-const fmtFull = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
-
-// ── Data historis untuk Purchase Volume Trend (multi-periode + pan/scroll
-// ala TradingView). Dibuat deterministik (bukan random murni) dari fungsi
-// hash sederhana, supaya angkanya konsisten setiap render tapi tetap
-// terlihat "natural" (ada tren naik & variasi musiman). Ini data contoh —
-// kalau sudah tersambung ke backend, tinggal ganti fungsi build-nya. ──
+// ── Data untuk Purchase Volume Trend (multi-periode + pan/scroll ala
+// TradingView). [DIUBAH] Sebelumnya dibangun dari generator pseudo-random
+// (seededRandom) -- data contoh, tidak nyambung ke Supabase sama sekali.
+// Sekarang dihitung dari purchaseTransactions asli: tiap hari/bulan dalam
+// jendela waktu dijumlahkan dari transaksi yang purchaseDate-nya jatuh di
+// hari/bulan itu; hari/bulan tanpa transaksi tampil 0 (bukan diisi angka
+// karangan) supaya jujur mencerminkan data di database. ──
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function seededRandom(seed: number) {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
 
 type TrendPoint = { month: string; amount: number };
 
 const DAILY_COUNT = 730; // ~2 tahun ke belakang, cukup untuk pan jauh di tampilan 1W/1M
-function buildDailyTrend(anchor: Date): TrendPoint[] {
+function buildDailyTrend(anchor: Date, transactions: PurchaseTransaction[]): TrendPoint[] {
+  const sumByDay = new Map<string, number>();
+  transactions.forEach((t) => {
+    const d = new Date(t.purchaseDate);
+    if (isNaN(d.getTime())) return;
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    sumByDay.set(key, (sumByDay.get(key) || 0) + t.total);
+  });
   const points: TrendPoint[] = [];
   for (let i = 0; i < DAILY_COUNT; i++) {
     const daysAgo = DAILY_COUNT - 1 - i;
     const d = new Date(anchor);
     d.setDate(d.getDate() - daysAgo);
-    const dayOfWeek = d.getDay();
-    const weekendFactor = dayOfWeek === 0 || dayOfWeek === 6 ? 0.35 : 1;
-    const trend = i * 15;
-    const seasonal = 4000 * Math.sin((i / 365) * Math.PI * 2);
-    const noise = (seededRandom(i * 7.13) - 0.5) * 6000;
-    const amount = Math.max(500, Math.round((9000 + trend + seasonal + noise) * weekendFactor));
-    points.push({ month: `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`, amount });
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    points.push({ month: `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`, amount: sumByDay.get(key) || 0 });
   }
   return points;
 }
 
 const MONTHLY_COUNT = 180; // 15 tahun ke belakang — cukup panjang untuk di-bucket jadi 6-bulanan/tahunan dan tetap bisa di-pan jauh
-function buildMonthlyTrendSeries(anchor: Date): TrendPoint[] {
+function buildMonthlyTrendSeries(anchor: Date, transactions: PurchaseTransaction[]): TrendPoint[] {
+  const sumByMonth = new Map<string, number>();
+  transactions.forEach((t) => {
+    const d = new Date(t.purchaseDate);
+    if (isNaN(d.getTime())) return;
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    sumByMonth.set(key, (sumByMonth.get(key) || 0) + t.total);
+  });
   const points: TrendPoint[] = [];
   const anchorAbs = anchor.getFullYear() * 12 + anchor.getMonth();
   for (let i = 0; i < MONTHLY_COUNT; i++) {
@@ -62,12 +64,11 @@ function buildMonthlyTrendSeries(anchor: Date): TrendPoint[] {
     const abs = anchorAbs - monthsAgo;
     const year = Math.floor(abs / 12);
     const mIdx = ((abs % 12) + 12) % 12;
-    const trend = i * 1270;
-    const seasonal = 60000 * Math.sin((i / 12) * Math.PI * 2);
-    const noise = (seededRandom(i * 3.71) - 0.5) * 70000;
-    const amount = Math.max(50000, Math.round(300000 + trend + seasonal + noise));
     const spansMultipleYears = year !== anchor.getFullYear();
-    points.push({ month: spansMultipleYears ? `${MONTH_ABBR[mIdx]} '${String(year).slice(-2)}` : MONTH_ABBR[mIdx], amount });
+    points.push({
+      month: spansMultipleYears ? `${MONTH_ABBR[mIdx]} '${String(year).slice(-2)}` : MONTH_ABBR[mIdx],
+      amount: sumByMonth.get(`${year}-${mIdx}`) || 0,
+    });
   }
   return points;
 }
@@ -93,33 +94,36 @@ function bucketTrendPoints(points: TrendPoint[], bucketSize: number): TrendPoint
   return buckets;
 }
 
-const categoryData = [
-  { name: 'IT Equipment', value: 241840 },
-  { name: 'Raw Materials', value: 158962 },
-  { name: 'Professional Services', value: 71120 },
-  { name: 'Logistics', value: 31976 },
-  { name: 'Marketing', value: 39200 },
-  { name: 'Office Supplies', value: 55549 },
-  { name: 'Maintenance', value: 13888 },
-];
+// [DIUBAH] categoryData/statusDist/paymentStatusDist dulu array statis
+// (angka contoh, tidak nyambung Supabase). Sekarang dihitung dari
+// purchaseTransactions asli lewat useMemo di dalam komponen -- lihat
+// categoryData/statusDist/paymentStatusDist di bawah (computed).
+const STATUS_DONUT_COLORS: Record<string, string> = {
+  draft: '#64748B',
+  pending_review: '#D97706',
+  approved: '#0369A1',
+  pending_posting: '#0891B2',
+  posted: '#15803D',
+  rejected: '#DC2626',
+  exception: '#C2410C',
+  cancelled: '#94A3B8',
+};
 
-const COLORS = ['#1E40AF', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
+const PAYMENT_DONUT_COLORS: Record<string, string> = {
+  unpaid: '#DC2626',
+  partially_paid: '#D97706',
+  paid: '#15803D',
+  overdue: '#C2410C',
+  on_hold: '#64748B',
+};
 
-const statusDist = [
-  { name: 'Posted', value: 6, color: '#15803D' },
-  { name: 'Approved', value: 2, color: '#0369A1' },
-  { name: 'Pending Review', value: 2, color: '#D97706' },
-  { name: 'Exception', value: 1, color: '#C2410C' },
-  { name: 'Cancelled', value: 1, color: '#64748B' },
-];
-
-const paymentStatusDist = [
-  { name: 'Unpaid', value: 4, color: '#DC2626' },
-  { name: 'Paid', value: 5, color: '#15803D' },
-  { name: 'Partially Paid', value: 1, color: '#D97706' },
-  { name: 'Overdue', value: 1, color: '#C2410C' },
-  { name: 'On Hold', value: 1, color: '#64748B' },
-];
+const paymentStatusLabels: Record<string, string> = {
+  unpaid: 'Unpaid',
+  partially_paid: 'Partially Paid',
+  paid: 'Paid',
+  overdue: 'Overdue',
+  on_hold: 'On Hold',
+};
 
 const statusColors: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -144,12 +148,17 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function PurchaseOverviewPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
-  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
-  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
-  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+  // [DIUBAH] Sebelumnya baca dari purchaseStore.tsx (tabel
+  // financial_transaction_purchase_*, kosong, filter by user login).
+  // Sekarang pakai purchasebridge.ts (tabel finance_transaction_purchase_*,
+  // sudah terisi, filter by client aktif di Topbar) -- satu hook untuk
+  // transactions + exceptions sekaligus, di-cache per client oleh TanStack Query.
+  const { purchaseTransactions, purchaseExceptions, vendors } = usePurchaseData();
+  // [DIUBAH] fmt dulu fungsi module-level tetap USD (Intl.NumberFormat hardcode).
+  // Sekarang ikut currency yang dipilih di header (IDR/USD/SGD) via useCurrency(),
+  // sama seperti pola yang sudah dipakai Financial Overview/AP/AR.
+  const { fx } = useCurrency();
+  const fmt = (n: number) => fx(formatRupiah(n, true));
 
   // purchaseOverviewKPIs dulu diekspor statis dari purchaseData.ts, sekarang
   // dihitung dari data backend (pola sama dengan kpis di Sales/JE Overview).
@@ -173,7 +182,7 @@ export default function PurchaseOverviewPage() {
     }))
     .filter(v => v.totalSpend > 0)
     .sort((a, b) => b.totalSpend - a.totalSpend)
-    .slice(0, 6), [purchaseTransactions]);
+    .slice(0, 6), [vendors, purchaseTransactions]);
 
   const recentActivity = useMemo(() => [...purchaseTransactions]
     .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
@@ -187,7 +196,41 @@ export default function PurchaseOverviewPage() {
   // custom di bawah, bukan format mata uang bawaan komponen. ──
   const [activeStatus, setActiveStatus] = useState<number | null>(null);
   const [statusLivePreview, setStatusLivePreview] = useState<DonutLivePreview[] | null>(null);
-  const statusTotal = useMemo(() => statusDist.reduce((s, d) => s + d.value, 0), []);
+  // [DIUBAH] statusDist dulu array statis (Posted 6, Approved 2, dst =
+  // total 12) yang tidak nyambung sama sekali ke "Total Purchases" di KPI
+  // card (yang sudah real). Sekarang dihitung langsung dari
+  // purchaseTransactions -- status yang jumlahnya 0 tidak ditampilkan.
+  const statusDist = useMemo(() => {
+    const counts = new Map<string, number>();
+    purchaseTransactions.forEach((t) => counts.set(t.status, (counts.get(t.status) || 0) + 1));
+    return Array.from(counts.entries())
+      .map(([status, value]) => ({ name: statusLabels[status] || status, value, color: STATUS_DONUT_COLORS[status] || '#64748B' }))
+      .sort((a, b) => b.value - a.value);
+  }, [purchaseTransactions]);
+  const statusTotal = useMemo(() => statusDist.reduce((s, d) => s + d.value, 0), [statusDist]);
+
+  // [BARU] Purchase by Category — dulu categoryData statis (angka contoh),
+  // sekarang jumlah `total` asli dikelompokkan per kategori transaksi.
+  const categoryData = useMemo(() => {
+    const sums = new Map<string, number>();
+    purchaseTransactions.forEach((t) => sums.set(t.category, (sums.get(t.category) || 0) + t.total));
+    return Array.from(sums.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [purchaseTransactions]);
+
+  // [BARU] Payment Status Overview — dulu paymentStatusDist statis (juga
+  // pakai divisor hardcode /12 untuk hitung persen). Sekarang dihitung
+  // dari paymentStatus asli tiap transaksi; persen dihitung dari total
+  // transaksi yang benar-benar ada (paymentStatusTotal), bukan angka tetap.
+  const paymentStatusDist = useMemo(() => {
+    const counts = new Map<string, number>();
+    purchaseTransactions.forEach((t) => counts.set(t.paymentStatus, (counts.get(t.paymentStatus) || 0) + 1));
+    return Array.from(counts.entries())
+      .map(([status, value]) => ({ name: paymentStatusLabels[status] || status, value, color: PAYMENT_DONUT_COLORS[status] || '#64748B' }))
+      .sort((a, b) => b.value - a.value);
+  }, [purchaseTransactions]);
+  const paymentStatusTotal = useMemo(() => paymentStatusDist.reduce((s, d) => s + d.value, 0), [paymentStatusDist]);
 
   // ── Purchase Volume Trend: filter periode menentukan UKURAN 1 BAR (bukan
   // total rentang yang tampil) — 1W = 1 bar per minggu, 1M = 1 bar per
@@ -204,8 +247,8 @@ export default function PurchaseOverviewPage() {
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('6M');
   const [trendWindowOffset, setTrendWindowOffset] = useState(0); // 0 = data terbaru; makin besar = makin ke masa lalu
 
-  const dailyTrendMaster = useMemo(() => buildDailyTrend(new Date()), []);
-  const monthlyTrendMaster = useMemo(() => buildMonthlyTrendSeries(new Date()), []);
+  const dailyTrendMaster = useMemo(() => buildDailyTrend(new Date(), purchaseTransactions), [purchaseTransactions]);
+  const monthlyTrendMaster = useMemo(() => buildMonthlyTrendSeries(new Date(), purchaseTransactions), [purchaseTransactions]);
 
   const trendPeriodCfg = TREND_PERIOD_CONFIG[trendPeriod];
   const trendVisibleCount = trendPeriodCfg.visibleCount;
@@ -431,6 +474,57 @@ export default function PurchaseOverviewPage() {
     );
   };
 
+  // [BARU] Trend label KPI dulu string statis ("+3 this week", "+16.7% vs
+  // last month", "Avg 12% rate") -- angka value KPI-nya sudah real, tapi
+  // label kecil di bawahnya cuma teks karangan. Sekarang dihitung dari
+  // purchaseTransactions/purchaseDate asli.
+  const kpiTrends = useMemo(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - 6);
+
+    const thisWeekCount = purchaseTransactions.filter((p) => {
+      const d = new Date(p.purchaseDate);
+      return !isNaN(d.getTime()) && d >= startOfWeek && d <= now;
+    }).length;
+
+    const thisMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${lastMonthDate.getMonth()}`;
+    let thisMonthTotal = 0;
+    let lastMonthTotal = 0;
+    purchaseTransactions.forEach((p) => {
+      const d = new Date(p.purchaseDate);
+      if (isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (key === thisMonthKey) thisMonthTotal += p.total;
+      else if (key === lastMonthKey) lastMonthTotal += p.total;
+    });
+    let amountTrend: string;
+    let amountUp = true;
+    if (lastMonthTotal > 0) {
+      const pctChange = ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
+      amountUp = pctChange >= 0;
+      amountTrend = `${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(1)}% vs last month`;
+    } else if (thisMonthTotal > 0) {
+      amountTrend = 'No data last month';
+    } else {
+      amountTrend = 'No purchases this month';
+      amountUp = false;
+    }
+
+    const subtotalSum = purchaseTransactions.reduce((s, p) => s + p.subtotal, 0);
+    const avgTaxRate = subtotalSum > 0 ? (kpis.totalTax / subtotalSum) * 100 : 0;
+
+    return {
+      thisWeekLabel: thisWeekCount > 0 ? `+${thisWeekCount} this week` : 'No new this week',
+      thisWeekUp: thisWeekCount > 0,
+      amountTrend,
+      amountUp,
+      avgTaxRateLabel: subtotalSum > 0 ? `Avg ${avgTaxRate.toFixed(1)}% rate` : 'No data yet',
+    };
+  }, [purchaseTransactions, kpis.totalTax]);
+
   const kpiCards = [
     {
       label: 'Total Purchases',
@@ -439,8 +533,8 @@ export default function PurchaseOverviewPage() {
       icon: 'ShoppingBagIcon',
       color: 'text-blue-700',
       bg: 'bg-blue-50',
-      trend: '+3 this week',
-      up: true,
+      trend: kpiTrends.thisWeekLabel,
+      up: kpiTrends.thisWeekUp,
     },
     {
       label: 'Purchase Amount',
@@ -449,8 +543,8 @@ export default function PurchaseOverviewPage() {
       icon: 'CurrencyDollarIcon',
       color: 'text-slate-700',
       bg: 'bg-slate-50',
-      trend: '+16.7% vs last month',
-      up: true,
+      trend: kpiTrends.amountTrend,
+      up: kpiTrends.amountUp,
     },
     {
       label: 'Outstanding AP',
@@ -499,7 +593,7 @@ export default function PurchaseOverviewPage() {
       icon: 'ChartBarIcon',
       color: 'text-purple-700',
       bg: 'bg-purple-50',
-      trend: 'Avg 12% rate',
+      trend: kpiTrends.avgTaxRateLabel,
       up: true,
     },
     {
@@ -579,7 +673,7 @@ export default function PurchaseOverviewPage() {
                     tick={{ fontSize: 11, fill: '#64748B' }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={(v) => fx(formatRupiah(v, true))}
                     width={56}
                     ticks={trendYTicks}
                     domain={trendYDomain}
@@ -651,18 +745,18 @@ export default function PurchaseOverviewPage() {
                   <div
                     key={item.name}
                     onClick={() => setActiveStatus((prev) => (prev === index ? null : index))}
-                    className={`flex items-center justify-between text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
+                    className={`grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
                       activeStatus === index ? 'bg-secondary' : 'hover:bg-secondary/50'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                      <span className={activeStatus === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}>
+                      <span className={`truncate ${activeStatus === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
                         {item.name}
                       </span>
                     </div>
-                    <span className="font-semibold text-foreground tabular-nums">{displayValue}</span>
-                    <span className="text-muted-foreground w-10 text-right">{displayPct.toFixed(0)}%</span>
+                    <span className="font-semibold text-foreground tabular-nums w-8 text-right">{displayValue}</span>
+                    <span className="text-muted-foreground tabular-nums w-10 text-right">{displayPct.toFixed(0)}%</span>
                   </div>
                 );
               })}
@@ -683,7 +777,7 @@ export default function PurchaseOverviewPage() {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fx(formatRupiah(v, true))} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
                 <Tooltip formatter={(v: number) => [fmt(v), 'Amount']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
                 <Bar dataKey="value" fill="#0EA5E9" radius={[0, 3, 3, 0]} />
@@ -701,7 +795,7 @@ export default function PurchaseOverviewPage() {
             </div>
             <div className="space-y-3 mt-2">
               {paymentStatusDist.map((item) => {
-                const pct = Math.round((item.value / 12) * 100);
+                const pct = paymentStatusTotal > 0 ? Math.round((item.value / paymentStatusTotal) * 100) : 0;
                 return (
                   <div key={item.name}>
                     <div className="flex items-center justify-between text-xs mb-1">
@@ -800,7 +894,7 @@ export default function PurchaseOverviewPage() {
               <ExclamationTriangleIcon className="w-4 h-4 text-orange-500" />
               <h3 className="text-sm font-semibold text-foreground">Exception Summary</h3>
             </div>
-            <a href="/purchase/exceptions" className="text-xs text-primary hover:underline font-medium">View all exceptions →</a>
+            <Link href="/transactions/purchase/exceptions" className="text-xs text-primary hover:underline font-medium">View all exceptions →</Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[

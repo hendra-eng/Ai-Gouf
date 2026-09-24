@@ -11,8 +11,12 @@
 // fungsi fx() di cash-flow/page.tsx.
 // Kalau client belum punya baris proyeksi (atau request gagal), hasilnya
 // array kosong -- halaman tetap tampil, hanya tanpa bagian proyeksi.
+//
+// [DIUBAH -- cache lewat TanStack Query] Sama seperti useProfitLossData.ts
+// & usePLInsights.ts: fetch di-cache 60 detik supaya buka-ulang halaman
+// Cash Flow tidak fetch ulang dari nol tiap kali.
 
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilCashFlowForecast } from '@/app/agent-ai/lib/api';
 
@@ -31,43 +35,35 @@ function jutaan(v: number | null | undefined): number {
   return Math.round(((v || 0) / 1_000_000) * 100) / 100;
 }
 
+async function fetchCashFlowForecast(clientId: string): Promise<CFForecastRow[]> {
+  const res: any = await ambilCashFlowForecast(clientId);
+  const data: any[] = Array.isArray(res?.forecast) ? res.forecast : [];
+  return data.map((r) => ({
+    month: `${NAMA_BULAN[(r.bulan || 1) - 1] || `Bulan ${r.bulan}`} ${r.tahun}`,
+    tahun: Number(r.tahun),
+    bulan: Number(r.bulan),
+    beginCash: jutaan(r.begin_cash),
+    operatingCF: jutaan(r.operating_cf),
+    investingCF: jutaan(r.investing_cf),
+    financingCF: jutaan(r.financing_cf),
+    netChange: jutaan(r.net_change),
+    endCash: jutaan(r.end_cash),
+    isForecast: true as const,
+  }));
+}
+
 export function useCashFlowForecast(): { loading: boolean; CF_FORECAST: CFForecastRow[] } {
   const { activeClientId, hydrated } = useActiveClient();
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<CFForecastRow[]>([]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!activeClientId) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    ambilCashFlowForecast(activeClientId)
-      .then((res: any) => {
-        if (cancelled) return;
-        const data: any[] = Array.isArray(res?.forecast) ? res.forecast : [];
-        setRows(
-          data.map((r) => ({
-            month: `${NAMA_BULAN[(r.bulan || 1) - 1] || `Bulan ${r.bulan}`} ${r.tahun}`,
-            tahun: Number(r.tahun),
-            bulan: Number(r.bulan),
-            beginCash: jutaan(r.begin_cash),
-            operatingCF: jutaan(r.operating_cf),
-            investingCF: jutaan(r.investing_cf),
-            financingCF: jutaan(r.financing_cf),
-            netChange: jutaan(r.net_change),
-            endCash: jutaan(r.end_cash),
-            isForecast: true as const,
-          }))
-        );
-      })
-      .catch(() => { if (!cancelled) setRows([]); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [hydrated, activeClientId]);
+  const query = useQuery({
+    queryKey: ['cash-flow-forecast', activeClientId],
+    queryFn: () => fetchCashFlowForecast(activeClientId as string),
+    enabled: hydrated && !!activeClientId,
+    staleTime: 60 * 1000,
+  });
 
-  return { loading, CF_FORECAST: rows };
+  return {
+    loading: !hydrated || (!!activeClientId && query.isPending),
+    CF_FORECAST: activeClientId ? query.data ?? [] : [],
+  };
 }

@@ -47,7 +47,7 @@
 // BUDGET_VS_ACTUAL & PL_AI_INSIGHTS di halaman Profit & Loss). Keduanya
 // tetap dipakai langsung dari financialData.tsx oleh cash-flow/page.tsx.
 
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
 import {
@@ -305,42 +305,31 @@ function hitungDataArusKas(hasil: any, coa: any[], tahun: number) {
   return { CF_CORE, CF_MONTHLY, OPERATING_ITEMS, INVESTING_ITEMS, FINANCING_ITEMS, RECENT_TRANSACTIONS, periodLabel };
 }
 
+async function fetchCashFlowData(clientId: string, tahun: number) {
+  const [coaRes, laporanRes] = await Promise.all([
+    ambilCoaClient(clientId).catch(() => ({ coa: [] })),
+    ambilLaporanBulanan(clientId, tahun).catch(() => generateLaporanBulanan(clientId, tahun)),
+  ]);
+  const hasil = (laporanRes as any)?.hasil;
+  const coa = (coaRes as any)?.coa || [];
+  return hitungDataArusKas(hasil, coa, tahun);
+}
+
+// [DIUBAH -- cache lewat TanStack Query] Sama seperti useProfitLossData.ts &
+// useBalanceSheetData.ts: hasil fetch di-cache 60 detik.
 export function useCashFlowData(): CashFlowData {
   const { activeClientId, activeClientName, hydrated } = useActiveClient();
-  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
-  const [loading, setLoading] = useState(true);
-  const [computed, setComputed] = useState<ReturnType<typeof hitungDataArusKas> | null>(null);
-  const requestIdRef = useRef(0);
+  const tahun = new Date().getFullYear();
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!activeClientId) {
-      setComputed(null);
-      setLoading(false);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    const tahun = new Date().getFullYear();
+  const query = useQuery({
+    queryKey: ['cash-flow', activeClientId, tahun],
+    queryFn: () => fetchCashFlowData(activeClientId as string, tahun),
+    enabled: hydrated && !!activeClientId,
+    staleTime: 60 * 1000,
+  });
 
-    (async () => {
-      try {
-        const [coaRes, laporanRes] = await Promise.all([
-          ambilCoaClient(activeClientId).catch(() => ({ coa: [] })),
-          ambilLaporanBulanan(activeClientId, tahun).catch(() => generateLaporanBulanan(activeClientId, tahun)),
-        ]);
-        if (requestIdRef.current !== requestId) return;
-        const hasil = (laporanRes as any)?.hasil;
-        const coa = (coaRes as any)?.coa || [];
-        setComputed(hitungDataArusKas(hasil, coa, tahun));
-      } catch {
-        if (requestIdRef.current !== requestId) return;
-        setComputed(null);
-      } finally {
-        if (requestIdRef.current === requestId) setLoading(false);
-      }
-    })();
-  }, [hydrated, activeClientId]);
+  const loading = !hydrated || (!!activeClientId && query.isPending);
+  const computed = query.data ?? null;
 
   if (computed) {
     return {

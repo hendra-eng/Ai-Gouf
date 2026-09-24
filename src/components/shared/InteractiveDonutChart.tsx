@@ -66,6 +66,27 @@ function polar(cx: number, cy: number, r: number, angleDeg: number) {
 
 function arcPath(cx: number, cy: number, rOuter: number, rInner: number, startAngle: number, endAngle: number) {
   const span = endAngle - startAngle;
+  // [FIXED] Kasus 1 segmen = 100% (span 360°): titik awal & akhir jadi sama
+  // persis secara matematis, dan menurut spek SVG, arc dengan endpoint sama
+  // dengan start point dianggap "tidak ada" (tidak digambar) -- makanya
+  // donut tampak kosong padahal datanya benar (mis. semua transaksi masih
+  // berstatus "Draft"). Dipecah jadi 2 busur 180° supaya tetap valid.
+  if (span >= 359.99) {
+    const mid = startAngle + 180;
+    const outerA = polar(cx, cy, rOuter, startAngle);
+    const outerB = polar(cx, cy, rOuter, mid);
+    const innerA = polar(cx, cy, rInner, startAngle);
+    const innerB = polar(cx, cy, rInner, mid);
+    return [
+      `M ${outerA.x} ${outerA.y}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${outerB.x} ${outerB.y}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${outerA.x} ${outerA.y}`,
+      `L ${innerA.x} ${innerA.y}`,
+      `A ${rInner} ${rInner} 0 1 0 ${innerB.x} ${innerB.y}`,
+      `A ${rInner} ${rInner} 0 1 0 ${innerA.x} ${innerA.y}`,
+      'Z',
+    ].join(' ');
+  }
   const largeArc = span > 180 ? 1 : 0;
   const p1 = polar(cx, cy, rOuter, startAngle);
   const p2 = polar(cx, cy, rOuter, endAngle);

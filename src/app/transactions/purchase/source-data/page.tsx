@@ -2,15 +2,14 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { useAuth } from '@/lib/auth';
-import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
+import { useCurrency } from '@/lib/currency';
+import { formatRupiah } from '@/lib/mockData';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
 const sourceTypeColors: Record<string, string> = {
   'Purchase Order': 'bg-blue-100 text-blue-700',
@@ -48,10 +47,11 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 }
 
 export default function PurchaseSourceDataPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { records: backendRecords } = usePurchaseSourceRecords(clientId);
-  const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);
+  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
+  // src/app/transactions/purchase/page.tsx.
+  const { purchaseSourceRecords } = usePurchaseData();
+  const { fx } = useCurrency();
+  const fmt = (n: number) => fx(formatRupiah(n, true));
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');

@@ -1,10 +1,14 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
+import { useCurrency } from '@/lib/currency';
+import { formatRupiah } from '@/lib/mockData';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
-import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { bulkUpdatePurchaseStatus } from '@/app/agent-ai/lib/api';
+import { exportPurchaseTransactionsCsv } from '@/app/transactions/purchase/purchaseExport';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -13,8 +17,6 @@ import {
   ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
 const statusColors: Record<PurchaseStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -55,10 +57,11 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
-  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
+  // src/app/transactions/purchase/page.tsx.
+  const { purchaseTransactions, activeClientId, refetch } = usePurchaseData();
+  const { fx } = useCurrency();
+  const fmt = (n: number) => fx(formatRupiah(n, true));
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -69,15 +72,12 @@ export default function PurchaseTransactionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
 
-  // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
-  // di detail panel (bukan seluruh daftar) -- pola sama seperti
-  // useJeDraftLines() di journalEntryStore.tsx.
-  const { lines: selectedLines } = usePurchaseTransactionLines(selectedRow?.id);
-  const selectedRowWithLines = useMemo(
-    () => (selectedRow ? { ...selectedRow, lines: selectedLines.map(mapTransactionLineToUi) } : null),
-    [selectedRow, selectedLines],
-  );
+  // [DIUBAH] purchasebridge.ts sudah menyertakan `lines` langsung di tiap
+  // transaksi (di-join dari purchase_line_items saat fetch), jadi tidak
+  // perlu lagi lazy-fetch line terpisah seperti versi purchaseStore lama.
+  const selectedRowWithLines = selectedRow;
 
   const uniqueVendors = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.vendor)))];
   const uniqueCategories = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.category)))];
@@ -116,6 +116,25 @@ export default function PurchaseTransactionPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  const handleExport = () => {
+    if (filtered.length === 0) { toast.error('Tidak ada transaksi untuk diekspor.'); return; }
+    exportPurchaseTransactionsCsv(filtered, 'purchase-transactions');
+  };
+
+  const handleBulkApprove = () => {
+    if (!activeClientId || selectedIds.size === 0) return;
+    setBulkApproving(true);
+    bulkUpdatePurchaseStatus(activeClientId, Array.from(selectedIds), 'approved', 'pending_review')
+      .then((res: { diperbarui: number; dilewati: number }) => {
+        if (res.diperbarui > 0) toast.success(`${res.diperbarui} transaksi disetujui.`);
+        if (res.dilewati > 0) toast.info(`${res.dilewati} transaksi dilewati (bukan status Pending Review).`);
+        setSelectedIds(new Set());
+        refetch();
+      })
+      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : 'Gagal menyetujui transaksi.'))
+      .finally(() => setBulkApproving(false));
   };
 
   const summary = useMemo(() => ({
@@ -178,7 +197,7 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>
@@ -188,7 +207,9 @@ export default function PurchaseTransactionPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-                <button className="je-btn-primary text-xs px-3 py-1.5">Bulk Approve</button>
+                <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" onClick={handleBulkApprove} disabled={bulkApproving}>
+                  {bulkApproving ? 'Approving…' : 'Bulk Approve'}
+                </button>
                 <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             )}

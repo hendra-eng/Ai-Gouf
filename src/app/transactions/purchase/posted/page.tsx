@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { useAuth } from '@/lib/auth';
-import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
+import { useCurrency } from '@/lib/currency';
+import { formatRupiah } from '@/lib/mockData';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { exportPurchaseTransactionsCsv } from '@/app/transactions/purchase/purchaseExport';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -14,8 +17,6 @@ import {
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
 const categoryColors: Record<string, string> = {
   Inventory: 'bg-emerald-100 text-emerald-700',
@@ -49,10 +50,14 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions: backendTransactions } = usePurchaseTransactions(clientId, 'posted');
-  const postedPurchases = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
+  // src/app/transactions/purchase/page.tsx. purchasebridge belum punya
+  // filter status di level fetch, jadi status='posted' difilter di sini
+  // (data per client sudah kecil, tidak masalah difilter di client).
+  const { purchaseTransactions } = usePurchaseData();
+  const { fx } = useCurrency();
+  const fmt = (n: number) => fx(formatRupiah(n, true));
+  const postedPurchases = useMemo(() => purchaseTransactions.filter(t => t.status === 'posted'), [purchaseTransactions]);
 
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
@@ -63,9 +68,12 @@ export default function PurchasePostedPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Baris item/jasa dimuat lazy, cuma untuk baris yang sedang di-expand.
-  const { lines: expandedLines } = usePurchaseTransactionLines(expandedId);
-  const mappedExpandedLines = useMemo(() => expandedLines.map(mapTransactionLineToUi), [expandedLines]);
+  // [DIUBAH] purchasebridge.ts sudah menyertakan `lines` langsung di tiap
+  // transaksi, jadi tidak perlu lazy-fetch line terpisah lagi.
+  const mappedExpandedLines = useMemo(
+    () => postedPurchases.find(t => t.id === expandedId)?.lines || [],
+    [postedPurchases, expandedId],
+  );
 
   const periods = ['All', ...Array.from(new Set(postedPurchases.map(t => t.period)))];
   const categories = ['All', ...Array.from(new Set(postedPurchases.map(t => t.category)))];
@@ -97,6 +105,11 @@ export default function PurchasePostedPage() {
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+  };
+
+  const handleExport = () => {
+    if (filtered.length === 0) { toast.error('Tidak ada transaksi untuk diekspor.'); return; }
+    exportPurchaseTransactionsCsv(filtered, 'purchase-posted');
   };
 
   const summary = useMemo(() => ({
@@ -160,7 +173,7 @@ export default function PurchasePostedPage() {
                 <option value="All">All Payment</option>
                 {Object.entries(paymentLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>

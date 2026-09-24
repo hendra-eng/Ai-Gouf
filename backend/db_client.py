@@ -34,43 +34,23 @@ from sqlalchemy.orm import sessionmaker, relationship
 # datang dari file .env yang di-load oleh load_dotenv() di main.py,
 # SEBELUM modul ini di-import -- lihat catatan di main.py.
 #
-# [FIX v6] SEBELUMNYA baris ini fallback diam-diam ke
-# "sqlite:///ai_gouf.db" kalau DATABASE_URL tidak ke-set (mis. file .env
-# belum dibuat, salah lokasi, atau load_dotenv() gagal). Akibatnya
-# backend tetap START NORMAL tanpa error apa pun, tapi diam-diam nulis
-# semua data ke file SQLite lokal, bukan ke Supabase -- baru ketahuan
-# belakangan setelah data "hilang"/tidak sinkron. Sekarang kalau
-# DATABASE_URL tidak ada, langsung raise di sini supaya backend GAGAL
-# START dengan jelas, bukan jalan diam-diam pakai config yang salah.
-#
-# Kalau memang mau sengaja pakai SQLite lokal (mis. dev tanpa server
-# Postgres), set eksplisit di .env: DATABASE_URL=sqlite:///ai_gouf.db
-# -- itu tetap didukung, yang dihapus cuma fallback DIAM-DIAMnya.
+# DATABASE_URL wajib mengarah ke Supabase -- tidak ada fallback ke
+# database lain. Kalau tidak di-set, backend gagal start dengan jelas
+# (bukan jalan diam-diam pakai config yang salah).
 def get_database_url():
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError(
-            "DATABASE_URL tidak diset! Backend tidak lagi fallback diam-diam "
-            "ke SQLite lokal. Buat file backend/.env (contoh di "
-            "backend/.env.example) dan isi DATABASE_URL ke Supabase, atau "
-            "set eksplisit ke sqlite:///ai_gouf.db kalau memang mau lokal."
+            "DATABASE_URL tidak diset! Buat file backend/.env (contoh di "
+            "backend/.env.example) dan isi DATABASE_URL ke Supabase kamu."
         )
     return url
 
 DATABASE_URL = get_database_url()
 Base = declarative_base()
 
-# [FIX -- Supabase dihapus] Sebelumnya create_engine() tidak punya
-# connect_timeout sama sekali. Kalau DATABASE_URL kebetulan masih
-# menunjuk ke host Postgres/Supabase yang sudah tidak ada (mis. project
-# Supabase sudah dihapus tapi .env belum sempat diupdate), SETIAP satu
-# panggilan dbc.xxx() (ambil_client, simpan_hasil, log_audit, dst -- ada
-# belasan per upload 1 file PDF, lihat _proses_dan_simpan_satu_file di
-# main.py) akan mencoba connect & menggantung lama sebelum gagal, lalu
-# panggilan berikutnya menggantung lagi -- inilah yang membuat proses
-# file PDF terasa "berulang-ulang dan sangat lama". connect_timeout di
-# bawah ini membuat percobaan koneksi ke host yang tidak bisa dihubungi
-# gagal dalam hitungan detik, bukan menggantung tanpa batas. Hanya
+# connect_timeout: percobaan koneksi ke host yang tidak bisa dihubungi
+# akan gagal dalam hitungan detik, bukan menggantung tanpa batas. Hanya
 # berlaku utk dialect postgresql (opsi ini tidak dikenal oleh driver
 # sqlite3, jadi harus dicabang berdasar engine yg akan dibuat).
 _connect_args = {"connect_timeout": 5} if DATABASE_URL.startswith("postgresql") else {}

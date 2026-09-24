@@ -1,23 +1,29 @@
 // Gerbang akses halaman dashboard -- jalan SEBELUM setiap request ke
-// route yang cocok `config.matcher` di bawah. Tanpa ini, /login memang
-// bisa memasang cookie httpOnly, tapi TIDAK ADA yang mencegah orang buka
-// langsung "/" atau halaman dashboard lain tanpa login sama sekali.
+// route yang cocok `config.matcher` di bawah.
 //
-// [PENTING] File ini WAJIB di src/middleware.ts, BUKAN middleware.ts di
-// root -- karena project ini pakai struktur `src/app` (App Router di
-// dalam src/), jadi Next.js hanya mengenali middleware yang ditaruh di
-// level yang sama dengan `src/app`.
-//
-// Validasi dilakukan dengan memanggil backend GET /api/v1/auth/me
-// (bukan verifikasi JWT manual di sini) supaya cuma ADA SATU tempat yang
-// tahu cara validasi token (signature, kadaluarsa, dst) -- backend --
-// dan tidak perlu duplikat JWT_SECRET_KEY di sisi Next.js.
+// [PERUBAHAN] Sebelumnya setiap navigasi memanggil backend
+// GET /api/v1/auth/me secara langsung (cache: 'no-store') -- ini bikin
+// TIAP pindah halaman menunggu satu round-trip network penuh ke backend,
+// meskipun user baru saja divalidasi beberapa detik lalu. Sekarang hasil
+// validasi di-cache singkat lewat cookie non-httpOnly `gouf_session_ok`
+// (cuma berisi timestamp, BUKAN data sensitif) selama SESSION_CHECK_TTL_MS.
+// Selama cache masih segar, middleware langsung `NextResponse.next()`
+// tanpa network call sama sekali -- ini yang bikin pindah halaman terasa
+// instan. Validasi asli (signature, expiry, dst) tetap SATU-SATUNYA di
+// backend: begitu cache basi, atau saat data sungguhan di-fetch dari
+// halaman manapun, backend tetap yang memutuskan token valid atau tidak.
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { BACKEND_URL, SESSION_COOKIE_NAME } from '@/lib/session';
 
-// Halaman yang boleh diakses TANPA login.
 const PUBLIC_PAGE_PATHS = new Set(['/login']);
+
+// Berapa lama hasil "token ini valid" boleh dipercaya tanpa cek ulang
+// ke backend. 30 detik cukup untuk bikin navigasi antar halaman terasa
+// instan, tapi tetap pendek -- kalau user di-logout paksa / token dicabut,
+// paling lambat 30 detik baru kepental ke /login.
+const SESSION_CHECK_TTL_MS = 30_000;
+const SESSION_CHECK_COOKIE = 'gouf_session_ok';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -31,6 +37,16 @@ export async function middleware(request: NextRequest) {
     return redirectToLogin(request);
   }
 
+  // Cache hit: masih dalam TTL -- skip network call, langsung lanjut.
+  const checkedAtRaw = request.cookies.get(SESSION_CHECK_COOKIE)?.value;
+  const checkedAt = checkedAtRaw ? Number(checkedAtRaw) : 0;
+  const isCacheFresh = Number.isFinite(checkedAt) && Date.now() - checkedAt < SESSION_CHECK_TTL_MS;
+
+  if (isCacheFresh) {
+    return NextResponse.next();
+  }
+
+  // Cache miss/basi: baru di sini kita benar-benar tanya backend.
   try {
     const res = await fetch(`${BACKEND_URL}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -40,12 +56,19 @@ export async function middleware(request: NextRequest) {
       return redirectToLogin(request);
     }
   } catch {
-    // Backend tidak bisa dihubungi -- anggap sesi tidak valid (fail
-    // closed) daripada diam-diam membiarkan dashboard terbuka.
     return redirectToLogin(request);
   }
 
-  return NextResponse.next();
+  // Simpan hasil "valid" supaya navigasi 30 detik ke depan tidak perlu
+  // network call lagi. Bukan httpOnly -- isinya cuma timestamp, tidak
+  // ada data sensitif, jadi aman dibaca/ditulis dari mana saja.
+  const response = NextResponse.next();
+  response.cookies.set(SESSION_CHECK_COOKIE, String(Date.now()), {
+    maxAge: Math.floor(SESSION_CHECK_TTL_MS / 1000),
+    sameSite: 'lax',
+    path: '/',
+  });
+  return response;
 }
 
 function redirectToLogin(request: NextRequest) {
@@ -56,12 +79,11 @@ function redirectToLogin(request: NextRequest) {
   }
   const response = NextResponse.redirect(loginUrl);
   response.cookies.delete(SESSION_COOKIE_NAME);
+  response.cookies.delete(SESSION_CHECK_COOKIE);
   return response;
 }
 
 export const config = {
-  // Kecualikan: route /api/* (backend proxy & /api/session/* punya
-  // pengaman sendiri-sendiri), file statis Next.js, dan aset publik.
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf)$).*)',
   ],

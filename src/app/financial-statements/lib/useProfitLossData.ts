@@ -38,7 +38,8 @@
 // yang expose data terstruktur lewat API saat ini. Ketiganya tetap pakai
 // data contoh (financialData.tsx) sampai ada sumber data yang jelas.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
@@ -235,81 +236,83 @@ export async function fetchMonthlyPLForYear(clientId: string, tahun: number): Pr
   }
 }
 
+// Key generator dipisah supaya listener di bawah (invalidate/refresh
+// paksa) selalu menunjuk ke entry cache yang SAMA PERSIS dengan yang
+// dibaca oleh useQuery -- kalau sampai beda (typo array, urutan field,
+// dst), refresh paksa itu akan menulis ke cache yang tidak pernah dibaca
+// siapa pun, dan halaman P&L tidak pernah ikut ter-update.
+function plQueryKey(clientId: string, tahun: number) {
+  return ['profit-loss', clientId, tahun] as const;
+}
+
+async function fetchProfitLossData(clientId: string, tahun: number) {
+  const [coaRes, laporanRes] = await Promise.all([
+    ambilCoaClient(clientId).catch(() => ({ coa: [] })),
+    // Kalau belum pernah digenerate tahun ini, generate on-the-fly (sekali)
+    // supaya halaman tetap bisa tampil data asli tanpa user harus buka
+    // menu lain dulu.
+    ambilLaporanBulanan(clientId, tahun).catch(() => generateLaporanBulanan(clientId, tahun)),
+  ]);
+  const hasil = (laporanRes as any)?.hasil;
+  const coa = (coaRes as any)?.coa || [];
+  return hitungDataProfitLoss(hasil, coa, tahun);
+}
+
 export function useProfitLossData(): ProfitLossData {
   const { activeClientId, activeClientName, hydrated } = useActiveClient();
-  // [FIX flash-ke-0] Default `true`: di render pertama kita belum tahu
-  // apakah ada client aktif tersimpan (localStorage belum sempat dibaca
-  // oleh ActiveClientProvider), jadi anggap "sedang memuat" dulu, bukan
-  // "tidak ada data" (yang sebelumnya tampil sbg ZERO_PL di bawah).
-  const [loading, setLoading] = useState(true);
-  const [computed, setComputed] = useState<ReturnType<typeof hitungDataProfitLoss> | null>(null);
-  const requestIdRef = useRef(0);
+  const queryClient = useQueryClient();
+  const tahun = new Date().getFullYear();
 
-  useEffect(() => {
-    // Context masih membaca client aktif dari localStorage -- jangan
-    // simpulkan "tidak ada client" dulu, biarkan `loading` tetap true.
-    if (!hydrated) return;
-    if (!activeClientId) {
-      setComputed(null);
-      setLoading(false);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    const tahun = new Date().getFullYear();
+  // [DIUBAH -- cache lewat TanStack Query] Sebelumnya hook ini fetch
+  // ulang dari nol (ambilCoaClient + ambilLaporanBulanan) SETIAP KALI
+  // halaman P&L di-mount, termasuk saat user cuma pindah ke halaman lain
+  // lalu balik lagi -- itu yang bikin muncul loading spinner berulang
+  // padahal datanya belum tentu berubah. Sekarang hasilnya disimpan di
+  // cache TanStack Query (staleTime 60 detik, sama seperti QueryClient
+  // default di AppLayout.tsx): buka P&L lagi dalam 1 menit ke depan
+  // langsung tampil dari cache, tanpa network call baru sama sekali.
+  const query = useQuery({
+    queryKey: activeClientId ? plQueryKey(activeClientId, tahun) : ['profit-loss', 'no-client'],
+    queryFn: () => fetchProfitLossData(activeClientId as string, tahun),
+    enabled: hydrated && !!activeClientId,
+    staleTime: 60 * 1000,
+  });
 
-    (async () => {
-      try {
-        const [coaRes, laporanRes] = await Promise.all([
-          ambilCoaClient(activeClientId).catch(() => ({ coa: [] })),
-          // Kalau belum pernah digenerate tahun ini, generate on-the-fly
-          // (sekali) supaya halaman tetap bisa tampil data asli tanpa
-          // user harus buka menu lain dulu.
-          ambilLaporanBulanan(activeClientId, tahun).catch(() => generateLaporanBulanan(activeClientId, tahun)),
-        ]);
-        if (requestIdRef.current !== requestId) return;
-        const hasil = (laporanRes as any)?.hasil;
-        const coa = (coaRes as any)?.coa || [];
-        setComputed(hitungDataProfitLoss(hasil, coa, tahun));
-      } catch {
-        if (requestIdRef.current !== requestId) return;
-        setComputed(null);
-      } finally {
-        if (requestIdRef.current === requestId) setLoading(false);
-      }
-    })();
-  }, [hydrated, activeClientId]);
+  // [FIX flash-ke-0] Selama context client aktif belum selesai dibaca
+  // dari localStorage (hydrated === false), anggap "sedang memuat" --
+  // sama seperti perilaku aslinya, supaya tidak sempat kelip ke ZERO_PL.
+  const loading = !hydrated || (!!activeClientId && query.isPending);
+  const computed = query.data ?? null;
 
   // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
-  // client yang sedang aktif -- BEDA dari effect mount di atas (yang GET
+  // client yang sedang aktif -- BEDA dari fetch normal di atas (yang GET
   // laporan CACHED biar hemat), di sini SENGAJA generateLaporanBulanan()
   // (POST, force hitung ulang dari jurnal+COA terbaru & timpa snapshot
-  // lama) karena kita SUDAH TAHU datanya baru saja berubah, jadi snapshot
-  // cache lama pasti basi. generateLaporanBulanan() MENIMPA snapshot yang
-  // sama (bukan bikin histori baru), jadi aman dipanggil berkali-kali.
+  // lama) karena kita SUDAH TAHU datanya baru saja berubah, jadi cache
+  // lama pasti basi. Hasilnya ditulis LANGSUNG ke cache TanStack Query
+  // (queryClient.setQueryData) supaya halaman yang sedang terbuka ikut
+  // ter-update seketika, dan kalau user pindah-balik halaman setelah ini
+  // dia baca cache yang sudah segar, bukan fetch ulang lagi.
   useEffect(() => {
     return listenClientDataChanged((changedClientId) => {
       if (!activeClientId || changedClientId !== activeClientId) return;
-      const requestId = ++requestIdRef.current;
-      const tahun = new Date().getFullYear();
+      const key = plQueryKey(activeClientId, tahun);
       (async () => {
         try {
           const [coaRes, laporanRes] = await Promise.all([
             ambilCoaClient(activeClientId).catch(() => ({ coa: [] })),
             generateLaporanBulanan(activeClientId, tahun),
           ]);
-          if (requestIdRef.current !== requestId) return;
           const hasil = (laporanRes as any)?.hasil;
           const coa = (coaRes as any)?.coa || [];
-          setComputed(hitungDataProfitLoss(hasil, coa, tahun));
+          queryClient.setQueryData(key, hitungDataProfitLoss(hasil, coa, tahun));
         } catch {
           // Regenerate gagal (mis. user login tidak punya level Supervisor+)
           // -- biarkan data lama tetap tampil drpd halaman jadi kosong.
         }
       })();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeClientId]);
+  }, [activeClientId, tahun, queryClient]);
 
   if (computed) {
     return {

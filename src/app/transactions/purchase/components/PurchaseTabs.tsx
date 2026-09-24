@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
 
 interface Tab {
   id: string;
@@ -12,17 +13,24 @@ interface Tab {
   description: string;
 }
 
-const tabs: Tab[] = [
-  { id: 'tab-overview', label: 'Overview', href: '/transactions/purchase', description: 'Ringkasan performa pembelian dan metrik utama.' },
-  { id: 'tab-source', label: 'Source Data', href: '/transactions/purchase/source-data', description: 'Kelola dan proses data sumber pembelian sebelum dilakukan penjurnalan.' },
-  { id: 'tab-transaction', label: 'Purchase Transaction', href: '/transactions/purchase/transaction', badge: 2, description: 'Workspace transaksi pembelian yang detail dan terintegrasi dengan jurnal akuntansi.' },
-  { id: 'tab-preview', label: 'Purchase Preview', href: '/transactions/purchase/preview', description: 'Pratinjau jurnal transaksi pembelian sebelum diposting.' },
-  { id: 'tab-exceptions', label: 'Exceptions', href: '/transactions/purchase/exceptions', badge: 5, description: 'Kelola dan tindak lanjuti transaksi pembelian yang memerlukan review.' },
-  { id: 'tab-posted', label: 'Posted', href: '/transactions/purchase/posted', description: 'Daftar transaksi pembelian yang telah diposting ke dalam sistem akuntansi.' },
-];
-
 export default function PurchaseTabs() {
   const pathname = usePathname();
+  // [DIUBAH] Badge dulu angka statis (badge: 2 / badge: 5) tidak nyambung ke
+  // data asli. Sekarang dihitung dari purchasebridge.ts (Supabase) yang
+  // sama dipakai halaman lain -- TanStack Query men-dedup fetch-nya lewat
+  // queryKey ['purchase', activeClientId], jadi tidak ada request tambahan.
+  const { purchaseTransactions, purchaseExceptions } = usePurchaseData();
+  const pendingReviewCount = purchaseTransactions.filter((t) => t.status === 'pending_review').length;
+  const openExceptionCount = purchaseExceptions.filter((e) => e.status === 'Open').length;
+
+  const tabs: Tab[] = [
+    { id: 'tab-overview', label: 'Overview', href: '/transactions/purchase', description: 'Ringkasan performa pembelian dan metrik utama.' },
+    { id: 'tab-source', label: 'Source Data', href: '/transactions/purchase/source-data', description: 'Kelola dan proses data sumber pembelian sebelum dilakukan penjurnalan.' },
+    { id: 'tab-transaction', label: 'Purchase Transaction', href: '/transactions/purchase/transaction', badge: pendingReviewCount || undefined, description: 'Workspace transaksi pembelian yang detail dan terintegrasi dengan jurnal akuntansi.' },
+    { id: 'tab-preview', label: 'Purchase Preview', href: '/transactions/purchase/preview', description: 'Pratinjau jurnal transaksi pembelian sebelum diposting.' },
+    { id: 'tab-exceptions', label: 'Exceptions', href: '/transactions/purchase/exceptions', badge: openExceptionCount || undefined, description: 'Kelola dan tindak lanjuti transaksi pembelian yang memerlukan review.' },
+    { id: 'tab-posted', label: 'Posted', href: '/transactions/purchase/posted', description: 'Daftar transaksi pembelian yang telah diposting ke dalam sistem akuntansi.' },
+  ];
 
   const isActive = (href: string) => {
     if (href === '/transactions/purchase') return pathname === '/transactions/purchase';

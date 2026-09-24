@@ -48,7 +48,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",
     "serve": "next start",
     "type-check": "tsc --noEmit",
-    "dev:frontend": "next dev -p 4028",
+    "dev:frontend": "next dev -p 4028 --turbo",
     "dev:backend": "cd backend && venv\\Scripts\\uvicorn main:app --reload --port 8000",
     "start:frontend": "next start -p 4028",
     "start:backend": "cd backend && venv\\Scripts\\uvicorn main:app --port 8000"

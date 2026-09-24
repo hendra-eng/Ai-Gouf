@@ -59,13 +59,21 @@ const nextConfig = {
     }
   ) {
     if (dev) {
-      config.module.rules.push({
-        test: /\.(jsx|tsx)$/,
-        exclude: [/node_modules/],
-        use: [{
-          loader: '@dhiwise/component-tagger/nextLoader',
-        }],
-      });
+      // [DIMATIKAN] Loader @dhiwise/component-tagger dipasang di SEMUA
+      // file .tsx/.jsx setiap kali dev server compile -- ini fitur untuk
+      // integrasi dengan editor visual DhiWise/Rocket. Karena project ini
+      // sekarang dikerjakan manual di VS Code (bukan lewat DhiWise lagi),
+      // loader ini cuma nambah beban compile tanpa manfaat, jadi
+      // dimatikan biar pindah halaman lebih cepat. Kalau suatu saat balik
+      // pakai DhiWise, tinggal un-comment blok ini lagi.
+      //
+      // config.module.rules.push({
+      //   test: /\.(jsx|tsx)$/,
+      //   exclude: [/node_modules/],
+      //   use: [{
+      //     loader: '@dhiwise/component-tagger/nextLoader',
+      //   }],
+      // });
       const ignoredPaths = (process.env.WATCH_IGNORED_PATHS || '')
         .split(',')
         .map((p) => p.trim())

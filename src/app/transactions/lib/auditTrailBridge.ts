@@ -16,7 +16,7 @@
 // diposting/diedit sama sekali) hasilnya akan kosong — itu benar & jujur,
 // bukan bug, beda dari mock lama yang SELALU menampilkan 2 entri palsu.
 
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
 import { auditLogClient } from '@/app/agent-ai/lib/api';
 import { extractPostingId } from './jurnalBridge';
@@ -76,53 +76,40 @@ export interface TransactionAuditTrail {
   entries: AuditTrailEntry[];
 }
 
+async function fetchAuditTrail(clientId: string, postingId: number): Promise<AuditTrailEntry[]> {
+  const res: { audit_log: BackendAuditRow[] } = await auditLogClient(clientId);
+  const rows = (res?.audit_log || []).filter(
+    (e) => e.detail && Number(e.detail.posting_id) === postingId
+  );
+  return rows.map((e) => ({
+    id: `audit-${e.id}`,
+    user: e.user || 'System',
+    action: ACTION_LABELS[e.aksi] || e.aksi,
+    time: formatWaktu(e.dibuat_at),
+    detail: ringkasDetail(e.aksi, e.detail || {}),
+  }));
+}
+
+// [DIUBAH -- cache lewat TanStack Query] Kalau drawer transaksi yang sama
+// dibuka-tutup berkali-kali dalam waktu singkat, riwayatnya tidak fetch
+// ulang tiap kali (cache 60 detik per posting_id).
 /** Ambil riwayat perubahan ASLI untuk satu transaksi (dicocokkan lewat jeId -> posting_id). */
 export function useTransactionAuditTrail(jeId: string | undefined | null): TransactionAuditTrail {
   const { activeClientId, hydrated } = useActiveClient();
   const postingId = extractPostingId(jeId);
-  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
-  const [loading, setLoading] = useState(true);
-  const [entries, setEntries] = useState<AuditTrailEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (postingId === null || !activeClientId) {
-      setEntries([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    auditLogClient(activeClientId)
-      .then((res: { audit_log: BackendAuditRow[] }) => {
-        if (requestIdRef.current !== requestId) return;
-        const rows = (res?.audit_log || []).filter(
-          (e) => e.detail && Number(e.detail.posting_id) === postingId
-        );
-        setEntries(
-          rows.map((e) => ({
-            id: `audit-${e.id}`,
-            user: e.user || 'System',
-            action: ACTION_LABELS[e.aksi] || e.aksi,
-            time: formatWaktu(e.dibuat_at),
-            detail: ringkasDetail(e.aksi, e.detail || {}),
-          }))
-        );
-      })
-      .catch((err: Error) => {
-        if (requestIdRef.current !== requestId) return;
-        setError(err?.message || 'Gagal memuat riwayat perubahan.');
-        setEntries([]);
-      })
-      .finally(() => {
-        if (requestIdRef.current !== requestId) return;
-        setLoading(false);
-      });
-  }, [hydrated, postingId, activeClientId]);
+  const query = useQuery({
+    queryKey: ['transaction-audit-trail', activeClientId, postingId],
+    queryFn: () => fetchAuditTrail(activeClientId as string, postingId as number),
+    enabled: hydrated && postingId !== null && !!activeClientId,
+    staleTime: 60 * 1000,
+  });
 
-  return { loading, hasPostingId: postingId !== null, error, entries };
+  const loading = hydrated && postingId !== null && !!activeClientId && query.isPending;
+  return {
+    loading,
+    hasPostingId: postingId !== null,
+    error: query.error ? (query.error as Error)?.message || 'Gagal memuat riwayat perubahan.' : null,
+    entries: query.data ?? [],
+  };
 }

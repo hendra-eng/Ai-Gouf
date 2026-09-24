@@ -3,9 +3,11 @@
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
+import { useCurrency } from '@/lib/currency';
+import { formatRupiah } from '@/lib/mockData';
 import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
-import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
+import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
+import { updatePurchaseExceptionStatus } from '@/app/agent-ai/lib/api';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -16,8 +18,6 @@ import {
   XCircleIcon,
 } from '@heroicons/react/24/outline';
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
 
 const severityConfig: Record<ExceptionSeverity, { cls: string; dot: string; icon: React.ReactNode }> = {
   Critical: { cls: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
@@ -45,10 +45,11 @@ function StatusBadge({ status }: { status: ExceptionStatus }) {
 }
 
 export default function PurchaseExceptionsPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
-  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
+  // src/app/transactions/purchase/page.tsx.
+  const { purchaseExceptions, activeClientId, refetch } = usePurchaseData();
+  const { fx } = useCurrency();
+  const fmt = (n: number) => fx(formatRupiah(n, true));
 
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('All');
@@ -90,9 +91,12 @@ export default function PurchaseExceptionsPage() {
   const handleStatusChange = (id: string, status: ExceptionStatus) => {
     setResolveMap(prev => ({ ...prev, [id]: status }));
     if (selectedExc?.id === id) setSelectedExc(prev => prev ? { ...prev, status } : null);
-    updatePurchaseException(id, { status }).catch(err => {
-      toast.error(err instanceof Error ? err.message : 'Failed to update exception status.');
-    });
+    if (!activeClientId) return;
+    updatePurchaseExceptionStatus(activeClientId, id, status)
+      .then(() => refetch())
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : 'Failed to update exception status.');
+      });
   };
 
   return (

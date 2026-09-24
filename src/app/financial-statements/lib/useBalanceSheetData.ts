@@ -31,7 +31,7 @@
 // cuma punya data 1 tahun berjalan per akun. Kalau bulan berjalan adalah
 // Januari (belum ada bulan sebelumnya), previous = 0.
 
-import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
 import { COMPANY } from '@/lib/financialData';
@@ -201,42 +201,35 @@ function seksiKosong(label: string): BSSection {
   return { label, items: [], total: 0, prevTotal: 0 };
 }
 
+async function fetchBalanceSheetData(clientId: string, tahun: number) {
+  const [coaRes, laporanRes] = await Promise.all([
+    ambilCoaClient(clientId).catch(() => ({ coa: [] })),
+    ambilLaporanBulanan(clientId, tahun).catch(() => generateLaporanBulanan(clientId, tahun)),
+  ]);
+  const hasil = (laporanRes as any)?.hasil;
+  const coa = (coaRes as any)?.coa || [];
+  return hitungDataNeraca(hasil, coa, tahun);
+}
+
+// [DIUBAH -- cache lewat TanStack Query] Sama seperti useProfitLossData.ts:
+// hasil fetch di-cache 60 detik, supaya buka-ulang halaman Balance Sheet
+// (atau pindah ke halaman lain lalu balik lagi) tidak fetch ulang dari nol.
 export function useBalanceSheetData(): BalanceSheetData {
   const { activeClientId, activeClientName, hydrated } = useActiveClient();
-  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
-  const [loading, setLoading] = useState(true);
-  const [computed, setComputed] = useState<ReturnType<typeof hitungDataNeraca> | null>(null);
-  const requestIdRef = useRef(0);
+  const tahun = new Date().getFullYear();
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!activeClientId) {
-      setComputed(null);
-      setLoading(false);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    const tahun = new Date().getFullYear();
+  const query = useQuery({
+    queryKey: ['balance-sheet', activeClientId, tahun],
+    queryFn: () => fetchBalanceSheetData(activeClientId as string, tahun),
+    enabled: hydrated && !!activeClientId,
+    staleTime: 60 * 1000,
+  });
 
-    (async () => {
-      try {
-        const [coaRes, laporanRes] = await Promise.all([
-          ambilCoaClient(activeClientId).catch(() => ({ coa: [] })),
-          ambilLaporanBulanan(activeClientId, tahun).catch(() => generateLaporanBulanan(activeClientId, tahun)),
-        ]);
-        if (requestIdRef.current !== requestId) return;
-        const hasil = (laporanRes as any)?.hasil;
-        const coa = (coaRes as any)?.coa || [];
-        setComputed(hitungDataNeraca(hasil, coa, tahun));
-      } catch {
-        if (requestIdRef.current !== requestId) return;
-        setComputed(null);
-      } finally {
-        if (requestIdRef.current === requestId) setLoading(false);
-      }
-    })();
-  }, [hydrated, activeClientId]);
+  // [FIX flash-ke-0] Selama context client aktif belum selesai dibaca dari
+  // localStorage (hydrated === false), anggap "sedang memuat" -- lihat
+  // penjelasan di useProfitLossData.ts.
+  const loading = !hydrated || (!!activeClientId && query.isPending);
+  const computed = query.data ?? null;
 
   if (computed) {
     return {

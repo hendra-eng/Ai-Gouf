@@ -73,9 +73,24 @@ interface RawPurchaseResponse {
 }
 
 // ─── Helper umum ────────────────────────────────────────────────────────────
+// [FIX BUG] Sebelumnya "Partial" (nilai asli di kolom payment_status pada
+// database, lihat CHECK constraint purchase_transaction_payment_status_check)
+// tidak pernah cocok dengan enum frontend 'partially_paid' -- norm("Partial")
+// = "partial", norm("partially_paid") = "partiallypaid", dua string itu beda
+// walau dibandingkan case/spasi/underscore-insensitive. Akibatnya transaksi
+// dengan payment_status = "Partial" selalu jatuh ke fallback 'unpaid' dan
+// tampil salah sebagai "Unpaid" di UI. Alias eksplisit di bawah menutup celah
+// itu tanpa mengubah data di database (datanya sendiri sudah benar).
+const ENUM_ALIASES: Record<string, string> = {
+  partial: 'partiallypaid',
+};
+
 function matchEnum<T extends string>(raw: string | null | undefined, allowed: readonly T[], fallback: T): T {
   if (!raw) return fallback;
-  const norm = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '');
+  const norm = (s: string) => {
+    const base = s.toLowerCase().replace(/[\s_-]+/g, '');
+    return ENUM_ALIASES[base] ?? base;
+  };
   const target = norm(raw);
   const found = allowed.find((a) => norm(a) === target);
   return found ?? fallback;

@@ -1,6 +1,17 @@
 'use client';
 
-// Data layer untuk fitur "Transactions > Purchase" (src/app/transactions/
+// [DEPRECATED -- sudah tidak dipakai halaman manapun per <tanggal fix ini>]
+// Ke-6 halaman transactions/purchase/* sekarang pakai
+// src/app/transactions/purchase/purchasebridge.ts (data dari Supabase,
+// tabel finance_transaction_purchase_*, scoped per client aktif) karena
+// tabel yang file ini pakai (financial_transaction_purchase_* -- perhatikan
+// beda nama "financial" vs "finance") kosong dan filternya berdasarkan user
+// login, bukan client aktif. File ini SENGAJA belum dihapus (bukan dead
+// code yang aman dibuang begitu saja -- backend/modules/transactions/
+// purchase_v1.py yang jadi sumbernya masih ada dan mungkin dipakai fitur
+// lain), tapi jangan import ulang dari sini untuk halaman Purchase manapun.
+
+// Data layer LAMA untuk fitur "Transactions > Purchase" (src/app/transactions/
 // purchase/*), terhubung ke backend/modules/transactions/purchase_v1.py:
 // /api/v1/transactions/purchase/... -- lihat file itu untuk daftar endpoint.
 //
