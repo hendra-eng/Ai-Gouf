@@ -188,12 +188,18 @@ def _account_metadata(session: Session, client_id: str, account_code: str) -> Di
     }
 
 
-def _standard_meta_bulk(session: Session, client_id: str, coa_ids: Iterable[Optional[int]]) -> Dict[int, Dict[str, Any]]:
+def _standard_meta_bulk(session: Session, client_id: str, coa_ids: Iterable[Optional[str]]) -> Dict[str, Dict[str, Any]]:
     """[SESUAI DB] 1_app.journal_lines tidak lagi menyimpan standard_account_*
     dan account_role per baris -- keduanya dihitung dari mapping COA
     (coa_standard_mapping & company_account_roles) saat dibaca, sekali query
-    untuk semua coa_id sekaligus."""
-    ids = {int(c) for c in coa_ids if c}
+    untuk semua coa_id sekaligus.
+
+    [FIX -- SCHEMA MISMATCH, 2026-09-24] `coa.id` (dan karenanya
+    `journal_lines.coa_id`) adalah UUID, BUKAN integer -- baris `int(c)`
+    yang sebelumnya ada di sini crash (ValueError: invalid literal for
+    int() with base 10) begitu dipanggil dengan coa_id UUID asli (selalu,
+    di skema sekarang). Cukup pakai nilainya apa adanya."""
+    ids = {c for c in coa_ids if c}
     if not ids:
         return {}
     out: Dict[int, Dict[str, Any]] = {
@@ -358,9 +364,21 @@ def sync_legacy_to_core(client_id: str, posting_ids: Optional[Iterable[int]] = N
 #   * Jurnal harus seimbang (total debit == total kredit), kalau tidak dilewati.
 #   * Transaksi yang sebelumnya sudah di-mirror lalu berubah jadi tidak POSTED
 #     (Unposted/Voided/...) dikembalikan ke DRAFT supaya keluar dari laporan.
-#   * Hanya entry bertanda created_by == MODULE_SYNC_MARK yang disentuh, jadi
-#     jurnal buatan modul lain (create_journal_entry) tidak terganggu.
+#   * Hanya entry bertanda created_by == MODULE_SYNC_CREATED_BY yang
+#     disentuh, jadi jurnal buatan modul lain (create_journal_entry) tidak
+#     terganggu.
 MODULE_SYNC_MARK = "module-sync"
+# [FIX -- SCHEMA MISMATCH, 2026-09-24] journal_entries.created_by adalah
+# kolom UUID di database (bukan teks bebas) -- string MODULE_SYNC_MARK di
+# atas TIDAK BISA disimpan langsung ke situ (crash:
+# psycopg2.errors.InvalidTextRepresentation: invalid input syntax for
+# type uuid: "module-sync", muncul tiap kali sync_module_transactions_to_core()
+# coba mem-mirror transaksi BANK_CASH/OTHER/PURCHASE baru). MODULE_SYNC_MARK
+# tetap dipakai apa adanya utk `posted_by` (kolom varchar, bebas teks),
+# tapi `created_by` & filter pencarian entry hasil sync sekarang pakai
+# UUID sentinel tetap di bawah ini -- tetap bisa dibedakan dari entry
+# buatan user asli tanpa melanggar tipe kolom.
+MODULE_SYNC_CREATED_BY = "00000000-0000-0000-0000-000000000001"
 _MODULE_SOURCES = ("BANK_CASH", "OTHER", "PURCHASE")
 _OTHER_POSTED_STATUS = {"posted", "reconciled"}
 
@@ -472,7 +490,7 @@ def _mirror_module_entry(session: Session, client_id: str, coa_ids: Dict[str, in
     if entry is None:
         entry = dbc.JournalEntry(
             client_id=client_id, journal_no=key[:80], source_module=source_module,
-            source_transaction_id=key, created_by=MODULE_SYNC_MARK, created_at=datetime.now(),
+            source_transaction_id=key, created_by=MODULE_SYNC_CREATED_BY, created_at=datetime.now(),
         )
         session.add(entry)
         session.flush()
@@ -582,7 +600,7 @@ def sync_module_transactions_to_core(client_id: str) -> int:
             stale = session.query(dbc.JournalEntry).filter(
                 dbc.JournalEntry.client_id == client_id,
                 dbc.JournalEntry.source_module == modul,
-                dbc.JournalEntry.created_by == MODULE_SYNC_MARK,
+                dbc.JournalEntry.created_by == MODULE_SYNC_CREATED_BY,
                 dbc.JournalEntry.legacy_posting_id.is_(None),
                 dbc.JournalEntry.status == "POSTED",
             ).all()
@@ -881,7 +899,7 @@ def post_journal_entry(client_id: str, journal_entry_id: int, user: str) -> Dict
         session.close()
 
 
-def set_coa_mapping(client_id: str, coa_id: int, standard_code: str, user: str) -> Dict[str, Any]:
+def set_coa_mapping(client_id: str, coa_id: str, standard_code: str, user: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         coa = session.query(dbc.Coa).filter(dbc.Coa.id == coa_id, dbc.Coa.client_id == client_id).first()
@@ -912,7 +930,7 @@ def set_coa_mapping(client_id: str, coa_id: int, standard_code: str, user: str) 
         session.close()
 
 
-def set_company_account_role(client_id: str, role_code: str, coa_id: int, user: str) -> Dict[str, Any]:
+def set_company_account_role(client_id: str, role_code: str, coa_id: str, user: str) -> Dict[str, Any]:
     session = dbc.SessionLocal()
     try:
         coa = session.query(dbc.Coa).filter(dbc.Coa.id == coa_id, dbc.Coa.client_id == client_id).first()

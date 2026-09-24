@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -43,7 +44,7 @@ class PLBudgetResponse(BaseModel):
 
 
 class PLInsightSkema(BaseModel):
-    id: int
+    id: UUID  # kolom id di DB bertipe uuid (bukan int)
     title: str
     description: str
     metric: str

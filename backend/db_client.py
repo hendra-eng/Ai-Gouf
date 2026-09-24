@@ -372,8 +372,8 @@ class Coa(Base):
     # pakai "Jakarta"/"Surabaya" (lihat OverviewContent.tsx).
     cabang = Column(String(100), nullable=True)
     aktif = Column(Boolean, default=True)
-    dibuat_at = Column(DateTime, default=datetime.now)
-    diperbarui_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    dibuat_at = Column("created_at", DateTime(timezone=True), server_default=text("now()"), nullable=True)
+    diperbarui_at = Column("edited_at", DateTime(timezone=True), nullable=True, onupdate=datetime.now)
 
     client = relationship("Client")
 
@@ -903,7 +903,7 @@ class AuditLog(Base):
     updated_at = Column("edited_at", DateTime(timezone=True), server_default=text("now()"), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
-    updated_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    updated_by = Column("edited_by", PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
     deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
 
 class User(Base):
@@ -3599,7 +3599,7 @@ class PLBudgetLine(Base):
     """Anggaran P&L per bulan per kategori (satu baris = satu kategori)."""
     __tablename__ = "finance_financial_statement_profit_loss_budget_line"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))  # DB: uuid
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
@@ -3614,7 +3614,7 @@ class PLInsight(Base):
     """Insight P&L (teks) per client -- sumber AIInsightsPanel."""
     __tablename__ = "finance_financial_statement_profit_loss_insights"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))  # DB: uuid
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     modul = Column(String, nullable=False)
     periode = Column(String, nullable=True)
@@ -3629,7 +3629,7 @@ class CashFlowForecastRow(Base):
     """Proyeksi arus kas bulanan per client (nominal Rupiah penuh)."""
     __tablename__ = "finance_financial_statement_cash_flow_forecast"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))  # DB: uuid
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     tahun = Column(Integer, nullable=False)
     bulan = Column(Integer, nullable=False)
@@ -4089,7 +4089,7 @@ class FinanceTransactionBankCash(Base):
     transaction_hash = Column(String(64), nullable=True)
     diposting_oleh = Column(String(100), nullable=True)
     diposting_at = Column(DateTime, nullable=True)
-    dibuat_at = Column(DateTime, nullable=False, default=datetime.now)
+    dibuat_at = Column("created_at", DateTime(timezone=True), nullable=True, default=datetime.now)
     payment_status = Column(String(20), nullable=True)
     paid_amount = Column(Float, nullable=True)
 
@@ -8088,7 +8088,7 @@ def cari_akun_coa(client_id: str, no_akun: str) -> Optional[Dict[str, Any]]:
         session.close()
 
 
-def ambil_akun_coa_by_id(akun_id: int) -> Optional[Dict[str, Any]]:
+def ambil_akun_coa_by_id(akun_id: str) -> Optional[Dict[str, Any]]:
     """Ambil satu akun COA berdasarkan id baris. Dipakai untuk mengambil
     snapshot "sebelum" saat update/hapus, untuk audit trail."""
     session = SessionLocal()
@@ -8141,7 +8141,7 @@ def tambah_akun_coa(client_id: str, no_akun: str, nama_akun: str, kategori: Opti
         session.close()
 
 
-def update_akun_coa(akun_id: int, **field_baru) -> bool:
+def update_akun_coa(akun_id: str, **field_baru) -> bool:
     """Update field akun COA (mis. kategori, nama_akun) berdasarkan id baris."""
     session = SessionLocal()
     try:
@@ -8161,7 +8161,7 @@ def update_akun_coa(akun_id: int, **field_baru) -> bool:
         session.close()
 
 
-def hapus_akun_coa(akun_id: int) -> bool:
+def hapus_akun_coa(akun_id: str) -> bool:
     """Nonaktifkan (soft-delete) satu akun COA -- tidak dihapus fisik supaya
     histori jurnal_posting yang sudah memakai akun ini tetap bisa ditelusuri."""
     session = SessionLocal()

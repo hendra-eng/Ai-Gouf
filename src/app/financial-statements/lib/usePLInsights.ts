@@ -14,7 +14,7 @@ import { useActiveClient } from '@/lib/activeClient';
 import { ambilPlInsights } from '@/app/agent-ai/lib/api';
 
 export interface PLInsight {
-  id: number;
+  id: string;
   title: string;
   description: string;
   metric: string;
@@ -41,7 +41,7 @@ export function usePLInsights(): { loading: boolean; insights: PLInsight[] } {
         const data: any[] = Array.isArray(res?.insights) ? res.insights : [];
         setInsights(
           data.map((r) => ({
-            id: Number(r.id),
+            id: String(r.id),
             title: String(r.title ?? ''),
             description: String(r.description ?? ''),
             metric: String(r.metric ?? ''),

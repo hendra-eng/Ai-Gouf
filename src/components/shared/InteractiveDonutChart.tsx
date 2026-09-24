@@ -59,7 +59,9 @@ const MIN_SEGMENT_DEG = 3; // minimum angular size any segment is allowed to shr
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  // Dibulatkan supaya hasil server (SSR) & browser identik → tidak ada hydration mismatch
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  return { x: r3(cx + r * Math.cos(rad)), y: r3(cy + r * Math.sin(rad)) };
 }
 
 function arcPath(cx: number, cy: number, rOuter: number, rInner: number, startAngle: number, endAngle: number) {

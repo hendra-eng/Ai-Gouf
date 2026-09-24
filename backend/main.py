@@ -937,7 +937,7 @@ class ARInvoiceSkema(BaseModel):
     due_date: Optional[str] = None
     amount: float = 0
     manual_status: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[uuid.UUID] = None
 
 class ARPaymentSkema(BaseModel):
     id: str
@@ -948,7 +948,7 @@ class ARPaymentSkema(BaseModel):
     reference: Optional[str] = None
     created_by: Optional[str] = None
     created_at: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[uuid.UUID] = None
 
 class ARCollectionNoteSkema(BaseModel):
     id: str
@@ -1133,7 +1133,7 @@ class ApPaymentSkema(BaseModel):
     reference_no: Optional[str] = None
     recorded_by: Optional[str] = None
     created_at: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[uuid.UUID] = None
 
 class ApNoteSkema(BaseModel):
     id: str
@@ -5636,7 +5636,7 @@ def api_tambah_akun_coa(client_id: str, req: AkunCoaRequest, user: dict = Depend
 
 
 @app.put("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_update_akun_coa(client_id: str, akun_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
+def api_update_akun_coa(client_id: str, akun_id: str, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
     """Perbarui satu akun COA (mis. mengisi kategori yang tadinya kosong)."""
     sebelum = dbc.ambil_akun_coa_by_id(akun_id)
     berhasil = dbc.update_akun_coa(
@@ -5661,7 +5661,7 @@ def api_update_akun_coa(client_id: str, akun_id: int, req: AkunCoaRequest, user:
 
 
 @app.delete("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_hapus_akun_coa(client_id: str, akun_id: int, user: dict = Depends(auth.get_current_user)):
+def api_hapus_akun_coa(client_id: str, akun_id: str, user: dict = Depends(auth.get_current_user)):
     """Nonaktifkan (soft-delete) satu akun COA."""
     sebelum = dbc.ambil_akun_coa_by_id(akun_id)
     berhasil = dbc.hapus_akun_coa(akun_id)
@@ -6994,26 +6994,28 @@ class GenerateLaporanBulananRequest(BaseModel):
     tahun: int  # 2026
 
 
-@app.post("/api/client/{client_id}/laporan-bulanan/generate")
-def api_generate_laporan_bulanan(
-    client_id: str,
-    req: GenerateLaporanBulananRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
+def _generate_laporan_bulanan_impl(client_id: str, tahun: int, username: str, jurnal: Optional[list] = None):
     """
-    Generate Trial Balance, Laba Rugi, dan Balance Sheet bulanan
-    Jan-Des dalam SATU tabel per laporan (12 kolom bulan).
+    Logika inti generate Trial Balance, Laba Rugi, dan Balance Sheet
+    bulanan Jan-Des (SATU tabel per laporan, 12 kolom bulan). Dipisah dari
+    endpoint POST /generate supaya bisa dipanggil ulang oleh GET
+    /laporan-bulanan/{tahun} untuk self-heal cache basi (lihat komentar
+    [FIX -- CACHE BASI] di endpoint GET di bawah) tanpa duplikasi logic.
 
     [ACCOUNTING CORE V2] Laporan bulanan hanya memakai POSTED journal lines.
+    `jurnal` boleh dioper langsung kalau pemanggil sudah menariknya sendiri
+    (mis. GET yang barusan menghitung jumlah baris live utk cek staleness)
+    supaya tidak query 2x.
     """
-    jurnal = accounting_core.list_posted_lines(
-        client_id,
-        tanggal_mulai=f"{req.tahun}-01-01",
-        tanggal_akhir=f"{req.tahun}-12-31",
-    )
+    if jurnal is None:
+        jurnal = accounting_core.list_posted_lines(
+            client_id,
+            tanggal_mulai=f"{tahun}-01-01",
+            tanggal_akhir=f"{tahun}-12-31",
+        )
 
     if not jurnal:
-        raise HTTPException(404, f"Belum ada jurnal untuk tahun {req.tahun}")
+        raise HTTPException(404, f"Belum ada jurnal untuk tahun {tahun}")
 
     coa = dbc.ambil_coa_client(client_id)
 
@@ -7023,7 +7025,7 @@ def api_generate_laporan_bulanan(
     # ulang dari nol dengan filter tanggal yang malah berbeda (string compare vs
     # _tanggal_jurnal()/_akhir_bulan() yang dipakai internal) -- sumber duplikasi
     # & potensi hasil beda-tipis sudah dihapus di sini.
-    hasil = lapkeu.susun_laporan_bulanan_setahun(jurnal, coa, req.tahun, sertakan_saldo_per_bulan=True)
+    hasil = lapkeu.susun_laporan_bulanan_setahun(jurnal, coa, tahun, sertakan_saldo_per_bulan=True)
     per_bulan_saldo = hasil.pop("_saldo_per_akun_per_bulan", [])
 
     # [BARU] Simpan snapshot saldo per akun untuk TIAP bulan ke
@@ -7037,26 +7039,43 @@ def api_generate_laporan_bulanan(
     for bulan in range(1, 13):
         saldo_per_akun = per_bulan_saldo[bulan - 1] if bulan - 1 < len(per_bulan_saldo) else {}
         baris_tersimpan += dbc.simpan_riwayat_saldo_bulanan(
-            client_id=client_id, saldo_per_akun=saldo_per_akun, tahun=req.tahun, bulan=bulan,
+            client_id=client_id, saldo_per_akun=saldo_per_akun, tahun=tahun, bulan=bulan,
         )
     hasil.setdefault("meta", {})["riwayat_saldo_tersimpan"] = baris_tersimpan
+    # [FIX -- CACHE BASI] Simpan jumlah baris jurnal live yang dipakai utk
+    # generate snapshot ini -- ini "tanda tangan kesegaran" yang dicek ulang
+    # oleh GET /laporan-bulanan/{tahun} tiap kali dibuka, supaya snapshot
+    # basi (jurnal bertambah dari luar sesi browser yg sedang buka
+    # halaman ini, mis. via script/import terpisah) otomatis kehitung
+    # ulang, bukan nyangkut selamanya krn dianggap "sudah pernah sukses".
+    hasil["meta"]["jumlah_baris_jurnal_live"] = len(jurnal)
 
     analisis_id = dbc.simpan_hasil_analisis(
         client_id=client_id,
-        jenis_analisis=f"laporan_bulanan_{req.tahun}",
+        jenis_analisis=f"laporan_bulanan_{tahun}",
         hasil=hasil,
-        prompt=f"Laporan bulanan tahun {req.tahun}",
+        prompt=f"Laporan bulanan tahun {tahun}",
         model_ai="rule_based",
     )
 
     dbc.log_audit(
         client_id=client_id,
-        user=user.get("username", "unknown"),
+        user=username,
         aksi="generate_laporan_bulanan",
-        detail={"tahun": req.tahun, "riwayat_saldo_tersimpan": baris_tersimpan},
+        detail={"tahun": tahun, "riwayat_saldo_tersimpan": baris_tersimpan},
     )
 
     return {"laporan_id": analisis_id, "hasil": hasil}
+
+
+@app.post("/api/client/{client_id}/laporan-bulanan/generate")
+def api_generate_laporan_bulanan(
+    client_id: str,
+    req: GenerateLaporanBulananRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """Generate/timpa snapshot laporan bulanan tahun `req.tahun` dari jurnal live saat ini."""
+    return _generate_laporan_bulanan_impl(client_id, req.tahun, user.get("username", "unknown"))
 
 
 # ============================================================
@@ -7130,13 +7149,46 @@ def api_ambil_laporan_bulanan(
     tahun: int,
     user: dict = Depends(auth.require_level(3)),
 ):
-    """Ambil laporan bulanan yang sudah pernah digenerate."""
+    """
+    Ambil laporan bulanan yang sudah pernah digenerate.
+
+    [FIX -- CACHE BASI, 2026-09-24] SEBELUMNYA endpoint ini polos ambil
+    snapshot cache TERAKHIR tanpa pernah cek apakah dia masih cocok
+    dengan jurnal live sekarang -- kalau jurnal bertambah dari LUAR sesi
+    browser yang biasanya memicu regenerate otomatis (listenClientDataChanged
+    di frontend, lihat useProfitLossData.ts), snapshot lama nyangkut
+    SELAMANYA dan halaman P&L/Neraca/dst tampil Rp 0 atau angka basi
+    walau jurnal aslinya sudah lengkap di database (kejadian nyata: 3
+    client sekaligus, snapshot ke-generate cuma 8 detik setelah baris
+    jurnal PERTAMA masuk, sebelum puluhan baris berikutnya selesai
+    ditulis). Sekarang tiap GET menghitung ulang jumlah baris jurnal
+    POSTED yang live, dibandingkan dengan jumlah yang tercatat di
+    meta.jumlah_baris_jurnal_live milik snapshot -- kalau beda (atau
+    snapshot lama belum punya field ini sama sekali), generate ulang
+    on-the-fly sebelum menjawab, alih-alih diam-diam menjawab data basi.
+    Snapshot yang MASIH cocok tetap langsung dikembalikan (tidak generate
+    ulang tiap request, biar tetap cepat).
+    """
+    jurnal_live = accounting_core.list_posted_lines(
+        client_id,
+        tanggal_mulai=f"{tahun}-01-01",
+        tanggal_akhir=f"{tahun}-12-31",
+    )
+
     riwayat = dbc.ambil_hasil_analisis_client(
         client_id, jenis_analisis=f"laporan_bulanan_{tahun}", limit=1
     )
-    if not riwayat:
+    if riwayat:
+        jumlah_saat_generate = (riwayat[0].get("hasil") or {}).get("meta", {}).get("jumlah_baris_jurnal_live")
+        if jumlah_saat_generate is not None and jumlah_saat_generate == len(jurnal_live):
+            return riwayat[0]  # masih segar, aman dipakai apa adanya
+
+    if not jurnal_live:
         raise HTTPException(404, f"Belum ada laporan bulanan untuk tahun {tahun}")
-    return riwayat[0]
+
+    # Cache tidak ada / basi -- generate ulang sekarang juga dari jurnal live
+    # yang sudah kita tarik di atas (tidak query ulang).
+    return _generate_laporan_bulanan_impl(client_id, tahun, user.get("username", "unknown"), jurnal=jurnal_live)
 
 
 

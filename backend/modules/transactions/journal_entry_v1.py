@@ -53,6 +53,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -150,7 +151,7 @@ class JeDraftCreateRequest(BaseModel):
     reviewed_by_name: Optional[str] = Field(None, max_length=255)
     approved_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[UUID] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
 
@@ -173,7 +174,7 @@ class JeDraftUpdateRequest(BaseModel):
     reviewed_by_name: Optional[str] = Field(None, max_length=255)
     approved_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[UUID] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
 
