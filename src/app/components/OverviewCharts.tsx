@@ -16,7 +16,7 @@
 // Kalau belum ada client aktif / client belum ada jurnal & transaksi Sales
 // sama sekali, kedua chart fallback ke data contoh (sama seperti versi
 // sebelumnya) supaya halaman tidak pernah kosong.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import InteractiveDonutChart, { DonutLivePreview as AgingLivePreview } from '@/components/shared/InteractiveDonutChart';
 import { useLanguage } from '@/lib/language';
@@ -328,14 +328,14 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
   const yDomainRef = useRef(yDomain);
   yDomainRef.current = yDomain;
 
-  const stopPointSpring = () => {
+  const stopPointSpring = useCallback(() => {
     if (pointAnimRef.current) cancelAnimationFrame(pointAnimRef.current);
     pointAnimRef.current = null;
-  };
+  }, []);
 
   const easeOutQuintPoint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-  const springBackPoint = () => {
+  const springBackPoint = useCallback(() => {
     const drag = dragPointRef.current;
     if (!drag) return;
     stopPointSpring();
@@ -360,7 +360,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
       }
     };
     pointAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopPointSpring]);
 
   const handleDotPointerDown = (key: LineKey, index: number, startValue: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -423,7 +423,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBackPoint]);
 
   // Reset drag kalau ganti periode/filter/tab (index bulan & kalibrasi piksel jadi tidak relevan lagi)
   useEffect(() => {
@@ -431,7 +431,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
     dragPointRef.current = null;
     setDragPoint(null);
     dotsRef.current = { revenue: [], expenses: [], netProfit: [], thisYear: [], lastYear: [], actualRaw: [], budgetRaw: [] };
-  }, [period, viewMode]);
+  }, [period, viewMode, stopPointSpring]);
 
   // Data yang benar-benar dikirim ke chart: sama seperti revenueData, kecuali
   // satu titik (bulan + garis) yang sedang ditarik/spring-back diganti nilai live-nya.
@@ -458,50 +458,54 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
 
   // Bar custom shape (tab Budget): seluruh badan bar bisa digenggam & ditarik
   // naik/turun (bukan cuma strip tipis di ujungnya) supaya terasa alami.
-  const renderInteractiveBar = (key: 'actualRaw' | 'budgetRaw', fillColor: string, fillOpacity: number = 1) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
-    const h = Math.max(0, height);
-    return (
-      <g>
-        <rect
-          x={x}
-          y={y}
-          width={width}
-          height={h}
-          fill={fillColor}
-          fillOpacity={fillOpacity}
-          rx={3}
-          ry={3}
-          stroke={isDraggingThis ? fillColor : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
-        />
-        {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek/kecil */}
-        <rect
-          x={x}
-          y={y - 10}
-          width={width}
-          height={10}
-          fill="transparent"
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
-        />
-      </g>
-    );
+  const renderInteractiveBar = (key: 'actualRaw' | 'budgetRaw', fillColor: string, fillOpacity: number = 1) => {
+    const InteractiveBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
+      const h = Math.max(0, height);
+      return (
+        <g>
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={h}
+            fill={fillColor}
+            fillOpacity={fillOpacity}
+            rx={3}
+            ry={3}
+            stroke={isDraggingThis ? fillColor : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
+          />
+          {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek/kecil */}
+          <rect
+            x={x}
+            y={y - 10}
+            width={width}
+            height={10}
+            fill="transparent"
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], height)}
+          />
+        </g>
+      );
+    };
+    InteractiveBar.displayName = 'InteractiveBar';
+    return InteractiveBar;
   };
 
   // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
   // (cy) & nilai asli tiap titik ke dotsRef, dipakai buat kalibrasi drag.
-  const renderCalibrationDot = (key: LineKey) => (props: any) => {
+  const renderCalibrationDot = (key: LineKey) => function CalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     dotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
   };
 
-  const renderActiveDot = (key: LineKey, color: string) => (props: any) => {
+  const renderActiveDot = (key: LineKey, color: string) => function ActiveDot(props: any) {
     const { cx, cy, index, value } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;

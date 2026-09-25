@@ -194,5 +194,5 @@ export function useAssetsData(): AssetsData {
     const periodLabel = `As of ${NAMA_BULAN[lastIdx]} 30, ${tahun}`;
 
     return { loading, isSampleData: false, companyName, periodLabel, totalAssets: totalNow, kpiCards, trendData, compositionData };
-  }, [loading, isSampleData, companyName, data]);
+  }, [loading, companyName, data]);
 }

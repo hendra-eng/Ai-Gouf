@@ -261,10 +261,10 @@ export default function CashFlowPage() {
     (r) => bulanAktualTerakhir === 0 || r.tahun > tahunBerjalan || (r.tahun === tahunBerjalan && r.bulan > bulanAktualTerakhir)
   );
 
-  const allCFData = [
+  const allCFData = useMemo(() => [
     ...CF_MONTHLY.map(d => ({ ...d, isForecast: false })),
     ...CF_FORECAST.slice(0, forecastRange === '3M' ? 3 : forecastRange === '6M' ? 6 : 12),
-  ];
+  ], [CF_MONTHLY, CF_FORECAST, forecastRange]);
 
   // ── [BARU] Fungsi interaktif untuk chart "Cash Flow Forecast" (Cash
   // Position vs Operating CF, actual + proyeksi): drag sumbu Y untuk zoom

@@ -224,7 +224,7 @@ export default function ProfitAnalysis() {
 
   // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
   // (cy) & nilai asli tiap titik ke plDotsRef, dipakai buat kalibrasi drag.
-  const renderPlCalibrationDot = (key: PlKey) => (props: any) => {
+  const renderPlCalibrationDot = (key: PlKey) => function PlCalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     plDotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
@@ -232,7 +232,7 @@ export default function ProfitAnalysis() {
 
   // Dot yang terlihat & bisa digenggam di bulan yang sedang di-hover — tarik
   // vertikal untuk preview, lepas untuk spring-back ke nilai asli.
-  const renderPlActiveDot = (key: PlKey, color: string) => (props: any) => {
+  const renderPlActiveDot = (key: PlKey, color: string) => function PlActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = plDragPoint?.key === key && plDragPoint?.index === index;

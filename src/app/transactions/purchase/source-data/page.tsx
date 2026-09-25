@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { useCurrency } from '@/lib/currency';
 import { formatRupiah } from '@/lib/mockData';
 import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
+import { updateSourceDataStatus, convertSourceDataToTransaction } from '@/app/agent-ai/lib/api';
+import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon, ArrowRightCircleIcon } from '@heroicons/react/24/outline';
+import { Upload, Download, Settings } from 'lucide-react';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
@@ -49,7 +52,7 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 export default function PurchaseSourceDataPage() {
   // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
   // src/app/transactions/purchase/page.tsx.
-  const { purchaseSourceRecords } = usePurchaseData();
+  const { purchaseSourceRecords, activeClientId, refetch } = usePurchaseData();
   const { fx } = useCurrency();
   const fmt = (n: number) => fx(formatRupiah(n, true));
 
@@ -60,6 +63,49 @@ export default function PurchaseSourceDataPage() {
   const [sortField, setSortField] = useState('sourceDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseSourceRecords[0] | null>(null);
+  // [BARU] id baris yang sedang diproses (verifikasi/konversi) -- dipakai
+  // buat disable tombol supaya tidak double-klik selagi request jalan.
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const handleValidate = (id: string, validation: 'Valid' | 'Invalid') => {
+    if (!activeClientId) return;
+    setProcessingId(id);
+    updateSourceDataStatus(activeClientId, id, { validation })
+      .then(() => {
+        toast.success(validation === 'Valid' ? 'Source data ditandai Valid.' : 'Source data ditandai Invalid.');
+        refetch();
+      })
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : 'Gagal memverifikasi source data.');
+      })
+      .finally(() => setProcessingId(null));
+  };
+
+  const handleConvertToTransaction = (id: string) => {
+    if (!activeClientId) return;
+    setProcessingId(id);
+    convertSourceDataToTransaction(activeClientId, id)
+      .then((res: { transaction?: { purchase_id?: string } }) => {
+        toast.success(`Purchase Transaction ${res?.transaction?.purchase_id || ''} berhasil dibuat.`);
+        setSelectedRow(null);
+        refetch();
+      })
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : 'Gagal membuat transaksi dari source data ini.');
+      })
+      .finally(() => setProcessingId(null));
+  };
+
+  // [BARU] Tombol Upload File/Template Excel/Export/Mapping Rules -- UI-nya
+  // dibuat sama persis dengan tab Source Data di modul Sales
+  // (src/app/transactions/sales/components/SalesSourceData.tsx), tapi
+  // belum ada logic backend-nya (form upload dokumen baru memang sengaja
+  // di-skip dulu, lihat catatan di purchasebridge.ts). Sengaja kasih toast
+  // "coming soon" instead of silent no-op supaya user gak bingung kenapa
+  // diklik tidak terjadi apa-apa.
+  const handleComingSoon = (fitur: string) => {
+    toast.info(`${fitur} belum tersedia untuk modul Purchase.`);
+  };
 
   const sourceTypes = ['All', 'Purchase Order', 'Vendor Invoice', 'Goods Receipt', 'Service Receipt'];
   const statuses = ['All', 'Mapped', 'Pending Mapping', 'Validation Error', 'Imported'];
@@ -103,6 +149,23 @@ export default function PurchaseSourceDataPage() {
   return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
+
+        {/* Action Bar -- UI sama seperti tab Source Data di modul Sales,
+            lihat catatan di handleComingSoon() di atas */}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <button onClick={() => handleComingSoon('Upload File')} className="btn-secondary text-xs py-1.5 gap-1.5">
+            <Upload size={13} /> Upload File
+          </button>
+          <button onClick={() => handleComingSoon('Template Excel')} className="btn-secondary text-xs py-1.5 gap-1.5">
+            <Download size={13} /> Template Excel
+          </button>
+          <button onClick={() => handleComingSoon('Export')} className="btn-secondary text-xs py-1.5 gap-1.5">
+            <Download size={13} /> Export
+          </button>
+          <button onClick={() => handleComingSoon('Mapping Rules')} className="btn-primary text-xs py-1.5 gap-1.5">
+            <Settings size={13} /> Mapping Rules
+          </button>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -208,9 +271,51 @@ export default function PurchaseSourceDataPage() {
                     <td className="px-4 py-3 whitespace-nowrap"><ValidationBadge status={row.validationStatus} /></td>
                     <td className="px-4 py-3 whitespace-nowrap"><SourceStatusBadge status={row.status} /></td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
-                        View <ArrowTopRightOnSquareIcon className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
+                          View <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                        </button>
+                        {row.status !== 'Mapped' && row.validationStatus === 'Pending Validation' && (
+                          <>
+                            <button
+                              disabled={processingId === row.id}
+                              className="text-xs text-green-700 hover:underline disabled:opacity-50"
+                              onClick={e => { e.stopPropagation(); handleValidate(row.id, 'Valid'); }}
+                            >
+                              Validate
+                            </button>
+                            <button
+                              disabled={processingId === row.id}
+                              className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                              onClick={e => { e.stopPropagation(); handleValidate(row.id, 'Invalid'); }}
+                            >
+                              Mark Invalid
+                            </button>
+                          </>
+                        )}
+                        {/* [BARU] row yang sudah ditandai Invalid sebelumnya sempat buntu -- gak ada
+                            jalan balik dari UI meski backend (update_purchase_source_data_status)
+                            sebenarnya izinkan validation diubah lagi selama status belum "Mapped".
+                            Tombol ini buka jalan re-validate itu. */}
+                        {row.status !== 'Mapped' && row.validationStatus === 'Invalid' && (
+                          <button
+                            disabled={processingId === row.id}
+                            className="text-xs text-green-700 hover:underline disabled:opacity-50"
+                            onClick={e => { e.stopPropagation(); handleValidate(row.id, 'Valid'); }}
+                          >
+                            Re-validate
+                          </button>
+                        )}
+                        {row.status !== 'Mapped' && row.validationStatus === 'Valid' && (
+                          <button
+                            disabled={processingId === row.id}
+                            className="text-xs text-blue-700 hover:underline flex items-center gap-0.5 disabled:opacity-50"
+                            onClick={e => { e.stopPropagation(); handleConvertToTransaction(row.id); }}
+                          >
+                            Create Transaction <ArrowRightCircleIcon className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -274,6 +379,49 @@ export default function PurchaseSourceDataPage() {
               <div className="mt-3 flex items-center gap-2 bg-amber-50 rounded-lg px-4 py-2.5">
                 <ClockIcon className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <p className="text-xs text-amber-700">This source document has not yet been mapped to a purchase transaction.</p>
+              </div>
+            )}
+            {!selectedRow.relatedPurchaseId && (
+              <div className="mt-4 pt-4 border-t border-border flex items-center gap-2 flex-wrap">
+                {selectedRow.validationStatus === 'Pending Validation' && (
+                  <>
+                    <button
+                      disabled={processingId === selectedRow.id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-50"
+                      onClick={() => handleValidate(selectedRow.id, 'Valid')}
+                    >
+                      Validate this record
+                    </button>
+                    <button
+                      disabled={processingId === selectedRow.id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-50"
+                      onClick={() => handleValidate(selectedRow.id, 'Invalid')}
+                    >
+                      Mark as Invalid
+                    </button>
+                  </>
+                )}
+                {selectedRow.validationStatus === 'Invalid' && (
+                  <div className="flex flex-col items-start gap-2">
+                    <p className="text-xs text-red-600">This record is marked Invalid. Fix the source document, then re-validate before it can become a transaction.</p>
+                    <button
+                      disabled={processingId === selectedRow.id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-50"
+                      onClick={() => handleValidate(selectedRow.id, 'Valid')}
+                    >
+                      Re-validate as Valid
+                    </button>
+                  </div>
+                )}
+                {selectedRow.validationStatus === 'Valid' && (
+                  <button
+                    disabled={processingId === selectedRow.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 flex items-center gap-1"
+                    onClick={() => handleConvertToTransaction(selectedRow.id)}
+                  >
+                    Create Purchase Transaction <ArrowRightCircleIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             )}
           </div>

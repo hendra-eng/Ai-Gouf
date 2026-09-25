@@ -276,6 +276,7 @@ export default function PLWaterfallChart() {
       </g>
     );
   };
+  renderInteractiveBar.displayName = 'RenderInteractiveBar';
 
   return (
     <div className="relative">

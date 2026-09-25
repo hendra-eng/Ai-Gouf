@@ -204,7 +204,7 @@ export default function EquityTrendChart({ trendData, companyName }: EquityTrend
 
   // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
   // (cy) & nilai asli tiap titik ke trendDotsRef, dipakai buat kalibrasi drag.
-  const renderTrendCalibrationDot = (key: TrendKey) => (props: any) => {
+  const renderTrendCalibrationDot = (key: TrendKey) => function TrendCalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     trendDotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
@@ -212,7 +212,7 @@ export default function EquityTrendChart({ trendData, companyName }: EquityTrend
 
   // Dot yang terlihat & bisa digenggam di bulan yang sedang di-hover — tarik
   // vertikal untuk preview, lepas untuk spring-back ke nilai asli.
-  const renderTrendActiveDot = (key: TrendKey, color: string) => (props: any) => {
+  const renderTrendActiveDot = (key: TrendKey, color: string) => function TrendActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = trendDragPoint?.key === key && trendDragPoint?.index === index;

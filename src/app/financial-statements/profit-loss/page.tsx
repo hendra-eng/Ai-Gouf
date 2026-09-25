@@ -583,7 +583,7 @@ export default function ProfitLossPage() {
   // can swap/unmount the dot mid-drag the instant the pointer isn't
   // perfectly vertical, killing the interaction. Rendering via the plain
   // `dot` prop keeps the same DOM node mounted for the whole gesture.
-  const makePlDraggableDot = (seriesKey: PLSeriesKey) => (props: any) => {
+  const makePlDraggableDot = (seriesKey: PLSeriesKey) => function PlDraggableDot(props: any) {
     const { cx, cy, index, payload } = props;
     // Keep calibration ref up to date every render (used to convert
     // vertical drag distance in px back into a value delta).
@@ -1047,6 +1047,7 @@ export default function ProfitLossPage() {
       </g>
     );
   };
+  renderWaterfallBar.displayName = 'RenderWaterfallBar';
 
   // [BARU] Anggaran P&L REAL untuk kolom "Budget" di tabel Budget vs Actual,
   // sumber tabel ..._profit and loss_finance_budget_li (schema 3_Financial)

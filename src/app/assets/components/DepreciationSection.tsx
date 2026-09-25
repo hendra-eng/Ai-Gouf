@@ -208,6 +208,7 @@ export default function DepreciationSection() {
       </g>
     );
   };
+  renderDraggableBar.displayName = 'RenderDraggableBar';
 
   const nearlyDepreciated = useMemo(() => {
     if (registerData.isSampleData) return SAMPLE_NEARLY_DEPRECIATED;

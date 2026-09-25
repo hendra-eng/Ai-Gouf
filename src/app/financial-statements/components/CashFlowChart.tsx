@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine
@@ -118,13 +118,13 @@ export default function CashFlowChart() {
   const yDomainRef = useRef(yDomain);
   yDomainRef.current = yDomain;
 
-  const stopSpring = () => {
+  const stopSpring = useCallback(() => {
     if (springAnimRef.current) cancelAnimationFrame(springAnimRef.current);
     springAnimRef.current = null;
-  };
+  }, []);
   const easeOutQuint = (x: number) => 1 - Math.pow(1 - x, 5);
 
-  const springBack = () => {
+  const springBack = useCallback(() => {
     const drag = dragBarRef.current;
     if (!drag) return;
     stopSpring();
@@ -149,7 +149,7 @@ export default function CashFlowChart() {
       }
     };
     springAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopSpring]);
 
   const handleBarPointerDown = (key: CFKey, index: number, startValue: number, barHeight: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -194,7 +194,7 @@ export default function CashFlowChart() {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBack]);
 
   // Data yang benar-benar dikirim ke chart: sama seperti cfMonthly, kecuali
   // satu bar (bulan + kategori) yang sedang ditarik/spring-back diganti nilai live-nya.
@@ -207,42 +207,46 @@ export default function CashFlowChart() {
   // Untuk nilai negatif (Investing), Recharts kadang mengirim `height` negatif
   // (y = titik bawah, height = jarak ke atas) -- jadi harus di-normalisasi
   // pakai Math.abs + geser y, bukan di-clamp ke 0 (itu yang bikin bar hilang).
-  const renderInteractiveBar = (key: CFKey) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
-    const color = getBarColor(key);
-    const opacity = getBarOpacity(key);
-    const h = Math.abs(height);
-    const rectY = height < 0 ? y + height : y;
-    return (
-      <g>
-        <rect
-          x={x}
-          y={rectY}
-          width={width}
-          height={h}
-          fill={color}
-          fillOpacity={opacity}
-          rx={3}
-          ry={3}
-          stroke={isDraggingThis ? color : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
-        />
-        {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
-        <rect
-          x={x}
-          y={rectY - 10}
-          width={width}
-          height={h + 20}
-          fill="transparent"
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
-        />
-      </g>
-    );
+  const renderInteractiveBar = (key: CFKey) => {
+    const CFBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
+      const color = getBarColor(key);
+      const opacity = getBarOpacity(key);
+      const h = Math.abs(height);
+      const rectY = height < 0 ? y + height : y;
+      return (
+        <g>
+          <rect
+            x={x}
+            y={rectY}
+            width={width}
+            height={h}
+            fill={color}
+            fillOpacity={opacity}
+            rx={3}
+            ry={3}
+            stroke={isDraggingThis ? color : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
+          />
+          {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
+          <rect
+            x={x}
+            y={rectY - 10}
+            width={width}
+            height={h + 20}
+            fill="transparent"
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
+          />
+        </g>
+      );
+    };
+    CFBar.displayName = 'CashFlowBar';
+    return CFBar;
   };
 
   return (

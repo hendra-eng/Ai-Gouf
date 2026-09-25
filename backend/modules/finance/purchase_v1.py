@@ -176,6 +176,25 @@ class UpdatePurchaseExceptionStatusRequest(BaseModel):
     exception_status: str
 
 
+class UpdateSourceDataStatusRequest(BaseModel):
+    """Body PATCH verifikasi satu baris Source Data -- minimal salah satu
+    dari status/validation harus diisi. Lihat
+    api_update_source_data_status()."""
+    status: Optional[str] = None
+    validation: Optional[str] = None
+
+
+class UpdateSourceDataStatusResponse(BaseModel):
+    berhasil: bool
+    source_data: PurchaseSourceDataSkema
+
+
+class ConvertSourceDataResponse(BaseModel):
+    berhasil: bool
+    transaction: PurchaseTransactionSkema
+    source_data: PurchaseSourceDataSkema
+
+
 # ============================================================
 # ENDPOINTS
 # ============================================================
@@ -266,3 +285,62 @@ def api_update_purchase_exception_status(
         detail={"exception_id": exception_id, "exception_status": req.exception_status},
     )
     return {"berhasil": True, "exception": hasil}
+
+
+@router.patch("/updateSourceDataStatus", response_model=UpdateSourceDataStatusResponse)
+def api_update_source_data_status(
+    client_id: str, source_data_id: str, req: UpdateSourceDataStatusRequest,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Verifikasi/validasi satu baris Source Data -- dipakai tombol
+    Validate/Mark Invalid di tab Source Data
+    (src/app/transactions/purchase/source-data/page.tsx). Prasyarat
+    sebelum baris bisa dikonversi jadi Purchase Transaction lewat
+    /convertSourceDataToTransaction (status="Mapped" TIDAK BISA diset di
+    sini, lihat db_client.py::update_purchase_source_data_status)."""
+    try:
+        hasil = dbc.update_purchase_source_data_status(
+            source_data_id, client_id, user.get("username", "unknown"),
+            status=req.status, validation=req.validation,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Source data tidak ditemukan untuk client ini.")
+
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"),
+        aksi="update_purchase_source_data_status",
+        detail={"source_data_id": source_data_id, "status": req.status, "validation": req.validation},
+    )
+    return {"berhasil": True, "source_data": hasil}
+
+
+@router.post("/convertSourceDataToTransaction", response_model=ConvertSourceDataResponse)
+def api_convert_source_data_to_transaction(
+    client_id: str, source_data_id: str,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Konversi satu Source Data yang sudah terverifikasi
+    (validation="Valid") menjadi Purchase Transaction baru -- dipakai
+    tombol "Create Transaction" di tab Source Data. Menutup celah alur
+    Source Data -> verifikasi -> Purchase Transaction yang sebelumnya cuma
+    ada di tampilan (badge Mapped/kolom Purchase Ref) tanpa logic backend
+    (lihat db_client.py::convert_purchase_source_data_to_transaction)."""
+    try:
+        hasil = dbc.convert_purchase_source_data_to_transaction(
+            source_data_id, client_id, user.get("username", "unknown"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if hasil is None:
+        raise HTTPException(status_code=404, detail="Source data tidak ditemukan untuk client ini.")
+
+    dbc.log_audit(
+        client_id=client_id, user=user.get("username", "unknown"),
+        aksi="convert_purchase_source_data_to_transaction",
+        detail={"source_data_id": source_data_id, "purchase_id": hasil["transaction"]["purchase_id"]},
+    )
+    return {"berhasil": True, **hasil}

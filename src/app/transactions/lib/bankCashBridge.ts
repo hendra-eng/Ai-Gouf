@@ -16,20 +16,40 @@
 // DUA baris Transaction (satu leg debet, satu leg kredit) yang berbagi
 // jeId yang sama.
 //
-// jeId di sini SENGAJA diberi prefix "BC-" (bukan "JE-" seperti
-// jurnalBridge.ts) supaya TransactionsContext bisa membedakan baris ini
-// datang dari tabel finance_transaction_bank_cash, bukan jurnal_posting --
-// lihat extractBankCashId() di bawah vs extractPostingId() di
-// jurnalBridge.ts, dan pemakaiannya di TransactionsContext.tsx (saveEdit/
-// deleteTransactions/postAllUnposted dst -- keduanya dicoba, salah satu
-// yang match dipakai untuk tahu endpoint PATCH/posting mana yang benar).
+// [DIUBAH -- nomor 2/3] Sejak backend daftar_bank_cash() digabung dengan
+// transaksi Kas & Bank yang sebenarnya berasal dari jurnal_posting (lihat
+// dbc.daftar_kas_bank_dari_jurnal(), VIEW v_kas_bank_dari_jurnal), baris
+// yang masuk ke sini bisa datang dari DUA tabel berbeda -- dibedakan lewat
+// field `sumber` ('manual' | 'jurnal_posting') yang backend sertakan per
+// baris. jeId diberi prefix "BC-" HANYA untuk baris sumber='manual'
+// (finance_transaction_bank_cash); baris sumber='jurnal_posting' diberi
+// prefix "JE-" (sama seperti jurnalBridge.ts) supaya
+// extractPostingId()/extractBankCashId() (lihat di bawah vs
+// jurnalBridge.ts) mengarahkannya ke endpoint backend yang benar --
+// pemakaiannya di TransactionsContext.tsx (saveEdit/deleteTransactions/
+// postAllUnposted dst) mencoba keduanya, salah satu yang match dipakai
+// untuk tahu endpoint PATCH/posting mana yang benar.
 
 import type { Transaction } from '../components/transactionData';
 import { classifyJournalPairCategory } from '../components/transactionData';
 
-/** Bentuk satu baris respons GET /api/client/{client_id}/bank-cash (lihat db_client._bank_cash_ke_dict). */
+/** Bentuk satu baris respons GET /api/client/{client_id}/bank-cash (lihat db_client._bank_cash_ke_dict()
+ *  utk baris manual, dan daftar_kas_bank_dari_jurnal() utk baris dari jurnal_posting). */
 export interface BackendBankCashRow {
-  id: number;
+  // [DIUBAH] id ASLI backend: UUID (string) utk baris manual
+  // (finance_transaction_bank_cash.id), ATAU jurnal_posting.id (integer,
+  // tapi backend selalu kirim sebagai string -- lihat daftar_bank_cash())
+  // utk baris dari ledger. TIDAK PERNAH format "BC-<id>"/"JE-<id>" siap
+  // pakai -- prefix itu baru ditambahkan di legFromRow() di bawah,
+  // berdasarkan `sumber`.
+  id: string;
+  // [BARU -- nomor 2] 'manual' = finance_transaction_bank_cash (entri
+  // manual dari halaman ini sendiri). 'jurnal_posting' = baris ini
+  // sebenarnya jurnal_posting (dari Sales/Purchase/jurnal manual/dst)
+  // yang salah satu akunnya kategori Kas & Bank -- lihat
+  // dbc.daftar_kas_bank_dari_jurnal(). Kosong/undefined diperlakukan
+  // sebagai 'manual' (data lama/fallback).
+  sumber?: 'manual' | 'jurnal_posting' | null;
   hasil_id?: number | null;
   jenis_dokumen?: string | null; // 'cash_payment' | 'cash_receipt'
   tanggal?: string | null;
@@ -73,19 +93,41 @@ function safeAmount(value?: number | null): number {
   return typeof value === 'number' && !isNaN(value) ? value : 0;
 }
 
-/** Satu leg (debet ATAU kredit) dari satu baris finance_transaction_bank_cash -> satu Transaction. */
+/** Satu leg (debet ATAU kredit) dari satu baris finance_transaction_bank_cash
+ *  ATAU satu baris jurnal_posting kategori Kas & Bank -> satu Transaction. */
 function legFromRow(row: BackendBankCashRow, side: 'debet' | 'kredit'): Transaction {
   const isDebet = side === 'debet';
   const rawAccountCode = isDebet ? row.no_akun_debet : row.no_akun_kredit;
   const accountCode = rawAccountCode ? String(rawAccountCode) : '—';
   const accountName = (isDebet ? row.nama_akun_debet : row.nama_akun_kredit) || '—';
   const amount = safeAmount(isDebet ? row.jml_debet : row.jml_kredit);
-  const reference = row.no_dokumen || row.lawan_transaksi || `BC-${row.id}`;
+
+  // [DIPERBAIKI -- nomor 3] SEBELUMNYA jeId SELALU diberi prefix "BC-"
+  // apa pun sumbernya. Sejak daftar_bank_cash() digabung dengan baris
+  // jurnal_posting (nomor 2), itu salah: baris jurnal_posting punya id
+  // integer milik TABEL LAIN (jurnal_posting, bukan
+  // finance_transaction_bank_cash) -- kalau tetap diberi "BC-", nanti
+  // pas diedit/diposting/dihapus, TransactionsContext akan mengirimnya
+  // ke endpoint /updateBankCash dkk, yang query ke
+  // finance_transaction_bank_cash dan TIDAK AKAN PERNAH menemukan baris
+  // itu (404) -- atau lebih buruk, tabrakan dengan id acak yang
+  // kebetulan sama di tabel yang salah.
+  //
+  // Baris dari jurnal_posting diberi prefix "JE-" (sama seperti
+  // jurnalBridge.ts) supaya extractPostingId() di jurnalBridge.ts yang
+  // menangkapnya, dan aksi edit/posting/hapus diarahkan ke endpoint
+  // jurnal-posting yang benar -- TransactionsContext sudah mencoba
+  // extractPostingId() LEBIH DULU sebelum extractBankCashId(), jadi
+  // tidak perlu ada perubahan apa pun di TransactionsContext.tsx untuk
+  // ini.
+  const fromJurnal = row.sumber === 'jurnal_posting';
+  const jeId = fromJurnal ? `JE-${row.id}` : `BC-${row.id}`;
+  const reference = row.no_dokumen || row.lawan_transaksi || jeId;
 
   return {
-    id: `bc-${row.id}-${side}`,
+    id: `${fromJurnal ? 'jebc' : 'bc'}-${row.id}-${side}`,
     date: row.tanggal || '',
-    txId: `TXN-BC-${row.id}-${isDebet ? 'D' : 'K'}`,
+    txId: `TXN-${fromJurnal ? 'JE' : 'BC'}-${row.id}-${isDebet ? 'D' : 'K'}`,
     accountCode,
     accountName,
     description: row.keterangan || '—',
@@ -104,7 +146,7 @@ function legFromRow(row: BackendBankCashRow, side: 'debet' | 'kredit'): Transact
     category: classifyJournalPairCategory(row.nama_akun_debet, row.nama_akun_kredit),
     type: isDebet ? 'debit' : 'credit',
     status: mapStatus(row.status),
-    jeId: `BC-${row.id}`,
+    jeId,
     notes: row.project_unit || undefined,
     voucherNo: row.voucher || row.periode_voucher || '—',
     saldoAkhir: 0,
@@ -136,17 +178,33 @@ export function transactionsFromBankCash(rows: BackendBankCashRow[]): Transactio
 
 /**
  * Ekstrak bank_cash id asli dari jeId satu Transaction -- HANYA baris yang
- * datang dari transactionsFromBankCash() (backend asli) yang jeId-nya
- * berformat persis "BC-<angka>" (lihat legFromRow di atas). Baris lokal
- * (data contoh statis / jurnal manual yang gagal tersimpan) mengembalikan
- * null di sini -- dipakai TransactionsContext untuk tahu baris mana yang
- * boleh dikirim PATCH/posting ke endpoint /bank-cash, vs baris yang cuma
- * bisa diubah di state lokal.
+ * datang dari transactionsFromBankCash() DAN memang berasal dari tabel
+ * finance_transaction_bank_cash (sumber 'manual', bukan hasil gabungan
+ * jurnal_posting -- lihat legFromRow di atas) yang jeId-nya berformat
+ * "BC-<id>". Baris lokal (data contoh statis / jurnal manual yang gagal
+ * tersimpan) DAN baris "JE-<id>" (hasil gabungan jurnal_posting, lihat
+ * jurnalBridge.extractPostingId) mengembalikan null di sini -- dipakai
+ * TransactionsContext untuk tahu baris mana yang boleh dikirim
+ * PATCH/posting ke endpoint /bank-cash, vs baris yang cuma bisa diubah
+ * di state lokal (atau harus lewat endpoint jurnal-posting).
+ *
+ * [DIPERBAIKI -- nomor 3] id asli finance_transaction_bank_cash adalah
+ * UUID (mis. "c3ada8a3-7cf0-4b2d-bec7-359e498338cb"), BUKAN angka --
+ * regex lama "/^BC-(\d+)$/" TIDAK PERNAH cocok dengan UUID sungguhan,
+ * cuma cocok kalau id-nya kebetulan semua digit. Akibatnya SEMUA edit/
+ * posting/hapus pada baris Cash Payment/Cash Receipt asli (bukan data
+ * contoh) selama ini diam-diam jatuh ke jalur "simpan lokal saja" di
+ * TransactionsContext (toast "Perubahan disimpan (lokal)") -- perubahan
+ * TIDAK PERNAH benar-benar terkirim ke backend, dan hilang saat refresh.
+ * Sekarang regex menerima id apa pun (UUID atau angka), dan hasilnya
+ * dikembalikan sebagai string (bukan Number(...), yang akan jadi NaN
+ * untuk UUID) -- lihat penyesuaian tipe terkait di TransactionsContext.tsx
+ * (Set<string> alih-alih Set<number> utk bankCashIds).
  */
-export function extractBankCashId(jeId: string | undefined | null): number | null {
+export function extractBankCashId(jeId: string | undefined | null): string | null {
   if (!jeId) return null;
-  const m = /^BC-(\d+)$/.exec(jeId);
-  return m ? Number(m[1]) : null;
+  const m = /^BC-(.+)$/.exec(jeId);
+  return m ? m[1] : null;
 }
 
 /** true kalau Transaction ini datang dari finance_transaction_bank_cash backend asli. */

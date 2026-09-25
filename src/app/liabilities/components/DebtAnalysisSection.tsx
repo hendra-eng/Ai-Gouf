@@ -220,6 +220,7 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
       </g>
     );
   };
+  renderDraggableBar.displayName = 'RenderDraggableBar';
 
   const debtMetrics = [
     { label: 'Total Debt', value: rp(m.totalDebt), sub: 'Short + Long-term' },

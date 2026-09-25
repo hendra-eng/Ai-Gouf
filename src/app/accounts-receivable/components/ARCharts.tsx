@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -62,13 +62,13 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
   } | null>(null);
   const pointAnimRef = useRef<number | null>(null);
 
-  const stopPointSpring = () => {
+  const stopPointSpring = useCallback(() => {
     if (pointAnimRef.current) cancelAnimationFrame(pointAnimRef.current);
     pointAnimRef.current = null;
-  };
+  }, []);
   const easeOutQuintPoint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-  const springBackPoint = () => {
+  const springBackPoint = useCallback(() => {
     const drag = dragPointRef.current;
     if (!drag) return;
     stopPointSpring();
@@ -93,7 +93,7 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
       }
     };
     pointAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopPointSpring]);
 
   const handleDotPointerDown = (key: string, index: number, startValue: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -136,7 +136,7 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBackPoint]);
 
   // Reset drag & kalibrasi kalau resetKey berubah (mis. ganti filter periode)
   useEffect(() => {
@@ -144,17 +144,16 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
     dragPointRef.current = null;
     setDragPoint(null);
     dotsRef.current = {};
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
+  }, [resetKey, stopPointSpring]);
 
-  const renderCalibrationDot = (key: string) => (props: any) => {
+  const renderCalibrationDot = (key: string) => function CalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (!dotsRef.current[key]) dotsRef.current[key] = [];
     dotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
   };
 
-  const renderActiveDot = (key: string, color: string) => (props: any) => {
+  const renderActiveDot = (key: string, color: string) => function ActiveDot(props: any) {
     const { cx, cy, index, value } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;

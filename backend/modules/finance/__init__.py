@@ -19,6 +19,16 @@ Editor:
     other_v1.py        -- Halaman Other (jurnal umum di luar Purchase/Bank
                         & Cash). Tabel: finance_transaction_other.
                         Frontend: otherBridge.ts.
+    bank_feed_v1.py     -- [BARU] Halaman Cash & Bank > tab "Bank Feed" &
+                        "Reconciliation". Tabel BARU: bank_feed_mutation
+                        (mutasi rekening koran mentah, sebelum dijurnal --
+                        lihat migrations/12-create_bank_feed_mutation_table.py).
+                        Path /api/v1/finance/bank-feed/... (BUKAN
+                        /api/v1/transaction/... seperti bank_cash_v1.py di
+                        atas -- ini fitur baru, bukan pindahan dari
+                        main.py). Frontend:
+                        src/app/transactions/bank-cash/context/
+                        BankFeedContext.tsx.
     profit_loss_v1.py  -- Halaman Profit & Loss: anggaran P&L (budget) &
                         insight P&L. Tabel: PLBudgetLine, PLInsight
                         (lihat db_client.py).
@@ -67,3 +77,4 @@ from .bank_cash_v1 import router as bank_cash_router  # noqa: F401
 from .other_v1 import router as other_router  # noqa: F401
 from .profit_loss_v1 import router as profit_loss_router  # noqa: F401
 from .cash_flow_v1 import router as cash_flow_router  # noqa: F401
+from .bank_feed_v1 import router as bank_feed_router  # noqa: F401 [BARU]

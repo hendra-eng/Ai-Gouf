@@ -183,5 +183,5 @@ export function useEquityData(): EquityData {
       otherEquity: otherNow, otherEquityPrev: otherPrev,
       netIncomeYtd: netProfitNow, netIncomeYtdPrev: netProfitPrev,
     };
-  }, [loading, isSampleData, companyName, data]);
+  }, [loading, companyName, data]);
 }

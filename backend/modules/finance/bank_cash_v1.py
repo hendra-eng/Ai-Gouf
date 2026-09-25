@@ -96,6 +96,12 @@ class BankCashRowSkema(BaseModel):
     diposting_oleh: Optional[str] = None
     diposting_at: Optional[str] = None
     dibuat_at: Optional[str] = None
+    # [BARU -- nomor 2] 'manual' (finance_transaction_bank_cash) atau
+    # 'jurnal_posting' (baris ini sebenarnya jurnal_posting, ikut tampil di
+    # sini karena akunnya kategori Kas & Bank -- lihat
+    # dbc.daftar_kas_bank_dari_jurnal()). Dipakai bankCashBridge.ts di
+    # frontend utk menentukan prefix jeId ("BC-" vs "JE-") yang benar.
+    sumber: Optional[str] = None
 
 
 class DaftarBankCashResponse(BaseModel):
@@ -170,11 +176,30 @@ class BuatBankCashManualRequest(BaseModel):
 
 
 class PostingMassalBankCashRequest(BaseModel):
-    ids: List[int]
+    # [DIUBAH -- nomor 2/3] id bank_cash asli adalah UUID (string), bukan
+    # integer -- lihat FinanceTransactionBankCash.id di db_client.py.
+    # Dulu di sini "List[int]" sehingga request dari frontend (yang selalu
+    # mengirim UUID) akan ditolak 422 oleh FastAPI sebelum sempat sampai
+    # ke posting_massal_bank_cash_by_ids().
+    ids: List[str]
 
 
 class TolakBankCashRequest(BaseModel):
     alasan: Optional[str] = None
+
+
+class BankCashActivityLogRowSkema(BaseModel):
+    """Satu baris riwayat aktivitas -- lihat dbc.daftar_log_bank_cash()."""
+    id: str
+    event_type: str
+    description: str
+    reference_no: Optional[str] = None
+    performed_by: str
+    created_at: Optional[str] = None
+
+
+class DaftarBankCashActivityLogResponse(BaseModel):
+    activity_log: List[BankCashActivityLogRowSkema]
 
 
 # ============================================================
@@ -191,6 +216,21 @@ def api_daftar_bank_cash(
     """Daftar seluruh baris Cash Payment + Cash Receipt milik client (semua
     status secara default). ?status=draft/terposting/ditolak untuk filter."""
     return {"bank_cash": dbc.daftar_bank_cash(client_id, status=status, limit=limit)}
+
+
+@router.get("/getBankCashActivityLog", response_model=DaftarBankCashActivityLogResponse)
+def api_daftar_bank_cash_activity_log(
+    client_id: str, bank_cash_id: str,
+    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
+):
+    """[BARU] Riwayat aktivitas (Audit Trail) SATU baris Bank & Cash manual
+    (prefix "BC-" di frontend) -- lihat auditTrailBridge.ts. Data ini
+    sudah lama ditulis lewat _catat_log_bank_cash() tiap kali baris
+    diedit/dibuat/diposting/ditolak, tapi baru sekarang ada endpoint
+    yang membacanya. Baris berprefix "JE-" (dari jurnal_posting) TIDAK
+    lewat sini -- itu tetap pakai GET /api/client/{id}/audit-log yang
+    sudah ada."""
+    return {"activity_log": dbc.daftar_log_bank_cash(client_id, bank_cash_id)}
 
 
 @router.patch("/updateBankCash", response_model=UpdateBankCashResponse)

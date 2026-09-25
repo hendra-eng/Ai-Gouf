@@ -219,7 +219,7 @@ export default function APCharts({ agingData, trendData, forecastData, vendors, 
 
   // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
   // (cy) & nilai asli tiap titik ke apTrendDotsRef, dipakai buat kalibrasi drag.
-  const renderApTrendCalibrationDot = (key: ApTrendKey) => (props: any) => {
+  const renderApTrendCalibrationDot = (key: ApTrendKey) => function ApTrendCalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     apTrendDotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
@@ -227,7 +227,7 @@ export default function APCharts({ agingData, trendData, forecastData, vendors, 
 
   // Dot yang terlihat & bisa digenggam di bulan yang sedang di-hover — tarik
   // vertikal untuk preview, lepas untuk spring-back ke nilai asli.
-  const renderApTrendActiveDot = (key: ApTrendKey, color: string) => (props: any) => {
+  const renderApTrendActiveDot = (key: ApTrendKey, color: string) => function ApTrendActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = apTrendDragPoint?.key === key && apTrendDragPoint?.index === index;

@@ -247,6 +247,7 @@ export default function LPEBridgeChart() {
       </g>
     );
   };
+  renderInteractiveBar.displayName = 'RenderInteractiveBar';
 
   return (
     <div className="relative">

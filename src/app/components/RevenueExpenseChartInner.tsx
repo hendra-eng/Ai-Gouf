@@ -218,7 +218,7 @@ export default function RevenueExpenseChartInner() {
 
   // Invisible per-point dot: renders nothing visible, just keeps `dotsRef`
   // calibrated to the current chart's pixel scale on every render.
-  const makeCalibrationDot = (seriesKey: SeriesKey) => (props: any) => {
+  const makeCalibrationDot = (seriesKey: SeriesKey) => function CalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     // NOTE: recharts' Area component passes `value` as [baseline, value] —
     // always read the real number off `payload` instead, which is a plain
@@ -229,7 +229,7 @@ export default function RevenueExpenseChartInner() {
 
   // The visible, grabbable dot shown at the hovered month for each series —
   // drag it vertically, release to spring back to the original value.
-  const makeActiveDot = (seriesKey: SeriesKey) => (props: any) => {
+  const makeActiveDot = (seriesKey: SeriesKey) => function ActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     return (
       <circle

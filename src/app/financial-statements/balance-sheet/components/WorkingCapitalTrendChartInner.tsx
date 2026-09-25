@@ -230,6 +230,7 @@ export default function WorkingCapitalTrendChartInner({
       </g>
     );
   };
+  renderBar.displayName = 'RenderBar';
 
   return (
     <div className="relative">
@@ -262,4 +263,3 @@ export default function WorkingCapitalTrendChartInner({
     </div>
   );
 }
-

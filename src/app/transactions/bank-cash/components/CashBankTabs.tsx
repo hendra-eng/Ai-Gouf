@@ -11,7 +11,17 @@ interface Tab {
   description: string;
 }
 
+// [BARU] Overview/Bank Feed/Reconciliation ditambahkan supaya Cash & Bank
+// mengarah ke arsitektur yang sudah disepakati (fokus rekonsiliasi, bukan
+// cuma approval jurnal) — lihat catatan di /areas/transactions-page-audit.md.
+// Cash Payment & Cash Receipt TIDAK diubah (sudah tersambung ke backend).
 const tabs: Tab[] = [
+  {
+    id: 'tab-overview',
+    label: 'Overview',
+    href: '/transactions/bank-cash/overview',
+    description: 'Ringkasan arus kas, saldo per akun & status rekonsiliasi',
+  },
   {
     id: 'tab-cash-payment',
     label: 'Cash Payment',
@@ -23,6 +33,18 @@ const tabs: Tab[] = [
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
     description: 'Pergerakan kas, bank & pendanaan — diambil otomatis dari halaman Transaksi',
+  },
+  {
+    id: 'tab-bank-feed',
+    label: 'Bank Feed',
+    href: '/transactions/bank-cash/bank-feed',
+    description: 'Import mutasi rekening koran untuk dicocokkan dengan pembukuan',
+  },
+  {
+    id: 'tab-reconciliation',
+    label: 'Reconciliation',
+    href: '/transactions/bank-cash/reconciliation',
+    description: 'Cocokkan mutasi Bank Feed dengan Cash Payment/Cash Receipt — termasuk riwayat yang sudah cocok',
   },
 ];
 

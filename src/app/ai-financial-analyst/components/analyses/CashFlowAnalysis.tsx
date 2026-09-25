@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import Icon from '@/components/ui/AppIcon';
@@ -108,12 +108,12 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
   } | null>(null);
   const springAnimRef = useRef<number | null>(null);
 
-  const stopSpring = () => {
+  const stopSpring = useCallback(() => {
     if (springAnimRef.current) cancelAnimationFrame(springAnimRef.current);
     springAnimRef.current = null;
-  };
+  }, []);
 
-  const springBack = () => {
+  const springBack = useCallback(() => {
     const drag = dragBarRef.current;
     if (!drag) return;
     stopSpring();
@@ -137,9 +137,9 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
       }
     };
     springAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopSpring]);
 
-  useEffect(() => stopSpring, []);
+  useEffect(() => stopSpring, [stopSpring]);
 
   const handleBarPointerDown = (key: CFKey, index: number, startValue: number, barHeight: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -190,7 +190,7 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBack]);
 
   const displayData = useMemo(() => {
     const withIndex = cashFlowData.map((d, i) => ({ ...d, __index: i }));
@@ -201,28 +201,32 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
   // Badan bar custom: seluruh kotak bisa digenggam & ditarik naik/turun.
   // Untuk nilai negatif, Recharts kadang mengirim `height` negatif (y = titik
   // bawah, height = jarak ke atas) -- normalisasi pakai Math.abs + geser y.
-  const renderInteractiveBar = (key: CFKey) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
-    const color = getBarColor(key);
-    const h = Math.abs(height);
-    const rectY = height < 0 ? y + height : y;
-    const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
-    return (
-      <g>
-        <rect
-          x={x} y={rectY} width={width} height={h}
-          fill={color} rx={2} ry={2}
-          stroke={isDraggingThis ? color : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={dragHandlers}
-        />
-        {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
-        <rect x={x} y={rectY - 10} width={width} height={h + 20} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
-      </g>
-    );
+  const renderInteractiveBar = (key: CFKey) => {
+    const CFBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
+      const color = getBarColor(key);
+      const h = Math.abs(height);
+      const rectY = height < 0 ? y + height : y;
+      const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
+      return (
+        <g>
+          <rect
+            x={x} y={rectY} width={width} height={h}
+            fill={color} rx={2} ry={2}
+            stroke={isDraggingThis ? color : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={dragHandlers}
+          />
+          {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
+          <rect x={x} y={rectY - 10} width={width} height={h + 20} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
+        </g>
+      );
+    };
+    CFBar.displayName = 'CashFlowBar';
+    return CFBar;
   };
 
   return (

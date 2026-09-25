@@ -196,6 +196,7 @@ export default function PPNChartInner({ data }: { data?: { period: string; payab
       </g>
     );
   };
+  renderBar.displayName = 'RenderBar';
 
   return (
     <div className="relative">

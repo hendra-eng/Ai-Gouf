@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ChevronLeft, ChevronRight,
@@ -62,7 +62,7 @@ export default function SalesExceptions() {
   const [editStatus, setEditStatus] = useState<ExceptionStatus>('Open');
   const [saving, setSaving] = useState(false);
 
-  const decorate = (e: BackendSalesException) => {
+  const decorate = useCallback((e: BackendSalesException) => {
     const inv = e.invoice_id ? invoiceById.get(e.invoice_id) : undefined;
     return {
       ...e,
@@ -70,8 +70,8 @@ export default function SalesExceptions() {
       customer: inv?.customer_name || '-',
       date: formatTanggalSingkat(e.created_at),
     };
-  };
-  const exceptions = useMemo(() => backendExceptions.map(decorate), [backendExceptions, invoiceById]);
+  }, [invoiceById]);
+  const exceptions = useMemo(() => backendExceptions.map(decorate), [backendExceptions, decorate]);
 
   const EXCEPTION_TYPES = useMemo(() => Array.from(new Set(exceptions.map(e => e.exception_type))), [exceptions]);
   const CUSTOMERS = useMemo(() => Array.from(new Set(exceptions.map(e => e.customer).filter(c => c !== '-'))), [exceptions]);

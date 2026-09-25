@@ -86,9 +86,9 @@ function detectExpenseAnomalies(expenseTx: Transaction[]): ExpenseAnomaly[] {
 export default function ExpenseAnomalyAnalysis() {
   const router = useRouter();
   const { fx } = useCurrency();
-  const { transactions, getByGroup, loading } = useTransactions();
+  const { getByGroup, loading } = useTransactions();
 
-  const expenseTx = useMemo(() => getByGroup('purchase'), [transactions, getByGroup]);
+  const expenseTx = useMemo(() => getByGroup('purchase'), [getByGroup]);
   const anomalies = useMemo(() => detectExpenseAnomalies(expenseTx), [expenseTx]);
 
   const totalExpense = useMemo(() => expenseTx.reduce((s, t) => s + (t.debit || 0), 0), [expenseTx]);

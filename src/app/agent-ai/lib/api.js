@@ -14,6 +14,13 @@
 // backend di-deploy di domain lain sepenuhnya, tapi default-nya kosong.)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
+// [BARU] Dipakai KHUSUS untuk upload file besar (rekening koran PDF/Excel)
+// yang butuh waktu proses lama -- sama seperti BACKEND_URL_LANGSUNG di
+// ImportRekeningKoranModal.tsx, langsung ke FastAPI (bukan lewat proxy
+// Next.js next.config.mjs) supaya tidak kena timeout proxy/serverless.
+// Dipakai importBankFeed() di bawah.
+const BACKEND_URL_LANGSUNG = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
 const TOKEN_STORAGE_KEY = "gouf_auth_token";
 let _token = null;
 
@@ -1048,6 +1055,36 @@ export async function updatePurchaseExceptionStatus(clientId, exceptionId, excep
 }
 
 /**
+ * [BARU] Verifikasi/validasi satu baris Source Data -- dipakai tombol
+ * Validate/Mark Invalid di tab Source Data. Minimal salah satu dari
+ * `status`/`validation` harus diisi. `status` TIDAK BOLEH "Mapped" --
+ * nilai itu cuma boleh diset lewat convertSourceDataToTransaction().
+ * @param {number|string} clientId
+ * @param {string} sourceDataId
+ * @param {{ status?: string, validation?: string }} payload
+ */
+export async function updateSourceDataStatus(clientId, sourceDataId, payload) {
+  return request(`/api/v1/transaction/updateSourceDataStatus?client_id=${clientId}&source_data_id=${sourceDataId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * [BARU] Konversi satu Source Data yang sudah terverifikasi
+ * (validation "Valid") menjadi Purchase Transaction baru -- dipakai
+ * tombol "Create Transaction" di tab Source Data.
+ * @param {number|string} clientId
+ * @param {string} sourceDataId
+ */
+export async function convertSourceDataToTransaction(clientId, sourceDataId) {
+  return request(`/api/v1/transaction/convertSourceDataToTransaction?client_id=${clientId}&source_data_id=${sourceDataId}`, {
+    method: "POST",
+  });
+}
+
+/**
  * [BARU] Audit trail (riwayat perubahan) -- siapa mengubah apa kapan,
  * mencakup auto-fix data, perubahan COA, jawaban klarifikasi, posting/
  * tolak jurnal, dan generate laporan keuangan. Lihat main.py:
@@ -1851,7 +1888,9 @@ export async function daftarBankCash(clientId, status = "") {
 
 /**
  * @param {number|string} clientId
- * @param {number} bankCashId
+ * @param {string} bankCashId -- UUID finance_transaction_bank_cash.id (BUKAN
+ *   number -- diperbaiki, sebelumnya JSDoc ini salah menyebut number dari
+ *   sebelum id kolom ini jadi UUID)
  * @param {Record<string, unknown>} perubahan
  */
 export async function updateBankCash(clientId, bankCashId, perubahan) {
@@ -1865,7 +1904,8 @@ export async function updateBankCash(clientId, bankCashId, perubahan) {
 /**
  * @param {number|string} clientId
  * @param {Record<string, unknown>} bankCashBaru -- wajib menyertakan jenis_dokumen: 'cash_payment' | 'cash_receipt'
- * @returns {Promise<{berhasil: boolean, bank_cash_id: number}>}
+ * @returns {Promise<{berhasil: boolean, bank_cash_id: string}>} bank_cash_id
+ *   adalah UUID (diperbaiki -- sebelumnya JSDoc ini salah menyebut number)
  */
 export async function buatBankCashManual(clientId, bankCashBaru) {
   return request(`/api/v1/transaction/addBankCashManual?client_id=${clientId}`, {
@@ -1877,7 +1917,8 @@ export async function buatBankCashManual(clientId, bankCashBaru) {
 
 /**
  * @param {number|string} clientId
- * @param {number[]} ids
+ * @param {string[]} ids -- UUID finance_transaction_bank_cash.id (diperbaiki
+ *   -- sebelumnya JSDoc ini salah menyebut number[])
  */
 export async function postingMassalBankCashByIds(clientId, ids) {
   return request(`/api/v1/transaction/postBankCashBulk?client_id=${clientId}`, {
@@ -1889,7 +1930,8 @@ export async function postingMassalBankCashByIds(clientId, ids) {
 
 /**
  * @param {number|string} clientId
- * @param {number} bankCashId
+ * @param {string} bankCashId -- UUID finance_transaction_bank_cash.id
+ *   (diperbaiki -- sebelumnya JSDoc ini salah menyebut number)
  * @param {string} [alasan]
  */
 export async function tolakBankCash(clientId, bankCashId, alasan) {
@@ -1898,6 +1940,103 @@ export async function tolakBankCash(clientId, bankCashId, alasan) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ alasan }),
   });
+}
+
+/**
+ * [BARU] Riwayat aktivitas (Audit Trail) SATU baris Bank & Cash manual
+ * (prefix "BC-" -- lihat auditTrailBridge.ts). Baris "JE-" (dari
+ * jurnal_posting) tetap pakai auditLogClient() di atas.
+ * @param {number|string} clientId
+ * @param {string} bankCashId
+ */
+export async function bankCashActivityLogClient(clientId, bankCashId) {
+  return request(`/api/v1/transaction/getBankCashActivityLog?client_id=${clientId}&bank_cash_id=${bankCashId}`);
+}
+
+// [BARU] Modul Bank Feed -- tabel BARU bank_feed_mutation (lihat
+// modules/finance/bank_feed_v1.py di backend), mutasi rekening koran
+// MENTAH (sebelum dijurnal) untuk tab "Bank Feed" & "Reconciliation" di
+// halaman Cash & Bank. TERPISAH dari daftarBankCash dkk di atas (itu
+// sudah berbentuk jurnal double-entry). Lihat
+// src/app/transactions/bank-cash/context/BankFeedContext.tsx.
+
+/**
+ * @param {number|string} clientId
+ * @param {'unmatched'|'matched'|''} [status] -- "" (default) = semua status
+ */
+export async function daftarBankFeed(clientId, status = "") {
+  const qs = status ? `&status=${encodeURIComponent(status)}` : "";
+  return request(`/api/v1/finance/bank-feed/list?client_id=${clientId}${qs}`);
+}
+
+/**
+ * Upload rekening koran (PDF/Excel) untuk SATU akun bank, diekstrak jadi
+ * mutasi mentah (bukan jurnal) lalu disimpan sebagai baris bank_feed_mutation
+ * berstatus 'unmatched' -- dipakai panel upload di tab Bank Feed.
+ *
+ * [BARU] SENGAJA fetch LANGSUNG ke backend (BACKEND_URL_LANGSUNG), BUKAN
+ * lewat request()/proxy Next.js -- sama alasan dengan handleFile() di
+ * ImportRekeningKoranModal.tsx: file PDF rekening koran bisa besar & proses
+ * ekstraksi (termasuk fallback AI) bisa memakan waktu, proxy/serverless
+ * function punya batas waktu yang lebih ketat daripada FastAPI langsung.
+ *
+ * @param {number|string} clientId
+ * @param {string} bankAccount -- label akun bank (mis. "BCA - 123.456.7890")
+ * @param {File} file
+ * @param {boolean} [pakaiAi=true]
+ * @returns {Promise<{berhasil: boolean, diimpor: number, mutations: Array, peringatan: string[]}>}
+ */
+export async function importBankFeed(clientId, bankAccount, file, pakaiAi = true) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("client_id", clientId);
+  formData.append("bank_account", bankAccount);
+  formData.append("pakai_ai", pakaiAi ? "true" : "false");
+
+  const headers = {};
+  const token = tokenTersimpan();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BACKEND_URL_LANGSUNG}/api/v1/finance/bank-feed/import`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `Gagal mengimpor rekening koran (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string} mutationId -- UUID bank_feed_mutation.id
+ */
+export async function hapusBankFeed(clientId, mutationId) {
+  return request(`/api/v1/finance/bank-feed/${mutationId}?client_id=${clientId}`, { method: "DELETE" });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string} mutationId
+ * @param {string} txId -- id Transaction sistem (prefix "BC-"/"JE-", lihat bankCashBridge.ts)
+ */
+export async function matchBankFeed(clientId, mutationId, txId) {
+  return request(`/api/v1/finance/bank-feed/${mutationId}/match?client_id=${clientId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tx_id: txId }),
+  });
+}
+
+/**
+ * @param {number|string} clientId
+ * @param {string} mutationId
+ */
+export async function unmatchBankFeed(clientId, mutationId) {
+  return request(`/api/v1/finance/bank-feed/${mutationId}/unmatch?client_id=${clientId}`, { method: "POST" });
 }
 
 // [BARU] Modul Other (jurnal lain-lain) -- tabel finance_transaction_other,

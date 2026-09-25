@@ -176,25 +176,29 @@ function QuarterComparisonChart() {
 
   // Custom bar shape: seluruh badan bar bisa digenggam & ditarik, plus area
   // transparan tambahan di atas biar gampang ditarik walau bar-nya pendek.
-  const renderBar = (key: BarKey, fillColor: string) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragPreview?.key === key && dragPreview?.index === index;
-    const h = Math.max(0, height);
-    const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
-    return (
-      <g>
-        <rect
-          x={x} y={y} width={width} height={h}
-          fill={fillColor} rx={3} ry={3}
-          stroke={isDraggingThis ? fillColor : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={dragHandlers}
-        />
-        <rect x={x} y={y - 10} width={width} height={10} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
-      </g>
-    );
+  const renderBar = (key: BarKey, fillColor: string) => {
+    const QuarterBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragPreview?.key === key && dragPreview?.index === index;
+      const h = Math.max(0, height);
+      const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
+      return (
+        <g>
+          <rect
+            x={x} y={y} width={width} height={h}
+            fill={fillColor} rx={3} ry={3}
+            stroke={isDraggingThis ? fillColor : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={dragHandlers}
+          />
+          <rect x={x} y={y - 10} width={width} height={10} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
+        </g>
+      );
+    };
+    QuarterBar.displayName = 'QuarterBar';
+    return QuarterBar;
   };
 
   return (

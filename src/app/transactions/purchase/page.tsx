@@ -357,14 +357,14 @@ export default function PurchaseOverviewPage() {
   const trendYDomainRef = React.useRef(trendYDomain);
   trendYDomainRef.current = trendYDomain;
 
-  const stopTrendSpring = () => {
+  const stopTrendSpring = React.useCallback(() => {
     if (trendPointAnimRef.current) cancelAnimationFrame(trendPointAnimRef.current);
     trendPointAnimRef.current = null;
-  };
+  }, []);
 
   const easeOutQuintTrend = (t: number) => 1 - Math.pow(1 - t, 5);
 
-  const springBackTrendBar = () => {
+  const springBackTrendBar = React.useCallback(() => {
     const drag = trendDragBarRef.current;
     if (!drag) return;
     stopTrendSpring();
@@ -389,7 +389,7 @@ export default function PurchaseOverviewPage() {
       }
     };
     trendPointAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopTrendSpring]);
 
   const handleTrendBarPointerDown = (index: number, startValue: number, barHeight: number) => (
     e: React.PointerEvent
@@ -409,7 +409,7 @@ export default function PurchaseOverviewPage() {
     stopTrendSpring();
     trendDragBarRef.current = null;
     setTrendDragBar(null);
-  }, [trendPeriod, trendWindowOffset]);
+  }, [trendPeriod, trendWindowOffset, stopTrendSpring]);
 
   React.useEffect(() => {
     const handleMove = (e: PointerEvent) => {
@@ -433,7 +433,7 @@ export default function PurchaseOverviewPage() {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBackTrendBar]);
 
   const trendChartData = useMemo(() => {
     if (!trendDragBar) return trendWindowData;
@@ -473,6 +473,7 @@ export default function PurchaseOverviewPage() {
       </g>
     );
   };
+  renderTrendInteractiveBar.displayName = 'RenderTrendInteractiveBar';
 
   // [BARU] Trend label KPI dulu string statis ("+3 this week", "+16.7% vs
   // last month", "Avg 12% rate") -- angka value KPI-nya sudah real, tapi

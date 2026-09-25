@@ -276,6 +276,7 @@ export default function EquityMovementChart({ steps, periodLabel }: EquityMoveme
       </g>
     );
   };
+  renderWaterfallBar.displayName = 'RenderWaterfallBar';
 
   return (
     <div className="fin-card p-5">

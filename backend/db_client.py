@@ -2776,6 +2776,278 @@ def update_purchase_exception_status(
         session.close()
 
 
+SOURCE_DATA_STATUS_VALID = {"Imported", "Pending Mapping", "Mapped", "Validation Error"}
+SOURCE_DATA_VALIDATION_VALID = {"Valid", "Pending Validation", "Invalid"}
+
+
+def _purchase_source_data_ke_dict(s: "PurchaseSourceDataRow") -> Dict[str, Any]:
+    return {
+        "id": str(s.id),
+        "source_id": s.source_id,
+        "type": s.type,
+        "vendor": s.vendor,
+        "date": s.date.isoformat() if s.date else None,
+        "invoice_no": s.invoice_no,
+        "po_number": s.po_number,
+        "amount": float(s.amount) if s.amount is not None else 0.0,
+        "tax": float(s.tax) if s.tax is not None else 0.0,
+        "total": float(s.total) if s.total is not None else 0.0,
+        "purchase_ref": s.purchase_ref,
+        "validation": s.validation,
+        "status": s.status,
+    }
+
+
+def _purchase_transaction_ke_dict_lengkap(t: "PurchaseTransactionRow") -> Dict[str, Any]:
+    """Versi lengkap _purchase_transaction_ke_dict() (semua kolom, bukan
+    cuma subset) -- dipakai response konversi Source Data supaya frontend
+    langsung dapat transaksi baru yang utuh tanpa perlu refetch dulu untuk
+    tahu isinya."""
+    return {
+        "id": str(t.id),
+        "purchase_id": t.purchase_id,
+        "vendor_id": str(t.vendor_id) if t.vendor_id else None,
+        "invoice_no": t.invoice_no,
+        "po_number": t.po_number,
+        "category": t.category,
+        "period": t.period,
+        "payment_terms": t.payment_terms,
+        "currency": t.currency,
+        "source": t.source,
+        "purchase_date": t.purchase_date.isoformat() if t.purchase_date else None,
+        "invoice_date": t.invoice_date.isoformat() if t.invoice_date else None,
+        "posting_date": t.posting_date.isoformat() if t.posting_date else None,
+        "due_date": t.due_date.isoformat() if t.due_date else None,
+        "subtotal": float(t.subtotal) if t.subtotal is not None else 0.0,
+        "discount": float(t.discount) if t.discount is not None else 0.0,
+        "tax": float(t.tax) if t.tax is not None else 0.0,
+        "total_payable": float(t.total_payable) if t.total_payable is not None else 0.0,
+        "payment_status": t.payment_status,
+        "status": t.status,
+        "prepared_by": t.prepared_by,
+        "approved_by": t.approved_by,
+        "posted_by": t.posted_by,
+        "description": t.description,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+
+def update_purchase_source_data_status(
+    source_data_id: str, client_id: str, user: str,
+    status: Optional[str] = None, validation: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """[BARU] Verifikasi/validasi satu baris Source Data (tab "Source
+    Data") -- mengisi celah yang sebelumnya TIDAK ADA sama sekali: dulu
+    badge status (Imported/Pending Mapping/Validation Error) cuma dihitung
+    dari data mentah, tidak pernah bisa diubah lewat aksi user.
+
+    SENGAJA tidak boleh dipakai untuk set status="Mapped" secara langsung
+    -- status itu HARUS lewat convert_purchase_source_data_to_transaction()
+    supaya purchase_ref selalu konsisten dengan transaksi yang benar-benar
+    dibuat (tidak ada source data "Mapped" tanpa transaksi nyata)."""
+    if status is not None:
+        if status not in SOURCE_DATA_STATUS_VALID:
+            raise ValueError(f"Status '{status}' tidak dikenal. Nilai sah: {sorted(SOURCE_DATA_STATUS_VALID)}")
+        if status == "Mapped":
+            raise ValueError("Status 'Mapped' hanya boleh diset lewat proses konversi ke Purchase Transaction (endpoint convertSourceDataToTransaction), bukan diubah manual.")
+    if validation is not None and validation not in SOURCE_DATA_VALIDATION_VALID:
+        raise ValueError(f"Validation '{validation}' tidak dikenal. Nilai sah: {sorted(SOURCE_DATA_VALIDATION_VALID)}")
+    if status is None and validation is None:
+        raise ValueError("Minimal salah satu dari status atau validation harus diisi.")
+
+    session = SessionLocal()
+    try:
+        s = session.query(PurchaseSourceDataRow).filter(
+            PurchaseSourceDataRow.id == source_data_id,
+            PurchaseSourceDataRow.client_id == client_id,
+        ).first()
+        if s is None:
+            return None
+        if s.status == "Mapped":
+            raise ValueError("Source data ini sudah dipetakan ke transaksi, statusnya tidak bisa diubah lagi.")
+
+        if validation is not None:
+            s.validation = validation
+            # Ditandai Invalid -> status ikut disetel "Validation Error"
+            # (kecuali caller sudah eksplisit minta status lain) supaya tab
+            # Source Data langsung menunjukkan baris ini butuh perbaikan.
+            if validation == "Invalid" and status is None:
+                status = "Validation Error"
+        if status is not None:
+            s.status = status
+        s.updated_at = datetime.now()
+
+        _catat_log_purchase(
+            session, client_id, None, "SOURCE_DATA_VERIFIED",
+            f"Source data {s.source_id or s.id} diverifikasi -- status={s.status}, validation={s.validation}",
+            user, reference_no=s.source_id,
+        )
+
+        session.commit()
+        session.refresh(s)
+        return _purchase_source_data_ke_dict(s)
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error update purchase source data status: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def _generate_purchase_no(session, client_id: str) -> str:
+    """Generate nomor Purchase baru format "PUR-YYYY-MM-XXXX" (sequential
+    per client per bulan berjalan, lihat contoh di komentar kolom
+    purchase_id PurchaseTransactionRow) -- dipakai
+    convert_purchase_source_data_to_transaction()."""
+    now = datetime.now()
+    prefix = f"PUR-{now.year}-{now.month:02d}-"
+    existing = session.query(PurchaseTransactionRow.purchase_id).filter(
+        PurchaseTransactionRow.client_id == client_id,
+        PurchaseTransactionRow.purchase_id.like(f"{prefix}%"),
+    ).all()
+    max_urut = 0
+    for (pid,) in existing:
+        try:
+            urut = int(str(pid).rsplit("-", 1)[-1])
+            max_urut = max(max_urut, urut)
+        except (ValueError, TypeError):
+            continue
+    return f"{prefix}{max_urut + 1:04d}"
+
+
+def convert_purchase_source_data_to_transaction(
+    source_data_id: str, client_id: str, user: str,
+) -> Optional[Dict[str, Any]]:
+    """[BARU] Konversi satu Source Data yang SUDAH TERVERIFIKASI
+    (validation="Valid") menjadi Purchase Transaction baru + satu Purchase
+    Line Item ringkasan (source data cuma simpan total per dokumen, bukan
+    rincian barang/jasa -- rincian lengkap masih bisa diedit manual di tab
+    Purchase Transaction setelah dibuat).
+
+    Ini mengisi celah alur "Source Data -> verifikasi -> jadi transaksi"
+    yang sebelumnya CUMA ADA DI TAMPILAN (badge "Mapped", kolom Purchase
+    Ref) tapi tidak ada logic backend yang benar-benar membuat transaksinya
+    -- lihat db_client.py::ambil_data_purchase(), sebelum ini tidak ada
+    satupun fungsi yang menulis ke finance_transaction_purchase_transaction
+    dari data source.
+
+    Vendor dicari dulu berdasar nama (case-insensitive); kalau belum ada di
+    finance_transaction_purchase_vendor, dibuat otomatis."""
+    session = SessionLocal()
+    try:
+        s = session.query(PurchaseSourceDataRow).filter(
+            PurchaseSourceDataRow.id == source_data_id,
+            PurchaseSourceDataRow.client_id == client_id,
+        ).first()
+        if s is None:
+            return None
+
+        if s.status == "Mapped" and s.purchase_ref:
+            raise ValueError(f"Source data ini sudah dipetakan ke transaksi {s.purchase_ref}.")
+        if s.validation != "Valid":
+            raise ValueError("Source data harus berstatus validation 'Valid' terlebih dahulu sebelum bisa dikonversi jadi transaksi. Verifikasi datanya dulu lewat updateSourceDataStatus.")
+        if not s.vendor:
+            raise ValueError("Source data tidak punya nama vendor, tidak bisa dikonversi.")
+
+        vendor = session.query(PurchaseVendor).filter(
+            PurchaseVendor.client_id == client_id,
+            func.lower(PurchaseVendor.name) == s.vendor.strip().lower(),
+        ).first()
+        if vendor is None:
+            vendor = PurchaseVendor(
+                id=uuid.uuid4(), client_id=client_id, name=s.vendor.strip(),
+                created_at=datetime.now(),
+            )
+            session.add(vendor)
+            session.flush()
+
+        purchase_no = _generate_purchase_no(session, client_id)
+        amount = Decimal(str(s.amount or 0))
+        tax = Decimal(str(s.tax or 0))
+        total = Decimal(str(s.total if s.total is not None else (amount + tax)))
+
+        transaksi = PurchaseTransactionRow(
+            id=uuid.uuid4(),
+            client_id=client_id,
+            purchase_id=purchase_no,
+            vendor_id=vendor.id,
+            invoice_no=s.invoice_no,
+            po_number=s.po_number,
+            category=None,
+            period=s.date.strftime("%b %Y") if s.date else None,
+            payment_terms=None,
+            currency="USD",
+            source=s.type,
+            purchase_date=s.date,
+            invoice_date=s.date,
+            posting_date=None,
+            due_date=None,
+            subtotal=amount,
+            discount=Decimal("0"),
+            tax=tax,
+            total_payable=total,
+            payment_status="Unpaid",
+            status="Pending Review",
+            prepared_by=user,
+            approved_by=None,
+            posted_by=None,
+            description=f"Dibuat otomatis dari Source Data {s.source_id or s.id}",
+            created_at=datetime.now(),
+        )
+        session.add(transaksi)
+        session.flush()
+
+        line = PurchaseLineItemRow(
+            id=uuid.uuid4(),
+            client_id=client_id,
+            purchase_id=purchase_no,
+            item_code=None,
+            item_name=s.type or "Item dari Source Data",
+            qty=Decimal("1"),
+            unit="pcs",
+            unit_price=amount,
+            discount=Decimal("0"),
+            tax_rate=(tax / amount * 100) if amount else Decimal("0"),
+            tax_amount=tax,
+            subtotal=amount,
+            total=total,
+            gl_account=None,
+            created_at=datetime.now(),
+        )
+        session.add(line)
+
+        s.status = "Mapped"
+        s.purchase_ref = purchase_no
+        s.updated_at = datetime.now()
+
+        _catat_log_purchase(
+            session, client_id, transaksi.id, "CREATED_FROM_SOURCE_DATA",
+            f"Transaksi dibuat dari Source Data {s.source_id or s.id}",
+            user, reference_no=purchase_no,
+        )
+
+        session.commit()
+        session.refresh(transaksi)
+        session.refresh(s)
+        return {
+            "transaction": _purchase_transaction_ke_dict_lengkap(transaksi),
+            "source_data": _purchase_source_data_ke_dict(s),
+        }
+    except ValueError:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        print(f"Error convert purchase source data to transaction: {e}")
+        return None
+    finally:
+        session.close()
+
+
 def ambil_data_purchase(client_id: str) -> Dict[str, Any]:
     """
     [BARU] Ambil seluruh data modul Purchase (vendor, purchase_transaction,
@@ -4095,10 +4367,63 @@ def _bank_cash_ke_dict(j: "FinanceTransactionBankCash") -> Dict[str, Any]:
     }
 
 
+def daftar_kas_bank_dari_jurnal(client_id: str, status: Optional[str] = None,
+                                 limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """[BARU -- nomor 2] Ambil transaksi Kas & Bank yang SEBENARNYA tercatat
+    di jurnal_posting (mis. penjualan tunai dari modul Sales, bayar
+    hutang/pajak dari modul Purchase/Tax, jurnal manual dst yang salah satu
+    sisinya menyentuh akun kategori='ASET' + sub_kategori='Kas' di COA
+    client ini), lewat VIEW v_kas_bank_dari_jurnal (Supabase). Baris di
+    sini BUKAN baris finance_transaction_bank_cash -- 'id'-nya adalah
+    jurnal_posting.id asli (integer), dan setiap baris ditandai
+    sumber='jurnal_posting', supaya frontend (bankCashBridge.ts) tahu
+    baris ini harus diberi jeId berprefix "JE-" (bukan "BC-") dan
+    diarahkan ke endpoint jurnal-posting kalau diedit/diposting/dihapus,
+    BUKAN ke endpoint bank-cash (yang tidak mengenal baris ini sama
+    sekali -- lihat update_bank_cash/tolak_bank_cash di bawah, keduanya
+    query ke tabel finance_transaction_bank_cash)."""
+    session = SessionLocal()
+    try:
+        sql = "SELECT * FROM v_kas_bank_dari_jurnal WHERE client_id = :client_id"
+        params: Dict[str, Any] = {"client_id": client_id}
+        if status:
+            sql += " AND status = :status"
+            params["status"] = status
+        sql += " ORDER BY tanggal DESC, id DESC"
+        if limit is not None and limit > 0:
+            sql += " LIMIT :limit"
+            params["limit"] = limit
+        rows = session.execute(text(sql), params).mappings().all()
+        hasil: List[Dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            if d.get("diposting_at") is not None:
+                d["diposting_at"] = d["diposting_at"].isoformat()
+            if d.get("dibuat_at") is not None:
+                d["dibuat_at"] = d["dibuat_at"].isoformat()
+            d.pop("client_id", None)
+            d["id"] = str(d["id"])  # jurnal_posting.id (integer) -> string, konsisten dgn baris manual (uuid)
+            d["sumber"] = "jurnal_posting"
+            hasil.append(d)
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error daftar kas bank dari jurnal: {e}")
+        return []
+    finally:
+        session.close()
+
+
 def daftar_bank_cash(client_id: str, status: Optional[str] = None,
                       limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Ambil seluruh baris Cash Payment + Cash Receipt milik client (tanpa
-    batas kalau limit=None -- sama seperti daftar_jurnal_posting)."""
+    """[DIUBAH -- nomor 2] Ambil seluruh baris Cash Payment + Cash Receipt
+    milik client: gabungan entri manual (finance_transaction_bank_cash,
+    id UUID) + transaksi Kas/Bank asli dari jurnal_posting (lewat
+    daftar_kas_bank_dari_jurnal(), id integer jurnal_posting.id).
+    Setiap baris ditandai field 'sumber' ('manual' / 'jurnal_posting')
+    -- lihat bankCashBridge.ts di frontend, yang memakai field ini untuk
+    memberi prefix jeId yang benar ("BC-" vs "JE-") supaya aksi
+    edit/posting/hapus diarahkan ke endpoint backend yang benar."""
     session = SessionLocal()
     try:
         query = session.query(FinanceTransactionBankCash).filter(
@@ -4107,15 +4432,24 @@ def daftar_bank_cash(client_id: str, status: Optional[str] = None,
         if status:
             query = query.filter(FinanceTransactionBankCash.status == status)
         query = query.order_by(FinanceTransactionBankCash.dibuat_at.desc())
-        if limit is not None and limit > 0:
-            query = query.limit(limit)
-        return [_bank_cash_ke_dict(j) for j in query.all()]
+        manual_rows = [_bank_cash_ke_dict(j) for j in query.all()]
+        for d in manual_rows:
+            d["id"] = str(d["id"])
+            d["sumber"] = "manual"
     except Exception as e:
         session.rollback()
-        print(f"Error daftar bank cash: {e}")
-        return []
+        print(f"Error daftar bank cash (manual): {e}")
+        manual_rows = []
     finally:
         session.close()
+
+    jurnal_rows = daftar_kas_bank_dari_jurnal(client_id, status=status)
+
+    gabungan = manual_rows + jurnal_rows
+    gabungan.sort(key=lambda d: (d.get("tanggal") or ""), reverse=True)
+    if limit is not None and limit > 0:
+        gabungan = gabungan[:limit]
+    return gabungan
 
 
 def ambil_bank_cash_by_id(bank_cash_id: str, client_id: str) -> Optional[Dict[str, Any]]:
@@ -4258,7 +4592,7 @@ def buat_bank_cash_manual(
         session.close()
 
 
-def posting_massal_bank_cash_by_ids(client_id: str, ids: List[int], user: str) -> Dict[str, int]:
+def posting_massal_bank_cash_by_ids(client_id: str, ids: List[str], user: str) -> Dict[str, int]:
     """Posting banyak baris 'draft' Bank & Cash sekaligus jadi 'terposting'
     -- pola identik konfirmasi_posting_by_ids()."""
     if not ids:
@@ -4337,6 +4671,169 @@ def tolak_bank_cash(bank_cash_id: str, client_id: str, user: str, alasan: Option
         session.rollback()
         print(f"Error tolak bank cash: {e}")
         return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# [BARU] MODUL BANK FEED -- tabel "bank_feed_mutation" (lihat
+# migrations/12-create_bank_feed_mutation_table.py), menampung mutasi
+# rekening koran MENTAH (sebelum dijurnal) untuk tab "Bank Feed" &
+# "Reconciliation" di halaman Cash & Bank. TERPISAH dari
+# finance_transaction_bank_cash (yang sudah berbentuk jurnal double-entry
+# lengkap) -- baris di sini murni "tanggal segini, uang masuk/keluar
+# sekian" seperti apa adanya di rekening koran, lalu dicocokkan manual/
+# otomatis ke satu baris Cash Payment/Cash Receipt yang sudah tercatat
+# (matched_tx_id menyimpan id Transaction frontend, prefix "BC-"/"JE-" --
+# lihat bankCashBridge.ts). Ekstraksi baris mentahnya REUSE
+# ak.proses_file_rekening_koran() yang sudah ada (field mutasi_debet/
+# mutasi_kredit per baris draf_jurnal) -- lihat modules/finance/
+# bank_feed_v1.py, tidak ada parser baru yang ditulis.
+# ============================================================
+
+STATUS_BANK_FEED_VALID = {"unmatched", "matched"}
+
+
+class BankFeedMutation(Base):
+    """Satu baris mutasi rekening koran mentah (belum dijurnal)."""
+    __tablename__ = "bank_feed_mutation"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    bank_account = Column(String(200), nullable=True)
+    tanggal = Column(String(20), nullable=True)
+    keterangan = Column(Text, nullable=True)
+    debet = Column(Float, nullable=False, default=0)   # uang keluar dari rekening (mutasi debet bank)
+    kredit = Column(Float, nullable=False, default=0)  # uang masuk ke rekening (mutasi kredit bank)
+    saldo_akhir = Column(Float, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="unmatched")  # unmatched/matched
+    matched_tx_id = Column(String(100), nullable=True)  # id Transaction frontend ("BC-..."/"JE-...")
+    source_file = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), nullable=True, default=datetime.now)
+
+    client = relationship("Client")
+
+
+def _bank_feed_ke_dict(m: "BankFeedMutation") -> Dict[str, Any]:
+    return {
+        "id": m.id,
+        "bankAccount": m.bank_account,
+        "date": m.tanggal,
+        "description": m.keterangan,
+        "debit": m.debet,
+        "credit": m.kredit,
+        "balanceAfter": m.saldo_akhir,
+        "status": m.status,
+        "matchedTxId": m.matched_tx_id,
+        "sourceFile": m.source_file,
+        "uploadedAt": m.uploaded_at.isoformat() if m.uploaded_at else None,
+    }
+
+
+def daftar_bank_feed_mutasi(client_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Daftar mutasi Bank Feed milik client, terbaru dulu. ?status=unmatched/matched utk filter."""
+    session = SessionLocal()
+    try:
+        q = session.query(BankFeedMutation).filter(BankFeedMutation.client_id == client_id)
+        if status:
+            q = q.filter(BankFeedMutation.status == status)
+        q = q.order_by(BankFeedMutation.tanggal.desc(), BankFeedMutation.uploaded_at.desc())
+        return [_bank_feed_ke_dict(m) for m in q.all()]
+    except Exception as e:
+        session.rollback()
+        print(f"Error daftar bank feed mutasi: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def simpan_bank_feed_mutasi_batch(
+    client_id: str, bank_account: str, source_file: str, rows: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Simpan hasil ekstraksi satu file rekening koran sebagai mutasi mentah.
+    `rows`: list of {tanggal, keterangan, debet, kredit} (lihat
+    modules/finance/bank_feed_v1.py -- dipetakan dari draf_jurnal hasil
+    ak.proses_file_rekening_koran, field mutasi_debet/mutasi_kredit).
+
+    Saldo berjalan (saldo_akhir) dihitung bersambung dari baris TERSIMPAN
+    terakhir milik client+akun bank ini (bukan cuma dari batch baru), supaya
+    tetap benar kalau diimpor bertahap (mis. rekening koran Jan lalu Feb
+    diupload terpisah)."""
+    session = SessionLocal()
+    try:
+        terakhir = (
+            session.query(BankFeedMutation)
+            .filter(BankFeedMutation.client_id == client_id, BankFeedMutation.bank_account == bank_account)
+            .order_by(BankFeedMutation.tanggal.desc(), BankFeedMutation.uploaded_at.desc())
+            .first()
+        )
+        saldo = terakhir.saldo_akhir if terakhir else 0.0
+        now = datetime.now()
+        rows_terurut = sorted(rows, key=lambda r: r.get("tanggal") or "")
+        baru: List[BankFeedMutation] = []
+        for r in rows_terurut:
+            debet = float(r.get("debet") or 0)
+            kredit = float(r.get("kredit") or 0)
+            saldo = saldo + kredit - debet
+            row = BankFeedMutation(
+                client_id=client_id, bank_account=bank_account,
+                tanggal=r.get("tanggal"), keterangan=r.get("keterangan"),
+                debet=debet, kredit=kredit, saldo_akhir=saldo,
+                status="unmatched", matched_tx_id=None,
+                source_file=source_file, uploaded_at=now,
+            )
+            session.add(row)
+            baru.append(row)
+        session.commit()
+        for r in baru:
+            session.refresh(r)
+        # Urutan tampil: terbaru dulu (sama seperti daftar_bank_feed_mutasi).
+        return [_bank_feed_ke_dict(r) for r in reversed(baru)]
+    except Exception as e:
+        session.rollback()
+        print(f"Error simpan bank feed mutasi batch: {e}")
+        raise
+    finally:
+        session.close()
+
+
+def hapus_bank_feed_mutasi(mutation_id: str, client_id: str) -> bool:
+    session = SessionLocal()
+    try:
+        row = session.query(BankFeedMutation).filter(
+            BankFeedMutation.id == mutation_id, BankFeedMutation.client_id == client_id
+        ).first()
+        if row is None:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error hapus bank feed mutasi: {e}")
+        return False
+    finally:
+        session.close()
+
+
+def set_match_bank_feed_mutasi(mutation_id: str, client_id: str, tx_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """tx_id diisi -> status 'matched'. tx_id=None -> 'unmatched' (undo pencocokan)."""
+    session = SessionLocal()
+    try:
+        row = session.query(BankFeedMutation).filter(
+            BankFeedMutation.id == mutation_id, BankFeedMutation.client_id == client_id
+        ).first()
+        if row is None:
+            return None
+        row.matched_tx_id = tx_id
+        row.status = "matched" if tx_id else "unmatched"
+        session.commit()
+        session.refresh(row)
+        return _bank_feed_ke_dict(row)
+    except Exception as e:
+        session.rollback()
+        print(f"Error set match bank feed mutasi: {e}")
+        return None
     finally:
         session.close()
 
@@ -4731,6 +5228,42 @@ def _catat_log_bank_cash(session, client_id, bank_cash_id, event_type, descripti
         reference_no=reference_no,
         performed_by=user or "System",
     ))
+
+
+def daftar_log_bank_cash(client_id: str, bank_cash_id: str) -> List[Dict[str, Any]]:
+    """[BARU] Ambil riwayat aktivitas (activity log) SATU baris Bank & Cash
+    manual (finance_transaction_bank_cash, id UUID) -- dipakai tab Audit
+    Trail di TransactionDrawer.tsx untuk baris berprefix "BC-" (lihat
+    auditTrailBridge.ts). Sebelum ini, log-nya sudah ditulis lewat
+    _catat_log_bank_cash() (di update_bank_cash/buat_bank_cash_manual/
+    posting_massal_bank_cash_by_ids/tolak_bank_cash) tapi TIDAK PERNAH
+    dibaca/ditampilkan dari mana pun -- fungsi ini yang pertama.
+    HANYA untuk baris manual; baris yang sebenarnya jurnal_posting
+    (prefix "JE-") tetap pakai get_audit_history()/api_audit_log_client
+    yang sudah ada (lihat daftar_kas_bank_dari_jurnal di atas)."""
+    session = SessionLocal()
+    try:
+        rows = session.query(FinanceTransactionBankCashActivityLog).filter(
+            FinanceTransactionBankCashActivityLog.client_id == client_id,
+            FinanceTransactionBankCashActivityLog.bank_cash_id == bank_cash_id,
+        ).order_by(FinanceTransactionBankCashActivityLog.created_at.desc()).all()
+        return [
+            {
+                "id": r.id,
+                "event_type": r.event_type,
+                "description": r.description,
+                "reference_no": r.reference_no,
+                "performed_by": r.performed_by,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        session.rollback()
+        print(f"Error daftar log bank cash: {e}")
+        return []
+    finally:
+        session.close()
 
 
 def _catat_log_finance_other(session, client_id, je_id, event_type, description, user, reference_no=None):
@@ -7883,6 +8416,47 @@ def daftar_reminder_spt_client(client_id: str, hanya_belum_selesai: bool = True)
     finally:
         session.close()
 
+# [BARU -- nomor 3, pencegahan] Kata kunci nama akun yang dianggap Kas/Bank.
+# Dicek via "in" (substring, case-insensitive) terhadap nama_akun yang sudah
+# di-lower() -- jadi "Bank Mandiri", "Kas Kecil", "Petty Cash Kantor",
+# "Giro BCA", "Tabungan BRI", "Deposito Berjangka" semuanya kena.
+_KATA_KUNCI_AKUN_KAS_BANK = ('kas', 'bank', 'petty cash', 'giro', 'tabungan', 'deposito')
+
+
+def _normalisasi_sub_kategori_kas_bank(
+    nama_akun: Optional[str], kategori: Optional[str], sub_kategori: Optional[str]
+) -> Optional[str]:
+    """
+    [BARU -- nomor 3, pencegahan] Auto-koreksi sub_kategori jadi 'Kas' untuk
+    akun ASET yang namanya mengandung kata kunci Kas/Bank -- supaya standar
+    yang sudah dipakai laporan_keuangan.py (perhitungan saldo Kas bulanan
+    utk Neraca/Arus Kas) dan VIEW v_kas_bank_dari_jurnal (dasar halaman Cash
+    & Bank) tidak rusak lagi kalau file import Excel/input manual COA
+    sub_kategori-nya kosong atau salah ketik.
+
+    Insiden sebelumnya (perbaikan manual, lihat migration
+    standarisasi_sub_kategori_kas_bank_coa): 3 akun "Kas" di 3 client sempat
+    ke-tag sub_kategori='Aset Lancar' padahal seharusnya 'Kas'. Perbaikan
+    itu cuma membetulkan DATA YANG SUDAH ADA -- fungsi ini yang mencegah
+    masalah yang sama muncul lagi tiap kali simpan_coa_bulk() dipanggil
+    (import ulang dari Excel ATAUPUN input manual dari UI, lihat pemanggil
+    di main.py).
+
+    Cuma berlaku untuk akun kategori='ASET' (dicek case-insensitive, karena
+    nilai kategori dari file Excel/input manual tidak selalu konsisten
+    huruf besar/kecilnya). Akun ASET lain yang kebetulan namanya tidak
+    mengandung kata kunci di atas, dan akun non-ASET (Liabilitas/Ekuitas/
+    dst), TIDAK disentuh -- sub_kategori aslinya tetap dipakai apa adanya,
+    termasuk kalau kosong (None).
+    """
+    if not kategori or str(kategori).strip().upper() != 'ASET':
+        return sub_kategori
+    nama = str(nama_akun or '').strip().lower()
+    if any(kw in nama for kw in _KATA_KUNCI_AKUN_KAS_BANK):
+        return 'Kas'
+    return sub_kategori
+
+
 def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_semua: bool = True) -> int:
     """
     Simpan banyak akun COA sekaligus untuk satu client (mis. hasil import
@@ -7918,7 +8492,10 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                     no_akun=no_akun,
                     nama_akun=nama_akun,
                     kategori=(akun.get("kategori") or None),
-                    sub_kategori=akun.get("sub_kategori"),
+                    # [DIUBAH -- nomor 3, pencegahan] lihat _normalisasi_sub_kategori_kas_bank()
+                    sub_kategori=_normalisasi_sub_kategori_kas_bank(
+                        nama_akun, akun.get("kategori"), akun.get("sub_kategori")
+                    ),
                     normal_saldo=akun.get("normal_saldo"),
                     saldo_awal=_angka(akun.get("saldo_awal")),  # [FIX] NaN-safe
                     segment=akun.get("segment"),      # [BARU]
@@ -7944,6 +8521,8 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                     a.nama_akun = nama_akun
                     a.kategori = akun.get("kategori") or a.kategori
                     a.sub_kategori = akun.get("sub_kategori") or a.sub_kategori
+                    # [BARU -- nomor 3, pencegahan] lihat _normalisasi_sub_kategori_kas_bank()
+                    a.sub_kategori = _normalisasi_sub_kategori_kas_bank(a.nama_akun, a.kategori, a.sub_kategori)
                     a.normal_saldo = akun.get("normal_saldo") or a.normal_saldo
                     if akun.get("saldo_awal") is not None:
                         a.saldo_awal = _angka(akun.get("saldo_awal"))  # [FIX] NaN-safe
@@ -7963,7 +8542,10 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                         no_akun=no_akun,
                         nama_akun=nama_akun,
                         kategori=(akun.get("kategori") or None),
-                        sub_kategori=akun.get("sub_kategori"),
+                        # [DIUBAH -- nomor 3, pencegahan] lihat _normalisasi_sub_kategori_kas_bank()
+                        sub_kategori=_normalisasi_sub_kategori_kas_bank(
+                            nama_akun, akun.get("kategori"), akun.get("sub_kategori")
+                        ),
                         normal_saldo=akun.get("normal_saldo"),
                         saldo_awal=_angka(akun.get("saldo_awal")),  # [FIX] NaN-safe
                         segment=akun.get("segment"),      # [BARU]

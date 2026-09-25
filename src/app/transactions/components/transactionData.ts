@@ -229,8 +229,6 @@ Object.keys(GROUP_LABELS).forEach((g) => {
   CATEGORY_TO_GROUP[GROUP_LABELS[group]] = group;
 });
 
-// Backend integration point: replace with /api/transactions?page=&filters=&sort=
-export const ALL_TRANSACTIONS: Transaction[] = [];
 
 // [BARU] Helper generator dipakai ulang oleh ImportRekeningKoranModal supaya
 // nomor voucher hasil import mengikuti pola yang sama persis dengan data di
