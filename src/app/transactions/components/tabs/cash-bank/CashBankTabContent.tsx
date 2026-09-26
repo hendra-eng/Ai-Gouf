@@ -368,8 +368,8 @@ export default function CashBankTabContent() {
       <div className="space-y-5">
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          <KpiCard label="Main Bank Balance" value="$0" subValue="Main Operating Account" trend={0} trendLabel="vs Aug 2026" icon={<Landmark size={18} />} variant="positive" />
-          <KpiCard label="Total Cash Balance" value="$0" subValue="Petty Cash on hand" trend={0} trendLabel="vs prior period" icon={<Banknote size={18} />} variant="info" />
+          <KpiCard label="Main Bank Balance" value="$0" subValue="0 transactions this period" trend={0} trendLabel="vs Aug 2026" icon={<Landmark size={18} />} variant="positive" />
+          <KpiCard label="Total Cash Balance" value="$0" subValue="0% of total balance" trend={0} trendLabel="vs prior period" icon={<Banknote size={18} />} variant="info" />
           <KpiCard label="Total Receipts (Sep)" value="$0" subValue="Inflows this period" trend={0} trendLabel="vs Aug 2026" icon={<ArrowDownLeft size={18} />} variant="positive" />
           <KpiCard label="Total Payments (Sep)" value="$0" subValue="Outflows this period" trend={0} trendLabel="vs Aug 2026" icon={<ArrowUpRight size={18} />} variant="warning" />
           <KpiCard label="Unreconciled Items" value={String(unreconciledCount + reviewCount)} subValue={`${unreconciledCount} unmatched, ${reviewCount} in review`} icon={<AlertCircle size={18} />} variant="negative" />

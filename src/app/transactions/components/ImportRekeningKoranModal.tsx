@@ -5,6 +5,7 @@ import { Upload, X, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle } from
 import { Transaction, kodeBankDariNama, buatVoucherNo, classifyJournalPairCategory, pisahkanTransaksiDuplikat } from './transactionData';
 import { useCurrency } from '@/lib/currency';
 import { useActiveClient } from '@/lib/activeClient';
+import { resolveBackendUrlLangsung, pesanGagalFetchBackend } from '@/lib/backendUrl';
 // [BARU] Guard duplikat (Opsi A) perlu tahu transaksi APA SAJA yang sudah
 // ada di halaman ini saat ini (state React lokal TransactionsContext) untuk
 // dibandingkan terhadap hasil import baru -- lihat pisahkanTransaksiDuplikat.
@@ -364,21 +365,24 @@ function drafJurnalPenjualanToTransactions(rows: DrafJurnalRow[], batchTag: stri
 
 const formatIDR = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
-// [BARU] URL backend LANGSUNG (bukan lewat proxy /api/... di next.config.mjs
-// rewrites). Upload di modal ini (khususnya laporan PDF ribuan halaman)
-// bisa butuh beberapa menit diproses server -- proxy rewrites Next.js
-// punya batas waktu tunggu (proxyTimeout) yang TIDAK BISA dikonfigurasi
-// lagi di versi Next.js sekarang (opsi itu sudah dihapus, lihat
+// [DIUBAH] URL backend LANGSUNG (bukan lewat proxy /api/... di next.config.mjs
+// rewrites) sekarang dari resolveBackendUrlLangsung() (src/lib/backendUrl.ts)
+// -- satu sumber kebenaran dipakai bersama agent-ai/lib/api.js (importBankFeed),
+// bukan konstanta lokal duplikat lagi (itu penyebab bug "Failed to fetch" di
+// tab Bank Feed: kedua salinan gampang tidak sinkron begitu backend pindah
+// host/port, dan fallback hardcode "localhost:8000" salah kalau browser
+// bukan di komputer yang sama dengan backend).
+//
+// Alasan tetap fetch LANGSUNG (bukan lewat proxy Next.js) tidak berubah:
+// upload di modal ini (khususnya laporan PDF ribuan halaman) bisa butuh
+// beberapa menit diproses server -- proxy rewrites Next.js punya batas
+// waktu tunggu (proxyTimeout) yang TIDAK BISA dikonfigurasi lagi di versi
+// Next.js sekarang (opsi itu sudah dihapus, lihat
 // https://github.com/vercel/next.js/issues/62869), jadi request lambat
 // selalu diputus ("socket hang up") walau body size limit sudah dinaikkan
 // (lihat middlewareClientMaxBodySize di next.config.mjs -- itu cuma
-// mengatasi masalah UKURAN, bukan WAKTU). Solusinya: khusus endpoint
-// upload berat ini, browser panggil backend FastAPI di port 8000 secara
-// langsung, melewati proxy Next.js sepenuhnya. Backend sudah mengizinkan
-// origin ini lewat CORSMiddleware (lihat backend/main.py). Override host
-// backend lewat env NEXT_PUBLIC_BACKEND_URL kalau backend tidak jalan di
-// localhost:8000 (mis. saat production/deploy terpisah).
-const BACKEND_URL_LANGSUNG = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+// mengatasi masalah UKURAN, bukan WAKTU). Backend sudah mengizinkan origin
+// ini lewat CORSMiddleware (lihat backend/main.py).
 
 export default function ImportRekeningKoranModal({ onClose, onImported, mode = 'replace', groupLabel }: Props) {
   const { fx } = useCurrency();
@@ -472,7 +476,19 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
       // riwayat client tsb di backend, bukan cuma diproses lalu dibuang.
       if (activeClientId) formData.append('client_id', activeClientId);
 
-      const res = await fetch(`${BACKEND_URL_LANGSUNG}/api/proses-file`, { method: 'POST', body: formData });
+      const url = `${resolveBackendUrlLangsung()}/api/proses-file`;
+      let res: Response;
+      try {
+        // [BARU] credentials: 'include' ditambahkan untuk konsistensi dengan
+        // importBankFeed() (agent-ai/lib/api.js) -- endpoint INI sendiri
+        // (/api/proses-file) belum diproteksi jwt_v1_middleware (tidak
+        // diawali /api/v1/), jadi belum wajib, tapi aman dipasang sekarang
+        // supaya tidak kebobolan lagi kalau endpoint ini nanti dipindah ke
+        // grup /api/v1/... yang mewajibkan cookie sesi.
+        res = await fetch(url, { method: 'POST', credentials: 'include', body: formData });
+      } catch (fetchErr) {
+        throw new Error(pesanGagalFetchBackend(fetchErr, url));
+      }
 
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));

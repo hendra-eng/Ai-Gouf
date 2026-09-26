@@ -14,12 +14,15 @@
 // backend di-deploy di domain lain sepenuhnya, tapi default-nya kosong.)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
-// [BARU] Dipakai KHUSUS untuk upload file besar (rekening koran PDF/Excel)
-// yang butuh waktu proses lama -- sama seperti BACKEND_URL_LANGSUNG di
-// ImportRekeningKoranModal.tsx, langsung ke FastAPI (bukan lewat proxy
-// Next.js next.config.mjs) supaya tidak kena timeout proxy/serverless.
-// Dipakai importBankFeed() di bawah.
-const BACKEND_URL_LANGSUNG = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+// [DIUBAH] Sebelumnya konstanta lokal terpisah di sini (gampang tidak
+// sinkron dengan salinan yang sama di ImportRekeningKoranModal.tsx begitu
+// backend pindah host/port -- itu penyebab bug "Failed to fetch" di tab
+// Bank Feed). Sekarang satu sumber kebenaran di src/lib/backendUrl.ts,
+// dipakai KHUSUS untuk upload file besar (rekening koran PDF/Excel,
+// Bank Feed) yang butuh waktu proses lama, langsung ke FastAPI (bukan
+// lewat proxy Next.js next.config.mjs) supaya tidak kena timeout
+// proxy/serverless. Dipakai importBankFeed() di bawah.
+import { resolveBackendUrlLangsung, pesanGagalFetchBackend } from "@/lib/backendUrl";
 
 const TOKEN_STORAGE_KEY = "gouf_auth_token";
 let _token = null;
@@ -1997,11 +2000,36 @@ export async function importBankFeed(clientId, bankAccount, file, pakaiAi = true
   const token = tokenTersimpan();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BACKEND_URL_LANGSUNG}/api/v1/finance/bank-feed/import`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  // [DIUBAH] URL backend sekarang dari resolveBackendUrlLangsung() (src/lib/
+  // backendUrl.ts) -- satu sumber kebenaran dipakai bersama ImportRekeningKoranModal.tsx,
+  // BUKAN fallback hardcode "localhost:8000" lokal lagi (itu penyebab "Failed to
+  // fetch" kalau browser bukan di komputer yang sama dengan backend / env
+  // NEXT_PUBLIC_BACKEND_URL tidak di-set). fetch() dibungkus try/catch supaya
+  // error jaringan (TypeError) diterjemahkan ke pesan yang actionable lewat
+  // pesanGagalFetchBackend(), bukan "Failed to fetch" mentah.
+  const url = `${resolveBackendUrlLangsung()}/api/v1/finance/bank-feed/import`;
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers,
+      // [BARU] WAJIB -- endpoint ini di bawah /api/v1/... jadi dijaga
+      // jwt_v1_middleware (backend/modules/auth/v1.py), yang menerima token
+      // dari header Authorization ATAU cookie httpOnly "gouf_session".
+      // Karena fetch ini LANGSUNG ke backend (origin beda dari halaman,
+      // localhost:8000 vs localhost:4028) dan token-nya cuma ada di cookie
+      // httpOnly (tokenTersimpan() di atas SELALU null di alur login
+      // sekarang -- lihat src/app/api/session/login/route.ts, JWT tidak
+      // pernah diekspos ke localStorage), browser TIDAK akan mengirim
+      // cookie itu kecuali diminta eksplisit lewat credentials: 'include'.
+      // Tanpa ini request selalu 401 walau user sudah login (cookie ADA di
+      // browser, cuma tidak ikut terkirim ke origin lain).
+      credentials: "include",
+      body: formData,
+    });
+  } catch (err) {
+    throw new Error(pesanGagalFetchBackend(err, url));
+  }
 
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
