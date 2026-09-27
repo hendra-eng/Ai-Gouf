@@ -5,58 +5,15 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useProfitLossStatement } from '../lib/useStatementData';
 
 const PLWaterfallChart = dynamic(() => import('./PLWaterfallChart'), {
   ssr: false,
   loading: () => <Skeleton className="h-[320px] w-full rounded-xl" />,
 });
 
-// Backend integration point: replace with /api/statements/pl?company=&period=
-const plData = {
-  revenue: {
-    label: 'Total Revenue',
-    value: 8420,
-    children: [
-      { label: 'Layanan Konsultasi IT', value: 4210, pct: 50.0 },
-      { label: 'Pengembangan Software', value: 2526, pct: 30.0 },
-      { label: 'Lisensi & Maintenance', value: 1262, pct: 15.0 },
-      { label: 'Pelatihan & Sertifikasi', value: 422, pct: 5.0 },
-    ],
-  },
-  cogs: {
-    label: 'Cost of Goods Sold',
-    value: 4700,
-    children: [
-      { label: 'Direct Labor', value: 2820, pct: 60.0 },
-      { label: 'Subcontractor', value: 940, pct: 20.0 },
-      { label: 'Infrastructure & Hosting', value: 658, pct: 14.0 },
-      { label: 'Software Licenses (COGS)', value: 282, pct: 6.0 },
-    ],
-  },
-  grossProfit: { label: 'Gross Profit', value: 3720 },
-  opex: {
-    label: 'Operating Expenses',
-    value: 1180,
-    children: [
-      { label: 'Gaji & Tunjangan (G&A)', value: 485, pct: 41.1 },
-      { label: 'Marketing & Promosi', value: 265, pct: 22.5 },
-      { label: 'Sewa Kantor', value: 190, pct: 16.1 },
-      { label: 'Software & Teknologi', value: 128, pct: 10.8 },
-      { label: 'Perjalanan Dinas', value: 72, pct: 6.1 },
-      { label: 'Lain-lain', value: 40, pct: 3.4 },
-    ],
-  },
-  ebitda: { label: 'EBITDA', value: 2310 },
-  depreciation: { label: 'Depreciation & Amortization', value: 210 },
-  ebit: { label: 'EBIT (Operating Income)', value: 2330 },
-  interest: { label: 'Interest Expense', value: 148 },
-  ebt: { label: 'Earnings Before Tax', value: 2182 },
-  tax: { label: 'Income Tax (PPh Badan)', value: 436 },
-  netProfit: { label: 'Net Profit', value: 1840 },
-};
-
 function formatPct(v: number, total: number) {
-  return `${((v / total) * 100).toFixed(1)}%`;
+  return total ? `${((v / total) * 100).toFixed(1)}%` : '—';
 }
 
 interface PLRowProps {
@@ -106,18 +63,18 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
           </span>
         </td>
         <td className="px-5 py-3 text-right hidden md:table-cell">
-          {revenueBase && (
+          {!!revenueBase && (
             <span className="text-xs text-muted-foreground font-mono">
               {formatPct(value, revenueBase)}
             </span>
           )}
         </td>
         <td className="px-5 py-3 hidden lg:table-cell">
-          {revenueBase && (
+          {!!revenueBase && (
             <div className="w-full max-w-[120px] h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full ${isNegative ? 'bg-negative/60' : isTotal || isSubtotal ? 'bg-primary' : 'bg-primary/40'}`}
-                style={{ width: `${Math.min((value / revenueBase) * 100, 100)}%` }}
+                style={{ width: `${Math.min(Math.abs(value / revenueBase) * 100, 100)}%` }}
               />
             </div>
           )}
@@ -136,7 +93,7 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
           </td>
           <td className="px-5 py-2.5 hidden lg:table-cell">
             <div className="w-full max-w-[120px] h-1 bg-muted rounded-full overflow-hidden">
-              <div className="h-full rounded-full bg-muted-foreground/40" style={{ width: `${child.pct}%` }} />
+              <div className="h-full rounded-full bg-muted-foreground/40" style={{ width: `${Math.min(Math.abs(child.pct), 100)}%` }} />
             </div>
           </td>
         </tr>
@@ -146,8 +103,25 @@ function PLRow({ label, value, indent = 0, isTotal, isSubtotal, isNegative, isBo
 }
 
 export default function PLStatement() {
-  const { fx, currency } = useCurrency();
+  const { currency } = useCurrency();
   const { t } = useLanguage();
+  const { PL_CORE: c, MARGINS, RINCIAN, periodLabel, effectiveTaxRate } = useProfitLossStatement();
+  const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
+  const anak = (items: { name: string; value: number; pct: number }[]) => items.map((i) => ({ label: i.name, value: i.value, pct: i.pct }));
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const plData = {
+    revenue: { label: 'Total Revenue', value: c.revenue, children: anak(RINCIAN.revenue) },
+    cogs: { label: 'Cost of Goods Sold', value: c.cogs, children: anak(RINCIAN.cogs) },
+    grossProfit: { label: 'Gross Profit', value: c.grossProfit },
+    opex: { label: 'Operating Expenses', value: c.operatingExpenses, children: anak(RINCIAN.operatingExpenses) },
+    ebitda: { label: 'EBITDA', value: c.ebitda },
+    depreciation: { label: 'Depreciation & Amortization', value: c.da, children: anak(RINCIAN.da) },
+    ebit: { label: 'EBIT (Operating Income)', value: c.ebit },
+    interest: { label: 'Interest Expense', value: c.interestExpense, children: anak(RINCIAN.interest) },
+    ebt: { label: 'Earnings Before Tax', value: c.ebt },
+    tax: { label: 'Income Tax (PPh Badan)', value: c.incomeTax, children: anak(RINCIAN.tax) },
+    netProfit: { label: 'Net Profit', value: c.netProfit },
+  };
   const rev = plData.revenue.value;
 
   return (
@@ -155,8 +129,8 @@ export default function PLStatement() {
       {/* Waterfall chart */}
       <div className="card-elevated-md rounded-xl p-5">
         <h3 className="text-base font-bold text-foreground mb-1">{t('P&L Waterfall — Revenue to Net Profit')}</h3>
-        <p className="text-xs text-muted-foreground mb-4">{fx(t('How Rp 8.42M revenue becomes Rp 1.84M net profit'))}</p>
-        <PLWaterfallChart />
+        <p className="text-xs text-muted-foreground mb-4">{t('Revenue')} {formatRp(c.revenue)} → {t('Net Profit')} {formatRp(c.netProfit)}</p>
+        <PLWaterfallChart values={{ revenue: c.revenue, cogs: c.cogs, opex: c.operatingExpenses, da: c.da, interest: c.interestExpense, tax: c.incomeTax }} />
       </div>
 
       {/* P&L Table */}
@@ -164,7 +138,7 @@ export default function PLStatement() {
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-foreground">{t('Laporan Laba Rugi')}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('Periode')}: {periodLabel}</p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="hidden sm:inline">{t('Click a row to expand details')}</span>
@@ -189,13 +163,13 @@ export default function PLStatement() {
               <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t('Operating')}</span></td></tr>
               <PLRow label={plData.opex.label} value={plData.opex.value} isNegative subRows={plData.opex.children} revenueBase={rev} />
               <PLRow label={plData.ebitda.label} value={plData.ebitda.value} isSubtotal isBold revenueBase={rev} />
-              <PLRow label={plData.depreciation.label} value={plData.depreciation.value} isNegative revenueBase={rev} />
+              <PLRow label={plData.depreciation.label} value={plData.depreciation.value} isNegative subRows={plData.depreciation.children} revenueBase={rev} />
               <PLRow label={plData.ebit.label} value={plData.ebit.value} isSubtotal revenueBase={rev} />
 
               <tr><td colSpan={4} className="px-5 py-1.5 bg-muted/20"><span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{t('Below the Line')}</span></td></tr>
-              <PLRow label={plData.interest.label} value={plData.interest.value} isNegative revenueBase={rev} />
+              <PLRow label={plData.interest.label} value={plData.interest.value} isNegative subRows={plData.interest.children} revenueBase={rev} />
               <PLRow label={plData.ebt.label} value={plData.ebt.value} isSubtotal revenueBase={rev} />
-              <PLRow label={plData.tax.label} value={plData.tax.value} isNegative revenueBase={rev} />
+              <PLRow label={plData.tax.label} value={plData.tax.value} isNegative subRows={plData.tax.children} revenueBase={rev} />
               <PLRow label={plData.netProfit.label} value={plData.netProfit.value} isTotal isBold revenueBase={rev} />
             </tbody>
           </table>
@@ -204,10 +178,10 @@ export default function PLStatement() {
         {/* Summary metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border border-t border-border">
           {[
-            { label: 'Gross Margin', value: `${((plData.grossProfit.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'EBITDA Margin', value: `${((plData.ebitda.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'Net Margin', value: `${((plData.netProfit.value / rev) * 100).toFixed(1)}%`, positive: true },
-            { label: 'Tax Rate Effective', value: `${((plData.tax.value / plData.ebt.value) * 100).toFixed(1)}%`, positive: false },
+            { label: 'Gross Margin', value: `${MARGINS.grossMargin.toFixed(1)}%`, positive: MARGINS.grossMargin >= 0 },
+            { label: 'EBITDA Margin', value: `${MARGINS.ebitdaMargin.toFixed(1)}%`, positive: MARGINS.ebitdaMargin >= 0 },
+            { label: 'Net Margin', value: `${MARGINS.netMargin.toFixed(1)}%`, positive: MARGINS.netMargin >= 0 },
+            { label: 'Tax Rate Effective', value: `${effectiveTaxRate.toFixed(1)}%`, positive: false },
           ].map((m) => (
             <div key={`plsum-${m.label}`} className="bg-card px-5 py-4">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{t(m.label)}</p>

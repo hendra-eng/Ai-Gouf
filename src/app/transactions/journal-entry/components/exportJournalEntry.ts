@@ -12,10 +12,10 @@ function formatTanggal(iso: string): string {
   if (!iso) return '-';
   const dt = new Date(iso + 'T00:00:00');
   if (Number.isNaN(dt.getTime())) return iso;
-  return dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  return dt.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const fmtUsd = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtIdr = (n: number) => n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Export "Jurnal Umum" (General Journal) ke PDF -- 1 baris per journal
  *  line (debit/kredit), dikelompokkan per JE, ditotal di akhir untuk
@@ -29,18 +29,18 @@ export function exportJournalEntriesToPdf(rows: JeExportRow[], companyName: stri
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
-  const generatedAt = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const generatedAt = new Date().toLocaleString('en-US', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.text(companyName, 14, 15);
   doc.setFontSize(11);
-  doc.text('Jurnal Umum (General Journal)', 14, 21);
+  doc.text('General Journal', 14, 21);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Periode: ${formatTanggal(sorted[0]?.date)} — ${formatTanggal(sorted[sorted.length - 1]?.date)}`, 14, 27);
+  doc.text(`Period: ${formatTanggal(sorted[0]?.date)} — ${formatTanggal(sorted[sorted.length - 1]?.date)}`, 14, 27);
   doc.text(`Total journal entries: ${sorted.length.toLocaleString('id-ID')}`, 14, 32);
-  doc.text(`Dicetak: ${generatedAt}`, pageWidth - 14, 15, { align: 'right' });
+  doc.text(`Printed: ${generatedAt}`, pageWidth - 14, 15, { align: 'right' });
 
   const body: (string | number)[][] = [];
   let grandDebit = 0;
@@ -54,8 +54,8 @@ export function exportJournalEntriesToPdf(rows: JeExportRow[], companyName: stri
         line.accountCode,
         line.accountName,
         line.description || je.description,
-        line.debit ? fmtUsd(line.debit) : '-',
-        line.credit ? fmtUsd(line.credit) : '-',
+        line.debit ? fmtIdr(line.debit) : '-',
+        line.credit ? fmtIdr(line.credit) : '-',
       ]);
       grandDebit += line.debit;
       grandCredit += line.credit;
@@ -64,9 +64,9 @@ export function exportJournalEntriesToPdf(rows: JeExportRow[], companyName: stri
 
   autoTable(doc, {
     startY: 37,
-    head: [['Tanggal', 'No. Jurnal', 'Status', 'Kode Akun', 'Nama Akun', 'Deskripsi', 'Debit (USD)', 'Credit (USD)']],
+    head: [['Date', 'JE Number', 'Status', 'Account Code', 'Account Name', 'Description', 'Debit (IDR)', 'Credit (IDR)']],
     body,
-    foot: [['', '', '', '', '', 'TOTAL', fmtUsd(grandDebit), fmtUsd(grandCredit)]],
+    foot: [['', '', '', '', '', 'TOTAL', fmtIdr(grandDebit), fmtIdr(grandCredit)]],
     styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
     headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
     footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
@@ -79,11 +79,11 @@ export function exportJournalEntriesToPdf(rows: JeExportRow[], companyName: stri
       const current = doc.getCurrentPageInfo().pageNumber;
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text(`Halaman ${current} dari ${pageCount}`, pageWidth - 14, doc.internal.pageSize.getHeight() - 8, { align: 'right' });
+      doc.text(`Page ${current} of ${pageCount}`, pageWidth - 14, doc.internal.pageSize.getHeight() - 8, { align: 'right' });
     },
   });
 
-  doc.save(`Jurnal-Umum-${new Date().toISOString().slice(0, 10)}.pdf`);
+  doc.save(`General-Journal-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 /** Export ke Excel -- 1 sheet, 1 row per journal line (format GL flat),
@@ -93,7 +93,7 @@ export async function exportJournalEntriesToExcel(rows: JeExportRow[]): Promise<
   if (rows.length === 0) return;
 
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Jurnal Umum');
+  const sheet = workbook.addWorksheet('General Journal');
 
   sheet.columns = [
     { header: 'JE Number', key: 'je', width: 20 },
@@ -144,5 +144,5 @@ export async function exportJournalEntriesToExcel(rows: JeExportRow[]): Promise<
 
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  downloadBlob(blob, `Jurnal-Umum-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  downloadBlob(blob, `General-Journal-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

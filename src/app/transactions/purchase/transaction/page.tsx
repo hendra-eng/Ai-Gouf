@@ -1,19 +1,24 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
+import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
+import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
   ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const statusColors: Record<PurchaseStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -54,6 +59,11 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [paymentFilter, setPaymentFilter] = useState('All');
@@ -63,6 +73,17 @@ export default function PurchaseTransactionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showImport, setShowImport] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
+
+  // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
+  // di detail panel (bukan seluruh daftar) -- pola sama seperti
+  // useJeDraftLines() di journalEntryStore.tsx.
+  const { lines: selectedLines } = usePurchaseTransactionLines(selectedRow?.id);
+  const selectedRowWithLines = useMemo(
+    () => (selectedRow ? { ...selectedRow, lines: selectedLines.map(mapTransactionLineToUi) } : null),
+    [selectedRow, selectedLines],
+  );
 
   const uniqueVendors = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.vendor)))];
   const uniqueCategories = ['All', ...Array.from(new Set(purchaseTransactions.map(t => t.category)))];
@@ -88,11 +109,30 @@ export default function PurchaseTransactionPage() {
       return 0;
     });
     return data;
-  }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  }, [purchaseTransactions, search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+  };
+
+  // Alur: draft -> Approve -> approved -> Post -> posted (pindah ke tab Posted).
+  const selectedRows = purchaseTransactions.filter(t => selectedIds.has(t.id));
+  const bisaApprove = selectedRows.filter(t => ['draft', 'pending_review', 'exception'].includes(t.status)).length;
+  const bisaPost = selectedRows.filter(t => ['approved', 'pending_posting'].includes(t.status)).length;
+
+  const runBulk = async (action: 'approve' | 'post') => {
+    setBulkBusy(action);
+    const n = await runPurchaseStatusAction(action, [...selectedIds]);
+    setBulkBusy(null);
+    if (n > 0) setSelectedIds(new Set());
   };
 
   const toggleSelect = (id: string) => {
@@ -110,11 +150,12 @@ export default function PurchaseTransactionPage() {
     posted: purchaseTransactions.filter(t => t.status === 'posted').length,
     exceptions: purchaseTransactions.filter(t => t.status === 'exception').length,
     totalAmount: purchaseTransactions.reduce((s, t) => s + t.total, 0),
-  }), []);
+  }), [purchaseTransactions]);
 
   return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
+        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -163,6 +204,9 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
+              <button className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => setShowImport(true)}>
+                <ArrowUpTrayIcon className="w-3.5 h-3.5" />Upload Data
+              </button>
               <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
@@ -173,7 +217,22 @@ export default function PurchaseTransactionPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-                <button className="je-btn-primary text-xs px-3 py-1.5">Bulk Approve</button>
+                <button
+                  className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-40"
+                  disabled={bulkBusy !== null || bisaApprove === 0}
+                  title="Draft / pending review → Approved"
+                  onClick={() => runBulk('approve')}
+                >
+                  {bulkBusy === 'approve' ? 'Approving…' : `Approve (${bisaApprove})`}
+                </button>
+                <button
+                  className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                  disabled={bulkBusy !== null || bisaPost === 0}
+                  title="Approved → Posted (moves to the Posted tab)"
+                  onClick={() => runBulk('post')}
+                >
+                  {bulkBusy === 'post' ? 'Posting…' : `Post (${bisaPost})`}
+                </button>
                 <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             )}
@@ -187,10 +246,16 @@ export default function PurchaseTransactionPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="px-4 py-3 w-8">
-                    <input type="checkbox" className="rounded" onChange={e => {
-                      if (e.target.checked) setSelectedIds(new Set(filtered.map(r => r.id)));
-                      else setSelectedIds(new Set());
-                    }} />
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      title={`Select all ${filtered.length} filtered transactions`}
+                      checked={filtered.length > 0 && filtered.every(r => selectedIds.has(r.id))}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedIds(new Set(filtered.map(r => r.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
                   </th>
                   {[
                     { label: 'Purchase ID', field: 'purchaseId' },
@@ -221,7 +286,7 @@ export default function PurchaseTransactionPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={15} className="px-4 py-12 text-center text-muted-foreground text-sm">No transactions match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr
                     key={row.id}
                     className={`table-row-hover cursor-pointer ${selectedIds.has(row.id) ? 'bg-blue-50/50' : ''}`}
@@ -259,33 +324,34 @@ export default function PurchaseTransactionPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="transactions" />
         </div>
 
         {/* Detail Panel */}
-        {selectedRow && (
+        {selectedRowWithLines && (
           <div className="je-card p-6">
             <div className="flex items-start justify-between mb-5">
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="font-mono text-sm font-bold text-primary">{selectedRow.purchaseId}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedRow.status]}`}>{statusLabels[selectedRow.status]}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentColors[selectedRow.paymentStatus]}`}>{paymentLabels[selectedRow.paymentStatus]}</span>
+                  <span className="font-mono text-sm font-bold text-primary">{selectedRowWithLines.purchaseId}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedRowWithLines.status]}`}>{statusLabels[selectedRowWithLines.status]}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentColors[selectedRowWithLines.paymentStatus]}`}>{paymentLabels[selectedRowWithLines.paymentStatus]}</span>
                 </div>
-                <p className="text-sm text-foreground font-medium">{selectedRow.description}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{selectedRow.vendor} · {selectedRow.category}</p>
+                <p className="text-sm text-foreground font-medium">{selectedRowWithLines.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{selectedRowWithLines.vendor} · {selectedRowWithLines.category}</p>
               </div>
               <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
-                { label: 'Invoice Number', value: selectedRow.invoiceNumber },
-                { label: 'PO Number', value: selectedRow.poNumber },
-                { label: 'Invoice Date', value: selectedRow.invoiceDate },
-                { label: 'Due Date', value: selectedRow.dueDate },
-                { label: 'Payment Terms', value: selectedRow.paymentTerms },
-                { label: 'Period', value: selectedRow.period },
-                { label: 'Created By', value: selectedRow.createdBy },
-                { label: 'Approved By', value: selectedRow.approvedBy || '—' },
+                { label: 'Invoice Number', value: selectedRowWithLines.invoiceNumber },
+                { label: 'PO Number', value: selectedRowWithLines.poNumber },
+                { label: 'Invoice Date', value: selectedRowWithLines.invoiceDate },
+                { label: 'Due Date', value: selectedRowWithLines.dueDate },
+                { label: 'Payment Terms', value: selectedRowWithLines.paymentTerms },
+                { label: 'Period', value: selectedRowWithLines.period },
+                { label: 'Created By', value: selectedRowWithLines.createdBy },
+                { label: 'Approved By', value: selectedRowWithLines.approvedBy || '—' },
               ].map(item => (
                 <div key={item.label}>
                   <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -308,7 +374,7 @@ export default function PurchaseTransactionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {selectedRow.lines.map(line => (
+                  {selectedRowWithLines.lines.map(line => (
                     <tr key={line.id} className="table-row-hover">
                       <td className="px-3 py-2">
                         <p className="font-medium text-foreground">{line.description}</p>
@@ -326,30 +392,30 @@ export default function PurchaseTransactionPage() {
                 <tfoot>
                   <tr className="bg-muted/40 border-t border-border">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Subtotal</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRow.subtotal)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRowWithLines.subtotal)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-muted/40">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Discount</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-red-600">-{fmt(selectedRow.discount)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-red-600">-{fmt(selectedRowWithLines.discount)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-muted/40">
                     <td colSpan={4} className="px-3 py-2 text-right font-semibold text-muted-foreground">Tax (Input VAT)</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRow.taxAmount)}</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(selectedRowWithLines.taxAmount)}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr className="bg-blue-50">
                     <td colSpan={4} className="px-3 py-2 text-right font-bold text-blue-700">Total Payable</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums text-blue-700 text-sm">{fmt(selectedRow.total)}</td>
+                    <td className="px-3 py-2 text-right font-bold tabular-nums text-blue-700 text-sm">{fmt(selectedRowWithLines.total)}</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
               </table>
             </div>
-            {selectedRow.notes && (
+            {selectedRowWithLines.notes && (
               <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5">
-                <p className="text-xs text-amber-700">{selectedRow.notes}</p>
+                <p className="text-xs text-amber-700">{selectedRowWithLines.notes}</p>
               </div>
             )}
           </div>

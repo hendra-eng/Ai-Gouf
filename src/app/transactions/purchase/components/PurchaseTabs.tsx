@@ -13,12 +13,12 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
-  { id: 'tab-overview', label: 'Overview', href: '/transactions/purchase', description: 'Ringkasan performa pembelian dan metrik utama.' },
-  { id: 'tab-source', label: 'Source Data', href: '/transactions/purchase/source-data', description: 'Kelola dan proses data sumber pembelian sebelum dilakukan penjurnalan.' },
-  { id: 'tab-transaction', label: 'Purchase Transaction', href: '/transactions/purchase/transaction', badge: 2, description: 'Workspace transaksi pembelian yang detail dan terintegrasi dengan jurnal akuntansi.' },
-  { id: 'tab-preview', label: 'Purchase Preview', href: '/transactions/purchase/preview', description: 'Pratinjau jurnal transaksi pembelian sebelum diposting.' },
-  { id: 'tab-exceptions', label: 'Exceptions', href: '/transactions/purchase/exceptions', badge: 5, description: 'Kelola dan tindak lanjuti transaksi pembelian yang memerlukan review.' },
-  { id: 'tab-posted', label: 'Posted', href: '/transactions/purchase/posted', description: 'Daftar transaksi pembelian yang telah diposting ke dalam sistem akuntansi.' },
+  { id: 'tab-overview', label: 'Overview', href: '/transactions/purchase', description: 'Summary of purchasing performance and key metrics.' },
+  { id: 'tab-source', label: 'Source Data', href: '/transactions/purchase/source-data', description: 'Manage and process purchase source data before it is journalized.' },
+  { id: 'tab-transaction', label: 'Purchase Transaction', href: '/transactions/purchase/transaction', badge: 2, description: 'Detailed purchase transaction workspace, integrated with the accounting journal.' },
+  { id: 'tab-preview', label: 'Purchase Preview', href: '/transactions/purchase/preview', description: 'Preview the journal of each purchase transaction before posting.' },
+  { id: 'tab-exceptions', label: 'Exceptions', href: '/transactions/purchase/exceptions', badge: 5, description: 'Manage and follow up purchase transactions that need review.' },
+  { id: 'tab-posted', label: 'Posted', href: '/transactions/purchase/posted', description: 'Purchase transactions that have been posted to the accounting system.' },
 ];
 
 export default function PurchaseTabs() {

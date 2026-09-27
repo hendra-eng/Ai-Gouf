@@ -20,12 +20,12 @@ const tabs: Tab[] = [
 ];
 
 const descriptions: Record<string, string> = {
-  overview: 'Ringkasan aktivitas jurnal dan metrik utama.',
-  source: 'Kelola dan proses data sumber jurnal sebelum dilakukan penjurnalan.',
-  transaction: 'Workspace transaksi jurnal yang detail dan terintegrasi dengan jurnal akuntansi.',
-  preview: 'Pratinjau jurnal sebelum diposting.',
-  exceptions: 'Kelola dan tindak lanjuti entri jurnal yang memerlukan review.',
-  posted: 'Daftar entri jurnal yang telah diposting ke dalam sistem akuntansi.',
+  overview: 'Summary of journal activity and key metrics.',
+  source: 'Manage and process journal source data before posting.',
+  transaction: 'Detailed journal transaction workspace, integrated with the accounting journal.',
+  preview: 'Preview journal entries before posting.',
+  exceptions: 'Manage and follow up on journal entries that need review.',
+  posted: 'List of journal entries that have been posted to the accounting system.',
 };
 
 interface JournalEntryTabsProps {

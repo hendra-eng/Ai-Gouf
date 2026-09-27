@@ -5,55 +5,21 @@ import { ChevronDown, ChevronRight, TrendingUp } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useCashFlowStatement, useProfitLossStatement } from '../lib/useStatementData';
 
 const CashFlowChart = dynamic(() => import('./CashFlowChart'), {
   ssr: false,
   loading: () => <Skeleton className="h-[300px] w-full rounded-xl" />,
 });
 
-// Backend integration point: replace with /api/statements/cash-flow?company=&period=
-const cfData = {
-  operating: {
-    label: 'Operating Activities',
-    items: [
-      { label: 'Net Income', value: 1840 },
-      { label: 'Depreciation & Amortization', value: 210 },
-      { label: 'Perubahan Piutang Usaha', value: -142 },
-      { label: 'Perubahan Persediaan', value: -38 },
-      { label: 'Perubahan Hutang Usaha', value: 86 },
-      { label: 'Perubahan Kewajiban Akrual', value: 44 },
-    ],
-    total: 1800,
-  },
-  investing: {
-    label: 'Investing Activities',
-    items: [
-      { label: 'Pembelian Peralatan & Mesin', value: -380 },
-      { label: 'Pembelian Aset Tak Berwujud', value: -120 },
-      { label: 'Investasi Jangka Panjang', value: -200 },
-      { label: 'Penjualan Aset Tetap', value: 45 },
-    ],
-    total: -655,
-  },
-  financing: {
-    label: 'Financing Activities',
-    items: [
-      { label: 'Penerimaan Hutang Bank', value: 500 },
-      { label: 'Pembayaran Hutang Bank', value: -280 },
-      { label: 'Pembayaran Dividen', value: -320 },
-      { label: 'Pembayaran Sewa (Lease)', value: -85 },
-    ],
-    total: -185,
-  },
-  beginning: 1996,
-  netChange: 960,
-  ending: 2956,
-};
-
-const runwayMonths = 4.8;
+interface CFSectionData {
+  label: string;
+  items: { label: string; value: number }[];
+  total: number;
+}
 
 interface CFSectionProps {
-  section: typeof cfData.operating;
+  section: CFSectionData;
   colorClass: string;
 }
 
@@ -99,10 +65,27 @@ function CFSection({ section, colorClass }: CFSectionProps) {
 }
 
 export default function CashFlowStatement() {
-  const { currency, fx } = useCurrency();
+  const { currency } = useCurrency();
   const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
   const [forecastPeriod, setForecastPeriod] = useState('3M');
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const { INDIRECT, CF_MONTHLY, periodLabel } = useCashFlowStatement();
+  const { PL_CORE, MONTHLY_PL } = useProfitLossStatement();
+  const cfData = {
+    operating: INDIRECT.operating,
+    investing: INDIRECT.investing,
+    financing: INDIRECT.financing,
+    beginning: INDIRECT.beginning,
+    netChange: INDIRECT.netChange,
+    ending: INDIRECT.ending,
+  };
+  // Runway = kas akhir / rata-rata beban kas bulanan (semua beban kecuali
+  // penyusutan & amortisasi yang non-kas).
+  const bulanAktif = Math.max(MONTHLY_PL.length, 1);
+  const bebanKasBulanan = (PL_CORE.cogs + PL_CORE.operatingExpenses + PL_CORE.interestExpense + PL_CORE.incomeTax) / bulanAktif;
+  const runwayMonths = bebanKasBulanan > 0 && cfData.ending > 0 ? Math.round((cfData.ending / bebanKasBulanan) * 10) / 10 : null;
+  const runwayAman = runwayMonths != null && runwayMonths >= 3;
 
   return (
     <div className="space-y-6">
@@ -111,7 +94,7 @@ export default function CashFlowStatement() {
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             <h3 className="text-base font-bold text-foreground">{t('Cash Flow by Activity')}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{t('Jan–Aug 2026 monthly breakdown')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{periodLabel}</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center bg-muted rounded-lg p-0.5 border border-border">
@@ -129,16 +112,16 @@ export default function CashFlowStatement() {
             </div>
           </div>
         </div>
-        <CashFlowChart />
+        <CashFlowChart data={CF_MONTHLY.map((m) => ({ month: m.month, operating: m.operatingCF, investing: m.investingCF, financing: m.financingCF }))} />
       </div>
 
       {/* Cash summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Beginning Cash', value: cfData.beginning, color: 'text-foreground' },
-          { label: 'Net Change', value: cfData.netChange, color: 'text-positive', prefix: '+' },
+          { label: 'Net Change', value: cfData.netChange, color: cfData.netChange >= 0 ? 'text-positive' : 'text-negative', prefix: cfData.netChange >= 0 ? '+' : '' },
           { label: 'Ending Cash', value: cfData.ending, color: 'text-primary' },
-          { label: 'Cash Runway', value: null, display: `${runwayMonths} months`, color: 'text-positive' },
+          { label: 'Cash Runway', value: null, display: runwayMonths == null ? '—' : `${runwayMonths} ${t('months')}`, color: runwayAman ? 'text-positive' : 'text-warning' },
         ].map((c) => (
           <div key={`cfsum-${c.label}`} className="card-elevated rounded-xl p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{t(c.label)}</p>
@@ -150,13 +133,16 @@ export default function CashFlowStatement() {
       </div>
 
       {/* Cash flow runway alert */}
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-positive-subtle border border-positive/20">
-        <TrendingUp size={18} className="text-positive flex-shrink-0 mt-0.5" />
+      <div className={`flex items-start gap-3 p-4 rounded-xl border ${runwayAman ? 'bg-positive-subtle border-positive/20' : 'bg-warning-subtle border-warning/20'}`}>
+        <TrendingUp size={18} className={`${runwayAman ? 'text-positive' : 'text-warning'} flex-shrink-0 mt-0.5`} />
         <div>
-          <p className="text-sm font-semibold text-foreground">{t('Cash Runway: 4.8 Months')}</p>
+          <p className="text-sm font-semibold text-foreground">
+            {t('Cash Runway')}: {runwayMonths == null ? '—' : `${runwayMonths} ${t('months')}`}
+          </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {fx(t('Current cash of Rp 2.96M covers approximately 4.8 months of projected operating expenses (Rp 618Jt/month avg).'))}
-            {' '}{t('Operating cash flow is positive and improving. No immediate liquidity risk.')}
+            {runwayMonths == null
+              ? t('Belum cukup data kas & beban posted untuk menghitung runway.')
+              : `${t('Kas akhir')} ${formatRp(cfData.ending)} ${t('menutup sekitar')} ${runwayMonths} ${t('bulan beban kas')} (${t('rata-rata')} ${formatRp(bebanKasBulanan)}/${t('bulan')}).`}
           </p>
         </div>
       </div>
@@ -165,7 +151,7 @@ export default function CashFlowStatement() {
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h3 className="text-base font-bold text-foreground">{t('Laporan Arus Kas')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026 (Metode Tidak Langsung)')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode')}: {periodLabel} ({t('Metode Tidak Langsung')})</p>
         </div>
 
         <CFSection section={cfData.operating} colorClass="text-positive" />
@@ -175,7 +161,7 @@ export default function CashFlowStatement() {
         <div className="divide-y divide-border">
           <div className="flex items-center justify-between px-5 py-3 bg-muted/30">
             <span className="text-sm font-semibold text-foreground">{t('Kenaikan (Penurunan) Bersih Kas')}</span>
-            <span className="text-sm font-bold font-mono text-positive">+{formatRp(cfData.netChange)}</span>
+            <span className={`text-sm font-bold font-mono ${cfData.netChange >= 0 ? 'text-positive' : 'text-negative'}`}>{cfData.netChange >= 0 ? '+' : ''}{formatRp(cfData.netChange)}</span>
           </div>
           <div className="flex items-center justify-between px-5 py-3">
             <span className="text-sm text-muted-foreground">{t('Saldo Kas Awal Periode')}</span>

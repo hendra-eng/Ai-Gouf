@@ -2,7 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions, purchaseExceptions, purchaseOverviewKPIs, vendors } from '@/data/purchaseData';
+import { vendors } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
   ExclamationTriangleIcon,
   BuildingStorefrontIcon,
@@ -15,9 +17,12 @@ import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/Int
 
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const fmtFull = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+// Label sumbu grafik: ringkas ala "Rp 22,5 jt" supaya muat.
+const fmtAxis = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
 // ── Data historis untuk Purchase Volume Trend (multi-periode + pan/scroll
 // ala TradingView). Dibuat deterministik (bukan random murni) dari fungsi
@@ -119,21 +124,6 @@ const paymentStatusDist = [
   { name: 'On Hold', value: 1, color: '#64748B' },
 ];
 
-// Top vendors by spend
-const topVendors = vendors
-  .map(v => ({
-    ...v,
-    totalSpend: purchaseTransactions.filter(p => p.vendorId === v.id).reduce((s, p) => s + p.total, 0),
-    txCount: purchaseTransactions.filter(p => p.vendorId === v.id).length,
-  }))
-  .filter(v => v.totalSpend > 0)
-  .sort((a, b) => b.totalSpend - a.totalSpend)
-  .slice(0, 6);
-
-const recentActivity = purchaseTransactions
-  .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
-  .slice(0, 6);
-
 const statusColors: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-700',
   pending_review: 'bg-amber-100 text-amber-700',
@@ -157,7 +147,40 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function PurchaseOverviewPage() {
-  const kpis = purchaseOverviewKPIs;
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
+  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
+  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+
+  // purchaseOverviewKPIs dulu diekspor statis dari purchaseData.ts, sekarang
+  // dihitung dari data backend (pola sama dengan kpis di Sales/JE Overview).
+  const kpis = useMemo(() => ({
+    totalPurchases: purchaseTransactions.length,
+    totalAmount: purchaseTransactions.reduce((s, p) => s + p.total, 0),
+    pendingReview: purchaseTransactions.filter(p => p.status === 'pending_review').length,
+    approved: purchaseTransactions.filter(p => p.status === 'approved').length,
+    posted: purchaseTransactions.filter(p => p.status === 'posted').length,
+    exceptions: purchaseTransactions.filter(p => p.status === 'exception').length,
+    totalTax: purchaseTransactions.reduce((s, p) => s + p.taxAmount, 0),
+    totalAP: purchaseTransactions.filter(p => p.paymentStatus !== 'paid').reduce((s, p) => s + p.accountsPayable, 0),
+    overdueAmount: purchaseTransactions.filter(p => p.paymentStatus === 'overdue').reduce((s, p) => s + p.total, 0),
+  }), [purchaseTransactions]);
+
+  const topVendors = useMemo(() => vendors
+    .map(v => ({
+      ...v,
+      totalSpend: purchaseTransactions.filter(p => p.vendorId === v.id).reduce((s, p) => s + p.total, 0),
+      txCount: purchaseTransactions.filter(p => p.vendorId === v.id).length,
+    }))
+    .filter(v => v.totalSpend > 0)
+    .sort((a, b) => b.totalSpend - a.totalSpend)
+    .slice(0, 6), [purchaseTransactions]);
+
+  const recentActivity = useMemo(() => [...purchaseTransactions]
+    .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
+    .slice(0, 6), [purchaseTransactions]);
 
   // ── Purchase Status donut — pakai komponen InteractiveDonutChart yang
   // sama dengan AR Aging Analysis di Financial Overview (klik untuk
@@ -559,8 +582,8 @@ export default function PurchaseOverviewPage() {
                     tick={{ fontSize: 11, fill: '#64748B' }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                    width={56}
+                    tickFormatter={(v) => fmtAxis(v)}
+                    width={72}
                     ticks={trendYTicks}
                     domain={trendYDomain}
                     allowDataOverflow
@@ -663,7 +686,7 @@ export default function PurchaseOverviewPage() {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtAxis(v)} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
                 <Tooltip formatter={(v: number) => [fmt(v), 'Amount']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
                 <Bar dataKey="value" fill="#0EA5E9" radius={[0, 3, 3, 0]} />

@@ -6,43 +6,35 @@ import { ArrowRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/LoadingSkeleton';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import { useEquityStatement } from '../lib/useStatementData';
 
 const LPEBridgeChart = dynamic(() => import('./LPEBridgeChart'), {
   ssr: false,
   loading: () => <Skeleton className="h-[280px] w-full rounded-xl" />,
 });
 
-// Backend integration point: replace with /api/statements/equity?company=&period=
-// Same period totals as the full Statement of Changes in Equity page — summarized
-// to component-level totals only (no opening/capital/profit/dividend/adj split per row).
-const lpeRows = [
-  { label: 'Share Capital', opening: 5000, movement: 500, closing: 5500 },
-  { label: 'Additional Paid-in Capital', opening: 1200, movement: 250, closing: 1450 },
-  { label: 'Retained Earnings', opening: 1980, movement: 1385, closing: 3365 },
-  { label: 'Other Comprehensive Income', opening: 140, movement: -50, closing: 90 },
-  { label: 'Other Equity', opening: 100, movement: 0, closing: 100 },
-];
-
-const totals = { opening: 8420, movement: 2085, closing: 10505 };
-const summaryCards = [
-  { label: 'Opening Equity', value: totals.opening, color: 'text-foreground' },
-  { label: 'Net Movement', value: totals.movement, color: 'text-positive', prefix: '+' },
-  { label: 'Closing Equity', value: totals.closing, color: 'text-primary' },
-];
-
 export default function LPEStatement() {
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
-  const growthPct = ((totals.movement / totals.opening) * 100).toFixed(1);
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const eq = useEquityStatement();
+  const lpeRows = eq.rows.map((r) => ({ label: r.label, opening: r.opening, movement: Math.round((r.closing - r.opening) * 100) / 100, closing: r.closing }));
+  const totals = { opening: eq.totals.opening, movement: Math.round((eq.totals.closing - eq.totals.opening) * 100) / 100, closing: eq.totals.closing };
+  const summaryCards = [
+    { label: 'Opening Equity', value: totals.opening, color: 'text-foreground', prefix: '' },
+    { label: 'Net Movement', value: totals.movement, color: totals.movement >= 0 ? 'text-positive' : 'text-negative', prefix: totals.movement >= 0 ? '+' : '' },
+    { label: 'Closing Equity', value: totals.closing, color: 'text-primary', prefix: '' },
+  ];
+  const growthPct = eq.summary.growthPct;
 
   return (
     <div className="space-y-6">
       {/* Bridge chart */}
       <div className="card-elevated-md rounded-xl p-5">
         <h3 className="text-base font-bold text-foreground mb-1">{t('Equity Movement Bridge')}</h3>
-        <p className="text-xs text-muted-foreground mb-4">{t('How opening equity changed to closing equity — Jan to Aug 2026')}</p>
-        <LPEBridgeChart />
+        <p className="text-xs text-muted-foreground mb-4">{t('How opening equity changed to closing equity')} — {eq.periodLabel}</p>
+        <LPEBridgeChart values={{ opening: eq.summary.openingEquity, capital: eq.summary.capitalContributions, profit: eq.summary.netProfit, dividends: eq.summary.dividends, adjustments: eq.summary.otherAdjustments }} />
       </div>
 
       {/* Summary cards */}
@@ -57,7 +49,7 @@ export default function LPEStatement() {
         ))}
         <div className="card-elevated rounded-xl p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">{t('Equity Growth')}</p>
-          <p className="text-xl font-bold font-mono text-positive">+{growthPct}%</p>
+          <p className={`text-xl font-bold font-mono ${(growthPct ?? 0) >= 0 ? 'text-positive' : 'text-negative'}`}>{growthPct == null ? '—' : `${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`}</p>
         </div>
       </div>
 
@@ -65,7 +57,7 @@ export default function LPEStatement() {
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h3 className="text-base font-bold text-foreground">{t('Laporan Perubahan Ekuitas')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode: Januari – Agustus 2026 · Ringkasan per komponen ekuitas')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('Periode')}: {eq.periodLabel} · {t('Ringkasan per komponen ekuitas')}</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -91,7 +83,7 @@ export default function LPEStatement() {
               <tr className="bg-primary/5 border-t-2 border-primary/20">
                 <td className="px-5 py-3 text-sm font-bold text-primary">{t('TOTAL EQUITY')}</td>
                 <td className="px-5 py-3 text-right text-sm font-bold font-mono text-primary">{formatRp(totals.opening)}</td>
-                <td className="px-5 py-3 text-right text-sm font-bold font-mono text-positive">+{formatRp(totals.movement)}</td>
+                <td className={`px-5 py-3 text-right text-sm font-bold font-mono ${totals.movement >= 0 ? 'text-positive' : 'text-negative'}`}>{totals.movement >= 0 ? '+' : '−'}{formatRp(Math.abs(totals.movement))}</td>
                 <td className="px-5 py-3 text-right text-base font-bold font-mono text-primary">{formatRp(totals.closing)}</td>
               </tr>
             </tbody>

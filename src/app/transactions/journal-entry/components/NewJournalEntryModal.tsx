@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 import { XMarkIcon, PlusIcon, TrashIcon, PrinterIcon } from '@heroicons/react/24/outline';
 import { createJeDraftWithLines, type JeDraftLineInput } from '@/lib/journalEntryStore';
 import { useActiveClient } from '@/lib/activeClient';
+import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { exportJournalEntryPdf } from './exportJournalEntryPdf';
+import AccountNameAutocomplete from './AccountNameAutocomplete';
 
 // Jumlah baris jurnal yang langsung tersedia saat form dibuka. Tetap bisa
 // ditambah (Add Line) atau dikurangi sampai minimal 2 (syarat 1 debit + 1 kredit).
@@ -31,7 +33,7 @@ function baris_kosong(key: number): LineDraft {
 function periodeDariTanggal(iso: string): string {
   try {
     const d = new Date(iso + 'T00:00:00');
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${names[d.getMonth()]} ${d.getFullYear()}`;
   } catch {
     return '';
@@ -46,8 +48,7 @@ function nomorJeDefault(): string {
   return `JE-${yyyy}-${mm}-${rand}`;
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 export default function NewJournalEntryModal({
   clientId,
@@ -74,6 +75,20 @@ export default function NewJournalEntryModal({
   // Kop PDF (nama + logo) mengikuti perusahaan yang sedang aktif di dropdown header.
   const { clients, activeClientId, activeClientName } = useActiveClient();
   const activeClient = clients.find(c => c.id === activeClientId) ?? null;
+
+  // Saran Account Name = COA milik klien yang dipilih di dropdown header.
+  const { accounts: coaAccounts, loading: coaLoading } = useClientCoa(activeClientId, { activeOnly: true });
+  const coaByAccNo = useMemo(() => new Map(coaAccounts.map(a => [a.acc_no, a])), [coaAccounts]);
+
+  const pilihAkun = (key: number, akun: CoaAccount) => {
+    setLines(prev => prev.map(l => (l.key === key ? { ...l, account_code: akun.acc_no, account_name: akun.account_name } : l)));
+  };
+
+  // Account Code diketik manual & persis ada di COA -> nama akun ikut terisi.
+  const lengkapiDariKode = (key: number, kode: string) => {
+    const akun = coaByAccNo.get(kode.trim());
+    if (akun) pilihAkun(key, akun);
+  };
 
   const totals = useMemo(() => {
     const debit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
@@ -110,7 +125,7 @@ export default function NewJournalEntryModal({
         },
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal membuat PDF journal entry');
+      toast.error(err instanceof Error ? err.message : 'Failed to generate journal entry PDF');
     } finally {
       setPrinting(false);
     }
@@ -118,7 +133,7 @@ export default function NewJournalEntryModal({
 
   const submit = async () => {
     if (!jeNumber.trim() || !entryDate || !periodLabel.trim()) {
-      toast.error('Lengkapi JE Number, Entry Date, dan Period terlebih dahulu.');
+      toast.error('Please fill in JE Number, Entry Date, and Period first.');
       return;
     }
     const cleanedLines: JeDraftLineInput[] = [];
@@ -127,15 +142,15 @@ export default function NewJournalEntryModal({
       const debit = Number(l.debit) || 0;
       const credit = Number(l.credit) || 0;
       if (!l.account_code.trim()) {
-        toast.error(`Baris ${i + 1}: Account Code wajib diisi.`);
+        toast.error(`Line ${i + 1}: Account Code is required.`);
         return;
       }
       if (debit > 0 && credit > 0) {
-        toast.error(`Baris ${i + 1}: tidak boleh mengisi Debit dan Credit sekaligus.`);
+        toast.error(`Line ${i + 1}: cannot fill both Debit and Credit.`);
         return;
       }
       if (debit === 0 && credit === 0) {
-        toast.error(`Baris ${i + 1}: Debit atau Credit wajib diisi.`);
+        toast.error(`Line ${i + 1}: Debit or Credit is required.`);
         return;
       }
       cleanedLines.push({
@@ -147,7 +162,7 @@ export default function NewJournalEntryModal({
       });
     }
     if (!totals.balanced) {
-      toast.error(`Journal entry belum balance. Debit ${fmt(totals.debit)} ≠ Credit ${fmt(totals.credit)}.`);
+      toast.error(`Journal entry is not balanced. Debit ${fmt(totals.debit)} ≠ Credit ${fmt(totals.credit)}.`);
       return;
     }
 
@@ -155,22 +170,23 @@ export default function NewJournalEntryModal({
     try {
       const dibuat = await createJeDraftWithLines({
         client_id: clientId,
+        management_client_id: activeClientId,
         je_number: jeNumber.trim(),
         entry_date: entryDate,
         period_label: periodLabel.trim(),
         description: description.trim() || undefined,
         source_type: sourceType,
         source_reference: sourceReference.trim() || undefined,
-        currency: 'USD',
+        currency: 'IDR',
         status: 'draft',
         created_by_name: createdByName,
         notes: notes.trim() || undefined,
         lines: cleanedLines,
       });
-      toast.success('Journal entry berhasil dibuat', { description: dibuat.je_number });
+      toast.success('Journal entry created successfully', { description: dibuat.je_number });
       onClose();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal membuat journal entry');
+      toast.error(err instanceof Error ? err.message : 'Failed to create journal entry');
     } finally {
       setSubmitting(false);
     }
@@ -205,10 +221,10 @@ export default function NewJournalEntryModal({
           </div>
           <div className="col-span-2">
             <label className="text-[11px] text-muted-foreground">Description</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Deskripsi journal entry" className="je-input w-full mt-0.5" />
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Journal entry description" className="je-input w-full mt-0.5" />
           </div>
           <div className="col-span-2">
-            <label className="text-[11px] text-muted-foreground">Source Reference (opsional)</label>
+            <label className="text-[11px] text-muted-foreground">Source Reference (optional)</label>
             <input value={sourceReference} onChange={e => setSourceReference(e.target.value)} placeholder="mis. INV-2026-1847" className="je-input w-full mt-0.5" />
           </div>
         </div>
@@ -236,8 +252,19 @@ export default function NewJournalEntryModal({
               <tbody className="divide-y divide-border">
                 {lines.map((l, idx) => (
                   <tr key={l.key}>
-                    <td className="px-2 py-1.5"><input value={l.account_code} onChange={e => updateLine(l.key, 'account_code', e.target.value)} placeholder="1100" className="je-input w-full text-xs" /></td>
-                    <td className="px-2 py-1.5"><input value={l.account_name} onChange={e => updateLine(l.key, 'account_name', e.target.value)} placeholder="Cash" className="je-input w-full text-xs" /></td>
+                    <td className="px-2 py-1.5"><input value={l.account_code} onChange={e => updateLine(l.key, 'account_code', e.target.value)} onBlur={e => lengkapiDariKode(l.key, e.target.value)} placeholder="1100" className="je-input w-full text-xs font-mono" /></td>
+                    <td className="px-2 py-1.5">
+                      <AccountNameAutocomplete
+                        value={l.account_name}
+                        accounts={coaAccounts}
+                        loading={coaLoading}
+                        noClient={!activeClientId}
+                        onChange={v => updateLine(l.key, 'account_name', v)}
+                        onSelect={akun => pilihAkun(l.key, akun)}
+                        placeholder="Type to search account…"
+                        className="je-input w-full text-xs"
+                      />
+                    </td>
                     <td className="px-2 py-1.5"><input value={l.description} onChange={e => updateLine(l.key, 'description', e.target.value)} className="je-input w-full text-xs" /></td>
                     <td className="px-2 py-1.5"><input value={l.cost_center} onChange={e => updateLine(l.key, 'cost_center', e.target.value)} className="je-input w-full text-xs" /></td>
                     <td className="px-2 py-1.5"><input type="number" min="0" step="0.01" value={l.debit} onChange={e => updateLine(l.key, 'debit', e.target.value)} placeholder="0.00" className="je-input w-full text-xs text-right" /></td>
@@ -265,7 +292,7 @@ export default function NewJournalEntryModal({
         </div>
 
         <div>
-          <label className="text-[11px] text-muted-foreground">Notes (opsional)</label>
+          <label className="text-[11px] text-muted-foreground">Notes (optional)</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="je-input w-full mt-0.5" />
         </div>
 

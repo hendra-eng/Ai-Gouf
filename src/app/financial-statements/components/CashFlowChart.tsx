@@ -7,8 +7,8 @@ import {
 import { useLanguage } from '@/lib/language';
 import { getNiceSymmetricTicks, formatAxisValue } from '@/lib/chartTicks';
 
-// Backend integration point: replace with /api/statements/cash-flow/monthly
-const cfMonthly = [
+// Data contoh (juta) -- dipakai kalau komponen tidak diberi prop `data`.
+const DEFAULT_CF_MONTHLY: CFMonthlyChartRow[] = [
   { month: 'Jan', operating: 195, investing: -88, financing: -42 },
   { month: 'Feb', operating: 218, investing: -120, financing: -28 },
   { month: 'Mar', operating: 240, investing: -65, financing: -185 },
@@ -18,6 +18,8 @@ const cfMonthly = [
   { month: 'Jul', operating: 244, investing: -58, financing: -5 },
   { month: 'Aug', operating: 218, investing: -47, financing: -5 },
 ];
+
+export interface CFMonthlyChartRow { month: string; operating: number; investing: number; financing: number }
 
 type CFKey = 'operating' | 'investing' | 'financing';
 
@@ -62,13 +64,13 @@ function getBarOpacity(key: CFKey) {
   return 0.8;
 }
 
-export default function CashFlowChart() {
+export default function CashFlowChart({ data: cfMonthly = DEFAULT_CF_MONTHLY }: { data?: CFMonthlyChartRow[] }) {
   const { t } = useLanguage();
 
   // ── Zoom skala harga (drag vertikal di sumbu Y, sama seperti chart lain) ──
   const baseMax = useMemo(
     () => Math.max(1, ...cfMonthly.flatMap((d) => [Math.abs(d.operating), Math.abs(d.investing), Math.abs(d.financing)])) * 1.25,
-    []
+    [cfMonthly]
   );
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
@@ -201,7 +203,7 @@ export default function CashFlowChart() {
   const displayData = useMemo(() => {
     if (!dragBar) return cfMonthly;
     return cfMonthly.map((d, i) => (i === dragBar.index ? { ...d, [dragBar.key]: dragBar.liveValue } : d));
-  }, [dragBar]);
+  }, [dragBar, cfMonthly]);
 
   // Badan bar custom: seluruh kotak bisa digenggam & ditarik naik/turun (bukan cuma strip tipis)
   // Untuk nilai negatif (Investing), Recharts kadang mengirim `height` negatif

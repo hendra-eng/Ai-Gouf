@@ -1,12 +1,14 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { allNotes } from './noteData';
+import { useAllNotes } from './noteData';
 import NotesNavPanel from './NotesNavPanel';
 import NoteSection from './NoteSection';
 import { useLanguage } from '@/lib/language';
 
 export default function NotesMainContent() {
   const { t } = useLanguage();
+  const allNotes = useAllNotes();
+  const kunciCatatan = allNotes.map(n => n.num).join(',');
   const [activeNote, setActiveNote] = useState('01');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -25,7 +27,8 @@ export default function NotesMainContent() {
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kunciCatatan]);
 
   const scrollTo = (num: string) => {
     document.getElementById(`ns-${num}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });

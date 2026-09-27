@@ -1,15 +1,17 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseSourceRecords } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const sourceTypeColors: Record<string, string> = {
   'Purchase Order': 'bg-blue-100 text-blue-700',
@@ -47,6 +49,11 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 }
 
 export default function PurchaseSourceDataPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { records: backendRecords } = usePurchaseSourceRecords(clientId);
+  const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -79,7 +86,14 @@ export default function PurchaseSourceDataPage() {
       return 0;
     });
     return data;
-  }, [search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  }, [purchaseSourceRecords, search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -92,7 +106,7 @@ export default function PurchaseSourceDataPage() {
     pending: purchaseSourceRecords.filter(r => r.status === 'Pending Mapping').length,
     errors: purchaseSourceRecords.filter(r => r.status === 'Validation Error').length,
     totalAmount: purchaseSourceRecords.reduce((s, r) => s + r.totalAmount, 0),
-  }), []);
+  }), [purchaseSourceRecords]);
 
   return (
       <div className="space-y-6 fade-in">
@@ -179,7 +193,7 @@ export default function PurchaseSourceDataPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.sourceId}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -211,6 +225,7 @@ export default function PurchaseSourceDataPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
         </div>
 
         {/* Detail Panel */}

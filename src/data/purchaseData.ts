@@ -57,6 +57,11 @@ export interface PurchaseTransaction {
   postingDate?: string;
   postedBy?: string;
   postedTimestamp?: string;
+  /** Akun jurnal per transaksi (Cr Hutang Usaha / Dr PPN Masukan); kosong = akun default. */
+  apAccountCode?: string;
+  apAccountName?: string;
+  taxAccountCode?: string;
+  taxAccountName?: string;
 }
 
 export interface PurchaseSourceRecord {

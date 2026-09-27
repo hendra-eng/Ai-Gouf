@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useCurrency, formatMoney } from '@/lib/currency';
+import { useEquityStatement } from '../../lib/useStatementData';
 
 interface Detail { id: string; label: string; value: string; sign?: 'pos' | 'neg' | null }
 interface Account {
@@ -10,63 +12,37 @@ interface Account {
   details: Detail[];
 }
 
-const accounts: Account[] = [
-  {
-    id: 'a-sc', name: 'Share Capital',
-    opening: '$5,000,000', closing: '$5,500,000', movement: '+$500,000', movSign: 'pos',
-    details: [
-      { id: 'sc-d1', label: 'Opening Balance',                    value: '5,000,000' },
-      { id: 'sc-d2', label: 'Capital Contributions — Jul 2026',   value: '500,000',  sign: 'pos' },
-      { id: 'sc-d3', label: 'Other Adjustments',                  value: '—' },
-      { id: 'sc-d4', label: 'Closing Balance',                    value: '5,500,000' },
-    ],
-  },
-  {
-    id: 'a-ap', name: 'Additional Paid-in Capital',
-    opening: '$1,200,000', closing: '$1,450,000', movement: '+$250,000', movSign: 'pos',
-    details: [
-      { id: 'ap-d1', label: 'Opening Balance',                   value: '1,200,000' },
-      { id: 'ap-d2', label: 'Share Premium — New Issue Jul 2026',value: '250,000',  sign: 'pos' },
-      { id: 'ap-d3', label: 'Closing Balance',                   value: '1,450,000' },
-    ],
-  },
-  {
-    id: 'a-re', name: 'Retained Earnings',
-    opening: '$1,980,000', closing: '$3,365,000', movement: '+$1,385,000', movSign: 'pos',
-    details: [
-      { id: 're-d1', label: 'Opening Balance',          value: '1,980,000' },
-      { id: 're-d2', label: 'Net Profit for Period',    value: '1,840,000', sign: 'pos' },
-      { id: 're-d3', label: 'Dividends Declared',       value: '(420,000)', sign: 'neg' },
-      { id: 're-d4', label: 'Other Adjustments',        value: '(35,000)',  sign: 'neg' },
-      { id: 're-d5', label: 'Closing Balance',          value: '3,365,000' },
-    ],
-  },
-  {
-    id: 'a-oci', name: 'Other Comprehensive Income',
-    opening: '$140,000', closing: '$90,000', movement: '($50,000)', movSign: 'neg',
-    details: [
-      { id: 'oci-d1', label: 'Opening Balance',                   value: '140,000' },
-      { id: 'oci-d2', label: 'Foreign Currency Translation Loss', value: '(32,000)', sign: 'neg' },
-      { id: 'oci-d3', label: 'Fair Value Revaluation',            value: '(18,000)', sign: 'neg' },
-      { id: 'oci-d4', label: 'Closing Balance',                   value: '90,000' },
-    ],
-  },
-  {
-    id: 'a-oe', name: 'Other Equity',
-    opening: '$100,000', closing: '$100,000', movement: '$0', movSign: 'neutral',
-    details: [
-      { id: 'oe-d1', label: 'Opening Balance',              value: '100,000' },
-      { id: 'oe-d2', label: 'No movements during period',   value: '—' },
-      { id: 'oe-d3', label: 'Closing Balance',              value: '100,000' },
-    ],
-  },
-];
-
 export default function EquityAccountBreakdown() {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState<string[]>([]);
   const toggle = (id: string) =>
     setExpanded(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+  const { currency } = useCurrency();
+  // Data dari API /api/v1/financial-statements (transaksi posted), satuan juta.
+  const { rows } = useEquityStatement();
+  const rp = (v: number) => (v < 0 ? `(${formatMoney(Math.abs(v) * 1_000_000, currency)})` : formatMoney(v * 1_000_000, currency));
+  const tanda = (v: number): 'pos' | 'neg' | null => (v > 0.004 ? 'pos' : v < -0.004 ? 'neg' : null);
+  const accounts: Account[] = rows.map((r) => {
+    const mutasi = Math.round((r.closing - r.opening) * 100) / 100;
+    const details: Detail[] = [{ id: `${r.key}-open`, label: 'Opening Balance', value: rp(r.opening) }];
+    if (r.accounts.length > 0) {
+      r.accounts.forEach((a, i) => details.push({
+        id: `${r.key}-acc-${i}`,
+        label: `${a.code ? `${a.code} · ` : ''}${a.name}`,
+        value: Math.abs(a.movement) < 0.005 ? '—' : `${a.movement > 0 ? '+' : ''}${rp(a.movement)}`,
+        sign: tanda(a.movement),
+      }));
+    } else if (Math.abs(mutasi) >= 0.005) {
+      details.push({ id: `${r.key}-mov`, label: r.key === 'laba_berjalan' ? 'Net Profit for Period' : 'Movement', value: `${mutasi > 0 ? '+' : ''}${rp(mutasi)}`, sign: tanda(mutasi) });
+    }
+    details.push({ id: `${r.key}-close`, label: 'Closing Balance', value: rp(r.closing) });
+    return {
+      id: r.key, name: r.label, opening: rp(r.opening), closing: rp(r.closing),
+      movement: `${mutasi > 0 ? '+' : ''}${rp(mutasi)}`,
+      movSign: mutasi > 0.004 ? 'pos' : mutasi < -0.004 ? 'neg' : 'neutral',
+      details,
+    };
+  });
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -76,6 +52,9 @@ export default function EquityAccountBreakdown() {
       </div>
 
       <div className="divide-y divide-border">
+        {accounts.length === 0 && (
+          <div className="px-5 py-6 text-center text-[12px] text-muted-foreground">{t('Belum ada saldo ekuitas dari transaksi posted.')}</div>
+        )}
         {accounts.map(acct => {
           const isOpen = expanded.includes(acct.id);
           const movCls = acct.movSign === 'pos' ? 'text-positive' : acct.movSign === 'neg' ? 'text-negative' : 'text-muted-foreground';

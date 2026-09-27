@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseExceptions } from '@/data/purchaseData';
 import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -15,7 +18,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const severityConfig: Record<ExceptionSeverity, { cls: string; dot: string; icon: React.ReactNode }> = {
   Critical: { cls: 'bg-red-50 text-red-700 border border-red-200', dot: 'bg-red-500', icon: <ExclamationCircleIcon className="w-3.5 h-3.5" /> },
@@ -43,6 +46,11 @@ function StatusBadge({ status }: { status: ExceptionStatus }) {
 }
 
 export default function PurchaseExceptionsPage() {
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
+  const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
+
   const [search, setSearch] = useState('');
   const [severityFilter, setSeverityFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -70,7 +78,14 @@ export default function PurchaseExceptionsPage() {
     if (typeFilter !== 'All') data = data.filter(r => r.exceptionType === typeFilter);
     if (vendorFilter !== 'All') data = data.filter(r => r.vendor === vendorFilter);
     return data;
-  }, [search, severityFilter, statusFilter, typeFilter, vendorFilter, resolveMap]);
+  }, [purchaseExceptions, search, severityFilter, statusFilter, typeFilter, vendorFilter, resolveMap]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, severityFilter, statusFilter, typeFilter, vendorFilter]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const summary = useMemo(() => ({
     total: purchaseExceptions.length,
@@ -78,11 +93,14 @@ export default function PurchaseExceptionsPage() {
     critical: purchaseExceptions.filter(e => e.severity === 'Critical').length,
     underReview: purchaseExceptions.filter(e => (resolveMap[e.id] || e.status) === 'Under Review').length,
     resolved: purchaseExceptions.filter(e => (resolveMap[e.id] || e.status) === 'Resolved').length,
-  }), [resolveMap]);
+  }), [purchaseExceptions, resolveMap]);
 
   const handleStatusChange = (id: string, status: ExceptionStatus) => {
     setResolveMap(prev => ({ ...prev, [id]: status }));
     if (selectedExc?.id === id) setSelectedExc(prev => prev ? { ...prev, status } : null);
+    updatePurchaseException(id, { status }).catch(err => {
+      toast.error(err instanceof Error ? err.message : 'Failed to update exception status.');
+    });
   };
 
   return (
@@ -162,7 +180,7 @@ export default function PurchaseExceptionsPage() {
               <p className="text-sm font-medium text-foreground">No exceptions match your filters</p>
               <p className="text-xs text-muted-foreground mt-1">Adjust your filters or clear the search to see all exceptions.</p>
             </div>
-          ) : filtered.map(exc => (
+          ) : paginated.map(exc => (
             <div
               key={exc.id}
               className={`je-card p-5 cursor-pointer transition-all ${selectedExc?.id === exc.id ? 'ring-2 ring-primary/30' : ''}`}
@@ -247,6 +265,11 @@ export default function PurchaseExceptionsPage() {
             </div>
           ))}
         </div>
+        {filtered.length > JE_PAGE_SIZE && (
+          <div className="je-card overflow-hidden">
+            <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="exceptions" />
+          </div>
+        )}
       </div>
   );
 }

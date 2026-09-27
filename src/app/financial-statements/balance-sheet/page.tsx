@@ -15,7 +15,10 @@ import { BS_AI_INSIGHTS } from '@/lib/financialData';
 // (useProfitLossData) yang sudah duluan tersambung. BS_AI_INSIGHTS di atas
 // TETAP data contoh -- belum ada modul AI-insight utk Balance Sheet yang
 // expose data terstruktur lewat API saat ini.
-import { useBalanceSheetData, type BSSection, type BSItem } from '../lib/useBalanceSheetData';
+import { type BSSection, type BSItem } from '../lib/useBalanceSheetData';
+// [UPDATE] Sumber data sekarang API /api/v1/financial-statements (transaksi
+// POSTED fitur Transactions) -- bentuk data sama dengan useBalanceSheetData().
+import { useBalanceSheetStatement } from '../lib/useStatementData';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import {
@@ -190,12 +193,12 @@ export default function BalanceSheetPage() {
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
-  const data = useBalanceSheetData();
+  const data = useBalanceSheetStatement();
 
   const {
     totalAssets, prevTotalAssets, totalLiabilities, prevTotalLiabilities, totalEquity, prevTotalEquity,
     currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities, equity,
-    BS_MONTHLY_TREND, companyName, periodLabel, isSampleData, loading,
+    BS_MONTHLY_TREND, WORKING_CAPITAL_TREND, companyName, periodLabel, isSampleData, loading,
   } = data;
 
   const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1;
@@ -429,9 +432,9 @@ export default function BalanceSheetPage() {
               <div className="lg:col-span-2">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">{t('Monthly Working Capital Trend')}</p>
                 <WorkingCapitalTrendChart
-                  data={BS_MONTHLY_TREND.map(d => ({
+                  data={WORKING_CAPITAL_TREND.map(d => ({
                     month: d.month,
-                    workingCapital: (d.assets * 0.72) - (d.liabilities * 0.78),
+                    workingCapital: d.workingCapital,
                   }))}
                   fx={fx}
                 />

@@ -1,12 +1,13 @@
 'use client';
 import React from 'react';
-import { allNotes } from './noteData';
+import { useAllNotes } from './noteData';
 import { useLanguage } from '@/lib/language';
 
 interface Props { activeNote: string; onSelect: (num: string) => void; }
 
 export default function NotesNavPanel({ activeNote, onSelect }: Props) {
   const { t } = useLanguage();
+  const allNotes = useAllNotes();
   return (
     <div className="bg-card border border-border rounded-xl p-3 overflow-hidden">
       <div className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-[0.1em] px-2 py-1 mb-1">

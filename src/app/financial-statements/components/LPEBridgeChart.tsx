@@ -8,24 +8,32 @@ import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero, formatAxisValue } from '@/lib/chartTicks';
 
-// Backend integration point: replace with /api/statements/equity?company=&period=
-const bridgeRaw = [
-  { name: 'Opening\nEquity', value: 8420, start: 0, end: 8420, type: 'base' },
-  { name: 'Capital\nContributions', value: 750, start: 8420, end: 9170, type: 'positive' },
-  { name: 'Net\nProfit', value: 1840, start: 9170, end: 11010, type: 'positive' },
-  { name: 'Dividends', value: -420, start: 10590, end: 11010, type: 'negative' },
-  { name: 'Other\nAdjustments', value: -85, start: 10505, end: 10590, type: 'negative' },
-  { name: 'Closing\nEquity', value: 10505, start: 0, end: 10505, type: 'base' },
-];
+export interface LPEBridgeValues { opening: number; capital: number; profit: number; dividends: number; adjustments: number }
 
-// Build invisible base + visible bar for each item (sama pola dengan chart P&L / Cash Flow)
-const baseChartData = bridgeRaw.map((d) => ({
-  name: d.name,
-  base: d.type === 'base' ? 0 : Math.min(d.start, d.end),
-  bar: Math.abs(d.value),
-  type: d.type,
-  value: d.value,
-}));
+// Nilai contoh (juta) -- dipakai kalau komponen tidak diberi prop `values`.
+const DEFAULT_VALUES: LPEBridgeValues = { opening: 8420, capital: 750, profit: 1840, dividends: -420, adjustments: -85 };
+
+function buatChartData(v: LPEBridgeValues) {
+  const raw: { name: string; value: number; start: number; end: number; type: string }[] = [
+    { name: 'Opening\nEquity', value: v.opening, start: 0, end: v.opening, type: 'base' },
+  ];
+  let jalan = v.opening;
+  for (const [name, nilai] of [
+    ['Capital\nContributions', v.capital], ['Net\nProfit', v.profit], ['Dividends', v.dividends], ['Other\nAdjustments', v.adjustments],
+  ] as const) {
+    raw.push({ name, value: nilai, start: jalan, end: jalan + nilai, type: nilai < 0 ? 'negative' : 'positive' });
+    jalan += nilai;
+  }
+  raw.push({ name: 'Closing\nEquity', value: jalan, start: 0, end: jalan, type: 'base' });
+  // Build invisible base + visible bar for each item (sama pola dengan chart P&L / Cash Flow)
+  return raw.map((d) => ({
+    name: d.name,
+    base: d.type === 'base' ? 0 : Math.max(0, Math.min(d.start, d.end)),
+    bar: Math.abs(d.value),
+    type: d.type,
+    value: d.value,
+  }));
+}
 
 function getColor(type: string) {
   if (type === 'base') return 'var(--primary)';
@@ -68,13 +76,14 @@ function CustomTooltip({ active, payload, t, formatRp }: TooltipProps) {
 const AXIS_WIDTH = 44;
 const AXIS_OVERLAY_WIDTH = AXIS_WIDTH + 16; // + margin.left dari BarChart
 
-export default function LPEBridgeChart() {
+export default function LPEBridgeChart({ values = DEFAULT_VALUES }: { values?: LPEBridgeValues }) {
+  const baseChartData = useMemo(() => buatChartData(values), [values]);
   const { currency } = useCurrency();
   const { t } = useLanguage();
   const formatRp = (v: number) => formatMoney(v * 1_000_000, currency);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y, sama seperti chart P&L / Cash Flow) ──
-  const baseMax = useMemo(() => Math.max(0, ...baseChartData.map((d) => d.base + d.bar)) * 1.15 || 1, []);
+  const baseMax = useMemo(() => Math.max(0, ...baseChartData.map((d) => d.base + d.bar)) * 1.15 || 1, [baseChartData]);
   const [priceZoom, setPriceZoom] = useState(1);
   const zoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
   // Tick "nice" (angka bulat) untuk label sumbu — domain chart tetap kontinu
@@ -207,7 +216,7 @@ export default function LPEBridgeChart() {
       }
       return { ...d, bar: dragBar.liveValue, value: dragBar.liveValue };
     });
-  }, [dragBar]);
+  }, [dragBar, baseChartData]);
 
   // Badan bar custom: seluruh kotak bisa digenggam & ditarik naik/turun (bukan cuma strip tipis)
   const renderInteractiveBar = (props: any) => {

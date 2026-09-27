@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { purchaseTransactions } from '@/data/purchaseData';
-import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
+import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
+import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -12,10 +15,14 @@ import {
   CalendarIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
+const PICKER_PAGE_SIZE = 20;
+
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const statusColors: Record<PurchaseStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -56,7 +63,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 // Accounting impact for a purchase transaction
-function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
+function getAccountingEntries(tx: PurchaseTransaction) {
   const entries: { account: string; code: string; debit: number; credit: number; description: string }[] = [];
 
   // Group lines by account
@@ -73,22 +80,84 @@ function getAccountingEntries(tx: typeof purchaseTransactions[0]) {
     entries.push({ account: info.name, code, debit: info.amount, credit: 0, description: tx.description });
   });
 
-  // Debit: Input Tax (VAT Recoverable)
+  // Debit: Input Tax -- akun per transaksi, fallback akun default backend
+  // (db_client._AKUN_DEFAULT_PURCHASE) supaya preview == jurnal yang diposting.
   if (tx.taxAmount > 0) {
-    entries.push({ account: 'VAT Recoverable (Input Tax)', code: '1300', debit: tx.taxAmount, credit: 0, description: `Input VAT @ 12%` });
+    entries.push({
+      account: tx.taxAccountName || 'VAT Recoverable (Input Tax)',
+      code: tx.taxAccountCode || '1300',
+      debit: tx.taxAmount, credit: 0, description: 'Input VAT',
+    });
   }
 
   // Credit: Accounts Payable
-  entries.push({ account: 'Accounts Payable', code: '2100', debit: 0, credit: tx.accountsPayable, description: `${tx.vendor} — ${tx.invoiceNumber}` });
+  entries.push({
+    account: tx.apAccountName || 'Accounts Payable',
+    code: tx.apAccountCode || '2100',
+    debit: 0, credit: tx.accountsPayable,
+    description: [tx.vendor, tx.invoiceNumber].filter(Boolean).join(' — '),
+  });
 
   return entries;
 }
 
 export default function PurchasePreviewPage() {
-  const [selectedId, setSelectedId] = useState(purchaseTransactions[0].id);
-  const [showAccounting, setShowAccounting] = useState(true);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
-  const tx = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showAccounting, setShowAccounting] = useState(true);
+  const [busy, setBusy] = useState<'approve' | 'post' | 'status' | null>(null);
+  // Daftar pilih transaksi dipaging 20 item (hasil upload bisa ratusan).
+  const [pickerPage, setPickerPage] = useState(1);
+  const pickerTotalPages = Math.max(1, Math.ceil(purchaseTransactions.length / PICKER_PAGE_SIZE));
+  const pickerPageSafe = Math.min(pickerPage, pickerTotalPages);
+  const pickerItems = purchaseTransactions.slice((pickerPageSafe - 1) * PICKER_PAGE_SIZE, pickerPageSafe * PICKER_PAGE_SIZE);
+
+  // Begitu daftar transaksi datang, pilih yang pertama secara default
+  // (dulu purchaseTransactions[0] selalu ada karena mock statis -- sekarang
+  // baru terisi setelah fetch API selesai).
+  useEffect(() => {
+    if (!selectedId && purchaseTransactions.length > 0) setSelectedId(purchaseTransactions[0].id);
+  }, [selectedId, purchaseTransactions]);
+
+  const txHeader = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+  const { lines: selectedLines } = usePurchaseTransactionLines(txHeader?.id);
+  const tx = useMemo(
+    () => (txHeader ? { ...txHeader, lines: selectedLines.map(mapTransactionLineToUi) } : null),
+    [txHeader, selectedLines],
+  );
+
+  if (!tx) {
+    return (
+      <div className="space-y-6 fade-in">
+        <PurchaseTabs />
+        <div className="je-card p-12 text-center text-sm text-muted-foreground">No purchase transactions yet.</div>
+      </div>
+    );
+  }
+
+  const runAction = async (action: 'approve' | 'post') => {
+    setBusy(action);
+    await runPurchaseStatusAction(action, [tx.id]);
+    setBusy(null);
+  };
+
+  // Reject / Return for Correction cukup ubah status (tidak menyentuh jurnal).
+  const setStatus = async (status: 'rejected' | 'draft') => {
+    setBusy('status');
+    try {
+      await updatePurchaseTransaction(tx.id, { status });
+      toast.success(status === 'draft' ? 'Returned to draft for correction' : 'Transaction rejected', { description: tx.purchaseId });
+    } catch (err) {
+      toast.error('Failed to update status', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const accountingEntries = getAccountingEntries(tx);
   const totalDebit = accountingEntries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = accountingEntries.reduce((s, e) => s + e.credit, 0);
@@ -103,7 +172,7 @@ export default function PurchasePreviewPage() {
           <div className="je-card p-4 lg:col-span-1">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Select Purchase</h3>
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-thin">
-              {purchaseTransactions.map(t => (
+              {pickerItems.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setSelectedId(t.id)}
@@ -122,6 +191,29 @@ export default function PurchasePreviewPage() {
                 </button>
               ))}
             </div>
+            {pickerTotalPages > 1 && (
+              <div className="flex items-center justify-between pt-3 mt-3 border-t border-border text-xs text-muted-foreground">
+                <button
+                  onClick={() => setPickerPage(pickerPageSafe - 1)}
+                  disabled={pickerPageSafe <= 1}
+                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeftIcon className="w-3.5 h-3.5" />
+                </button>
+                <span>
+                  Page <span className="font-medium text-foreground">{pickerPageSafe}</span> of {pickerTotalPages} · {purchaseTransactions.length} purchases
+                </span>
+                <button
+                  onClick={() => setPickerPage(pickerPageSafe + 1)}
+                  disabled={pickerPageSafe >= pickerTotalPages}
+                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Next page"
+                >
+                  <ChevronRightIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Preview Document */}
@@ -337,22 +429,41 @@ export default function PurchasePreviewPage() {
                   {tx.postedTimestamp && <><span>·</span><span>Posted: {tx.postedTimestamp}</span></>}
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  {tx.status === 'draft' && (
+                  {(tx.status === 'draft' || tx.status === 'pending_review') && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5">Save Draft</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Submit for Review</button>
-                    </>
-                  )}
-                  {tx.status === 'pending_review' && (
-                    <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200">Reject</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Approve</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200 disabled:opacity-40"
+                        disabled={busy !== null}
+                        onClick={() => setStatus('rejected')}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null || !isBalanced}
+                        title={isBalanced ? undefined : 'Journal is not balanced'}
+                        onClick={() => runAction('approve')}
+                      >
+                        {busy === 'approve' ? 'Approving…' : 'Approve'}
+                      </button>
                     </>
                   )}
                   {tx.status === 'approved' && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5">Return for Correction</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5">Post to GL</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null}
+                        onClick={() => setStatus('draft')}
+                      >
+                        Return for Correction
+                      </button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null || !isBalanced}
+                        onClick={() => runAction('post')}
+                      >
+                        {busy === 'post' ? 'Posting…' : 'Post to GL'}
+                      </button>
                     </>
                   )}
                   {tx.status === 'posted' && (
@@ -363,7 +474,6 @@ export default function PurchasePreviewPage() {
                   {tx.status === 'exception' && (
                     <button className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200">View Exception</button>
                   )}
-                  <button className="je-btn-secondary text-xs px-3 py-1.5">View Source</button>
                 </div>
               </div>
             </div>

@@ -53,7 +53,7 @@ export default function OverviewActivityFeed() {
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border">
         <div>
           <h2 className="text-sm font-700 text-foreground">Recent Activity</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">{items.length} aktivitas terbaru</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{items.length} recent activities</p>
         </div>
         {items.length > 0 && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -64,9 +64,9 @@ export default function OverviewActivityFeed() {
       </div>
       <div className="divide-y divide-border">
         {loading ? (
-          <div className="px-5 py-6 text-xs text-muted-foreground">Memuat aktivitas…</div>
+          <div className="px-5 py-6 text-xs text-muted-foreground">Loading activity…</div>
         ) : items.length === 0 ? (
-          <div className="px-5 py-6 text-xs text-muted-foreground">Belum ada aktivitas journal entry.</div>
+          <div className="px-5 py-6 text-xs text-muted-foreground">No journal entry activity yet.</div>
         ) : items.map((item) => {
           const Icon = actionIcons[item.event_type] ?? FileEdit;
           const colorClass = actionColors[item.event_type] ?? 'text-slate-600 bg-slate-100';
