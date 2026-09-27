@@ -14,3 +14,14 @@ seed_template_sau_detail_penjualan_csv.sql
 11-create_journal_entry_import_templates.py
 seed_template_sau_jurnal_kas_kasir_excel.sql
 12-create_financial_transaction_purchase_tables.py
+14-add_management_client_id_to_transactions.py
+15-create_purchase_import_templates.py
+seed_template_sau_pembelian_detail_csv.sql
+16-create_management_client_coa.py
+seed_coa_sau.sql
+seed_coa_npi.sql
+seed_coa_nbm.sql
+17-allow_unassigned_management_client_coa.py
+18-add_posting_accounts_to_purchase_transactions.py
+19-fix_sau_purchase_accounts.sql
+20-set_sau_sales_accounts.sql

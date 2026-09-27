@@ -26,6 +26,7 @@ export const searchIndex: SearchIndexItem[] = [
   { label: 'Audit', href: '/audit', group: 'Intelligence' },
   { label: 'Reports', href: '/reports', group: 'Management' },
   { label: 'Clients', href: '/clients', group: 'Management' },
+  { label: 'Chart of Accounts', href: '/coa', group: 'Management' },
   { label: 'Documents', href: '/documents', group: 'Management' },
 ];
 

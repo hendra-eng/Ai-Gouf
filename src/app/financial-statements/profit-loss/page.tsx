@@ -25,8 +25,8 @@ import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import {
   ChevronDownIcon, ChevronRightIcon, FunnelIcon,
-  ArrowDownTrayIcon, ArrowUpTrayIcon, CalendarIcon, BuildingOfficeIcon,
-  ChevronUpDownIcon, ChevronUpIcon, ArrowTrendingUpIcon, XMarkIcon,
+  ArrowDownTrayIcon, CalendarIcon, BuildingOfficeIcon,
+  ChevronUpDownIcon, ChevronUpIcon, ArrowTrendingUpIcon,
 } from '@heroicons/react/24/outline';
 
 // ─── CSV helper ───────────────────────────────────────────────────────────────
@@ -42,71 +42,6 @@ function downloadCsv(rows: Record<string, string | number>[], filename: string) 
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-// [BARU] Import CSV (fitur tahap awal -- parsing sederhana di browser, BELUM
-// tersambung ke backend/jurnal seperti ImportRekeningKoranModal di halaman
-// Transaksi). Cukup untuk menimpa tampilan tabel & chart P&L bulanan supaya
-// fitur upload file bisa langsung dipakai, meski hasilnya masih sederhana.
-function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
-  if (lines.length === 0) return [];
-  const parseLine = (line: string): string[] => {
-    const result: string[] = [];
-    let cur = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (inQuotes) {
-        if (c === '"') {
-          if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
-        } else cur += c;
-      } else if (c === '"') inQuotes = true;
-      else if (c === ',') { result.push(cur); cur = ''; }
-      else cur += c;
-    }
-    result.push(cur);
-    return result.map((v) => v.trim());
-  };
-  const header = parseLine(lines[0]);
-  return lines.slice(1).map((line) => {
-    const vals = parseLine(line);
-    const row: Record<string, string> = {};
-    header.forEach((h, i) => { row[h] = vals[i] ?? ''; });
-    return row;
-  });
-}
-
-// Kolom yang dikenali (case-insensitive): Month, Revenue, COGS, OpEx, D&A,
-// Interest, Tax. Gross Profit/EBITDA/EBIT/Net Profit dihitung ulang dari
-// angka-angka itu supaya selalu konsisten (bukan diambil mentah dari file).
-function csvRowsToMonthlyPL(rows: Record<string, string>[]): MonthlyPLRow[] {  const ambil = (row: Record<string, string>, ...keys: string[]) => {
-    for (const k of keys) {
-      const found = Object.keys(row).find((h) => h.toLowerCase() === k.toLowerCase());
-      if (found) return row[found];
-    }
-    return undefined;
-  };
-  const num = (v: string | undefined) => {
-    const n = parseFloat((v ?? '0').replace(/[^0-9.\-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  };
-  return rows
-    .filter((r) => (ambil(r, 'Month') ?? '').trim() !== '')
-    .map((r) => {
-      const month = (ambil(r, 'Month') ?? '').trim();
-      const revenue = num(ambil(r, 'Revenue'));
-      const cogs = num(ambil(r, 'COGS'));
-      const opEx = num(ambil(r, 'OpEx', 'Operating Expenses'));
-      const da = num(ambil(r, 'D&A', 'DA'));
-      const interest = num(ambil(r, 'Interest'));
-      const tax = num(ambil(r, 'Tax'));
-      const grossProfit = revenue - cogs;
-      const ebitda = grossProfit - opEx;
-      const ebit = ebitda - da;
-      const netProfit = revenue - (cogs + opEx + da + interest + tax);
-      return { month, revenue, cogs, grossProfit, opEx, ebitda, da, ebit, interest, tax, netProfit };
-    });
 }
 
 // Maps table header labels to MONTHLY_PL row keys for sorting
@@ -374,63 +309,9 @@ export default function ProfitLossPage() {
   const { t } = useLanguage();
   const fx = (v: number) => formatMoney(v * 1_000_000, currency);
 
-  // ── [BARU] Import data P&L dari file CSV (fitur tahap awal) ─────────────
-  // Kalau ada hasil import, MONTHLY_PL/PL_CORE/MARGINS di bawah dihitung
-  // dari file yang diupload, bukan dari data client aktif/data contoh lagi.
-  // "Reset" mengembalikan ke data asli (hookMonthlyPL dkk).
-  const [importedMonthlyPL, setImportedMonthlyPL] = useState<MonthlyPLRow[] | null>(null);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const MONTHLY_PL = importedMonthlyPL ?? hookMonthlyPL;
-  const PL_CORE = useMemo(() => {
-    if (!importedMonthlyPL) return hookPLCore;
-    const sum = (key: keyof MonthlyPLRow) => importedMonthlyPL.reduce((s, r) => s + (Number(r[key]) || 0), 0);
-    const revenue = sum('revenue');
-    const cogs = sum('cogs');
-    const grossProfit = sum('grossProfit');
-    const operatingExpenses = sum('opEx');
-    const ebitda = sum('ebitda');
-    const da = sum('da');
-    const ebit = sum('ebit');
-    const interestExpense = sum('interest');
-    const incomeTax = sum('tax');
-    const netProfit = sum('netProfit');
-    const ebt = ebit - interestExpense;
-    return { revenue, cogs, grossProfit, operatingExpenses, ebitda, da, ebit, interestExpense, ebt, incomeTax, netProfit };
-  }, [importedMonthlyPL, hookPLCore]);
-  const MARGINS = useMemo(() => {
-    if (!importedMonthlyPL) return hookMargins;
-    const persen = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : 0);
-    return {
-      grossMargin: persen(PL_CORE.grossProfit, PL_CORE.revenue),
-      ebitdaMargin: persen(PL_CORE.ebitda, PL_CORE.revenue),
-      ebitMargin: persen(PL_CORE.ebit, PL_CORE.revenue),
-      netMargin: persen(PL_CORE.netProfit, PL_CORE.revenue),
-    };
-  }, [importedMonthlyPL, hookMargins, PL_CORE]);
-
-  function handleImportFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const text = String(reader.result || '');
-        const monthly = csvRowsToMonthlyPL(parseCsv(text));
-        if (monthly.length === 0) {
-          setImportError(t('File tidak berisi baris data yang valid. Pastikan ada kolom "Month" & "Revenue".'));
-          return;
-        }
-        setImportedMonthlyPL(monthly);
-        setImportError(null);
-        setShowImportModal(false);
-        toast.success(t('Import berhasil'), { description: `${monthly.length} ${t('baris data P&L dimuat dari file.')}` });
-      } catch {
-        setImportError(t('Gagal membaca file. Pastikan formatnya CSV.'));
-      }
-    };
-    reader.readAsText(file);
-  }
+  const MONTHLY_PL = hookMonthlyPL;
+  const PL_CORE = hookPLCore;
+  const MARGINS = hookMargins;
 
   function handleExportMonthly() {
     const rows = MONTHLY_PL.map((r) => ({
@@ -1084,17 +965,6 @@ export default function ProfitLossPage() {
               {loading && (
                 <span className="text-xs font-medium text-slate-400">{t('Memuat data…')}</span>
               )}
-              {importedMonthlyPL && (
-                <span className="text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                  {t('Data hasil import')}
-                  <button
-                    onClick={() => { setImportedMonthlyPL(null); toast.info(t('Kembali ke data asli')); }}
-                    className="underline hover:text-teal-900"
-                  >
-                    {t('Reset')}
-                  </button>
-                </span>
-              )}
             </div>
             <p className="text-slate-500 text-sm">{MONTHLY_PL.length} {MONTHLY_PL.length !== 1 ? t('months') : t('month')} {t('YTD')}</p>
           </div>
@@ -1111,10 +981,6 @@ export default function ProfitLossPage() {
                 {t(m)}
               </button>
             ))}
-            <button onClick={() => { setImportError(null); setShowImportModal(true); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
-              <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-              {t('Import')}
-            </button>
             <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
               {t('Export')}
@@ -1582,47 +1448,6 @@ export default function ProfitLossPage() {
 
       </div>
 
-      {/* ── [BARU] Import Data P&L Modal (tahap awal) ── */}
-      {showImportModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setShowImportModal(false)}
-        >
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-slate-800">{t('Import Data Profit & Loss')}</h3>
-              <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600">
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-500 mb-3">
-              {t('Upload file CSV berisi data bulanan dengan kolom: Month, Revenue, COGS, OpEx, D&A, Interest, Tax. Fitur ini masih tahap awal — tampilan hasil import belum sepenuhnya rapi.')}
-            </p>
-            <button onClick={handleExportMonthly} className="text-xs text-teal-600 hover:underline mb-3 block">
-              {t('Unduh contoh format (data saat ini) sebagai CSV')}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleImportFile(file);
-                e.target.value = '';
-              }}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-lg py-8 text-slate-500 hover:border-teal-400 hover:text-teal-600 transition-colors"
-            >
-              <ArrowUpTrayIcon className="w-6 h-6" />
-              <span className="text-sm font-medium">{t('Klik untuk pilih file CSV')}</span>
-            </button>
-            {importError && <p className="text-xs text-red-500 mt-2">{importError}</p>}
-          </div>
-        </div>
-      )}
     </>
   );
 }

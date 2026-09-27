@@ -17,9 +17,12 @@ import InteractiveDonutChart, { DonutLivePreview } from '@/components/shared/Int
 
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const fmtFull = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+// Label sumbu grafik: ringkas ala "Rp 22,5 jt" supaya muat.
+const fmtAxis = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
 // ── Data historis untuk Purchase Volume Trend (multi-periode + pan/scroll
 // ala TradingView). Dibuat deterministik (bukan random murni) dari fungsi
@@ -579,8 +582,8 @@ export default function PurchaseOverviewPage() {
                     tick={{ fontSize: 11, fill: '#64748B' }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                    width={56}
+                    tickFormatter={(v) => fmtAxis(v)}
+                    width={72}
                     ticks={trendYTicks}
                     domain={trendYDomain}
                     allowDataOverflow
@@ -683,7 +686,7 @@ export default function PurchaseOverviewPage() {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtAxis(v)} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={110} />
                 <Tooltip formatter={(v: number) => [fmt(v), 'Amount']} contentStyle={{ fontSize: 11, borderRadius: 6 }} />
                 <Bar dataKey="value" fill="#0EA5E9" radius={[0, 3, 3, 0]} />

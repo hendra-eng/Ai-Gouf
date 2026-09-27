@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import KpiCard from '@/components/shared/KpiCard';
 import {
   useSalesInvoices, createSalesInvoice, updateSalesInvoice, deleteSalesInvoice,
@@ -107,6 +108,7 @@ export default function SalesTransaction() {
   const { t } = useLanguage();
   const { user } = useAuth();
   const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
   const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(clientId);
   const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
 
@@ -311,6 +313,7 @@ export default function SalesTransaction() {
     try {
       await createSalesInvoice({
         client_id: clientId,
+        management_client_id: activeClientId,
         invoice_no: invoiceNo,
         invoice_date: addForm.date,
         due_date: addForm.dueDate,

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { useAuth } from '@/lib/auth';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
@@ -15,7 +16,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const categoryColors: Record<string, string> = {
   Inventory: 'bg-emerald-100 text-emerald-700',
@@ -93,6 +94,13 @@ export default function PurchasePostedPage() {
     });
     return data;
   }, [postedPurchases, search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -203,7 +211,7 @@ export default function PurchasePostedPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground text-sm">No posted purchases match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <React.Fragment key={row.id}>
                     <tr className="table-row-hover">
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.purchaseId}</td>
@@ -304,6 +312,7 @@ export default function PurchasePostedPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="posted purchases" />
         </div>
       </div>
   );

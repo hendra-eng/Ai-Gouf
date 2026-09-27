@@ -3,7 +3,8 @@
 // Hook data untuk halaman-halaman Financial Statements, bersumber dari
 // API /api/v1/financial-statements (lihat src/lib/financialStatementsStore.tsx
 // & backend/modules/financial_statements/) -- yaitu transaksi POSTED dari
-// fitur Transactions (Journal Entry, Sales, Purchase) milik user yang login.
+// fitur Transactions (Journal Entry, Sales, Purchase) milik client yang
+// dipilih di Topbar ("Switch Company").
 //
 // Bentuk return SENGAJA sama persis dengan hook lama (useProfitLossData /
 // useBalanceSheetData / useCashFlowData) supaya komponen halaman tidak
@@ -20,7 +21,6 @@
 // formatMoney(v * 1_000_000).
 
 import { useActiveClient } from '@/lib/activeClient';
-import { useAuth } from '@/lib/auth';
 import { keJuta, useFinancialStatements, type FinancialStatements, type FsNeracaSeksi } from '@/lib/financialStatementsStore';
 import { CF_CORE as MOCK_CF_CORE } from '@/lib/financialData';
 import type { PLCoreValues, MarginValues, MonthlyPLRow, BreakdownItem } from './useProfitLossData';
@@ -35,19 +35,21 @@ function formatTanggal(iso: string | null | undefined, opts: Intl.DateTimeFormat
 
 /** Header bersama: nama perusahaan, label periode, status loading. */
 export function useStatementMeta() {
-  const { data, loading, error, refresh } = useFinancialStatements();
+  const { data, loading, error, noClient, refresh } = useFinancialStatements();
   const { activeClientName } = useActiveClient();
-  const { user } = useAuth();
   const periode = data?.periode;
   const adaData = !!periode?.ada_data;
   return {
     data,
     loading,
     error,
+    noClient,
     refresh,
     adaData,
-    companyName: activeClientName || user?.nama || user?.username || 'No client selected',
-    periodLabel: periode ? (adaData ? periode.label : `No posted data — ${periode.tahun}`) : (loading ? 'Loading…' : `No posted data — ${new Date().getFullYear()}`),
+    companyName: activeClientName || 'No client selected',
+    periodLabel: noClient
+      ? 'Select a client in the top bar'
+      : periode ? (adaData ? periode.label : `No posted data — ${periode.tahun}`) : (loading ? 'Loading…' : `No posted data — ${new Date().getFullYear()}`),
     asOfLabel: periode ? `As of ${formatTanggal(periode.per_tanggal, { day: 'numeric', month: 'short', year: 'numeric' })}` : '',
     asOfLabelId: periode ? `Per ${formatTanggal(periode.per_tanggal, { day: 'numeric', month: 'long', year: 'numeric' })}` : '',
   };

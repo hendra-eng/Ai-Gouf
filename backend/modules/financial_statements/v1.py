@@ -8,15 +8,19 @@ Standar SAMA dengan modules/transactions/*_v1.py:
     - Response amplop {status, message, data, errors} (modules/api_response.py).
     - Autentikasi ditegakkan middleware `jwt_v1_middleware` (grup /api/v1/**);
       semua endpoint di sini READ-ONLY, cukup token valid.
-    - client_id = id_user management_users (akun yang login), sama persis
-      dengan filter tab Transactions (Sales/Journal Entry/Purchase). Kalau
-      tidak dikirim, default ke user yang sedang login.
+    - Filter kepemilikan data:
+        * management_client_id = klien/perusahaan (management_clients, dropdown
+          "Switch Company" di Topbar) -- filter UTAMA. Kalau dikirim, laporan
+          berisi transaksi klien itu saja (siapa pun user yang menginputnya).
+        * client_id = id_user management_users (akun yang login). Dipakai
+          kalau management_client_id tidak dikirim; default user yang login.
+          Kalau keduanya dikirim, dua-duanya diterapkan.
 
 Sumber data: HANYA transaksi berstatus Posted dari tabel fitur
 Transactions (db_client.ambil_baris_jurnal_posted_transaksi). Perhitungan
 ada di modules/financial_statements/core.py.
 
-Endpoint (semua GET, query: client_id?, tahun?, sampai_bulan?):
+Endpoint (semua GET, query: management_client_id?, client_id?, tahun?, sampai_bulan?):
     /                    -> kelima laporan + neraca saldo sekaligus
     /periods             -> tahun-tahun yang punya transaksi posted
     /trial-balance       -> neraca saldo per akun
@@ -48,42 +52,55 @@ router = APIRouter(prefix="/api/v1/financial-statements", tags=["financial-state
 _RESPONSES = {200: {"description": "OK."}, 400: {"description": "Parameter tidak valid."}, 401: {"description": "Unauthorized."}}
 
 
-def _client_id_valid(client_id: Optional[str], current_user: Dict[str, Any]) -> Optional[str]:
-    """client_id dari query atau user login; None kalau bukan UUID valid."""
-    nilai = client_id or current_user.get("id")
+def _uuid(nilai: Optional[str]) -> Optional[str]:
     try:
         return str(uuid.UUID(str(nilai)))
     except (ValueError, TypeError):
         return None
 
 
-def _hitung(client_id: Optional[str], tahun: Optional[int], sampai_bulan: Optional[int],
-            nama_perusahaan: Optional[str], current_user: Dict[str, Any]):
+def _filter_pemilik(client_id: Optional[str], management_client_id: Optional[str], current_user: Dict[str, Any]):
+    """Return ({client_id, management_client_id}, None) atau (None, response gagal).
+    Tanpa management_client_id -> default ke user yang login."""
+    filter_: Dict[str, Optional[str]] = {"client_id": None, "management_client_id": None}
+    if management_client_id:
+        filter_["management_client_id"] = _uuid(management_client_id)
+        if filter_["management_client_id"] is None:
+            return None, gagal(message="management_client_id tidak valid.", errors={"code": "INVALID_MANAGEMENT_CLIENT_ID"}, status_code=400)
+    if client_id or not management_client_id:
+        filter_["client_id"] = _uuid(client_id or current_user.get("id"))
+        if filter_["client_id"] is None:
+            return None, gagal(message="client_id tidak valid.", errors={"code": "INVALID_CLIENT_ID"}, status_code=400)
+    return filter_, None
+
+
+def _hitung(filter_: Dict[str, Optional[str]], tahun: Optional[int], sampai_bulan: Optional[int], nama_perusahaan: Optional[str]):
     """Return (laporan, None) atau (None, response gagal)."""
-    cid = _client_id_valid(client_id, current_user)
-    if cid is None:
-        return None, gagal(message="client_id tidak valid.", errors={"code": "INVALID_CLIENT_ID"}, status_code=400)
     tahun = tahun or date.today().year
     try:
         # Transaksi sesudah periode laporan tidak perlu dibaca sama sekali.
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(cid, core.akhir_bulan(tahun, sampai_bulan or 12))
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=core.akhir_bulan(tahun, sampai_bulan or 12), **filter_)
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca transaksi posted untuk laporan keuangan: %s", e)
         return None, gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
     laporan = core.susun_laporan_keuangan(baris, tahun, sampai_bulan, nama_perusahaan)
-    laporan["periode"]["client_id"] = cid
+    laporan["periode"].update(filter_)
     return laporan, None
 
 
 def _endpoint_laporan(kunci: Optional[str]):
     def handler(
-        client_id: Optional[str] = Query(None, description="id_user management_users; default user yang login"),
+        management_client_id: Optional[str] = Query(None, description="id management_clients (klien); filter utama"),
+        client_id: Optional[str] = Query(None, description="id_user management_users; default user yang login kalau management_client_id kosong"),
         tahun: Optional[int] = Query(None, ge=1900, le=9999, description="Default tahun berjalan"),
         sampai_bulan: Optional[int] = Query(None, ge=1, le=12, description="Default bulan terakhir yang ada transaksi posted"),
         nama_perusahaan: Optional[str] = Query(None, max_length=255, description="Dipakai di narasi CALK"),
         current_user: Dict[str, Any] = Depends(get_current_user_v1),
     ):
-        laporan, error = _hitung(client_id, tahun, sampai_bulan, nama_perusahaan, current_user)
+        filter_, error = _filter_pemilik(client_id, management_client_id, current_user)
+        if error is not None:
+            return error
+        laporan, error = _hitung(filter_, tahun, sampai_bulan, nama_perusahaan)
         if error is not None:
             return error
         data = laporan if kunci is None else {"periode": laporan["periode"], kunci: laporan[kunci]}
@@ -106,14 +123,15 @@ for _path, _kunci, _ringkas in [
 
 @router.get("/periods", summary="Tahun-tahun yang punya transaksi posted", responses=_RESPONSES)
 def daftar_periode(
-    client_id: Optional[str] = Query(None, description="id_user management_users; default user yang login"),
+    management_client_id: Optional[str] = Query(None, description="id management_clients (klien); filter utama"),
+    client_id: Optional[str] = Query(None, description="id_user management_users; default user yang login kalau management_client_id kosong"),
     current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    cid = _client_id_valid(client_id, current_user)
-    if cid is None:
-        return gagal(message="client_id tidak valid.", errors={"code": "INVALID_CLIENT_ID"}, status_code=400)
+    filter_, error = _filter_pemilik(client_id, management_client_id, current_user)
+    if error is not None:
+        return error
     try:
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(cid)
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(**filter_)
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca periode laporan keuangan: %s", e)
         return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
@@ -122,4 +140,4 @@ def daftar_periode(
         if b.get("tanggal"):
             per_tahun.setdefault(b["tanggal"].year, set()).add(b["tanggal"].month)
     tahun = [{"tahun": t, "bulan_terakhir": max(bln), "bulan_aktif": sorted(bln)} for t, bln in sorted(per_tahun.items(), reverse=True)]
-    return sukses(data={"client_id": cid, "tahun": tahun, "default_tahun": tahun[0]["tahun"] if tahun else date.today().year}, message="OK")
+    return sukses(data={**filter_, "tahun": tahun, "default_tahun": tahun[0]["tahun"] if tahun else date.today().year}, message="OK")

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark } from 'lucide-react';
+import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
 import { useAuth, userInitials } from '@/lib/auth';
@@ -90,6 +90,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { id: 'nav-reports', label: 'Reports', icon: BarChart3, href: '/reports' },
       { id: 'nav-clients', label: 'Clients', icon: Building2, href: '/clients' },
+      { id: 'nav-coa', label: 'Chart of Accounts', icon: ListTree, href: '/coa' },
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
     ],
   },

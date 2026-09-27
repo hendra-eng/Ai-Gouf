@@ -169,7 +169,7 @@ export function usePurchaseSourceRecords(clientId: string | null | undefined): {
     setLoading(true);
     listPurchaseSourceRecords(clientId)
       .then(data => { setRecords(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat source records'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source records'))
       .finally(() => setLoading(false));
   }, [clientId]);
 
@@ -190,6 +190,8 @@ export function usePurchaseSourceRecords(clientId: string | null | undefined): {
 export interface BackendPurchaseTransaction {
   id: string;
   client_id: string | null;
+  /** id management_clients -- klien pemilik transaksi (filter Financial Statements). */
+  management_client_id?: string | null;
   purchase_no: string;
   purchase_date: string;
   invoice_date: string | null;
@@ -220,6 +222,12 @@ export interface BackendPurchaseTransaction {
   journal_entry_id: number | null;
   posting_date: string | null;
   posted_at: string | null;
+  /** Akun Cr Hutang Usaha / Dr PPN Masukan per transaksi -- null = akun default (2100 / 1300). */
+  ap_account_code: string | null;
+  ap_account_name: string | null;
+  tax_account_code: string | null;
+  tax_account_name: string | null;
+  approved_at: string | null;
   created_at: string;
   created_by: string | null;
   edited_at: string | null;
@@ -249,6 +257,28 @@ export async function deletePurchaseTransaction(id: string): Promise<void> {
   notifyPurchaseChanged();
 }
 
+// Alur status: draft --approve--> approved --post--> posted (tab Posted + Financial Statements).
+// Transaksi yang tidak memenuhi syarat dilewati backend (lihat `skipped`), sisanya tetap diproses.
+export interface PurchaseStatusActionResult {
+  done: BackendPurchaseTransaction[];
+  skipped: { id: string; purchase_no: string | null; reason: string }[];
+}
+
+export async function approvePurchaseTransactions(ids: string[]): Promise<PurchaseStatusActionResult> {
+  const hasil = await post<PurchaseStatusActionResult>(`${PURCHASE_BASE_URL}/transactions/approve`, { transaction_ids: ids });
+  notifyPurchaseChanged();
+  return hasil;
+}
+
+export async function postPurchaseTransactions(ids: string[], postingDate?: string): Promise<PurchaseStatusActionResult> {
+  const hasil = await post<PurchaseStatusActionResult>(`${PURCHASE_BASE_URL}/transactions/post`, {
+    transaction_ids: ids,
+    ...(postingDate ? { posting_date: postingDate } : {}),
+  });
+  notifyPurchaseChanged();
+  return hasil;
+}
+
 export interface PurchaseTransactionLineInput {
   line_no?: number;
   item_code?: string;
@@ -267,6 +297,8 @@ export interface PurchaseTransactionLineInput {
 
 export interface PurchaseTransactionWithLinesInput {
   client_id?: string | null;
+  /** id management_clients -- klien pemilik transaksi (filter Financial Statements). */
+  management_client_id?: string | null;
   purchase_no: string;
   purchase_date: string;
   invoice_date?: string | null;
@@ -302,6 +334,46 @@ export async function createPurchaseTransactionWithLines(
   return row;
 }
 
+export interface PurchaseImportTransactionResult {
+  purchase_no: string;
+  ok: boolean;
+  message: string;
+}
+
+/** Ringkasan hasil POST /import/upload -- lihat backend/modules/
+ *  transactions/purchase_import_v1.py::upload_purchase_import. */
+export interface UploadPurchaseSourceFileResult {
+  template_matched: boolean;
+  transactions_detected: number;
+  created: number;
+  skipped_invalid?: number;
+  skipped_duplicate?: number;
+  transactions: PurchaseImportTransactionResult[];
+}
+
+/**
+ * Upload file laporan pembelian MENTAH (CSV/Excel) -- backend mencocokkan
+ * pola kolomnya ke Purchase Import Template milik klien aktif (mis.
+ * "Data Pembelian Detail" SAU), lalu langsung membuat Purchase Transaction
+ * draft + baris itemnya. Pola sama dengan uploadJeSourceFile() di
+ * journalEntryStore.tsx.
+ *
+ * managementClientId WAJIB -- ID management_clients (klien aktif di
+ * dropdown "Switch Company"), BUKAN client_id akun yang login.
+ */
+export async function uploadPurchaseSourceFile(file: File, managementClientId: string): Promise<UploadPurchaseSourceFileResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('management_client_id', managementClientId);
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/import/upload`, {
+    method: 'POST',
+    body: form, // JANGAN set Content-Type manual -- browser yang mengisi boundary multipart-nya
+  });
+  const row = await baca<UploadPurchaseSourceFileResult>(res);
+  if (row.created > 0) notifyPurchaseChanged();
+  return row;
+}
+
 export function usePurchaseTransactions(clientId: string | null | undefined, status?: string): {
   transactions: BackendPurchaseTransaction[]; loading: boolean; error: string | null; refresh: () => void;
 } {
@@ -314,7 +386,7 @@ export function usePurchaseTransactions(clientId: string | null | undefined, sta
     setLoading(true);
     listPurchaseTransactions(clientId, status)
       .then(data => { setTransactions(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat purchase transaction'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load purchase transactions'))
       .finally(() => setLoading(false));
   }, [clientId, status]);
 
@@ -388,7 +460,7 @@ export function usePurchaseTransactionLines(transactionId: string | null | undef
     setLoading(true);
     listPurchaseTransactionLines(transactionId)
       .then(data => { setLines([...data].sort((a, b) => a.line_no - b.line_no)); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat baris item/jasa'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load item/service lines'))
       .finally(() => setLoading(false));
   }, [transactionId]);
 
@@ -461,7 +533,7 @@ export function usePurchaseExceptions(clientId: string | null | undefined): {
     setLoading(true);
     listPurchaseExceptions(clientId)
       .then(data => { setExceptions(data); setError(null); })
-      .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat exceptions'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load exceptions'))
       .finally(() => setLoading(false));
   }, [clientId]);
 
@@ -541,6 +613,10 @@ export function mapTransactionToUi(t: BackendPurchaseTransaction, lines: Purchas
     postingDate: t.posting_date || undefined,
     postedBy: t.posted_by_name || undefined,
     postedTimestamp: t.posted_at || undefined,
+    apAccountCode: t.ap_account_code || undefined,
+    apAccountName: t.ap_account_name || undefined,
+    taxAccountCode: t.tax_account_code || undefined,
+    taxAccountName: t.tax_account_name || undefined,
   };
 }
 

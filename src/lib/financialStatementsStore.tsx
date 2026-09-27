@@ -5,9 +5,11 @@
 // GET /api/v1/financial-statements[/...] -- lihat file itu untuk daftar endpoint.
 //
 // Sumber data backend = transaksi POSTED dari fitur Transactions (Journal
-// Entry, Sales, Purchase). client_id = id_user akun yang SEDANG LOGIN
-// (`useAuth().user.id`), sama persis dengan filter tab-tab Transactions --
-// BUKAN activeClientId (tabel clients lama).
+// Entry, Sales, Purchase), difilter per KLIEN yang dipilih di Topbar
+// ("Switch Company" -> `useActiveClient().activeClientId`, id
+// management_clients) lewat query `management_client_id`. Belum ada client
+// yang dipilih -> tidak fetch sama sekali (laporan kosong), supaya data antar
+// client tidak pernah tercampur.
 //
 // Semua nominal dari backend dalam RUPIAH penuh. Komponen financial
 // statements menampilkan dalam JUTA (formatMoney(v * 1_000_000)), jadi
@@ -20,6 +22,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const FS_BASE_URL = `${API_BASE_URL}/api/v1/financial-statements`;
@@ -63,7 +66,8 @@ export interface FsPeriode {
   per_tanggal: string;
   ada_data: boolean;
   jumlah_jurnal: number;
-  client_id: string;
+  client_id: string | null;
+  management_client_id: string | null;
 }
 
 export interface FsRincianItem { account_code: string; name: string; value: number; pct: number }
@@ -186,7 +190,8 @@ export interface FinancialStatements {
 }
 
 export interface FsPeriodeTersedia {
-  client_id: string;
+  client_id: string | null;
+  management_client_id: string | null;
   tahun: { tahun: number; bulan_terakhir: number; bulan_aktif: number[] }[];
   default_tahun: number;
 }
@@ -195,15 +200,15 @@ export interface FsPeriodeTersedia {
 // Fetcher
 // ============================================================
 
-export interface FsQuery { clientId?: string | null; tahun?: number | null; sampaiBulan?: number | null }
+export interface FsQuery { managementClientId?: string | null; tahun?: number | null; sampaiBulan?: number | null }
 
-export async function getFinancialStatements({ clientId, tahun, sampaiBulan }: FsQuery = {}): Promise<FinancialStatements> {
-  const res = await fetch(`${FS_BASE_URL}${qs({ client_id: clientId, tahun, sampai_bulan: sampaiBulan })}`);
+export async function getFinancialStatements({ managementClientId, tahun, sampaiBulan }: FsQuery = {}): Promise<FinancialStatements> {
+  const res = await fetch(`${FS_BASE_URL}${qs({ management_client_id: managementClientId, tahun, sampai_bulan: sampaiBulan })}`);
   return baca<FinancialStatements>(res);
 }
 
-export async function getFinancialStatementPeriods(clientId?: string | null): Promise<FsPeriodeTersedia> {
-  const res = await fetch(`${FS_BASE_URL}/periods${qs({ client_id: clientId })}`);
+export async function getFinancialStatementPeriods(managementClientId?: string | null): Promise<FsPeriodeTersedia> {
+  const res = await fetch(`${FS_BASE_URL}/periods${qs({ management_client_id: managementClientId })}`);
   return baca<FsPeriodeTersedia>(res);
 }
 
@@ -216,7 +221,7 @@ const pendengar = new Set<() => void>();
 let versiCache = 0; // naik tiap invalidate -> hook fetch ulang
 
 function kunciCache(q: FsQuery): string {
-  return `${q.clientId || ''}|${q.tahun || ''}|${q.sampaiBulan || ''}`;
+  return `${q.managementClientId || ''}|${q.tahun || ''}|${q.sampaiBulan || ''}`;
 }
 
 function kabariPendengar() {
@@ -254,17 +259,20 @@ function muat(q: FsQuery): Promise<FinancialStatements> {
 }
 
 /**
- * Laporan keuangan lengkap untuk user yang login. `data` null selama
- * loading pertama / kalau request gagal (lihat `error`).
+ * Laporan keuangan lengkap untuk client yang aktif di Topbar. `data` null
+ * selama loading pertama, kalau request gagal (lihat `error`), atau kalau
+ * belum ada client yang dipilih (`noClient`).
  */
 export function useFinancialStatements(opts: { tahun?: number | null; sampaiBulan?: number | null } = {}): {
   data: FinancialStatements | null;
   loading: boolean;
   error: string | null;
+  noClient: boolean;
   refresh: () => void;
 } {
-  const { user, loading: authLoading } = useAuth();
-  const q: FsQuery = { clientId: user?.id ?? null, tahun: opts.tahun, sampaiBulan: opts.sampaiBulan };
+  const { loading: authLoading } = useAuth();
+  const { activeClientId, loading: clientsLoading } = useActiveClient();
+  const q: FsQuery = { managementClientId: activeClientId, tahun: opts.tahun, sampaiBulan: opts.sampaiBulan };
   const kunci = kunciCache(q);
   const [, setTick] = useState(0);
 
@@ -275,13 +283,14 @@ export function useFinancialStatements(opts: { tahun?: number | null; sampaiBula
   }, []);
 
   useEffect(() => {
-    if (authLoading || !q.clientId) return;
+    if (authLoading || !q.managementClientId) return;
     const entri = cache.get(kunci);
     if (!entri?.data && !entri?.promise && !entri?.error) muat(q).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kunci, authLoading, versiCache]);
 
   const refresh = useCallback(() => {
+    if (!q.managementClientId) return;
     cache.delete(kunci);
     muat(q).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,8 +299,9 @@ export function useFinancialStatements(opts: { tahun?: number | null; sampaiBula
   const entri = cache.get(kunci);
   return {
     data: entri?.data ?? null,
-    loading: authLoading || (!!q.clientId && !entri?.data && !entri?.error),
+    loading: authLoading || clientsLoading || (!!q.managementClientId && !entri?.data && !entri?.error),
     error: entri?.error ?? null,
+    noClient: !authLoading && !clientsLoading && !q.managementClientId,
     refresh,
   };
 }

@@ -300,6 +300,7 @@ async def upload_journal_entry_import(
 
         draft_data = {
             "client_id": client_id,
+            "management_client_id": management_client_id,
             "je_number": g["je_number"],
             "entry_date": g["entry_date"],
             "period_label": _period_label(g["entry_date"]),

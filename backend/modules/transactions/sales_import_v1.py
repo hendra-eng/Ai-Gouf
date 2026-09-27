@@ -779,6 +779,7 @@ def promote_source_file_to_invoices(
 
         invoice_baru = dbc.create_sales_invoice({
             "client_id": client_id,
+            "management_client_id": source_file.get("management_client_id"),
             "invoice_no": no_invoice,
             "invoice_date": row.get("tanggal"),
             "customer_name": row.get("nama_customer") or "-",
@@ -792,6 +793,9 @@ def promote_source_file_to_invoices(
         }, created_by=client_id)
         if invoice_baru is not None:
             dibuat += 1
+            # Akun jurnal langsung mengikuti akun default klien (COA klien) --
+            # dilewati diam-diam kalau klien belum punya pengaturan akun.
+            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=client_id)
         else:
             dilewati_invoice_bentrok += 1  # gagal simpan (mis. race condition duplikat) -- hitung sbg dilewati, bukan error keras
 

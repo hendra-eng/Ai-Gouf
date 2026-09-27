@@ -7,9 +7,10 @@ import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import {
   useSalesInvoices, updateSalesInvoice, upsertSalesAccountMapping,
-  getSalesAccountMappingByInvoice, createSalesActivityLog,
+  ensureSalesAccountMapping, createSalesActivityLog,
   type BackendSalesInvoice, type BackendSalesAccountMapping,
 } from '@/lib/salesStore';
+import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -52,46 +53,73 @@ const stepForStatus = (status: UiStatus) => {
   return 4;
 };
 
-const PIUTANG_ACCOUNTS = [
+// Opsi akun jurnal diambil dari master COA klien pemilik invoice (Management >
+// Chart of Accounts). Daftar di bawah HANYA fallback untuk klien yang belum
+// punya COA -- sama dengan db_client._AKUN_DEFAULT_SALES di backend.
+const FALLBACK_PIUTANG = [
   { code: '1120-01', name: 'Piutang Usaha - IDR' },
   { code: '1120-02', name: 'Piutang Usaha - USD' },
   { code: '1121-01', name: 'Piutang Lain-lain' },
 ];
-const PENDAPATAN_ACCOUNTS = [
+const FALLBACK_PENDAPATAN = [
   { code: '4100-01', name: 'Pendapatan Jasa Konsultasi' },
   { code: '4100-02', name: 'Pendapatan Jasa Implementasi' },
   { code: '4200-01', name: 'Pendapatan Lain-lain' },
 ];
-const PPN_ACCOUNTS = [
+const FALLBACK_PPN = [
   { code: '2100-01', name: 'PPN Keluaran' },
   { code: '2100-02', name: 'PPN Keluaran - Dipungut Pihak Lain' },
 ];
-const PPH_ACCOUNTS: { code: string | null; name: string }[] = [
-  { code: null, name: 'Tidak ada potongan PPh' },
+const FALLBACK_PPH = [
   { code: '1170-01', name: 'PPh Pasal 23 Dibayar Dimuka' },
   { code: '1170-02', name: 'PPh Pasal 4(2) Dibayar Dimuka' },
 ];
 
+interface Acc { code: string | null; name: string }
+const NO_PPH: Acc = { code: null, name: 'Tidak ada potongan PPh' };
+
 interface Mapping {
-  piutang: string;
-  pendapatan: string;
-  ppn: string;
-  pph: string | null;
+  piutang: Acc;
+  pendapatan: Acc;
+  ppn: Acc;
+  pph: Acc;
 }
 
-const DEFAULT_MAPPING: Mapping = {
-  piutang: PIUTANG_ACCOUNTS[0].code,
-  pendapatan: PENDAPATAN_ACCOUNTS[0].code,
-  ppn: PPN_ACCOUNTS[0].code,
-  pph: null,
-};
+interface AccountOptions { piutang: Acc[]; pendapatan: Acc[]; ppn: Acc[]; pph: Acc[] }
 
-function mappingDariBackend(m: BackendSalesAccountMapping): Mapping {
-  return { piutang: m.piutang_account_code, pendapatan: m.pendapatan_account_code, ppn: m.ppn_account_code || PPN_ACCOUNTS[0].code, pph: m.pph_account_code };
+function opsiAkunDariCoa(coa: CoaAccount[]): AccountOptions {
+  if (coa.length === 0) {
+    return { piutang: FALLBACK_PIUTANG, pendapatan: FALLBACK_PENDAPATAN, ppn: FALLBACK_PPN, pph: [NO_PPH, ...FALLBACK_PPH] };
+  }
+  const pilih = (f: (a: CoaAccount) => boolean): Acc[] => coa.filter(f).map(a => ({ code: a.acc_no, name: a.account_name }));
+  // Kalau sub-akun spesifik kosong di COA klien, tawarkan seluruh klasifikasinya.
+  const atauKelas = (list: Acc[], kelas: string[]) => (list.length ? list : pilih(a => kelas.includes(a.account_classification)));
+  return {
+    piutang: atauKelas(pilih(a => ['TRADE RECEIVABLES', 'OTHER RECEIVABLES', 'RELATED PARTY RECEIVABLES'].includes(a.account_sub ?? '')), ['ASSET']),
+    pendapatan: atauKelas(pilih(a => ['REVENUE', 'OTHER INCOME'].includes(a.account_classification)), ['REVENUE']),
+    ppn: atauKelas(pilih(a => a.account_sub === 'TAX PAYABLES'), ['LIABILITY']),
+    pph: [NO_PPH, ...atauKelas(pilih(a => a.account_sub === 'INCOME TAX RECEIVABLE'), ['ASSET'])],
+  };
 }
 
-const findAccount = (list: { code: string | null; name: string }[], code: string | null) =>
-  list.find(a => a.code === code) ?? list[0];
+function mappingDariBackend(m: BackendSalesAccountMapping, opsi: AccountOptions): Mapping {
+  return {
+    piutang: { code: m.piutang_account_code, name: m.piutang_account_name || '' },
+    pendapatan: { code: m.pendapatan_account_code, name: m.pendapatan_account_name || '' },
+    ppn: m.ppn_account_code ? { code: m.ppn_account_code, name: m.ppn_account_name || '' } : opsi.ppn[0] ?? { code: null, name: '-' },
+    pph: m.pph_account_code ? { code: m.pph_account_code, name: m.pph_account_name || '' } : NO_PPH,
+  };
+}
+
+/** Usulan kalau invoice belum punya mapping & klien belum punya akun default. */
+function mappingUsulan(opsi: AccountOptions): Mapping {
+  const kosong: Acc = { code: null, name: '-' };
+  return { piutang: opsi.piutang[0] ?? kosong, pendapatan: opsi.pendapatan[0] ?? kosong, ppn: opsi.ppn[0] ?? kosong, pph: NO_PPH };
+}
+
+/** Pastikan akun yang sedang terpasang ikut muncul di dropdown walau di luar filter. */
+const denganAkunAktif = (list: Acc[], aktif: Acc) =>
+  aktif.code === null || list.some(a => a.code === aktif.code) ? list : [aktif, ...list];
 
 const ITEMS_PER_PAGE = 5;
 
@@ -106,7 +134,8 @@ export default function SalesJournalPreview() {
   const { invoices: backendInvoices, loading, refresh } = useSalesInvoices(clientId);
   const invoices = useMemo(() => backendInvoices.filter(i => i.posting_status !== 'Paid'), [backendInvoices]);
 
-  const [mappings, setMappings] = useState<Record<string, Mapping>>({});
+  // Mapping tersimpan per invoice; null = sudah dicek, belum ada mapping.
+  const [mappings, setMappings] = useState<Record<string, BackendSalesAccountMapping | null>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
@@ -114,7 +143,7 @@ export default function SalesJournalPreview() {
 
   const [showDocPreview, setShowDocPreview] = useState(false);
   const [isEditingMapping, setIsEditingMapping] = useState(false);
-  const [draftMapping, setDraftMapping] = useState<Mapping>(DEFAULT_MAPPING);
+  const [draftMapping, setDraftMapping] = useState<Mapping>(() => mappingUsulan(opsiAkunDariCoa([])));
   const [savingMapping, setSavingMapping] = useState(false);
 
   useEffect(() => {
@@ -134,13 +163,18 @@ export default function SalesJournalPreview() {
 
   const selectedInvoice: BackendSalesInvoice | null = invoices.find(inv => inv.id === selectedId) ?? invoices[0] ?? null;
 
-  // Muat mapping akun (kalau sudah pernah disimpan) begitu invoice yang dipilih berganti.
+  // COA klien pemilik invoice -> opsi dropdown akun.
+  const { accounts: coaKlien } = useClientCoa(selectedInvoice?.management_client_id ?? null, { activeOnly: true });
+  const opsiAkun = useMemo(() => opsiAkunDariCoa(coaKlien), [coaKlien]);
+
+  // Muat mapping akun invoice terpilih; kalau belum ada, backend membuatnya dari
+  // akun default klien (lihat db_client.pastikan_mapping_sales).
   useEffect(() => {
-    if (!selectedInvoice) return;
-    if (mappings[selectedInvoice.id]) return;
-    getSalesAccountMappingByInvoice(selectedInvoice.id)
-      .then(m => { if (m) setMappings(prev => ({ ...prev, [selectedInvoice.id]: mappingDariBackend(m) })); })
-      .catch(() => {});
+    if (!selectedInvoice || selectedInvoice.id in mappings) return;
+    const invoiceId = selectedInvoice.id;
+    ensureSalesAccountMapping(invoiceId)
+      .then(m => setMappings(prev => ({ ...prev, [invoiceId]: m })))
+      .catch(() => setMappings(prev => ({ ...prev, [invoiceId]: null })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedInvoice?.id]);
 
@@ -153,15 +187,13 @@ export default function SalesJournalPreview() {
   }
 
   const uiStatus = keUiStatus(selectedInvoice.posting_status);
-  const mapping = mappings[selectedInvoice.id] ?? DEFAULT_MAPPING;
+  const mappingTersimpan = mappings[selectedInvoice.id] ?? null;
+  const mapping = mappingTersimpan ? mappingDariBackend(mappingTersimpan, opsiAkun) : mappingUsulan(opsiAkun);
 
   const dpp = selectedInvoice.dpp || Math.round(selectedInvoice.gross_amount / 1.11);
   const ppn = selectedInvoice.ppn || (selectedInvoice.gross_amount - dpp);
 
-  const piutangAcc = findAccount(PIUTANG_ACCOUNTS, mapping.piutang);
-  const pendapatanAcc = findAccount(PENDAPATAN_ACCOUNTS, mapping.pendapatan);
-  const ppnAcc = findAccount(PPN_ACCOUNTS, mapping.ppn);
-  const pphAcc = findAccount(PPH_ACCOUNTS, mapping.pph);
+  const { piutang: piutangAcc, pendapatan: pendapatanAcc, ppn: ppnAcc, pph: pphAcc } = mapping;
 
   const journalLines = [
     { no: 1, code: piutangAcc.code as string, name: piutangAcc.name, debit: selectedInvoice.gross_amount, credit: 0 },
@@ -191,26 +223,25 @@ export default function SalesJournalPreview() {
 
   const cancelEditMapping = () => setIsEditingMapping(false);
 
+  const simpanMapping = (m: Mapping) =>
+    upsertSalesAccountMapping(selectedInvoice.id, clientId, {
+      piutang_account_code: m.piutang.code as string,
+      piutang_account_name: m.piutang.name,
+      pendapatan_account_code: m.pendapatan.code as string,
+      pendapatan_account_name: m.pendapatan.name,
+      ppn_account_code: m.ppn.code,
+      ppn_account_name: m.ppn.code ? m.ppn.name : null,
+      pph_account_code: m.pph.code,
+      pph_account_name: m.pph.code ? m.pph.name : null,
+      is_ai_suggested: false,
+      mapped_by: clientId ?? undefined,
+    });
+
   const saveEditMapping = async () => {
     setSavingMapping(true);
     try {
-      const piutang = findAccount(PIUTANG_ACCOUNTS, draftMapping.piutang);
-      const pendapatan = findAccount(PENDAPATAN_ACCOUNTS, draftMapping.pendapatan);
-      const ppnA = findAccount(PPN_ACCOUNTS, draftMapping.ppn);
-      const pphA = findAccount(PPH_ACCOUNTS, draftMapping.pph);
-      await upsertSalesAccountMapping(selectedInvoice.id, clientId, {
-        piutang_account_code: piutang.code as string,
-        piutang_account_name: piutang.name,
-        pendapatan_account_code: pendapatan.code as string,
-        pendapatan_account_name: pendapatan.name,
-        ppn_account_code: ppnA.code,
-        ppn_account_name: ppnA.name,
-        pph_account_code: pphA.code,
-        pph_account_name: pphA.name,
-        is_ai_suggested: false,
-        mapped_by: clientId ?? undefined,
-      });
-      setMappings(prev => ({ ...prev, [selectedInvoice.id]: draftMapping }));
+      const tersimpan = await simpanMapping(draftMapping);
+      setMappings(prev => ({ ...prev, [selectedInvoice.id]: tersimpan }));
       setIsEditingMapping(false);
       toast.success(t('Mapping akun disimpan'), { description: selectedInvoice.invoice_no });
     } catch (err) {
@@ -223,6 +254,12 @@ export default function SalesJournalPreview() {
   const handleApprove = async () => {
     if (uiStatus !== 'Diproses') return;
     try {
+      // Klien tanpa akun default: simpan usulan yang sedang tampil supaya
+      // jurnal yang disetujui == jurnal yang dilihat user.
+      if (!mappingTersimpan) {
+        const tersimpan = await simpanMapping(mapping);
+        setMappings(prev => ({ ...prev, [selectedInvoice.id]: tersimpan }));
+      }
       await updateSalesInvoice(selectedInvoice.id, { posting_status: 'Approved' });
       toast.success(t('Klasifikasi akun disetujui'), { description: selectedInvoice.invoice_no });
     } catch (err) {
@@ -457,17 +494,22 @@ export default function SalesJournalPreview() {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {[
-                  { label: 'Akun Piutang Usaha', options: PIUTANG_ACCOUNTS, value: draftMapping.piutang, key: 'piutang' as const },
-                  { label: 'Akun Pendapatan', options: PENDAPATAN_ACCOUNTS, value: draftMapping.pendapatan, key: 'pendapatan' as const },
-                  { label: 'Akun PPN Keluaran', options: PPN_ACCOUNTS, value: draftMapping.ppn, key: 'ppn' as const },
-                  { label: 'Akun PPh (Jika ada)', options: PPH_ACCOUNTS, value: draftMapping.pph, key: 'pph' as const },
-                ].map(f => (
+                {([
+                  { label: 'Akun Piutang Usaha', key: 'piutang' },
+                  { label: 'Akun Pendapatan', key: 'pendapatan' },
+                  { label: 'Akun PPN Keluaran', key: 'ppn' },
+                  { label: 'Akun PPh (Jika ada)', key: 'pph' },
+                ] as const).map(({ label, key }) => ({
+                  label, key, value: draftMapping[key].code, options: denganAkunAktif(opsiAkun[key], draftMapping[key]),
+                })).map(f => (
                   <div key={f.label}>
                     <label className="text-[11px] text-muted-foreground block mb-1">{t(f.label)}</label>
                     <select
                       value={f.value ?? ''}
-                      onChange={e => setDraftMapping(prev => ({ ...prev, [f.key]: e.target.value || null }))}
+                      onChange={e => {
+                        const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
+                        setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
+                      }}
                       className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
                     >
                       {f.options.map(opt => (

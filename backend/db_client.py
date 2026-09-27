@@ -941,6 +941,10 @@ class SalesInvoice(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
+    # filter per client di Financial Statements. BEDA dari client_id di atas
+    # (management_users, akun yang login). Lihat migrations/14-*.py.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True, index=True)
     invoice_no = Column(String(100), nullable=False)
     invoice_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
@@ -1153,6 +1157,10 @@ class JournalEntryDraft(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
+    # filter per client di Financial Statements. BEDA dari client_id di atas
+    # (management_users, akun yang login). Lihat migrations/14-*.py.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True, index=True)
     je_number = Column(String(100), nullable=False)
     entry_date = Column(Date, nullable=False)
     posting_date = Column(Date, nullable=True)
@@ -1312,7 +1320,7 @@ class PurchaseSourceRecord(Base):
     amount = Column(Numeric(24, 2), nullable=False, default=0)
     tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
     total_amount = Column(Numeric(24, 2), nullable=False, default=0)
-    currency = Column(String(10), nullable=False, default="USD")
+    currency = Column(String(10), nullable=False, default="IDR")
     status = Column(String(20), nullable=False, default="Imported")
     validation_status = Column(String(20), nullable=False, default="Pending Validation")
     period_label = Column(String(50), nullable=False)
@@ -1337,6 +1345,10 @@ class PurchaseTransaction(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
+    # filter per client di Financial Statements. BEDA dari client_id di atas
+    # (management_users, akun yang login). Lihat migrations/14-*.py.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True, index=True)
     purchase_no = Column(String(100), nullable=False)
     purchase_date = Column(Date, nullable=False)
     invoice_date = Column(Date, nullable=True)
@@ -1354,7 +1366,7 @@ class PurchaseTransaction(Base):
     tax_amount = Column(Numeric(24, 2), nullable=False, default=0)
     total = Column(Numeric(24, 2), nullable=False, default=0)
     accounts_payable = Column(Numeric(24, 2), nullable=False, default=0)
-    currency = Column(String(10), nullable=False, default="USD")
+    currency = Column(String(10), nullable=False, default="IDR")
     payment_status = Column(String(20), nullable=False, default="unpaid")
     payment_terms = Column(String(50), nullable=True)
     due_date = Column(Date, nullable=True)
@@ -1367,6 +1379,14 @@ class PurchaseTransaction(Base):
     journal_entry_id = Column(Integer, ForeignKey("journal_entries.id"), nullable=True)
     posting_date = Column(Date, nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
+    # [BARU - migration 18] Akun posting per transaksi (Cr Hutang Usaha, Dr PPN
+    # Masukan) -- dari template import / input user. NULL = fallback ke
+    # _AKUN_DEFAULT_PURCHASE. approved_at diisi saat status -> 'approved'.
+    ap_account_code = Column(String(50), nullable=True)
+    ap_account_name = Column(String(255), nullable=True)
+    tax_account_code = Column(String(50), nullable=True)
+    tax_account_name = Column(String(255), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
@@ -1433,13 +1453,120 @@ class PurchaseException(Base):
     invoice_number = Column(String(100), nullable=True)
     purchase_date = Column(Date, nullable=True)
     amount = Column(Numeric(24, 2), nullable=False, default=0)
-    currency = Column(String(10), nullable=False, default="USD")
+    currency = Column(String(10), nullable=False, default="IDR")
     description = Column(Text, nullable=False)
     detected_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     assigned_to = Column(String(255), nullable=True)
     resolution = Column(Text, nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     period_label = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseImportTemplate(Base):
+    """Pola kolom file laporan pembelian (CSV/Excel) yang sudah "dipelajari"
+    untuk 1 klien -- versi Purchase dari SalesImportTemplate &
+    JournalEntryImportTemplate (bentuk kolom PERSIS sama, lihat
+    SALES_IMPORT_TEMPLATES.md di root untuk alurnya). Sengaja tabel
+    TERPISAH supaya pola kolom Sales/Journal Entry/Purchase tidak saling
+    bentrok walau milik klien yang sama.
+
+    client_id reference ke management_clients (BUKAN management_users
+    seperti 4 tabel financial_transaction_purchase_* lain) -- pola kolom
+    laporan adalah properti PERUSAHAAN klien, bukan akun yang upload."""
+    __tablename__ = "financial_transaction_purchase_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_purchase_import_templates_signature"),
+        Index("idx_purchase_import_templates_client", "client_id"),
+        Index("idx_purchase_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# ============================================================
+# MANAGEMENT > COA -- DDL: root/ddl-table (bagian "FITUR MANAGEMENT > COA")
+# ============================================================
+
+class ManagementClientCoa(Base):
+    """[BARU] Master Chart of Accounts per klien (management_clients).
+
+    Sumber awal: dataset/COA/COA_Clients_GOUF.xlsx (sheet "COA <KODE>"),
+    di-seed lewat migrations/seed_coa_*.sql. Kolom mengikuti persis kolom
+    sheet tsb: nomor & nama akun ASLI klien (acc_no/account_name) + lapisan
+    semantik standar lintas-klien (classification/head/sub/standard_account_code,
+    IFRS-aligned) -- jadi 1001, 1-1000 dan 110101 di 3 klien berbeda bisa
+    punya standard_account_code yang sama.
+
+    TERPISAH dari tabel `coa` lama (FK ke `clients` integer, dipakai modul
+    akuntansi/upload lama) -- tabel ini FK ke management_clients (UUID),
+    sama seperti fitur Transactions yang baru.
+
+    normal_balance (DEBIT/CREDIT) TIDAK ada di Excel -- diturunkan dari
+    account_classification + akun kontra (akumulasi penyusutan, cadangan
+    kerugian piutang, potongan/retur pembelian, potongan penjualan, prive),
+    lihat migrations/generate_seed_coa.py::normal_balance().
+
+    client_id BOLEH NULL = akun "unassigned": dibuat dulu tanpa klien, lalu
+    kelak di-assign ke klien lewat POST /api/v1/management/coa/assign (baris
+    yang sama diisi client_id-nya, bukan disalin). UNIQUE (client_id, acc_no)
+    tidak berlaku antar baris NULL di Postgres, jadi keunikan acc_no di pool
+    unassigned dijaga di API (modules/management/coa_v1.py). Lihat
+    migrations/17-allow_unassigned_management_client_coa.py.
+    """
+    __tablename__ = "management_client_coa"
+    __table_args__ = (
+        UniqueConstraint("client_id", "acc_no", name="uq_management_client_coa_client_acc_no"),
+        # UNIQUE di atas tidak berlaku antar client_id NULL -> jaga acc_no unik di pool unassigned.
+        Index(
+            "uq_management_client_coa_unassigned_acc_no", "acc_no", unique=True,
+            postgresql_where=text("client_id IS NULL AND deleted_at IS NULL"),
+        ),
+        Index("idx_management_client_coa_client", "client_id"),
+        Index("idx_management_client_coa_standard_code", "standard_account_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)  # NULL = unassigned
+    client_code = Column(String(50), nullable=True)
+    acc_no = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    account_classification = Column(String(30), nullable=False)  # ASSET/LIABILITY/EQUITY/REVENUE/COST OF SALES/EXPENSE/OTHER INCOME/OTHER EXPENSE/INCOME TAX
+    account_head = Column(String(50), nullable=True)             # mis. CURRENT ASSET, OPERATING EXPENSE
+    account_sub = Column(String(100), nullable=True)             # mis. CASH & CASH EQUIVALENTS
+    normal_balance = Column(String(10), nullable=True)           # DEBIT/CREDIT
+    description = Column(Text, nullable=True)
+    international_standard_group = Column(String(255), nullable=True)
+    standard_account_code = Column(String(100), nullable=True)   # mis. std_asset_current_cash_bank
+    ifrs_taxonomy_reference = Column(String(255), nullable=True)
+    ifrs_source = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
@@ -2535,6 +2662,197 @@ def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = No
 
 
 # ============================================================
+# MANAGEMENT > COA -- CRUD management_client_coa (lihat model
+# ManagementClientCoa & modules/management/coa_v1.py). create/get/update/
+# soft-delete memakai helper generic _sales_crud_* di bawah (kolom audit
+# tabel ini sama persis).
+# ============================================================
+
+CRUD_FIELDS_MANAGEMENT_CLIENT_COA = [
+    "client_id", "client_code", "acc_no", "account_name", "account_classification",
+    "account_head", "account_sub", "normal_balance", "description",
+    "international_standard_group", "standard_account_code",
+    "ifrs_taxonomy_reference", "ifrs_source", "is_active",
+]
+
+
+def _filter_client_coa(query, client_id: Optional[str]):
+    """client_id None = akun unassigned (client_id IS NULL)."""
+    if client_id is None:
+        return query.filter(ManagementClientCoa.client_id.is_(None))
+    return query.filter(ManagementClientCoa.client_id == client_id)
+
+
+def list_management_client_coa(
+    client_id: Optional[str],
+    search: Optional[str] = None,
+    account_classification: Optional[str] = None,
+    hanya_aktif: bool = False,
+    termasuk_nonaktif: bool = False,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """COA 1 klien (client_id None = akun unassigned), terurut acc_no.
+    `search` mencocokkan acc_no ATAU account_name (case-insensitive,
+    substring) -- dipakai autocomplete Account Name di New Journal Entry
+    & pencarian akun unassigned."""
+    session = SessionLocal()
+    try:
+        query = _filter_client_coa(session.query(ManagementClientCoa), client_id)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClientCoa.deleted_at.is_(None))
+        if hanya_aktif:
+            query = query.filter(ManagementClientCoa.is_active.is_(True))
+        if account_classification:
+            query = query.filter(ManagementClientCoa.account_classification == account_classification.upper())
+        if search and search.strip():
+            pola = f"%{search.strip()}%"
+            query = query.filter(
+                (ManagementClientCoa.acc_no.ilike(pola)) | (ManagementClientCoa.account_name.ilike(pola))
+            )
+        query = query.order_by(ManagementClientCoa.acc_no)
+        if limit:
+            query = query.limit(limit)
+        return [_sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA) for obj in query.all()]
+    except Exception as e:
+        session.rollback()
+        print(f"Error list management_client_coa: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def get_management_client_coa_by_id(coa_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, coa_id, termasuk_nonaktif)
+
+
+def cari_management_client_coa_by_acc_no(client_id: Optional[str], acc_no: str) -> Optional[Dict[str, Any]]:
+    """1 akun berdasarkan (client_id, acc_no) persis -- TERMASUK yang sudah
+    di-soft-delete (lihat field `aktif`), karena UNIQUE (client_id, acc_no)
+    tetap berlaku untuk baris yang dihapus. client_id None = pool unassigned
+    (bisa >1 baris dgn acc_no sama kalau ada yang terhapus -> yang aktif
+    diutamakan)."""
+    session = SessionLocal()
+    try:
+        obj = _filter_client_coa(session.query(ManagementClientCoa), client_id).filter(
+            ManagementClientCoa.acc_no == acc_no
+        ).order_by(ManagementClientCoa.deleted_at.desc().nullsfirst()).first()
+        return _sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def create_management_client_coa(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, data, created_by)
+
+
+def update_management_client_coa(coa_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, coa_id, data, updated_by)
+
+
+def restore_management_client_coa(coa_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Hidupkan lagi akun yang sudah di-soft-delete sekaligus timpa isinya --
+    dipakai saat user membuat akun dengan acc_no yang dulu pernah dihapus."""
+    session = SessionLocal()
+    try:
+        obj = session.query(ManagementClientCoa).filter(ManagementClientCoa.id == coa_id).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT_COA:
+                setattr(obj, kolom, nilai)
+        obj.deleted_at = None
+        obj.deleted_by = None
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error restore management_client_coa: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def soft_delete_management_client_coa(coa_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(ManagementClientCoa, coa_id, deleted_by)
+
+
+def assign_management_client_coa(
+    coa_ids: List[str], client_id: str, client_code: Optional[str], assigned_by: Optional[str] = None
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Assign akun unassigned (client_id NULL) ke 1 klien -- baris YANG SAMA
+    diisi client_id-nya (akun keluar dari pool unassigned). 1 transaksi.
+
+    Per akun:
+      - tidak ada / sudah dihapus / sudah punya klien -> skipped
+      - acc_no sudah dipakai akun AKTIF klien tujuan   -> skipped
+      - acc_no dipakai akun klien tujuan yang SUDAH DIHAPUS -> baris terhapus
+        itu dihidupkan lagi dengan isi akun unassigned, lalu akun unassigned
+        di-soft-delete (UNIQUE (client_id, acc_no) tidak memberi pilihan lain;
+        pola sama dengan POST create yang menghidupkan akun terhapus).
+    Return {"assigned": [...akun], "skipped": [{id, acc_no, account_name, reason}]}.
+    """
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"assigned": [], "skipped": []}
+    try:
+        rows = session.query(ManagementClientCoa).filter(ManagementClientCoa.id.in_(coa_ids)).all()
+        by_id = {r.id: r for r in rows}
+        existing = {
+            r.acc_no: r for r in session.query(ManagementClientCoa).filter(
+                ManagementClientCoa.client_id == client_id
+            ).all()
+        }
+        sekarang = datetime.now()
+        for coa_id in dict.fromkeys(coa_ids):  # buang id dobel, urutan dipertahankan
+            obj = by_id.get(coa_id)
+            if obj is None or obj.deleted_at is not None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": None, "account_name": None, "reason": "Akun tidak ditemukan."})
+                continue
+            if obj.client_id is not None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
+                                         "reason": "Akun sudah terhubung ke klien lain."})
+                continue
+            bentrok = existing.get(obj.acc_no)
+            if bentrok is not None and bentrok.deleted_at is None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
+                                         "reason": f"ACC NO sudah dipakai akun '{bentrok.account_name}' di klien ini."})
+                continue
+            if bentrok is not None:
+                for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT_COA:
+                    if kolom not in ("client_id", "client_code"):
+                        setattr(bentrok, kolom, getattr(obj, kolom))
+                bentrok.client_code = client_code
+                bentrok.deleted_at = None
+                bentrok.deleted_by = None
+                bentrok.edited_at = sekarang
+                bentrok.edited_by = assigned_by
+                obj.deleted_at = sekarang
+                obj.deleted_by = assigned_by
+                target = bentrok
+            else:
+                obj.client_id = client_id
+                obj.client_code = client_code
+                obj.edited_at = sekarang
+                obj.edited_by = assigned_by
+                existing[obj.acc_no] = obj
+                target = obj
+            hasil["assigned"].append(_sales_row_ke_dict(target, CRUD_FIELDS_MANAGEMENT_CLIENT_COA))
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error assign management_client_coa: {e}")
+        raise
+    finally:
+        session.close()
+
+
+# ============================================================
 # TRANSACTIONS > SALES -- CRUD (lihat model di atas & DDL root/ddl-table)
 # ============================================================
 # Ke-6 tabel Sales sengaja punya bentuk kolom audit yang SAMA persis
@@ -2701,7 +3019,7 @@ def soft_delete_sales_source_row(source_row_id: str, deleted_by: Optional[str] =
 # --- 3) financial_transaction_sales_invoices ---
 
 CRUD_FIELDS_SALES_INVOICE = [
-    "client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
+    "client_id", "management_client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
     "customer_npwp", "description", "transaction_type", "project_name",
     "sales_person", "term_of_payment", "cabang", "dpp", "ppn", "pph", "gross_amount",
     "paid_amount", "tax_invoice_status", "posting_status", "reconcile_status",
@@ -2866,6 +3184,104 @@ def update_sales_account_mapping(mapping_id: str, data: Dict[str, Any], updated_
 
 def soft_delete_sales_account_mapping(mapping_id: str, deleted_by: Optional[str] = None) -> bool:
     return _sales_crud_soft_delete(SalesAccountMapping, mapping_id, deleted_by)
+
+
+# ------------------------------------------------------------
+# Akun jurnal Sales per klien (mengikuti master COA klien)
+# ------------------------------------------------------------
+# Akun default disimpan di mapping_rules template import Sales klien
+# (pola sama dengan Purchase -- lihat purchase_import_v1.py):
+#   piutang_account              {account_code, account_name}  Dr Piutang
+#   pendapatan_account           {account_code, account_name}  Cr Pendapatan (default)
+#   pendapatan_account_by_cabang {"CRS": {...}, ...}           Cr Pendapatan per cabang
+#   ppn_account                  {account_code, account_name}  Cr PPN Keluaran
+# Tiap invoice tetap punya mapping sendiri (financial_transaction_sales_account_mappings)
+# yang dibuat otomatis dari default ini dan bisa diubah user di Journal Preview.
+
+def akun_default_sales(management_client_id: Optional[str], cabang: Optional[str] = None, session=None) -> Optional[Dict[str, tuple]]:
+    """{"piutang": (kode, nama), "pendapatan": (...), "ppn": (...)} dari
+    template Sales klien, atau None kalau klien belum punya pengaturan akun."""
+    if not management_client_id:
+        return None
+    milik_sendiri = session is None
+    session = session or SessionLocal()
+    try:
+        rules = None
+        for (mr,) in session.query(SalesImportTemplate.mapping_rules).filter(
+            SalesImportTemplate.client_id == management_client_id,
+            SalesImportTemplate.deleted_at.is_(None),
+        ).order_by(SalesImportTemplate.created_at).all():
+            if isinstance(mr, dict) and mr.get("piutang_account") and mr.get("pendapatan_account"):
+                rules = mr
+                break
+        if rules is None:
+            return None
+        pendapatan = ((rules.get("pendapatan_account_by_cabang") or {}).get((cabang or "").strip().upper())
+                      or rules["pendapatan_account"])
+        akun = {"piutang": rules["piutang_account"], "pendapatan": pendapatan, "ppn": rules.get("ppn_account")}
+        return {k: (v.get("account_code"), v.get("account_name")) if v else None for k, v in akun.items()}
+    except Exception as e:
+        print(f"Error akun_default_sales: {e}")
+        return None
+    finally:
+        if milik_sendiri:
+            session.close()
+
+
+def pastikan_mapping_sales(invoice_id: str, dibuat_oleh: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Mapping akun invoice; kalau belum ada, dibuat dari akun_default_sales()
+    klien. None = belum ada mapping DAN klien belum punya akun default."""
+    ada = get_sales_account_mapping_by_invoice(invoice_id)
+    if ada:
+        return ada
+    inv = get_sales_invoice_by_id(invoice_id)
+    if not inv:
+        return None
+    akun = akun_default_sales(inv.get("management_client_id"), inv.get("cabang"))
+    if not akun:
+        return None
+    return create_sales_account_mapping({
+        "client_id": inv.get("client_id"),
+        "invoice_id": invoice_id,
+        "piutang_account_code": akun["piutang"][0], "piutang_account_name": akun["piutang"][1],
+        "pendapatan_account_code": akun["pendapatan"][0], "pendapatan_account_name": akun["pendapatan"][1],
+        "ppn_account_code": akun["ppn"][0] if akun["ppn"] else None,
+        "ppn_account_name": akun["ppn"][1] if akun["ppn"] else None,
+        "is_ai_suggested": False,
+        "mapped_by": dibuat_oleh,
+    }, created_by=dibuat_oleh)
+
+
+def validasi_posting_sales(invoice_id: str) -> List[str]:
+    """Alasan invoice TIDAK boleh diposting (kosong = boleh). Kalau klien
+    punya master COA, invoice wajib punya mapping akun & semua akunnya
+    (piutang, pendapatan, PPN kalau ada PPN, PPh kalau diisi) ada di COA."""
+    inv = get_sales_invoice_by_id(invoice_id)
+    if not inv or not inv.get("management_client_id"):
+        return []
+    session = SessionLocal()
+    try:
+        coa = {r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
+            ManagementClientCoa.client_id == inv["management_client_id"],
+            ManagementClientCoa.deleted_at.is_(None),
+        ).all()}
+    finally:
+        session.close()
+    if not coa:
+        return []
+    m = get_sales_account_mapping_by_invoice(invoice_id)
+    if not m:
+        return ["Accounts are not mapped yet -- set the accounts in Journal Preview first."]
+    dipakai = {m["piutang_account_code"], m["pendapatan_account_code"]}
+    if float(inv.get("ppn") or 0) > 0 or not float(inv.get("dpp") or 0):
+        # PPN ikut jurnal kalau ada (atau kalau dpp kosong -> dihitung dari gross).
+        dipakai.add(m.get("ppn_account_code") or _AKUN_DEFAULT_SALES["ppn"][0])
+    if m.get("pph_account_code"):
+        dipakai.add(m["pph_account_code"])
+    tidak_ada = sorted(k for k in dipakai if k and k not in coa)
+    if tidak_ada:
+        return [f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}."]
+    return []
 
 
 # --- 5) financial_transaction_sales_exceptions ---
@@ -3127,7 +3543,7 @@ def soft_delete_je_source_record(source_record_id: str, deleted_by: Optional[str
 # --- 2) financial_transaction_journal_entry_drafts ---
 
 CRUD_FIELDS_JE_DRAFT = [
-    "client_id", "je_number", "entry_date", "posting_date", "period_label",
+    "client_id", "management_client_id", "je_number", "entry_date", "posting_date", "period_label",
     "description", "source_type", "source_reference", "source_record_id",
     "total_debit", "total_credit", "currency", "status", "created_by_name",
     "reviewed_by_name", "approved_by_name", "notes", "journal_entry_id",
@@ -3532,13 +3948,14 @@ def soft_delete_purchase_source_record(source_record_id: str, deleted_by: Option
 # --- 2) financial_transaction_purchase_transactions ---
 
 CRUD_FIELDS_PURCHASE_TRANSACTION = [
-    "client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
+    "client_id", "management_client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
     "po_number", "vendor_name", "vendor_code", "source_doc_type", "source_ref",
     "source_record_id", "description", "category", "subtotal", "discount",
     "tax_amount", "total", "accounts_payable", "currency", "payment_status",
     "payment_terms", "due_date", "status", "period_label", "created_by_name",
     "approved_by_name", "posted_by_name", "notes", "journal_entry_id",
     "posting_date", "posted_at",
+    "ap_account_code", "ap_account_name", "tax_account_code", "tax_account_name", "approved_at",
 ]
 
 def create_purchase_transaction(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -3635,6 +4052,122 @@ def soft_delete_purchase_exception(exception_id: str, deleted_by: Optional[str] 
     return _purchase_crud_soft_delete(PurchaseException, exception_id, deleted_by)
 
 
+# Status yang boleh di-approve / di-post (alur Approve -> Post, lihat
+# modules/transactions/purchase_v1.py POST /transactions/approve & /post).
+PURCHASE_STATUS_BISA_APPROVE = ("draft", "pending_review", "exception")
+PURCHASE_STATUS_BISA_POST = ("approved", "pending_posting")
+_TOLERANSI_BALANCE_PURCHASE = Decimal("1")
+
+
+def _validasi_posting_purchase(session, tx: "PurchaseTransaction", lines: List["PurchaseTransactionLine"]) -> List[str]:
+    """Alasan transaksi TIDAK boleh diposting (list kosong = boleh)."""
+    alasan: List[str] = []
+    if not lines:
+        return ["Transaction has no item lines."]
+    tanpa_akun = [l.line_no for l in lines if not (l.account_code or "").strip()]
+    if tanpa_akun:
+        alasan.append(f"Line(s) {', '.join(map(str, tanpa_akun))} have no account code.")
+
+    debit = sum((Decimal(str(l.subtotal or 0)) - Decimal(str(l.discount or 0))) for l in lines) + Decimal(str(tx.tax_amount or 0))
+    kredit = Decimal(str(tx.accounts_payable or 0))
+    if abs(debit - kredit) > _TOLERANSI_BALANCE_PURCHASE:
+        alasan.append(f"Journal is not balanced (debit {debit:,.2f} vs accounts payable {kredit:,.2f}).")
+
+    # Kalau klien punya master COA, semua akun jurnal WAJIB ada di COA-nya.
+    if tx.management_client_id:
+        coa = {
+            r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
+                ManagementClientCoa.client_id == tx.management_client_id,
+                ManagementClientCoa.deleted_at.is_(None),
+            ).all()
+        }
+        if coa:
+            akun = akun_posting_purchase(tx)
+            dipakai = {l.account_code for l in lines if l.account_code} | {akun["ap"][0]}
+            if Decimal(str(tx.tax_amount or 0)) > 0:
+                dipakai.add(akun["tax"][0])
+            tidak_ada = sorted(k for k in dipakai if k not in coa)
+            if tidak_ada:
+                alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
+    return alasan
+
+
+def ubah_status_purchase_transactions(
+    transaction_ids: List[str],
+    aksi: str,
+    oleh_nama: Optional[str],
+    oleh_id: Optional[str] = None,
+    posting_date: Optional[date] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Approve (`aksi`='approve') atau Post (`aksi`='post') banyak Purchase
+    Transaction sekaligus, 1 transaksi DB. Transaksi yang tidak memenuhi
+    syarat dilewati (`skipped` + alasan), sisanya tetap diproses.
+
+    approve: status draft/pending_review/exception -> approved (approved_by_name, approved_at)
+    post   : status approved/pending_posting -> posted (posted_by_name, posted_at,
+             posting_date default = purchase_date) -- divalidasi dulu lewat
+             _validasi_posting_purchase (baris & akun lengkap, balance, akun ada di COA klien).
+    """
+    if aksi not in ("approve", "post"):
+        raise ValueError("aksi harus 'approve' atau 'post'.")
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
+    try:
+        txs = {
+            t.id: t for t in session.query(PurchaseTransaction).filter(
+                PurchaseTransaction.id.in_(transaction_ids), PurchaseTransaction.deleted_at.is_(None)
+            ).all()
+        }
+        lines_per_tx: Dict[str, List[PurchaseTransactionLine]] = {}
+        if txs:
+            for l in session.query(PurchaseTransactionLine).filter(
+                PurchaseTransactionLine.transaction_id.in_(list(txs)), PurchaseTransactionLine.deleted_at.is_(None)
+            ).order_by(PurchaseTransactionLine.line_no).all():
+                lines_per_tx.setdefault(l.transaction_id, []).append(l)
+
+        sekarang = datetime.now()
+        for tx_id in dict.fromkeys(transaction_ids):
+            tx = txs.get(tx_id)
+            if tx is None:
+                hasil["skipped"].append({"id": tx_id, "purchase_no": None, "reason": "Transaction not found."})
+                continue
+            status_lama = (tx.status or "").lower()
+            if aksi == "approve":
+                if status_lama not in PURCHASE_STATUS_BISA_APPROVE:
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": f"Status '{tx.status}' cannot be approved."})
+                    continue
+                if not lines_per_tx.get(tx_id):
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": "Transaction has no item lines."})
+                    continue
+                tx.status = "approved"
+                tx.approved_by_name = oleh_nama
+                tx.approved_at = sekarang
+            else:
+                if status_lama not in PURCHASE_STATUS_BISA_POST:
+                    alasan = "Approve the transaction first." if status_lama in PURCHASE_STATUS_BISA_APPROVE else f"Status '{tx.status}' cannot be posted."
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
+                    continue
+                alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
+                if alasan:
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": " ".join(alasan)})
+                    continue
+                tx.status = "posted"
+                tx.posted_by_name = oleh_nama
+                tx.posted_at = sekarang
+                tx.posting_date = posting_date or tx.purchase_date
+            tx.edited_at = sekarang
+            tx.edited_by = oleh_id
+            hasil["done"].append(_purchase_row_ke_dict(tx, CRUD_FIELDS_PURCHASE_TRANSACTION))
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error {aksi} purchase transactions: {e}")
+        raise
+    finally:
+        session.close()
+
+
 def create_purchase_transaction_with_lines(
     transaction_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
@@ -3698,6 +4231,62 @@ def create_purchase_transaction_with_lines(
         session.close()
 
 
+# --- 5) financial_transaction_purchase_import_templates ---
+# Pola sama dengan CRUD_FIELDS_JE_IMPORT_TEMPLATE -- client_id di sini
+# reference ke management_clients, list di-order by usage_count.
+
+CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE = [
+    "client_id", "client_code", "file_type", "sheet_name",
+    "header_row_index", "data_start_row_index", "column_signature_hash",
+    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
+    "ai_confidence", "is_active",
+]
+
+def create_purchase_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseImportTemplate, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE, data, created_by)
+
+def get_purchase_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseImportTemplate, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
+
+def list_purchase_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    """Daftar template pola kolom Purchase -- dipakai untuk mencocokkan file
+    baru (lihat _cocokkan_template di modules/transactions/purchase_import_v1.py)."""
+    session = SessionLocal()
+    try:
+        query = session.query(PurchaseImportTemplate).filter(PurchaseImportTemplate.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(PurchaseImportTemplate.client_id == client_id)
+        if file_type is not None:
+            query = query.filter(PurchaseImportTemplate.file_type == file_type)
+        if hanya_aktif:
+            query = query.filter(PurchaseImportTemplate.is_active.is_(True))
+        return [_purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE) for obj in query.order_by(PurchaseImportTemplate.usage_count.desc()).all()]
+    except Exception:
+        session.rollback()
+        return []
+    finally:
+        session.close()
+
+def touch_purchase_import_template_usage(template_id: str) -> bool:
+    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
+    kali template ini berhasil dipakai mencocokkan file baru."""
+    session = SessionLocal()
+    try:
+        obj = session.query(PurchaseImportTemplate).filter(PurchaseImportTemplate.id == template_id).first()
+        if not obj:
+            return False
+        obj.usage_count = (obj.usage_count or 0) + 1
+        obj.last_used_at = datetime.now()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error touch usage purchase_import_template: {e}")
+        return False
+    finally:
+        session.close()
+
+
 # ============================================================
 # FITUR FINANCIAL STATEMENTS -- sumber data buku besar (GL)
 # ============================================================
@@ -3733,15 +4322,43 @@ _AKUN_DEFAULT_PURCHASE = {
 }
 
 
+def akun_posting_purchase(tx: Any) -> Dict[str, tuple]:
+    """Akun Cr Hutang Usaha & Dr PPN Masukan 1 Purchase Transaction (ORM
+    object atau dict) -- kolom per transaksi (migration 18), fallback ke
+    _AKUN_DEFAULT_PURCHASE kalau kosong."""
+    ambil = (lambda k: tx.get(k)) if isinstance(tx, dict) else (lambda k: getattr(tx, k, None))
+    return {
+        "ap": (ambil("ap_account_code"), ambil("ap_account_name") or "") if ambil("ap_account_code") else _AKUN_DEFAULT_PURCHASE["hutang"],
+        "tax": (ambil("tax_account_code"), ambil("tax_account_name") or "") if ambil("tax_account_code") else _AKUN_DEFAULT_PURCHASE["ppn_masukan"],
+    }
+
+
 def _angka_gl(v: Any) -> float:
     return float(v) if v is not None else 0.0
 
 
-def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal: Optional[date] = None) -> List[Dict[str, Any]]:
-    """Semua baris jurnal POSTED milik `client_id` (id_user management_users,
-    sama dengan filter tab Transactions) s.d. `sampai_tanggal` (inklusif,
-    None = semua). Tiap baris: sumber, jurnal_id, nomor, tanggal (date),
-    keterangan, pihak, account_code, account_name, debit, kredit."""
+def ambil_baris_jurnal_posted_transaksi(
+    client_id: Optional[str] = None,
+    sampai_tanggal: Optional[date] = None,
+    management_client_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
+    semua), difilter per `management_client_id` (klien/perusahaan -- filter
+    utama Financial Statements) dan/atau `client_id` (id_user
+    management_users, akun yang login). Minimal salah satu WAJIB diisi.
+    Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
+    account_code, account_name, debit, kredit."""
+    if not client_id and not management_client_id:
+        raise ValueError("client_id atau management_client_id wajib diisi.")
+
+    def _filter_pemilik(model):
+        syarat = []
+        if client_id:
+            syarat.append(model.client_id == client_id)
+        if management_client_id:
+            syarat.append(model.management_client_id == management_client_id)
+        return syarat
+
     session = SessionLocal()
     hasil: List[Dict[str, Any]] = []
     try:
@@ -3749,7 +4366,7 @@ def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal
         q = session.query(JournalEntryDraft, JournalEntryDraftLine).join(
             JournalEntryDraftLine, JournalEntryDraftLine.draft_id == JournalEntryDraft.id
         ).filter(
-            JournalEntryDraft.client_id == client_id,
+            *_filter_pemilik(JournalEntryDraft),
             func.lower(JournalEntryDraft.status) == "posted",
             JournalEntryDraft.deleted_at.is_(None),
             JournalEntryDraftLine.deleted_at.is_(None),
@@ -3771,11 +4388,12 @@ def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal
             })
 
         # --- 2) Sales ---
+        default_klien_sales: Dict[tuple, Dict[str, tuple]] = {}
         q = session.query(SalesInvoice, SalesAccountMapping).outerjoin(
             SalesAccountMapping,
             (SalesAccountMapping.invoice_id == SalesInvoice.id) & SalesAccountMapping.deleted_at.is_(None),
         ).filter(
-            SalesInvoice.client_id == client_id,
+            *_filter_pemilik(SalesInvoice),
             func.lower(SalesInvoice.posting_status) == "posted",
             SalesInvoice.deleted_at.is_(None),
         )
@@ -3790,6 +4408,12 @@ def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal
                 "pendapatan": (mapping.pendapatan_account_code, mapping.pendapatan_account_name) if mapping else None,
                 "ppn": (mapping.ppn_account_code, mapping.ppn_account_name) if mapping and mapping.ppn_account_code else None,
             }
+            # Belum ada mapping -> akun default klien (template Sales), baru default global.
+            if not mapping or None in akun.values():
+                kunci_cache = (inv.management_client_id, (inv.cabang or "").upper())
+                if kunci_cache not in default_klien_sales:
+                    default_klien_sales[kunci_cache] = akun_default_sales(inv.management_client_id, inv.cabang, session=session) or {}
+                akun = {k: v or default_klien_sales[kunci_cache].get(k) for k, v in akun.items()}
             akun = {k: v or _AKUN_DEFAULT_SALES[k] for k, v in akun.items()}
             dasar = {
                 "sumber": "sales",
@@ -3805,7 +4429,7 @@ def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal
 
         # --- 3) Purchase ---
         q = session.query(PurchaseTransaction).filter(
-            PurchaseTransaction.client_id == client_id,
+            *_filter_pemilik(PurchaseTransaction),
             func.lower(PurchaseTransaction.status) == "posted",
             PurchaseTransaction.deleted_at.is_(None),
         )
@@ -3836,10 +4460,10 @@ def ambil_baris_jurnal_posted_transaksi(client_id: Optional[str], sampai_tanggal
                 if nilai:
                     hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": nilai, "kredit": 0.0})
             if _angka_gl(tx.tax_amount) > 0:
-                kode, nama = _AKUN_DEFAULT_PURCHASE["ppn_masukan"]
+                kode, nama = akun_posting_purchase(tx)["tax"]
                 hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": _angka_gl(tx.tax_amount), "kredit": 0.0})
             if _angka_gl(tx.accounts_payable):
-                kode, nama = _AKUN_DEFAULT_PURCHASE["hutang"]
+                kode, nama = akun_posting_purchase(tx)["ap"]
                 hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": 0.0, "kredit": _angka_gl(tx.accounts_payable)})
 
         return hasil

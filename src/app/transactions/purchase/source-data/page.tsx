@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { useAuth } from '@/lib/auth';
 import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
@@ -10,7 +11,7 @@ type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Importe
 type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const sourceTypeColors: Record<string, string> = {
   'Purchase Order': 'bg-blue-100 text-blue-700',
@@ -86,6 +87,13 @@ export default function PurchaseSourceDataPage() {
     });
     return data;
   }, [purchaseSourceRecords, search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -185,7 +193,7 @@ export default function PurchaseSourceDataPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.sourceId}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -217,6 +225,7 @@ export default function PurchaseSourceDataPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
         </div>
 
         {/* Detail Panel */}

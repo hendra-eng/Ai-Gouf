@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
+import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
+import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
 import { useAuth } from '@/lib/auth';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
@@ -11,10 +14,11 @@ import {
   ArrowsUpDownIcon,
   EyeIcon,
   ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const statusColors: Record<PurchaseStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -69,6 +73,8 @@ export default function PurchaseTransactionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showImport, setShowImport] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
 
   // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
   // di detail panel (bukan seluruh daftar) -- pola sama seperti
@@ -104,10 +110,29 @@ export default function PurchaseTransactionPage() {
     });
     return data;
   }, [purchaseTransactions, search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+  };
+
+  // Alur: draft -> Approve -> approved -> Post -> posted (pindah ke tab Posted).
+  const selectedRows = purchaseTransactions.filter(t => selectedIds.has(t.id));
+  const bisaApprove = selectedRows.filter(t => ['draft', 'pending_review', 'exception'].includes(t.status)).length;
+  const bisaPost = selectedRows.filter(t => ['approved', 'pending_posting'].includes(t.status)).length;
+
+  const runBulk = async (action: 'approve' | 'post') => {
+    setBulkBusy(action);
+    const n = await runPurchaseStatusAction(action, [...selectedIds]);
+    setBulkBusy(null);
+    if (n > 0) setSelectedIds(new Set());
   };
 
   const toggleSelect = (id: string) => {
@@ -130,6 +155,7 @@ export default function PurchaseTransactionPage() {
   return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
+        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -178,6 +204,9 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
+              <button className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => setShowImport(true)}>
+                <ArrowUpTrayIcon className="w-3.5 h-3.5" />Upload Data
+              </button>
               <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
@@ -188,7 +217,22 @@ export default function PurchaseTransactionPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-                <button className="je-btn-primary text-xs px-3 py-1.5">Bulk Approve</button>
+                <button
+                  className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-40"
+                  disabled={bulkBusy !== null || bisaApprove === 0}
+                  title="Draft / pending review → Approved"
+                  onClick={() => runBulk('approve')}
+                >
+                  {bulkBusy === 'approve' ? 'Approving…' : `Approve (${bisaApprove})`}
+                </button>
+                <button
+                  className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                  disabled={bulkBusy !== null || bisaPost === 0}
+                  title="Approved → Posted (moves to the Posted tab)"
+                  onClick={() => runBulk('post')}
+                >
+                  {bulkBusy === 'post' ? 'Posting…' : `Post (${bisaPost})`}
+                </button>
                 <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => setSelectedIds(new Set())}>Clear</button>
               </div>
             )}
@@ -202,10 +246,16 @@ export default function PurchaseTransactionPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="px-4 py-3 w-8">
-                    <input type="checkbox" className="rounded" onChange={e => {
-                      if (e.target.checked) setSelectedIds(new Set(filtered.map(r => r.id)));
-                      else setSelectedIds(new Set());
-                    }} />
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      title={`Select all ${filtered.length} filtered transactions`}
+                      checked={filtered.length > 0 && filtered.every(r => selectedIds.has(r.id))}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedIds(new Set(filtered.map(r => r.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
                   </th>
                   {[
                     { label: 'Purchase ID', field: 'purchaseId' },
@@ -236,7 +286,7 @@ export default function PurchaseTransactionPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={15} className="px-4 py-12 text-center text-muted-foreground text-sm">No transactions match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <tr
                     key={row.id}
                     className={`table-row-hover cursor-pointer ${selectedIds.has(row.id) ? 'bg-blue-50/50' : ''}`}
@@ -274,6 +324,7 @@ export default function PurchaseTransactionPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="transactions" />
         </div>
 
         {/* Detail Panel */}
