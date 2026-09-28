@@ -1548,6 +1548,62 @@ class PurchaseException(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+# ============================================================
+# MANAGEMENT > COA -- memakai tabel `coa` milik playground-hendra
+# (BUKAN tabel baru). Nama atribut Python tetap versi playground-willi
+# (acc_no, account_name, ...) supaya modules/management/coa_v1.py & frontend
+# tidak berubah; nama KOLOM di database versi Indonesia (no_akun, nama_akun, ...).
+#
+# Sengaja pakai Base sendiri (_CoaBase), bukan Base utama: tabel `coa` sudah
+# didefinisikan oleh model Coa lama, dan dua model di satu MetaData yang
+# menunjuk tabel sama akan error "Table 'coa' is already defined".
+# Konsekuensi: init_db()/create_all() TIDAK menyentuh model ini -- kolom baru
+# dibuat lewat migration (sudah dijalankan di Supabase).
+#
+# Pemetaan atribut -> kolom `coa`:
+#   client_code -> kode_client          account_classification -> klasifikasi_akun
+#   acc_no -> no_akun                   account_head -> kelompok_akun
+#   account_name -> nama_akun           account_sub -> sub_kategori
+#   normal_balance -> normal_saldo      description -> keterangan
+#   is_active -> aktif                  standard_account_code -> kode_akun_standar
+#   international_standard_group -> kelompok_standar_internasional
+#   ifrs_taxonomy_reference -> referensi_taksonomi_ifrs, ifrs_source -> sumber_ifrs
+# `kategori` = 5 kategori besar (ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN) yang
+# dipakai laporan playground-hendra -- diisi otomatis dari klasifikasi_akun
+# oleh coa_v1.py.
+# client_id NULL = akun "unassigned" (belum terhubung ke klien mana pun).
+# ============================================================
+
+_CoaBase = declarative_base()
+
+
+class ManagementClientCoa(_CoaBase):
+    __tablename__ = "coa"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), nullable=True)  # FK ke management_clients sudah ada di DB
+    client_code = Column("kode_client", String(50), nullable=True)
+    acc_no = Column("no_akun", String(50), nullable=False)
+    account_name = Column("nama_akun", String(255), nullable=False)
+    kategori = Column("kategori", String(30), nullable=True)
+    account_classification = Column("klasifikasi_akun", String(40), nullable=True)
+    account_head = Column("kelompok_akun", String(50), nullable=True)
+    account_sub = Column("sub_kategori", String(100), nullable=True)
+    normal_balance = Column("normal_saldo", String(10), nullable=True)
+    description = Column("keterangan", Text, nullable=True)
+    international_standard_group = Column("kelompok_standar_internasional", String(255), nullable=True)
+    standard_account_code = Column("kode_akun_standar", String(100), nullable=True)
+    ifrs_taxonomy_reference = Column("referensi_taksonomi_ifrs", String(255), nullable=True)
+    ifrs_source = Column("sumber_ifrs", String(255), nullable=True)
+    is_active = Column("aktif", Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
 class UserClientAccess(Base):
     """Pembatasan client per user. tahap_5 dapat full access; role lain wajib mapping di production."""
     __tablename__ = "user_client_access"
@@ -6258,6 +6314,202 @@ def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = No
         session.rollback()
         print(f"Error soft-delete management_client: {e}")
         return False
+    finally:
+        session.close()
+
+
+# ============================================================
+# MANAGEMENT > COA -- CRUD atas tabel `coa` (lihat model
+# ManagementClientCoa & modules/management/coa_v1.py). create/get/update/
+# soft-delete memakai helper generic _sales_crud_* di bawah (kolom audit
+# tabel coa sama persis: created_at/by, edited_at/by, deleted_at/by).
+# ============================================================
+
+CRUD_FIELDS_MANAGEMENT_CLIENT_COA = [
+    "client_id", "client_code", "acc_no", "account_name", "kategori",
+    "account_classification", "account_head", "account_sub", "normal_balance",
+    "description", "international_standard_group", "standard_account_code",
+    "ifrs_taxonomy_reference", "ifrs_source", "is_active",
+]
+
+
+def _filter_client_coa(query, client_id: Optional[str]):
+    """client_id None = akun unassigned (client_id IS NULL)."""
+    if client_id is None:
+        return query.filter(ManagementClientCoa.client_id.is_(None))
+    return query.filter(ManagementClientCoa.client_id == client_id)
+
+
+def list_management_client_coa(
+    client_id: Optional[str],
+    search: Optional[str] = None,
+    account_classification: Optional[str] = None,
+    hanya_aktif: bool = False,
+    termasuk_nonaktif: bool = False,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """COA 1 klien (client_id None = akun unassigned), terurut no_akun.
+    `search` mencocokkan acc_no ATAU account_name (case-insensitive,
+    substring). `account_classification` dicocokkan ke klasifikasi_akun
+    ATAU kategori (5 kategori besar), supaya akun lama yang klasifikasinya
+    masih setara kategori tetap ikut terfilter."""
+    from sqlalchemy import or_
+    session = SessionLocal()
+    try:
+        query = _filter_client_coa(session.query(ManagementClientCoa), client_id)
+        if not termasuk_nonaktif:
+            query = query.filter(ManagementClientCoa.deleted_at.is_(None))
+        if hanya_aktif:
+            query = query.filter(ManagementClientCoa.is_active.is_(True))
+        if account_classification:
+            nilai = account_classification.upper()
+            query = query.filter(or_(
+                ManagementClientCoa.account_classification == nilai,
+                ManagementClientCoa.kategori == nilai,
+            ))
+        if search and search.strip():
+            pola = f"%{search.strip()}%"
+            query = query.filter(
+                (ManagementClientCoa.acc_no.ilike(pola)) | (ManagementClientCoa.account_name.ilike(pola))
+            )
+        query = query.order_by(ManagementClientCoa.acc_no)
+        if limit:
+            query = query.limit(limit)
+        return [_sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA) for obj in query.all()]
+    except Exception as e:
+        session.rollback()
+        print(f"Error list management_client_coa: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def get_management_client_coa_by_id(coa_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, coa_id, termasuk_nonaktif)
+
+
+def cari_management_client_coa_by_acc_no(client_id: Optional[str], acc_no: str) -> Optional[Dict[str, Any]]:
+    """1 akun berdasarkan (client_id, acc_no) persis -- TERMASUK yang sudah
+    di-soft-delete (lihat field `aktif`), karena UNIQUE (client_id, no_akun)
+    tetap berlaku untuk baris yang dihapus. client_id None = pool unassigned
+    (bisa >1 baris dgn acc_no sama kalau ada yang terhapus -> yang aktif
+    diutamakan)."""
+    session = SessionLocal()
+    try:
+        obj = _filter_client_coa(session.query(ManagementClientCoa), client_id).filter(
+            ManagementClientCoa.acc_no == acc_no
+        ).order_by(ManagementClientCoa.deleted_at.desc().nullsfirst()).first()
+        return _sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
+def create_management_client_coa(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, data, created_by)
+
+
+def update_management_client_coa(coa_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(ManagementClientCoa, CRUD_FIELDS_MANAGEMENT_CLIENT_COA, coa_id, data, updated_by)
+
+
+def restore_management_client_coa(coa_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Hidupkan lagi akun yang sudah di-soft-delete sekaligus timpa isinya --
+    dipakai saat user membuat akun dengan acc_no yang dulu pernah dihapus."""
+    session = SessionLocal()
+    try:
+        obj = session.query(ManagementClientCoa).filter(ManagementClientCoa.id == coa_id).first()
+        if not obj:
+            return None
+        for kolom, nilai in data.items():
+            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT_COA:
+                setattr(obj, kolom, nilai)
+        obj.deleted_at = None
+        obj.deleted_by = None
+        obj.edited_at = datetime.now()
+        obj.edited_by = updated_by
+        hasil = _sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA)
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error restore management_client_coa: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def soft_delete_management_client_coa(coa_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(ManagementClientCoa, coa_id, deleted_by)
+
+
+def assign_management_client_coa(
+    coa_ids: List[str], client_id: str, client_code: Optional[str], assigned_by: Optional[str] = None
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Assign akun unassigned (client_id NULL) ke 1 klien -- baris YANG SAMA
+    diisi client_id-nya (akun keluar dari pool unassigned). 1 transaksi.
+
+    Per akun:
+      - tidak ada / sudah dihapus / sudah punya klien -> skipped
+      - acc_no sudah dipakai akun AKTIF klien tujuan   -> skipped
+      - acc_no dipakai akun klien tujuan yang SUDAH DIHAPUS -> baris terhapus
+        itu dihidupkan lagi dengan isi akun unassigned, lalu akun unassigned
+        di-soft-delete (UNIQUE (client_id, no_akun) tidak memberi pilihan lain).
+    Return {"assigned": [...akun], "skipped": [{id, acc_no, account_name, reason}]}.
+    """
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"assigned": [], "skipped": []}
+    try:
+        rows = session.query(ManagementClientCoa).filter(ManagementClientCoa.id.in_(coa_ids)).all()
+        by_id = {r.id: r for r in rows}
+        existing = {
+            r.acc_no: r for r in session.query(ManagementClientCoa).filter(
+                ManagementClientCoa.client_id == client_id
+            ).all()
+        }
+        sekarang = datetime.now()
+        for coa_id in dict.fromkeys(coa_ids):  # buang id dobel, urutan dipertahankan
+            obj = by_id.get(coa_id)
+            if obj is None or obj.deleted_at is not None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": None, "account_name": None, "reason": "Akun tidak ditemukan."})
+                continue
+            if obj.client_id is not None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
+                                         "reason": "Akun sudah terhubung ke klien lain."})
+                continue
+            bentrok = existing.get(obj.acc_no)
+            if bentrok is not None and bentrok.deleted_at is None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
+                                         "reason": f"ACC NO sudah dipakai akun '{bentrok.account_name}' di klien ini."})
+                continue
+            if bentrok is not None:
+                for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT_COA:
+                    if kolom not in ("client_id", "client_code"):
+                        setattr(bentrok, kolom, getattr(obj, kolom))
+                bentrok.client_code = client_code
+                bentrok.deleted_at = None
+                bentrok.deleted_by = None
+                bentrok.edited_at = sekarang
+                bentrok.edited_by = assigned_by
+                obj.deleted_at = sekarang
+                obj.deleted_by = assigned_by
+                target = bentrok
+            else:
+                obj.client_id = client_id
+                obj.client_code = client_code
+                obj.edited_at = sekarang
+                obj.edited_by = assigned_by
+                existing[obj.acc_no] = obj
+                target = obj
+            hasil["assigned"].append(_sales_row_ke_dict(target, CRUD_FIELDS_MANAGEMENT_CLIENT_COA))
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error assign management_client_coa: {e}")
+        raise
     finally:
         session.close()
 
