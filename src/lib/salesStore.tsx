@@ -292,6 +292,8 @@ export function useSalesSourceRows(sourceFileId: string | null | undefined): {
 export interface BackendSalesInvoice {
   id: string;
   client_id: string | null;
+  /** id management_clients -- klien pemilik transaksi (filter Financial Statements). */
+  management_client_id?: string | null;
   invoice_no: string;
   invoice_date: string;
   due_date: string | null;
@@ -411,6 +413,17 @@ export async function updateSalesAccountMapping(id: string, payload: Partial<Bac
   const row = await put<BackendSalesAccountMapping>(`${SALES_BASE_URL}/account-mappings/${id}`, payload);
   notifySalesChanged();
   return row;
+}
+
+/** Mapping akun invoice; kalau belum ada, backend membuatnya dari akun default
+ *  klien (template Sales, mengikuti COA klien). null = klien belum punya akun default
+ *  (atau user tidak berhak membuat mapping). */
+export async function ensureSalesAccountMapping(invoiceId: string): Promise<BackendSalesAccountMapping | null> {
+  const ada = await getSalesAccountMappingByInvoice(invoiceId);
+  if (ada) return ada;
+  const res = await authenticatedFetch(`${SALES_BASE_URL}/invoices/${invoiceId}/account-mapping/default`, { method: 'POST' });
+  if (!res.ok) return null;
+  return baca<BackendSalesAccountMapping>(res);
 }
 
 /** Buat mapping baru kalau invoice ini belum punya, atau update kalau sudah ada (relasinya 1:1). */

@@ -106,7 +106,7 @@ class PurchaseSourceRecordCreateRequest(BaseModel):
     amount: float = 0
     tax_amount: float = 0
     total_amount: float = 0
-    currency: str = Field("USD", max_length=10)
+    currency: str = Field("IDR", max_length=10)
     status: str = Field("Imported", max_length=20, description="Mapped/Pending Mapping/Validation Error/Imported")
     validation_status: str = Field("Pending Validation", max_length=20, description="Valid/Pending Validation/Invalid")
     period_label: str = Field(..., max_length=50)
@@ -138,6 +138,7 @@ class PurchaseSourceRecordUpdateRequest(BaseModel):
 
 class PurchaseTransactionCreateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     purchase_no: str = Field(..., min_length=1, max_length=100)
     purchase_date: date
     invoice_date: Optional[date] = None
@@ -155,7 +156,7 @@ class PurchaseTransactionCreateRequest(BaseModel):
     tax_amount: float = 0
     total: float = 0
     accounts_payable: float = 0
-    currency: str = Field("USD", max_length=10)
+    currency: str = Field("IDR", max_length=10)
     payment_status: str = Field("unpaid", max_length=20)
     payment_terms: Optional[str] = Field(None, max_length=50)
     due_date: Optional[date] = None
@@ -165,13 +166,18 @@ class PurchaseTransactionCreateRequest(BaseModel):
     approved_by_name: Optional[str] = Field(None, max_length=255)
     posted_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[UUID] = None
+    journal_entry_id: Optional[int] = None
     posting_date: Optional[date] = None
     posted_at: Optional[datetime] = None
+    ap_account_code: Optional[str] = Field(None, max_length=50)   # Cr Hutang Usaha -- kosong = akun default
+    ap_account_name: Optional[str] = Field(None, max_length=255)
+    tax_account_code: Optional[str] = Field(None, max_length=50)  # Dr PPN Masukan -- kosong = akun default
+    tax_account_name: Optional[str] = Field(None, max_length=255)
 
 
 class PurchaseTransactionUpdateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     purchase_no: Optional[str] = Field(None, min_length=1, max_length=100)
     purchase_date: Optional[date] = None
     invoice_date: Optional[date] = None
@@ -199,9 +205,13 @@ class PurchaseTransactionUpdateRequest(BaseModel):
     approved_by_name: Optional[str] = Field(None, max_length=255)
     posted_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[UUID] = None
+    journal_entry_id: Optional[int] = None
     posting_date: Optional[date] = None
     posted_at: Optional[datetime] = None
+    ap_account_code: Optional[str] = Field(None, max_length=50)   # Cr Hutang Usaha -- kosong = akun default
+    ap_account_name: Optional[str] = Field(None, max_length=255)
+    tax_account_code: Optional[str] = Field(None, max_length=50)  # Dr PPN Masukan -- kosong = akun default
+    tax_account_name: Optional[str] = Field(None, max_length=255)
 
 
 # ============================================================
@@ -229,6 +239,7 @@ class PurchaseTransactionLineInput(BaseModel):
 
 class PurchaseTransactionWithLinesCreateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     purchase_no: str = Field(..., min_length=1, max_length=100)
     purchase_date: date
     invoice_date: Optional[date] = None
@@ -242,7 +253,7 @@ class PurchaseTransactionWithLinesCreateRequest(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = Field(None, max_length=50)
     accounts_payable: Optional[float] = None
-    currency: str = Field("USD", max_length=10)
+    currency: str = Field("IDR", max_length=10)
     payment_status: str = Field("unpaid", max_length=20)
     payment_terms: Optional[str] = Field(None, max_length=50)
     due_date: Optional[date] = None
@@ -250,7 +261,17 @@ class PurchaseTransactionWithLinesCreateRequest(BaseModel):
     period_label: str = Field(..., max_length=50)
     created_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
+    ap_account_code: Optional[str] = Field(None, max_length=50)   # Cr Hutang Usaha -- kosong = akun default
+    ap_account_name: Optional[str] = Field(None, max_length=255)
+    tax_account_code: Optional[str] = Field(None, max_length=50)  # Dr PPN Masukan -- kosong = akun default
+    tax_account_name: Optional[str] = Field(None, max_length=255)
     lines: List[PurchaseTransactionLineInput] = Field(..., min_length=1, description="Minimal 1 baris item/jasa.")
+
+
+class PurchaseStatusActionRequest(BaseModel):
+    """Approve / Post banyak transaksi sekaligus."""
+    transaction_ids: List[UUID] = Field(..., min_length=1, max_length=5000)
+    posting_date: Optional[date] = Field(None, description="Khusus /post -- default = purchase_date tiap transaksi.")
 
 
 # ============================================================
@@ -307,7 +328,7 @@ class PurchaseExceptionCreateRequest(BaseModel):
     invoice_number: Optional[str] = Field(None, max_length=100)
     purchase_date: Optional[date] = None
     amount: float = 0
-    currency: str = Field("USD", max_length=10)
+    currency: str = Field("IDR", max_length=10)
     description: str
     detected_at: Optional[datetime] = None
     assigned_to: Optional[str] = Field(None, max_length=255)
@@ -494,6 +515,56 @@ def buat_transaction_dengan_baris(
     if dibuat is None:
         return gagal(message="Failed to create transaction (database error).", status_code=500)
     return sukses(data=dibuat, message="Transaction created successfully.", status_code=201)
+
+
+# Alur status: draft --(approve, Supervisor+)--> approved --(post, Manager+)--> posted.
+# Transaksi 'posted' tampil di tab Posted & masuk Financial Statements
+# (db_client.ambil_baris_jurnal_posted_transaksi).
+LEVEL_APPROVE_PURCHASE = 3
+LEVEL_POST_PURCHASE = 4
+
+
+def _jalankan_aksi_status(aksi: str, payload: PurchaseStatusActionRequest, current_user: Dict[str, Any]):
+    nama = current_user.get("nama") or current_user.get("username")
+    try:
+        hasil = dbc.ubah_status_purchase_transactions(
+            [str(i) for i in payload.transaction_ids], aksi, nama,
+            oleh_id=current_user.get("id"), posting_date=payload.posting_date,
+        )
+    except Exception:  # noqa: BLE001 -- sudah di-log di db_client
+        logger.exception("Gagal %s purchase transactions", aksi)
+        return gagal(message=f"Failed to {aksi} transactions (database error).", status_code=500)
+    kata = "approved" if aksi == "approve" else "posted"
+    pesan = f"{len(hasil['done'])} transaction(s) {kata}."
+    if hasil["skipped"]:
+        pesan += f" {len(hasil['skipped'])} skipped."
+    return sukses(data=hasil, message=pesan)
+
+
+@router.post(
+    "/transactions/approve",
+    summary="Approve banyak transaksi pembelian (draft -> approved, khusus Supervisor ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}},
+)
+def approve_transactions(
+    payload: PurchaseStatusActionRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_PURCHASE)),
+):
+    return _jalankan_aksi_status("approve", payload, current_user)
+
+
+@router.post(
+    "/transactions/post",
+    summary="Posting banyak transaksi pembelian (approved -> posted, khusus Manager ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}},
+)
+def post_transactions(
+    payload: PurchaseStatusActionRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_POST_PURCHASE)),
+):
+    """Hanya transaksi 'approved' yang bisa diposting, dan hanya kalau baris
+    & akunnya lengkap, jurnalnya balance, dan semua akunnya ada di COA klien."""
+    return _jalankan_aksi_status("post", payload, current_user)
 
 
 @router.get(

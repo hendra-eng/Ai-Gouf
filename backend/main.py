@@ -123,6 +123,7 @@ from modules.transactions import sales_v1 as transactions_sales_v1  # [BARU] CRU
 from modules.transactions import sales_import_v1 as transactions_sales_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Sales Import Template
 from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
 from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
+from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/... -- [TIDAK DIPAKAI FRONTEND] satu-satunya caller-nya (src/lib/purchaseStore.tsx) sudah tidak diimport halaman manapun sejak migrasi ke purchasebridge.ts, lihat catatan di finance_purchase_v1 di atas yang justru aktif dipakai. TODO cleanup.
 from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
@@ -411,6 +412,7 @@ app.include_router(transactions_sales_import_v1.router)  # [BARU] /api/v1/transa
 app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri -- [TIDAK DIPAKAI FRONTEND], lihat catatan di import-nya di atas
+app.include_router(transactions_purchase_import_v1.router)
 
 
 @app.on_event("startup")

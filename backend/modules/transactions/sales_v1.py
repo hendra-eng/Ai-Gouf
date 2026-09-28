@@ -35,7 +35,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -181,6 +180,7 @@ class SalesSourceRowUpdateRequest(BaseModel):
 
 class SalesInvoiceCreateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     invoice_no: str = Field(..., min_length=1, max_length=100)
     invoice_date: date
     due_date: Optional[date] = None
@@ -201,7 +201,7 @@ class SalesInvoiceCreateRequest(BaseModel):
     posting_status: str = Field("Draft", max_length=20)
     reconcile_status: str = Field("Unreconciled", max_length=20)
     journal_sync_status: str = Field("Pending", max_length=20)
-    journal_entry_id: Optional[UUID] = None
+    journal_entry_id: Optional[int] = None
     source_row_id: Optional[str] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
@@ -209,6 +209,7 @@ class SalesInvoiceCreateRequest(BaseModel):
 
 class SalesInvoiceUpdateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     invoice_no: Optional[str] = Field(None, min_length=1, max_length=100)
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
@@ -229,7 +230,7 @@ class SalesInvoiceUpdateRequest(BaseModel):
     posting_status: Optional[str] = Field(None, max_length=20)
     reconcile_status: Optional[str] = Field(None, max_length=20)
     journal_sync_status: Optional[str] = Field(None, max_length=20)
-    journal_entry_id: Optional[UUID] = None
+    journal_entry_id: Optional[int] = None
     source_row_id: Optional[str] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
@@ -347,7 +348,7 @@ def buat_source_file(
     responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}},
 )
 def daftar_source_file(
-    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id)."),
+    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id_user)."),
     termasuk_nonaktif: bool = Query(False, description="Sertakan yang sudah di-soft-delete."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
@@ -556,7 +557,25 @@ def update_invoice(
     payload: SalesInvoiceUpdateRequest,
     current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
 ):
-    diupdate = dbc.update_sales_invoice(invoice_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
+    data = payload.model_dump(exclude_unset=True)
+    status_baru = data.get("posting_status")
+    if status_baru in ("Approved", "Posted"):
+        lama = dbc.get_sales_invoice_by_id(invoice_id)
+        if lama is None:
+            return gagal(message="Invoice tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        # Akun jurnal mengikuti COA klien: invoice tanpa mapping otomatis
+        # dibuatkan dari akun default klien (template Sales), lalu saat
+        # posting semua akunnya wajib ada di master COA klien.
+        dbc.pastikan_mapping_sales(invoice_id, dibuat_oleh=current_user.get("id"))
+        if status_baru == "Posted" and lama.get("posting_status") not in ("Posted", "Partial", "Paid"):
+            alasan = dbc.validasi_posting_sales(invoice_id)
+            if alasan:
+                return gagal(
+                    message=f"Invoice {lama.get('invoice_no')} cannot be posted: {' '.join(alasan)}",
+                    errors={"code": "INVALID_ACCOUNTS", "reasons": alasan},
+                    status_code=422,
+                )
+    diupdate = dbc.update_sales_invoice(invoice_id, data, updated_by=current_user.get("id"))
     if diupdate is None:
         return gagal(message="Invoice tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=diupdate, message="Invoice berhasil diupdate.")
@@ -616,6 +635,29 @@ def daftar_account_mapping(
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     data = dbc.list_sales_account_mappings(client_id=client_id, termasuk_nonaktif=termasuk_nonaktif)
+    return sukses(data=data, message="OK")
+
+
+@router.post(
+    "/invoices/{invoice_id}/account-mapping/default",
+    summary="Buat mapping akun invoice dari akun default klien (COA klien) kalau belum ada (khusus Supervisor ke atas)",
+    responses={
+        200: {"description": "Mapping yang ada / baru dibuat."},
+        401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."},
+        404: {"description": "Invoice tidak ada, atau klien belum punya akun default Sales."},
+    },
+)
+def buat_mapping_default(
+    invoice_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    data = dbc.pastikan_mapping_sales(invoice_id, dibuat_oleh=current_user.get("id"))
+    if data is None:
+        return gagal(
+            message="No default sales accounts are configured for this client.",
+            errors={"code": "NO_DEFAULT_ACCOUNTS"},
+            status_code=404,
+        )
     return sukses(data=data, message="OK")
 
 

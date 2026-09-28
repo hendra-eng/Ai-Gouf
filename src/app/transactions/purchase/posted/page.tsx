@@ -1,12 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import React, { useState, useMemo, useEffect } from 'react';
+import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { useCurrency } from '@/lib/currency';
-import { formatRupiah } from '@/lib/mockData';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { exportPurchaseTransactionsCsv } from '@/app/transactions/purchase/purchaseExport';
+import { useAuth } from '@/lib/auth';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -17,6 +15,8 @@ import {
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
 
+const fmt = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const categoryColors: Record<string, string> = {
   Inventory: 'bg-emerald-100 text-emerald-700',
@@ -50,14 +50,10 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
-  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
-  // src/app/transactions/purchase/page.tsx. purchasebridge belum punya
-  // filter status di level fetch, jadi status='posted' difilter di sini
-  // (data per client sudah kecil, tidak masalah difilter di client).
-  const { purchaseTransactions } = usePurchaseData();
-  const { fx } = useCurrency();
-  const fmt = (n: number) => fx(formatRupiah(n, true));
-  const postedPurchases = useMemo(() => purchaseTransactions.filter(t => t.status === 'posted'), [purchaseTransactions]);
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId, 'posted');
+  const postedPurchases = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
   const [search, setSearch] = useState('');
   const [periodFilter, setPeriodFilter] = useState('All');
@@ -68,12 +64,9 @@ export default function PurchasePostedPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // [DIUBAH] purchasebridge.ts sudah menyertakan `lines` langsung di tiap
-  // transaksi, jadi tidak perlu lazy-fetch line terpisah lagi.
-  const mappedExpandedLines = useMemo(
-    () => postedPurchases.find(t => t.id === expandedId)?.lines || [],
-    [postedPurchases, expandedId],
-  );
+  // Baris item/jasa dimuat lazy, cuma untuk baris yang sedang di-expand.
+  const { lines: expandedLines } = usePurchaseTransactionLines(expandedId);
+  const mappedExpandedLines = useMemo(() => expandedLines.map(mapTransactionLineToUi), [expandedLines]);
 
   const periods = ['All', ...Array.from(new Set(postedPurchases.map(t => t.period)))];
   const categories = ['All', ...Array.from(new Set(postedPurchases.map(t => t.category)))];
@@ -101,15 +94,17 @@ export default function PurchasePostedPage() {
     });
     return data;
   }, [postedPurchases, search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [search, periodFilter, categoryFilter, vendorFilter, paymentFilter, sortField, sortDir]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
-  };
-
-  const handleExport = () => {
-    if (filtered.length === 0) { toast.error('Tidak ada transaksi untuk diekspor.'); return; }
-    exportPurchaseTransactionsCsv(filtered, 'purchase-posted');
   };
 
   const summary = useMemo(() => ({
@@ -173,7 +168,7 @@ export default function PurchasePostedPage() {
                 <option value="All">All Payment</option>
                 {Object.entries(paymentLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5" onClick={handleExport}>
+              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
                 <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
               </button>
             </div>
@@ -216,7 +211,7 @@ export default function PurchasePostedPage() {
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr><td colSpan={14} className="px-4 py-12 text-center text-muted-foreground text-sm">No posted purchases match your filters.</td></tr>
-                ) : filtered.map(row => (
+                ) : paginated.map(row => (
                   <React.Fragment key={row.id}>
                     <tr className="table-row-hover">
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.purchaseId}</td>
@@ -317,6 +312,7 @@ export default function PurchasePostedPage() {
               </tbody>
             </table>
           </div>
+          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="posted purchases" />
         </div>
       </div>
   );

@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { useCurrency } from '@/lib/currency';
-import { formatRupiah } from '@/lib/mockData';
 import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
-import { usePurchaseData } from '@/app/transactions/purchase/purchasebridge';
-import { updatePurchaseStatus } from '@/app/agent-ai/lib/api';
+import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
+import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
+import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -17,8 +15,14 @@ import {
   CalendarIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
+const PICKER_PAGE_SIZE = 20;
+
+const fmt = (n: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
 const statusColors: Record<PurchaseStatus, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -76,28 +80,41 @@ function getAccountingEntries(tx: PurchaseTransaction) {
     entries.push({ account: info.name, code, debit: info.amount, credit: 0, description: tx.description });
   });
 
-  // Debit: Input Tax (VAT Recoverable)
+  // Debit: Input Tax -- akun per transaksi, fallback akun default backend
+  // (db_client._AKUN_DEFAULT_PURCHASE) supaya preview == jurnal yang diposting.
   if (tx.taxAmount > 0) {
-    entries.push({ account: 'VAT Recoverable (Input Tax)', code: '1300', debit: tx.taxAmount, credit: 0, description: `Input VAT @ 12%` });
+    entries.push({
+      account: tx.taxAccountName || 'VAT Recoverable (Input Tax)',
+      code: tx.taxAccountCode || '1300',
+      debit: tx.taxAmount, credit: 0, description: 'Input VAT',
+    });
   }
 
   // Credit: Accounts Payable
-  entries.push({ account: 'Accounts Payable', code: '2100', debit: 0, credit: tx.accountsPayable, description: `${tx.vendor} — ${tx.invoiceNumber}` });
+  entries.push({
+    account: tx.apAccountName || 'Accounts Payable',
+    code: tx.apAccountCode || '2100',
+    debit: 0, credit: tx.accountsPayable,
+    description: [tx.vendor, tx.invoiceNumber].filter(Boolean).join(' — '),
+  });
 
   return entries;
 }
 
 export default function PurchasePreviewPage() {
-  // [DIUBAH] purchaseStore.tsx -> purchasebridge.ts, lihat catatan di
-  // src/app/transactions/purchase/page.tsx.
-  const { purchaseTransactions, activeClientId, refetch } = usePurchaseData();
-  const { fx } = useCurrency();
-  const fmt = (n: number) => fx(formatRupiah(n, true));
-  const router = useRouter();
+  const { user } = useAuth();
+  const clientId = user?.id ?? null;
+  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showAccounting, setShowAccounting] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [busy, setBusy] = useState<'approve' | 'post' | 'status' | null>(null);
+  // Daftar pilih transaksi dipaging 20 item (hasil upload bisa ratusan).
+  const [pickerPage, setPickerPage] = useState(1);
+  const pickerTotalPages = Math.max(1, Math.ceil(purchaseTransactions.length / PICKER_PAGE_SIZE));
+  const pickerPageSafe = Math.min(pickerPage, pickerTotalPages);
+  const pickerItems = purchaseTransactions.slice((pickerPageSafe - 1) * PICKER_PAGE_SIZE, pickerPageSafe * PICKER_PAGE_SIZE);
 
   // Begitu daftar transaksi datang, pilih yang pertama secara default
   // (dulu purchaseTransactions[0] selalu ada karena mock statis -- sekarang
@@ -106,9 +123,12 @@ export default function PurchasePreviewPage() {
     if (!selectedId && purchaseTransactions.length > 0) setSelectedId(purchaseTransactions[0].id);
   }, [selectedId, purchaseTransactions]);
 
-  // [DIUBAH] purchasebridge.ts sudah menyertakan `lines` langsung di tiap
-  // transaksi, jadi tidak perlu lazy-fetch line terpisah lagi.
-  const tx = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0] || null;
+  const txHeader = purchaseTransactions.find(t => t.id === selectedId) || purchaseTransactions[0];
+  const { lines: selectedLines } = usePurchaseTransactionLines(txHeader?.id);
+  const tx = useMemo(
+    () => (txHeader ? { ...txHeader, lines: selectedLines.map(mapTransactionLineToUi) } : null),
+    [txHeader, selectedLines],
+  );
 
   if (!tx) {
     return (
@@ -119,30 +139,29 @@ export default function PurchasePreviewPage() {
     );
   }
 
+  const runAction = async (action: 'approve' | 'post') => {
+    setBusy(action);
+    await runPurchaseStatusAction(action, [tx.id]);
+    setBusy(null);
+  };
+
+  // Reject / Return for Correction cukup ubah status (tidak menyentuh jurnal).
+  const setStatus = async (status: 'rejected' | 'draft') => {
+    setBusy('status');
+    try {
+      await updatePurchaseTransaction(tx.id, { status });
+      toast.success(status === 'draft' ? 'Returned to draft for correction' : 'Transaction rejected', { description: tx.purchaseId });
+    } catch (err) {
+      toast.error('Failed to update status', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const accountingEntries = getAccountingEntries(tx);
   const totalDebit = accountingEntries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = accountingEntries.reduce((s, e) => s + e.credit, 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
-
-  const handleStatusChange = (status: PurchaseStatus, alasan?: string) => {
-    if (!activeClientId) { toast.error('Client aktif belum dipilih.'); return; }
-    setActionLoading(true);
-    updatePurchaseStatus(activeClientId, tx.id, status, alasan)
-      .then(() => { toast.success(`Status diperbarui ke "${statusLabels[status]}".`); refetch(); })
-      .catch((err: unknown) => toast.error(err instanceof Error ? err.message : 'Gagal memperbarui status.'))
-      .finally(() => setActionLoading(false));
-  };
-
-  const handleReject = () => {
-    const alasan = window.prompt('Alasan penolakan (opsional):') || undefined;
-    handleStatusChange('rejected', alasan);
-  };
-
-  const handlePostToGl = () => {
-    if (!isBalanced) { toast.error('Tidak bisa posting: jurnal belum balance (Debit ≠ Credit).'); return; }
-    if (!window.confirm('Posting ke General Ledger tidak dapat dibatalkan. Lanjutkan?')) return;
-    handleStatusChange('posted');
-  };
 
   return (
       <div className="space-y-6 fade-in">
@@ -153,7 +172,7 @@ export default function PurchasePreviewPage() {
           <div className="je-card p-4 lg:col-span-1">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Select Purchase</h3>
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-thin">
-              {purchaseTransactions.map(t => (
+              {pickerItems.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setSelectedId(t.id)}
@@ -172,6 +191,29 @@ export default function PurchasePreviewPage() {
                 </button>
               ))}
             </div>
+            {pickerTotalPages > 1 && (
+              <div className="flex items-center justify-between pt-3 mt-3 border-t border-border text-xs text-muted-foreground">
+                <button
+                  onClick={() => setPickerPage(pickerPageSafe - 1)}
+                  disabled={pickerPageSafe <= 1}
+                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeftIcon className="w-3.5 h-3.5" />
+                </button>
+                <span>
+                  Page <span className="font-medium text-foreground">{pickerPageSafe}</span> of {pickerTotalPages} · {purchaseTransactions.length} purchases
+                </span>
+                <button
+                  onClick={() => setPickerPage(pickerPageSafe + 1)}
+                  disabled={pickerPageSafe >= pickerTotalPages}
+                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Next page"
+                >
+                  <ChevronRightIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Preview Document */}
@@ -387,30 +429,41 @@ export default function PurchasePreviewPage() {
                   {tx.postedTimestamp && <><span>·</span><span>Posted: {tx.postedTimestamp}</span></>}
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  {tx.status === 'draft' && (
-                    <button
-                      className="je-btn-secondary text-xs px-3 py-1.5 opacity-50 cursor-not-allowed"
-                      disabled
-                      title="Tidak ada perubahan untuk disimpan di halaman pratinjau ini"
-                    >
-                      Save Draft
-                    </button>
-                  )}
-                  {tx.status === 'draft' && (
-                    <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" onClick={() => handleStatusChange('pending_review')} disabled={actionLoading}>
-                      Submit for Review
-                    </button>
-                  )}
-                  {tx.status === 'pending_review' && (
+                  {(tx.status === 'draft' || tx.status === 'pending_review') && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200 disabled:opacity-50" onClick={handleReject} disabled={actionLoading}>Reject</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" onClick={() => handleStatusChange('approved')} disabled={actionLoading}>Approve</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 text-red-600 border-red-200 disabled:opacity-40"
+                        disabled={busy !== null}
+                        onClick={() => setStatus('rejected')}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null || !isBalanced}
+                        title={isBalanced ? undefined : 'Journal is not balanced'}
+                        onClick={() => runAction('approve')}
+                      >
+                        {busy === 'approve' ? 'Approving…' : 'Approve'}
+                      </button>
                     </>
                   )}
                   {tx.status === 'approved' && (
                     <>
-                      <button className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-50" onClick={() => handleStatusChange('pending_review')} disabled={actionLoading}>Return for Correction</button>
-                      <button className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-50" onClick={handlePostToGl} disabled={actionLoading}>Post to GL</button>
+                      <button
+                        className="je-btn-secondary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null}
+                        onClick={() => setStatus('draft')}
+                      >
+                        Return for Correction
+                      </button>
+                      <button
+                        className="je-btn-primary text-xs px-3 py-1.5 disabled:opacity-40"
+                        disabled={busy !== null || !isBalanced}
+                        onClick={() => runAction('post')}
+                      >
+                        {busy === 'post' ? 'Posting…' : 'Post to GL'}
+                      </button>
                     </>
                   )}
                   {tx.status === 'posted' && (
@@ -419,9 +472,8 @@ export default function PurchasePreviewPage() {
                     </span>
                   )}
                   {tx.status === 'exception' && (
-                    <button className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200" onClick={() => router.push('/transactions/purchase/exceptions')}>View Exception</button>
+                    <button className="je-btn-secondary text-xs px-3 py-1.5 text-orange-700 border-orange-200">View Exception</button>
                   )}
-                  <button className="je-btn-secondary text-xs px-3 py-1.5" onClick={() => router.push('/transactions/purchase/source-data')}>View Source</button>
                 </div>
               </div>
             </div>
