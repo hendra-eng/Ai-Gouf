@@ -1,14 +1,22 @@
 'use client';
 import React from 'react';
-import { Printer, FileDown, Sheet, RefreshCw, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { RefreshCw, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { useAuth } from '@/lib/auth';
+import PrintMenu from '@/components/shared/PrintMenu';
+import { printReport, type PrintFormat } from '@/lib/printExport';
 import { useEquityStatement } from '../../lib/useStatementData';
+import { buildEquityReport } from './equityPrintReport';
 
 export default function EquityHeader() {
   const { t } = useLanguage();
+  const { user } = useAuth();
   // Data dari API /api/v1/financial-statements (transaksi posted).
   const eq = useEquityStatement();
   const seimbang = Math.abs(eq.totals.closing - eq.balanceSheetEquity) < 0.01;
+
+  const print = (format: PrintFormat) =>
+    printReport(buildEquityReport(eq, t, user?.nama || user?.username || undefined), format);
   return (
     <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
       {/* Left */}
@@ -51,18 +59,7 @@ export default function EquityHeader() {
 
       {/* Right actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <button className="btn-ghost">
-          <Printer size={13} />
-          {t('Print')}
-        </button>
-        <button className="btn-ghost">
-          <FileDown size={13} />
-          {t('PDF')}
-        </button>
-        <button className="btn-secondary">
-          <Sheet size={13} />
-          {t('Export Excel')}
-        </button>
+        <PrintMenu onPrint={print} label={t('Print')} disabled={eq.loading || !eq.adaData} />
       </div>
     </div>
   );

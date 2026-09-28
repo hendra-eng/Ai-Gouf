@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
 import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
-import { exportJournalEntriesToPdf, exportJournalEntriesToExcel, type JeExportRow } from '@/app/transactions/journal-entry/components/exportJournalEntry';
+import { buildJeListReport, buildJeDetailReport, type JePrintRow } from '@/app/transactions/journal-entry/components/jePrintReports';
+import PrintMenu from '@/components/shared/PrintMenu';
+import { printReport, type PrintFormat } from '@/lib/printExport';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -13,10 +15,9 @@ import {
   EyeIcon,
   PlusIcon,
   ArrowUpTrayIcon,
-  DocumentTextIcon,
-  TableCellsIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { useJeDrafts, useJeDraftLines, listJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry, type JeUiStatus } from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
@@ -61,7 +62,10 @@ export default function JournalEntryTransactionPage() {
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+
+  const { clients, activeClientId, activeClientName } = useActiveClient();
+  const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
+  const printedBy = user?.nama || user?.username || undefined;
 
   const sourceTypes = ['All', ...Array.from(new Set(journalEntries.map(t => t.sourceType)))];
   const periods = ['All', ...Array.from(new Set(journalEntries.map(t => t.period)))];
@@ -96,25 +100,23 @@ export default function JournalEntryTransactionPage() {
     setCurrentPage(1);
   };
 
-  const runExport = async (format: 'pdf' | 'excel') => {
+  // Print daftar = semua JE yang lolos filter (bukan cuma halaman aktif), lengkap dengan baris jurnalnya.
+  const printList = async (format: PrintFormat) => {
     if (filtered.length === 0) {
-      toast.error('No journal entries to export.');
+      toast.error('No journal entries to print.');
       return;
     }
-    setExporting(format);
-    try {
-      const rows: JeExportRow[] = await Promise.all(filtered.map(async (je) => ({
-        ...je,
-        lines: (await listJeDraftLines(je.id)).map(mapJeDraftLineToUi),
-      })));
-      if (format === 'pdf') exportJournalEntriesToPdf(rows);
-      else await exportJournalEntriesToExcel(rows);
-      toast.success('Export successful', { description: `${rows.length} journal entries exported.` });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to export journal entries.');
-    } finally {
-      setExporting(null);
-    }
+    const rows: JePrintRow[] = await Promise.all(filtered.map(async (je) => ({
+      ...je,
+      lines: (await listJeDraftLines(je.id)).map(mapJeDraftLineToUi),
+    })));
+    await printReport(buildJeListReport(rows, companyName, printedBy), format);
+    toast.success('File ready', { description: `${rows.length} journal entries printed.` });
+  };
+
+  const printDetail = async (format: PrintFormat) => {
+    if (!selectedRow) return;
+    await printReport(buildJeDetailReport(selectedRow, mappedLines, companyName, printedBy), format);
   };
 
   const summary = useMemo(() => ({
@@ -132,20 +134,7 @@ export default function JournalEntryTransactionPage() {
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            onClick={() => runExport('excel')}
-            disabled={exporting !== null}
-            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <TableCellsIcon className="w-4 h-4" /> {exporting === 'excel' ? 'Exporting…' : 'Export Excel'}
-          </button>
-          <button
-            onClick={() => runExport('pdf')}
-            disabled={exporting !== null}
-            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <DocumentTextIcon className="w-4 h-4" /> {exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
-          </button>
+          <PrintMenu onPrint={printList} label="Print All" disabled={loading || filtered.length === 0} />
           <button
             onClick={() => setShowImportModal(true)}
             className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
@@ -282,7 +271,10 @@ export default function JournalEntryTransactionPage() {
                 <p className="text-sm text-foreground font-medium">{selectedRow.description}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{selectedRow.sourceType} · {selectedRow.sourceReference}</p>
               </div>
-              <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+              <div className="flex items-center gap-2">
+                <PrintMenu onPrint={printDetail} />
+                <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+              </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
