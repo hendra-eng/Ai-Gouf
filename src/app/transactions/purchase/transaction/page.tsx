@@ -6,14 +6,17 @@ import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
+import PrintMenu from '@/components/shared/PrintMenu';
+import { printReport, type PrintFormat } from '@/lib/printExport';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
-  ArrowDownTrayIcon,
   ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 
@@ -123,6 +126,17 @@ export default function PurchaseTransactionPage() {
     else { setSortField(field); setSortDir('desc'); }
   };
 
+  const { clients, activeClientId, activeClientName } = useActiveClient();
+  const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
+  const printedBy = user?.nama || user?.username || undefined;
+
+  // Print daftar = semua transaksi yang lolos filter (bukan cuma halaman aktif).
+  const printList = (format: PrintFormat) => printReport(buildPurchaseListReport(filtered, companyName, printedBy), format);
+  const printDetail = async (format: PrintFormat) => {
+    if (!selectedRowWithLines) return;
+    await printReport(buildPurchaseDetailReport(selectedRowWithLines, selectedRowWithLines.lines, companyName, printedBy), format);
+  };
+
   // Alur: draft -> Approve -> approved -> Post -> posted (pindah ke tab Posted).
   const selectedRows = purchaseTransactions.filter(t => selectedIds.has(t.id));
   const bisaApprove = selectedRows.filter(t => ['draft', 'pending_review', 'exception'].includes(t.status)).length;
@@ -207,9 +221,7 @@ export default function PurchaseTransactionPage() {
               <button className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => setShowImport(true)}>
                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />Upload Data
               </button>
-              <button className="je-btn-secondary text-xs px-3 py-2 flex items-center gap-1.5">
-                <ArrowDownTrayIcon className="w-3.5 h-3.5" />Export
-              </button>
+              <PrintMenu onPrint={printList} label="Print All" disabled={filtered.length === 0} />
             </div>
           </div>
           <div className="flex items-center justify-between mt-2">
@@ -340,7 +352,10 @@ export default function PurchaseTransactionPage() {
                 <p className="text-sm text-foreground font-medium">{selectedRowWithLines.description}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{selectedRowWithLines.vendor} · {selectedRowWithLines.category}</p>
               </div>
-              <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+              <div className="flex items-center gap-2">
+                <PrintMenu onPrint={printDetail} />
+                <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+              </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
