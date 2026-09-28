@@ -2,15 +2,20 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';
-import TransactionDrawer from '../../components/TransactionDrawer';
-import TransactionsGroupPanel from '../../components/TransactionsGroupPanel';
-import { Transaction } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
-import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsByCategory, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../../lib/groupAnalytics';
+import DataTable from '@/components/shared/DataTable';
+import Pagination from '@/components/shared/Pagination';
+import { formatIDR, formatDate, CHART_COLORS } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import CashBankTabs from '../components/CashBankTabs';
+import {
+  useCashPaymentsFromPurchase,
+  trenBulananDibayar,
+  rincianPerKategori,
+  vendorTerbesar,
+  type CashPaymentRow,
+} from '../lib/usePurchaseCashPayments';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase). ──
 const PAYMENT_AXIS_WIDTH = 65;
@@ -49,43 +54,46 @@ function PaymentTrendTooltip({
   );
 }
 
-const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
+const PAGE_SIZE = 8;
+
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  paid: 'Lunas', partially_paid: 'Sebagian', unpaid: 'Belum Dibayar', overdue: 'Jatuh Tempo', on_hold: 'Ditahan',
+};
+const PAYMENT_STATUS_VARIANT: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
+  paid: 'positive', partially_paid: 'warning', unpaid: 'neutral', overdue: 'negative', on_hold: 'info',
 };
 
-// [BARU] Kelompok 'cash_payment' = pembayaran kewajiban tunai/bank (Hutang
-// Usaha, Pajak/PPN/PPh) — lihat getTransactionGroup() di transactionData.ts.
+// Cash Payment = pembayaran tagihan vendor. Sumber data: transaksi Purchase
+// (lihat lib/usePurchaseCashPayments.ts) -- TIDAK membaca tabel Cash & Bank lagi.
 export default function CashPaymentPage() {
-  const { getByGroup } = useTransactions();
-  const paymentTx = useMemo(() => getByGroup('cash_payment'), [getByGroup]);
+  const { rows, loading, error, refresh } = useCashPaymentsFromPurchase();
 
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
-  // [DIUBAH] Sama seperti Sales/Purchase — dikelompokkan per NOMOR JURNAL
-  // (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi dengan 2 kaki
-  // jurnal (mis. sisi Kas & Bank saat uang keluar, DAN sisi akun
-  // Hutang/Pajak saat kewajiban dilunasi — keduanya sama-sama masuk
-  // paymentTx) tidak terhitung dua kali. Lihat groupAnalytics.ts untuk detail.
-  const totalPayment = uniqueJournalTotal(paymentTx);
-  const txCount = uniqueJournalCount(paymentTx);
-  const avgTxValue = txCount > 0 ? totalPayment / txCount : 0;
-  const unpostedCount = countJournalsByStatus(paymentTx, 'Unposted');
-  // [BARU] Sama seperti Sales/Purchase — transaksi 'Draft' sengaja dikeluarkan
-  // dari totalPayment/txCount lewat groupByJournalRealized(), nilainya
-  // ditampilkan terpisah supaya tidak hilang begitu saja.
-  const draftCount = countJournalsByStatus(paymentTx, 'Draft');
-  const draftTotal = draftJournalTotal(paymentTx);
-  const taxCount = countJournalsByCategory(paymentTx, ['Tax']);
-  const apCount = countJournalsByCategory(paymentTx, ['AP Payment']);
+  const totalPaid = useMemo(() => rows.reduce((s, r) => s + r.paid, 0), [rows]);
+  const totalOutstanding = useMemo(() => rows.reduce((s, r) => s + r.outstanding, 0), [rows]);
+  const txCount = rows.length;
+  const avgTxValue = txCount > 0 ? rows.reduce((s, r) => s + r.total, 0) / txCount : 0;
+  const overdueCount = useMemo(() => rows.filter(r => r.isOverdue).length, [rows]);
 
-  // [BARU] Peringatan integritas data — sama seperti Sales/Purchase. Lihat
-  // transactionsMissingJeId() di groupAnalytics.ts.
-  const missingJeIdCount = useMemo(() => transactionsMissingJeId(paymentTx).length, [paymentTx]);
-  const unbalanced = useMemo(() => unbalancedJournals(paymentTx), [paymentTx]);
+  const trend = useMemo(() => trenBulananDibayar(rows), [rows]);
+  const byCategory = useMemo(() => rincianPerKategori(rows).slice(0, 6), [rows]);
+  const topPayees = useMemo(() => vendorTerbesar(rows, 5), [rows]);
 
-  const trend = useMemo(() => monthlyTrendFor(paymentTx), [paymentTx]);
-  const byCategory = useMemo(() => categoryBreakdown(paymentTx).slice(0, 6), [paymentTx]);
-  const topPayees = useMemo(() => topParties(paymentTx, 5), [paymentTx]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (statusFilter !== 'all' && r.paymentStatus !== statusFilter) return false;
+      if (!q) return true;
+      return [r.purchaseId, r.invoiceNumber, r.vendor, r.description].some(v => (v || '').toLowerCase().includes(q));
+    });
+  }, [rows, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
   // Sales / Purchase / Financial Overview. ──
@@ -260,75 +268,53 @@ export default function CashPaymentPage() {
   };
 
   const columns = [
-    { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'txId', label: 'TX ID', render: (r: Transaction) => <span className="font-mono text-xs text-teal-600">{r.txId}</span> },
-    { key: 'party', label: 'Penerima', render: (r: Transaction) => <span className="font-medium text-xs">{r.party}</span> },
-    { key: 'description', label: 'Deskripsi', render: (r: Transaction) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description}</span> },
-    { key: 'category', label: 'Kategori', render: (r: Transaction) => <span className="badge badge-neutral">{r.category}</span> },
-    { key: 'accountName', label: 'Akun', render: (r: Transaction) => <span className="text-xs text-muted-foreground">{r.accountName}</span> },
-    { key: 'debit', label: 'Debit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs font-semibold text-rose-700">{r.debit ? formatIDR(r.debit, true) : '—'}</span> },
-    { key: 'credit', label: 'Kredit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{r.credit ? formatIDR(r.credit, true) : '—'}</span> },
-    { key: 'status', label: 'Status', render: (r: Transaction) => <StatusBadge variant={statusVariant[r.status] || 'neutral'} label={r.status} dot /> },
+    { key: 'date', label: 'Tanggal', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
+    { key: 'purchaseId', label: 'No. Purchase', render: (r: CashPaymentRow) => <span className="font-mono text-xs text-teal-600">{r.purchaseId}</span> },
+    { key: 'vendor', label: 'Vendor', render: (r: CashPaymentRow) => <span className="font-medium text-xs">{r.vendor}</span> },
+    { key: 'description', label: 'Deskripsi', render: (r: CashPaymentRow) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description || '—'}</span> },
+    { key: 'category', label: 'Kategori', render: (r: CashPaymentRow) => <span className="badge badge-neutral">{r.category}</span> },
+    { key: 'dueDate', label: 'Jatuh Tempo', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.dueDate ? formatDate(r.dueDate) : '—'}</span> },
+    { key: 'total', label: 'Total', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{formatIDR(r.total, true)}</span> },
+    { key: 'paid', label: 'Dibayar', render: (r: CashPaymentRow) => <span className="font-mono text-xs font-semibold text-rose-700">{r.paid ? formatIDR(r.paid, true) : '—'}</span> },
+    { key: 'outstanding', label: 'Sisa', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
+    { key: 'paymentStatus', label: 'Status', render: (r: CashPaymentRow) => (
+      <StatusBadge variant={r.isOverdue && r.paymentStatus !== 'overdue' ? 'negative' : (PAYMENT_STATUS_VARIANT[r.paymentStatus] || 'neutral')}
+        label={r.isOverdue && r.paymentStatus !== 'overdue' ? 'Jatuh Tempo' : (PAYMENT_STATUS_LABEL[r.paymentStatus] || r.paymentStatus)} dot />
+    ) },
   ];
 
   return (
     <div className="space-y-5">
       <CashBankTabs />
 
-      {missingJeIdCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {missingJeIdCount} baris transaksi Cash Payment tidak memiliki nomor jurnal (jeId). KPI di bawah tetap
-            dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
-          </span>
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          <span className="font-semibold">Gagal memuat data Purchase:</span>
+          <span>{error}</span>
+          <button onClick={refresh} className="underline font-medium ml-auto">Coba lagi</button>
         </div>
       )}
 
-      {unbalanced.length > 0 && (
+      {overdueCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <span className="font-semibold">Perhatian:</span>
-          <span>
-            {unbalanced.length} jurnal Cash Payment tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
-            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Cash Payment tetap dihitung dari sisi yang
-            lebih besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
-          </span>
-        </div>
-      )}
-
-      {draftCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {draftCount} transaksi Cash Payment senilai {formatIDR(draftTotal, true)} masih berstatus Draft
-            (menunggu approval) — belum termasuk dalam Total Cash Payment di bawah sampai disetujui.
-          </span>
+          <span>{overdueCount} tagihan vendor sudah lewat jatuh tempo dan belum lunas (total sisa {formatIDR(totalOutstanding, true)} untuk seluruh tagihan yang belum lunas).</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard
-          title="Total Cash Payment"
-          value={totalPayment}
-          icon="ArrowUpCircleIcon"
-          iconColor="text-rose-600"
-          iconBg="bg-rose-50"
-          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
-        />
-        <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
-        <KpiCard title="Pembayaran Pajak" value={String(taxCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
-        <KpiCard title="Pembayaran Hutang Usaha" value={String(apCount)} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
+        <KpiCard title="Total Dibayar" value={totalPaid} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
+        <KpiCard title="Belum Dibayar (Hutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
+        <KpiCard title="Jumlah Tagihan" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+        <KpiCard title="Rata-rata / Tagihan" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
+        <KpiCard title="Lewat Jatuh Tempo" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
       </div>
-      {unpostedCount > 0 && (
-        <p className="text-xs text-amber-700 -mt-4 mb-2">⚠ {unpostedCount} transaksi Cash Payment belum diposting.</p>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-foreground">Tren Cash Payment Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Berdasarkan transaksi yang tercatat di halaman Transaksi</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Nominal dibayar per bulan, berdasarkan transaksi di halaman Purchase (tanggal pembelian)</p>
           </div>
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Payment untuk ditampilkan.</p>
@@ -382,7 +368,7 @@ export default function CashPaymentPage() {
 
         <div className="card-elevated-md rounded-xl p-5">
           <h2 className="text-sm font-bold text-foreground mb-1">Payment per Kategori</h2>
-          <p className="text-xs text-muted-foreground mb-3">Breakdown pembayaran</p>
+          <p className="text-xs text-muted-foreground mb-3">Total tagihan per kategori Purchase</p>
           {byCategory.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
           ) : (
@@ -408,8 +394,8 @@ export default function CashPaymentPage() {
       </div>
 
       <div className="card-elevated-md rounded-xl p-5 mb-6">
-        <h2 className="text-sm font-bold text-foreground mb-1">Top Penerima Pembayaran</h2>
-        <p className="text-xs text-muted-foreground mb-4">Berdasarkan kontribusi nominal</p>
+        <h2 className="text-sm font-bold text-foreground mb-1">Top Vendor</h2>
+        <p className="text-xs text-muted-foreground mb-4">Berdasarkan total tagihan</p>
         {topPayees.length === 0 ? (
           <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
         ) : (
@@ -435,17 +421,42 @@ export default function CashPaymentPage() {
         )}
       </div>
 
-      {/* Aksi & Upload Data + Tabel Transaksi Cash Payment — digabung jadi 1
-          kolom, aksi & filter di atas tabel. */}
-      <TransactionsGroupPanel
-        group="cash_payment"
-        groupLabel="Cash Payment"
-        defaultCategory="AP Payment"
-        columns={columns}
-        onRowClick={setSelectedTx}
-      />
-
-      {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
+      <div className="card-elevated-md rounded-xl p-5 mb-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+          <h2 className="text-sm font-bold text-foreground">Tagihan Vendor (dari halaman Purchase)</h2>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Cari no. purchase, invoice, vendor..."
+              className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground w-64"
+            />
+            <select
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
+            >
+              <option value="all">Semua status</option>
+              <option value="unpaid">Belum Dibayar</option>
+              <option value="partially_paid">Sebagian</option>
+              <option value="overdue">Jatuh Tempo</option>
+              <option value="on_hold">Ditahan</option>
+              <option value="paid">Lunas</option>
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Hanya transaksi Purchase yang sudah diposting. Pembayaran dicatat dari halaman Purchase.
+        </p>
+        <DataTable
+          columns={columns}
+          data={paged}
+          loading={loading}
+          emptyMessage="Belum ada transaksi Purchase yang sudah diposting."
+        />
+        <Pagination page={pageSafe} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+      </div>
     </div>
   );
 }
