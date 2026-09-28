@@ -57,6 +57,10 @@ export interface PurchaseTransaction {
   postingDate?: string;
   postedBy?: string;
   postedTimestamp?: string;
+  apAccountCode?: string;
+  apAccountName?: string;
+  taxAccountCode?: string;
+  taxAccountName?: string;
 }
 
 export interface PurchaseSourceRecord {
