@@ -1987,14 +1987,18 @@ export async function daftarBankFeed(clientId, status = "") {
  * @param {string} bankAccount -- label akun bank (mis. "BCA - 123.456.7890")
  * @param {File} file
  * @param {boolean} [pakaiAi=true]
+ * @param {boolean} [simpan=true] -- false = mode sesi (tidak disimpan di DB)
  * @returns {Promise<{berhasil: boolean, diimpor: number, mutations: Array, peringatan: string[]}>}
  */
-export async function importBankFeed(clientId, bankAccount, file, pakaiAi = true) {
+export async function importBankFeed(clientId, bankAccount, file, pakaiAi = true, simpan = true) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("client_id", clientId);
   formData.append("bank_account", bankAccount);
   formData.append("pakai_ai", pakaiAi ? "true" : "false");
+  // [BARU] simpan=false -> backend cuma mengembalikan hasil ekstraksi, TIDAK
+  // menulis ke tabel bank_feed_mutation (mode sesi, dipakai BankFeedContext).
+  formData.append("simpan", simpan ? "true" : "false");
 
   const headers = {};
   const token = tokenTersimpan();

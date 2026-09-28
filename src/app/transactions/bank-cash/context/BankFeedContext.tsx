@@ -1,29 +1,25 @@
 'use client';
 
-// ─── STATE BANK FEED — SEKARANG REAL, DARI BACKEND ─────────────────────────
-// [DIUBAH] Sebelumnya context ini cuma nyimpen state React lokal per sesi
-// (addMockMutationsFromFile menggenerate baris acak) sambil menunggu tabel
-// & endpoint backend selesai dibuat. Backend itu SUDAH ADA sekarang:
-//   - Tabel `bank_feed_mutation` (db_client.py::BankFeedMutation) — mutasi
-//     rekening koran MENTAH, terpisah dari `finance_transaction_bank_cash`
-//     yang sudah berbentuk jurnal.
-//   - Router modules/finance/bank_feed_v1.py — GET /list, POST /import,
-//     DELETE /{id}, POST /{id}/match, POST /{id}/unmatch.
-//   - Wrapper frontend: daftarBankFeed/importBankFeed/hapusBankFeed/
-//     matchBankFeed/unmatchBankFeed di agent-ai/lib/api.js.
-//
-// Context ini sekarang murni lapisan state di atas API itu — polanya
-// disamakan dengan TransactionsContext.tsx (loadFromBackend + requestIdRef
-// supaya respons client lama yang telat tidak menimpa data client aktif
-// yang sekarang, useEffect re-fetch saat activeClientId berubah).
-//
-// (Riwayat: sebelumnya di sini ada `addMockMutationsFromFile` yang generate
-// 3–5 baris mutasi acak per upload, murni untuk mendemokan UI Bank Feed +
-// Reconciliation sebelum backend selesai. Sudah tidak dipakai lagi.)
+// ─── STATE BANK FEED — MODE SESI (TIDAK DISIMPAN DI DATABASE) ──────────────
+// [DIUBAH] Sebelumnya context ini membaca/menulis tabel `bank_feed_mutation`
+// lewat backend, jadi hasil upload rekening koran tersimpan permanen dan
+// muncul lagi tiap halaman dibuka. Sesuai permintaan user, Bank Feed
+// sekarang sifatnya SEMENTARA:
+//   - Upload -> backend hanya mengekstrak & membalas baris mutasi
+//     (importBankFeed(..., simpan=false)), TIDAK menulis ke database.
+//   - Hasilnya hidup di state React + sessionStorage per client
+//     (src/lib/bankFeedSession.ts): tetap ada saat pindah halaman/refresh di
+//     tab yang sama, hilang otomatis saat tab ditutup, dan dikosongkan
+//     eksplisit saat logout.
+//   - Hapus / match / unmatch berlaku lokal di sesi ini saja (tanpa panggilan
+//     backend). Artinya status Reconciliation ikut ter-reset bersama Bank Feed.
+// Endpoint list/hapus/match/unmatch di backend (bank_feed_v1.py) sengaja
+// dibiarkan ada (tidak dihapus) tapi tidak dipanggil lagi dari sini.
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { daftarBankFeed, importBankFeed, hapusBankFeed, matchBankFeed, unmatchBankFeed } from '@/app/agent-ai/lib/api';
+import { importBankFeed } from '@/app/agent-ai/lib/api';
+import { bacaSesiBankFeed, tulisSesiBankFeed } from '@/lib/bankFeedSession';
 
 export type MatchStatus = 'unmatched' | 'matched';
 
@@ -43,11 +39,8 @@ export interface BankFeedMutation {
   uploadedAt: string;
 }
 
-// Bentuk baris apa adanya dari backend (lihat db_client.py::_bank_feed_ke_dict)
-// -- field-nya sudah persis sama nama & tipe dengan BankFeedMutation di atas,
-// tapi sejumlah field boleh null dari server (mis. bankAccount/date belum
-// terisi kalau ekstraksi gagal membaca kolom itu) sehingga dinormalisasi di
-// normalisasiMutasi() sebelum masuk ke state.
+// Bentuk baris apa adanya dari backend (respons POST /import) -- sejumlah
+// field boleh null, dinormalisasi di normalisasiMutasi() sebelum masuk state.
 interface BankFeedMutationBackend {
   id: string;
   bankAccount?: string | null;
@@ -78,159 +71,182 @@ function normalisasiMutasi(m: BankFeedMutationBackend): BankFeedMutation {
   };
 }
 
+// Urutkan terbaru dulu (tanggal desc, stabil -- baris yang lebih baru masuk
+// ke sesi tampil lebih atas untuk tanggal yang sama), lalu hitung ulang saldo
+// berjalan BERSAMBUNG per akun bank dari seluruh baris sesi. Backend hanya
+// menghitung saldo per-file mulai dari 0, jadi kalau ada beberapa file untuk
+// akun yang sama, saldonya harus disambung di sini. (Saldo awal rekening
+// koran tidak dibaca -- saldo dihitung dari 0 + kredit - debit.)
+function urutkanDanHitungSaldo(list: BankFeedMutation[]): BankFeedMutation[] {
+  const tampil = [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const saldoPerAkun = new Map<string, number>();
+  const kronologis = [...tampil].reverse().map((m) => {
+    const saldo = (saldoPerAkun.get(m.bankAccount) || 0) + m.credit - m.debit;
+    saldoPerAkun.set(m.bankAccount, saldo);
+    return { ...m, balanceAfter: saldo };
+  });
+  return kronologis.reverse();
+}
+
 interface BankFeedContextType {
   mutations: BankFeedMutation[];
-  /** true selagi memuat daftar mutasi Bank Feed dari backend untuk client aktif. */
+  /** Selalu false -- tidak ada fetch daftar dari server lagi (mode sesi). */
   loading: boolean;
-  /** Pesan error terakhir dari fetch daftar (null kalau tidak ada error). */
+  /** Selalu null -- dipertahankan supaya halaman pemakai tidak perlu diubah. */
   error: string | null;
-  /** Muat ulang daftar mutasi dari backend untuk client aktif. */
+  /** Baca ulang state dari penyimpanan sesi (dipertahankan untuk kompatibilitas). */
   refetch: () => void;
   /** true selagi upload+ekstraksi rekening koran sedang berjalan. */
   importing: boolean;
   /**
-   * Upload rekening koran (PDF/Excel) untuk satu akun bank — hasil ekstraksi
-   * langsung tersimpan di backend sebagai mutasi baru berstatus 'unmatched',
-   * lalu daftar di-refetch supaya `mutations` selalu cermin data server
-   * (termasuk saldo berjalan yang dihitung backend, bukan cuma baris baru).
-   * Melempar Error kalau gagal (mis. file tidak terbaca sama sekali) —
-   * pemanggil (UploadPanel) yang menampilkan toast-nya.
+   * Upload rekening koran (PDF/Excel) untuk satu akun bank. Hasil ekstraksi
+   * TIDAK disimpan di database -- hanya ditambahkan ke state sesi ini.
+   * Melempar Error kalau gagal; pemanggil (UploadPanel) yang menampilkan toast.
    */
   importFile: (file: File, bankAccount: string, pakaiAi?: boolean) => Promise<{ diimpor: number; peringatan: string[] }>;
-  /** Hapus satu baris mutasi Bank Feed. Melempar Error kalau gagal. */
+  /** Hapus satu baris mutasi dari sesi ini. */
   removeMutation: (id: string) => Promise<void>;
-  /** Tandai satu mutasi Bank Feed cocok dengan satu Transaction sistem. Melempar Error kalau gagal. */
+  /** Tandai satu mutasi cocok dengan satu Transaction sistem (lokal di sesi). */
   matchMutation: (mutationId: string, txId: string) => Promise<void>;
-  /** Batalkan pencocokan (dipakai dari tab Reconciliation, riwayat matched). Melempar Error kalau gagal. */
+  /** Batalkan pencocokan (lokal di sesi). */
   unmatchMutation: (mutationId: string) => Promise<void>;
-  /**
-   * Id mutasi yang sedang diproses (hapus/match/unmatch) — dipakai UI untuk
-   * menonaktifkan tombol baris terkait selagi request-nya berjalan, supaya
-   * tidak diklik dobel.
-   */
+  /** Kosongkan seluruh Bank Feed (dan status match-nya) untuk client aktif. */
+  clearAll: () => void;
+  /** Dipertahankan untuk kompatibilitas -- selalu kosong (operasi lokal, instan). */
   pendingIds: Set<string>;
 }
 
 const BankFeedContext = createContext<BankFeedContextType | undefined>(undefined);
 
+const PENDING_KOSONG: Set<string> = new Set();
+
+// State disimpan bersama clientId pemiliknya supaya data client lama tidak
+// pernah tertulis ke kunci client baru saat user pindah client.
+interface SesiBankFeed {
+  clientId: string | null;
+  list: BankFeedMutation[];
+}
+
 export function BankFeedProvider({ children }: { children: React.ReactNode }) {
   const { activeClientId } = useActiveClient();
-  const [mutations, setMutations] = useState<BankFeedMutation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sesi, setSesi] = useState<SesiBankFeed>({ clientId: null, list: [] });
   const [importing, setImporting] = useState(false);
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
-  // Dipakai supaya respons fetch client LAMA yang telat datang (mis. user
-  // pindah client dengan cepat) tidak menimpa data client yang sekarang aktif
-  // -- pola sama seperti TransactionsContext.tsx.
-  const requestIdRef = useRef(0);
+  const activeClientIdRef = useRef<string | null>(null);
 
-  const loadFromBackend = useCallback(() => {
-    if (!activeClientId) {
-      setMutations([]);
-      setError(null);
-      setLoading(false);
+  const clientIdStr = activeClientId ? String(activeClientId) : null;
+  activeClientIdRef.current = clientIdStr;
+
+  // Muat dari sessionStorage tiap client aktif berubah.
+  useEffect(() => {
+    if (!clientIdStr) {
+      setSesi({ clientId: null, list: [] });
       return;
     }
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    daftarBankFeed(activeClientId, '')
-      .then((res: { mutations: BankFeedMutationBackend[] }) => {
-        if (requestIdRef.current !== requestId) return; // sudah usang
-        setMutations((res?.mutations || []).map(normalisasiMutasi));
-      })
-      .catch((err: Error) => {
-        if (requestIdRef.current !== requestId) return;
-        console.error('Gagal memuat mutasi Bank Feed dari backend:', err);
-        setError(err?.message || 'Gagal memuat mutasi Bank Feed dari server.');
-      })
-      .finally(() => {
-        if (requestIdRef.current !== requestId) return;
-        setLoading(false);
-      });
-  }, [activeClientId]);
+    setSesi((prev) =>
+      prev.clientId === clientIdStr
+        ? prev
+        : { clientId: clientIdStr, list: urutkanDanHitungSaldo(bacaSesiBankFeed<BankFeedMutation>(clientIdStr)) }
+    );
+  }, [clientIdStr]);
 
+  // Simpan tiap state berubah (ke kunci milik sesi.clientId, bukan client aktif).
   useEffect(() => {
-    loadFromBackend();
-  }, [loadFromBackend]);
+    if (sesi.clientId) tulisSesiBankFeed(sesi.clientId, sesi.list);
+  }, [sesi]);
 
-  const withPending = useCallback(async <T,>(id: string, fn: () => Promise<T>): Promise<T> => {
-    setPendingIds((prev) => new Set(prev).add(id));
-    try {
-      return await fn();
-    } finally {
-      setPendingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
+  const mutations = useMemo(
+    () => (sesi.clientId && sesi.clientId === clientIdStr ? sesi.list : []),
+    [sesi, clientIdStr]
+  );
+
+  const ubahList = useCallback(
+    (fn: (prev: BankFeedMutation[]) => BankFeedMutation[]) => {
+      const cid = activeClientIdRef.current;
+      if (!cid) return;
+      setSesi((prev) => (prev.clientId === cid ? { clientId: cid, list: fn(prev.list) } : prev));
+    },
+    []
+  );
+
+  const refetch = useCallback(() => {
+    const cid = activeClientIdRef.current;
+    if (!cid) return;
+    setSesi({ clientId: cid, list: urutkanDanHitungSaldo(bacaSesiBankFeed<BankFeedMutation>(cid)) });
   }, []);
 
   const importFile = useCallback(
     async (file: File, bankAccount: string, pakaiAi: boolean = true) => {
-      if (!activeClientId) {
+      const cid = activeClientIdRef.current;
+      if (!cid) {
         throw new Error('Belum ada client aktif — pilih client dulu di Topbar.');
       }
       setImporting(true);
       try {
-        const res = await importBankFeed(activeClientId, bankAccount, file, pakaiAi);
-        // Refetch daripada menggabungkan manual ke state -- saldo berjalan
-        // (balanceAfter) dihitung backend bersambung dari baris tersimpan
-        // sebelumnya, jadi sumber kebenarannya tetap server.
-        loadFromBackend();
-        return { diimpor: res?.diimpor || 0, peringatan: res?.peringatan || [] };
+        // simpan=false -> backend cuma mengekstrak, tidak menulis ke database.
+        const res = await importBankFeed(cid, bankAccount, file, pakaiAi, false);
+        const baru = ((res?.mutations || []) as BankFeedMutationBackend[]).map(normalisasiMutasi);
+        if (activeClientIdRef.current === cid) {
+          ubahList((prev) => urutkanDanHitungSaldo([...baru, ...prev]));
+        } else {
+          // User pindah client selagi upload berjalan -- simpan ke sesi client
+          // asalnya, jangan campur ke client yang sekarang aktif.
+          tulisSesiBankFeed(
+            cid,
+            urutkanDanHitungSaldo([...baru, ...bacaSesiBankFeed<BankFeedMutation>(cid)])
+          );
+        }
+        return { diimpor: res?.diimpor || baru.length, peringatan: (res?.peringatan || []) as string[] };
       } finally {
         setImporting(false);
       }
     },
-    [activeClientId, loadFromBackend]
+    [ubahList]
   );
 
   const removeMutation = useCallback(
     async (id: string) => {
-      if (!activeClientId) return;
-      await withPending(id, () => hapusBankFeed(activeClientId, id));
-      setMutations((prev) => prev.filter((m) => m.id !== id));
+      ubahList((prev) => urutkanDanHitungSaldo(prev.filter((m) => m.id !== id)));
     },
-    [activeClientId, withPending]
+    [ubahList]
   );
 
   const matchMutation = useCallback(
     async (mutationId: string, txId: string) => {
-      if (!activeClientId) return;
-      const res = await withPending(mutationId, () => matchBankFeed(activeClientId, mutationId, txId));
-      const updated = normalisasiMutasi(res.mutation);
-      setMutations((prev) => prev.map((m) => (m.id === mutationId ? updated : m)));
+      ubahList((prev) =>
+        prev.map((m) => (m.id === mutationId ? { ...m, status: 'matched' as const, matchedTxId: txId } : m))
+      );
     },
-    [activeClientId, withPending]
+    [ubahList]
   );
 
   const unmatchMutation = useCallback(
     async (mutationId: string) => {
-      if (!activeClientId) return;
-      const res = await withPending(mutationId, () => unmatchBankFeed(activeClientId, mutationId));
-      const updated = normalisasiMutasi(res.mutation);
-      setMutations((prev) => prev.map((m) => (m.id === mutationId ? updated : m)));
+      ubahList((prev) =>
+        prev.map((m) => (m.id === mutationId ? { ...m, status: 'unmatched' as const, matchedTxId: null } : m))
+      );
     },
-    [activeClientId, withPending]
+    [ubahList]
   );
+
+  const clearAll = useCallback(() => {
+    ubahList(() => []);
+  }, [ubahList]);
 
   const value = useMemo(
     () => ({
       mutations,
-      loading,
-      error,
-      refetch: loadFromBackend,
+      loading: false,
+      error: null,
+      refetch,
       importing,
       importFile,
       removeMutation,
       matchMutation,
       unmatchMutation,
-      pendingIds,
+      clearAll,
+      pendingIds: PENDING_KOSONG,
     }),
-    [mutations, loading, error, loadFromBackend, importing, importFile, removeMutation, matchMutation, unmatchMutation, pendingIds]
+    [mutations, refetch, importing, importFile, removeMutation, matchMutation, unmatchMutation, clearAll]
   );
 
   return <BankFeedContext.Provider value={value}>{children}</BankFeedContext.Provider>;

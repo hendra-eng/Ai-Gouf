@@ -20,8 +20,11 @@ Frontend: src/app/transactions/bank-cash/context/BankFeedContext.tsx.
 
 from __future__ import annotations
 
+import asyncio
 import io
-from typing import List, Optional
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -84,6 +87,38 @@ class UnmatchBankFeedResponse(BaseModel):
     mutation: BankFeedMutationSkema
 
 
+def _bangun_mutasi_sementara(
+    bank_account: str, source_file: str, rows: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """[BARU] Bentuk baris mutasi Bank Feed TANPA menyimpan ke database --
+    dipakai mode simpan=False (Bank Feed sekarang murni sesi browser, lihat
+    BankFeedContext.tsx). Bentuk dict-nya sama persis dengan
+    dbc._bank_feed_ke_dict() supaya skema respons tidak berubah. Saldo
+    berjalan dihitung dari 0 per file; frontend yang menghitung ulang
+    bersambung per akun bank kalau ada beberapa file dalam satu sesi."""
+    saldo = 0.0
+    now = datetime.now().isoformat()
+    baru: List[Dict[str, Any]] = []
+    for r in sorted(rows, key=lambda x: x.get("tanggal") or ""):
+        debet = float(r.get("debet") or 0)
+        kredit = float(r.get("kredit") or 0)
+        saldo = saldo + kredit - debet
+        baru.append({
+            "id": str(uuid.uuid4()),
+            "bankAccount": bank_account,
+            "date": r.get("tanggal"),
+            "description": r.get("keterangan"),
+            "debit": debet,
+            "credit": kredit,
+            "balanceAfter": saldo,
+            "status": "unmatched",
+            "matchedTxId": None,
+            "sourceFile": source_file,
+            "uploadedAt": now,
+        })
+    return list(reversed(baru))  # terbaru dulu, sama seperti versi DB
+
+
 # ============================================================
 # ENDPOINTS
 # ============================================================
@@ -110,6 +145,7 @@ async def api_import_bank_feed(
     client_id: str = Form(...),
     bank_account: str = Form(...),
     pakai_ai: bool = Form(True),
+    simpan: bool = Form(True),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """Upload rekening koran (PDF/Excel), ekstrak mutasi MENTAH-nya (REUSE
@@ -117,12 +153,41 @@ async def api_import_bank_feed(
     upload rekening koran biasa di halaman Transaksi utama), lalu simpan
     sebagai baris bank_feed_mutation berstatus 'unmatched'. Belum
     dijurnal sama sekali -- itu tetap lewat jalur Cash Payment/Cash
-    Receipt yang sudah ada, terpisah dari endpoint ini."""
+    Receipt yang sudah ada, terpisah dari endpoint ini.
+
+    [BARU] simpan=False -> hasil ekstraksi HANYA dikembalikan ke browser,
+    TIDAK ditulis ke tabel bank_feed_mutation (mode sesi; dipakai frontend
+    Bank Feed sekarang). simpan=True (default) = perilaku lama, tersimpan
+    permanen di database."""
     isi = await file.read()
     nama_file = file.filename or "rekening-koran.xlsx"
 
     try:
-        hasil = ak.proses_file_rekening_koran(io.BytesIO(isi), nama_file, client_id, pakai_ai)
+        # [FIX -- BUG BESAR] Sebelumnya proses_file_rekening_koran (berat --
+        # parsing PDF + puluhan panggilan AI kategorisasi) dipanggil LANGSUNG
+        # secara sinkron di dalam endpoint async ini. Karena uvicorn jalan
+        # single-thread event loop, ini MEMBEKUKAN SELURUH SERVER selama
+        # proses berlangsung -- request lain (bahkan yang tidak berhubungan,
+        # mis. GET /coa) ikut macet/timeout ("socket hang up") sampai upload
+        # ini selesai. Sekarang dijalankan lewat asyncio.to_thread supaya
+        # event loop tetap bisa melayani request lain selama proses ini
+        # jalan di background thread.
+        #
+        # model_kategorisasi="claude-sonnet-5" -- KHUSUS jalur Bank Feed
+        # ini supaya proses kategorisasi lebih cepat (sebelumnya default
+        # global claude-opus-5 / CLAUDE_MODEL_KATEGORISASI bikin ±8 menit).
+        # paralel_maks_kategorisasi=12 -- KHUSUS jalur ini juga, dinaikkan
+        # dari default global 6 supaya lebih banyak chunk jalan bersamaan,
+        # berguna terutama utk statement BESAR (puluhan-ratusan halaman,
+        # ratusan-ribuan baris transaksi). Tidak mengubah default jalur
+        # import rekening koran umum di halaman Transaksi -- lihat
+        # docstring proses_file_rekening_koran().
+        hasil = await asyncio.to_thread(
+            ak.proses_file_rekening_koran,
+            io.BytesIO(isi), nama_file, client_id, pakai_ai,
+            model_kategorisasi="claude-sonnet-5",
+            paralel_maks_kategorisasi=12,
+        )
     except Exception as e:
         logger.exception(f"Gagal ekstrak rekening koran '{nama_file}' untuk Bank Feed: {e}")
         raise HTTPException(status_code=500, detail=f"Gagal memproses file: {e}")
@@ -149,12 +214,15 @@ async def api_import_bank_feed(
         for row in draf_jurnal
     ]
 
-    tersimpan = dbc.simpan_bank_feed_mutasi_batch(client_id, bank_account, nama_file, rows_mentah)
+    if simpan:
+        tersimpan = dbc.simpan_bank_feed_mutasi_batch(client_id, bank_account, nama_file, rows_mentah)
+    else:
+        tersimpan = _bangun_mutasi_sementara(bank_account, nama_file, rows_mentah)
 
     dbc.log_audit(
         client_id=client_id, user=user.get("username", "unknown"),
         aksi="import_bank_feed",
-        detail={"file": nama_file, "bank_account": bank_account, "jumlah_baris": len(tersimpan)},
+        detail={"file": nama_file, "bank_account": bank_account, "jumlah_baris": len(tersimpan), "disimpan_ke_db": simpan},
     )
 
     return {

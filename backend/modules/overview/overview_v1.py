@@ -34,8 +34,9 @@ path-nya, tidak perlu ubah logic apa pun di file ini.
 
 from __future__ import annotations
 
+import threading
 from datetime import date
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -47,6 +48,58 @@ from ..auth import get_current_user
 from ..logging_config import get_module_logger
 
 logger = get_module_logger("overview_v1")
+
+
+# [FIX -- THUNDERING HERD, 2026-09-26] getKpiBento SENGAJA tidak dicache
+# (lihat catatan di endpoint di bawah -- ini dashboard "real-time"), tapi
+# itu berarti tiap request selalu hitung ulang dari nol (query jurnal
+# setahun + hitung 8 kartu). Kalau kebetulan ada beberapa request BENAR
+# IDENTIK (client+tahun+cabang sama) datang bersamaan (mis. beberapa
+# halaman/widget dibuka nyaris bareng), sebelum ini semuanya jalan
+# PARALEL sendiri-sendiri, rebutan CPU & koneksi DB sampai sebagian bisa
+# timeout ("socket hang up") -- padahal hasilnya pasti sama persis.
+#
+# Fix di bawah ini BUKAN cache (tidak menyimpan hasil lintas waktu, tidak
+# mengubah sifat "real-time"-nya) -- cuma "single-flight": request
+# pertama untuk satu kunci yang benar-benar menghitung, request lain yang
+# datang SAMBIL itu masih jalan tinggal menunggu & memakai hasil yang
+# sama, lalu kunci itu langsung dibuang begitu selesai.
+class _KpiBentoInFlight:
+    __slots__ = ("event", "result", "error")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.result: Optional[Dict[str, Any]] = None
+        self.error: Optional[BaseException] = None
+
+
+_kpi_bento_registry_lock = threading.Lock()
+_kpi_bento_inflight: Dict[str, _KpiBentoInFlight] = {}
+
+
+def _hitung_kpi_bento_single_flight(kunci: str, fn):
+    with _kpi_bento_registry_lock:
+        existing = _kpi_bento_inflight.get(kunci)
+        is_leader = existing is None
+        if is_leader:
+            existing = _KpiBentoInFlight()
+            _kpi_bento_inflight[kunci] = existing
+
+    if is_leader:
+        try:
+            existing.result = fn()
+        except BaseException as e:  # noqa: BLE001 -- diteruskan lagi ke pemanggil asli
+            existing.error = e
+        finally:
+            with _kpi_bento_registry_lock:
+                _kpi_bento_inflight.pop(kunci, None)
+            existing.event.set()
+    else:
+        existing.event.wait()
+
+    if existing.error is not None:
+        raise existing.error
+    return existing.result
 
 # Endpoint dengan path /api/v1/overview/... (getBranches, getFinancialBudget)
 router = APIRouter(prefix="/api/v1/overview", tags=["overview"])
@@ -124,12 +177,17 @@ def api_kpi_bento_dashboard(
     SEBELUM dihitung ke 8 kartu. Kosong/None/"All Branches" = tidak
     difilter (semua cabang digabung, perilaku lama)."""
     tahun_dipakai = tahun or date.today().year
-    # Accounting Core V2: Dashboard Actual hanya memakai journal lines POSTED.
-    jurnal = accounting_core.list_posted_lines(
-        client_id,
-        tanggal_mulai=f"{tahun_dipakai}-01-01",
-        tanggal_akhir=f"{tahun_dipakai}-12-31",
-    )
-    coa = dbc.ambil_coa_client(client_id)
-    jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
-    return lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
+
+    def _hitung() -> Dict[str, Any]:
+        # Accounting Core V2: Dashboard Actual hanya memakai journal lines POSTED.
+        jurnal = accounting_core.list_posted_lines(
+            client_id,
+            tanggal_mulai=f"{tahun_dipakai}-01-01",
+            tanggal_akhir=f"{tahun_dipakai}-12-31",
+        )
+        coa = dbc.ambil_coa_client(client_id)
+        jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
+        return lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
+
+    kunci = f"{client_id}:{tahun_dipakai}:{cabang or ''}"
+    return _hitung_kpi_bento_single_flight(kunci, _hitung)

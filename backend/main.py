@@ -6996,6 +6996,50 @@ class GenerateLaporanBulananRequest(BaseModel):
     tahun: int  # 2026
 
 
+# [FIX -- THUNDERING HERD, 2026-09-26] Kalau snapshot laporan bulanan basi
+# (atau belum ada), SEBELUM ini setiap GET/POST yang datang bersamaan
+# langsung generate ulang sendiri-sendiri secara paralel -- tiap generate
+# itu berat (query semua jurnal setahun, hitung 12 bulan, tulis 12 baris
+# riwayat_saldo_bulanan). Kalau beberapa halaman/report dibuka bersamaan
+# (mis. saat lagi ada proses lain jalan di background seperti import Bank
+# Feed), bisa ada belasan generate PARALEL untuk client+tahun yang SAMA,
+# rebutan CPU (GIL) & koneksi DB sampai sebagian request timeout
+# (socket hang up) meski komputasinya sendiri akhirnya tetap selesai.
+#
+# Fix: satu threading.Lock per (client_id, tahun) -- request pertama yang
+# dapat lock itu yang benar-benar generate; request lain yang datang
+# bersamaan untuk kunci yang sama menunggu, lalu (double-checked locking)
+# cek ulang cache dulu sebelum ikut generate -- kalau request pertama
+# barusan sudah mengisi cache yang segar, mereka tinggal pakai itu, tidak
+# generate lagi dari nol.
+_lock_registry_lock = threading.Lock()
+_laporan_bulanan_locks: Dict[str, threading.Lock] = {}
+
+
+def _ambil_lock_laporan_bulanan(client_id: str, tahun: int) -> threading.Lock:
+    kunci = f"{client_id}:{tahun}"
+    with _lock_registry_lock:
+        lock = _laporan_bulanan_locks.get(kunci)
+        if lock is None:
+            lock = threading.Lock()
+            _laporan_bulanan_locks[kunci] = lock
+        return lock
+
+
+def _cache_laporan_bulanan_segar(client_id: str, tahun: int, jumlah_jurnal_live: int):
+    """Cek cache yang sudah tersimpan -- return snapshot kalau masih cocok
+    dengan `jumlah_jurnal_live`, None kalau basi/tidak ada. Dipanggil di
+    dalam DAN di luar lock (double-checked locking)."""
+    riwayat = dbc.ambil_hasil_analisis_client(
+        client_id, jenis_analisis=f"laporan_bulanan_{tahun}", limit=1
+    )
+    if riwayat:
+        jumlah_saat_generate = (riwayat[0].get("hasil") or {}).get("meta", {}).get("jumlah_baris_jurnal_live")
+        if jumlah_saat_generate is not None and jumlah_saat_generate == jumlah_jurnal_live:
+            return riwayat[0]
+    return None
+
+
 def _generate_laporan_bulanan_impl(client_id: str, tahun: int, username: str, jurnal: Optional[list] = None):
     """
     Logika inti generate Trial Balance, Laba Rugi, dan Balance Sheet
@@ -7077,7 +7121,9 @@ def api_generate_laporan_bulanan(
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
     """Generate/timpa snapshot laporan bulanan tahun `req.tahun` dari jurnal live saat ini."""
-    return _generate_laporan_bulanan_impl(client_id, req.tahun, user.get("username", "unknown"))
+    lock = _ambil_lock_laporan_bulanan(client_id, req.tahun)
+    with lock:
+        return _generate_laporan_bulanan_impl(client_id, req.tahun, user.get("username", "unknown"))
 
 
 # ============================================================
@@ -7177,20 +7223,26 @@ def api_ambil_laporan_bulanan(
         tanggal_akhir=f"{tahun}-12-31",
     )
 
-    riwayat = dbc.ambil_hasil_analisis_client(
-        client_id, jenis_analisis=f"laporan_bulanan_{tahun}", limit=1
-    )
-    if riwayat:
-        jumlah_saat_generate = (riwayat[0].get("hasil") or {}).get("meta", {}).get("jumlah_baris_jurnal_live")
-        if jumlah_saat_generate is not None and jumlah_saat_generate == len(jurnal_live):
-            return riwayat[0]  # masih segar, aman dipakai apa adanya
+    cache_segar = _cache_laporan_bulanan_segar(client_id, tahun, len(jurnal_live))
+    if cache_segar is not None:
+        return cache_segar  # masih segar, aman dipakai apa adanya
 
     if not jurnal_live:
         raise HTTPException(404, f"Belum ada laporan bulanan untuk tahun {tahun}")
 
-    # Cache tidak ada / basi -- generate ulang sekarang juga dari jurnal live
-    # yang sudah kita tarik di atas (tidak query ulang).
-    return _generate_laporan_bulanan_impl(client_id, tahun, user.get("username", "unknown"), jurnal=jurnal_live)
+    # Cache tidak ada / basi -- antre di lock client+tahun ini dulu, supaya
+    # kalau ada beberapa request bersamaan minta laporan yang SAMA, cuma
+    # satu yang benar-benar generate (lihat catatan [FIX -- THUNDERING
+    # HERD] di atas _generate_laporan_bulanan_impl).
+    lock = _ambil_lock_laporan_bulanan(client_id, tahun)
+    with lock:
+        # Double-checked: mungkin request lain yang tadi pegang lock ini
+        # sudah selesai generate & mengisi cache sementara kita menunggu --
+        # kalau iya, tinggal pakai itu, tidak perlu generate lagi.
+        cache_segar = _cache_laporan_bulanan_segar(client_id, tahun, len(jurnal_live))
+        if cache_segar is not None:
+            return cache_segar
+        return _generate_laporan_bulanan_impl(client_id, tahun, user.get("username", "unknown"), jurnal=jurnal_live)
 
 
 

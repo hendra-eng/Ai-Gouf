@@ -2992,11 +2992,20 @@ def ambil_api_key_claude():
 #
 # Model bisa dioverride lewat env var CLAUDE_MODEL_KATEGORISASI tanpa
 # ubah kode (mis. kalau nanti mau turun ke claude-sonnet-5 buat hemat biaya).
-def ambil_model_kategorisasi_claude() -> str:
+# [BARU] Parameter `override` opsional -- dipakai pemanggil yang mau
+# memaksa model TERTENTU untuk 1 pemanggilan spesifik (mis. jalur import
+# Bank Feed di halaman Cash & Bank, lihat proses_file_rekening_koran),
+# TANPA mengubah default global (env var/hardcode) yang tetap dipakai
+# jalur lain (mis. import rekening koran umum di halaman Transaksi).
+# `override` menang kalau diisi (bukan None/string kosong), else fallback
+# ke perilaku lama (env var -> hardcode "claude-opus-5").
+def ambil_model_kategorisasi_claude(override: Optional[str] = None) -> str:
+    if override:
+        return override
     return os.environ.get("CLAUDE_MODEL_KATEGORISASI", "claude-opus-5")
 
 
-def _konfigurasi_provider_kategorisasi() -> list[dict]:
+def _konfigurasi_provider_kategorisasi(model_override: Optional[str] = None) -> list[dict]:
     """Balikin LIST provider utk tugas kategorisasi jurnal (dipakai
     kategorikan_dengan_ai & kategorikan_penjualan_dengan_ai).
 
@@ -3009,6 +3018,9 @@ def _konfigurasi_provider_kategorisasi() -> list[dict]:
     Field "tipe" membedakan SDK/endpoint yang harus dipakai pemanggil:
     - "anthropic": lewat SDK anthropic, client.messages.create (lihat
       _panggil_ai_batch_json_claude / claude_client.py).
+
+    [BARU] `model_override` diteruskan apa adanya ke
+    ambil_model_kategorisasi_claude() -- lihat docstring di sana.
     """
     daftar = []
     claude_key = ambil_api_key_claude()
@@ -3016,7 +3028,7 @@ def _konfigurasi_provider_kategorisasi() -> list[dict]:
         daftar.append({
             "tipe": "anthropic",
             "api_key": claude_key,
-            "model": ambil_model_kategorisasi_claude(),
+            "model": ambil_model_kategorisasi_claude(model_override),
             "nama": "Claude",
         })
     return daftar
@@ -3583,6 +3595,7 @@ def _panggil_kategorisasi_dengan_fallback(
     items: list, buat_prompt, prompt_statis: Optional[str] = None,
     ukuran_chunk: int = 25, token_per_item: int = 220, token_dasar: int = 500,
     max_percobaan: int = 3, timeout_detik: float = 90.0,
+    model_override: Optional[str] = None, paralel_maks: Optional[int] = None,
 ) -> tuple[dict, list[dict]]:
     """
     Dispatcher umum utk tugas kategorisasi (dipakai kategorikan_dengan_ai &
@@ -3611,7 +3624,7 @@ def _panggil_kategorisasi_dengan_fallback(
     """
     if not items:
         return {}, []
-    daftar_provider = _konfigurasi_provider_kategorisasi()
+    daftar_provider = _konfigurasi_provider_kategorisasi(model_override=model_override)
     if not daftar_provider:
         return {}, [{
             "idx_terdampak": [b["idx"] for b in items],
@@ -3632,6 +3645,7 @@ def _panggil_kategorisasi_dengan_fallback(
                     ukuran_chunk=ukuran_chunk, token_per_item=token_per_item,
                     token_dasar=token_dasar, max_percobaan=max_percobaan,
                     timeout_detik=timeout_detik, prompt_statis=prompt_statis,
+                    paralel_maks=paralel_maks,
                 )
             else:  # "openai_compatible" -- provider OpenAI-compatible (tidak dipakai lagi saat ini, disiapkan kalau perlu di masa depan)
                 hasil_chunk, log_chunk = _panggil_ai_batch_json(
@@ -3664,7 +3678,8 @@ def _panggil_kategorisasi_dengan_fallback(
 
 
 def kategorikan_dengan_ai(baris_belum_jelas: list[dict], df_coa: pd.DataFrame, api_key: str,
-                           mask_pii: bool = True, ambang_confidence: str = "sedang"):
+                           mask_pii: bool = True, ambang_confidence: str = "sedang",
+                           model_override: Optional[str] = None, paralel_maks: Optional[int] = None):
     """
     baris_belum_jelas: list of dict {"idx":..., "keterangan":..., "arah":..., "nominal":...}
     df_coa: daftar akun asli perusahaan (no_akun, nama_akun, kategori)
@@ -3672,6 +3687,15 @@ def kategorikan_dengan_ai(baris_belum_jelas: list[dict], df_coa: pd.DataFrame, a
       keterangan disamarkan dulu sebelum dikirim ke API pihak ketiga.
     ambang_confidence: "tinggi" | "sedang" | "rendah" -- confidence minimum untuk
       dianggap valid tanpa review.
+    model_override: [BARU] paksa model Claude tertentu utk panggilan ini saja
+      (mis. "claude-sonnet-5" utk jalur import Bank Feed) -- None = pakai
+      default global (env var CLAUDE_MODEL_KATEGORISASI / hardcode Opus),
+      lihat ambil_model_kategorisasi_claude().
+    paralel_maks: [BARU] paksa jumlah chunk paralel utk panggilan ini saja
+      (mis. utk file rekening koran BESAR di jalur Bank Feed supaya lebih
+      banyak chunk jalan bersamaan) -- None = pakai default global (env var
+      CLAUDE_KATEGORISASI_PARALEL_MAKS, fallback 6), lihat
+      _panggil_ai_batch_json_claude().
     Return: (mapping, log_kegagalan)
     """
     if not baris_belum_jelas:
@@ -3795,6 +3819,7 @@ dengan format:
     # mengoper ambil_api_key_claude()) tidak perlu diubah sama sekali.
     return _panggil_kategorisasi_dengan_fallback(
         baris_belum_jelas, _buat_prompt, prompt_statis=_buat_bagian_statis(),
+        model_override=model_override, paralel_maks=paralel_maks,
     )
 
 
@@ -3836,7 +3861,9 @@ def _cari_akun_bank_di_coa(nama_bank, df_coa: pd.DataFrame, nama_akun_upper: Opt
 
 def proses_dataframe(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pola,
                       pakai_ai: bool = False, api_key: Optional[str] = None,
-                      mask_pii: bool = True, ambang_confidence: str = "sedang") -> pd.DataFrame:
+                      mask_pii: bool = True, ambang_confidence: str = "sedang",
+                      model_kategorisasi: Optional[str] = None,
+                      paralel_maks_kategorisasi: Optional[int] = None) -> pd.DataFrame:
     """
     SEMUA baris (baik yang jurnalnya sudah terisi di file asal maupun yang
     belum) diproses ulang lewat: pola historis -> kata kunci COA -> (opsional)
@@ -3950,7 +3977,10 @@ def proses_dataframe(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pola,
                     "idx": idx, "keterangan": row["keterangan"],
                     "arah": _arah(row), "nominal": nominal,
                 })
-            mapping, log_kegagalan_ai = kategorikan_dengan_ai(batch, df_coa, api_key, mask_pii=mask_pii)
+            mapping, log_kegagalan_ai = kategorikan_dengan_ai(
+                batch, df_coa, api_key, mask_pii=mask_pii, model_override=model_kategorisasi,
+                paralel_maks=paralel_maks_kategorisasi,
+            )
             
             alasan_gagal_per_idx = {}
             for entri in (log_kegagalan_ai or []):
@@ -3969,6 +3999,52 @@ def proses_dataframe(df: pd.DataFrame, df_coa: pd.DataFrame, pola: Pola,
             for idx, alasan in alasan_gagal_per_idx.items():
                 if pd.isna(df.at[idx, "catatan_ai"]):
                     df.at[idx, "catatan_ai"] = alasan
+
+            # [FIX -- BUG: hasil AI tidak pernah dipelajari jadi pola]
+            # Sebelumnya hasil kategorisasi AI HANYA ditulis ke df (utk
+            # upload ini saja) -- tidak pernah masuk ke `pola.aturan`,
+            # jadi upload BERIKUTNYA (mis. rekening koran bulan depan,
+            # bank/client yang sama) selalu mengulang AI dari nol untuk
+            # signature keterangan yang SEBENARNYA sudah pernah berhasil
+            # dikategorikan bulan lalu (mis. "KASBON KARYAWAN", pengirim
+            # yang sama berulang) -- inilah penyebab utama upload rekening
+            # koran panjang (ratusan/ribuan baris) selalu lambat SETIAP
+            # kali, bukan cuma sekali di awal.
+            #
+            # Sekarang: baris yang AI kategorikan dengan confidence
+            # "tinggi" SAJA (bukan "sedang"/"rendah" -- sengaja ketat,
+            # supaya pola yang tersimpan cuma dari hasil AI yang paling
+            # bisa dipercaya) diajarkan ke `pola.aturan`, PERSIS pola yang
+            # sama dipakai tahap 1 & tahap 4 di bawah (key: signature+arah
+            # dari ekstrak_signature()+_arah()). Kalau signature+arah itu
+            # SUDAH ada di pola (mis. sudah pernah dikoreksi manual staf
+            # sebelumnya), TIDAK ditimpa -- pola yang sudah ada selalu
+            # menang.
+            #
+            # PENTING: ini TIDAK mengubah alur review -- baris tetap
+            # berstatus draf (sumber_kategori "AI (...)"), tetap harus
+            # direview/diapprove staf sebelum diposting ke GL, sama
+            # seperti sebelumnya. Yang berubah cuma: mulai upload
+            # BERIKUTNYA, saran kategorisasi utk signature yang sama akan
+            # muncul instan (tahap 1, tanpa panggil AI) alih-alih AI
+            # dipanggil ulang setiap bulan.
+            for idx in masih_belum:
+                row = df.loc[idx]
+                if str(row.get("confidence_ai") or "").lower() != "tinggi":
+                    continue
+                no_akun_debet = row.get("no_akun_debet")
+                no_akun_kredit = row.get("no_akun_kredit")
+                if pd.isna(no_akun_debet) or pd.isna(no_akun_kredit):
+                    continue
+                sig = ekstrak_signature(row["keterangan"])
+                arah = _arah(row)
+                if (sig, arah) in pola.aturan:
+                    continue
+                pola.aturan[(sig, arah)] = {
+                    "no_akun_debet": no_akun_debet, "nama_akun_debet": row.get("nama_akun_debet"),
+                    "no_akun_kredit": no_akun_kredit, "nama_akun_kredit": row.get("nama_akun_kredit"),
+                    "konsisten": True, "jumlah_contoh": 1,
+                }
 
     # tahap 4: fallback ke data asli
     for idx in df[df["sumber_kategori"].isna()].index:
@@ -11091,7 +11167,8 @@ def simpan_histori_gaji(histori: Dict[str, dict], path: str):
 
 
 def proses_file_rekening_koran(
-    file_like, nama_file: str = None, client_id: Optional[str] = None, pakai_ai: bool = True
+    file_like, nama_file: str = None, client_id: Optional[str] = None, pakai_ai: bool = True,
+    model_kategorisasi: Optional[str] = None, paralel_maks_kategorisasi: Optional[int] = None,
 ) -> dict:
     """
     "Jurnal Koran" -- mutasi rekening koran/bank (multi-sheet, multi-bank)
@@ -11100,9 +11177,27 @@ def proses_file_rekening_koran(
     ditandai "Belum Terkategori" utk direview manual. Pola yang berhasil
     dipelajari (baris yang jurnalnya sudah lengkap di file asal) otomatis
     disimpan lagi supaya dipakai ulang di upload bulan berikutnya.
+
+    model_kategorisasi: [BARU] paksa model Claude tertentu KHUSUS untuk
+    panggilan ini (diteruskan ke proses_dataframe -> kategorikan_dengan_ai)
+    -- None = pakai default global seperti sebelumnya. Dipakai jalur import
+    Bank Feed (lihat modules/finance/bank_feed_v1.py) supaya halaman itu
+    bisa pakai model lebih cepat (mis. "claude-sonnet-5") TANPA mengubah
+    default jalur import rekening koran umum di halaman Transaksi.
+
+    paralel_maks_kategorisasi: [BARU] paksa jumlah chunk paralel KHUSUS
+    untuk panggilan ini (mis. utk file rekening koran BESAR -- ratusan/
+    ribuan baris, seperti statement multi-halaman -- supaya lebih banyak
+    chunk jalan bersamaan) -- None = pakai default global (env var
+    CLAUDE_KATEGORISASI_PARALEL_MAKS, fallback 6).
     """
+    import time as _time_debug  # [DEBUG SEMENTARA] hapus/comment setelah selesai profiling
+
     nama_file = nama_file or getattr(file_like, "name", "") or ""
+    _t_parse = _time_debug.perf_counter()
     df_bank, _df_jual, _df_nilai, _df_piutang, df_coa, peringatan = muat_workbook(file_like, nama_file)
+    print(f"[DEBUG-TIMING] muat_workbook('{nama_file}'): "
+          f"{_time_debug.perf_counter() - _t_parse:.2f} detik")
 
     # [FIX -- propagasi ke pemanggil, poin B] Sebelumnya ringkasan_footer
     # (saldo_awal/mutasi_cr/mutasi_db/saldo_akhir resmi dari blok footer
@@ -11134,6 +11229,7 @@ def proses_file_rekening_koran(
         # mematikannya tetap dapat perilaku lama (gagal cepat, tanpa
         # panggilan API tambahan/biaya token).
         if pakai_ai:
+            _t_fallback_ai = _time_debug.perf_counter()
             try:
                 if hasattr(file_like, "seek"):
                     file_like.seek(0)
@@ -11145,6 +11241,8 @@ def proses_file_rekening_koran(
                     peringatan = list(peringatan) + list(df_bank.attrs.get("peringatan_ekstraksi_ai") or [])
             except FormatTidakDikenali as e:
                 peringatan = list(peringatan) + [f"Fallback ekstraksi AI juga gagal: {e}"]
+            print(f"[DEBUG-TIMING] fallback ekstraksi AI ('{nama_file}'): "
+                  f"{_time_debug.perf_counter() - _t_fallback_ai:.2f} detik")
 
         if df_bank is None or df_bank.empty:
             if not pakai_ai:
@@ -11161,11 +11259,27 @@ def proses_file_rekening_koran(
     path_pola = _path_pola("pola_bank", client_id)
     pola = muat_pola(path_pola)
 
+    # [FIX -- BUG] model_kategorisasi sebelumnya diterima di parameter fungsi
+    # ini (lihat docstring) tapi TIDAK PERNAH diteruskan ke proses_dataframe,
+    # jadi override "claude-sonnet-5" dari jalur Bank Feed (bank_feed_v1.py)
+    # selalu jatuh ke default global (Opus/env var) -- override-nya diam-diam
+    # tidak pernah kepakai. Sekarang diteruskan dengan benar.
+    _t_kategori = _time_debug.perf_counter()
     df_hasil = proses_dataframe(
         df_bank, df_coa, pola, pakai_ai=pakai_ai,
         api_key=ambil_api_key_claude() if pakai_ai else None,
+        model_kategorisasi=model_kategorisasi,
+        paralel_maks_kategorisasi=paralel_maks_kategorisasi,
     )
+    print(f"[DEBUG-TIMING] proses_dataframe (pola+kata kunci+AI, {len(df_bank)} baris, "
+          f"model={model_kategorisasi or '(default global)'}, "
+          f"paralel_maks={paralel_maks_kategorisasi or '(default global env)'}) untuk '{nama_file}': "
+          f"{_time_debug.perf_counter() - _t_kategori:.2f} detik")
+
+    _t_simpan_pola = _time_debug.perf_counter()
     simpan_pola(pola, path_pola, sumber_perubahan="proses_file_rekening_koran (auto dari data asli)")
+    print(f"[DEBUG-TIMING] simpan_pola untuk '{nama_file}': "
+          f"{_time_debug.perf_counter() - _t_simpan_pola:.2f} detik")
 
     keseimbangan = cek_keseimbangan_jurnal(df_hasil)
 

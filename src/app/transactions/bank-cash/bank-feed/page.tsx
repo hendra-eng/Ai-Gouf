@@ -96,7 +96,7 @@ function UploadPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="text-sm font-bold text-foreground">Import Rekening Koran</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">PDF atau Excel — hasil ekstraksi akan tampil di tabel bawah untuk dicocokkan</p>
+          <p className="text-xs text-muted-foreground mt-0.5">PDF atau Excel — hasil ekstraksi tampil di tabel bawah untuk dicocokkan. Data hanya bersifat sementara: tidak disimpan di server dan hilang saat tab ditutup atau logout</p>
         </div>
         <select
           value={bankAccount}
@@ -158,7 +158,7 @@ function UploadPanel() {
 }
 
 export default function BankFeedPage() {
-  const { mutations, loading, error, refetch, removeMutation, pendingIds } = useBankFeed();
+  const { mutations, loading, error, refetch, removeMutation, clearAll, pendingIds } = useBankFeed();
   const [statusFilter, setStatusFilter] = useState<'all' | 'unmatched' | 'matched'>('all');
 
   const filtered = useMemo(
@@ -174,6 +174,13 @@ export default function BankFeedPage() {
     } catch (e: any) {
       toast.error(e?.message || 'Gagal menghapus baris mutasi.');
     }
+  };
+
+  const handleClearAll = () => {
+    if (mutations.length === 0) return;
+    if (!window.confirm(`Kosongkan seluruh ${mutations.length} mutasi Bank Feed (termasuk status pencocokannya)?`)) return;
+    clearAll();
+    toast.success('Bank Feed dikosongkan.');
   };
 
   return (
@@ -195,7 +202,14 @@ export default function BankFeedPage() {
           <span className="text-xs text-muted-foreground">
             {unmatchedCount} dari {mutations.length} belum dicocokkan
           </span>
-          <div className="ml-auto flex items-center gap-1 bg-muted rounded-lg p-1 border border-border">
+          <button
+            onClick={handleClearAll}
+            disabled={mutations.length === 0}
+            className="ml-auto text-xs font-semibold text-rose-600 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Kosongkan semua
+          </button>
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1 border border-border">
             {(['all', 'unmatched', 'matched'] as const).map((s) => (
               <button
                 key={s}
