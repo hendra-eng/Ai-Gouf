@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import re
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -85,6 +86,22 @@ class MatchBankFeedResponse(BaseModel):
 class UnmatchBankFeedResponse(BaseModel):
     berhasil: bool
     mutation: BankFeedMutationSkema
+
+
+def _tanggal_ke_str(v: Any) -> Optional[str]:
+    """[FIX] Ekstraksi file Excel mengembalikan tanggal sebagai objek
+    datetime.date/datetime, bukan string -- skema respons (date: Optional[str])
+    lalu menolaknya ("Input should be a valid string") sehingga endpoint 500
+    dan browser hanya melihat "Failed to fetch". Selalu ubah ke string
+    YYYY-MM-DD di sini."""
+    if v is None or v == "":
+        return None
+    if hasattr(v, "isoformat"):
+        return v.isoformat()[:10]
+    teks = str(v).strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}[T ]", teks):
+        return teks[:10]
+    return teks
 
 
 def _bangun_mutasi_sementara(
@@ -206,7 +223,7 @@ async def api_import_bank_feed(
     # sama besar di kedua sisi, tidak bisa dipakai untuk tahu arah saldo).
     rows_mentah = [
         {
-            "tanggal": row.get("tanggal"),
+            "tanggal": _tanggal_ke_str(row.get("tanggal")),
             "keterangan": row.get("keterangan"),
             "debet": row.get("mutasi_debet") or 0,
             "kredit": row.get("mutasi_kredit") or 0,

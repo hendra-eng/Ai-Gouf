@@ -329,6 +329,10 @@ class Coa(Base):
     # "Keterangan" (mis. "Kas kecil dan kas operasional") -- murni
     # dokumentasi, tidak dipakai logika laporan mana pun.
     keterangan = Column(Text, nullable=True)
+    # [BARU] Jenis akun Kas & Bank (hanya terisi kalau sub_kategori='Kas'):
+    # bank / kas_tunai / kas_kecil / transit. Dropdown Bank Feed memakai
+    # jenis_kas='bank' supaya kas kecil, kas kasir, dan akun transit tidak ikut.
+    jenis_kas = Column(String(20), nullable=True)
     # [BARU - sheet Neraca Saldo Awal] Sebelumnya kolom "Lawan Transaksi"
     # & "Project/Asset Unit" di sheet Neraca Saldo Awal HARDCODE
     # "Pemilik"/"HO" utk SEMUA baris (lihat accounting_export.py) --
@@ -8420,7 +8424,34 @@ def daftar_reminder_spt_client(client_id: str, hanya_belum_selesai: bool = True)
 # Dicek via "in" (substring, case-insensitive) terhadap nama_akun yang sudah
 # di-lower() -- jadi "Bank Mandiri", "Kas Kecil", "Petty Cash Kantor",
 # "Giro BCA", "Tabungan BRI", "Deposito Berjangka" semuanya kena.
+#
+# [DIUBAH -- sinkron dengan COA IFRS standar] Kata kunci ini HANYA dipakai
+# kalau sub_kategori dari sumber data kosong/generik (lihat
+# _SUB_KATEGORI_UMUM_ASET). Kalau sumber data sudah menyebut sub_kategori yang
+# spesifik (mis. "SHORT-TERM FINANCIAL ASSETS" untuk akun "Deposito", atau
+# "TRADE RECEIVABLES" untuk akun "Bank Transfer"), sub_kategori itu DIHORMATI
+# dan tidak ditimpa jadi 'Kas' cuma karena namanya kebetulan mengandung kata
+# "bank"/"deposito".
 _KATA_KUNCI_AKUN_KAS_BANK = ('kas', 'bank', 'petty cash', 'giro', 'tabungan', 'deposito')
+
+# [BARU -- sinkron dengan COA IFRS standar] Nilai sub_kategori dari sumber data
+# (mis. sheet COA IFRS: kolom ACCOUNT SUB) yang artinya memang Kas & Bank.
+# Semuanya dipetakan ke 'Kas' -- standar yang dibaca dropdown Bank Feed,
+# laporan_keuangan.py, dan VIEW v_kas_bank_dari_jurnal. Ini termasuk akun
+# kas/bank yang namanya TIDAK mengandung kata kunci di atas (mis. "BCA # 1234",
+# "Pety Cash - Lokasi", "Money In Transit", "Setoran Dalam Perjalanan").
+# Dibandingkan setelah upper() dan spasi berlebih dirapikan.
+_SUB_KATEGORI_KAS_BANK_STANDAR = (
+    'CASH & CASH EQUIVALENTS',
+    'CASH AND CASH EQUIVALENTS',
+    'KAS DAN SETARA KAS',
+    'KAS & BANK',
+    'KAS',
+)
+
+# [BARU] sub_kategori generik yang belum menunjukkan klasifikasi spesifik --
+# hanya untuk nilai inilah kata kunci nama akun boleh menentukan 'Kas'.
+_SUB_KATEGORI_UMUM_ASET = ('', 'ASET LANCAR', 'ASET', 'CURRENT ASSET', 'CURRENT ASSETS', 'LANCAR')
 
 
 def _normalisasi_sub_kategori_kas_bank(
@@ -8428,11 +8459,11 @@ def _normalisasi_sub_kategori_kas_bank(
 ) -> Optional[str]:
     """
     [BARU -- nomor 3, pencegahan] Auto-koreksi sub_kategori jadi 'Kas' untuk
-    akun ASET yang namanya mengandung kata kunci Kas/Bank -- supaya standar
-    yang sudah dipakai laporan_keuangan.py (perhitungan saldo Kas bulanan
-    utk Neraca/Arus Kas) dan VIEW v_kas_bank_dari_jurnal (dasar halaman Cash
-    & Bank) tidak rusak lagi kalau file import Excel/input manual COA
-    sub_kategori-nya kosong atau salah ketik.
+    akun ASET Kas/Bank -- supaya standar yang sudah dipakai
+    laporan_keuangan.py (perhitungan saldo Kas bulanan utk Neraca/Arus Kas)
+    dan VIEW v_kas_bank_dari_jurnal (dasar halaman Cash & Bank) tidak rusak
+    lagi kalau file import Excel/input manual COA sub_kategori-nya kosong,
+    salah ketik, atau memakai istilah IFRS.
 
     Insiden sebelumnya (perbaikan manual, lihat migration
     standarisasi_sub_kategori_kas_bank_coa): 3 akun "Kas" di 3 client sempat
@@ -8442,19 +8473,97 @@ def _normalisasi_sub_kategori_kas_bank(
     (import ulang dari Excel ATAUPUN input manual dari UI, lihat pemanggil
     di main.py).
 
-    Cuma berlaku untuk akun kategori='ASET' (dicek case-insensitive, karena
-    nilai kategori dari file Excel/input manual tidak selalu konsisten
-    huruf besar/kecilnya). Akun ASET lain yang kebetulan namanya tidak
-    mengandung kata kunci di atas, dan akun non-ASET (Liabilitas/Ekuitas/
-    dst), TIDAK disentuh -- sub_kategori aslinya tetap dipakai apa adanya,
-    termasuk kalau kosong (None).
+    [DIUBAH -- sinkron dengan COA IFRS standar] Urutan aturan (hanya untuk
+    akun kategori ASET/ASSET, dicek case-insensitive):
+      1. sub_kategori sudah bernilai istilah Kas & Bank
+         (_SUB_KATEGORI_KAS_BANK_STANDAR, mis. "CASH & CASH EQUIVALENTS")
+         -> jadi 'Kas', TANPA melihat nama akun.
+      2. sub_kategori kosong/generik (_SUB_KATEGORI_UMUM_ASET) DAN nama akun
+         mengandung kata kunci Kas/Bank -> jadi 'Kas' (perilaku lama).
+      3. selain itu -> sub_kategori asli dipakai apa adanya. Jadi "Deposito"
+         ber-sub "SHORT-TERM FINANCIAL ASSETS" dan "Bank Transfer" ber-sub
+         "TRADE RECEIVABLES" TIDAK lagi salah jadi Kas.
+    Akun non-ASET (Liabilitas/Ekuitas/dst) TIDAK disentuh.
     """
-    if not kategori or str(kategori).strip().upper() != 'ASET':
+    if not kategori or str(kategori).strip().upper() not in ('ASET', 'ASSET'):
         return sub_kategori
-    nama = str(nama_akun or '').strip().lower()
-    if any(kw in nama for kw in _KATA_KUNCI_AKUN_KAS_BANK):
+    sub_norm = ' '.join(str(sub_kategori or '').upper().split())
+    if sub_norm in _SUB_KATEGORI_KAS_BANK_STANDAR:
         return 'Kas'
+    if sub_norm in _SUB_KATEGORI_UMUM_ASET:
+        nama = str(nama_akun or '').strip().lower()
+        if any(kw in nama for kw in _KATA_KUNCI_AKUN_KAS_BANK):
+            return 'Kas'
     return sub_kategori
+
+
+_JENIS_KAS_VALID = ('bank', 'kas_tunai', 'kas_kecil', 'transit')
+
+# [BARU] Kode standar IFRS (kolom STANDARD ACCOUNT CODE di Excel COA) -> jenis_kas.
+_STD_CODE_KE_JENIS_KAS = {
+    'std_asset_current_cash_bank': 'bank',
+    'std_asset_current_cash_on_hand': 'kas_tunai',
+    'std_asset_current_cash_petty': 'kas_kecil',
+    'std_asset_current_cash_transit': 'transit',
+}
+
+# Nama bank yang lazim, dipakai hanya sebagai cadangan terakhir kalau
+# keterangan/kode standar tidak ada (mis. nama akun "BCA # 1234").
+_KATA_NAMA_BANK = (
+    'bank', 'bca', 'bri', 'bni', 'mandiri', 'permata', 'ocbc', 'cimb', 'btn', 'bjb',
+    'danamon', 'uob', 'niaga', 'bpd', 'maybank', 'panin', 'mega', 'wise', 'escrow',
+)
+
+
+def _tentukan_jenis_kas(
+    sub_kategori: Optional[str],
+    nama_akun: Optional[str],
+    keterangan: Optional[str] = None,
+    jenis_kas: Optional[str] = None,
+    standard_code: Optional[str] = None,
+) -> Optional[str]:
+    """
+    [BARU] Tentukan jenis akun Kas & Bank (bank / kas_tunai / kas_kecil /
+    transit). Hanya untuk sub_kategori 'Kas'; selain itu None.
+    Urutan: nilai eksplisit -> kode standar IFRS -> deskripsi IFRS di keterangan -> tebakan dari nama akun. Kalau tidak
+    bisa ditentukan, hasilnya None (akun tidak muncul di dropdown bank,
+    dan bisa diisi manual).
+    """
+    if str(sub_kategori or '').strip() != 'Kas':
+        return None
+    jk = str(jenis_kas or '').strip().lower()
+    if jk in _JENIS_KAS_VALID:
+        return jk
+    nama = str(nama_akun or '').strip().lower()
+    if 'transit' in nama or 'setoran dalam perjalanan' in nama:
+        return 'transit'
+    kode = str(standard_code or '').strip().lower()
+    if kode in _STD_CODE_KE_JENIS_KAS:
+        return _STD_CODE_KE_JENIS_KAS[kode]
+    ket = str(keterangan or '').strip().lower()
+    if ket.startswith('cash or bank funds in transit'):
+        return 'transit'
+    if ket.startswith('petty cash'):
+        return 'kas_kecil'
+    if ket.startswith('cash on hand'):
+        return 'kas_tunai'
+    if ket.startswith('cash held in bank'):
+        return 'bank'
+    if 'petty' in nama or 'pety' in nama or 'kas kecil' in nama:
+        return 'kas_kecil'
+    if any(k in nama.replace('#', ' ').split() or k in nama for k in _KATA_NAMA_BANK):
+        return 'bank'
+    if 'kas' in nama or 'cash' in nama:
+        return 'kas_tunai'
+    return None
+
+
+def _jenis_kas_dari_akun(nama_akun: str, akun: Dict[str, Any]) -> Optional[str]:
+    """[BARU] Turunkan jenis_kas dari satu dict akun import (setelah normalisasi sub_kategori)."""
+    sub = _normalisasi_sub_kategori_kas_bank(nama_akun, akun.get("kategori"), akun.get("sub_kategori"))
+    return _tentukan_jenis_kas(
+        sub, nama_akun, akun.get("keterangan"), akun.get("jenis_kas"), akun.get("standard_account_code")
+    )
 
 
 def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_semua: bool = True) -> int:
@@ -8497,6 +8606,7 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                         nama_akun, akun.get("kategori"), akun.get("sub_kategori")
                     ),
                     normal_saldo=akun.get("normal_saldo"),
+                    jenis_kas=_jenis_kas_dari_akun(nama_akun, akun),  # [BARU]
                     saldo_awal=_angka(akun.get("saldo_awal")),  # [FIX] NaN-safe
                     segment=akun.get("segment"),      # [BARU]
                     arus_kas=akun.get("arus_kas"),    # [BARU]
@@ -8523,6 +8633,13 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                     a.sub_kategori = akun.get("sub_kategori") or a.sub_kategori
                     # [BARU -- nomor 3, pencegahan] lihat _normalisasi_sub_kategori_kas_bank()
                     a.sub_kategori = _normalisasi_sub_kategori_kas_bank(a.nama_akun, a.kategori, a.sub_kategori)
+                    # [BARU] jenis_kas: pakai input baru kalau ada, kalau tidak pertahankan yang lama
+                    a.jenis_kas = _tentukan_jenis_kas(
+                        a.sub_kategori, a.nama_akun,
+                        akun.get("keterangan") or a.keterangan,
+                        akun.get("jenis_kas") or a.jenis_kas,
+                        akun.get("standard_account_code"),
+                    )
                     a.normal_saldo = akun.get("normal_saldo") or a.normal_saldo
                     if akun.get("saldo_awal") is not None:
                         a.saldo_awal = _angka(akun.get("saldo_awal"))  # [FIX] NaN-safe
@@ -8547,6 +8664,7 @@ def simpan_coa_bulk(client_id: str, daftar_akun: List[Dict[str, Any]], ganti_sem
                             nama_akun, akun.get("kategori"), akun.get("sub_kategori")
                         ),
                         normal_saldo=akun.get("normal_saldo"),
+                        jenis_kas=_jenis_kas_dari_akun(nama_akun, akun),  # [BARU]
                         saldo_awal=_angka(akun.get("saldo_awal")),  # [FIX] NaN-safe
                         segment=akun.get("segment"),      # [BARU]
                         arus_kas=akun.get("arus_kas"),    # [BARU]
@@ -8610,6 +8728,7 @@ def ambil_coa_client(client_id: str, hanya_aktif: bool = True) -> List[Dict[str,
                 "lawan_transaksi_saldo_awal": a.lawan_transaksi_saldo_awal,
                 "project_unit_saldo_awal": a.project_unit_saldo_awal,
                 "cabang": a.cabang,
+                "jenis_kas": a.jenis_kas,  # [BARU]
                 "aktif": a.aktif,
                 "standard_account_code": std.standard_code if std else None,
                 "standard_account_name": std.standard_name if std else None,
@@ -8690,6 +8809,7 @@ def tambah_akun_coa(client_id: str, no_akun: str, nama_akun: str, kategori: Opti
             saldo_awal=_angka(saldo_awal),  # [FIX] NaN-safe
             segment=segment, arus_kas=arus_kas,  # [BARU]
             keterangan=keterangan,  # [BARU]
+            jenis_kas=_tentukan_jenis_kas(sub_kategori, nama_akun, keterangan),  # [BARU]
             lawan_transaksi_saldo_awal=lawan_transaksi_saldo_awal,  # [BARU]
             project_unit_saldo_awal=project_unit_saldo_awal,  # [BARU]
         ))
@@ -8713,6 +8833,11 @@ def update_akun_coa(akun_id: str, **field_baru) -> bool:
         for k, v in field_baru.items():
             if hasattr(a, k) and v is not None:
                 setattr(a, k, v)
+        # [BARU] jaga jenis_kas tetap sinkron dengan sub_kategori
+        if a.sub_kategori != 'Kas':
+            a.jenis_kas = None
+        elif not a.jenis_kas or 'sub_kategori' in field_baru or 'nama_akun' in field_baru:
+            a.jenis_kas = _tentukan_jenis_kas(a.sub_kategori, a.nama_akun, a.keterangan, field_baru.get('jenis_kas') or a.jenis_kas)
         session.commit()
         return True
     except Exception as e:
