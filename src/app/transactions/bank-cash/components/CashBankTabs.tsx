@@ -46,6 +46,18 @@ const tabs: Tab[] = [
     href: '/transactions/bank-cash/reconciliation',
     description: 'Cocokkan mutasi Bank Feed dengan Cash Payment/Cash Receipt — termasuk riwayat yang sudah cocok',
   },
+  {
+    id: 'tab-journal-preview',
+    label: 'Journal Preview',
+    href: '/transactions/bank-cash/journal-preview',
+    description: 'Lihat bagaimana transaksi kas & bank diubah menjadi jurnal akuntansi',
+  },
+  {
+    id: 'tab-exceptions',
+    label: 'Exceptions',
+    href: '/transactions/bank-cash/exceptions',
+    description: 'Kelola dan tindak lanjuti transaksi kas & bank yang memerlukan review',
+  },
 ];
 
 export default function CashBankTabs() {
