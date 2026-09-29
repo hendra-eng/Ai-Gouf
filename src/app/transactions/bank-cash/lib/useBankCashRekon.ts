@@ -34,7 +34,12 @@ export interface PembayaranRekon {
 }
 
 export interface BarisJurnal { no: number; code: string; name: string; debit: number; credit: number }
-export type CashBankTxReal = CashBankTx & { realLines?: BarisJurnal[] };
+export type CashBankTxReal = CashBankTx & {
+  realLines?: BarisJurnal[];
+  /** Diisi kalau backend mengirim posted_by/posted_at di /journal-preview (belum tersedia). */
+  postedBy?: string | null;
+  postedAt?: string | null;
+};
 
 const num = (v: unknown) => {
   const n = Number(v);
@@ -182,6 +187,8 @@ function susunTx(jurnal: any[], bayar: PembayaranRekon[]): CashBankTxReal[] {
         outstandingBefore: rentang.reduce((n, r) => n + r.before, 0),
         outstandingAfter: rentang.reduce((n, r) => n + r.after, 0),
       },
+      postedBy: je.posted_by ?? null,
+      postedAt: je.posted_at ?? null,
       realLines: (je.lines || []).map((l: any) => ({
         no: num(l.line_no),
         code: String(l.no_akun ?? ''),

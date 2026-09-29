@@ -58,6 +58,12 @@ const tabs: Tab[] = [
     href: '/transactions/bank-cash/exceptions',
     description: 'Kelola dan tindak lanjuti transaksi kas & bank yang memerlukan review',
   },
+  {
+    id: 'tab-posted',
+    label: 'Posted',
+    href: '/transactions/bank-cash/posted',
+    description: 'Jurnal kas & bank yang sudah diposting ke buku besar',
+  },
 ];
 
 export default function CashBankTabs() {
