@@ -2,6 +2,13 @@
 
 // Salinan desain tab Exceptions di Sales (sales/components/SalesExceptions.tsx)
 // untuk Cash & Bank. Data masih DUMMY (lib/cashBankMock.ts) — belum tersambung backend.
+//
+// [BARU] Tiap exception sekarang punya `source`: 'Reconciliation' (soal
+// pencocokan mutasi bank vs invoice -- berlaku untuk transaksi matched
+// maupun unmatched) atau 'Classification' (soal akun lawan/pajak yang belum
+// diketahui -- HANYA berlaku untuk transaksi yang tidak match invoice
+// manapun, lihat CashBankJournalPreview.tsx). Badge & filter baru di bawah
+// supaya kedua jenis masalah ini tidak tercampur.
 
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -11,7 +18,8 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
-import { MOCK_CASH_BANK_EXCEPTIONS, type CashBankException } from '../lib/cashBankMock';
+import type { CashBankExceptionSource } from '../lib/cashBankMock';
+import { useCashBankExceptions, type CashBankExceptionView } from '../lib/cashBankExceptionsStore';
 
 type Priority = 'High' | 'Medium' | 'Low';
 type ExceptionStatus = 'Open' | 'In Review' | 'Resolved';
@@ -30,6 +38,15 @@ const STATUS_STYLE: Record<ExceptionStatus, string> = {
   Resolved: 'bg-emerald-100 text-emerald-700',
 };
 
+const SOURCE_STYLE: Record<CashBankExceptionSource, string> = {
+  Reconciliation: 'bg-indigo-100 text-indigo-700',
+  Classification: 'bg-orange-100 text-orange-700',
+};
+const SOURCE_LABEL: Record<CashBankExceptionSource, string> = {
+  Reconciliation: 'Reconciliation',
+  Classification: 'Classification',
+};
+
 function formatTanggalSingkat(iso: string | null): string {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -42,17 +59,17 @@ export default function CashBankExceptions() {
   const { t } = useLanguage();
   const { user } = useAuth();
 
-  // DUMMY: state lokal menggantikan hook data backend. assigned_to 'me' = user yang login.
-  const [backendExceptions, setBackendExceptions] = useState<CashBankException[]>(MOCK_CASH_BANK_EXCEPTIONS);
-  const loading = false;
-  const error: string | null = null;
-  const refresh = () => setBackendExceptions(MOCK_CASH_BANK_EXCEPTIONS);
+  // Deteksi dihitung dari Bank Feed + Reconciliation, status penanganan disimpan di
+  // tabel financial_transaction_bank_cash_exceptions (lihat lib/cashBankExceptionsStore.ts).
+  // assigned_to 'me' = user yang login.
+  const { exceptions: backendExceptions, loading, error, refresh, simpan } = useCashBankExceptions();
   const ME = 'me';
 
   // Filters
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [customerFilter, setCustomerFilter] = useState('all');
   const [assignedFilter, setAssignedFilter] = useState('all');
   const [dateStart, setDateStart] = useState('');
@@ -67,13 +84,9 @@ export default function CashBankExceptions() {
 
   // Edit form (drawer)
   const [isEditing, setIsEditing] = useState(false);
-  const [editType, setEditType] = useState('');
-  const [editAssignToMe, setEditAssignToMe] = useState(false);
+    const [editAssignToMe, setEditAssignToMe] = useState(false);
   const [editStatus, setEditStatus] = useState<ExceptionStatus>('Open');
-  const saving = false;
-
-  const patchException = (id: string, patch: Partial<CashBankException>) =>
-    setBackendExceptions(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
+  const [saving, setSaving] = useState(false);
 
   const exceptions = useMemo(
     () => backendExceptions.map(e => ({ ...e, displayId: e.tx_no, customer: e.counterparty, date: formatTanggalSingkat(e.created_at) })),
@@ -91,6 +104,7 @@ export default function CashBankExceptions() {
       if (q && !(e.displayId.toLowerCase().includes(q) || e.customer.toLowerCase().includes(q) || e.exception_type.toLowerCase().includes(q))) return false;
       if (severity !== 'all' && e.priority !== severity) return false;
       if (typeFilter !== 'all' && e.exception_type !== typeFilter) return false;
+      if (sourceFilter !== 'all' && e.source !== sourceFilter) return false;
       if (customerFilter !== 'all' && e.customer !== customerFilter) return false;
       if (assignedFilter === 'unassigned' && e.assigned_to) return false;
       if (assignedFilter === 'me' && e.assigned_to !== ME) return false;
@@ -99,7 +113,7 @@ export default function CashBankExceptions() {
       if (end && d > end) return false;
       return true;
     });
-  }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd]);
+  }, [exceptions, search, severity, typeFilter, sourceFilter, customerFilter, assignedFilter, dateStart, dateEnd]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const [currentPage, setCurrentPage] = useState(1);
@@ -110,7 +124,7 @@ export default function CashBankExceptions() {
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const resetFilters = () => {
-    setSearch(''); setSeverity('all'); setTypeFilter('all'); setCustomerFilter('all');
+    setSearch(''); setSeverity('all'); setTypeFilter('all'); setSourceFilter('all'); setCustomerFilter('all');
     setAssignedFilter('all'); setDateStart(''); setDateEnd('');
     setCurrentPage(1); setShowDatePicker(false);
   };
@@ -142,37 +156,52 @@ export default function CashBankExceptions() {
 
   const startEdit = () => {
     if (!selected) return;
-    setEditType(selected.exception_type);
     setEditAssignToMe(selected.assigned_to === ME);
     setEditStatus(selected.status as ExceptionStatus);
     setIsEditing(true);
   };
 
-  const saveEdit = () => {
-    if (!selected) return;
-    patchException(selected.id, {
-      exception_type: editType,
-      assigned_to: editAssignToMe ? ME : null,
-      status: editStatus,
-      resolved_at: editStatus === 'Resolved' ? new Date().toISOString() : null,
-    });
-    setIsEditing(false);
-    toast.success(t('Perubahan disimpan'), { description: selected.displayId });
+  const simpanPenanganan = async (
+    ex: CashBankExceptionView,
+    patch: { status?: ExceptionStatus; assigned_to?: 'me' | null },
+    pesanSukses: string,
+  ): Promise<boolean> => {
+    setSaving(true);
+    try {
+      await simpan(ex, patch);
+      toast.success(t(pesanSukses), { description: ex.tx_no });
+      return true;
+    } catch (err) {
+      toast.error(t('Gagal menyimpan'), { description: err instanceof Error ? err.message : undefined });
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const acceptSuggestion = (id: string) => {
+  const saveEdit = async () => {
+    if (!selected) return;
+    const ok = await simpanPenanganan(
+      selected,
+      { assigned_to: editAssignToMe ? 'me' : null, status: editStatus },
+      'Perubahan disimpan',
+    );
+    if (ok) setIsEditing(false);
+  };
+
+  const acceptSuggestion = async (id: string) => {
     const target = exceptions.find(e => e.id === id);
     if (!target) return;
-    patchException(id, { status: target.status === 'Open' ? 'In Review' : target.status });
-    toast.success(t('Saran AI diterapkan'), { description: target.displayId });
     setOpenMenuId(null);
+    if (target.status === 'Open') await simpanPenanganan(target, { status: 'In Review' }, 'Saran AI diterapkan');
+    else toast.info(t('Saran AI diterapkan'), { description: target.displayId });
   };
 
-  const resolveException = (id: string) => {
+  const resolveException = async (id: string) => {
     const target = exceptions.find(e => e.id === id);
-    patchException(id, { status: 'Resolved', resolved_at: new Date().toISOString() });
-    toast.success(t('Exception ditandai selesai'), { description: target?.displayId });
+    if (!target) return;
     setOpenMenuId(null);
+    await simpanPenanganan(target, { status: 'Resolved' }, 'Exception ditandai selesai');
   };
 
   const viewOriginalFile = () => {
@@ -195,9 +224,9 @@ export default function CashBankExceptions() {
         {[
           { label: 'Total Exceptions', value: String(exceptions.length) },
           { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length) },
-          { label: 'Unmatched Mutation', value: String(exceptions.filter(e => e.exception_type === 'Unmatched bank mutation').length) },
-          { label: 'Low Confidence', value: String(exceptions.filter(e => (e.ai_confidence ?? 0) < 40).length) },
-          { label: 'Duplicate Transaction', value: String(exceptions.filter(e => e.exception_type === 'Duplicate transaction').length) },
+          { label: 'Soal Pencocokan', value: String(exceptions.filter(e => e.source === 'Reconciliation').length) },
+          { label: 'Perlu Klasifikasi', value: String(exceptions.filter(e => e.source === 'Classification').length) },
+          { label: 'Low Confidence', value: String(exceptions.filter(e => e.ai_confidence != null && e.ai_confidence < 40).length) },
         ].map(k => (
           <div key={k.label} className="card p-4">
             <p className="text-xs text-muted-foreground">{t(k.label)}</p>
@@ -240,6 +269,16 @@ export default function CashBankExceptions() {
             {EXCEPTION_TYPES.map(type => (
               <option key={type} value={type}>{t(type)}</option>
             ))}
+          </select>
+
+          <select
+            value={sourceFilter}
+            onChange={ev => { setSourceFilter(ev.target.value); setCurrentPage(1); }}
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+          >
+            <option value="all">{t('Semua (Sumber)')}</option>
+            <option value="Reconciliation">{t('Reconciliation')}</option>
+            <option value="Classification">{t('Classification')}</option>
           </select>
 
           <select
@@ -312,7 +351,7 @@ export default function CashBankExceptions() {
                   <th className="py-2.5 px-3 w-8">
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
-                  {['Priority', 'Tanggal', 'Transaction/File ID', 'Counterparty', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
+                  {['Priority', 'Sumber', 'Tanggal', 'Transaction/File ID', 'Counterparty', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
                     <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
                   ))}
                 </tr>
@@ -320,7 +359,7 @@ export default function CashBankExceptions() {
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada exception yang cocok dengan filter.')}</td>
+                    <td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada exception yang cocok dengan filter.')}</td>
                   </tr>
                 )}
                 {paginated.map(e => (
@@ -335,13 +374,16 @@ export default function CashBankExceptions() {
                     <td className="py-2.5 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(e.priority)}</span>
                     </td>
+                    <td className="py-2.5 px-2">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[e.source] || 'bg-muted text-muted-foreground'}`}>{t(SOURCE_LABEL[e.source] || e.source)}</span>
+                    </td>
                     <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
                     <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
                     <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
                     <td className="py-2.5 px-2 text-muted-foreground">{t(e.exception_type)}</td>
                     <td className="py-2.5 px-2">
                       <div className="flex items-center gap-1.5">
-                        <span className={`font-semibold ${(e.ai_confidence ?? 0) < 40 ? 'text-red-600' : (e.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence ?? 0}%</span>
+                        {e.ai_confidence == null ? <span className="text-muted-foreground">—</span> : <span className={`font-semibold ${e.ai_confidence < 40 ? 'text-red-600' : e.ai_confidence < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence}%</span>}
                       </div>
                     </td>
                     <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === ME ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
@@ -411,6 +453,9 @@ export default function CashBankExceptions() {
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(selected.priority)} {t('Priority')}</span>
               <span className="text-xs text-muted-foreground">ID: {selected.displayId}</span>
             </div>
+            <span className={`inline-block w-fit text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[selected.source] || 'bg-muted text-muted-foreground'}`}>
+              {t(SOURCE_LABEL[selected.source] || selected.source)}
+            </span>
             <div>
               <h4 className="text-sm font-bold text-foreground">{t(selected.exception_type)}</h4>
               {selected.ai_suggestion && <p className="text-xs text-muted-foreground mt-0.5">{selected.ai_suggestion}</p>}
@@ -422,7 +467,7 @@ export default function CashBankExceptions() {
                   ['Tanggal', selected.date],
                   ['Counterparty', selected.customer],
                   ['Transaction ID', selected.displayId],
-                  ['AI Confidence', <span key="c" className={`font-bold ${(selected.ai_confidence ?? 0) < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence ?? 0}%</span>],
+                  ['AI Confidence', selected.ai_confidence == null ? '—' : <span key="c" className={`font-bold ${selected.ai_confidence < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence}%</span>],
                   ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(selected.status)}</span>],
                 ].map(([k, v]) => (
                   <div key={String(k)} className="flex justify-between">
@@ -437,7 +482,7 @@ export default function CashBankExceptions() {
               <div className="space-y-2 text-xs">
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Exception Type')}</label>
-                  <input value={editType} onChange={ev => setEditType(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <input value={selected.exception_type} readOnly disabled className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-muted text-muted-foreground mt-0.5" />
                 </div>
                 <label className="flex items-center gap-2 text-xs text-foreground">
                   <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-border" />

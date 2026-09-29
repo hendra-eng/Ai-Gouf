@@ -22,6 +22,7 @@ from sqlalchemy import (
     Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+from sqlalchemy.exc import IntegrityError  # [BARU] dipakai upsert_bank_cash_exception (tabrakan unique index)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -957,7 +958,7 @@ class SalesSourceFile(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan) yang laporannya sedang diupload -- WAJIB
     # diisi user lewat dropdown saat upload (lihat SALES_IMPORT_TEMPLATES.md
     # di root). BEDA dari client_id di atas (management_users, akun yang
@@ -1008,7 +1009,7 @@ class SalesSourceRow(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_files.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     row_no = Column(Integer, nullable=False)
     tanggal = Column(Date, nullable=True)
     no_invoice = Column(String(100), nullable=True)
@@ -1040,7 +1041,10 @@ class SalesInvoice(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    # Company (management_clients) pemilik transaksi -- dipakai untuk mengikuti "Switch Company".
+    # NULL = data lama yang belum di-backfill.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     invoice_no = Column(String(100), nullable=False)
     invoice_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
@@ -1082,7 +1086,7 @@ class SalesAccountMapping(Base):
     __tablename__ = "financial_transaction_sales_account_mappings"
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False, unique=True)
     piutang_account_code = Column(String(50), nullable=False)
     piutang_account_name = Column(String(200), nullable=True)
@@ -1113,7 +1117,7 @@ class SalesException(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
     source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
     exception_type = Column(String(100), nullable=False)
@@ -1143,7 +1147,7 @@ class SalesActivityLog(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
     event_type = Column(String(50), nullable=False)
     description = Column(Text, nullable=False)
@@ -1400,7 +1404,7 @@ class PurchaseSourceRecord(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     source_code = Column(String(100), nullable=False)
     source_type = Column(String(30), nullable=False)
     vendor_name = Column(String(255), nullable=False)
@@ -1436,7 +1440,10 @@ class PurchaseTransaction(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    # Company (management_clients) pemilik transaksi -- dipakai untuk mengikuti "Switch Company".
+    # NULL = data lama yang belum di-backfill.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     purchase_no = Column(String(100), nullable=False)
     purchase_date = Column(Date, nullable=False)
     invoice_date = Column(Date, nullable=True)
@@ -1489,7 +1496,7 @@ class PurchaseTransactionLine(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     line_no = Column(Integer, nullable=False)
     item_code = Column(String(50), nullable=True)
     description = Column(Text, nullable=False)
@@ -1523,7 +1530,7 @@ class PurchaseException(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
     source_record_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_records.id"), nullable=True)
     exception_type = Column(String(100), nullable=False)
@@ -4770,6 +4777,8 @@ class BankFeedMutation(Base):
     matched_tx_id = Column(String(100), nullable=True)  # id Transaction frontend ("BC-..."/"JE-...")
     source_file = Column(String(255), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), nullable=True, default=datetime.now)
+    mutation_hash = Column(String(64), nullable=True)   # [BARU] anti-duplikat impor (unique per client+rekening)
+    matched_at = Column(DateTime(timezone=True), nullable=True)  # [BARU]
 
     client = relationship("Client")
 
@@ -5235,6 +5244,58 @@ class FinanceTransactionBankCashActivityLog(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+class FinanceTransactionBankCashException(Base):
+    """[BARU] Catatan PENANGANAN exception tab "Exceptions" di Cash & Bank.
+
+    Tabel ini SENGAJA hanya menyimpan status penanganan (Open / In Review /
+    Resolved, assigned_to, resolved_at/by), BUKAN salinan masalahnya --
+    deteksi masalah (amount mismatch, duplicate, mutasi unmatched, akun
+    lawan kosong, dst) dihitung ulang dari Bank Feed + Reconciliation
+    setiap tab dibuka, lalu dicocokkan ke baris tabel ini lewat
+    (client_id, bank_mutation_ref, exception_type). Masalah yang sudah
+    tidak terdeteksi lagi otomatis hilang dari daftar walau barisnya di
+    sini masih ada.
+
+    Tabel dibuat manual lewat Supabase (bukan init_db()/create_all()).
+    client_id -> management_clients (SAMA seperti finance_transaction_
+    bank_cash), BUKAN management_users seperti tabel exceptions Sales.
+    bank_mutation_ref berupa teks (id mutasi Bank Feed / no transaksi
+    kas-bank), bukan FK -- Bank Feed tidak disimpan permanen dan Cash
+    Payment/Receipt tidak punya satu tabel tunggal.
+    """
+    __tablename__ = "financial_transaction_bank_cash_exceptions"
+    __table_args__ = (
+        Index("idx_bank_cash_exceptions_client_status", "client_id", "status"),
+        Index("idx_bank_cash_exceptions_mutation_ref", "bank_mutation_ref"),
+        # [BARU] Sudah ada di DB (uq_bank_cash_exceptions_key_aktif): 1 baris aktif per kunci upsert.
+        Index("uq_bank_cash_exceptions_key_aktif", "client_id", "bank_mutation_ref", "exception_type",
+              unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    bank_mutation_ref = Column(String(100), nullable=False)
+    linked_sales_invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    linked_purchase_transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    exception_type = Column(String(100), nullable=False)
+    source = Column(String(30), nullable=False)  # 'Reconciliation' | 'Classification'
+    priority = Column(String(10), nullable=False, default="Medium")
+    status = Column(String(20), nullable=False, default="Open")
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    ai_suggestion = Column(Text, nullable=True)
+    source_snippet = Column(JSONB, nullable=True)
+    assigned_to = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    notes = Column(Text, nullable=True)  # [BARU] catatan penanganan (diisi user)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id"), nullable=True)
+
+
 class FinanceTransactionOtherActivityLog(Base):
     """Log aktivitas satu ENTRI finance_transaction_other (sepasang leg
     debet+kredit yang berbagi je_id yang sama) -- satu baris log per
@@ -5322,6 +5383,95 @@ def daftar_log_bank_cash(client_id: str, bank_cash_id: str) -> List[Dict[str, An
         session.rollback()
         print(f"Error daftar log bank cash: {e}")
         return []
+    finally:
+        session.close()
+
+# ============================================================
+# [BARU] financial_transaction_bank_cash_exceptions -- catatan penanganan
+# exception tab "Exceptions" Cash & Bank (lihat
+# FinanceTransactionBankCashException di atas). Memakai helper CRUD
+# generic _sales_crud_*() (sudah generic: model + daftar field), jadi
+# perilakunya (soft-delete, created_by/edited_by, urutan created_at desc)
+# sama persis dengan exceptions Sales.
+# ============================================================
+
+CRUD_FIELDS_BANK_CASH_EXCEPTION = [
+    "client_id", "bank_mutation_ref", "linked_sales_invoice_id",
+    "linked_purchase_transaction_id", "exception_type", "source", "priority",
+    "status", "ai_confidence", "ai_suggestion", "source_snippet",
+    "assigned_to", "resolved_at", "resolved_by", "notes",
+]
+
+def create_bank_cash_exception(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_create(FinanceTransactionBankCashException, CRUD_FIELDS_BANK_CASH_EXCEPTION, data, created_by)
+
+def get_bank_cash_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _sales_crud_get_by_id(FinanceTransactionBankCashException, CRUD_FIELDS_BANK_CASH_EXCEPTION, exception_id, termasuk_nonaktif)
+
+def list_bank_cash_exceptions(
+    client_id: str,
+    status: Optional[str] = None,
+    bank_mutation_ref: Optional[str] = None,
+    source: Optional[str] = None,
+    termasuk_nonaktif: bool = False,
+) -> List[Dict[str, Any]]:
+    return _sales_crud_list(
+        FinanceTransactionBankCashException, CRUD_FIELDS_BANK_CASH_EXCEPTION,
+        {"client_id": client_id, "status": status, "bank_mutation_ref": bank_mutation_ref, "source": source},
+        termasuk_nonaktif,
+    )
+
+def update_bank_cash_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _sales_crud_update(FinanceTransactionBankCashException, CRUD_FIELDS_BANK_CASH_EXCEPTION, exception_id, data, updated_by)
+
+def soft_delete_bank_cash_exception(exception_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _sales_crud_soft_delete(FinanceTransactionBankCashException, exception_id, deleted_by)
+
+def upsert_bank_cash_exception(data: Dict[str, Any], user_id: Optional[str] = None, _ulang: bool = False) -> Optional[Dict[str, Any]]:
+    """Cocokkan baris penanganan berdasarkan (client_id, bank_mutation_ref,
+    exception_type) -- kunci yang sama dipakai tab Exceptions untuk
+    menggabungkan hasil deteksi dengan status penanganan. Ada -> update
+    field yang dikirim saja; belum ada -> buat baru (default status
+    'Open'). Hasilnya dict baris + kunci "_dibuat" (True kalau baru
+    dibuat) supaya router bisa membalas 201 vs 200."""
+    session = SessionLocal()
+    try:
+        obj = session.query(FinanceTransactionBankCashException).filter(
+            FinanceTransactionBankCashException.client_id == data.get("client_id"),
+            FinanceTransactionBankCashException.bank_mutation_ref == data.get("bank_mutation_ref"),
+            FinanceTransactionBankCashException.exception_type == data.get("exception_type"),
+            FinanceTransactionBankCashException.deleted_at.is_(None),
+        ).first()
+        dibuat = obj is None
+        if dibuat:
+            obj = FinanceTransactionBankCashException(
+                **{k: v for k, v in data.items() if k in CRUD_FIELDS_BANK_CASH_EXCEPTION},
+                created_by=user_id,
+            )
+            session.add(obj)
+            session.flush()
+        else:
+            for kolom, nilai in data.items():
+                if kolom in CRUD_FIELDS_BANK_CASH_EXCEPTION:
+                    setattr(obj, kolom, nilai)
+            obj.edited_at = datetime.now()
+            obj.edited_by = user_id
+        hasil = _sales_row_ke_dict(obj, CRUD_FIELDS_BANK_CASH_EXCEPTION)
+        session.commit()
+        hasil["_dibuat"] = dibuat
+        return hasil
+    except IntegrityError:
+        # [BARU] Dua request bersamaan membuat baris yang sama -> unique index menolak
+        # yang kedua. Ulangi sekali: kali ini barisnya sudah ada, jadi jalur update.
+        session.rollback()
+        if not _ulang:
+            return upsert_bank_cash_exception(data, user_id, _ulang=True)
+        print(f"Error upsert {FinanceTransactionBankCashException.__tablename__}: tabrakan unique berulang")
+        return None
+    except Exception as e:
+        session.rollback()
+        print(f"Error upsert {FinanceTransactionBankCashException.__tablename__}: {e}")
+        return None
     finally:
         session.close()
 
@@ -6681,7 +6831,7 @@ def soft_delete_sales_source_row(source_row_id: str, deleted_by: Optional[str] =
 # --- 3) financial_transaction_sales_invoices ---
 
 CRUD_FIELDS_SALES_INVOICE = [
-    "client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
+    "client_id", "management_client_id", "invoice_no", "invoice_date", "due_date", "customer_name",
     "customer_npwp", "description", "transaction_type", "project_name",
     "sales_person", "term_of_payment", "cabang", "dpp", "ppn", "pph", "gross_amount",
     "paid_amount", "tax_invoice_status", "posting_status", "reconcile_status",
@@ -7512,7 +7662,7 @@ def soft_delete_purchase_source_record(source_record_id: str, deleted_by: Option
 # --- 2) financial_transaction_purchase_transactions ---
 
 CRUD_FIELDS_PURCHASE_TRANSACTION = [
-    "client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
+    "client_id", "management_client_id", "purchase_no", "purchase_date", "invoice_date", "invoice_number",
     "po_number", "vendor_name", "vendor_code", "source_doc_type", "source_ref",
     "source_record_id", "description", "category", "subtotal", "discount",
     "tax_amount", "total", "accounts_payable", "currency", "payment_status",

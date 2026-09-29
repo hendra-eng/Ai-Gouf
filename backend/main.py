@@ -115,6 +115,8 @@ from modules.finance import other_v1 as finance_other_v1  # [DIPINDAH] /api/v1/t
 from modules.finance import profit_loss_v1 as finance_profit_loss_v1  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights (halaman Profit & Loss) -- pindahan apa adanya dari main.py
 from modules.finance import cash_flow_v1 as finance_cash_flow_v1  # [DIPINDAH] /api/v1/finance/getCashFlowForecast (halaman Cash Flow) -- pindahan apa adanya dari main.py
 from modules.finance import bank_feed_v1 as finance_bank_feed_v1  # [BARU] /api/v1/finance/bank-feed/list|import|{id}|{id}/match|{id}/unmatch (halaman Cash & Bank > Bank Feed/Reconciliation)
+from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
+from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview
 from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # [DIPINDAH] /api/v1/planning/... (halaman Tax & Compliance) -- pindahan apa adanya dari main.py
 from modules.planning import budget_forecast_v1 as planning_budget_forecast_v1  # [DIPINDAH] /api/v1/planning/... (halaman Budget & Forecast) -- pindahan apa adanya dari main.py
 from modules.intelligence import audit_v1 as intelligence_audit_v1  # [DIPINDAH] /api/v1/intelligence/... (halaman Audit) -- pindahan apa adanya dari main.py
@@ -404,6 +406,8 @@ app.include_router(finance_other_v1.router)  # [DIPINDAH] /api/v1/transaction/ge
 app.include_router(finance_profit_loss_v1.router)  # [DIPINDAH] /api/v1/finance/getProfitLossBudget|getProfitLossInsights
 app.include_router(finance_cash_flow_v1.router)  # [DIPINDAH] /api/v1/finance/getCashFlowForecast
 app.include_router(finance_bank_feed_v1.router)  # [BARU] /api/v1/finance/bank-feed/list|import|{id}|{id}/match|{id}/unmatch
+app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
+app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri
 app.include_router(planning_tax_compliance_v1.router)  # [DIPINDAH] /api/v1/planning/getFiscalCorrection|getTaxComplianceTasks|addTaxComplianceTask|updateTaxComplianceTaskStatus|deleteTaxComplianceTask
 app.include_router(planning_budget_forecast_v1.router)  # [DIPINDAH] /api/v1/planning/getForecastAssumption|saveForecastAssumption|getScenarios|addScenario|deleteScenario
 app.include_router(intelligence_audit_v1.router)  # [DIPINDAH] /api/v1/intelligence/getAudit|addAuditFinding|updateAuditFinding|addAuditEvidence|getAuditEvidenceFile|deleteAuditEvidence|updateAuditStage

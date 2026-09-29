@@ -3,55 +3,70 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import KpiCard from '@/components/shared/KpiCard';
-import { useTransactions } from '../../context/TransactionsContext';
-import { formatIDR, uniqueJournalTotal, uniqueJournalCount, monthlyTrendFor, CHART_COLORS } from '../../lib/groupAnalytics';
+import { formatIDR, CHART_COLORS } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CashBankTabs from '../components/CashBankTabs';
 import { useBankFeed } from '../context/BankFeedContext';
+import { usePembayaranRekon } from '../lib/useBankCashRekon';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
-// [BARU] Halaman Overview — murni agregasi dari data yang SUDAH real
-// (Cash Payment/Cash Receipt via TransactionsContext) + jumlah item Bank
-// Feed yang belum dicocokkan (state mock, lihat BankFeedContext). Tidak ada
-// data baru yang diminta dari backend di halaman ini.
+// [DIUBAH] Overview membaca dari sumber yang SAMA dengan tab Reconciliation, yaitu pembayaran hasil
+// rekonsiliasi di backend (/api/v1/finance/bank-reconciliation/payments): Cash In = penerimaan
+// invoice Sales, Cash Out = pembayaran invoice Purchase, yang sudah dicocokkan dengan mutasi bank.
+// Sebelumnya dari TransactionsContext (sumber lama). "Saldo per Akun" dan jumlah mutasi belum
+// cocok tetap dari Bank Feed (hanya ada di sesi browser).
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
 export default function CashBankOverviewPage() {
-  const { getByGroup } = useTransactions();
   const { mutations } = useBankFeed();
+  const { payments, loading, error, refresh } = usePembayaranRekon();
 
-  const paymentTx = useMemo(() => getByGroup('cash_payment'), [getByGroup]);
-  const receiptTx = useMemo(() => getByGroup('cash_receipt'), [getByGroup]);
-
-  const totalOut = uniqueJournalTotal(paymentTx);
-  const totalIn = uniqueJournalTotal(receiptTx);
+  const totalOut = useMemo(() => payments.filter((p) => p.direction === 'cash_payment').reduce((n, p) => n + p.amount, 0), [payments]);
+  const totalIn = useMemo(() => payments.filter((p) => p.direction === 'cash_receipt').reduce((n, p) => n + p.amount, 0), [payments]);
   const netCashFlow = totalIn - totalOut;
-  const txCount = uniqueJournalCount(paymentTx) + uniqueJournalCount(receiptTx);
+  const txCount = payments.length;
 
   const unmatchedCount = useMemo(() => mutations.filter((m) => m.status === 'unmatched').length, [mutations]);
 
-  // Gabung tren bulanan payment (keluar) & receipt (masuk) jadi satu chart.
-  const trendOut = useMemo(() => monthlyTrendFor(paymentTx), [paymentTx]);
-  const trendIn = useMemo(() => monthlyTrendFor(receiptTx), [receiptTx]);
-  const combinedTrend = useMemo(
-    () => trendOut.map((t, i) => ({ month: t.month, masuk: trendIn[i]?.total || 0, keluar: t.total })),
-    [trendOut, trendIn]
-  );
+  // Tren bulanan menurut tanggal pembayaran; tahun = tahun pembayaran terbaru.
+  const combinedTrend = useMemo(() => {
+    const tahun = payments.reduce((maks, p) => {
+      const y = new Date(p.payment_date).getFullYear();
+      return Number.isFinite(y) && y > maks ? y : maks;
+    }, 0) || new Date().getFullYear();
+    const bulan = MONTH_LABELS.map((month) => ({ month, masuk: 0, keluar: 0 }));
+    payments.forEach((p) => {
+      const d = new Date(p.payment_date);
+      if (isNaN(d.getTime()) || d.getFullYear() !== tahun) return;
+      if (p.direction === 'cash_receipt') bulan[d.getMonth()].masuk += p.amount;
+      else bulan[d.getMonth()].keluar += p.amount;
+    });
+    return bulan;
+  }, [payments]);
 
-  // Saldo per akun bank/kas — dihitung sederhana dari saldoAkhir baris
-  // terakhir tiap accountName (mengikuti field yang sudah ada di Transaction).
+  // Saldo terbaru per rekening dari Bank Feed (mutasi sudah terurut terbaru dulu). Saldo dihitung
+  // dari 0 + kredit - debit karena saldo awal rekening koran tidak dibaca.
   const saldoPerAkun = useMemo(() => {
     const map = new Map<string, number>();
-    [...paymentTx, ...receiptTx].forEach((tx) => {
-      if (tx.accountName && tx.accountName !== '—') map.set(tx.accountName, tx.saldoAkhir || map.get(tx.accountName) || 0);
+    mutations.forEach((m) => {
+      if (m.bankAccount && !map.has(m.bankAccount)) map.set(m.bankAccount, m.balanceAfter);
     });
     return Array.from(map.entries())
       .map(([name, saldo]) => ({ name, saldo }))
       .sort((a, b) => b.saldo - a.saldo)
       .slice(0, 6);
-  }, [paymentTx, receiptTx]);
+  }, [mutations]);
 
   return (
     <div className="p-6">
       <CashBankTabs />
+
+      {error && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 mb-6">
+          <span>{error}</span>
+          <button onClick={refresh} className="font-semibold underline hover:no-underline shrink-0">Coba lagi</button>
+        </div>
+      )}
 
       {unmatchedCount > 0 && (
         <Link
@@ -60,8 +75,8 @@ export default function CashBankOverviewPage() {
         >
           <ExclamationTriangleIcon className="w-4 h-4 shrink-0" />
           <span>
-            <span className="font-semibold">{unmatchedCount} mutasi Bank Feed</span> belum dicocokkan dengan Cash
-            Payment/Cash Receipt — klik untuk buka Reconciliation.
+            <span className="font-semibold">{unmatchedCount} mutasi Bank Feed</span> belum dicocokkan dengan invoice
+            Purchase/Sales — klik untuk buka Reconciliation.
           </span>
         </Link>
       )}
@@ -89,9 +104,9 @@ export default function CashBankOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <h2 className="text-sm font-bold text-foreground mb-1">Arus Kas Bulanan</h2>
-          <p className="text-xs text-muted-foreground mb-3">Cash In vs Cash Out — Cash Payment & Cash Receipt</p>
+          <p className="text-xs text-muted-foreground mb-3">Cash In vs Cash Out — pembayaran & penerimaan yang sudah direkonsiliasi</p>
           {combinedTrend.every((t) => t.masuk === 0 && t.keluar === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi untuk ditampilkan.</p>
+            <p className="text-xs text-muted-foreground py-10 text-center">{loading ? 'Memuat data...' : 'Belum ada pembayaran yang direkonsiliasi.'}</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={combinedTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
@@ -118,9 +133,9 @@ export default function CashBankOverviewPage() {
 
         <div className="card-elevated-md rounded-xl p-5">
           <h2 className="text-sm font-bold text-foreground mb-1">Saldo per Akun</h2>
-          <p className="text-xs text-muted-foreground mb-3">Bank & Kas</p>
+          <p className="text-xs text-muted-foreground mb-3">Dari Bank Feed sesi ini</p>
           {saldoPerAkun.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+            <p className="text-xs text-muted-foreground py-6 text-center">Upload rekening koran di tab Bank Feed untuk melihat saldo.</p>
           ) : (
             <div className="space-y-2.5">
               {saldoPerAkun.map((a, i) => (
@@ -132,7 +147,7 @@ export default function CashBankOverviewPage() {
                   <div className="w-full h-1.5 bg-slate-100 rounded-full">
                     <div
                       className="h-full rounded-full"
-                      style={{ width: `${Math.min(100, (a.saldo / (saldoPerAkun[0].saldo || 1)) * 100)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+                      style={{ width: `${Math.max(0, Math.min(100, (a.saldo / (saldoPerAkun[0].saldo || 1)) * 100))}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
                     />
                   </div>
                 </div>
@@ -142,7 +157,7 @@ export default function CashBankOverviewPage() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">{txCount} transaksi Cash Payment + Cash Receipt tercatat.</p>
+      <p className="text-xs text-muted-foreground">{txCount} pembayaran hasil rekonsiliasi tercatat (Cash Payment + Cash Receipt).</p>
     </div>
   );
 }

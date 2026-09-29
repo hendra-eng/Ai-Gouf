@@ -1,13 +1,35 @@
 'use client';
 
 // Salinan desain tab Journal Preview di Sales (sales/components/SalesJournalPreview.tsx)
-// untuk Cash & Bank. Data masih DUMMY (lib/cashBankMock.ts) — belum tersambung backend.
+// untuk Cash & Bank.
+//
+// [DIUBAH] Jalur PENDEK (matched) sekarang memakai data REAL dari backend
+// (/api/v1/finance/bank-reconciliation -- lihat lib/useBankCashRekon.ts): daftar = jurnal Kas vs
+// Hutang/Piutang hasil pencocokan di tab Reconciliation, baris jurnal apa adanya dari tabel
+// journal_lines, dan Post Journal memanggil endpoint posting jurnal. Jurnal hasil match langsung
+// berstatus "Siap Posting" (backend tidak punya status approved), jadi tombol Approve dihapus.
+// Jalur LENGKAP (unmatched: klasifikasi akun & pajak) belum punya backend -- kodenya dibiarkan,
+// tapi belum ada data yang masuk ke sana.
+//
+// [BARU] UI sekarang bercabang berdasarkan `matchStatus` tiap transaksi (lihat
+// cashBankMock.ts untuk alasannya):
+//   - 'matched'   -> jalur pendek. Akun lawan & pajak sudah diketahui dari
+//                    invoice Sales/Purchase asal, jadi tidak lewat AI
+//                    Extraction/Classification/Tax Treatment. Panel kiri
+//                    diganti 1 panel "Invoice Terkait", jurnal otomatis 2
+//                    baris, dan Edit Mapping dikunci.
+//   - 'unmatched' -> jalur lengkap, TIDAK DIUBAH dari sebelumnya (AI
+//                    Extraction -> Accounting Classification -> Tax
+//                    Treatment -> Journal Entry, semua bisa diedit).
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, X, Eye } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, X, Eye, Link2, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
-import { MOCK_CASH_BANK_TXS, type CashBankTx } from '../lib/cashBankMock';
+import type { CashBankTx } from '../lib/cashBankMock';
+import { useActiveClient } from '@/lib/activeClient';
+import { postJurnalEntry } from '@/app/agent-ai/lib/api';
+import { useJurnalRekonTxs, type CashBankTxReal } from '../lib/useBankCashRekon';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -35,7 +57,15 @@ const STATUS_BADGE: Record<UiStatus, string> = {
   'Diposting': 'bg-gray-100 text-gray-600',
 };
 
-const STEPS = [
+// Jalur MATCHED: pendek (3 langkah) — akun lawan & pajak sudah diketahui dari invoice.
+const STEPS_MATCHED = [
+  { n: 1, label: 'Invoice Terkait', sub: 'Matched ke invoice' },
+  { n: 2, label: 'Journal', sub: 'Jurnal akuntansi' },
+  { n: 3, label: 'Approve/Post', sub: 'Persetujuan' },
+];
+
+// Jalur UNMATCHED: lengkap (6 langkah) — sama seperti sebelumnya, tidak diubah.
+const STEPS_UNMATCHED = [
   { n: 1, label: 'Source Document', sub: 'Dokumen sumber' },
   { n: 2, label: 'AI Extraction', sub: 'Ekstraksi data' },
   { n: 3, label: 'Accounting Classification', sub: 'Klasifikasi akun' },
@@ -44,10 +74,10 @@ const STEPS = [
   { n: 6, label: 'Approve/Post', sub: 'Persetujuan' },
 ];
 
-const stepForStatus = (status: UiStatus) => {
-  if (status === 'Diposting') return 6;
-  if (status === 'Siap Posting') return 5;
-  return 4;
+const stepForStatus = (status: UiStatus, totalSteps: number) => {
+  if (status === 'Diposting') return totalSteps;
+  if (status === 'Siap Posting') return totalSteps - 1;
+  return totalSteps - 2;
 };
 
 // Opsi akun DUMMY. Nanti diganti dengan COA klien (useClientCoa) seperti di Sales.
@@ -78,8 +108,20 @@ const OPSI_AKUN: AccountOptions = {
   pph: [NO_PPH, { code: '1170-01', name: 'PPh Pasal 23 Dibayar Dimuka' }, { code: '1170-02', name: 'PPh Pasal 4(2) Dibayar Dimuka' }],
 };
 
-function mappingUsulan(tx: CashBankTx): Mapping {
+function kasAccUntuk(tx: CashBankTx): Acc {
   const kasIdx = tx.bank_account.startsWith('Mandiri') ? 2 : tx.bank_account.startsWith('BNI') ? 3 : 1;
+  return OPSI_AKUN.kas[kasIdx];
+}
+
+/** Mapping untuk transaksi MATCHED: akun lawan tetap (Piutang/Hutang Usaha dari invoice
+ *  asal), tidak ada baris PPN/PPh terpisah karena pajaknya sudah tercatat di invoice. */
+function mappingMatched(tx: CashBankTx): Mapping {
+  const namaAkun = tx.linkedInvoice?.counterpartyAccount ?? (tx.direction === 'Cash Receipt' ? OPSI_AKUN.lawan[0].code + ' - ' + OPSI_AKUN.lawan[0].name : OPSI_AKUN.lawan[1].code + ' - ' + OPSI_AKUN.lawan[1].name);
+  const [code, ...rest] = namaAkun.split(' - ');
+  return { kas: kasAccUntuk(tx), lawan: { code, name: rest.join(' - ') }, ppn: OPSI_AKUN.ppn[0], pph: NO_PPH };
+}
+
+function mappingUsulan(tx: CashBankTx): Mapping {
   const lawan =
     tx.transaction_type.includes('Piutang') ? OPSI_AKUN.lawan[0]
     : tx.transaction_type.includes('Hutang') ? OPSI_AKUN.lawan[1]
@@ -88,7 +130,7 @@ function mappingUsulan(tx: CashBankTx): Mapping {
     : tx.transaction_type.includes('Bank') ? OPSI_AKUN.lawan[4]
     : OPSI_AKUN.lawan[0];
   return {
-    kas: OPSI_AKUN.kas[kasIdx],
+    kas: kasAccUntuk(tx),
     lawan,
     ppn: tx.direction === 'Cash Payment' ? OPSI_AKUN.ppn[1] : OPSI_AKUN.ppn[0],
     pph: NO_PPH,
@@ -104,9 +146,9 @@ const ITEMS_PER_PAGE = 5;
 export default function CashBankJournalPreview() {
   const { t } = useLanguage();
 
-  // DUMMY: state lokal menggantikan hook data backend.
-  const [txs, setTxs] = useState<CashBankTx[]>(MOCK_CASH_BANK_TXS);
-  const loading = false;
+  const { activeClientId } = useActiveClient();
+  const { txs, loading, error, refresh } = useJurnalRekonTxs();
+  const [posting, setPosting] = useState(false);
   const [mappings, setMappings] = useState<Record<string, Mapping>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -133,27 +175,48 @@ export default function CashBankJournalPreview() {
   const pageStart = (safePage - 1) * ITEMS_PER_PAGE;
   const pagedTxs = filteredTxs.slice(pageStart, pageStart + ITEMS_PER_PAGE);
 
-  const selectedTx: CashBankTx | null = txs.find(x => x.id === selectedId) ?? txs[0] ?? null;
+  const selectedTx: CashBankTxReal | null = txs.find(x => x.id === selectedId) ?? txs[0] ?? null;
 
   if (!selectedTx) {
     return (
-      <div className="card p-8 text-center text-xs text-muted-foreground">
-        {loading ? t('Memuat...') : t('Belum ada transaksi kas & bank untuk diproses ke jurnal.')}
+      <div className="card p-8 text-center text-xs text-muted-foreground space-y-2">
+        {error && <p className="text-rose-600">{error}</p>}
+        <p>
+          {loading
+            ? t('Memuat...')
+            : t('Belum ada jurnal. Jurnal muncul di sini setelah mutasi Bank Feed dicocokkan ke invoice di tab Reconciliation.')}
+        </p>
       </div>
     );
   }
 
+  const isMatched = selectedTx.matchStatus === 'matched';
+  const STEPS = isMatched ? STEPS_MATCHED : STEPS_UNMATCHED;
+
   const uiStatus = keUiStatus(selectedTx.posting_status);
-  const mapping: Mapping = mappings[selectedTx.id] ?? mappingUsulan(selectedTx);
+  const mapping: Mapping = isMatched ? mappingMatched(selectedTx) : (mappings[selectedTx.id] ?? mappingUsulan(selectedTx));
   const opsiAkun = OPSI_AKUN;
   const dpp = selectedTx.dpp;
-  const ppn = selectedTx.ppn;
+  const ppn = isMatched ? 0 : selectedTx.ppn; // matched: PPN sudah tercatat di invoice, tidak dipecah lagi di sini
 
   const { kas: kasAcc, lawan: lawanAcc, ppn: ppnAcc, pph: pphAcc } = mapping;
   const isReceipt = selectedTx.direction === 'Cash Receipt';
 
-  // Cash Receipt: Debit Kas/Bank, Kredit akun lawan (+ PPN). Cash Payment: kebalikannya.
-  const journalLines = isReceipt
+  // Cash Receipt: Debit Kas/Bank, Kredit akun lawan (+ PPN kalau unmatched). Cash Payment: kebalikannya.
+  // Matched: selalu 2 baris (Kas/Bank vs Piutang/Hutang Usaha), sebesar nominal mutasi bank.
+  const journalLines = isMatched && selectedTx.realLines && selectedTx.realLines.length > 0
+    ? selectedTx.realLines
+    : isMatched
+    ? (isReceipt
+        ? [
+            { no: 1, code: kasAcc.code as string, name: kasAcc.name, debit: selectedTx.amount, credit: 0 },
+            { no: 2, code: lawanAcc.code as string, name: lawanAcc.name, debit: 0, credit: selectedTx.amount },
+          ]
+        : [
+            { no: 1, code: lawanAcc.code as string, name: lawanAcc.name, debit: selectedTx.amount, credit: 0 },
+            { no: 2, code: kasAcc.code as string, name: kasAcc.name, debit: 0, credit: selectedTx.amount },
+          ])
+    : isReceipt
     ? [
         { no: 1, code: kasAcc.code as string, name: kasAcc.name, debit: selectedTx.amount, credit: 0 },
         { no: 2, code: lawanAcc.code as string, name: lawanAcc.name, debit: 0, credit: dpp },
@@ -165,7 +228,7 @@ export default function CashBankJournalPreview() {
         { no: ppn > 0 ? 3 : 2, code: kasAcc.code as string, name: kasAcc.name, debit: 0, credit: selectedTx.amount },
       ];
 
-  const activeStep = stepForStatus(uiStatus);
+  const activeStep = stepForStatus(uiStatus, STEPS.length);
   const isPosted = uiStatus === 'Diposting';
 
   const handleSelectTx = (x: CashBankTx) => {
@@ -181,6 +244,7 @@ export default function CashBankJournalPreview() {
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const startEditMapping = () => {
+    if (isMatched) return; // akun mengikuti invoice asal, tidak bisa diedit di jalur matched
     setDraftMapping(mapping);
     setIsEditingMapping(true);
   };
@@ -194,27 +258,38 @@ export default function CashBankJournalPreview() {
     toast.success(t('Mapping akun disimpan'), { description: selectedTx.tx_no });
   };
 
-  const setStatus = (id: string, posting_status: CashBankTx['posting_status']) =>
-    setTxs(prev => prev.map(x => (x.id === id ? { ...x, posting_status } : x)));
-
-  const handleApprove = () => {
-    if (uiStatus !== 'Diproses') return;
-    setStatus(selectedTx.id, 'Approved');
-    toast.success(t('Klasifikasi akun disetujui'), { description: selectedTx.tx_no });
-  };
-
-  const handlePostJournal = () => {
-    if (uiStatus !== 'Siap Posting') return;
-    setStatus(selectedTx.id, 'Posted');
-    setIsEditingMapping(false);
-    toast.success(t('Jurnal berhasil diposting'), { description: selectedTx.tx_no });
+  const handlePostJournal = async () => {
+    if (uiStatus !== 'Siap Posting' || posting) return;
+    if (!activeClientId) {
+      toast.error(t('Belum ada client aktif — pilih client dulu di Topbar.'));
+      return;
+    }
+    setPosting(true);
+    try {
+      await postJurnalEntry(String(activeClientId), selectedTx.id);
+      setIsEditingMapping(false);
+      await refresh();
+      toast.success(t('Jurnal berhasil diposting'), {
+        description: selectedTx.linkedInvoice ? `${selectedTx.tx_no} → ${selectedTx.linkedInvoice.no}` : selectedTx.tx_no,
+      });
+    } catch (e: any) {
+      toast.error(e?.message || t('Gagal memposting jurnal.'));
+    } finally {
+      setPosting(false);
+    }
   };
 
   const footerMessage =
     uiStatus === 'Diposting'
-      ? t('Jurnal ini sudah diposting ke buku besar.')
+      ? isMatched
+        ? t('Jurnal ini sudah diposting ke buku besar dan outstanding invoice sudah diperbarui.')
+        : t('Jurnal ini sudah diposting ke buku besar.')
       : uiStatus === 'Siap Posting'
-      ? t('Jurnal ini siap untuk diposting. Silakan periksa kembali hasil klasifikasi akun dan pastikan sudah sesuai sebelum diposting ke buku besar.')
+      ? isMatched
+        ? t('Jurnal ini siap diposting. Akun mengikuti invoice asal, silakan periksa nominalnya sebelum diposting.')
+        : t('Jurnal ini siap untuk diposting. Silakan periksa kembali hasil klasifikasi akun dan pastikan sudah sesuai sebelum diposting ke buku besar.')
+      : isMatched
+      ? t('Mutasi ini sudah cocok dengan invoice. Setujui dulu sebelum bisa diposting.')
       : t('Jurnal masih diproses. Setujui klasifikasi akun terlebih dahulu sebelum bisa diposting.');
 
   return (
@@ -240,6 +315,7 @@ export default function CashBankJournalPreview() {
           )}
           {pagedTxs.map(x => {
             const s = keUiStatus(x.posting_status);
+            const matched = x.matchStatus === 'matched';
             return (
               <div
                 key={x.id}
@@ -248,8 +324,8 @@ export default function CashBankJournalPreview() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
-                      <span className="text-[9px] font-bold text-blue-600">TRX</span>
+                    <div className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${matched ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                      {matched ? <Link2 size={12} className="text-emerald-600" /> : <AlertTriangle size={12} className="text-amber-600" />}
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-foreground">{x.tx_no}</p>
@@ -262,6 +338,9 @@ export default function CashBankJournalPreview() {
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_BADGE[s]}`}>{t(s)}</span>
                   </div>
                 </div>
+                <span className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium ${matched ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {matched ? t('Dari Invoice') : t('Perlu Klasifikasi')}
+                </span>
               </div>
             );
           })}
@@ -308,7 +387,11 @@ export default function CashBankJournalPreview() {
             <h3 className="text-sm font-semibold text-foreground">{t('Detail Journal Preview')}</h3>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[uiStatus]}`}>{t(uiStatus)}</span>
           </div>
-          <p className="text-xs text-muted-foreground">{t('Lihat bagaimana transaksi kas & bank diubah menjadi jurnal akuntansi')}</p>
+          <p className="text-xs text-muted-foreground">
+            {isMatched
+              ? t('Mutasi ini sudah cocok dengan invoice — akun & pajak mengikuti invoice asal.')
+              : t('Lihat bagaimana transaksi kas & bank diubah menjadi jurnal akuntansi')}
+          </p>
 
           {/* Steps */}
           <div className="flex items-center gap-0 mt-4 overflow-x-auto scrollbar-thin pb-1">
@@ -329,214 +412,309 @@ export default function CashBankJournalPreview() {
           </div>
         </div>
 
-        {/* Content Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          {/* 1. Source Document */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">1</span>
-              {t('Source Document')}
-            </h4>
-            <div className="bg-muted/30 rounded-lg p-3 mb-3 flex items-center gap-3">
-              <div className="w-10 h-12 bg-white border border-border rounded flex items-center justify-center text-[9px] text-muted-foreground">TRX</div>
-              <div className="text-xs space-y-1">
-                {[
-                  ['No. Transaksi', selectedTx.tx_no],
-                  ['Counterparty', selectedTx.counterparty],
-                  ['Tanggal Transaksi', formatTanggal(selectedTx.tx_date)],
-                  ['Nominal', formatIDR(selectedTx.amount)],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex gap-2">
-                    <span className="text-muted-foreground w-24 flex-shrink-0">{t(k)}</span>
-                    <span className="font-medium text-foreground">{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={() => setShowDocPreview(true)}
-              className="w-full py-1.5 border border-border rounded-lg text-xs text-muted-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Eye size={12} /> {t('Lihat Dokumen')}
-            </button>
-          </div>
-
-          {/* 2. AI Extraction */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold flex items-center justify-center">2</span>
-              {t('AI Extraction')}
-            </h4>
-            <div className="space-y-2 text-xs">
-              {[
-                ['No. Transaksi', selectedTx.tx_no],
-                ['Counterparty', selectedTx.counterparty],
-                ['Tipe Transaksi', <span key="t" className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t(selectedTx.transaction_type || selectedTx.direction)}</span>],
-                ['Status Pajak', <span key="s" className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t(selectedTx.tax_status)}</span>],
-                ['Total DPP', formatIDR(dpp)],
-                ['PPN (11%)', formatIDR(ppn)],
-                ['Nominal', formatIDR(selectedTx.amount)],
-              ].map(([k, v]) => (
-                <div key={String(k)} className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground flex-shrink-0">{t(k as string)}</span>
-                  <span className="font-medium text-foreground text-right">{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 3. Accounting Classification */}
-          <div className="card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
-                <span className="w-5 h-5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold flex items-center justify-center">3</span>
-                {t('Accounting Classification')}
+        {isMatched ? (
+          <>
+            {/* Jalur MATCHED: 1 panel ringkas Invoice Terkait, ganti Source Document/AI
+                Extraction/Accounting Classification/Tax Treatment yang tidak relevan lagi. */}
+            <div className="card p-4">
+              <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                <span className="w-5 h-5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold flex items-center justify-center">
+                  <Link2 size={11} />
+                </span>
+                {t('Invoice Terkait')}
               </h4>
-              {isEditingMapping && <span className="text-[10px] text-primary font-medium">{t('Mode Edit')}</span>}
-            </div>
-
-            {!isEditingMapping ? (
-              <div className="space-y-2">
-                {[
-                  { label: 'Akun Kas/Bank', code: kasAcc.code, name: kasAcc.name },
-                  { label: 'Akun Lawan', code: lawanAcc.code, name: lawanAcc.name },
-                  { label: 'Akun PPN', code: ppnAcc.code, name: ppnAcc.name },
-                  { label: 'Akun PPh (Jika ada)', code: pphAcc.code, name: pphAcc.name },
-                ].map(a => (
-                  <div key={a.label} className="flex items-center justify-between py-1.5 border-b border-border/50">
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">{t(a.label)}</p>
-                      <p className="text-xs font-medium text-foreground">{a.code ? `${a.code} - ${t(a.name)}` : t(a.name)}</p>
+              {selectedTx.linkedInvoice ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="text-xs space-y-1.5">
+                    {[
+                      ['No. Invoice', selectedTx.linkedInvoice.no],
+                      ['Jenis', selectedTx.linkedInvoice.type === 'Sales' ? t('Sales (Piutang)') : t('Purchase (Hutang)')],
+                      ['Counterparty', selectedTx.counterparty],
+                      ['No. Mutasi Bank', selectedTx.tx_no],
+                      ['Tanggal Mutasi', formatTanggal(selectedTx.tx_date)],
+                      ['Akun Piutang/Hutang', selectedTx.linkedInvoice.counterpartyAccount],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex gap-2">
+                        <span className="text-muted-foreground w-32 flex-shrink-0">{t(k)}</span>
+                        <span className="font-medium text-foreground">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-xs space-y-1.5 border-l border-border pl-4">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('Outstanding Sebelum')}</span>
+                      <span className="font-medium text-foreground">{formatIDR(selectedTx.linkedInvoice.outstandingBefore)}</span>
                     </div>
-                    <Arrow size={12} className="text-muted-foreground flex-shrink-0" />
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('Nominal Mutasi Bank')}</span>
+                      <span className="font-medium text-foreground">{formatIDR(selectedTx.amount)}</span>
+                    </div>
+                    <div className="flex justify-between pt-1.5 border-t border-border/70">
+                      <span className="text-muted-foreground">{t('Outstanding Sesudah')}</span>
+                      <span className={`font-semibold ${selectedTx.linkedInvoice.outstandingAfter === 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                        {formatIDR(selectedTx.linkedInvoice.outstandingAfter)}
+                        {selectedTx.linkedInvoice.outstandingAfter === 0 ? ` (${t('Lunas')})` : ''}
+                      </span>
+                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {([
-                  { label: 'Akun Kas/Bank', key: 'kas' },
-                  { label: 'Akun Lawan', key: 'lawan' },
-                  { label: 'Akun PPN', key: 'ppn' },
-                  { label: 'Akun PPh (Jika ada)', key: 'pph' },
-                ] as const).map(({ label, key }) => ({
-                  label, key, value: draftMapping![key].code, options: denganAkunAktif(opsiAkun[key], draftMapping![key]),
-                })).map(f => (
-                  <div key={f.label}>
-                    <label className="text-[11px] text-muted-foreground block mb-1">{t(f.label)}</label>
-                    <select
-                      value={f.value ?? ''}
-                      onChange={e => {
-                        const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
-                        setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
-                      }}
-                      className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
-                    >
-                      {f.options.map(opt => (
-                        <option key={String(opt.code)} value={opt.code ?? ''}>
-                          {opt.code ? `${opt.code} - ${t(opt.name)}` : t(opt.name)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={saveEditMapping}
-                    disabled={savingMapping}
-                    className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    {savingMapping ? t('Menyimpan...') : t('Simpan')}
-                  </button>
-                  <button
-                    onClick={cancelEditMapping}
-                    className="flex-1 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors"
-                  >
-                    {t('Batal')}
-                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {/* 4. Tax Treatment */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold flex items-center justify-center">4</span>
-              {t('Tax Treatment')}
-            </h4>
-            {ppn > 0 ? (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mb-3 flex items-start gap-2">
-                <CheckCircle size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-emerald-700">{t('Dikenakan PPN (Taxable)')}</p>
-                  <p className="text-[11px] text-emerald-600">{t('Transaksi ini dikenakan PPN sesuai ketentuan yang berlaku.')}</p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg mb-3 flex items-start gap-2">
-                <CheckCircle size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs font-semibold text-slate-700">{t('Tidak Dikenakan PPN (Non-Taxable)')}</p>
-                  <p className="text-[11px] text-slate-600">{t('Transaksi ini tidak memiliki PPN.')}</p>
-                </div>
-              </div>
-            )}
-            <div className="space-y-1.5 text-xs">
-              {[
-                ['Dasar Pengenaan Pajak (DPP)', formatIDR(dpp)],
-                ['Tarif PPN', ppn > 0 ? '11%' : '—'],
-                ['PPN', formatIDR(ppn)],
-                ['Total Termasuk PPN', formatIDR(selectedTx.amount)],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="text-muted-foreground">{t(k)}</span>
-                  <span className="font-medium text-foreground">{v}</span>
-                </div>
-              ))}
+              ) : (
+                <p className="text-xs text-muted-foreground">{t('Data invoice terkait tidak ditemukan.')}</p>
+              )}
             </div>
-          </div>
 
-          {/* 5. Journal Entry */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">5</span>
-              {t('Journal Entry')}
-            </h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('No.')}</th>
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Code')}</th>
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Name')}</th>
-                    <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Debit (IDR)')}</th>
-                    <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Credit (IDR)')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {journalLines.map(l => (
-                    <tr key={l.no} className="border-b border-border/50">
-                      <td className="py-1.5 px-2 text-muted-foreground">{l.no}</td>
-                      <td className="py-1.5 px-2 text-primary font-medium">{l.code}</td>
-                      <td className="py-1.5 px-2 text-foreground">{t(l.name)}</td>
-                      <td className="py-1.5 px-2 text-right">{l.debit > 0 ? l.debit.toLocaleString('id-ID') : '—'}</td>
-                      <td className="py-1.5 px-2 text-right">{l.credit > 0 ? l.credit.toLocaleString('id-ID') : '—'}</td>
+            {/* Journal Entry — 2 baris saja untuk jalur matched */}
+            <div className="card p-4">
+              <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">2</span>
+                {t('Journal Entry')}
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('No.')}</th>
+                      <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Code')}</th>
+                      <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Name')}</th>
+                      <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Debit (IDR)')}</th>
+                      <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Credit (IDR)')}</th>
                     </tr>
-                  ))}
-                  <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={3} className="py-1.5 px-2 text-xs">{t('Total')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
-                  </tr>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {journalLines.map(l => (
+                      <tr key={l.no} className="border-b border-border/50">
+                        <td className="py-1.5 px-2 text-muted-foreground">{l.no}</td>
+                        <td className="py-1.5 px-2 text-primary font-medium">{l.code}</td>
+                        <td className="py-1.5 px-2 text-foreground">{t(l.name)}</td>
+                        <td className="py-1.5 px-2 text-right">{l.debit > 0 ? l.debit.toLocaleString('id-ID') : '—'}</td>
+                        <td className="py-1.5 px-2 text-right">{l.credit > 0 ? l.credit.toLocaleString('id-ID') : '—'}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-muted/30 font-semibold">
+                      <td colSpan={3} className="py-1.5 px-2 text-xs">{t('Total')}</td>
+                      <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
+                      <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                {t('Pajak (PPN/PPh) sudah tercatat saat invoice diposting, jadi tidak dipecah lagi di jurnal pelunasan ini.')}
+              </p>
             </div>
-          </div>
-        </div>
+          </>
+        ) : (
+          <>
+            {/* Content Grid — jalur UNMATCHED, tidak diubah dari sebelumnya */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              {/* 1. Source Document */}
+              <div className="card p-4">
+                <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">1</span>
+                  {t('Source Document')}
+                </h4>
+                <div className="bg-muted/30 rounded-lg p-3 mb-3 flex items-center gap-3">
+                  <div className="w-10 h-12 bg-white border border-border rounded flex items-center justify-center text-[9px] text-muted-foreground">TRX</div>
+                  <div className="text-xs space-y-1">
+                    {[
+                      ['No. Transaksi', selectedTx.tx_no],
+                      ['Counterparty', selectedTx.counterparty],
+                      ['Tanggal Transaksi', formatTanggal(selectedTx.tx_date)],
+                      ['Nominal', formatIDR(selectedTx.amount)],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex gap-2">
+                        <span className="text-muted-foreground w-24 flex-shrink-0">{t(k)}</span>
+                        <span className="font-medium text-foreground">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDocPreview(true)}
+                  className="w-full py-1.5 border border-border rounded-lg text-xs text-muted-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Eye size={12} /> {t('Lihat Dokumen')}
+                </button>
+              </div>
+
+              {/* 2. AI Extraction */}
+              <div className="card p-4">
+                <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span className="w-5 h-5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold flex items-center justify-center">2</span>
+                  {t('AI Extraction')}
+                </h4>
+                <div className="space-y-2 text-xs">
+                  {[
+                    ['No. Transaksi', selectedTx.tx_no],
+                    ['Counterparty', selectedTx.counterparty],
+                    ['Tipe Transaksi', <span key="t" className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t(selectedTx.transaction_type || selectedTx.direction)}</span>],
+                    ['Status Pajak', <span key="s" className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t(selectedTx.tax_status)}</span>],
+                    ['Total DPP', formatIDR(dpp)],
+                    ['PPN (11%)', formatIDR(ppn)],
+                    ['Nominal', formatIDR(selectedTx.amount)],
+                  ].map(([k, v]) => (
+                    <div key={String(k)} className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground flex-shrink-0">{t(k as string)}</span>
+                      <span className="font-medium text-foreground text-right">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Accounting Classification */}
+              <div className="card p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
+                    <span className="w-5 h-5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold flex items-center justify-center">3</span>
+                    {t('Accounting Classification')}
+                  </h4>
+                  {isEditingMapping && <span className="text-[10px] text-primary font-medium">{t('Mode Edit')}</span>}
+                </div>
+
+                {!isEditingMapping ? (
+                  <div className="space-y-2">
+                    {[
+                      { label: 'Akun Kas/Bank', code: kasAcc.code, name: kasAcc.name },
+                      { label: 'Akun Lawan', code: lawanAcc.code, name: lawanAcc.name },
+                      { label: 'Akun PPN', code: ppnAcc.code, name: ppnAcc.name },
+                      { label: 'Akun PPh (Jika ada)', code: pphAcc.code, name: pphAcc.name },
+                    ].map(a => (
+                      <div key={a.label} className="flex items-center justify-between py-1.5 border-b border-border/50">
+                        <div>
+                          <p className="text-[11px] text-muted-foreground">{t(a.label)}</p>
+                          <p className="text-xs font-medium text-foreground">{a.code ? `${a.code} - ${t(a.name)}` : t(a.name)}</p>
+                        </div>
+                        <Arrow size={12} className="text-muted-foreground flex-shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {([
+                      { label: 'Akun Kas/Bank', key: 'kas' },
+                      { label: 'Akun Lawan', key: 'lawan' },
+                      { label: 'Akun PPN', key: 'ppn' },
+                      { label: 'Akun PPh (Jika ada)', key: 'pph' },
+                    ] as const).map(({ label, key }) => ({
+                      label, key, value: draftMapping![key].code, options: denganAkunAktif(opsiAkun[key], draftMapping![key]),
+                    })).map(f => (
+                      <div key={f.label}>
+                        <label className="text-[11px] text-muted-foreground block mb-1">{t(f.label)}</label>
+                        <select
+                          value={f.value ?? ''}
+                          onChange={e => {
+                            const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
+                            setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
+                          }}
+                          className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
+                        >
+                          {f.options.map(opt => (
+                            <option key={String(opt.code)} value={opt.code ?? ''}>
+                              {opt.code ? `${opt.code} - ${t(opt.name)}` : t(opt.name)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={saveEditMapping}
+                        disabled={savingMapping}
+                        className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      >
+                        {savingMapping ? t('Menyimpan...') : t('Simpan')}
+                      </button>
+                      <button
+                        onClick={cancelEditMapping}
+                        className="flex-1 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors"
+                      >
+                        {t('Batal')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {/* 4. Tax Treatment */}
+              <div className="card p-4">
+                <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span className="w-5 h-5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold flex items-center justify-center">4</span>
+                  {t('Tax Treatment')}
+                </h4>
+                {ppn > 0 ? (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mb-3 flex items-start gap-2">
+                    <CheckCircle size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-700">{t('Dikenakan PPN (Taxable)')}</p>
+                      <p className="text-[11px] text-emerald-600">{t('Transaksi ini dikenakan PPN sesuai ketentuan yang berlaku.')}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg mb-3 flex items-start gap-2">
+                    <CheckCircle size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">{t('Tidak Dikenakan PPN (Non-Taxable)')}</p>
+                      <p className="text-[11px] text-slate-600">{t('Transaksi ini tidak memiliki PPN.')}</p>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-1.5 text-xs">
+                  {[
+                    ['Dasar Pengenaan Pajak (DPP)', formatIDR(dpp)],
+                    ['Tarif PPN', ppn > 0 ? '11%' : '—'],
+                    ['PPN', formatIDR(ppn)],
+                    ['Total Termasuk PPN', formatIDR(selectedTx.amount)],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between">
+                      <span className="text-muted-foreground">{t(k)}</span>
+                      <span className="font-medium text-foreground">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. Journal Entry */}
+              <div className="card p-4">
+                <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">5</span>
+                  {t('Journal Entry')}
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('No.')}</th>
+                        <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Code')}</th>
+                        <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Name')}</th>
+                        <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Debit (IDR)')}</th>
+                        <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Credit (IDR)')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {journalLines.map(l => (
+                        <tr key={l.no} className="border-b border-border/50">
+                          <td className="py-1.5 px-2 text-muted-foreground">{l.no}</td>
+                          <td className="py-1.5 px-2 text-primary font-medium">{l.code}</td>
+                          <td className="py-1.5 px-2 text-foreground">{t(l.name)}</td>
+                          <td className="py-1.5 px-2 text-right">{l.debit > 0 ? l.debit.toLocaleString('id-ID') : '—'}</td>
+                          <td className="py-1.5 px-2 text-right">{l.credit > 0 ? l.credit.toLocaleString('id-ID') : '—'}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-muted/30 font-semibold">
+                        <td colSpan={3} className="py-1.5 px-2 text-xs">{t('Total')}</td>
+                        <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
+                        <td className="py-1.5 px-2 text-right text-xs">{selectedTx.amount.toLocaleString('id-ID')}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Footer Action Bar */}
         <div className="card p-3 flex items-center justify-between gap-3 flex-wrap">
@@ -547,24 +725,18 @@ export default function CashBankJournalPreview() {
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={startEditMapping}
-              disabled={isPosted || isEditingMapping}
+              disabled={isPosted || isEditingMapping || isMatched}
+              title={isMatched ? t('Akun mengikuti invoice asal, tidak bisa diedit di sini') : undefined}
               className="px-3 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ✏ {t('Edit Mapping')}
             </button>
             <button
-              onClick={handleApprove}
-              disabled={uiStatus !== 'Diproses'}
-              className="px-3 py-1.5 border border-emerald-500 text-emerald-600 rounded-lg text-xs font-medium hover:bg-emerald-50 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              <CheckCircle size={12} /> {t('Approve')}
-            </button>
-            <button
               onClick={handlePostJournal}
-              disabled={uiStatus !== 'Siap Posting'}
+              disabled={uiStatus !== 'Siap Posting' || posting}
               className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary"
             >
-              📋 {t('Post Journal')}
+              📋 {posting ? t('Memposting...') : t('Post Journal')}
             </button>
           </div>
         </div>

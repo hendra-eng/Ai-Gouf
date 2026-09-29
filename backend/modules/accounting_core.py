@@ -840,7 +840,7 @@ def create_journal_entry(client_id: str, *, source_module: str, posting_date: An
         )
         session.add(entry)
         session.flush()
-        entry.journal_no = f"JE-{pdate.year}-{entry.id:08d}"
+        entry.journal_no = f"JE-{pdate.year}-{str(entry.id).replace('-', '')[:8].upper()}"  # [FIX] id journal_entries sudah UUID (str) -- format {:08d} lama akan crash
         for idx, payload in enumerate(lines, 1):
             code = str(payload.get("account_code") or "").strip()
             meta = _account_metadata(session, client_id, code)

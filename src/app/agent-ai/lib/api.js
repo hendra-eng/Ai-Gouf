@@ -2513,3 +2513,75 @@ export async function* aiBacaFileStream(file, pertanyaan) {
     if (potongan) yield potongan;
   }
 }
+
+// ============================================================
+// [BARU] Bank & Cash -- Rekonsiliasi Bank Feed <-> invoice Purchase/Sales
+// Endpoint: /api/v1/finance/bank-reconciliation/* (bank_reconciliation_v1.py)
+// Semua memakai requestEnvelope (amplop {status,message,data,errors}).
+// Mutasi dikirim inline (Bank Feed hanya hidup di sesi browser) dengan `ref`
+// STABIL dari refUntukMutasi() di cashBankExceptionsStore.ts.
+// ============================================================
+const REKON_BASE = "/api/v1/finance/bank-reconciliation";
+
+function rekonPost(path, body) {
+  return requestEnvelope(`${REKON_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Saran kandidat invoice untuk sekumpulan mutasi (tidak menulis apa pun). */
+export function rekonSaran(clientId, mutations) {
+  return rekonPost("/suggest", { client_id: clientId, mutations });
+}
+
+/** Cocokkan 1 mutasi ke 1..n invoice: [{invoice_id, amount}]. */
+export function rekonCocokkan(clientId, mutation, allocations, opsi = {}) {
+  return rekonPost("/match", {
+    client_id: clientId,
+    mutation,
+    allocations,
+    bank_coa_id: opsi.bankCoaId || null,
+    counter_coa_id: opsi.counterCoaId || null,
+    notes: opsi.notes || null,
+  });
+}
+
+/** Cocokkan otomatis mutasi yang pasti; sisanya dicatat ke Exceptions. */
+export function rekonAutoCocokkan(clientId, mutations, bankCoaId = null) {
+  return rekonPost("/auto-match", {
+    client_id: clientId,
+    mutations,
+    bank_coa_id: bankCoaId,
+    catat_exception: true,
+  });
+}
+
+/** Batalkan pencocokan satu mutasi (jurnal POSTED ditolak backend). */
+export function rekonBatalkan(clientId, bankMutationRef, alasan = null) {
+  return rekonPost("/unmatch", {
+    client_id: clientId,
+    bank_mutation_ref: bankMutationRef,
+    alasan,
+  });
+}
+
+/** Daftar pembayaran hasil rekonsiliasi (direction: cash_payment | cash_receipt). */
+export function rekonDaftarPembayaran(clientId, direction = null) {
+  const q = new URLSearchParams({ client_id: clientId });
+  if (direction) q.set("direction", direction);
+  return requestEnvelope(`${REKON_BASE}/payments?${q.toString()}`);
+}
+
+/** Jurnal Kas vs Hutang/Piutang hasil rekonsiliasi (Journal Preview jalur pendek). */
+export function rekonJurnalPreview(clientId, status = null) {
+  const q = new URLSearchParams({ client_id: clientId });
+  if (status) q.set("status", status);
+  return requestEnvelope(`${REKON_BASE}/journal-preview?${q.toString()}`);
+}
+
+/** Posting satu jurnal (DRAFT -> POSTED). Endpoint lama, level Supervisor ke atas. */
+export function postJurnalEntry(clientId, journalEntryId) {
+  return request(`/api/client/${clientId}/journal-entries/${journalEntryId}/post`, { method: "POST" });
+}

@@ -13,9 +13,19 @@
 //       unpaid/overdue/on_hold -> dibayar = 0,         sisa = total
 //   - Purchase belum punya tanggal pembayaran, jadi tren bulanan memakai
 //     tanggal pembelian (purchaseDate).
+//
+// SCOPE CLIENT (disamakan dengan Bank Feed / Reconciliation / Exceptions):
+//   - [FIX] Fetch ke backend memakai client_id = activeClientId (id
+//     management_clients dari "Switch Company"). Di database live, kolom
+//     client_id tabel purchase merujuk management_clients, BUKAN
+//     management_users -- memakai user.id membuat filter tidak pernah cocok
+//     dan tab ini selalu kosong. Baris tetap disaring lagi berdasarkan
+//     management_client_id === activeClientId.
+//   - Transaksi lama yang management_client_id-nya masih NULL tidak akan
+//     tampil sampai di-backfill (lihat catatan migrasi).
 
 import { useMemo } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, mapTransactionToUi } from '@/lib/purchaseStore';
 import type { PaymentStatus } from '@/data/purchaseData';
 
@@ -54,13 +64,14 @@ export function useCashPaymentsFromPurchase(): {
   error: string | null;
   refresh: () => void;
 } {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions, loading, error, refresh } = usePurchaseTransactions(clientId);
+  const { activeClientId } = useActiveClient();
+  const { transactions, loading, error, refresh } = usePurchaseTransactions(activeClientId);
 
   const rows = useMemo<CashPaymentRow[]>(() => {
     const today = new Date().toISOString().slice(0, 10);
+    if (!activeClientId) return [];
     return transactions
+      .filter(t => t.management_client_id === activeClientId)
       .filter(t => STATUS_PURCHASE_DIPAKAI.includes(t.status))
       .map(t => {
         const ui = mapTransactionToUi(t);
@@ -83,7 +94,7 @@ export function useCashPaymentsFromPurchase(): {
         };
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  }, [transactions]);
+  }, [transactions, activeClientId]);
 
   return { rows, loading, error, refresh };
 }
