@@ -6864,6 +6864,32 @@ CRUD_FIELDS_SALES_SOURCE_ROW = [
 def create_sales_source_row(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
     return _sales_crud_create(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, data, created_by)
 
+def create_sales_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: str, client_id: Optional[str], created_by: Optional[str] = None, chunk_size: int = 1000) -> int:
+    """Insert massal baris source_rows dalam SATU transaksi (menggantikan create_sales_source_row
+    satu-per-satu yang ~0,3 dtk/baris ke Supabase -> file 10rb+ baris butuh berjam-jam dan
+    memblokir server). Semua-atau-tidak-sama-sekali: gagal di tengah = rollback, return 0."""
+    if not rows:
+        return 0
+    session = SessionLocal()
+    try:
+        payload = []
+        for r in rows:
+            item = {k: v for k, v in r.items() if k in CRUD_FIELDS_SALES_SOURCE_ROW}
+            item["source_file_id"] = source_file_id
+            item["client_id"] = client_id
+            item["created_by"] = created_by
+            payload.append(item)
+        for i in range(0, len(payload), chunk_size):
+            session.bulk_insert_mappings(SalesSourceRow, payload[i:i + chunk_size])
+        session.commit()
+        return len(payload)
+    except Exception as e:
+        session.rollback()
+        print(f"Error bulk create {SalesSourceRow.__tablename__}: {e}")
+        return 0
+    finally:
+        session.close()
+
 def get_sales_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _sales_crud_get_by_id(SalesSourceRow, CRUD_FIELDS_SALES_SOURCE_ROW, source_row_id, termasuk_nonaktif)
 
