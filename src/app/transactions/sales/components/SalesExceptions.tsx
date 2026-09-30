@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import {
   useSalesExceptions, updateSalesException, useSalesInvoices,
   formatTanggalSingkat, type BackendSalesException,
@@ -33,7 +34,11 @@ const STATUS_STYLE: Record<ExceptionStatus, string> = {
 export default function SalesExceptions() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  // userId = akun yang login (management_users) -- untuk kolom "siapa" (posted_by, mapped_by, assigned_to, resolved_by).
+  // clientId = company aktif dari Switch Company (management_clients) -- untuk client_id & filter data, sama seperti Purchase.
+  const userId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  const clientId = activeClientId ?? null;
 
   const { exceptions: backendExceptions, loading, error, refresh } = useSalesExceptions(clientId);
   const { invoices } = useSalesInvoices(clientId);
@@ -86,13 +91,13 @@ export default function SalesExceptions() {
       if (typeFilter !== 'all' && e.exception_type !== typeFilter) return false;
       if (customerFilter !== 'all' && e.customer !== customerFilter) return false;
       if (assignedFilter === 'unassigned' && e.assigned_to) return false;
-      if (assignedFilter === 'me' && e.assigned_to !== clientId) return false;
+      if (assignedFilter === 'me' && e.assigned_to !== userId) return false;
       const d = new Date(e.created_at);
       if (start && d < start) return false;
       if (end && d > end) return false;
       return true;
     });
-  }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd, clientId]);
+  }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd, userId]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const [currentPage, setCurrentPage] = useState(1);
@@ -136,7 +141,7 @@ export default function SalesExceptions() {
   const startEdit = () => {
     if (!selected) return;
     setEditType(selected.exception_type);
-    setEditAssignToMe(selected.assigned_to === clientId);
+    setEditAssignToMe(selected.assigned_to === userId);
     setEditStatus(selected.status as ExceptionStatus);
     setIsEditing(true);
   };
@@ -147,10 +152,10 @@ export default function SalesExceptions() {
     try {
       await updateSalesException(selected.id, {
         exception_type: editType,
-        assigned_to: editAssignToMe ? (clientId ?? undefined) : null,
+        assigned_to: editAssignToMe ? (userId ?? undefined) : null,
         status: editStatus,
         resolved_at: editStatus === 'Resolved' ? new Date().toISOString() : undefined,
-        resolved_by: editStatus === 'Resolved' ? (clientId ?? undefined) : undefined,
+        resolved_by: editStatus === 'Resolved' ? (userId ?? undefined) : undefined,
       });
       setIsEditing(false);
       toast.success(t('Perubahan disimpan'), { description: selected.displayId });
@@ -176,7 +181,7 @@ export default function SalesExceptions() {
   const resolveException = async (id: string) => {
     const target = exceptions.find(e => e.id === id);
     try {
-      await updateSalesException(id, { status: 'Resolved', resolved_at: new Date().toISOString(), resolved_by: clientId ?? undefined });
+      await updateSalesException(id, { status: 'Resolved', resolved_at: new Date().toISOString(), resolved_by: userId ?? undefined });
       toast.success(t('Exception ditandai selesai'), { description: target?.displayId });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('Gagal menandai selesai'));
@@ -353,7 +358,7 @@ export default function SalesExceptions() {
                         <span className={`font-semibold ${(e.ai_confidence ?? 0) < 40 ? 'text-red-600' : (e.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence ?? 0}%</span>
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === clientId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
                     <td className="py-2.5 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
                     </td>

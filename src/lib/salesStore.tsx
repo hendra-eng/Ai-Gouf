@@ -10,16 +10,12 @@
 // tanpa header Authorization manual, kenapa 401 tidak memaksa redirect, dst).
 //
 // [PENTING] client_id: 6 tabel financial_transaction_sales_* di backend
-// FK ke management_users(id_user) -- BUKAN management_clients (dropdown
-// "Switch Company" di src/lib/activeClient.tsx pakai ID yang beda semesta,
-// dan saat ini belum ada satupun baris management_users yang tertaut ke
-// management_clients). Diputuskan (lihat percakapan pengembangan fitur ini):
-// client_id yang dikirim/dipakai untuk filter di SELURUH fungsi di bawah
-// adalah id_user milik akun yang SEDANG LOGIN (`useAuth().user.id`), bukan
-// activeClientId. Artinya data Sales ini scope-nya "per akun yang membuat",
-// cocok untuk akun client_lv_N yang login langsung mewakili perusahaannya
-// sendiri -- staf internal (tahap_1..5) yang mencoba fitur ini akan melihat
-// datanya sendiri (tertaut ke id_user staf tsb), bukan ke suatu "klien".
+// FK ke management_clients(id) -- sama seperti Purchase. client_id yang
+// dikirim/dipakai untuk filter di SELURUH fungsi di bawah adalah
+// activeClientId (company aktif dari dropdown "Switch Company" di
+// src/lib/activeClient.tsx), BUKAN id akun yang login. Kolom "siapa yang
+// melakukan" (uploaded_by, posted_by, mapped_by, assigned_to, resolved_by)
+// FK ke management_users dan tetap diisi id akun login (`useAuth().user.id`).
 
 import { useEffect, useState, useCallback } from 'react';
 
@@ -145,6 +141,11 @@ export async function updateSalesSourceFile(id: string, payload: Partial<Backend
   const row = await put<BackendSalesSourceFile>(`${SALES_BASE_URL}/source-files/${id}`, payload);
   notifySalesChanged();
   return row;
+}
+
+export async function deleteSalesSourceFile(id: string): Promise<void> {
+  await del(`${SALES_BASE_URL}/source-files/${id}`);
+  notifySalesChanged();
 }
 
 /** Hasil upload -- BackendSalesSourceFile ditambah 2 field yang cuma

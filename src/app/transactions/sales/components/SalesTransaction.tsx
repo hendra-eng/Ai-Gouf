@@ -107,8 +107,11 @@ const emptyForm = {
 export default function SalesTransaction() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  // userId = akun yang login (management_users) -- untuk kolom "siapa" (posted_by, mapped_by, assigned_to, resolved_by).
+  // clientId = company aktif dari Switch Company (management_clients) -- untuk client_id & filter data, sama seperti Purchase.
+  const userId = user?.id ?? null;
   const { activeClientId } = useActiveClient();
+  const clientId = activeClientId ?? null;
   const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(clientId);
   const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
 
@@ -254,7 +257,7 @@ export default function SalesTransaction() {
       await updateSalesInvoice(uuid, {
         posting_status: 'Posted',
         posted_at: new Date().toISOString(),
-        posted_by: clientId ?? undefined,
+        posted_by: userId ?? undefined,
       });
       await createSalesActivityLog({
         client_id: clientId ?? undefined,
@@ -301,7 +304,7 @@ export default function SalesTransaction() {
       toast.error(t('Lengkapi Customer, Deskripsi, dan DPP terlebih dahulu.'));
       return;
     }
-    if (!clientId) {
+    if (!userId || !clientId) {
       toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
       return;
     }

@@ -8,7 +8,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useLanguage } from '@/lib/language';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { useSalesInvoices, formatTanggalSingkat, type BackendSalesInvoice } from '@/lib/salesStore';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Financial
@@ -76,9 +76,8 @@ const TABLE_PAGE_SIZE = 10;
 // Jadi invoice hasil "Create Invoice" dari Source Data maupun input manual di
 // Sales Transaction langsung tampil di sini.
 //
-// clientId = akun yang login (user.id), sama seperti tab Sales lainnya --
-// invoices.client_id memang mengacu ke management_users, bukan ke perusahaan
-// aktif di dropdown "Switch Company".
+// clientId = company aktif (Switch Company), sama seperti tab Sales lainnya & Purchase --
+// invoices.client_id mengacu ke management_clients (company), bukan ke akun user yang login.
 //
 // Definisi angka:
 //  - Total Sales / Invoices / DPP / VAT / PPh : SEMUA invoice (Draft s/d Paid),
@@ -88,8 +87,8 @@ const TABLE_PAGE_SIZE = 10;
 //    (piutang baru sah setelah diposting; sama dengan kolom AR di tab Posted).
 export default function SalesOverview() {
   const { t } = useLanguage();
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  const clientId = activeClientId ?? null;
   const { invoices: allInvoices, loading, error } = useSalesInvoices(clientId);
   const invoices = useMemo(() => allInvoices.filter((i) => i.aktif !== false), [allInvoices]);
 

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, X, Eye } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import {
   useSalesInvoices, updateSalesInvoice, upsertSalesAccountMapping,
   ensureSalesAccountMapping, createSalesActivityLog,
@@ -126,7 +127,11 @@ const ITEMS_PER_PAGE = 5;
 export default function SalesJournalPreview() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  // userId = akun yang login (management_users) -- untuk kolom "siapa" (posted_by, mapped_by, assigned_to, resolved_by).
+  // clientId = company aktif dari Switch Company (management_clients) -- untuk client_id & filter data, sama seperti Purchase.
+  const userId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  const clientId = activeClientId ?? null;
 
   // Journal Preview cuma menampilkan invoice yang BELUM final "Paid"
   // (masih dalam proses klasifikasi/posting) -- invoice yang sudah lunas
@@ -234,7 +239,7 @@ export default function SalesJournalPreview() {
       pph_account_code: m.pph.code,
       pph_account_name: m.pph.code ? m.pph.name : null,
       is_ai_suggested: false,
-      mapped_by: clientId ?? undefined,
+      mapped_by: userId ?? undefined,
     });
 
   const saveEditMapping = async () => {
@@ -273,7 +278,7 @@ export default function SalesJournalPreview() {
       await updateSalesInvoice(selectedInvoice.id, {
         posting_status: 'Posted',
         posted_at: new Date().toISOString(),
-        posted_by: clientId ?? undefined,
+        posted_by: userId ?? undefined,
       });
       await createSalesActivityLog({
         client_id: clientId ?? undefined,
