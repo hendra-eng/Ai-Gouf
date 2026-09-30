@@ -9,6 +9,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import CashBankTabs from '../components/CashBankTabs';
+import { MutasiBankCell, JurnalCell, DalamProsesBadge } from '../components/RekonInfoCells';
 import {
   useCashPaymentsFromPurchase,
   trenBulananDibayar,
@@ -77,6 +78,7 @@ export default function CashPaymentPage() {
   const txCount = rows.length;
   const avgTxValue = txCount > 0 ? rows.reduce((s, r) => s + r.total, 0) / txCount : 0;
   const overdueCount = useMemo(() => rows.filter(r => r.isOverdue).length, [rows]);
+  const totalDalamProses = useMemo(() => rows.reduce((s, r) => s + r.dalamProses, 0), [rows]);
 
   const trend = useMemo(() => trenBulananDibayar(rows), [rows]);
   const byCategory = useMemo(() => rincianPerKategori(rows).slice(0, 6), [rows]);
@@ -278,9 +280,14 @@ export default function CashPaymentPage() {
     { key: 'paid', label: 'Dibayar', render: (r: CashPaymentRow) => <span className="font-mono text-xs font-semibold text-rose-700">{r.paid ? formatIDR(r.paid, true) : '—'}</span> },
     { key: 'outstanding', label: 'Sisa', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
     { key: 'paymentStatus', label: 'Status', render: (r: CashPaymentRow) => (
-      <StatusBadge variant={r.isOverdue && r.paymentStatus !== 'overdue' ? 'negative' : (PAYMENT_STATUS_VARIANT[r.paymentStatus] || 'neutral')}
-        label={r.isOverdue && r.paymentStatus !== 'overdue' ? 'Jatuh Tempo' : (PAYMENT_STATUS_LABEL[r.paymentStatus] || r.paymentStatus)} dot />
+      <div>
+        <StatusBadge variant={r.isOverdue && r.paymentStatus !== 'overdue' ? 'negative' : (PAYMENT_STATUS_VARIANT[r.paymentStatus] || 'neutral')}
+          label={r.isOverdue && r.paymentStatus !== 'overdue' ? 'Jatuh Tempo' : (PAYMENT_STATUS_LABEL[r.paymentStatus] || r.paymentStatus)} dot />
+        <DalamProsesBadge nominal={r.dalamProses} />
+      </div>
     ) },
+    { key: 'mutasi', label: 'Mutasi Bank', render: (r: CashPaymentRow) => <MutasiBankCell items={r.rekon} /> },
+    { key: 'jurnal', label: 'Jurnal', render: (r: CashPaymentRow) => <JurnalCell items={r.rekon} /> },
   ];
 
   return (
@@ -304,7 +311,7 @@ export default function CashPaymentPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
         <KpiCard title="Total Dibayar" value={totalPaid} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
-        <KpiCard title="Belum Dibayar (Hutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
+        <KpiCard title="Belum Dibayar (Hutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} dalam proses (menunggu posting)` : undefined} />
         <KpiCard title="Jumlah Tagihan" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Tagihan" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
         <KpiCard title="Lewat Jatuh Tempo" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
@@ -314,7 +321,7 @@ export default function CashPaymentPage() {
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-foreground">Tren Cash Payment Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Nominal dibayar per bulan, berdasarkan transaksi di halaman Purchase (tanggal pembelian)</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Nominal dibayar per bulan: tanggal bayar untuk pembayaran rekonsiliasi yang sudah diposting, tanggal pembelian untuk sisanya</p>
           </div>
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Payment untuk ditampilkan.</p>
@@ -447,7 +454,7 @@ export default function CashPaymentPage() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          Hanya transaksi Purchase yang sudah diposting. Pembayaran dicatat dari halaman Purchase.
+          Hanya transaksi Purchase yang sudah diposting. Dibayar dan sisa baru berubah setelah jurnal rekonsiliasinya diposting; sebelum itu invoice ditandai "Dalam proses".
         </p>
         <DataTable
           columns={columns}

@@ -1,6 +1,6 @@
 'use client';
 
-// Data layer tab Exceptions di Cash & Bank -- menggantikan MOCK_CASH_BANK_EXCEPTIONS.
+// Data layer tab Exceptions di Cash & Bank.
 //
 // Pola sesuai rancangan: DETEKSI dihitung ulang di frontend dari Bank Feed +
 // Reconciliation (Bank Feed hanya hidup di sesi browser, jadi backend tidak
@@ -10,16 +10,19 @@
 //
 // Tahap 1 -- yang dideteksi:
 //   1. Unmatched bank mutation  (mutasi Bank Feed berstatus 'unmatched')
-//   2. Amount mismatch          (mutasi 'matched' tapi nominal != transaksi sistem)
+//   2. Amount mismatch          (mutasi 'matched' tapi nominal != total pembayaran yang tercatat di backend)
 //   3. Duplicate transaction    (mutasi identik muncul lebih dari sekali)
+// Mutasi yang dicatat lewat jalur tanpa invoice tidak punya pembayaran, jadi tidak pernah dianggap mismatch.
 // Belum: Missing counter account & Unbalanced journal (source 'Classification').
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
-import { useTransactions } from '../../context/TransactionsContext';
-import type { Transaction } from '../../components/transactionData';
 import { useBankFeed, type BankFeedMutation } from '../context/BankFeedContext';
+import { REKON_EVENT } from '@/app/agent-ai/lib/api';
+import { useCashPaymentsFromPurchase } from './usePurchaseCashPayments';
+import { useCashReceiptsFromSales } from './useSalesCashReceipts';
+import { usePembayaranRekon } from './useBankCashRekon';
 import type { CashBankException } from './cashBankMock';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
@@ -105,7 +108,17 @@ export interface Deteksi {
 }
 
 const nominalMutasi = (m: BankFeedMutation) => m.credit || m.debit;
-const nominalTx = (tx: Transaction) => tx.debit || tx.credit;
+
+/** Sumber pembanding untuk deteksi: invoice yang masih ada sisa (sisi buku) dan pembayaran hasil pencocokan. */
+export interface InvoiceSisa { no: string; pihak: string; sisa: number }
+export interface SumberDeteksi {
+  /** Purchase (posted) yang masih ada sisa hutang -- pasangan mutasi debet. */
+  invoicePurchase: InvoiceSisa[];
+  /** Sales (Posted/Partial) yang masih ada sisa piutang -- pasangan mutasi kredit. */
+  invoiceSales: InvoiceSisa[];
+  /** ref mutasi -> total nominal pembayaran aktif yang tercatat di backend untuk mutasi itu. */
+  bayarPerRef: Map<string, number>;
+}
 
 function hash(s: string): string {
   let h = 5381;
@@ -141,11 +154,8 @@ function prioritas(nominal: number): 'High' | 'Medium' | 'Low' {
 
 const ringkas = (s: string) => (s.length > 40 ? `${s.slice(0, 40)}…` : s || '-');
 
-export function deteksiException(mutations: BankFeedMutation[], systemTx: Transaction[]): Deteksi[] {
+export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDeteksi): Deteksi[] {
   const hasil: Deteksi[] = [];
-  const txById = new Map(systemTx.map((tx) => [tx.id, tx]));
-  const sudahDicocokkan = new Set(mutations.filter((m) => m.matchedTxId).map((m) => m.matchedTxId));
-  const txBebas = systemTx.filter((tx) => !sudahDicocokkan.has(tx.id));
   const hitungan = new Map<string, number>();
 
   for (const m of mutations) {
@@ -168,28 +178,29 @@ export function deteksiException(mutations: BankFeedMutation[], systemTx: Transa
 
     // 2) Unmatched bank mutation
     if (m.status === 'unmatched') {
-      const kandidat = txBebas.find((tx) => tx.date === m.date && Math.abs(nominalTx(tx) - nominal) < 1);
+      // Mutasi kredit (uang masuk) dicari ke invoice Sales, mutasi debet (uang keluar) ke Purchase.
+      const kandidat = (m.credit ? sumber.invoiceSales : sumber.invoicePurchase).find((i) => Math.abs(i.sisa - nominal) < 1);
       hasil.push({
         ref, tanggal: m.date, tx_no: ref, counterparty: ringkas(m.description),
         exception_type: 'Unmatched bank mutation', source: 'Reconciliation', priority: prioritas(nominal),
         ai_suggestion: kandidat
-          ? `Kandidat cocok: ${kandidat.txId} (${ringkas(kandidat.description)}) — tanggal dan nominal sama. Cocokkan di tab Reconciliation.`
-          : 'Belum ada transaksi sistem dengan tanggal dan nominal yang sama. Buat Cash Receipt/Payment atau periksa input.',
+          ? `Kandidat cocok: invoice ${kandidat.no} (${ringkas(kandidat.pihak)}) — sisa tagihan sama dengan nominal mutasi. Cocokkan di tab Reconciliation.`
+          : `Tidak ada invoice ${m.credit ? 'Sales' : 'Purchase'} outstanding dengan nominal yang sama. Cek apakah invoicenya sudah berstatus posted. Kalau bukan pelunasan invoice (biaya bank, bunga, transfer antar bank, setoran modal), catat lewat form "Jurnal tanpa invoice" di tab Reconciliation.`,
         source_snippet: { tanggal: m.date, [m.credit ? 'kredit' : 'debit']: nominal, rekening },
       });
       continue;
     }
 
-    // 3) Amount mismatch: matched, tapi nominal beda dari transaksi sistem
-    const tx = m.matchedTxId ? txById.get(m.matchedTxId) : undefined;
-    if (tx) {
-      const selisih = nominal - nominalTx(tx);
+    // 3) Amount mismatch: matched, tapi total pembayaran yang tercatat di backend beda dari nominal mutasi
+    const dibayar = sumber.bayarPerRef.get(ref);
+    if (dibayar !== undefined) {
+      const selisih = nominal - dibayar;
       if (Math.abs(selisih) >= 1) {
         hasil.push({
-          ref, tanggal: m.date, tx_no: tx.txId || ref, counterparty: ringkas(tx.party || m.description),
+          ref, tanggal: m.date, tx_no: ref, counterparty: ringkas(m.description),
           exception_type: 'Amount mismatch', source: 'Reconciliation', priority: prioritas(selisih),
-          ai_suggestion: `Nominal mutasi bank berbeda ${Math.abs(selisih).toLocaleString('id-ID')} dari transaksi sistem. Cek salah input, potongan/biaya bank, atau pencocokan yang keliru.`,
-          source_snippet: { tanggal: m.date, mutasi_bank: nominal, transaksi_sistem: nominalTx(tx), selisih },
+          ai_suggestion: `Nominal mutasi bank berbeda ${Math.abs(selisih).toLocaleString('id-ID')} dari total pembayaran yang tercatat. Cek potongan/biaya bank, pembayaran sebagian, atau pencocokan yang keliru.`,
+          source_snippet: { tanggal: m.date, mutasi_bank: nominal, pembayaran_tercatat: dibayar, selisih },
         });
       }
     }
@@ -242,13 +253,22 @@ export function useCashBankExceptions() {
   const { activeClientId } = useActiveClient();
   const { user } = useAuth();
   const { mutations } = useBankFeed();
-  const { getByGroup } = useTransactions();
   const clientId = activeClientId ? String(activeClientId) : null;
   const userId: string | null = user?.id ? String(user.id) : null;
 
-  const paymentTx = getByGroup('cash_payment');
-  const receiptTx = getByGroup('cash_receipt');
-  const systemTx = useMemo(() => [...paymentTx, ...receiptTx], [paymentTx, receiptTx]);
+  // Sumber pembanding: invoice Purchase/Sales yang masih ada sisa + pembayaran hasil pencocokan (backend).
+  const { rows: rowsPurchase } = useCashPaymentsFromPurchase();
+  const { rows: rowsSales } = useCashReceiptsFromSales();
+  const { payments } = usePembayaranRekon();
+  const sumber = useMemo<SumberDeteksi>(() => {
+    const bayarPerRef = new Map<string, number>();
+    payments.forEach((p) => bayarPerRef.set(p.bank_mutation_ref, (bayarPerRef.get(p.bank_mutation_ref) || 0) + p.amount));
+    return {
+      invoicePurchase: rowsPurchase.filter((r) => r.outstanding > 0).map((r) => ({ no: r.invoiceNumber, pihak: r.vendor, sisa: r.outstanding })),
+      invoiceSales: rowsSales.filter((r) => r.outstanding > 0).map((r) => ({ no: r.invoiceNo, pihak: r.customer, sisa: r.outstanding })),
+      bayarPerRef,
+    };
+  }, [rowsPurchase, rowsSales, payments]);
 
   const [rows, setRows] = useState<BackendBankCashException[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,7 +285,14 @@ export function useCashBankExceptions() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const detected = useMemo(() => deteksiException(mutations, systemTx), [mutations, systemTx]);
+  // Match / unmatch / approve / post / reverse (termasuk jalur tanpa invoice) menutup atau membuka
+  // baris exception di backend -> muat ulang status penanganan supaya tab ini tidak basi.
+  useEffect(() => {
+    window.addEventListener(REKON_EVENT, refresh);
+    return () => window.removeEventListener(REKON_EVENT, refresh);
+  }, [refresh]);
+
+  const detected = useMemo(() => deteksiException(mutations, sumber), [mutations, sumber]);
   const exceptions = useMemo(() => gabungkan(detected, rows, userId), [detected, rows, userId]);
 
   /** Simpan penanganan (status / assign). Melempar Error kalau gagal -- pemanggil yang menampilkan toast. */

@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { toast } from 'sonner';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
@@ -102,8 +102,9 @@ function getAccountingEntries(tx: PurchaseTransaction) {
 }
 
 export default function PurchasePreviewPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  const clientId = activeClientId ?? null;
   const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
   const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 

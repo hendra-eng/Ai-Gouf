@@ -9,6 +9,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import CashBankTabs from '../components/CashBankTabs';
+import { MutasiBankCell, JurnalCell, DalamProsesBadge } from '../components/RekonInfoCells';
 import {
   useCashReceiptsFromSales,
   trenBulananDiterima,
@@ -77,6 +78,7 @@ export default function CashReceiptPage() {
   const txCount = rows.length;
   const avgTxValue = txCount > 0 ? rows.reduce((s, r) => s + r.total, 0) / txCount : 0;
   const overdueCount = useMemo(() => rows.filter(r => r.isOverdue).length, [rows]);
+  const totalDalamProses = useMemo(() => rows.reduce((s, r) => s + r.dalamProses, 0), [rows]);
 
   const trend = useMemo(() => trenBulananDiterima(rows), [rows]);
   const byCategory = useMemo(() => rincianPerKategori(rows).slice(0, 6), [rows]);
@@ -278,9 +280,14 @@ export default function CashReceiptPage() {
     { key: 'received', label: 'Diterima', render: (r: CashReceiptRow) => <span className="font-mono text-xs font-semibold text-blue-700">{r.received ? formatIDR(r.received, true) : '—'}</span> },
     { key: 'outstanding', label: 'Sisa', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
     { key: 'receiptStatus', label: 'Status', render: (r: CashReceiptRow) => (
-      <StatusBadge variant={r.isOverdue ? 'negative' : (RECEIPT_STATUS_VARIANT[r.receiptStatus] || 'neutral')}
-        label={r.isOverdue ? 'Jatuh Tempo' : (RECEIPT_STATUS_LABEL[r.receiptStatus] || r.receiptStatus)} dot />
+      <div>
+        <StatusBadge variant={r.isOverdue ? 'negative' : (RECEIPT_STATUS_VARIANT[r.receiptStatus] || 'neutral')}
+          label={r.isOverdue ? 'Jatuh Tempo' : (RECEIPT_STATUS_LABEL[r.receiptStatus] || r.receiptStatus)} dot />
+        <DalamProsesBadge nominal={r.dalamProses} />
+      </div>
     ) },
+    { key: 'mutasi', label: 'Mutasi Bank', render: (r: CashReceiptRow) => <MutasiBankCell items={r.rekon} /> },
+    { key: 'jurnal', label: 'Jurnal', render: (r: CashReceiptRow) => <JurnalCell items={r.rekon} /> },
   ];
 
   return (
@@ -304,7 +311,7 @@ export default function CashReceiptPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
         <KpiCard title="Total Diterima" value={totalReceived} icon="ArrowDownCircleIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Belum Diterima (Piutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" />
+        <KpiCard title="Belum Diterima (Piutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} dalam proses (menunggu posting)` : undefined} />
         <KpiCard title="Jumlah Invoice" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
         <KpiCard title="Rata-rata / Invoice" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
         <KpiCard title="Lewat Jatuh Tempo" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
@@ -314,7 +321,7 @@ export default function CashReceiptPage() {
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-foreground">Tren Cash Receipt Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Nominal diterima per bulan, berdasarkan invoice di halaman Sales (tanggal invoice)</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Nominal diterima per bulan: tanggal bayar untuk pembayaran rekonsiliasi yang sudah diposting, tanggal invoice untuk sisanya</p>
           </div>
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Receipt untuk ditampilkan.</p>
@@ -445,7 +452,7 @@ export default function CashReceiptPage() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          Hanya invoice Sales yang sudah diposting. Penerimaan pembayaran mengikuti data di halaman Sales.
+          Hanya invoice Sales yang sudah diposting. Diterima dan sisa baru berubah setelah jurnal rekonsiliasinya diposting; sebelum itu invoice ditandai "Dalam proses".
         </p>
         <DataTable
           columns={columns}

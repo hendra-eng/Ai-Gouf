@@ -4,16 +4,16 @@ import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { LinkIcon, XMarkIcon, BoltIcon } from '@heroicons/react/24/outline';
 import CashBankTabs from '../components/CashBankTabs';
+import NonInvoiceForm from '../components/NonInvoiceForm';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatIDR, uniqueJournalTotal } from '../../lib/groupAnalytics';
-import { useTransactions } from '../../context/TransactionsContext';
+import { formatIDR } from '../../lib/groupAnalytics';
 import { useBankFeed } from '../context/BankFeedContext';
-import { useBankReconciliation, type SaranKandidat } from '../lib/useBankReconciliation';
+import { useBankReconciliation, type SaranKandidat, type BarisLawanInput } from '../lib/useBankReconciliation';
 
-// [BARU] Ringkasan Saldo Menurut Bank vs Menurut Buku — pola & istilah
-// disamakan dengan proses_file_rekonsiliasi_bank() di backend
-// (akuntansi_ai.py). Dihitung dari mutasi Bank Feed REAL (sudah tersambung
-// backend, lihat BankFeedContext.tsx) vs total Cash Payment/Receipt REAL.
+// Ringkasan Saldo Menurut Bank vs Menurut Buku.
+//  - Bank  = saldo terbaru tiap rekening di Bank Feed sesi ini, dijumlahkan (dihitung dari 0 + kredit - debit).
+//  - Buku  = penerimaan - pembayaran dari mutasi yang SUDAH dicocokkan ke invoice (backend).
+//  - Selisih = mutasi yang belum dicocokkan (sisanya harus 0 kalau semua mutasi sudah cocok).
 function ReconciliationSummary({
   saldoBank,
   saldoBuku,
@@ -28,18 +28,18 @@ function ReconciliationSummary({
       <div className="card-elevated-md rounded-xl p-5">
         <p className="text-xs text-muted-foreground mb-1">Saldo Menurut Bank</p>
         <p className="text-xl font-bold text-foreground font-mono">{formatIDR(saldoBank)}</p>
-        <p className="text-[11px] text-muted-foreground mt-1">Dari mutasi Bank Feed</p>
+        <p className="text-[11px] text-muted-foreground mt-1">Semua mutasi Bank Feed sesi ini</p>
       </div>
       <div className="card-elevated-md rounded-xl p-5">
         <p className="text-xs text-muted-foreground mb-1">Saldo Menurut Buku</p>
         <p className="text-xl font-bold text-foreground font-mono">{formatIDR(saldoBuku)}</p>
-        <p className="text-[11px] text-muted-foreground mt-1">Dari Cash Payment + Cash Receipt</p>
+        <p className="text-[11px] text-muted-foreground mt-1">Mutasi yang sudah dicocokkan (invoice atau tanpa invoice)</p>
       </div>
       <div className={`rounded-xl p-5 border ${balance ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
         <p className={`text-xs mb-1 ${balance ? 'text-emerald-700' : 'text-amber-700'}`}>Selisih</p>
         <p className={`text-xl font-bold font-mono ${balance ? 'text-emerald-700' : 'text-amber-700'}`}>{formatIDR(selisih)}</p>
         <p className={`text-[11px] mt-1 ${balance ? 'text-emerald-600' : 'text-amber-600'}`}>
-          {balance ? 'BALANCE' : 'Ada selisih — cek mutasi yang belum dicocokkan di bawah'}
+          {balance ? 'BALANCE — semua mutasi sudah dicocokkan' : 'Selisih = mutasi yang belum dicocokkan (lihat daftar di bawah)'}
         </p>
       </div>
     </div>
@@ -59,20 +59,28 @@ const pihakKandidat = (k: SaranKandidat) =>
   Array.from(new Set(k.allocations.map((a) => a.party).filter(Boolean))).join(', ') || '-';
 
 export default function ReconciliationPage() {
-  const { getByGroup } = useTransactions();
   const { mutations } = useBankFeed();
   const {
-    saran, pembayaran, refById, loading, error, busy, autoRunning,
-    cocokkan, batalkan, autoCocokkan, muatUlang,
+    saran, pembayaran, saldoBuku, refById, loading, error, busy, autoRunning,
+    cocokkan, catatNonInvoice, akunLawan, akunBank, batalkan, autoCocokkan, muatUlang,
   } = useBankReconciliation();
   const [tab, setTab] = useState<'unreconciled' | 'reconciled'>('unreconciled');
   const [selectedMutation, setSelectedMutation] = useState<string | null>(null);
+  // '' = otomatis (dicocokkan dari nama rekening mutasi). Dipilih manual bila client punya >1 akun bank.
+  const [bankCoaPilihan, setBankCoaPilihan] = useState('');
+  const bankCoaId = akunBank.some((a) => a.id === bankCoaPilihan) ? bankCoaPilihan : '';
 
-  const paymentTx = getByGroup('cash_payment');
-  const receiptTx = getByGroup('cash_receipt');
-
-  const saldoBank = mutations.length > 0 ? mutations[0].balanceAfter : 0;
-  const saldoBuku = uniqueJournalTotal(receiptTx) - uniqueJournalTotal(paymentTx);
+  // Mutasi sudah terurut terbaru dulu, jadi kemunculan pertama per rekening = saldo terbaru rekening itu.
+  const saldoBank = useMemo(() => {
+    const sudah = new Set<string>();
+    let total = 0;
+    for (const m of mutations) {
+      if (sudah.has(m.bankAccount)) continue;
+      sudah.add(m.bankAccount);
+      total += m.balanceAfter;
+    }
+    return total;
+  }, [mutations]);
 
   const unmatchedMutations = useMemo(() => mutations.filter((m) => m.status === 'unmatched'), [mutations]);
   const matchedMutations = useMemo(() => mutations.filter((m) => m.status === 'matched'), [mutations]);
@@ -87,12 +95,20 @@ export default function ReconciliationPage() {
     const m = mutations.find((x) => x.id === mutationId);
     if (!m) return;
     try {
-      await cocokkan(m, kandidat);
+      await cocokkan(m, kandidat, bankCoaId || null);
       setSelectedMutation(null);
       toast.success(`Dicocokkan dengan ${namaKandidat(kandidat)}. Jurnal berstatus DRAFT.`);
     } catch (e: any) {
       toast.error(e?.message || 'Gagal mencocokkan mutasi.');
     }
+  };
+
+  const handleNonInvoice = async (mutationId: string, kategori: string, baris: BarisLawanInput[]) => {
+    const m = mutations.find((x) => x.id === mutationId);
+    if (!m) return;
+    await catatNonInvoice(m, kategori, baris, bankCoaId || null); // error dilempar ke form supaya tampil di sana
+    setSelectedMutation(null);
+    toast.success(`${kategori} dicatat. Jurnal berstatus DRAFT, lanjutkan Approve di Journal Preview.`);
   };
 
   const handleUnmatch = async (mutationId: string) => {
@@ -108,7 +124,7 @@ export default function ReconciliationPage() {
 
   const handleAuto = async () => {
     try {
-      const r = await autoCocokkan();
+      const r = await autoCocokkan(bankCoaId || null);
       toast.success(`${r.matched} mutasi dicocokkan, ${r.unmatched} belum cocok (dicatat di Exceptions).`);
     } catch (e: any) {
       toast.error(e?.message || 'Auto-match gagal.');
@@ -155,6 +171,26 @@ export default function ReconciliationPage() {
         )}
       </div>
 
+      {tab === 'unreconciled' && akunBank.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 mb-4">
+          <label htmlFor="rekon-akun-bank" className="text-xs font-semibold text-foreground">Akun Bank untuk jurnal</label>
+          <select
+            id="rekon-akun-bank"
+            value={bankCoaId}
+            onChange={(e) => setBankCoaPilihan(e.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+          >
+            <option value="">Otomatis (sesuai nama rekening mutasi)</option>
+            {akunBank.map((a) => (
+              <option key={a.id} value={a.id}>{a.no_akun} · {a.nama_akun}</option>
+            ))}
+          </select>
+          <span className="text-[11px] text-muted-foreground">
+            Berlaku untuk Cocokkan, Auto-match, dan Jurnal tanpa invoice. Pilih manual kalau muncul error "Akun Bank tidak bisa ditentukan".
+          </span>
+        </div>
+      )}
+
       {loading && mutations.length === 0 ? (
         <p className="text-xs text-muted-foreground py-12 text-center">Memuat data rekonsiliasi...</p>
       ) : tab === 'unreconciled' ? (
@@ -163,7 +199,7 @@ export default function ReconciliationPage() {
           <div className="card-elevated-md rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h2 className="text-sm font-bold text-foreground">Bank Feed — Belum Dicocokkan</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Klik satu baris, lalu pilih invoice pasangannya di kolom kanan</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Klik satu baris, lalu pilih invoice pasangannya di kolom kanan, atau catat tanpa invoice</p>
             </div>
             {unmatchedMutations.length === 0 ? (
               <p className="text-xs text-muted-foreground py-10 text-center">Tidak ada mutasi Bank Feed yang menunggu.</p>
@@ -184,7 +220,7 @@ export default function ReconciliationPage() {
                         <div className="min-w-0">
                           <p className="text-xs font-medium text-foreground truncate">{m.description}</p>
                           <p className="text-[11px] text-muted-foreground">
-                            {m.date} · {m.bankAccount} · {m.credit ? 'Masuk (Sales)' : 'Keluar (Purchase)'}
+                            {m.date} · {m.bankAccount} · {m.credit ? 'Masuk (Sales / lainnya)' : 'Keluar (Purchase / lainnya)'}
                           </p>
                         </div>
                         <span className={`text-xs font-mono font-semibold whitespace-nowrap ${m.credit ? 'text-emerald-700' : 'text-rose-700'}`}>
@@ -260,6 +296,18 @@ export default function ReconciliationPage() {
                 })}
               </div>
             )}
+            {mutasiTerpilih && (
+              <div className="p-3 border-t border-border">
+                <NonInvoiceForm
+                  key={mutasiTerpilih.id}
+                  nominal={mutasiTerpilih.credit || mutasiTerpilih.debit}
+                  masuk={!!mutasiTerpilih.credit}
+                  akun={akunLawan}
+                  busy={busy.has(mutasiTerpilih.id)}
+                  onSubmit={(kategori, baris) => handleNonInvoice(mutasiTerpilih.id, kategori, baris)}
+                />
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -288,7 +336,11 @@ export default function ReconciliationPage() {
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{m.date}</td>
                         <td className="px-4 py-3 text-xs text-foreground max-w-[200px] truncate">{m.description}</td>
                         <td className="px-4 py-3 text-xs text-foreground max-w-[220px] truncate">
-                          {p ? `${p.invoices.join(', ') || '—'}${p.party ? ` · ${p.party}` : ''}` : '—'}
+                          {p
+                            ? p.nonInvoice
+                              ? `Tanpa invoice · ${p.party || '—'}`
+                              : `${p.invoices.join(', ') || '—'}${p.party ? ` · ${p.party}` : ''}`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3 text-xs font-mono font-semibold text-right whitespace-nowrap">{formatIDR(m.credit || m.debit, true)}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">

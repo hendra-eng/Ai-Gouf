@@ -6,7 +6,7 @@ import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
@@ -59,8 +59,9 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  const clientId = activeClientId ?? null;
   const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
   const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 

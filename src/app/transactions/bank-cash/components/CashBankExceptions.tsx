@@ -1,7 +1,7 @@
 'use client';
 
 // Salinan desain tab Exceptions di Sales (sales/components/SalesExceptions.tsx)
-// untuk Cash & Bank. Data masih DUMMY (lib/cashBankMock.ts) — belum tersambung backend.
+// untuk Cash & Bank. Data dari lib/cashBankExceptionsStore.ts (deteksi dari Bank Feed + invoice Purchase/Sales + pembayaran rekonsiliasi, penanganan disimpan di backend).
 //
 // [BARU] Tiap exception sekarang punya `source`: 'Reconciliation' (soal
 // pencocokan mutasi bank vs invoice -- berlaku untuk transaksi matched

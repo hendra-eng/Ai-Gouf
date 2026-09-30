@@ -3,13 +3,12 @@
 // Salinan desain tab Journal Preview di Sales (sales/components/SalesJournalPreview.tsx)
 // untuk Cash & Bank.
 //
-// [DIUBAH] Jalur PENDEK (matched) sekarang memakai data REAL dari backend
-// (/api/v1/finance/bank-reconciliation -- lihat lib/useBankCashRekon.ts): daftar = jurnal Kas vs
-// Hutang/Piutang hasil pencocokan di tab Reconciliation, baris jurnal apa adanya dari tabel
-// journal_lines, dan Post Journal memanggil endpoint posting jurnal. Jurnal hasil match langsung
-// berstatus "Siap Posting" (backend tidak punya status approved), jadi tombol Approve dihapus.
-// Jalur LENGKAP (unmatched: klasifikasi akun & pajak) belum punya backend -- kodenya dibiarkan,
-// tapi belum ada data yang masuk ke sana.
+// Data REAL dari backend (/api/v1/finance/bank-reconciliation -- lihat lib/useBankCashRekon.ts):
+// daftar = jurnal hasil Reconciliation (invoice maupun tanpa invoice), baris jurnal apa adanya dari
+// journal_lines. Alur status: DRAFT -> Approve (Supervisor ke atas) -> APPROVED -> Post Journal
+// (Manager ke atas) -> POSTED. Invoice baru berubah saat POSTED. Jurnal tanpa invoice (biaya admin,
+// bunga, dst) dibuat dari form di tab Reconciliation dan lewat antrean yang sama.
+// Jalur LENGKAP lama (klasifikasi akun & pajak per mutasi) tidak dipakai lagi; kodenya dibiarkan.
 //
 // [BARU] UI sekarang bercabang berdasarkan `matchStatus` tiap transaksi (lihat
 // cashBankMock.ts untuk alasannya):
@@ -28,7 +27,7 @@ import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, 
 import { useLanguage } from '@/lib/language';
 import type { CashBankTx } from '../lib/cashBankMock';
 import { useActiveClient } from '@/lib/activeClient';
-import { postJurnalEntry } from '@/app/agent-ai/lib/api';
+import { rekonApproveJurnal, rekonPostJurnal } from '@/app/agent-ai/lib/api';
 import { useJurnalRekonTxs, type CashBankTxReal } from '../lib/useBankCashRekon';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
@@ -80,7 +79,7 @@ const stepForStatus = (status: UiStatus, totalSteps: number) => {
   return totalSteps - 2;
 };
 
-// Opsi akun DUMMY. Nanti diganti dengan COA klien (useClientCoa) seperti di Sales.
+// Opsi akun statis untuk jalur lengkap lama (tidak dipakai jalur rekonsiliasi; akun jurnal nyata dari backend).
 interface Acc { code: string | null; name: string }
 const NO_PPH: Acc = { code: null, name: 'Tidak ada potongan PPh' };
 
@@ -149,6 +148,7 @@ export default function CashBankJournalPreview() {
   const { activeClientId } = useActiveClient();
   const { txs, loading, error, refresh } = useJurnalRekonTxs();
   const [posting, setPosting] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [mappings, setMappings] = useState<Record<string, Mapping>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -258,6 +258,24 @@ export default function CashBankJournalPreview() {
     toast.success(t('Mapping akun disimpan'), { description: selectedTx.tx_no });
   };
 
+  const handleApprove = async () => {
+    if (uiStatus !== 'Diproses' || approving) return;
+    if (!activeClientId) {
+      toast.error(t('Belum ada client aktif — pilih client dulu di Topbar.'));
+      return;
+    }
+    setApproving(true);
+    try {
+      await rekonApproveJurnal(String(activeClientId), selectedTx.id);
+      await refresh();
+      toast.success(t('Jurnal disetujui'), { description: selectedTx.tx_no });
+    } catch (e: any) {
+      toast.error(e?.message || t('Gagal menyetujui jurnal.'));
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const handlePostJournal = async () => {
     if (uiStatus !== 'Siap Posting' || posting) return;
     if (!activeClientId) {
@@ -266,7 +284,7 @@ export default function CashBankJournalPreview() {
     }
     setPosting(true);
     try {
-      await postJurnalEntry(String(activeClientId), selectedTx.id);
+      await rekonPostJurnal(String(activeClientId), selectedTx.id);
       setIsEditingMapping(false);
       await refresh();
       toast.success(t('Jurnal berhasil diposting'), {
@@ -282,14 +300,20 @@ export default function CashBankJournalPreview() {
   const footerMessage =
     uiStatus === 'Diposting'
       ? isMatched
-        ? t('Jurnal ini sudah diposting ke buku besar dan outstanding invoice sudah diperbarui.')
+        ? selectedTx.linkedInvoice
+          ? t('Jurnal ini sudah diposting ke buku besar dan outstanding invoice sudah diperbarui.')
+          : t('Jurnal ini sudah diposting ke buku besar.')
         : t('Jurnal ini sudah diposting ke buku besar.')
       : uiStatus === 'Siap Posting'
       ? isMatched
-        ? t('Jurnal ini siap diposting. Akun mengikuti invoice asal, silakan periksa nominalnya sebelum diposting.')
+        ? selectedTx.linkedInvoice
+          ? t('Jurnal sudah disetujui. Saat diposting, outstanding invoice ikut diperbarui. Posting butuh Manager ke atas.')
+          : t('Jurnal sudah disetujui. Posting butuh Manager ke atas.')
         : t('Jurnal ini siap untuk diposting. Silakan periksa kembali hasil klasifikasi akun dan pastikan sudah sesuai sebelum diposting ke buku besar.')
       : isMatched
-      ? t('Mutasi ini sudah cocok dengan invoice. Setujui dulu sebelum bisa diposting.')
+      ? selectedTx.linkedInvoice
+        ? t('Mutasi ini sudah cocok dengan invoice, jurnal masih DRAFT. Setujui (Approve) dulu, lalu Post. Outstanding invoice baru berubah setelah diposting.')
+        : t('Mutasi tanpa invoice, jurnal masih DRAFT. Setujui (Approve) dulu, lalu Post.')
       : t('Jurnal masih diproses. Setujui klasifikasi akun terlebih dahulu sebelum bisa diposting.');
 
   return (
@@ -421,7 +445,7 @@ export default function CashBankJournalPreview() {
                 <span className="w-5 h-5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold flex items-center justify-center">
                   <Link2 size={11} />
                 </span>
-                {t('Invoice Terkait')}
+                {selectedTx.linkedInvoice ? t('Invoice Terkait') : t('Detail Mutasi')}
               </h4>
               {selectedTx.linkedInvoice ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -459,7 +483,21 @@ export default function CashBankJournalPreview() {
                   </div>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">{t('Data invoice terkait tidak ditemukan.')}</p>
+                <div className="text-xs space-y-1.5">
+                  {[
+                    ['Jenis', t('Tanpa invoice (biaya admin, bunga, transfer, dll)')],
+                    ['Kategori', selectedTx.counterparty],
+                    ['No. Mutasi Bank', selectedTx.tx_no],
+                    ['Tanggal Mutasi', formatTanggal(selectedTx.tx_date)],
+                    ['Nominal Mutasi Bank', formatIDR(selectedTx.amount)],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex gap-2">
+                      <span className="text-muted-foreground w-32 flex-shrink-0">{t(k)}</span>
+                      <span className="font-medium text-foreground">{v}</span>
+                    </div>
+                  ))}
+                  <p className="text-muted-foreground pt-1">{t('Tidak ada invoice yang dilunasi, jadi outstanding Purchase/Sales tidak berubah.')}</p>
+                </div>
               )}
             </div>
 
@@ -604,7 +642,7 @@ export default function CashBankJournalPreview() {
                           value={f.value ?? ''}
                           onChange={e => {
                             const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
-                            setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
+                            setDraftMapping(prev => ({ ...(prev as Mapping), [f.key]: dipilih }));
                           }}
                           className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
                         >
@@ -730,6 +768,13 @@ export default function CashBankJournalPreview() {
               className="px-3 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               ✏ {t('Edit Mapping')}
+            </button>
+            <button
+              onClick={handleApprove}
+              disabled={uiStatus !== 'Diproses' || approving}
+              className="px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ✅ {approving ? t('Menyetujui...') : t('Approve')}
             </button>
             <button
               onClick={handlePostJournal}

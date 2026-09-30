@@ -13,9 +13,12 @@ import { refUntukMutasi } from './cashBankExceptionsStore';
 import {
   rekonSaran,
   rekonCocokkan,
+  rekonCatatNonInvoice,
+  rekonJurnalPreview,
   rekonAutoCocokkan,
   rekonBatalkan,
   rekonDaftarPembayaran,
+  ambilCoaClient,
 } from '@/app/agent-ai/lib/api';
 
 export interface SaranAlokasi {
@@ -50,6 +53,25 @@ export interface PembayaranRingkas {
   party: string;
   journalNo: string | null;
   journalStatus: string | null;
+  /** true = jurnal tanpa invoice (biaya admin, bunga, dst); `party` berisi kategorinya. */
+  nonInvoice?: boolean;
+}
+
+/** Akun COA yang bisa dipilih sebagai akun lawan di mutasi tanpa invoice. */
+export interface AkunLawan {
+  id: string;
+  no_akun: string;
+  nama_akun: string;
+  kategori?: string | null;
+  /** 'bank' / 'kas' / null (dari COA.jenis_kas). */
+  jenis_kas?: string | null;
+}
+
+export interface BarisLawanInput {
+  coaId: string;
+  side: 'debit' | 'credit';
+  amount: number;
+  description?: string;
 }
 
 /** Penanda di BankFeedMutation.matchedTxId bahwa pencocokannya tersimpan di backend (bukan Transaction lokal). */
@@ -79,7 +101,13 @@ export function useBankReconciliation() {
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [versi, setVersi] = useState(0);
   const [autoRunning, setAutoRunning] = useState(false);
+  // Saldo menurut buku = total pembayaran hasil pencocokan (penerimaan - pembayaran) untuk mutasi
+  // yang ada di Bank Feed sesi ini. Dihitung dari backend, bukan dari TransactionsContext lama.
+  const [saldoBuku, setSaldoBuku] = useState(0);
   const reqId = useRef(0);
+  const [akunLawan, setAkunLawan] = useState<AkunLawan[]>([]);
+  // Akun bank client (untuk memilih rekening bila tidak bisa ditentukan otomatis dari nama rekening mutasi).
+  const akunBank = useMemo(() => akunLawan.filter((a) => a.jenis_kas === 'bank'), [akunLawan]);
 
   const refById = useMemo(() => refUntukMutasi(mutations), [mutations]);
   // Kunci efek = daftar ref (bukan status), supaya menyamakan status lokal tidak memicu loop.
@@ -91,11 +119,38 @@ export function useBankReconciliation() {
 
   const muatUlang = useCallback(() => setVersi((v) => v + 1), []);
 
+  // Daftar akun untuk pemilih akun lawan (jalur tanpa invoice). Dimuat sekali per client.
+  useEffect(() => {
+    if (!clientId) {
+      setAkunLawan([]);
+      return;
+    }
+    let batal = false;
+    ambilCoaClient(clientId)
+      .then((res: any) => {
+        if (batal) return;
+        const daftar: any[] = Array.isArray(res) ? res : res?.coa || [];
+        setAkunLawan(
+          daftar
+            .filter((a) => a && a.id && a.aktif !== false)
+            .map((a) => ({ id: String(a.id), no_akun: String(a.no_akun ?? ''), nama_akun: String(a.nama_akun ?? ''), kategori: a.kategori ?? null, jenis_kas: a.jenis_kas ? String(a.jenis_kas).toLowerCase() : null }))
+            .sort((x, y) => x.no_akun.localeCompare(y.no_akun)),
+        );
+      })
+      .catch(() => {
+        if (!batal) setAkunLawan([]);
+      });
+    return () => {
+      batal = true;
+    };
+  }, [clientId]);
+
   useEffect(() => {
     const { mutations: daftar, refById: refs } = terbaru.current;
     if (!clientId || daftar.length === 0) {
       setSaran({});
       setPembayaran({});
+      setSaldoBuku(0);
       setError(null);
       return;
     }
@@ -104,9 +159,10 @@ export function useBankReconciliation() {
     (async () => {
       try {
         const kirim = daftar.slice(0, 1000).map((m) => keMutasiBackend(m, refs.get(m.id) as string));
-        const [resSaran, resBayar] = await Promise.all([
+        const [resSaran, resBayar, resJurnal] = await Promise.all([
           rekonSaran(clientId, kirim),
           rekonDaftarPembayaran(clientId),
+          rekonJurnalPreview(clientId).catch(() => []),
         ]);
         if (id !== reqId.current) return; // respons basi (client/data sudah berganti)
 
@@ -115,12 +171,37 @@ export function useBankReconciliation() {
         setSaran(peta);
 
         const bayar: Record<string, PembayaranRingkas> = {};
+        const refAktif = new Set<string>(daftar.map((m) => refs.get(m.id) as string));
+        let bukuBersih = 0;
         for (const p of ((resBayar || []) as any[])) {
           if (p.deleted_at) continue;
+          if (refAktif.has(p.bank_mutation_ref)) {
+            const nilai = Number(p.amount) || 0;
+            bukuBersih += p.direction === 'cash_receipt' ? nilai : -nilai;
+          }
           const b = (bayar[p.bank_mutation_ref] ||= { invoices: [], party: p.party || '', journalNo: p.journal_no || null, journalStatus: p.journal_status || null });
           if (p.invoice_no) b.invoices.push(p.invoice_no);
         }
+        // Jurnal tanpa invoice (biaya admin, bunga, dst): masuk ke saldo buku & riwayat Reconciled.
+        for (const je of ((resJurnal || []) as any[])) {
+          if (!je.non_invoice || !refAktif.has(je.reference)) continue;
+          if (je.status !== 'DRAFT' && je.status !== 'APPROVED' && je.status !== 'POSTED') continue;
+          if (je.reversal_id) continue;
+          const baris: any[] = je.lines || [];
+          const bank = baris.find((l) => String(l.jenis_kas ?? '').toLowerCase() === 'bank');
+          const masuk = Number(bank?.debit) > 0;
+          const nilai = Number(bank?.debit) || Number(bank?.credit) || 0;
+          bukuBersih += masuk ? nilai : -nilai;
+          bayar[je.reference] = {
+            invoices: [],
+            party: String(je.description ?? '').split(':')[0].trim(),
+            journalNo: je.journal_no || null,
+            journalStatus: je.status || null,
+            nonInvoice: true,
+          };
+        }
         setPembayaran(bayar);
+        setSaldoBuku(bukuBersih);
         setError(null);
 
         // Samakan status lokal dengan backend.
@@ -153,7 +234,7 @@ export function useBankReconciliation() {
 
   /** Cocokkan 1 mutasi ke kandidat (1..n invoice). Melempar Error kalau ditolak backend. */
   const cocokkan = useCallback(
-    async (m: BankFeedMutation, kandidat: SaranKandidat) => {
+    async (m: BankFeedMutation, kandidat: SaranKandidat, bankCoaId?: string | null) => {
       if (!clientId) throw new Error('Belum ada client aktif — pilih client dulu di Topbar.');
       const ref = terbaru.current.refById.get(m.id) as string;
       tandaiBusy(m.id, true);
@@ -162,6 +243,30 @@ export function useBankReconciliation() {
           clientId,
           keMutasiBackend(m, ref),
           kandidat.allocations.map((a) => ({ invoice_id: a.invoice_id, amount: a.amount })),
+          { bankCoaId: bankCoaId || null },
+        );
+        await terbaru.current.matchMutation(m.id, PENANDA_BACKEND + ref);
+        muatUlang();
+      } finally {
+        tandaiBusy(m.id, false);
+      }
+    },
+    [clientId, muatUlang],
+  );
+
+  /** Catat mutasi tanpa invoice sebagai jurnal DRAFT. Melempar Error kalau ditolak backend. */
+  const catatNonInvoice = useCallback(
+    async (m: BankFeedMutation, kategori: string, baris: BarisLawanInput[], bankCoaId?: string | null) => {
+      if (!clientId) throw new Error('Belum ada client aktif — pilih client dulu di Topbar.');
+      const ref = terbaru.current.refById.get(m.id) as string;
+      tandaiBusy(m.id, true);
+      try {
+        await rekonCatatNonInvoice(
+          clientId,
+          keMutasiBackend(m, ref),
+          kategori,
+          baris.map((b) => ({ coa_id: b.coaId, side: b.side, amount: b.amount, description: b.description || null })),
+          { bankCoaId: bankCoaId || null },
         );
         await terbaru.current.matchMutation(m.id, PENANDA_BACKEND + ref);
         muatUlang();
@@ -192,14 +297,14 @@ export function useBankReconciliation() {
   );
 
   /** Auto-match semua mutasi belum cocok yang pasti; sisanya dicatat ke Exceptions oleh backend. */
-  const autoCocokkan = useCallback(async () => {
+  const autoCocokkan = useCallback(async (bankCoaId?: string | null) => {
     if (!clientId) throw new Error('Belum ada client aktif — pilih client dulu di Topbar.');
     const { mutations: daftar, refById: refs } = terbaru.current;
     const belum = daftar.filter((m) => m.status === 'unmatched').slice(0, 1000);
     if (belum.length === 0) return { matched: 0, unmatched: 0 };
     setAutoRunning(true);
     try {
-      const res = await rekonAutoCocokkan(clientId, belum.map((m) => keMutasiBackend(m, refs.get(m.id) as string)));
+      const res = await rekonAutoCocokkan(clientId, belum.map((m) => keMutasiBackend(m, refs.get(m.id) as string)), bankCoaId || null);
       muatUlang(); // status lokal disamakan lewat already_matched dari /suggest
       return { matched: (res?.matched || []).length as number, unmatched: (res?.unmatched || []).length as number };
     } finally {
@@ -207,5 +312,5 @@ export function useBankReconciliation() {
     }
   }, [clientId, muatUlang]);
 
-  return { saran, pembayaran, refById, loading, error, busy, autoRunning, cocokkan, batalkan, autoCocokkan, muatUlang };
+  return { saran, pembayaran, saldoBuku, refById, loading, error, busy, autoRunning, cocokkan, catatNonInvoice, akunLawan, akunBank, batalkan, autoCocokkan, muatUlang };
 }

@@ -880,6 +880,11 @@ def post_journal_entry(client_id: str, journal_entry_id: int, user: str) -> Dict
             return _entry_dict(entry, lines, _standard_meta_bulk(session, client_id, [l.coa_id for l in lines]))
         if entry.status in {"REJECTED", "REVERSED"}:
             raise ValueError(f"Journal status {entry.status} tidak dapat diposting.")
+        if entry.source_module == "BANK_RECONCILIATION":
+            raise ValueError(
+                "Jurnal hasil rekonsiliasi bank harus disetujui (Approve) dan diposting lewat "
+                "Cash & Bank > Journal Preview, supaya pembayaran ikut diterapkan ke invoice."
+            )
         lines = session.query(dbc.JournalLine).filter(dbc.JournalLine.journal_entry_id == entry.id).all()
         validate_lines(client_id, [
             {"account_code": x.account_code, "debit": x.debit, "credit": x.credit}

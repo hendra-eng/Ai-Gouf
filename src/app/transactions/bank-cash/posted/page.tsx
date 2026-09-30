@@ -7,6 +7,8 @@ import {
   ArrowsUpDownIcon,
   ArrowDownTrayIcon,
   CheckBadgeIcon,
+  ArrowUturnLeftIcon,
+  XMarkIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   ChevronLeftIcon,
@@ -17,15 +19,24 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { useActiveClient } from '@/lib/activeClient';
 import { formatIDR } from '../../lib/groupAnalytics';
 import CashBankTabs from '../components/CashBankTabs';
-import { useJurnalRekonTxs, type CashBankTxReal } from '../lib/useBankCashRekon';
+import { usePostedJurnalRekon, type CashBankTxReal } from '../lib/useBankCashRekon';
+import { toast } from 'sonner';
+import { useAuth } from '@/lib/auth';
+import { rekonBalikJurnal } from '@/app/agent-ai/lib/api';
 
 // Tab Posted (Cash & Bank) = daftar jurnal Kas vs Hutang/Piutang hasil rekonsiliasi yang SUDAH
-// diposting lewat tombol "Post Journal" di tab Journal Preview. Sumbernya sama dengan Journal
-// Preview (useJurnalRekonTxs -> /api/v1/finance/bank-reconciliation/journal-preview), difilter ke
-// status Posted, jadi begitu jurnal diposting, datanya otomatis pindah/muncul di sini.
+// diposting lewat tombol "Post Journal" di tab Journal Preview. Data diambil lewat
+// usePostedJurnalRekon (/api/v1/finance/bank-reconciliation/journal-preview?status=POSTED),
+// jadi begitu jurnal diposting, datanya otomatis muncul di sini.
 //
-// Halaman ini hanya MEMBACA. Kolom "Diposting Oleh" / "Waktu Posting" membaca posted_by /
-// posted_at dari /journal-preview; selama backend belum mengirim field itu, isinya tampil "—".
+// "Diposting Oleh" / "Waktu Posting" dari posted_by / posted_at (dikirim backend di
+// /journal-preview); tampil "—" kalau nilainya kosong.
+//
+// [FASE 2] Balik Jurnal (Manager ke atas): tombol di detail baris memanggil POST /reverse. Backend
+// membuat jurnal pembalik (debit/kredit ditukar, langsung POSTED), membatalkan pembayaran jurnal asal
+// dan memulihkan outstanding invoice. Jurnal asal TIDAK diubah dan tetap berstatus POSTED di backend
+// (buku besar hanya membaca POSTED, jadi nettonya nol); di halaman ini ia ditandai "Dibalik", disembunyikan
+// dari daftar dan angka ringkasan, dan bisa ditampilkan lewat kotak centang di bawah filter.
 
 const PAGE_SIZE = 10;
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -54,6 +65,19 @@ const formatWaktu = (iso?: string | null) => {
   return `${String(d.getDate()).padStart(2, '0')} ${BULAN[d.getMonth()]} ${d.getFullYear()} ${jam}`;
 };
 
+// Harus sama dengan LEVEL_REVERSAL di backend (bank_reconciliation_v1.py). Backend tetap yang menentukan;
+// ini hanya menyembunyikan tombol dari user yang pasti ditolak (403).
+const LEVEL_BALIK_JURNAL = 4; // Manager (tahap_4) ke atas
+const levelDariRole = (role?: string | null) => {
+  if (role === 'super_admin') return 999;
+  const m = /^tahap_(\d+)$/.exec(role ?? '');
+  return m ? Number(m[1]) : 0;
+};
+const hariIniLokal = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const csvCell = (v: unknown) => {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -63,7 +87,7 @@ function eksporCsv(rows: CashBankTxReal[]) {
   const header = [
     'No. Jurnal', 'Tanggal Jurnal', 'Arah', 'Counterparty', 'Invoice Terkait',
     'Rekening Kas/Bank', 'Akun Lawan', 'Nominal', 'Outstanding Sebelum', 'Outstanding Sesudah',
-    'Diposting Oleh', 'Waktu Posting',
+    'Diposting Oleh', 'Waktu Posting', 'Ref Mutasi Bank', 'Status', 'Jurnal Pembalik', 'Alasan Pembalikan',
   ];
   const lines = rows.map((r) => [
     r.tx_no,
@@ -78,6 +102,10 @@ function eksporCsv(rows: CashBankTxReal[]) {
     r.linkedInvoice?.outstandingAfter ?? '',
     r.postedBy ?? '',
     r.postedAt ?? '',
+    r.mutationRef ?? '',
+    r.reversal ? 'Dibalik' : 'Diposting',
+    r.reversal?.journalNo ?? '',
+    r.reversal?.reason ?? '',
   ]);
   const csv = [header, ...lines].map((l) => l.map(csvCell).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -106,9 +134,17 @@ const KOLOM: { label: string; field?: SortField; align?: 'right' }[] = [
 
 export default function CashBankPostedPage() {
   const { activeClientId } = useActiveClient();
-  const { txs, loading, error, refresh } = useJurnalRekonTxs();
+  const { user } = useAuth();
+  const { txs, loading, error, refresh } = usePostedJurnalRekon();
+  const bisaBalik = levelDariRole(user?.role) >= LEVEL_BALIK_JURNAL;
 
-  const posted = useMemo(() => txs.filter((x) => x.posting_status === 'Posted'), [txs]);
+  // Jurnal asal yang sudah dibalik tetap POSTED di backend, jadi dipisah di sini: angka ringkasan
+  // hanya menghitung jurnal yang masih berlaku.
+  const semuaPosted = useMemo(() => txs.filter((x) => x.posting_status === 'Posted'), [txs]);
+  const aktif = useMemo(() => semuaPosted.filter((x) => !x.reversal), [semuaPosted]);
+  const jumlahDibalik = semuaPosted.length - aktif.length;
+  const [tampilDibalik, setTampilDibalik] = useState(false);
+  const posted = tampilDibalik ? semuaPosted : aktif;
 
   const [search, setSearch] = useState('');
   const [arahFilter, setArahFilter] = useState<'all' | 'Cash Payment' | 'Cash Receipt'>('all');
@@ -118,6 +154,48 @@ export default function CashBankPostedPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+
+  // Dialog Balik Jurnal
+  const [balikTarget, setBalikTarget] = useState<CashBankTxReal | null>(null);
+  const [balikAlasan, setBalikAlasan] = useState('');
+  const [balikTanggal, setBalikTanggal] = useState('');
+  const [membalik, setMembalik] = useState(false);
+
+  const bukaDialogBalik = (row: CashBankTxReal) => {
+    const hariIni = hariIniLokal();
+    setBalikTarget(row);
+    setBalikAlasan('');
+    setBalikTanggal(hariIni < row.tx_date ? row.tx_date : hariIni);
+  };
+  const tutupDialogBalik = () => {
+    if (!membalik) setBalikTarget(null);
+  };
+  const konfirmasiBalik = async () => {
+    if (!balikTarget || membalik) return;
+    if (!activeClientId) {
+      toast.error('Belum ada client aktif — pilih client dulu di Topbar.');
+      return;
+    }
+    const alasan = balikAlasan.trim();
+    if (alasan.length < 5) {
+      toast.error('Alasan pembalikan wajib diisi (minimal 5 karakter).');
+      return;
+    }
+    setMembalik(true);
+    try {
+      const hasil = await rekonBalikJurnal(String(activeClientId), balikTarget.id, alasan, balikTanggal || null);
+      toast.success('Jurnal berhasil dibalik', {
+        description: `${balikTarget.tx_no} → ${hasil?.reversal_no ?? 'jurnal pembalik'}`,
+      });
+      setBalikTarget(null);
+      setExpandedId(null);
+      await refresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Gagal membalik jurnal.');
+    } finally {
+      setMembalik(false);
+    }
+  };
 
   const periodeList = useMemo(
     () => Array.from(new Set(posted.map((x) => periodeDari(x.tx_date)).filter(Boolean))).sort().reverse(),
@@ -160,10 +238,11 @@ export default function CashBankPostedPage() {
   const sampaiItem = Math.min(pageSafe * PAGE_SIZE, filtered.length);
 
   const ringkasan = useMemo(() => {
-    const cashIn = posted.filter((x) => x.direction === 'Cash Receipt').reduce((n, x) => n + x.amount, 0);
-    const cashOut = posted.filter((x) => x.direction === 'Cash Payment').reduce((n, x) => n + x.amount, 0);
-    return { total: posted.length, cashIn, cashOut, net: cashIn - cashOut, periode: periodeList.length };
-  }, [posted, periodeList]);
+    const cashIn = aktif.filter((x) => x.direction === 'Cash Receipt').reduce((n, x) => n + x.amount, 0);
+    const cashOut = aktif.filter((x) => x.direction === 'Cash Payment').reduce((n, x) => n + x.amount, 0);
+    const periode = new Set(aktif.map((x) => periodeDari(x.tx_date)).filter(Boolean)).size;
+    return { total: aktif.length, cashIn, cashOut, net: cashIn - cashOut, periode };
+  }, [aktif]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -269,9 +348,17 @@ export default function CashBankPostedPage() {
             </button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          {filtered.length} dari {posted.length} jurnal diposting
-        </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap mt-2">
+          <p className="text-xs text-muted-foreground">
+            {filtered.length} dari {posted.length} jurnal{tampilDibalik ? '' : ' diposting'}
+          </p>
+          {jumlahDibalik > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input type="checkbox" checked={tampilDibalik} onChange={(e) => setTampilDibalik(e.target.checked)} />
+              Tampilkan yang sudah dibalik ({jumlahDibalik})
+            </label>
+          )}
+        </div>
       </div>
 
       {/* Tabel */}
@@ -317,8 +404,15 @@ export default function CashBankPostedPage() {
                   const seimbang = Math.abs(totalDebit - totalKredit) < 0.5;
                   return (
                     <React.Fragment key={row.id}>
-                      <tr className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.tx_no}</td>
+                      <tr className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${row.reversal ? 'opacity-60' : ''}`}>
+                        <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">
+                          {row.tx_no}
+                          {row.reversal && (
+                            <span className="ml-2 align-middle rounded-full bg-amber-100 px-2 py-0.5 font-sans text-[10px] font-bold text-amber-700">
+                              Dibalik
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatTanggal(row.tx_date)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <StatusBadge label={row.direction} variant={isReceipt ? 'positive' : 'negative'} />
@@ -353,16 +447,30 @@ export default function CashBankPostedPage() {
                                   { label: 'Akun Lawan', value: row.linkedInvoice?.counterpartyAccount ?? '—' },
                                   {
                                     label: 'Outstanding Sebelum',
-                                    value: row.linkedInvoice ? formatIDR(row.linkedInvoice.outstandingBefore) : '—',
+                                    value: row.linkedInvoice && !row.reversal ? formatIDR(row.linkedInvoice.outstandingBefore) : '—',
                                   },
                                   {
                                     label: 'Outstanding Sesudah',
-                                    value: row.linkedInvoice ? formatIDR(row.linkedInvoice.outstandingAfter) : '—',
+                                    value: row.linkedInvoice && !row.reversal ? formatIDR(row.linkedInvoice.outstandingAfter) : '—',
                                   },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
                                     <p className="text-xs text-muted-foreground">{item.label}</p>
                                     <p className="text-xs font-semibold text-foreground mt-0.5 break-words">{item.value}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Info mutasi bank asal */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {[
+                                  { label: 'Ref Mutasi Bank', value: row.mutationRef || '—', mono: true },
+                                  { label: 'Deskripsi Mutasi', value: row.mutationDescription || '—', mono: false },
+                                  { label: 'File Sumber', value: row.sourceFile || '—', mono: false },
+                                ].map((item) => (
+                                  <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
+                                    <p className="text-xs text-muted-foreground">{item.label}</p>
+                                    <p className={`text-xs font-semibold text-foreground mt-0.5 break-words ${item.mono ? 'font-mono' : ''}`}>{item.value}</p>
                                   </div>
                                 ))}
                               </div>
@@ -413,14 +521,50 @@ export default function CashBankPostedPage() {
                                 )}
                               </div>
 
-                              {/* Indikator posted */}
-                              <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-4 py-2.5">
-                                <CheckBadgeIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                                <p className="text-xs text-emerald-700 font-medium">
-                                  Jurnal ini sudah diposting ke buku besar
-                                  {row.linkedInvoice ? ` dan outstanding invoice ${row.linkedInvoice.no} sudah diperbarui.` : '.'}
-                                </p>
-                              </div>
+                              {row.reversal ? (
+                                /* Sudah dibalik */
+                                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                                  <ArrowUturnLeftIcon className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                                  <div className="text-xs text-amber-800 space-y-0.5">
+                                    <p className="font-semibold">
+                                      Jurnal ini sudah dibalik oleh <span className="font-mono">{row.reversal.journalNo}</span>
+                                      {row.reversal.date ? ` (tanggal ${formatTanggal(row.reversal.date)})` : ''}.
+                                    </p>
+                                    <p>Dibalik oleh {row.reversal.by || '—'} pada {formatWaktu(row.reversal.at)}.</p>
+                                    {row.reversal.reason && <p>Alasan: {row.reversal.reason}</p>}
+                                    <p>
+                                      Pembayaran dibatalkan dan outstanding invoice sudah dipulihkan. Mutasi bank ini bisa dicocokkan
+                                      ulang di tab Reconciliation.
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  {/* Indikator posted */}
+                                  <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-4 py-2.5">
+                                    <CheckBadgeIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                    <p className="text-xs text-emerald-700 font-medium">
+                                      Jurnal ini sudah diposting ke buku besar
+                                      {row.linkedInvoice ? ` dan outstanding invoice ${row.linkedInvoice.no} sudah diperbarui.` : '.'}
+                                    </p>
+                                  </div>
+                                  {bisaBalik ? (
+                                    <div className="flex justify-end">
+                                      <button
+                                        onClick={() => bukaDialogBalik(row)}
+                                        className="flex items-center gap-1.5 text-xs font-semibold border border-rose-200 text-rose-700 rounded-lg px-3 py-2 bg-card hover:bg-rose-50 transition-colors"
+                                      >
+                                        <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                                        Balik Jurnal
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px] text-muted-foreground text-right">
+                                      Membalik jurnal yang sudah diposting hanya bisa dilakukan Manager ke atas.
+                                    </p>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -463,6 +607,106 @@ export default function CashBankPostedPage() {
           </div>
         )}
       </div>
+
+      {/* Dialog Balik Jurnal */}
+      {balikTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={tutupDialogBalik}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="judul-balik-jurnal"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
+              <div>
+                <h2 id="judul-balik-jurnal" className="text-base font-bold text-foreground">Balik Jurnal</h2>
+                <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                  {balikTarget.tx_no} · {formatIDR(balikTarget.amount)}
+                </p>
+              </div>
+              <button
+                onClick={tutupDialogBalik}
+                disabled={membalik}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                aria-label="Tutup"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
+                <p className="font-semibold">Yang akan terjadi:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Dibuat jurnal pembalik (debit dan kredit ditukar) yang langsung diposting. Jurnal asal tidak diubah atau dihapus.</li>
+                  {balikTarget.linkedInvoice ? (
+                    <li>
+                      Pembayaran ke invoice {balikTarget.linkedInvoice.no} dibatalkan, jadi outstanding invoice kembali seperti
+                      sebelum pembayaran ini.
+                    </li>
+                  ) : (
+                    <li>Jurnal ini tanpa invoice, jadi tidak ada outstanding Purchase/Sales yang berubah.</li>
+                  )}
+                  <li>Mutasi bank {balikTarget.mutationRef ?? '—'} bisa dicocokkan ulang di tab Reconciliation.</li>
+                </ul>
+              </div>
+
+              <div>
+                <label htmlFor="balik-alasan" className="block text-xs font-semibold text-foreground mb-1">
+                  Alasan pembalikan <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  id="balik-alasan"
+                  value={balikAlasan}
+                  onChange={(e) => setBalikAlasan(e.target.value)}
+                  maxLength={300}
+                  rows={3}
+                  disabled={membalik}
+                  placeholder="Contoh: salah cocok ke invoice, seharusnya invoice lain"
+                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+                />
+                <p className="text-[11px] text-muted-foreground mt-0.5">Minimal 5 karakter. Alasan tercatat di jurnal pembalik.</p>
+              </div>
+
+              <div>
+                <label htmlFor="balik-tanggal" className="block text-xs font-semibold text-foreground mb-1">
+                  Tanggal jurnal pembalik
+                </label>
+                <input
+                  id="balik-tanggal"
+                  type="date"
+                  value={balikTanggal}
+                  min={balikTarget.tx_date}
+                  onChange={(e) => setBalikTanggal(e.target.value)}
+                  disabled={membalik}
+                  className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+                />
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Tidak boleh sebelum tanggal jurnal asal ({formatTanggal(balikTarget.tx_date)}).
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
+              <button
+                onClick={tutupDialogBalik}
+                disabled={membalik}
+                className="text-xs font-semibold border border-border rounded-lg px-4 py-2 bg-card text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+              >
+                Batal
+              </button>
+              <button
+                onClick={konfirmasiBalik}
+                disabled={membalik || balikAlasan.trim().length < 5}
+                className="text-xs font-semibold rounded-lg px-4 py-2 bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {membalik ? 'Membalik...' : 'Balik Jurnal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2523,11 +2523,22 @@ export async function* aiBacaFileStream(file, pertanyaan) {
 // ============================================================
 const REKON_BASE = "/api/v1/finance/bank-reconciliation";
 
+/** Nama event window yang dipicu setiap kali data rekonsiliasi berubah (match, unmatch, approve, post, reverse). */
+export const REKON_EVENT = "rekon-berubah";
+
+function notifRekonBerubah() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(REKON_EVENT));
+}
+
 function rekonPost(path, body) {
   return requestEnvelope(`${REKON_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  }).then((res) => {
+    // /suggest hanya membaca; selain itu menulis, jadi tab lain (Overview, Cash Payment/Receipt) perlu memuat ulang.
+    if (path !== "/suggest") notifRekonBerubah();
+    return res;
   });
 }
 
@@ -2548,7 +2559,28 @@ export function rekonCocokkan(clientId, mutation, allocations, opsi = {}) {
   });
 }
 
-/** Cocokkan otomatis mutasi yang pasti; sisanya dicatat ke Exceptions. */
+/**
+ * Catat mutasi TANPA invoice (biaya admin, bunga, pajak bunga, transfer antar bank, setoran modal, dst)
+ * sebagai jurnal DRAFT. Baris Bank dibuat otomatis dari arah mutasi; `lines` = baris akun lawan
+ * [{coa_id, side: 'debit'|'credit', amount, description?}] dan harus membuat jurnal seimbang.
+ */
+export function rekonCatatNonInvoice(clientId, mutation, category, lines, opsi = {}) {
+  return rekonPost("/match-non-invoice", {
+    client_id: clientId,
+    mutation,
+    category,
+    lines,
+    bank_coa_id: opsi.bankCoaId || null,
+    notes: opsi.notes || null,
+  });
+}
+
+/**
+ * Cocokkan otomatis mutasi yang pasti; sisanya dicatat ke Exceptions.
+ * @param {string} clientId
+ * @param {any[]} mutations
+ * @param {string | null} [bankCoaId]
+ */
 export function rekonAutoCocokkan(clientId, mutations, bankCoaId = null) {
   return rekonPost("/auto-match", {
     client_id: clientId,
@@ -2567,21 +2599,63 @@ export function rekonBatalkan(clientId, bankMutationRef, alasan = null) {
   });
 }
 
-/** Daftar pembayaran hasil rekonsiliasi (direction: cash_payment | cash_receipt). */
-export function rekonDaftarPembayaran(clientId, direction = null) {
+/**
+ * Balik jurnal POSTED hasil rekonsiliasi (Manager ke atas): backend membuat jurnal pembalik yang
+ * langsung diposting, membatalkan pembayaran jurnal asal, dan memulihkan outstanding invoice.
+ * `alasan` wajib (min. 5 karakter); `tanggal` (YYYY-MM-DD) opsional, kosong = hari ini.
+ * @param {string} clientId
+ * @param {string} journalEntryId
+ * @param {string} alasan
+ * @param {string | null} [tanggal]
+ */
+export function rekonBalikJurnal(clientId, journalEntryId, alasan, tanggal = null) {
+  return rekonPost("/reverse", {
+    client_id: clientId,
+    journal_entry_id: journalEntryId,
+    alasan,
+    tanggal: tanggal || null,
+  });
+}
+
+/** Setujui jurnal hasil rekonsiliasi: DRAFT -> APPROVED (Supervisor ke atas). */
+export function rekonApproveJurnal(clientId, journalEntryId) {
+  return rekonPost("/approve", { client_id: clientId, journal_entry_id: journalEntryId });
+}
+
+/**
+ * Posting jurnal hasil rekonsiliasi: APPROVED -> POSTED (Manager ke atas). Saat ini juga pembayaran
+ * diterapkan ke invoice Purchase/Sales (outstanding berubah).
+ */
+export function rekonPostJurnal(clientId, journalEntryId) {
+  return rekonPost("/post", { client_id: clientId, journal_entry_id: journalEntryId });
+}
+
+/**
+ * Daftar pembayaran hasil rekonsiliasi (direction: cash_payment | cash_receipt).
+ * `termasukDibatalkan` = ikutkan pembayaran yang sudah dibatalkan (dipakai tab Posted untuk jurnal yang sudah dibalik).
+ * @param {string} clientId
+ * @param {string | null} [direction]
+ * @param {boolean} [termasukDibatalkan]
+ */
+export function rekonDaftarPembayaran(clientId, direction = null, termasukDibatalkan = false) {
   const q = new URLSearchParams({ client_id: clientId });
   if (direction) q.set("direction", direction);
+  if (termasukDibatalkan) q.set("termasuk_dibatalkan", "true");
   return requestEnvelope(`${REKON_BASE}/payments?${q.toString()}`);
 }
 
-/** Jurnal Kas vs Hutang/Piutang hasil rekonsiliasi (Journal Preview jalur pendek). */
+/**
+ * Jurnal Kas vs Hutang/Piutang hasil rekonsiliasi (Journal Preview jalur pendek).
+ * @param {string} clientId
+ * @param {string | null} [status] DRAFT | APPROVED | POSTED | REJECTED | REVERSED; kosong = semua.
+ */
 export function rekonJurnalPreview(clientId, status = null) {
   const q = new URLSearchParams({ client_id: clientId });
   if (status) q.set("status", status);
   return requestEnvelope(`${REKON_BASE}/journal-preview?${q.toString()}`);
 }
 
-/** Posting satu jurnal (DRAFT -> POSTED). Endpoint lama, level Supervisor ke atas. */
+/** Posting satu jurnal umum (DRAFT -> POSTED). Endpoint lama; menolak jurnal hasil rekonsiliasi bank (pakai rekonPostJurnal). */
 export function postJurnalEntry(clientId, journalEntryId) {
   return request(`/api/client/${clientId}/journal-entries/${journalEntryId}/post`, { method: "POST" });
 }

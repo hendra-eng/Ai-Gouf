@@ -7,12 +7,14 @@ import { formatIDR, CHART_COLORS } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import CashBankTabs from '../components/CashBankTabs';
 import { useBankFeed } from '../context/BankFeedContext';
-import { usePembayaranRekon } from '../lib/useBankCashRekon';
+import { usePembayaranRekon, sudahDiterapkan } from '../lib/useBankCashRekon';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 // [DIUBAH] Overview membaca dari sumber yang SAMA dengan tab Reconciliation, yaitu pembayaran hasil
 // rekonsiliasi di backend (/api/v1/finance/bank-reconciliation/payments): Cash In = penerimaan
-// invoice Sales, Cash Out = pembayaran invoice Purchase, yang sudah dicocokkan dengan mutasi bank.
+// invoice Sales, Cash Out = pembayaran invoice Purchase.
+// Angka resmi (KPI + tren) HANYA dari pembayaran yang jurnalnya sudah POSTED (applied_at terisi),
+// sama dengan tab Posted. Yang masih DRAFT/APPROVED tampil terpisah di "Pipeline Rekonsiliasi".
 // Sebelumnya dari TransactionsContext (sumber lama). "Saldo per Akun" dan jumlah mutasi belum
 // cocok tetap dari Bank Feed (hanya ada di sesi browser).
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -21,28 +23,44 @@ export default function CashBankOverviewPage() {
   const { mutations } = useBankFeed();
   const { payments, loading, error, refresh } = usePembayaranRekon();
 
-  const totalOut = useMemo(() => payments.filter((p) => p.direction === 'cash_payment').reduce((n, p) => n + p.amount, 0), [payments]);
-  const totalIn = useMemo(() => payments.filter((p) => p.direction === 'cash_receipt').reduce((n, p) => n + p.amount, 0), [payments]);
+  const posted = useMemo(() => payments.filter(sudahDiterapkan), [payments]);
+  const totalOut = useMemo(() => posted.filter((p) => p.direction === 'cash_payment').reduce((n, p) => n + p.amount, 0), [posted]);
+  const totalIn = useMemo(() => posted.filter((p) => p.direction === 'cash_receipt').reduce((n, p) => n + p.amount, 0), [posted]);
   const netCashFlow = totalIn - totalOut;
-  const txCount = payments.length;
+  const txCount = posted.length;
+
+  // Pipeline: jurnal rekon yang belum diposting (satu jurnal bisa melunasi beberapa invoice, jadi dihitung per jurnal).
+  const pipeline = useMemo(() => {
+    const hitung = (status: 'DRAFT' | 'APPROVED') => {
+      const jurnal = new Set<string>();
+      let nominal = 0;
+      payments.forEach((p) => {
+        if (sudahDiterapkan(p) || p.journal_status !== status) return;
+        jurnal.add(p.journal_entry_id || p.id);
+        nominal += p.amount;
+      });
+      return { jumlah: jurnal.size, nominal };
+    };
+    return { draft: hitung('DRAFT'), approved: hitung('APPROVED') };
+  }, [payments]);
 
   const unmatchedCount = useMemo(() => mutations.filter((m) => m.status === 'unmatched').length, [mutations]);
 
   // Tren bulanan menurut tanggal pembayaran; tahun = tahun pembayaran terbaru.
   const combinedTrend = useMemo(() => {
-    const tahun = payments.reduce((maks, p) => {
+    const tahun = posted.reduce((maks, p) => {
       const y = new Date(p.payment_date).getFullYear();
       return Number.isFinite(y) && y > maks ? y : maks;
     }, 0) || new Date().getFullYear();
     const bulan = MONTH_LABELS.map((month) => ({ month, masuk: 0, keluar: 0 }));
-    payments.forEach((p) => {
+    posted.forEach((p) => {
       const d = new Date(p.payment_date);
       if (isNaN(d.getTime()) || d.getFullYear() !== tahun) return;
       if (p.direction === 'cash_receipt') bulan[d.getMonth()].masuk += p.amount;
       else bulan[d.getMonth()].keluar += p.amount;
     });
     return bulan;
-  }, [payments]);
+  }, [posted]);
 
   // Saldo terbaru per rekening dari Bank Feed (mutasi sudah terurut terbaru dulu). Saldo dihitung
   // dari 0 + kredit - debit karena saldo awal rekening koran tidak dibaca.
@@ -81,6 +99,33 @@ export default function CashBankOverviewPage() {
         </Link>
       )}
 
+      <div className="card-elevated-md rounded-xl p-5 mb-6">
+        <h2 className="text-sm font-bold text-foreground mb-1">Pipeline Rekonsiliasi</h2>
+        <p className="text-xs text-muted-foreground mb-3">Belum masuk angka resmi di bawah. Invoice baru berubah setelah jurnal diposting.</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link href="/transactions/bank-cash/reconciliation" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors">
+            <p className="text-xs text-amber-800">Belum cocok</p>
+            <p className="text-lg font-bold text-amber-900 font-mono">{unmatchedCount}</p>
+            <p className="text-[11px] text-amber-700">mutasi Bank Feed</p>
+          </Link>
+          <Link href="/transactions/bank-cash/journal-preview" className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-slate-100 transition-colors">
+            <p className="text-xs text-slate-700">Draft (menunggu Approve)</p>
+            <p className="text-lg font-bold text-slate-900 font-mono">{pipeline.draft.jumlah}</p>
+            <p className="text-[11px] text-slate-600 font-mono">{formatIDR(pipeline.draft.nominal, true)}</p>
+          </Link>
+          <Link href="/transactions/bank-cash/journal-preview" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 hover:bg-blue-100 transition-colors">
+            <p className="text-xs text-blue-800">Approved (menunggu Post)</p>
+            <p className="text-lg font-bold text-blue-900 font-mono">{pipeline.approved.jumlah}</p>
+            <p className="text-[11px] text-blue-700 font-mono">{formatIDR(pipeline.approved.nominal, true)}</p>
+          </Link>
+          <Link href="/transactions/bank-cash/posted" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 hover:bg-emerald-100 transition-colors">
+            <p className="text-xs text-emerald-800">Sudah diposting</p>
+            <p className="text-lg font-bold text-emerald-900 font-mono">{txCount}</p>
+            <p className="text-[11px] text-emerald-700">pembayaran</p>
+          </Link>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard title="Total Cash In" value={totalIn} icon="ArrowDownCircleIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
         <KpiCard title="Total Cash Out" value={totalOut} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
@@ -104,7 +149,7 @@ export default function CashBankOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <h2 className="text-sm font-bold text-foreground mb-1">Arus Kas Bulanan</h2>
-          <p className="text-xs text-muted-foreground mb-3">Cash In vs Cash Out — pembayaran & penerimaan yang sudah direkonsiliasi</p>
+          <p className="text-xs text-muted-foreground mb-3">Cash In vs Cash Out — pembayaran & penerimaan yang jurnalnya sudah diposting</p>
           {combinedTrend.every((t) => t.masuk === 0 && t.keluar === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">{loading ? 'Memuat data...' : 'Belum ada pembayaran yang direkonsiliasi.'}</p>
           ) : (
@@ -157,7 +202,7 @@ export default function CashBankOverviewPage() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">{txCount} pembayaran hasil rekonsiliasi tercatat (Cash Payment + Cash Receipt).</p>
+      <p className="text-xs text-muted-foreground">{txCount} pembayaran hasil rekonsiliasi sudah diposting (Cash Payment + Cash Receipt).</p>
     </div>
   );
 }
