@@ -422,12 +422,32 @@ def _coa_dari_role(session, client_id: str, role_code: str) -> Optional[Dict[str
     return dict(rows[0]) if len(rows) == 1 else None
 
 
+def _no_akun_dari_label(label: Optional[str]) -> Optional[str]:
+    """Label akun bank dari Bank Feed berbentuk "<no_akun> - <nama_akun>"
+    (mis. "11200001 - BANK BCA") -> "11200001". None kalau polanya tidak cocok."""
+    m = re.match(r"^\s*(\S+)\s+-\s+", label or "")
+    return m.group(1) if m else None
+
+
 def _resolve_bank(session, client_id: str, explicit_id: Optional[str], bank_hint: Optional[str]) -> Dict[str, Any]:
     if explicit_id:
         r = _coa_row(session, client_id, explicit_id)
         if not r:
             raise _Gagal("Akun Kas/Bank tidak ditemukan pada COA client ini.")
         return r
+    # [BARU] Akun bank mutasi sudah dipilih saat upload di Bank Feed dan label-nya
+    # memuat nomor akun COA -> cocokkan LANGSUNG lewat nomor akun (pasti), bukan
+    # menebak dari kata-kata nama akun. Dipakai hanya kalau nomor itu cocok tepat
+    # 1 akun aktif milik client; selain itu jatuh ke logika lama di bawah.
+    no_akun = _no_akun_dari_label(bank_hint)
+    if no_akun:
+        langsung = session.execute(text("""
+            select id::text as id, no_akun, nama_akun from coa
+             where client_id = cast(:c as uuid) and no_akun = :n
+               and deleted_at is null and coalesce(aktif, true)
+        """), {"c": client_id, "n": no_akun}).mappings().all()
+        if len(langsung) == 1:
+            return dict(langsung[0])
     banks = [dict(x) for x in session.execute(text("""
         select id::text as id, no_akun, nama_akun from coa
          where client_id = cast(:c as uuid) and deleted_at is null and coalesce(aktif, true)
@@ -444,7 +464,7 @@ def _resolve_bank(session, client_id: str, explicit_id: Optional[str], bank_hint
     if len(banks) == 1:
         return banks[0]
     raise _Gagal(
-        "Akun Bank tidak bisa ditentukan otomatis. Pilih akun bank untuk mutasi ini.",
+        "Akun Bank mutasi ini tidak bisa ditentukan. Hapus data Bank Feed, lalu upload ulang rekening koran dan pilih akun bank di dropdown upload.",
         kode="NEED_ACCOUNT", detail={"field": "bank_coa_id", "options": banks},
     )
 

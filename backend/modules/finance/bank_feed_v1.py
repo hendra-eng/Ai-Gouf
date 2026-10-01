@@ -57,6 +57,10 @@ class BankFeedMutationSkema(BaseModel):
     matchedTxId: Optional[str] = None
     sourceFile: Optional[str] = None
     uploadedAt: Optional[str] = None
+    # [BARU] Saldo awal resmi file sumber (dari footer PDF) -- dipakai frontend
+    # sebagai saldo pembuka saat menghitung saldo berjalan. None = file tidak
+    # punya footer yang terbaca (mis. Excel) -> frontend mulai dari 0 seperti dulu.
+    fileOpeningBalance: Optional[float] = None
 
 
 class DaftarBankFeedResponse(BaseModel):
@@ -68,6 +72,8 @@ class ImportBankFeedResponse(BaseModel):
     diimpor: int
     mutations: List[BankFeedMutationSkema]
     peringatan: List[str] = []
+    saldoAwal: Optional[float] = None
+    saldoAkhir: Optional[float] = None
 
 
 class HapusBankFeedResponse(BaseModel):
@@ -104,16 +110,47 @@ def _tanggal_ke_str(v: Any) -> Optional[str]:
     return teks
 
 
+def _saldo_dari_footer(ringkasan_footer: Any) -> tuple:
+    """[BARU] Ambil (saldo_awal, saldo_akhir) resmi dari ringkasan footer PDF
+    (hasil ak.proses_file_rekening_koran, key 'ringkasan_footer', bentuknya
+    {nama_sheet: {saldo_awal, mutasi_cr, mutasi_db, saldo_akhir, ...}}).
+    Hanya dipakai kalau TEPAT SATU sheet punya saldo_awal -- kalau ada lebih
+    dari satu (file multi-sheet) tidak jelas mana yang dimaksud, jadi None
+    (frontend mulai dari 0 seperti perilaku lama, bukan menebak)."""
+    if not isinstance(ringkasan_footer, dict) or not ringkasan_footer:
+        return None, None
+    if "saldo_awal" in ringkasan_footer:  # bentuk datar (1 sheet)
+        kandidat = [ringkasan_footer]
+    else:
+        kandidat = [
+            v for v in ringkasan_footer.values()
+            if isinstance(v, dict) and v.get("saldo_awal") is not None
+        ]
+    if len(kandidat) != 1:
+        return None, None
+    try:
+        awal = kandidat[0].get("saldo_awal")
+        akhir = kandidat[0].get("saldo_akhir")
+        return (
+            float(awal) if awal is not None else None,
+            float(akhir) if akhir is not None else None,
+        )
+    except (TypeError, ValueError):
+        return None, None
+
+
 def _bangun_mutasi_sementara(
-    bank_account: str, source_file: str, rows: List[Dict[str, Any]]
+    bank_account: str, source_file: str, rows: List[Dict[str, Any]],
+    saldo_awal: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """[BARU] Bentuk baris mutasi Bank Feed TANPA menyimpan ke database --
     dipakai mode simpan=False (Bank Feed sekarang murni sesi browser, lihat
     BankFeedContext.tsx). Bentuk dict-nya sama persis dengan
     dbc._bank_feed_ke_dict() supaya skema respons tidak berubah. Saldo
-    berjalan dihitung dari 0 per file; frontend yang menghitung ulang
-    bersambung per akun bank kalau ada beberapa file dalam satu sesi."""
-    saldo = 0.0
+    berjalan dihitung dari saldo_awal (footer PDF; 0 kalau tidak ada) per file;
+    frontend yang menghitung ulang bersambung per akun bank kalau ada beberapa
+    file dalam satu sesi."""
+    saldo = float(saldo_awal) if saldo_awal is not None else 0.0
     now = datetime.now().isoformat()
     baru: List[Dict[str, Any]] = []
     for r in sorted(rows, key=lambda x: x.get("tanggal") or ""):
@@ -132,6 +169,7 @@ def _bangun_mutasi_sementara(
             "matchedTxId": None,
             "sourceFile": source_file,
             "uploadedAt": now,
+            "fileOpeningBalance": saldo_awal,
         })
     return list(reversed(baru))  # terbaru dulu, sama seperti versi DB
 
@@ -231,10 +269,20 @@ async def api_import_bank_feed(
         for row in draf_jurnal
     ]
 
+    peringatan = list(hasil.get("sheet_dilewati") or [])
+    saldo_awal, saldo_akhir = _saldo_dari_footer(hasil.get("ringkasan_footer"))
+    if saldo_awal is not None and saldo_akhir is not None:
+        hitung_akhir = saldo_awal + sum(float(r["kredit"]) - float(r["debet"]) for r in rows_mentah)
+        if abs(hitung_akhir - saldo_akhir) > 1.0:
+            peringatan.append(
+                f"Saldo akhir hasil ekstraksi ({hitung_akhir:,.2f}) tidak sama dengan saldo akhir di footer "
+                f"rekening koran ({saldo_akhir:,.2f}) -- cek apakah ada baris yang terlewat."
+            )
+
     if simpan:
         tersimpan = dbc.simpan_bank_feed_mutasi_batch(client_id, bank_account, nama_file, rows_mentah)
     else:
-        tersimpan = _bangun_mutasi_sementara(bank_account, nama_file, rows_mentah)
+        tersimpan = _bangun_mutasi_sementara(bank_account, nama_file, rows_mentah, saldo_awal)
 
     dbc.log_audit(
         client_id=client_id, user=user.get("username", "unknown"),
@@ -246,7 +294,9 @@ async def api_import_bank_feed(
         "berhasil": True,
         "diimpor": len(tersimpan),
         "mutations": tersimpan,
-        "peringatan": hasil.get("sheet_dilewati") or [],
+        "peringatan": peringatan,
+        "saldoAwal": saldo_awal,
+        "saldoAkhir": saldo_akhir,
     }
 
 

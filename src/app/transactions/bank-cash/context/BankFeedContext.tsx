@@ -37,6 +37,10 @@ export interface BankFeedMutation {
   matchedTxId: string | null;
   sourceFile: string;
   uploadedAt: string;
+  // Saldo awal resmi file sumber (footer PDF rekening koran), dipakai sebagai
+  // saldo pembuka saat menghitung saldo berjalan. null/undefined = tidak
+  // diketahui (mis. file Excel, atau sesi lama) -> mulai dari 0 seperti dulu.
+  fileOpeningBalance?: number | null;
 }
 
 // Bentuk baris apa adanya dari backend (respons POST /import) -- sejumlah
@@ -53,6 +57,7 @@ interface BankFeedMutationBackend {
   matchedTxId?: string | null;
   sourceFile?: string | null;
   uploadedAt?: string | null;
+  fileOpeningBalance?: number | null;
 }
 
 function normalisasiMutasi(m: BankFeedMutationBackend): BankFeedMutation {
@@ -68,6 +73,7 @@ function normalisasiMutasi(m: BankFeedMutationBackend): BankFeedMutation {
     matchedTxId: m.matchedTxId || null,
     sourceFile: m.sourceFile || '',
     uploadedAt: m.uploadedAt || '',
+    fileOpeningBalance: typeof m.fileOpeningBalance === 'number' ? m.fileOpeningBalance : null,
   };
 }
 
@@ -75,14 +81,41 @@ function normalisasiMutasi(m: BankFeedMutationBackend): BankFeedMutation {
 // ke sesi tampil lebih atas untuk tanggal yang sama), lalu hitung ulang saldo
 // berjalan BERSAMBUNG per akun bank dari seluruh baris sesi. Backend hanya
 // menghitung saldo per-file mulai dari 0, jadi kalau ada beberapa file untuk
-// akun yang sama, saldonya harus disambung di sini. (Saldo awal rekening
-// koran tidak dibaca -- saldo dihitung dari 0 + kredit - debit.)
+// akun yang sama, saldonya harus disambung di sini.
+//
+// Saldo pembuka: tiap file membawa `fileOpeningBalance` (saldo awal resmi dari
+// footer PDF). Pada baris PERTAMA tiap file (urut kronologis) saldo berjalan
+// di-set ke saldo awal file itu, sehingga saldo = saldo awal + kredit - debit
+// -- sama dengan kolom SALDO di rekening koran. Untuk file yang bersambung
+// (bulan berikutnya) hasilnya identik dengan menyambung saldo file sebelumnya;
+// kalau ada bulan yang bolong, saldo tetap benar karena di-anchor ulang.
+// Re-anchor dilewati kalau tanggal file baru tumpang tindih dengan data akun
+// yang sudah ada (mencegah saldo loncat). File tanpa saldo awal (Excel / sesi
+// lama) diperlakukan seperti dulu: lanjut dari saldo berjalan (atau 0).
 function urutkanDanHitungSaldo(list: BankFeedMutation[]): BankFeedMutation[] {
   const tampil = [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const saldoPerAkun = new Map<string, number>();
+  const tanggalTerakhirPerAkun = new Map<string, string>();
+  const fileSudahDiproses = new Set<string>();
   const kronologis = [...tampil].reverse().map((m) => {
-    const saldo = (saldoPerAkun.get(m.bankAccount) || 0) + m.credit - m.debit;
+    let saldoSebelum = saldoPerAkun.get(m.bankAccount) ?? 0;
+    const kunciFile = `${m.bankAccount}|${m.sourceFile}|${m.uploadedAt}`;
+    if (!fileSudahDiproses.has(kunciFile)) {
+      fileSudahDiproses.add(kunciFile);
+      const pembuka = m.fileOpeningBalance;
+      const tanggalTerakhir = tanggalTerakhirPerAkun.get(m.bankAccount);
+      if (
+        typeof pembuka === 'number' &&
+        Number.isFinite(pembuka) &&
+        (tanggalTerakhir === undefined || m.date > tanggalTerakhir)
+      ) {
+        saldoSebelum = pembuka;
+      }
+    }
+    const saldo = saldoSebelum + m.credit - m.debit;
     saldoPerAkun.set(m.bankAccount, saldo);
+    const tglSebelumnya = tanggalTerakhirPerAkun.get(m.bankAccount);
+    if (tglSebelumnya === undefined || m.date > tglSebelumnya) tanggalTerakhirPerAkun.set(m.bankAccount, m.date);
     return { ...m, balanceAfter: saldo };
   });
   return kronologis.reverse();

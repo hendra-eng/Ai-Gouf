@@ -11,9 +11,10 @@ import { useActiveClient } from '@/lib/activeClient';
 import { ambilCoaClient } from '@/app/agent-ai/lib/api';
 
 // [BARU] Satu akun bank untuk dropdown upload — dibangun dari COA client
-// aktif (kategori Kas & Bank = sub_kategori 'Kas', lihat
-// db_client.py::_normalisasi_sub_kategori_kas_bank), BUKAN array hardcode
-// lagi. `value` dipakai sebagai `bankAccount` (dikirim ke backend & dipakai
+// aktif, HANYA akun rekening bank (jenis_kas = 'bank'). Kas kecil, kas tunai
+// dan akun transit/clearing (jenis_kas kas_kecil/kas_tunai/transit) tidak
+// punya rekening koran dari bank, jadi sengaja tidak ditampilkan. BUKAN array
+// hardcode lagi. `value` dipakai sebagai `bankAccount` (dikirim ke backend & dipakai
 // sebagai label di tabel Bank Feed), dibentuk "<no_akun> - <nama_akun>"
 // supaya beda akun dengan nama mirip (mis. 2 rekening BCA) tetap unik.
 interface AkunBank {
@@ -34,10 +35,10 @@ function useAkunBankClientAktif() {
     let batal = false;
     setLoading(true);
     ambilCoaClient(activeClientId)
-      .then((res: { coa: Array<{ no_akun: string; nama_akun: string; sub_kategori?: string | null }> }) => {
+      .then((res: { coa: Array<{ no_akun: string; nama_akun: string; sub_kategori?: string | null; jenis_kas?: string | null }> }) => {
         if (batal) return;
         const daftar = (res?.coa || [])
-          .filter((a) => a.sub_kategori === 'Kas')
+          .filter((a) => a.sub_kategori === 'Kas' && a.jenis_kas === 'bank')
           .map((a) => ({ value: `${a.no_akun} - ${a.nama_akun}`, label: `${a.no_akun} - ${a.nama_akun}` }));
         setAkun(daftar);
       })
@@ -106,7 +107,7 @@ function UploadPanel() {
         >
           {akunBank.length === 0 ? (
             <option value="">
-              {loadingAkun ? 'Memuat akun...' : 'Belum ada akun Kas & Bank di COA'}
+              {loadingAkun ? 'Memuat akun...' : 'Belum ada akun Bank di COA (jenis_kas = bank)'}
             </option>
           ) : (
             akunBank.map((a) => (

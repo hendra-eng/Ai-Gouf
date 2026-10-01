@@ -9,6 +9,8 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatIDR } from '../../lib/groupAnalytics';
 import { useBankFeed } from '../context/BankFeedContext';
 import { useBankReconciliation, type SaranKandidat, type BarisLawanInput } from '../lib/useBankReconciliation';
+import { useCashPaymentsFromPurchase } from '../lib/usePurchaseCashPayments';
+import { useCashReceiptsFromSales } from '../lib/useSalesCashReceipts';
 
 // Ringkasan Saldo Menurut Bank vs Menurut Buku.
 //  - Bank  = saldo terbaru tiap rekening di Bank Feed sesi ini, dijumlahkan (dihitung dari 0 + kredit - debit).
@@ -46,8 +48,10 @@ function ReconciliationSummary({
   );
 }
 
-// [DIUBAH] Pencocokan sekarang ke INVOICE Purchase (mutasi debet) dan Sales (mutasi kredit)
-// yang masih outstanding -- sumber yang sama dengan tab Cash Payment/Receipt -- lewat backend
+// [DIUBAH] Kolom kanan sekarang SELALU menampilkan invoice Purchase (posted) dan Sales
+// (Posted/Partial/Paid) -- sumber yang sama dengan tab Cash Payment/Receipt -- tanpa perlu memilih
+// mutasi di kolom kiri dulu (fitur "kandidat per mutasi terpilih" dihapus). Pencocokan tetap lewat
+// tombol Cocokkan/Auto-match di kolom kiri, ke INVOICE Purchase (mutasi debet) dan Sales (mutasi kredit), lewat backend
 // /api/v1/finance/bank-reconciliation. Kalau matched: pembayaran tercatat (saldo invoice
 // diperbarui trigger DB) dan jurnal Kas vs Hutang/Piutang terbentuk (DRAFT). Yang belum
 // cocok dicatat di tab Exceptions. Sebelumnya: cocok lokal berdasarkan tanggal + nominal.
@@ -62,13 +66,16 @@ export default function ReconciliationPage() {
   const { mutations } = useBankFeed();
   const {
     saran, pembayaran, saldoBuku, refById, loading, error, busy, autoRunning,
-    cocokkan, catatNonInvoice, akunLawan, akunBank, batalkan, autoCocokkan, muatUlang,
+    cocokkan, catatNonInvoice, akunLawan, batalkan, autoCocokkan, muatUlang,
   } = useBankReconciliation();
   const [tab, setTab] = useState<'unreconciled' | 'reconciled'>('unreconciled');
   const [selectedMutation, setSelectedMutation] = useState<string | null>(null);
-  // '' = otomatis (dicocokkan dari nama rekening mutasi). Dipilih manual bila client punya >1 akun bank.
-  const [bankCoaPilihan, setBankCoaPilihan] = useState('');
-  const bankCoaId = akunBank.some((a) => a.id === bankCoaPilihan) ? bankCoaPilihan : '';
+  // Kolom kanan: daftar invoice posted dari halaman Purchase (Cash Payment) / Sales (Cash Receipt).
+  const [sisiInvoice, setSisiInvoice] = useState<'payment' | 'receipt'>('payment');
+  const purchase = useCashPaymentsFromPurchase();
+  const sales = useCashReceiptsFromSales();
+  // Akun bank jurnal ditentukan backend dari label akun di tiap mutasi (dipilih saat upload di
+  // Bank Feed) -- tidak ada lagi pilihan global di halaman ini.
 
   // Mutasi sudah terurut terbaru dulu, jadi kemunculan pertama per rekening = saldo terbaru rekening itu.
   const saldoBank = useMemo(() => {
@@ -82,6 +89,24 @@ export default function ReconciliationPage() {
     return total;
   }, [mutations]);
 
+  // Saldo awal rekening (dari footer PDF) = saldo terbaru - total arus (kredit - debit) per akun.
+  // Saldo Bank sekarang sudah termasuk saldo awal, sedangkan saldoBuku di bawah hanya arus hasil
+  // pencocokan -- jadi saldo awal yang sama ditambahkan ke sisi buku supaya Selisih tetap berarti
+  // "mutasi yang belum dicocokkan", bukan ikut membawa saldo awal.
+  const saldoAwalBank = useMemo(() => {
+    const terbaru = new Map<string, number>();
+    const arus = new Map<string, number>();
+    for (const m of mutations) {
+      if (!terbaru.has(m.bankAccount)) terbaru.set(m.bankAccount, m.balanceAfter);
+      arus.set(m.bankAccount, (arus.get(m.bankAccount) || 0) + m.credit - m.debit);
+    }
+    let total = 0;
+    terbaru.forEach((saldo, akun) => {
+      total += saldo - (arus.get(akun) || 0);
+    });
+    return total;
+  }, [mutations]);
+
   const unmatchedMutations = useMemo(() => mutations.filter((m) => m.status === 'unmatched'), [mutations]);
   const matchedMutations = useMemo(() => mutations.filter((m) => m.status === 'matched'), [mutations]);
 
@@ -89,13 +114,28 @@ export default function ReconciliationPage() {
     () => unmatchedMutations.find((m) => m.id === selectedMutation) || null,
     [unmatchedMutations, selectedMutation],
   );
-  const saranTerpilih = mutasiTerpilih ? saran[refById.get(mutasiTerpilih.id) || ''] : undefined;
+
+  const daftarInvoice = useMemo(
+    () =>
+      sisiInvoice === 'payment'
+        ? purchase.rows.map((r) => ({
+            id: r.id, no: r.invoiceNumber || r.purchaseId, pihak: r.vendor, tanggal: r.date, jatuhTempo: r.dueDate,
+            total: r.total, sisa: r.outstanding, dalamProses: r.dalamProses, overdue: r.isOverdue,
+          }))
+        : sales.rows.map((r) => ({
+            id: r.id, no: r.invoiceNo, pihak: r.customer, tanggal: r.date, jatuhTempo: r.dueDate,
+            total: r.total, sisa: r.outstanding, dalamProses: r.dalamProses, overdue: r.isOverdue,
+          })),
+    [sisiInvoice, purchase.rows, sales.rows],
+  );
+  const loadingInvoice = sisiInvoice === 'payment' ? purchase.loading : sales.loading;
+  const errorInvoice = sisiInvoice === 'payment' ? purchase.error : sales.error;
 
   const handleMatch = async (mutationId: string, kandidat: SaranKandidat) => {
     const m = mutations.find((x) => x.id === mutationId);
     if (!m) return;
     try {
-      await cocokkan(m, kandidat, bankCoaId || null);
+      await cocokkan(m, kandidat, null);
       setSelectedMutation(null);
       toast.success(`Dicocokkan dengan ${namaKandidat(kandidat)}. Jurnal berstatus DRAFT.`);
     } catch (e: any) {
@@ -103,10 +143,25 @@ export default function ReconciliationPage() {
     }
   };
 
+  // Cocokkan manual: mutasi terpilih di kiri + invoice yang diklik di kanan. Nominal alokasi = nominal
+  // mutasi (backend menolak kalau total alokasi != nominal mutasi), jadi invoice harus punya sisa >= nominal.
+  const handleMatchInvoice = async (r: { id: string; no: string; pihak: string; sisa: number }) => {
+    if (!mutasiTerpilih) return;
+    const nominal = mutasiTerpilih.credit || mutasiTerpilih.debit;
+    await handleMatch(mutasiTerpilih.id, {
+      kind: 'single',
+      exact: Math.abs(r.sisa - nominal) < 0.5,
+      ref_hit: false,
+      party_ratio: 0,
+      score: 0,
+      allocations: [{ invoice_id: r.id, invoice_no: r.no || null, party: r.pihak || null, outstanding: r.sisa, amount: nominal }],
+    });
+  };
+
   const handleNonInvoice = async (mutationId: string, kategori: string, baris: BarisLawanInput[]) => {
     const m = mutations.find((x) => x.id === mutationId);
     if (!m) return;
-    await catatNonInvoice(m, kategori, baris, bankCoaId || null); // error dilempar ke form supaya tampil di sana
+    await catatNonInvoice(m, kategori, baris, null); // error dilempar ke form supaya tampil di sana
     setSelectedMutation(null);
     toast.success(`${kategori} dicatat. Jurnal berstatus DRAFT, lanjutkan Approve di Journal Preview.`);
   };
@@ -124,7 +179,7 @@ export default function ReconciliationPage() {
 
   const handleAuto = async () => {
     try {
-      const r = await autoCocokkan(bankCoaId || null);
+      const r = await autoCocokkan(null);
       toast.success(`${r.matched} mutasi dicocokkan, ${r.unmatched} belum cocok (dicatat di Exceptions).`);
     } catch (e: any) {
       toast.error(e?.message || 'Auto-match gagal.');
@@ -142,7 +197,7 @@ export default function ReconciliationPage() {
         </div>
       )}
 
-      <ReconciliationSummary saldoBank={saldoBank} saldoBuku={saldoBuku} />
+      <ReconciliationSummary saldoBank={saldoBank} saldoBuku={saldoBuku + saldoAwalBank} />
 
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-1 bg-muted rounded-lg p-1 border border-border w-fit">
@@ -171,26 +226,6 @@ export default function ReconciliationPage() {
         )}
       </div>
 
-      {tab === 'unreconciled' && akunBank.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 mb-4">
-          <label htmlFor="rekon-akun-bank" className="text-xs font-semibold text-foreground">Akun Bank untuk jurnal</label>
-          <select
-            id="rekon-akun-bank"
-            value={bankCoaId}
-            onChange={(e) => setBankCoaPilihan(e.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1 text-xs"
-          >
-            <option value="">Otomatis (sesuai nama rekening mutasi)</option>
-            {akunBank.map((a) => (
-              <option key={a.id} value={a.id}>{a.no_akun} · {a.nama_akun}</option>
-            ))}
-          </select>
-          <span className="text-[11px] text-muted-foreground">
-            Berlaku untuk Cocokkan, Auto-match, dan Jurnal tanpa invoice. Pilih manual kalau muncul error "Akun Bank tidak bisa ditentukan".
-          </span>
-        </div>
-      )}
-
       {loading && mutations.length === 0 ? (
         <p className="text-xs text-muted-foreground py-12 text-center">Memuat data rekonsiliasi...</p>
       ) : tab === 'unreconciled' ? (
@@ -199,7 +234,7 @@ export default function ReconciliationPage() {
           <div className="card-elevated-md rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
               <h2 className="text-sm font-bold text-foreground">Bank Feed — Belum Dicocokkan</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Klik satu baris, lalu pilih invoice pasangannya di kolom kanan, atau catat tanpa invoice</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Pakai tombol Cocokkan / Auto-match, atau klik satu baris untuk mencatat tanpa invoice</p>
             </div>
             {unmatchedMutations.length === 0 ? (
               <p className="text-xs text-muted-foreground py-10 text-center">Tidak ada mutasi Bank Feed yang menunggu.</p>
@@ -213,7 +248,11 @@ export default function ReconciliationPage() {
                   return (
                     <div
                       key={m.id}
-                      onClick={() => !isBusy && setSelectedMutation(selected ? null : m.id)}
+                      onClick={() => {
+                        if (isBusy) return;
+                        setSelectedMutation(selected ? null : m.id);
+                        if (!selected) setSisiInvoice(m.credit ? 'receipt' : 'payment');
+                      }}
                       className={`px-4 py-3 transition-colors ${isBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer'} ${selected ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -247,57 +286,39 @@ export default function ReconciliationPage() {
             )}
           </div>
 
-          {/* Kolom kanan — invoice outstanding yang cocok untuk mutasi terpilih */}
+          {/* Kolom kanan — invoice posted dari Purchase (Cash Payment) & Sales (Cash Receipt), selalu tampil */}
           <div className="card-elevated-md rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
-              <h2 className="text-sm font-bold text-foreground">Invoice Outstanding — Kandidat</h2>
+              <h2 className="text-sm font-bold text-foreground">Invoice Posted — Cash Payment &amp; Cash Receipt</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
+                {sisiInvoice === 'payment'
+                  ? 'Invoice Purchase berstatus posted (sumber tab Cash Payment)'
+                  : 'Invoice Sales berstatus Posted/Partial/Paid (sumber tab Cash Receipt)'}
+              </p>
+              <p className="text-xs text-foreground mt-2">
                 {mutasiTerpilih
-                  ? mutasiTerpilih.credit
-                    ? 'Invoice Sales yang masih ada sisa tagihan'
-                    : 'Invoice Purchase (status posted) yang masih ada sisa tagihan'
-                  : 'Pilih dulu satu mutasi di kolom kiri'}
+                  ? `Mutasi terpilih: ${formatIDR(mutasiTerpilih.credit || mutasiTerpilih.debit)} (${mutasiTerpilih.credit ? 'masuk' : 'keluar'}). Klik invoice untuk mencocokkan.`
+                  : 'Pilih satu mutasi di kiri, lalu klik invoice di sini untuk mencocokkan.'}
               </p>
-            </div>
-            {!mutasiTerpilih ? (
-              <p className="text-xs text-muted-foreground py-10 text-center">Belum ada mutasi yang dipilih.</p>
-            ) : !saranTerpilih ? (
-              <p className="text-xs text-muted-foreground py-10 text-center">{loading ? 'Mencari kandidat…' : 'Saran belum tersedia.'}</p>
-            ) : saranTerpilih.candidates.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-10 px-6 text-center">
-                Tidak ada invoice yang cocok dengan nominal/nama pihak mutasi ini. Pastikan invoicenya sudah berstatus
-                posted dan masih ada sisa tagihan; mutasi ini akan tercatat di tab Exceptions.
-              </p>
-            ) : (
-              <div className="divide-y divide-border/50 max-h-[520px] overflow-y-auto">
-                {saranTerpilih.candidates.map((k, i) => {
-                  const isBusy = busy.has(mutasiTerpilih.id);
-                  return (
-                    <div
-                      key={`${namaKandidat(k)}-${i}`}
-                      onClick={() => !isBusy && handleMatch(mutasiTerpilih.id, k)}
-                      className={`px-4 py-3 flex items-center justify-between gap-2 transition-colors ${isBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-primary/5'}`}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-foreground truncate">
-                          {namaKandidat(k)}{k.kind === 'combo' ? ' (gabungan invoice)' : ''}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {pihakKandidat(k)} · skor {Math.round(k.score * 100)}%
-                          {k.exact ? ' · nominal pas' : ' · bayar sebagian'}
-                          {k.ref_hit ? ' · no. invoice ada di keterangan' : ''}
-                        </p>
-                      </div>
-                      <span className="text-xs font-mono font-semibold whitespace-nowrap text-foreground">
-                        {formatIDR(k.allocations.reduce((n, a) => n + a.amount, 0), true)}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-1 border border-border w-fit mt-3">
+                {([
+                  ['payment', `Cash Payment (${purchase.rows.length})`],
+                  ['receipt', `Cash Receipt (${sales.rows.length})`],
+                ] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setSisiInvoice(k)}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                      sisiInvoice === k ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
             {mutasiTerpilih && (
-              <div className="p-3 border-t border-border">
+              <div className="p-3 border-b border-border">
                 <NonInvoiceForm
                   key={mutasiTerpilih.id}
                   nominal={mutasiTerpilih.credit || mutasiTerpilih.debit}
@@ -306,6 +327,61 @@ export default function ReconciliationPage() {
                   busy={busy.has(mutasiTerpilih.id)}
                   onSubmit={(kategori, baris) => handleNonInvoice(mutasiTerpilih.id, kategori, baris)}
                 />
+              </div>
+            )}
+            {errorInvoice ? (
+              <p className="text-xs text-rose-700 py-10 px-6 text-center">{errorInvoice}</p>
+            ) : loadingInvoice && daftarInvoice.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-10 text-center">Memuat invoice…</p>
+            ) : daftarInvoice.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-10 px-6 text-center">
+                {sisiInvoice === 'payment'
+                  ? 'Belum ada invoice Purchase berstatus posted untuk client ini.'
+                  : 'Belum ada invoice Sales berstatus Posted/Partial/Paid untuk client ini.'}
+              </p>
+            ) : (
+              <div className="divide-y divide-border/50 max-h-[520px] overflow-y-auto">
+                {daftarInvoice.map((r) => {
+                  const nominalTerpilih = mutasiTerpilih ? mutasiTerpilih.credit || mutasiTerpilih.debit : 0;
+                  const sisiSesuai = mutasiTerpilih ? (mutasiTerpilih.credit ? 'receipt' : 'payment') === sisiInvoice : false;
+                  const tersedia = Math.max(r.sisa - r.dalamProses, 0);
+                  const cukup = tersedia + 0.5 >= nominalTerpilih;
+                  const bisa = !!mutasiTerpilih && sisiSesuai && cukup;
+                  const isBusy = !!mutasiTerpilih && busy.has(mutasiTerpilih.id);
+                  const alasan = !mutasiTerpilih
+                    ? ''
+                    : !sisiSesuai
+                      ? mutasiTerpilih.credit ? 'Mutasi masuk: pilih invoice di tab Cash Receipt' : 'Mutasi keluar: pilih invoice di tab Cash Payment'
+                      : !cukup
+                        ? 'Sisa invoice lebih kecil dari nominal mutasi'
+                        : 'Klik untuk mencocokkan';
+                  return (
+                    <div
+                      key={r.id}
+                      title={alasan}
+                      onClick={() => bisa && !isBusy && handleMatchInvoice(r)}
+                      className={`px-4 py-3 flex items-center justify-between gap-2 transition-colors ${
+                        !mutasiTerpilih ? '' : bisa ? (isBusy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-primary/5') : 'opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground truncate">{r.no || '—'}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {r.pihak || '—'} · {r.tanggal}
+                          {r.jatuhTempo ? ` · jatuh tempo ${r.jatuhTempo}` : ''}
+                          {r.overdue ? ' · overdue' : ''}
+                        </p>
+                      </div>
+                      <div className="text-right whitespace-nowrap">
+                        <p className="text-xs font-mono font-semibold text-foreground">{formatIDR(r.total, true)}</p>
+                        <p className={`text-[11px] ${r.sisa > 0.005 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {r.sisa > 0.005 ? `Sisa ${formatIDR(r.sisa, true)}` : 'Lunas'}
+                          {r.dalamProses > 0.005 ? ` · proses ${formatIDR(r.dalamProses, true)}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
