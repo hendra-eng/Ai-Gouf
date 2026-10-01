@@ -7,7 +7,7 @@ export default function BankCashPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/transactions/bank-cash/cash-payment');
+    router.replace('/transactions/bank-cash/overview');
   }, [router]);
 
   return null;

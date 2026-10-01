@@ -5,7 +5,7 @@ import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/com
 import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
   MagnifyingGlassIcon,
@@ -46,8 +46,9 @@ function StatusBadge({ status }: { status: ExceptionStatus }) {
 }
 
 export default function PurchaseExceptionsPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  const clientId = activeClientId ?? null;
   const { exceptions: backendExceptions } = usePurchaseExceptions(clientId);
   const purchaseExceptions = useMemo(() => backendExceptions.map(mapExceptionToUi), [backendExceptions]);
 

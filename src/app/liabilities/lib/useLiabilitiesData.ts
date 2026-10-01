@@ -201,5 +201,5 @@ export function useLiabilitiesData(): LiabilitiesData {
       accounts: data, liabilityAccounts: liabilitas, shortTermDebt: shortDebtNow, longTermDebt: longDebtNow,
       totalEquity, netIncomeYtd, taxPayable: taxNow, tahun, lastIdx,
     };
-  }, [loading, isSampleData, companyName, data]);
+  }, [loading, companyName, data]);
 }

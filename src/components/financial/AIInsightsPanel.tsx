@@ -9,7 +9,7 @@ import { useLanguage } from '@/lib/language';
 
 
 interface Insight {
-  id: number;
+  id: number | string;
   title: string;
   description: string;
   metric: string;

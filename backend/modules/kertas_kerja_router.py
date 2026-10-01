@@ -91,7 +91,7 @@ def _validasi_dan_baca_pdf(files: List[UploadFile]) -> List[tuple]:
     return daftar_file_pdf
 
 
-def _ambil_coa_client(client_id: int):
+def _ambil_coa_client(client_id: str):
     """
     [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini
     memanggil db_client.ambil_coa_client(client_id) -- round-trip ke
@@ -114,7 +114,7 @@ def _ambil_coa_client(client_id: int):
 
 @router.post("/generate")
 def generate(
-    client_id: int = Form(...),
+    client_id: str = Form(...),
     pakai_ai: bool = Form(True),
     pakai_claude_review: bool = Form(False),
     files: List[UploadFile] = File(...),
@@ -188,7 +188,7 @@ def generate(
 
 @router.post("/preview", response_model=KertasKerjaRingkasanResponse)
 def preview(
-    client_id: int = Form(...),
+    client_id: str = Form(...),
     pakai_ai: bool = Form(True),
     pakai_claude_review: bool = Form(False),
     files: List[UploadFile] = File(...),

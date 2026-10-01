@@ -7,17 +7,13 @@ import { useCurrency } from '@/lib/currency';
 import { formatIDR } from '@/lib/financialData';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
 
-// Data contoh -- HANYA dipakai kalau client aktif belum punya jurnal
-// terkait akun aset tetap/penyusutan.
-const SAMPLE_TRANSACTIONS = [
-  { id: 'TXN-AST-0881', date: '26 Aug 2026', asset: 'Server Dell PowerEdge R750', type: 'Depreciation', account: 'Beban Penyusutan', debit: 'Rp 3M', credit: '—', ref: 'JE-2026-0881', user: 'Siti Rahayu', status: 'paid' as const },
-  { id: 'TXN-AST-0880', date: '25 Aug 2026', asset: 'Software ERP License', type: 'Depreciation', account: 'Beban Penyusutan', debit: 'Rp 3.83M', credit: '—', ref: 'JE-2026-0880', user: 'Siti Rahayu', status: 'paid' as const },
-  { id: 'TXN-AST-0875', date: '20 Aug 2026', asset: 'CCTV System 48 kamera', type: 'Acquisition', account: 'Aset Tetap', debit: '—', credit: 'Rp 65M', ref: 'PO-2026-0145', user: 'Budi Santoso', status: 'active' as const },
-  { id: 'TXN-AST-0870', date: '15 Aug 2026', asset: 'Mesin Produksi CNC-X200', type: 'Transfer', account: 'Aset Tetap', debit: '—', credit: '—', ref: 'TRF-2026-0022', user: 'Ahmad Fauzi', status: 'active' as const },
-  { id: 'TXN-AST-0862', date: '10 Aug 2026', asset: 'Mesin Offset Heidelberg', type: 'Disposal', account: 'Akumulasi Penyusutan', debit: 'Rp 580M', credit: 'Rp 580M', ref: 'DIS-2026-0003', user: 'Rizky Wardana', status: 'disposed' as const },
-  { id: 'TXN-AST-0855', date: '05 Aug 2026', asset: 'Toyota Fortuner 2022', type: 'Depreciation', account: 'Beban Penyusutan', debit: 'Rp 5.42M', credit: '—', ref: 'JE-2026-0855', user: 'Siti Rahayu', status: 'paid' as const },
-  { id: 'TXN-AST-0848', date: '01 Aug 2026', asset: 'Gedung Kantor Jakarta', type: 'Revaluation', account: 'Surplus Revaluasi', debit: '—', credit: 'Rp 50M', ref: 'REV-2026-0001', user: 'Rizky Wardana', status: 'active' as const },
-];
+// [UBAH] Data contoh dikosongkan -- HANYA dipakai kalau client aktif belum
+// punya jurnal terkait akun aset tetap/penyusutan.
+const SAMPLE_TRANSACTIONS: {
+  id: string; date: string; asset: string; type: string; account: string;
+  debit: string; credit: string; ref: string; user: string;
+  status: 'paid' | 'active' | 'disposed';
+}[] = [];
 
 function detectAssetTxnType(accountName: string, description: string): string {
   const t = `${accountName} ${description}`.toLowerCase();

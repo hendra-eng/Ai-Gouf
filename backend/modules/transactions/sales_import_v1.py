@@ -45,6 +45,7 @@ from datetime import date, datetime
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 import db_client as dbc
@@ -596,7 +597,8 @@ async def upload_source_file(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    client_id = current_user.get("id")
+    user_id = current_user.get("id")  # management_users.id -- untuk uploaded_by / created_by
+    client_id = management_client_id  # kolom client_id di DB = FK ke management_clients (BUKAN id user)
 
     if file_type == "PDF":
         # [CATATAN] PDF belum didukung pembelajaran pola sama sekali --
@@ -612,8 +614,8 @@ async def upload_source_file(
             "status_ekstraksi": "Butuh Review",
             "status_mapping": "Butuh Review",
             "processed_by": current_user.get("nama") or current_user.get("username"),
-            "uploaded_by": client_id,
-        }, created_by=client_id)
+            "uploaded_by": user_id,
+        }, created_by=user_id)
         if source_file is None:
             return gagal(message="Gagal menyimpan source file (kesalahan database).", status_code=500)
         return sukses(
@@ -624,7 +626,7 @@ async def upload_source_file(
 
     cocok = None
     try:
-        cocok = _cocokkan_template(content, file_type, management_client_id)
+        cocok = await run_in_threadpool(_cocokkan_template, content, file_type, management_client_id)
     except Exception as e:
         logger.warning(f"Gagal mencocokkan template untuk file {file.filename}: {e}")
 
@@ -638,8 +640,8 @@ async def upload_source_file(
             "status_ekstraksi": "Butuh Review",
             "status_mapping": "Butuh Review",
             "processed_by": current_user.get("nama") or current_user.get("username"),
-            "uploaded_by": client_id,
-        }, created_by=client_id)
+            "uploaded_by": user_id,
+        }, created_by=user_id)
         if source_file is None:
             return gagal(message="Gagal menyimpan source file (kesalahan database).", status_code=500)
         return sukses(
@@ -654,7 +656,7 @@ async def upload_source_file(
 
     template, rows = cocok
     try:
-        baris_ekstrak = _ekstrak_dengan_template(rows, template, file.filename)
+        baris_ekstrak = await run_in_threadpool(_ekstrak_dengan_template, rows, template, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
         source_file = dbc.create_sales_source_file({
@@ -667,8 +669,8 @@ async def upload_source_file(
             "status_mapping": "Gagal",
             "template_id": template["id"],
             "processed_by": current_user.get("nama") or current_user.get("username"),
-            "uploaded_by": client_id,
-        }, created_by=client_id)
+            "uploaded_by": user_id,
+        }, created_by=user_id)
         return sukses(
             data={**(source_file or {}), "template_matched": True, "rows_extracted": 0},
             message=f"Template ditemukan tapi ekstraksi gagal: {e}",
@@ -701,19 +703,27 @@ async def upload_source_file(
         "mapping_rules": template.get("mapping_rules"),
         "template_id": template["id"],
         "processed_by": current_user.get("nama") or current_user.get("username"),
-        "uploaded_by": client_id,
-    }, created_by=client_id)
+        "uploaded_by": user_id,
+    }, created_by=user_id)
     if source_file is None:
         return gagal(message="Gagal menyimpan source file (kesalahan database).", status_code=500)
 
-    for row_data in baris_ekstrak:
-        dbc.create_sales_source_row({
-            "source_file_id": source_file["id"],
-            "client_id": client_id,
-            **row_data,
-        }, created_by=client_id)
+    # [FIX] Insert massal (1 transaksi) di threadpool -- sebelumnya create_sales_source_row
+    # dipanggil per baris (~0,3 dtk/baris ke Supabase) di dalam handler async, sehingga file
+    # 10rb+ baris membutuhkan berjam-jam dan MEMBLOKIR event loop (semua request lain
+    # ikut "socket hang up"/ECONNRESET).
+    n_tersimpan = await run_in_threadpool(
+        dbc.create_sales_source_rows_bulk, baris_ekstrak, source_file["id"], client_id, user_id
+    )
+    if n_tersimpan != len(baris_ekstrak):
+        await run_in_threadpool(dbc.update_sales_source_file, source_file["id"],
+                                {"status_ekstraksi": "Gagal", "status_mapping": "Gagal", "rows_detected": 0}, user_id)
+        return gagal(
+            message="Ekstraksi berhasil tapi gagal menyimpan baris ke database (kesalahan database).",
+            errors={"code": "BULK_INSERT_FAILED"}, status_code=500,
+        )
 
-    dbc.touch_sales_import_template_usage(template["id"])
+    await run_in_threadpool(dbc.touch_sales_import_template_usage, template["id"])
 
     return sukses(
         data={**source_file, "template_matched": True, "rows_extracted": len(baris_ekstrak)},
@@ -754,7 +764,8 @@ def promote_source_file_to_invoices(
     if source_file is None:
         return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
 
-    client_id = current_user.get("id")
+    user_id = current_user.get("id")  # management_users.id -- untuk created_by / dibuat_oleh
+    client_id = source_file.get("management_client_id")  # FK client_id -> management_clients
     rows = dbc.list_sales_source_rows(source_file_id=source_file_id, termasuk_nonaktif=False)
 
     dibuat = 0
@@ -790,7 +801,7 @@ def promote_source_file_to_invoices(
             "tax_invoice_status": "Belum Terbit Faktur",
             "posting_status": "Draft",
             "source_row_id": row["id"],
-        }, created_by=client_id)
+        }, created_by=user_id)
         if invoice_baru is not None:
             dibuat += 1
             # Akun jurnal langsung mengikuti akun default klien (COA klien) --

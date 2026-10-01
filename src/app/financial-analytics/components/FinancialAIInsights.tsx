@@ -16,52 +16,9 @@ import { generateFinancialInsights, type FinancialInsight } from '../lib/financi
 // useAnalyticsData.ts (margins/liquidity/growth/expense, sudah tersambung
 // ke trial balance bulanan backend) + arBridge.ts (konsentrasi piutang per
 // customer, sumber yang sama dengan halaman Account Receivable).
-const SAMPLE_INSIGHTS: FinancialInsight[] = [
-  {
-    id: 'fa-ai-1',
-    title: 'Profitability: Strong Margin Expansion',
-    summary: 'Net profit increased 16.2% YoY, primarily because revenue growth (+12.8%) exceeded operating expense growth (+6.4%). EBITDA margin expanded from 25.9% to 27.4%.',
-    numbers: ['Revenue Growth: +12.8%', 'OpEx Growth: +6.4%', 'EBITDA Margin: 27.4%', 'Net Margin: 21.9%'],
-    factors: ['Revenue growth outpaced cost growth', 'Payroll efficiency improvement', 'Technology cost leverage'],
-    recommendation: 'Maintain cost discipline in Q4. Focus on protecting EBITDA margin as marketing spend recovers.',
-    severity: 'positive',
-    icon: 'ChartBarIcon',
-    analysisType: 'profit-decrease',
-  },
-  {
-    id: 'fa-ai-2',
-    title: 'Liquidity: Cash Position Remains Strong',
-    summary: 'Cash reserves of Rp 2.96M remain well above the internal minimum threshold of Rp 1.50M. Current ratio of 2.41x provides comfortable short-term liquidity buffer.',
-    numbers: ['Cash: Rp 2.96M', 'Current Ratio: 2.41x', 'Quick Ratio: 2.12x', 'Cash Runway: 30 months'],
-    factors: ['Strong cash conversion from operations', 'Controlled CapEx spending', 'Improving collection rates'],
-    recommendation: 'Consider deploying excess cash strategically — short-term instruments or accelerated debt reduction.',
-    severity: 'positive',
-    icon: 'BanknotesIcon',
-    analysisType: 'cash-flow',
-  },
-  {
-    id: 'fa-ai-3',
-    title: 'Receivables: Concentration Risk Requires Attention',
-    summary: 'A concentration of overdue receivables in CV Mitra Digital Prima (Rp 380M, DSO 239 days) represents meaningful collection risk. Overall AR balance is Rp 1.24M.',
-    numbers: ['Total AR: Rp 1.24M', 'CV Mitra Digital: Rp 380M overdue', 'DSO: 239 days', 'Overall Collection Rate: 93.8%'],
-    factors: ['Single customer concentration in overdue AR', 'Overall collection rate healthy at 93.8%', 'Top 3 customers show strong payment patterns'],
-    recommendation: 'Escalate collection efforts on CV Mitra Digital. Review credit terms and consider requiring advance payments.',
-    severity: 'warning',
-    icon: 'InboxArrowDownIcon',
-    analysisType: 'ar-risk',
-  },
-  {
-    id: 'fa-ai-4',
-    title: 'Expenses: Technology Costs Growing Faster Than Revenue',
-    summary: 'Technology and infrastructure expenses grew 27.8% YoY vs revenue growth of 12.8%. This divergence warrants review to ensure technology investment is generating commensurate returns.',
-    numbers: ['Tech Expense Growth: +27.8%', 'Revenue Growth: +12.8%', 'Tech Expense: Rp 138M', 'Tech % of Revenue: 1.6%'],
-    factors: ['Cloud infrastructure scaling costs', 'New software license investments', 'Security and compliance tooling'],
-    recommendation: 'Review technology investment ROI. Identify recurring vs one-time costs and optimize vendor contracts.',
-    severity: 'info',
-    icon: 'CpuChipIcon',
-    analysisType: 'expense-anomaly',
-  },
-];
+// Dikosongkan (tidak ada sample insight hardcode) — saat belum ada client
+// aktif/data, komponen jatuh ke empty state "No notable insights..." di bawah.
+const SAMPLE_INSIGHTS: FinancialInsight[] = [];
 
 const SEVERITY_CONFIG = {
   positive: { bg: 'bg-positive-subtle border-positive/20', icon: 'text-positive', badge: 'bg-positive/10 text-positive' },

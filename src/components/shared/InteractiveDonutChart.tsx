@@ -59,11 +59,34 @@ const MIN_SEGMENT_DEG = 3; // minimum angular size any segment is allowed to shr
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+  // Dibulatkan supaya hasil server (SSR) & browser identik → tidak ada hydration mismatch
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  return { x: r3(cx + r * Math.cos(rad)), y: r3(cy + r * Math.sin(rad)) };
 }
 
 function arcPath(cx: number, cy: number, rOuter: number, rInner: number, startAngle: number, endAngle: number) {
   const span = endAngle - startAngle;
+  // [FIXED] Kasus 1 segmen = 100% (span 360°): titik awal & akhir jadi sama
+  // persis secara matematis, dan menurut spek SVG, arc dengan endpoint sama
+  // dengan start point dianggap "tidak ada" (tidak digambar) -- makanya
+  // donut tampak kosong padahal datanya benar (mis. semua transaksi masih
+  // berstatus "Draft"). Dipecah jadi 2 busur 180° supaya tetap valid.
+  if (span >= 359.99) {
+    const mid = startAngle + 180;
+    const outerA = polar(cx, cy, rOuter, startAngle);
+    const outerB = polar(cx, cy, rOuter, mid);
+    const innerA = polar(cx, cy, rInner, startAngle);
+    const innerB = polar(cx, cy, rInner, mid);
+    return [
+      `M ${outerA.x} ${outerA.y}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${outerB.x} ${outerB.y}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${outerA.x} ${outerA.y}`,
+      `L ${innerA.x} ${innerA.y}`,
+      `A ${rInner} ${rInner} 0 1 0 ${innerB.x} ${innerB.y}`,
+      `A ${rInner} ${rInner} 0 1 0 ${innerA.x} ${innerA.y}`,
+      'Z',
+    ].join(' ');
+  }
   const largeArc = span > 180 ? 1 : 0;
   const p1 = polar(cx, cy, rOuter, startAngle);
   const p2 = polar(cx, cy, rOuter, endAngle);
@@ -133,10 +156,22 @@ export default function InteractiveDonutChart({
 }: Props) {
   const { t } = useLanguage();
   const { currency } = useCurrency();
-  const total = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data]);
+  // Nilai bisa negatif (mis. akun kontra-aset seperti Akumulasi Penyusutan,
+  // atau Piutang minus karena retur/kelebihan bayar). Sudut tiap segmen HARUS
+  // selalu dihitung dari besaran (magnitude), bukan nilai mentah -- kalau tidak,
+  // satu nilai negatif bisa bikin total jadi lebih kecil dari salah satu
+  // komponennya sendiri, menghasilkan sudut negatif / >360° yang bikin path SVG
+  // saling tumpang-tindih ("meleber" jadi blob, bukan potongan pie yang rapi).
+  const total = useMemo(() => data.reduce((s, d) => s + Math.abs(d.value), 0), [data]);
   const N = data.length;
 
-  const baseSizes = useMemo(() => (total > 0 ? data.map((d) => (d.value / total) * 360) : data.map(() => 0)), [data, total]);
+  const baseSizes = useMemo(
+    () => (total > 0 ? data.map((d) => (Math.abs(d.value) / total) * 360) : data.map(() => 0)),
+    [data, total]
+  );
+  // Tanda asli tiap segmen (positif/negatif), dipakai untuk menampilkan nilai
+  // & memilih gaya render (hatch) -- terpisah dari geometri sudut di atas.
+  const signs = useMemo(() => data.map((d) => (d.value < 0 ? -1 : 1)), [data]);
   const baseBoundaries = useMemo(() => {
     const arr: number[] = [];
     let acc = 0;
@@ -301,8 +336,8 @@ export default function InteractiveDonutChart({
     onLiveChange?.(
       data.map((d, i) => ({
         name: d.name,
-        pct: (liveSizes[i] / 360) * 100,
-        value: (total * liveSizes[i]) / 360,
+        pct: signs[i] * ((liveSizes[i] / 360) * 100),
+        value: signs[i] * ((total * liveSizes[i]) / 360),
       }))
     );
     // liveSizes is derived fresh each render from pulledIndex/pulledSize/data/total,
@@ -319,8 +354,8 @@ export default function InteractiveDonutChart({
       ? {
           name: data[calloutIndex].name,
           color: data[calloutIndex].color,
-          pct: (liveSizes[calloutIndex] / 360) * 100,
-          value: (total * liveSizes[calloutIndex]) / 360,
+          pct: signs[calloutIndex] * ((liveSizes[calloutIndex] / 360) * 100),
+          value: signs[calloutIndex] * ((total * liveSizes[calloutIndex]) / 360),
           isPreview: pulledIndex !== null,
         }
       : null;
@@ -343,15 +378,38 @@ export default function InteractiveDonutChart({
       height={height}
       style={{ touchAction: 'none', overflow: 'visible' }}
     >
+      <defs>
+        {/* Pola garis-garis untuk segmen bernilai negatif (mis. akun kontra-aset)
+            supaya tetap kelihatan beda secara visual dari segmen positif,
+            tanpa mengubah geometri arc-nya sama sekali. */}
+        {segments.map((seg) =>
+          signs[seg.index] < 0 ? (
+            <pattern
+              key={`donut-hatch-${seg.index}`}
+              id={`donut-hatch-${seg.index}`}
+              width={6}
+              height={6}
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width={6} height={6} fill={seg.color} fillOpacity={0.25} />
+              <line x1={0} y1={0} x2={0} y2={6} stroke={seg.color} strokeWidth={2.5} />
+            </pattern>
+          ) : null
+        )}
+      </defs>
       {segments.map((seg) => {
         const isActive = activeIndex === seg.index;
         const isDimmed = activeIndex !== null && !isActive;
         const outer = isActive ? R_OUTER + 6 : R_OUTER;
+        const isNegative = signs[seg.index] < 0;
         return (
           <path
             key={`donut-seg-${seg.index}`}
             d={arcPath(CX, CY, outer, R_INNER, seg.start, seg.end)}
-            fill={seg.color}
+            fill={isNegative ? `url(#donut-hatch-${seg.index})` : seg.color}
+            stroke={isNegative ? seg.color : undefined}
+            strokeWidth={isNegative ? 1 : undefined}
             opacity={isDimmed ? 0.35 : 1}
             style={{ cursor: 'pointer', transition: 'opacity 150ms ease, filter 150ms ease' }}
             filter={hoverIndex === seg.index ? 'brightness(1.08)' : undefined}

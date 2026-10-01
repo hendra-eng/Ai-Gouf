@@ -4,14 +4,7 @@ import dynamic from 'next/dynamic';
 
 const PurchaseBarChart = dynamic(() => import('./PurchaseBarChart'), { ssr: false });
 
-const vendorBreakdown = [
-  { id: 'vend-01', name: 'Synergy Systems Inc.', amount: '$48,200', pct: 100, category: 'Technology' },
-  { id: 'vend-02', name: 'CoreSupply Partners', amount: '$36,800', pct: 76, category: 'Raw Materials' },
-  { id: 'vend-03', name: 'Nexus Office Solutions', amount: '$24,100', pct: 50, category: 'Office Supplies' },
-  { id: 'vend-04', name: 'Atlas Freight Services', amount: '$19,600', pct: 41, category: 'Logistics' },
-  { id: 'vend-05', name: 'Pinnacle Cloud Ltd.', amount: '$16,400', pct: 34, category: 'Cloud Services' },
-  { id: 'vend-06', name: 'Delta Engineering Co.', amount: '$12,900', pct: 27, category: 'Engineering' },
-];
+const vendorBreakdown: { id: string; name: string; amount: string; pct: number; category: string }[] = [];
 
 export default function PurchaseChartSection() {
   return (
@@ -43,6 +36,9 @@ export default function PurchaseChartSection() {
         <h3 className="text-sm font-600 text-foreground mb-1">Top Vendors</h3>
         <p className="text-xs text-muted-foreground mb-4">By spend — Sep 2026</p>
         <div className="space-y-3">
+          {vendorBreakdown.length === 0 && (
+            <p className="text-xs text-muted-foreground">No data yet</p>
+          )}
           {vendorBreakdown?.map((v, i) => (
             <div key={`top-vendor-${v?.id}`} className="flex items-center gap-3">
               <span className="text-xs font-600 text-muted-foreground w-4 text-right">{i + 1}</span>

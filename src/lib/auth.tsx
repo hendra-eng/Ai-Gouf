@@ -6,6 +6,7 @@
 // Dipakai Topbar.tsx untuk menampilkan nama/role user yang login, dan
 // oleh tombol "Log out".
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { hapusSemuaSesiBankFeed } from '@/lib/bankFeedSession';
 
 export interface SessionUser {
   // [FIX] Sebelumnya diketik `number` -- tapi backend (GET /api/v1/auth/me)
@@ -51,6 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await fetch('/api/session/logout', { method: 'POST' }).catch(() => {});
+    // Bank Feed cuma hidup selama sesi -- kosongkan saat logout.
+    hapusSemuaSesiBankFeed();
     setUser(null);
     if (typeof window !== 'undefined') {
       window.location.assign('/login');

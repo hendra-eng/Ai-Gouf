@@ -9,7 +9,7 @@ import { useBudgetData } from '../lib/budgetBridge';
 export default function PlanningStatusHero() {
   const { fx } = useCurrency();
   const { activeClientName } = useActiveClient();
-  const { kpis, lines, periodLabel, isSampleData } = useBudgetData();
+  const { kpis, lines, periodLabel, isSampleData, capexBudget, expectedCollections } = useBudgetData();
 
   const achievement = kpis.totalBudget !== 0 ? Math.round((kpis.totalActual / kpis.totalBudget) * 1000) / 10 : 0;
   const forecastVsBudget = lines.revenue.budget !== 0 ? ((lines.revenue.forecast - lines.revenue.budget) / lines.revenue.budget) * 100 : 0;
@@ -22,6 +22,11 @@ export default function PlanningStatusHero() {
     { label: 'Actual Revenue', value: formatIDR(kpis.totalActual * 1_000_000, true), trend: `YTD ${periodLabel || ''}`, status: 'neutral', icon: 'BanknotesIcon' },
     { label: 'Forecast Revenue', value: formatIDR(lines.revenue.forecast * 1_000_000, true), trend: 'Full Year', status: 'positive', icon: 'ChartBarIcon' },
     { label: 'Forecast Confidence', value: `${forecastConfidence.toFixed(1)}%`, trend: forecastConfidence >= 80 ? 'High Confidence' : 'Moderate Confidence', status: forecastConfidence >= 80 ? 'positive' : 'neutral', icon: 'ShieldCheckIcon' },
+    // [BARU] Dari asumsi tersimpan (forecast_assumption.collection_rate_pct
+    // & .capex) -- sebelumnya kedua kolom ini tersimpan di database tapi
+    // tidak dipakai perhitungan/tampilan apa pun.
+    { label: 'Expected Collections', value: formatIDR(expectedCollections * 1_000_000, true), trend: 'From revenue budget × collection rate', status: 'neutral', icon: 'BanknotesIcon' },
+    { label: 'CapEx Budget', value: formatIDR(capexBudget * 1_000_000, true), trend: 'Planned, not yet in Assets module', status: 'neutral', icon: 'CubeIcon' },
   ];
 
   return (

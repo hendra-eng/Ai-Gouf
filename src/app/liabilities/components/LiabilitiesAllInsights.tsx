@@ -5,45 +5,9 @@ import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
 import type { LiabilityInsight } from '../lib/liabilitiesBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_INSIGHTS: LiabilityInsight[] = [
-  {
-    title: 'Tax Obligation Urgent',
-    description: 'PPh 21 of Rp 182M is due in 13 days on 8 Sep 2026. Ensure cash is allocated and payment is initiated at least 3 business days before the deadline.',
-    metric: 'Rp 182M \u00b7 Due 8 Sep 2026 \u00b7 13 days',
-    severity: 'critical',
-  },
-  {
-    title: 'Payables Concentration',
-    description: 'Top 5 vendors represent 78.4% of total outstanding accounts payable. PT Sinar Abadi Makmur alone accounts for 16.5% of total AP balance.',
-    metric: 'Rp 672M \u00b7 78.4% of total AP',
-    severity: 'warning',
-  },
-  {
-    title: 'Healthy Debt Leverage',
-    description: 'Debt-to-equity ratio of 0.18x is well below the 1.0x threshold, indicating conservative financial leverage and strong equity base.',
-    metric: 'D/E: 0.18x \u00b7 Interest Coverage: 12.7x',
-    severity: 'positive',
-  },
-  {
-    title: 'Long-Term Debt Increase',
-    description: 'Long-term debt increased 3.3% compared with the previous period due to the BNI bond facility drawn in Q1 2026.',
-    metric: '+Rp 20M \u00b7 Q1 2026 bond facility',
-    severity: 'info',
-  },
-  {
-    title: 'Overdue Payable Detected',
-    description: 'PT Bintang Mas Sejahtera invoice of Rp 58M is 2 days overdue. Contact vendor to negotiate extension or initiate payment immediately.',
-    metric: 'Rp 58M \u00b7 OBL-2026-008 \u00b7 2 days overdue',
-    severity: 'critical',
-  },
-  {
-    title: 'Accrued Expense Trend',
-    description: 'Accrued expenses increased 5.5% this period, primarily driven by higher payroll accruals reflecting headcount growth in engineering.',
-    metric: 'Rp 118M \u00b7 +5.5% vs prev period',
-    severity: 'info',
-  },
-];
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 insight.
+const SAMPLE_INSIGHTS: LiabilityInsight[] = [];
 
 interface LiabilitiesAllInsightsProps {
   isSampleData: boolean;

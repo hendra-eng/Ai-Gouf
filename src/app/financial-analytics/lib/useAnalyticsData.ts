@@ -422,88 +422,44 @@ function buildHealthDimensions(computed: NonNullable<ReturnType<typeof hitungAna
   return { dims, overall };
 }
 
-// ── Data contoh (fallback) -- dipakai saat belum ada client aktif / belum
-// ada jurnal sama sekali, supaya nilai yang tampil SAMA seperti versi mock
-// sebelumnya (tidak ada regresi tampilan saat demo tanpa data asli). ──
-const SAMPLE: Omit<AnalyticsData, 'loading' | 'isSampleData' | 'companyName'> = {
-  periodLabel: COMPANY.period,
-  comparisonLabel: 'vs Previous Year',
+// ── Fallback kosong -- dipakai saat belum ada client aktif / belum ada
+// jurnal sama sekali. Semua nilai nol/array kosong (bukan data contoh)
+// supaya halaman tidak menampilkan angka palsu sebelum data asli masuk. ──
+const ZERO_METRIC: AnalyticsMetric = { current: 0, previous: 0 };
+const EMPTY: Omit<AnalyticsData, 'loading' | 'isSampleData' | 'companyName'> = {
+  periodLabel: '',
+  comparisonLabel: 'vs Previous Month',
   margins: {
-    gross: { current: 44.2, previous: 42.8 }, ebitda: { current: 27.4, previous: 25.9 },
-    ebit: { current: 25.9, previous: 24.3 }, net: { current: 21.9, previous: 20.1 },
-    roa: { current: 14.4, previous: 12.8 }, roe: { current: 21.4, previous: 18.2 },
+    gross: ZERO_METRIC, ebitda: ZERO_METRIC, ebit: ZERO_METRIC, net: ZERO_METRIC,
+    roa: ZERO_METRIC, roe: ZERO_METRIC,
   },
   liquidity: {
-    currentRatio: { current: 2.41, previous: 2.18 }, quickRatio: { current: 2.12, previous: 1.94 },
-    cashRatio: { current: 1.35, previous: 1.18 }, workingCapital: { current: 4192, previous: 3720 },
-    cashRunwayMonths: { current: 9.4, previous: 8.6 },
+    currentRatio: ZERO_METRIC, quickRatio: ZERO_METRIC, cashRatio: ZERO_METRIC,
+    workingCapital: ZERO_METRIC, cashRunwayMonths: ZERO_METRIC,
   },
   solvency: {
-    debtToEquity: { current: 0.21, previous: 0.24 }, debtRatio: { current: 0.14, previous: 0.15 },
-    interestCoverage: { current: 27.5, previous: 22.1 }, totalDebt: { current: 1800, previous: 1860 },
+    debtToEquity: ZERO_METRIC, debtRatio: ZERO_METRIC, interestCoverage: ZERO_METRIC, totalDebt: ZERO_METRIC,
   },
   efficiency: {
-    assetTurnover: { current: 1.42, previous: 1.28 }, dso: { current: 53.8, previous: 56.2 },
-    dpo: { current: 66.8, previous: 64.1 }, cashConversionCycle: { current: -13.0, previous: -7.9 },
+    assetTurnover: ZERO_METRIC, dso: ZERO_METRIC, dpo: ZERO_METRIC, cashConversionCycle: ZERO_METRIC,
   },
-  growth: { revenue: 12.8, grossProfit: 15.2, ebitda: 18.4, netProfit: 16.2, assets: 8.4, equity: 11.6 },
+  growth: { revenue: 0, grossProfit: 0, ebitda: 0, netProfit: 0, assets: 0, equity: 0 },
   absolutes: {
-    revenue: { current: 842, previous: 747 }, grossProfit: { current: 372, previous: 319 },
-    ebitda: { current: 231, previous: 195 }, netProfit: { current: 184, previous: 158 },
-    cash: { current: 296, previous: 248 }, ar: { current: 124, previous: 108 }, ap: { current: 86, previous: 78 },
+    revenue: ZERO_METRIC, grossProfit: ZERO_METRIC, ebitda: ZERO_METRIC, netProfit: ZERO_METRIC,
+    cash: ZERO_METRIC, ar: ZERO_METRIC, ap: ZERO_METRIC,
   },
-  monthlyTrend: [
-    { month: 'Jan', grossMargin: 42.1, ebitdaMargin: 22.1, netMargin: 19.8, currentRatio: 2.12, quickRatio: 1.88, debtToEquity: 0.26, debtRatio: 0.16, dso: 56, dpo: 62 },
-    { month: 'Feb', grossMargin: 43.2, ebitdaMargin: 23.4, netMargin: 19.4, currentRatio: 2.18, quickRatio: 1.94, debtToEquity: 0.25, debtRatio: 0.15, dso: 54, dpo: 64 },
-    { month: 'Mar', grossMargin: 45.1, ebitdaMargin: 24.8, netMargin: 18.2, currentRatio: 2.24, quickRatio: 1.98, debtToEquity: 0.24, debtRatio: 0.15, dso: 55, dpo: 68 },
-    { month: 'Apr', grossMargin: 44.6, ebitdaMargin: 23.2, netMargin: 18.2, currentRatio: 2.19, quickRatio: 1.92, debtToEquity: 0.23, debtRatio: 0.14, dso: 58, dpo: 66 },
-    { month: 'May', grossMargin: 45.1, ebitdaMargin: 25.1, netMargin: 18.5, currentRatio: 2.31, quickRatio: 2.04, debtToEquity: 0.22, debtRatio: 0.14, dso: 52, dpo: 70 },
-    { month: 'Jun', grossMargin: 44.9, ebitdaMargin: 26.4, netMargin: 17.9, currentRatio: 2.38, quickRatio: 2.12, debtToEquity: 0.22, debtRatio: 0.14, dso: 51, dpo: 68 },
-    { month: 'Jul', grossMargin: 45.1, ebitdaMargin: 27.1, netMargin: 17.9, currentRatio: 2.35, quickRatio: 2.08, debtToEquity: 0.21, debtRatio: 0.14, dso: 54, dpo: 67 },
-    { month: 'Aug', grossMargin: 44.3, ebitdaMargin: 28.2, netMargin: 20.1, currentRatio: 2.41, quickRatio: 2.12, debtToEquity: 0.21, debtRatio: 0.14, dso: 54, dpo: 67 },
-  ],
-  monthlyAbsoluteTrend: [
-    { month: "Sep'25", revenue: 680, cogs: 374, grossProfit: 306, ebitda: 176, netProfit: 138, cash: 2420, ar: 1020, ap: 780, assets: 11800, liabilities: 4100, equity: 7700 },
-    { month: 'Oct', revenue: 712, cogs: 392, grossProfit: 320, ebitda: 188, netProfit: 148, cash: 2480, ar: 1060, ap: 800, assets: 11900, liabilities: 4120, equity: 7780 },
-    { month: 'Nov', revenue: 748, cogs: 411, grossProfit: 337, ebitda: 198, netProfit: 158, cash: 2560, ar: 1120, ap: 820, assets: 12000, liabilities: 4140, equity: 7860 },
-    { month: 'Dec', revenue: 692, cogs: 381, grossProfit: 311, ebitda: 172, netProfit: 132, cash: 2620, ar: 1080, ap: 810, assets: 12100, liabilities: 4160, equity: 7940 },
-    { month: "Jan'26", revenue: 780, cogs: 429, grossProfit: 351, ebitda: 204, netProfit: 162, cash: 2700, ar: 1140, ap: 840, assets: 12200, liabilities: 4180, equity: 8020 },
-    { month: 'Feb', revenue: 842, cogs: 463, grossProfit: 379, ebitda: 228, netProfit: 182, cash: 2780, ar: 1200, ap: 860, assets: 12400, liabilities: 4200, equity: 8200 },
-    { month: 'Mar', revenue: 818, cogs: 450, grossProfit: 368, ebitda: 218, netProfit: 174, cash: 2840, ar: 1180, ap: 850, assets: 12500, liabilities: 4190, equity: 8310 },
-    { month: 'Apr', revenue: 702, cogs: 386, grossProfit: 316, ebitda: 177, netProfit: 141, cash: 2960, ar: 1240, ap: 860, assets: 12800, liabilities: 4200, equity: 8600 },
-    { month: 'May', revenue: 820, cogs: 451, grossProfit: 369, ebitda: 208, netProfit: 166, cash: 3020, ar: 1260, ap: 870, assets: 12900, liabilities: 4210, equity: 8690 },
-    { month: 'Jun', revenue: 864, cogs: 475, grossProfit: 389, ebitda: 224, netProfit: 178, cash: 3080, ar: 1280, ap: 880, assets: 13000, liabilities: 4220, equity: 8780 },
-    { month: 'Jul', revenue: 892, cogs: 490, grossProfit: 402, ebitda: 236, netProfit: 188, cash: 3140, ar: 1300, ap: 890, assets: 13100, liabilities: 4230, equity: 8870 },
-    { month: 'Aug', revenue: 920, cogs: 506, grossProfit: 414, ebitda: 244, netProfit: 196, cash: 3200, ar: 1320, ap: 900, assets: 13200, liabilities: 4240, equity: 8960 },
-  ],
-  revenueByCategory: [
-    { id: 'cat-1', name: 'Recurring Revenue', current: 5820, previous: 4924, growth: 18.2, contribution: 69.1 },
-    { id: 'cat-2', name: 'Project Revenue', current: 1840, previous: 1756, growth: 4.8, contribution: 21.8 },
-    { id: 'cat-3', name: 'One-time Revenue', current: 760, previous: 830, growth: -8.4, contribution: 9.0 },
-  ],
-  expenseBreakdown: [
-    { id: 'exp-cogs', name: 'Cost of Revenue', current: 4700, previous: 4180, growth: 12.4, contribution: 79.9 },
-    { id: 'exp-payroll', name: 'Payroll & Benefits', current: 598, previous: 542, growth: 10.3, contribution: 10.2 },
-    { id: 'exp-tech', name: 'Technology & Infrastructure', current: 138, previous: 108, growth: 27.8, contribution: 2.3 },
-    { id: 'exp-marketing', name: 'Marketing & Sales', current: 202, previous: 164, growth: 23.2, contribution: 3.4 },
-    { id: 'exp-profsvc', name: 'Professional Services', current: 68, previous: 72, growth: -5.6, contribution: 1.2 },
-    { id: 'exp-admin', name: 'Administration', current: 92, previous: 88, growth: 4.5, contribution: 1.6 },
-    { id: 'exp-travel', name: 'Travel & Entertainment', current: 41, previous: 32, growth: 28.1, contribution: 0.7 },
-    { id: 'exp-other', name: 'Other Operating', current: 27, previous: 28, growth: -3.6, contribution: 0.5 },
-  ],
-  healthDimensions: [
-    { label: 'Profitability', score: 88, icon: 'ChartBarIcon', color: 'text-positive', detail: 'Net Margin 21.9%, EBITDA 27.4%' },
-    { label: 'Liquidity', score: 92, icon: 'BanknotesIcon', color: 'text-chart-2', detail: 'Current Ratio 2.41, Cash Rp 2.96M' },
-    { label: 'Solvency', score: 79, icon: 'ScaleIcon', color: 'text-chart-3', detail: 'D/E 0.21, Interest Coverage 27.5x' },
-    { label: 'Efficiency', score: 74, icon: 'ArrowPathIcon', color: 'text-chart-4', detail: 'DSO 53.8d, DPO 66.8d' },
-    { label: 'Growth', score: 83, icon: 'ArrowTrendingUpIcon', color: 'text-chart-5', detail: 'Revenue +12.8%, NP +16.2%' },
-  ],
-  overallHealthScore: 83,
+  monthlyTrend: [],
+  monthlyAbsoluteTrend: [],
+  revenueByCategory: [],
+  expenseBreakdown: [],
+  healthDimensions: [],
+  overallHealthScore: 0,
 };
 
 export function useAnalyticsData(): AnalyticsData {
-  const { activeClientId, activeClientName } = useActiveClient();
-  const [loading, setLoading] = useState(false);
+  const { activeClientId, activeClientName, hydrated } = useActiveClient();
+  // [FIX flash-ke-0] Default true -- lihat penjelasan di useProfitLossData.ts
+  const [loading, setLoading] = useState(true);
   const [computed, setComputed] = useState<ReturnType<typeof hitungAnalytics> | null>(null);
   const requestIdRef = useRef(0);
 
@@ -536,9 +492,12 @@ export function useAnalyticsData(): AnalyticsData {
   };
 
   useEffect(() => {
+    // Context masih membaca client aktif dari localStorage -- tunda dulu,
+    // jangan simpulkan "tidak ada client" (lihat activeClient.tsx).
+    if (!hydrated) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeClientId]);
+  }, [hydrated, activeClientId]);
 
   // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
   // client yang sedang aktif -- supaya Financial Analytics ikut ter-update
@@ -560,5 +519,5 @@ export function useAnalyticsData(): AnalyticsData {
     };
   }
 
-  return { loading, isSampleData: true, companyName: COMPANY.name, ...SAMPLE };
+  return { loading, isSampleData: false, companyName: activeClientName || 'No client selected', ...EMPTY };
 }

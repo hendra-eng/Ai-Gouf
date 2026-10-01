@@ -53,3 +53,5 @@ backend/migrations/history-migration.md
 .env
 
 task-claude.md
+backend/logs/*.log*
+backend/encryption.key

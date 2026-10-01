@@ -5,45 +5,9 @@ import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
 import type { EquityInsight } from '../lib/equityBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_INSIGHTS: EquityInsight[] = [
-  {
-    title: 'Strong Equity Growth',
-    description: 'Total equity grew 9.6% YTD, driven by current-year net profit of Rp 1.84M. This reflects healthy retained earnings accumulation and no dilutive capital events.',
-    metric: '+Rp 410M \u00b7 9.6% YTD growth',
-    severity: 'positive',
-  },
-  {
-    title: 'Retained Earnings Expansion',
-    description: 'Retained earnings increased Rp 1.16M net of dividends paid, representing 24.7% growth. Profit retention rate is 52.2% after the Rp 880M dividend payment.',
-    metric: 'Rp 2,040M \u00b7 +53.6% vs Jan 2026',
-    severity: 'positive',
-  },
-  {
-    title: 'Dividend Payout Impact',
-    description: 'The Rp 880M final dividend paid in March 2026 represents 47.8% of FY2025 net profit. This is within normal range but reduces equity growth capacity.',
-    metric: 'Rp 880M \u00b7 47.8% payout ratio',
-    severity: 'info',
-  },
-  {
-    title: 'Stable Capital Base',
-    description: 'Paid-in capital of Rp 3.00M has remained unchanged in 2026. No share issuances or buybacks have occurred, maintaining a stable ownership structure.',
-    metric: 'Rp 3.00M \u00b7 No capital movement',
-    severity: 'info',
-  },
-  {
-    title: 'OCI Negative Adjustment',
-    description: 'Other Comprehensive Income decreased Rp 12M in August 2026 due to unrealized losses on investment portfolio revaluation. Monitor closely in Q4 2026.',
-    metric: '(Rp 12M) \u00b7 Investment portfolio',
-    severity: 'warning',
-  },
-  {
-    title: 'Revaluation Reserve Gain',
-    description: 'Property revaluation of the Jakarta office building added Rp 50M to equity in August 2026, reflecting current market appreciation of the asset.',
-    metric: '+Rp 50M \u00b7 Gedung Kantor Jakarta',
-    severity: 'positive',
-  },
-];
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 insight.
+const SAMPLE_INSIGHTS: EquityInsight[] = [];
 
 interface EquityAllInsightsProps {
   isSampleData: boolean;

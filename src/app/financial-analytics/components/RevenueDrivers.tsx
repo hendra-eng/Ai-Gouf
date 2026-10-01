@@ -13,23 +13,12 @@ type ViewType = 'customer' | 'product' | 'category';
 // REVENUE_BY_CUSTOMER di useProfitLossData.ts (financial-statements). Hanya
 // tab Category yang tersambung ke data client aktif (diturunkan dari
 // sub_kategori COA akun PENDAPATAN, sama seperti REVENUE_BY_CATEGORY di P&L).
+// Dikosongkan (tidak ada sample customer/product hardcode) — tab ini akan
+// menampilkan empty state sampai dimensi per-customer/per-product tersedia
+// di backend jurnal/GL.
 const SAMPLE_DATA: Record<'customer' | 'product', { id: string; name: string; revenue: number; growth: number; contribution: number; previous: number }[]> = {
-  customer: [
-    { id: 'cust-1', name: 'PT Maju Bersama Digital', revenue: 1_840_000_000, growth: 18.4, contribution: 21.8, previous: 1_554_000_000 },
-    { id: 'cust-2', name: 'CV Solusi Teknindo', revenue: 1_240_000_000, growth: 12.2, contribution: 14.7, previous: 1_105_000_000 },
-    { id: 'cust-3', name: 'PT Artha Niaga Nusantara', revenue: 980_000_000, growth: 8.6, contribution: 11.6, previous: 902_000_000 },
-    { id: 'cust-4', name: 'PT Kreasi Media Utama', revenue: 860_000_000, growth: 22.4, contribution: 10.2, previous: 702_000_000 },
-    { id: 'cust-5', name: 'PT Sinergi Inovasi', revenue: 720_000_000, growth: 6.8, contribution: 8.6, previous: 674_000_000 },
-    { id: 'cust-6', name: 'CV Mitra Digital Prima', revenue: 580_000_000, growth: -4.2, contribution: 6.9, previous: 605_000_000 },
-    { id: 'cust-7', name: 'Others', revenue: 2_200_000_000, growth: 11.4, contribution: 26.2, previous: 1_975_000_000 },
-  ],
-  product: [
-    { id: 'prod-1', name: 'Enterprise Software License', revenue: 3_200_000_000, growth: 16.8, contribution: 38.0, previous: 2_740_000_000 },
-    { id: 'prod-2', name: 'Professional Services', revenue: 2_180_000_000, growth: 10.2, contribution: 25.9, previous: 1_978_000_000 },
-    { id: 'prod-3', name: 'Cloud & Infrastructure', revenue: 1_420_000_000, growth: 24.6, contribution: 16.9, previous: 1_139_000_000 },
-    { id: 'prod-4', name: 'Support & Maintenance', revenue: 980_000_000, growth: 8.4, contribution: 11.6, previous: 904_000_000 },
-    { id: 'prod-5', name: 'Training & Certification', revenue: 640_000_000, growth: -2.8, contribution: 7.6, previous: 658_000_000 },
-  ],
+  customer: [],
+  product: [],
 };
 
 export default function RevenueDrivers() {
@@ -70,6 +59,11 @@ export default function RevenueDrivers() {
       </div>
 
       <div className="space-y-2">
+        {items.length === 0 && (
+          <div className="text-xs text-muted-foreground py-6 text-center">
+            No data yet.
+          </div>
+        )}
         {items.map((item) => {
           const barWidth = (item.revenue / maxRevenue) * 100;
           const isPositive = item.growth >= 0;

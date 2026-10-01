@@ -8,19 +8,9 @@ import EmptyState from '@/components/ui/EmptyState';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import type { LiabilityObligation } from '../lib/liabilitiesBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_OBLIGATIONS: LiabilityObligation[] = [
-  { id: 'OBL-2026-001', liability: 'PPh 21 Agustus 2026', type: 'Tax Payable', creditor: 'Direktorat Jenderal Pajak', dueDate: '2026-09-08', amount: 182_000_000, daysRemaining: 13, status: 'due-soon', reference: 'SAMPLE' },
-  { id: 'OBL-2026-002', liability: 'Hutang Dagang — PT Sinar Abadi', type: 'Accounts Payable', creditor: 'PT Sinar Abadi Makmur', dueDate: '2026-09-15', amount: 142_000_000, daysRemaining: 20, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-003', liability: 'Cicilan KPR Gedung Surabaya', type: 'Long-Term Debt', creditor: 'Bank Mandiri', dueDate: '2026-10-01', amount: 48_000_000, daysRemaining: 36, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-004', liability: 'Hutang Dagang — CV Maju Jaya', type: 'Accounts Payable', creditor: 'CV Maju Jaya Teknik', dueDate: '2026-10-10', amount: 88_000_000, daysRemaining: 45, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-005', liability: 'PPN Masa Agustus 2026', type: 'Tax Payable', creditor: 'Direktorat Jenderal Pajak', dueDate: '2026-09-25', amount: 62_000_000, daysRemaining: 30, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-006', liability: 'Hutang Bank BRI — Kredit Modal Kerja', type: 'Short-Term Debt', creditor: 'Bank Rakyat Indonesia', dueDate: '2026-11-20', amount: 120_000_000, daysRemaining: 86, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-007', liability: 'Sewa Kantor Bandung — Q4 2026', type: 'Lease Liability', creditor: 'PT Graha Properti Nusantara', dueDate: '2026-10-01', amount: 24_000_000, daysRemaining: 36, status: 'scheduled', reference: 'SAMPLE' },
-  { id: 'OBL-2026-008', liability: 'Hutang Dagang — PT Bintang Mas', type: 'Accounts Payable', creditor: 'PT Bintang Mas Sejahtera', dueDate: '2026-08-28', amount: 58_000_000, daysRemaining: -2, status: 'overdue', reference: 'SAMPLE' },
-  { id: 'OBL-2026-009', liability: 'Cicilan Leasing Forklift', type: 'Lease Liability', creditor: 'BFI Finance Indonesia', dueDate: '2026-09-05', amount: 8_400_000, daysRemaining: 10, status: 'due-soon', reference: 'SAMPLE' },
-  { id: 'OBL-2026-010', liability: 'Hutang Obligasi — BNI', type: 'Long-Term Debt', creditor: 'Bank Negara Indonesia', dueDate: '2028-03-15', amount: 500_000_000, daysRemaining: 566, status: 'scheduled', reference: 'SAMPLE' },
-];
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 baris.
+const SAMPLE_OBLIGATIONS: LiabilityObligation[] = [];
 
 interface LiabilityDueScheduleProps {
   isSampleData: boolean;

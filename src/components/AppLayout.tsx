@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { CurrencyProvider } from '@/lib/currency';
@@ -30,7 +31,28 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
   // masuk akal dibungkus chrome dashboard yang butuh login.
   const isLoginPage = currentPath === '/login';
 
+  // [BARU] Satu instance QueryClient dibuat sekali per mount lewat
+  // useState (bukan variabel module-level), supaya tiap sesi user di
+  // client punya cache-nya sendiri dan tidak bocor antar request saat
+  // SSR. Ini fondasi caching data per-client (lihat usePurchaseData di
+  // purchasebridge.ts) -- begitu data satu client sudah pernah di-fetch,
+  // pindah tab/halaman baca dari cache ini, bukan fetch ulang ke backend.
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60 * 1000, // data dianggap masih segar 1 menit, tidak refetch otomatis dalam rentang ini
+            gcTime: 10 * 60 * 1000, // cache disimpan 10 menit setelah tidak dipakai (misal pindah client lalu balik lagi)
+            refetchOnWindowFocus: false,
+            retry: 1,
+          },
+        },
+      })
+  );
+
   return (
+    <QueryClientProvider client={queryClient}>
     <LanguageProvider>
     <CurrencyProvider>
     <AuthProvider>
@@ -77,5 +99,6 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
     </AuthProvider>
     </CurrencyProvider>
     </LanguageProvider>
+    </QueryClientProvider>
   );
 }

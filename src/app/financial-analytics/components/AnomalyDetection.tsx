@@ -15,68 +15,9 @@ import { generateAnomalies, countBySeverity, type FinancialAnomaly } from '../li
 // Sumber datanya: useAnalyticsData.ts (expense/revenue MoM, sudah
 // tersambung ke trial balance bulanan backend) + arBridge.ts (sebaran AR
 // per customer, sumber yang sama dengan halaman Account Receivable).
-const SAMPLE_ANOMALIES: FinancialAnomaly[] = [
-  {
-    id: 'anom-1',
-    metric: 'Marketing Expenses',
-    category: 'Expenses',
-    currentValue: 202_000_000,
-    expectedValue: 164_000_000,
-    difference: 38_000_000,
-    diffPct: 23.2,
-    severity: 'Medium',
-    description: 'Unusual movement detected — marketing spend significantly above historical average for this period.',
-    period: 'Aug 2026',
-  },
-  {
-    id: 'anom-2',
-    metric: 'Technology Expenses',
-    category: 'Expenses',
-    currentValue: 138_000_000,
-    expectedValue: 108_000_000,
-    difference: 30_000_000,
-    diffPct: 27.8,
-    severity: 'Medium',
-    description: 'Unusual movement detected — technology infrastructure costs increased above typical monthly run rate.',
-    period: 'Aug 2026',
-  },
-  {
-    id: 'anom-3',
-    metric: 'Revenue — Aug 2026',
-    category: 'Revenue',
-    currentValue: 700_000_000,
-    expectedValue: 850_000_000,
-    difference: -150_000_000,
-    diffPct: -17.6,
-    severity: 'High',
-    description: 'Unusual movement detected — August revenue below expected trajectory. Deviation exceeds 15% threshold.',
-    period: 'Aug 2026',
-  },
-  {
-    id: 'anom-4',
-    metric: 'CV Mitra Digital AR',
-    category: 'Accounts Receivable',
-    currentValue: 380_000_000,
-    expectedValue: 120_000_000,
-    difference: 260_000_000,
-    diffPct: 216.7,
-    severity: 'High',
-    description: 'Unusual movement detected — AR balance for this customer is significantly above normal collection pattern. DSO: 239 days.',
-    period: 'Aug 2026',
-  },
-  {
-    id: 'anom-5',
-    metric: 'Travel & Entertainment',
-    category: 'Expenses',
-    currentValue: 41_000_000,
-    expectedValue: 28_000_000,
-    difference: 13_000_000,
-    diffPct: 46.4,
-    severity: 'Low',
-    description: 'Unusual movement detected — travel expenses above average. Spike may relate to Q3 sales conference.',
-    period: 'Aug 2026',
-  },
-];
+// Dikosongkan (tidak ada sample anomaly hardcode) — saat belum ada client
+// aktif/data, komponen jatuh ke empty state "No notable deviations..." di bawah.
+const SAMPLE_ANOMALIES: FinancialAnomaly[] = [];
 
 const SEVERITY_STYLES: Record<string, { badge: string; row: string; icon: string }> = {
   High: { badge: 'bg-negative-subtle text-negative border-negative/20', row: 'border-l-2 border-l-negative', icon: 'text-negative' },

@@ -230,6 +230,7 @@ export default function WorkingCapitalTrendChartInner({
       </g>
     );
   };
+  renderBar.displayName = 'RenderBar';
 
   return (
     <div className="relative">
@@ -248,7 +249,7 @@ export default function WorkingCapitalTrendChartInner({
             allowDataOverflow
           />
           <Tooltip content={<CustomTooltip fx={fx} t={t} dragPreview={dragPreview} />} cursor={false} />
-          <Bar dataKey="workingCapital" name={t('Working Capital')} shape={renderBar} isAnimationActive={false} />
+          <Bar dataKey="workingCapital" name={t('Working Capital')} shape={renderBar as any} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
       {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
@@ -262,4 +263,3 @@ export default function WorkingCapitalTrendChartInner({
     </div>
   );
 }
-

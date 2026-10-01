@@ -12,15 +12,15 @@ import {
 } from 'recharts';
 
 const data = [
-  { month: 'Jan', paid: 142000, outstanding: 28000, overdue: 8000 },
-  { month: 'Feb', paid: 118000, outstanding: 34000, overdue: 12000 },
-  { month: 'Mar', paid: 165000, outstanding: 22000, overdue: 6000 },
-  { month: 'Apr', paid: 198000, outstanding: 41000, overdue: 9000 },
-  { month: 'May', paid: 172000, outstanding: 36000, overdue: 14000 },
-  { month: 'Jun', paid: 221000, outstanding: 29000, overdue: 7000 },
-  { month: 'Jul', paid: 189000, outstanding: 52000, overdue: 11000 },
-  { month: 'Aug', paid: 234000, outstanding: 38000, overdue: 16000 },
-  { month: 'Sep', paid: 198920, outstanding: 67340, overdue: 18500 },
+  { month: 'Jan', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Feb', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Mar', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Apr', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'May', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Jun', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Jul', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Aug', paid: 0, outstanding: 0, overdue: 0 },
+  { month: 'Sep', paid: 0, outstanding: 0, overdue: 0 },
 ];
 
 function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {

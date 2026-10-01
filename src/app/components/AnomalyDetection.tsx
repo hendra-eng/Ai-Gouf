@@ -6,30 +6,19 @@ import { useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 
 // Backend integration point: replace with /api/ai/anomalies?company=&period=
-const anomalies = [
-  {
-    id: 'anom-001',
-    vendor: 'CV Mitra Abadi Jaya',
-    amount: 'Rp 185.000.000',
-    amountNum: 185,
-    expectedRange: 'Rp 20Jt – Rp 50Jt',
-    risk: 'High' as const,
-    date: '22 Aug 2026',
-    category: 'Vendor Payment',
-    txId: 'TXN-2026-08422',
-  },
-  {
-    id: 'anom-002',
-    vendor: 'Petty Cash — Ops',
-    amount: 'Rp 42.500.000',
-    amountNum: 42.5,
-    expectedRange: 'Rp 5Jt – Rp 15Jt',
-    risk: 'Medium' as const,
-    date: '19 Aug 2026',
-    category: 'Petty Cash',
-    txId: 'TXN-2026-08318',
-  },
-];
+// [UBAH] Data contoh dikosongkan -- diisi backend setelah ada transaksi
+// yang benar-benar terdeteksi anomali untuk client aktif.
+const anomalies: {
+  id: string;
+  vendor: string;
+  amount: string;
+  amountNum: number;
+  expectedRange: string;
+  risk: 'High' | 'Medium' | 'Low';
+  date: string;
+  category: string;
+  txId: string;
+}[] = [];
 
 const riskStyle = {
   High: 'badge-negative',

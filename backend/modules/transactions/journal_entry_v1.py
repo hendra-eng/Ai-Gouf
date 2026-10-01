@@ -53,6 +53,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -151,7 +152,7 @@ class JeDraftCreateRequest(BaseModel):
     reviewed_by_name: Optional[str] = Field(None, max_length=255)
     approved_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[UUID] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
 
@@ -175,7 +176,7 @@ class JeDraftUpdateRequest(BaseModel):
     reviewed_by_name: Optional[str] = Field(None, max_length=255)
     approved_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[UUID] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
 
@@ -293,7 +294,7 @@ def buat_source_record(
     responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}},
 )
 def daftar_source_record(
-    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id_user)."),
+    client_id: Optional[str] = Query(None, description="Filter berdasarkan client_id (management_users.id)."),
     source_type: Optional[str] = Query(None, description="Sales/Purchase/Payroll/Bank/Cash/Expense/Inventory/Fixed Assets/Tax/Manual"),
     mapping_status: Optional[str] = Query(None, description="Mapped/Pending Mapping/Validation Error/Imported"),
     termasuk_nonaktif: bool = Query(False, description="Sertakan yang sudah di-soft-delete."),

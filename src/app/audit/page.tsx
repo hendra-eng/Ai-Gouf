@@ -2,127 +2,23 @@
 
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon,  } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
 import { useAuditTrail } from './lib/useAuditTrail';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type FindingRisk = 'Low' | 'Medium' | 'High' | 'Critical';
-type FindingStatus = 'Open' | 'Under Review' | 'Management Response' | 'Resolved' | 'Accepted';
-
-interface AuditFinding {
-  id: string;
-  area: string;
-  description: string;
-  account: string;
-  amount: number;
-  risk: FindingRisk;
-  assignedTo: string;
-  dueDate: string;
-  status: FindingStatus;
-  rootCause: string;
-  recommendation: string;
-  managementResponse: string;
-  likelihood: number; // 1-5
-  impact: number; // 1-5
-}
+import { useAuditData, type AuditFinding, type FindingRisk, type FindingStatus, type AuditEvidenceItem } from './lib/auditBridge';
+import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/agent-ai/lib/api';
 
 // ─── Data ────────────────────────────────────────────────────────────────────
-// [PENTING] auditStages, findings, auditActivities, dan kpis di bawah ini
-// SENGAJA TETAP data contoh -- isinya adalah hasil kerja/judgment auditor
-// (temuan, root cause, rekomendasi, tanggapan manajemen, progres audit)
-// yang tidak punya sumber data terstruktur di backend akuntansi (beda
-// dengan Financial Overview/Statements/Transaksi/AP/AR yang murni angka
-// dari jurnal). Satu-satunya bagian di halaman ini yang tersambung ke
-// client aktif adalah "Audit Trail" di bagian bawah (lihat useAuditTrail.ts
-// -- diturunkan dari jurnal_posting asli, endpoint yang sama dipakai
-// halaman Transaksi).
-
-const auditStages = [
-  { id: 'planning', label: 'Planning', date: '1 Jun 2026', done: true },
-  { id: 'fieldwork', label: 'Fieldwork', date: '15 Jun 2026', done: true },
-  { id: 'testing', label: 'Testing', date: 'In Progress', done: false, current: true },
-  { id: 'review', label: 'Review', date: 'Pending', done: false },
-  { id: 'mgmt-response', label: 'Mgmt Response', date: 'Pending', done: false },
-  { id: 'finalization', label: 'Finalization', date: 'Pending', done: false },
-];
-
-const findings: AuditFinding[] = [
-  {
-    id: 'AUD-001', area: 'Revenue Recognition', description: 'Revenue recorded before delivery confirmation received',
-    account: 'Revenue', amount: 45_000_000, risk: 'High', assignedTo: 'Budi S.', dueDate: '15 Sep 2026',
-    status: 'Open', likelihood: 4, impact: 4,
-    rootCause: 'Lack of automated delivery confirmation integration with billing system.',
-    recommendation: 'Implement automated delivery confirmation before revenue recognition.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-002', area: 'Accounts Receivable', description: 'AR aging >90 days not provisioned per policy',
-    account: 'Accounts Receivable', amount: 120_000_000, risk: 'Critical', assignedTo: 'Sari W.', dueDate: '10 Sep 2026',
-    status: 'Under Review', likelihood: 5, impact: 5,
-    rootCause: 'Provisioning policy not applied to overdue balances exceeding 90 days.',
-    recommendation: 'Create provision of Rp 120M and review credit policy for high-risk customers.',
-    managementResponse: 'Finance team is reviewing the aging schedule and will create provisions by Sep 10.',
-  },
-  {
-    id: 'AUD-003', area: 'Fixed Assets', description: 'Depreciation calculation error — wrong useful life applied',
-    account: 'Depreciation Expense', amount: 28_000_000, risk: 'Medium', assignedTo: 'Ahmad R.', dueDate: '20 Sep 2026',
-    status: 'Open', likelihood: 3, impact: 3,
-    rootCause: 'Asset register not updated with revised useful life estimates.',
-    recommendation: 'Recalculate depreciation using correct useful life and adjust journal entries.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-004', area: 'Cash & Bank', description: 'Unreconciled bank items outstanding >30 days',
-    account: 'Cash & Bank', amount: 15_000_000, risk: 'Low', assignedTo: 'Dewi P.', dueDate: '25 Sep 2026',
-    status: 'Resolved', likelihood: 2, impact: 2,
-    rootCause: 'Bank reconciliation process not performed on schedule.',
-    recommendation: 'Implement weekly bank reconciliation process.',
-    managementResponse: 'Bank reconciliation completed. All items cleared.',
-  },
-  {
-    id: 'AUD-005', area: 'Payroll', description: 'Overtime calculation discrepancy in August payroll',
-    account: 'Salaries Expense', amount: 8_000_000, risk: 'Medium', assignedTo: 'Budi S.', dueDate: '18 Sep 2026',
-    status: 'Management Response', likelihood: 3, impact: 2,
-    rootCause: 'Overtime rate formula error in payroll system.',
-    recommendation: 'Correct payroll system formula and reprocess affected employees.',
-    managementResponse: 'HR has identified the formula error. Correction will be applied in September payroll.',
-  },
-  {
-    id: 'AUD-006', area: 'Tax', description: 'VAT input credit not claimed for eligible purchases',
-    account: 'Tax Payable', amount: 32_000_000, risk: 'High', assignedTo: 'Sari W.', dueDate: '12 Sep 2026',
-    status: 'Open', likelihood: 4, impact: 3,
-    rootCause: 'Tax team not reviewing all purchase invoices for VAT credit eligibility.',
-    recommendation: 'Review all purchase invoices from Jan-Aug 2026 and claim eligible VAT credits.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-007', area: 'Inventory', description: 'Stock count variance between system and physical count',
-    account: 'Inventory', amount: 18_000_000, risk: 'Medium', assignedTo: 'Ahmad R.', dueDate: '22 Sep 2026',
-    status: 'Under Review', likelihood: 3, impact: 3,
-    rootCause: 'Inventory movement not recorded in real-time.',
-    recommendation: 'Implement real-time inventory tracking and conduct monthly cycle counts.',
-    managementResponse: '',
-  },
-  {
-    id: 'AUD-008', area: 'Expenses', description: 'Unsupported expense claims without receipts',
-    account: 'Operating Expenses', amount: 12_000_000, risk: 'Low', assignedTo: 'Dewi P.', dueDate: '28 Sep 2026',
-    status: 'Open', likelihood: 2, impact: 2,
-    rootCause: 'Expense claim policy not enforced consistently.',
-    recommendation: 'Reject unsupported claims and strengthen expense approval process.',
-    managementResponse: '',
-  },
-];
-
-const auditActivities = [
-  { id: 'a1', user: 'Budi S.', action: 'AUD-002 finding created — AR aging >90 days not provisioned', time: '10:30 AM', date: '28 Aug 2026', type: 'finding' },
-  { id: 'a2', user: 'Sari W.', action: 'Evidence uploaded for AUD-001 — delivery confirmation policy', time: '2:15 PM', date: '27 Aug 2026', type: 'evidence' },
-  { id: 'a3', user: 'Ahmad R.', action: 'Control test completed — Revenue recognition procedures', time: '9:00 AM', date: '26 Aug 2026', type: 'test' },
-  { id: 'a4', user: 'Dewi P.', action: 'AUD-004 resolved — Bank reconciliation completed', time: '4:45 PM', date: '25 Aug 2026', type: 'resolved' },
-  { id: 'a5', user: 'Budi S.', action: 'Management response submitted for AUD-005', time: '11:20 AM', date: '24 Aug 2026', type: 'response' },
-];
+// [FIX] Sebelumnya auditStages/findings/auditActivities di sini SENGAJA
+// array statis KOSONG karena belum ada jembatan ke Supabase (lihat komentar
+// lama di git history). Sekarang diambil dari useAuditData() ->
+// src/app/audit/lib/auditBridge.ts, yang membaca 4 tabel asli schema
+// "6_Intelligence" (audit_finding/audit_stage/audit_activity/
+// audit_evidence) -- pola yang sama dengan Purchase (purchasebridge.ts).
+// "Audit Trail" di bagian BAWAH halaman ini TETAP dari useAuditTrail.ts
+// (diturunkan dari jurnal_posting) -- konsep berbeda, sengaja dibiarkan
+// terpisah (lihat catatan di auditBridge.ts).
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -155,13 +51,69 @@ function StatusBadge({ status }: { status: FindingStatus }) {
   );
 }
 
-function FindingDrawer({ finding, onClose }: { finding: AuditFinding; onClose: () => void }) {
+interface FindingDrawerProps {
+  finding: AuditFinding;
+  onClose: () => void;
+  evidence: AuditEvidenceItem[];
+  clientId: string | number;
+  onChanged: () => void;
+}
+
+function FindingDrawer({ finding, onClose, evidence, clientId, onChanged }: FindingDrawerProps) {
   const { fx } = useCurrency();
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  function handleAction(action: string) {
+  const NEXT_RISK: Record<FindingRisk, FindingRisk> = { Low: 'Medium', Medium: 'High', High: 'Critical', Critical: 'Critical' };
+
+  async function handleAction(action: string) {
     setActiveAction(action);
-    setTimeout(() => setActiveAction(null), 1500);
+    try {
+      if (action === 'Review') {
+        await ubahAuditFinding(clientId, finding.dbId, { status: 'Under Review' as FindingStatus });
+      } else if (action === 'Resolve') {
+        await ubahAuditFinding(clientId, finding.dbId, { status: 'Resolved' as FindingStatus });
+      } else if (action === 'Escalate') {
+        await ubahAuditFinding(clientId, finding.dbId, { status: 'Under Review' as FindingStatus, risk: NEXT_RISK[finding.risk] });
+      } else if (action === 'Add Evidence') {
+        fileInputRef.current?.click();
+        setActiveAction(null);
+        return;
+      }
+      toast.success(`${action} berhasil disimpan`);
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message || `Gagal menyimpan ${action}`);
+    } finally {
+      setTimeout(() => setActiveAction(null), 1200);
+    }
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      await tambahAuditEvidence(clientId, finding.dbId, file);
+      toast.success('Bukti berhasil dilampirkan');
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal mengunggah bukti');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteEvidence(evidenceId: string) {
+    try {
+      await hapusAuditEvidence(clientId, evidenceId);
+      toast.success('Bukti dihapus');
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menghapus bukti');
+    }
   }
 
   return (
@@ -259,34 +211,41 @@ function FindingDrawer({ finding, onClose }: { finding: AuditFinding; onClose: (
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-light mb-2">Evidence</p>
             <div className="space-y-1.5">
-              {finding.id === 'AUD-002' ? (
-                <>
-                  <div className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
+              {evidence.length > 0 ? (
+                evidence.map((ev) => (
+                  <div key={ev.id} className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
                     <PaperClipIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs text-foreground flex-1">AR_Aging_Aug2026.xlsx</span>
-                    <span className="text-[10px] text-muted-light">284 KB</span>
+                    <a
+                      href={auditEvidenceFileUrl(clientId, ev.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-foreground flex-1 hover:text-primary hover:underline truncate"
+                    >
+                      {ev.fileName}
+                    </a>
+                    <span className="text-[10px] text-muted-light">{ev.fileSize ? `${Math.round(ev.fileSize / 1024)} KB` : ''}</span>
+                    <button onClick={() => handleDeleteEvidence(ev.id)} className="p-1 rounded hover:bg-negative-subtle">
+                      <TrashIcon className="w-3 h-3 text-muted-foreground hover:text-negative" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 p-2 bg-background rounded-lg border border-border">
-                    <PaperClipIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-xs text-foreground flex-1">Customer_Statements.pdf</span>
-                    <span className="text-[10px] text-muted-light">1.2 MB</span>
-                  </div>
-                </>
+                ))
               ) : (
                 <div className="p-3 bg-background rounded-lg border border-dashed border-[#CBD5E1] text-center">
                   <p className="text-xs text-muted-light">No evidence attached</p>
                 </div>
               )}
+              {uploading && <p className="text-[10px] text-muted-light">Mengunggah...</p>}
             </div>
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex-shrink-0 px-5 py-4 border-t border-border bg-background">
+          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
           <div className="flex flex-wrap gap-2">
             {[
               { label: 'Review', color: 'bg-[#EFF6FF] text-primary border-[#DBEAFE]' },
-              { label: 'Add Evidence', color: 'bg-ai-subtle text-ai border-[#EDE9FE]' },
+              { label: 'Add Evidence', color: 'bg-ai-subtle text-ai border-[#EDE9FE]', icon: ArrowUpTrayIcon },
               { label: 'Resolve', color: 'bg-positive-subtle text-positive border-[#A7F3D0]' },
               { label: 'Escalate', color: 'bg-negative-subtle text-negative border-[#FECACA]' },
             ].map(({ label, color }) => (
@@ -399,9 +358,22 @@ export default function AuditPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'open' | 'high-risk' | 'resolved'>('all');
   const [selectedFinding, setSelectedFinding] = useState<AuditFinding | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeStage, setActiveStage] = useState('testing');
+  const [activeStage, setActiveStage] = useState<string | null>(null);
   const [trailFilter, setTrailFilter] = useState('');
+  const [showNewFinding, setShowNewFinding] = useState(false);
   const { trail: auditTrail, isSampleData: isTrailSample } = useAuditTrail();
+  const { findings, stages: auditStages, activities: auditActivities, evidence, kpis: kpiData, activeClientId, refetch } = useAuditData();
+
+  // Sinkronkan selectedFinding (dipakai FindingDrawer) dgn versi terbaru findings
+  // setelah refetch, supaya drawer yang sedang terbuka ikut menampilkan
+  // status/evidence baru, bukan snapshot lama.
+  React.useEffect(() => {
+    if (!selectedFinding) return;
+    const fresh = findings.find(f => f.dbId === selectedFinding.dbId);
+    if (fresh && fresh !== selectedFinding) setSelectedFinding(fresh);
+    if (!fresh) setSelectedFinding(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findings]);
 
   const filteredFindings = findings.filter(f => {
     const matchesSearch = !searchQuery || f.description.toLowerCase().includes(searchQuery.toLowerCase()) || f.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -409,13 +381,30 @@ export default function AuditPage() {
     return matchesSearch && matchesTab;
   });
 
+  async function handleStageClick(stageId: string) {
+    setActiveStage(stageId);
+    if (!activeClientId) return;
+    const stage = auditStages.find(s => s.id === stageId);
+    if (!stage) return;
+    try {
+      // Klik stage yang belum selesai -> tandai selesai & jadikan current.
+      // Klik stage yang sudah current -> tidak ada perubahan status (cuma highlight lokal).
+      if (!stage.done) {
+        await ubahAuditStage(activeClientId, stageId, { done: true, current: true });
+        refetch();
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal memperbarui tahapan audit');
+    }
+  }
+
   const kpis = [
-    { label: 'Audit Completion', value: '78%', color: '#1B4FD8', bg: '#EFF6FF', icon: '📊' },
-    { label: 'Open Findings', value: '12', color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
-    { label: 'High Risk', value: '3', color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
-    { label: 'Pending Evidence', value: '8', color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },
-    { label: 'Adjustments', value: 'Rp 142M', color: '#0284C7', bg: '#F0F9FF', icon: '💰' },
-    { label: 'Controls Tested', value: '84%', color: '#059669', bg: '#ECFDF5', icon: '✅' },
+    { label: 'Audit Completion', value: `${kpiData.completionPct}%`, color: '#1B4FD8', bg: '#EFF6FF', icon: '📊' },
+    { label: 'Open Findings', value: String(kpiData.openFindings), color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
+    { label: 'High Risk', value: String(kpiData.highRisk), color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
+    { label: 'Pending Evidence', value: String(kpiData.pendingEvidence), color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },
+    { label: 'Adjustments', value: formatIDR(kpiData.totalAdjustments), color: '#0284C7', bg: '#F0F9FF', icon: '💰' },
+    { label: 'Controls Tested', value: `${kpiData.controlsTestedPct}%`, color: '#059669', bg: '#ECFDF5', icon: '✅' },
   ];
 
   return (
@@ -431,12 +420,14 @@ export default function AuditPage() {
             <div className="flex items-center gap-2 px-3 py-1.5 bg-background border border-border rounded-lg">
               <span className="text-xs font-medium text-muted-foreground">FY 2026</span>
               <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-semibold text-primary">78% Complete</span>
+              <span className="text-xs font-semibold text-primary">{kpiData.completionPct}% Complete</span>
               <span className="w-1 h-1 rounded-full bg-[#CBD5E1]" />
-              <span className="text-xs font-medium text-warning">Risk: Moderate</span>
+              <span className="text-xs font-medium text-warning">
+                Risk: {kpiData.highRisk === 0 ? 'Low' : kpiData.highRisk >= 3 ? 'High' : 'Moderate'}
+              </span>
             </div>
             <button
-              onClick={() => toast.info('Membuka form New Finding')}
+              onClick={() => setShowNewFinding(true)}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 transition-colors"
             >
               <PlusIcon style={{ width: 13, height: 13 }} />
@@ -461,13 +452,16 @@ export default function AuditPage() {
           <div className="relative">
             {/* Progress line */}
             <div className="absolute top-5 left-0 right-0 h-0.5 bg-border" />
-            <div className="absolute top-5 left-0 h-0.5 bg-primary transition-all" style={{ width: '40%' }} />
+            <div className="absolute top-5 left-0 h-0.5 bg-primary transition-all" style={{ width: `${kpiData.completionPct}%` }} />
 
             <div className="relative flex justify-between">
+              {auditStages.length === 0 && (
+                <p className="text-xs text-muted-light py-2">No audit stages set up yet for this client.</p>
+              )}
               {auditStages.map((stage, i) => (
                 <button
                   key={stage.id}
-                  onClick={() => setActiveStage(stage.id)}
+                  onClick={() => handleStageClick(stage.id)}
                   className="flex flex-col items-center gap-2 group"
                 >
                   <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center z-10 transition-all ${
@@ -689,9 +683,156 @@ export default function AuditPage() {
       </div>
 
       {/* Finding Drawer */}
-      {selectedFinding && (
-        <FindingDrawer finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+      {selectedFinding && activeClientId && (
+        <FindingDrawer
+          finding={selectedFinding}
+          onClose={() => setSelectedFinding(null)}
+          evidence={evidence.filter(ev => ev.findingId === selectedFinding.dbId)}
+          clientId={activeClientId}
+          onChanged={refetch}
+        />
+      )}
+
+      {/* New Finding Modal */}
+      {showNewFinding && activeClientId && (
+        <NewFindingModal
+          clientId={activeClientId}
+          onClose={() => setShowNewFinding(false)}
+          onCreated={() => { setShowNewFinding(false); refetch(); }}
+        />
       )}
     </>
+  );
+}
+
+// ─── New Finding Modal ────────────────────────────────────────────────────
+function NewFindingModal({ clientId, onClose, onCreated }: { clientId: string | number; onClose: () => void; onCreated: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    area: '', description: '', account: '', amount: '', risk: 'Medium' as FindingRisk,
+    assignedTo: '', dueDate: '', rootCause: '', recommendation: '', likelihood: 3, impact: 3,
+  });
+
+  function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm(f => ({ ...f, [key]: value }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.description.trim()) {
+      toast.error('Deskripsi temuan wajib diisi');
+      return;
+    }
+    setSaving(true);
+    try {
+      await tambahAuditFinding(clientId, {
+        area: form.area || null,
+        description: form.description,
+        account: form.account || null,
+        amount: form.amount ? Number(form.amount) : 0,
+        risk: form.risk,
+        assignedTo: form.assignedTo || null,
+        dueDate: form.dueDate || null,
+        rootCause: form.rootCause || null,
+        recommendation: form.recommendation || null,
+        likelihood: form.likelihood,
+        impact: form.impact,
+      });
+      toast.success('Temuan audit baru berhasil ditambahkan');
+      onCreated();
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menyimpan temuan audit');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        onClick={e => e.stopPropagation()}
+        className="w-full max-w-lg bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <h2 className="text-sm font-bold text-foreground">New Audit Finding</h2>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-background transition-colors">
+            <XMarkIcon className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Description *</label>
+            <textarea
+              required
+              value={form.description}
+              onChange={e => update('description', e.target.value)}
+              rows={2}
+              className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Area</label>
+              <input value={form.area} onChange={e => update('area', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Account</label>
+              <input value={form.account} onChange={e => update('account', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Financial Impact</label>
+              <input type="number" step="0.01" value={form.amount} onChange={e => update('amount', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Risk</label>
+              <select value={form.risk} onChange={e => update('risk', e.target.value as FindingRisk)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30">
+                {(['Low', 'Medium', 'High', 'Critical'] as const).map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Assigned To</label>
+              <input value={form.assignedTo} onChange={e => update('assignedTo', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Due Date</label>
+              <input type="date" value={form.dueDate} onChange={e => update('dueDate', e.target.value)} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Likelihood (1-5)</label>
+              <input type="number" min={1} max={5} value={form.likelihood} onChange={e => update('likelihood', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Impact (1-5)</label>
+              <input type="number" min={1} max={5} value={form.impact} onChange={e => update('impact', Number(e.target.value))} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Root Cause</label>
+            <textarea value={form.rootCause} onChange={e => update('rootCause', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-light">Recommendation</label>
+            <textarea value={form.recommendation} onChange={e => update('recommendation', e.target.value)} rows={2} className="mt-1 w-full text-xs px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1B4FD8]/30" />
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-3 py-2 text-xs font-medium text-muted-foreground bg-white border border-border rounded-lg hover:bg-background">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving} className="px-3 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 disabled:opacity-60">
+            {saving ? 'Saving...' : 'Create Finding'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

@@ -26,12 +26,15 @@ function niceStep(rawStep: number): number {
 export function getNiceTicksFromZero(maxValue: number, tickCount = 5) {
   const safeMax = Math.max(maxValue, 1);
   const step = niceStep(safeMax / tickCount);
+  // Jangan Math.round kalau step < 1 (data kosong / nilai kecil) — dulu itu
+  // menghasilkan tick duplikat [0,0,0,1,1,1] → error "two children with the same key".
+  const norm = (v: number) => (step >= 1 ? Math.round(v) : Number(v.toFixed(6)));
   const ticks: number[] = [0];
-  for (let v = step; v <= safeMax + step * 1e-6; v += step) {
-    ticks.push(Math.round(v));
+  for (let i = 1; i * step <= safeMax + step * 1e-6; i++) {
+    ticks.push(norm(i * step));
   }
-  if (ticks.length < 2) ticks.push(Math.round(safeMax));
-  return { ticks, step };
+  if (ticks.length < 2) ticks.push(norm(safeMax));
+  return { ticks: Array.from(new Set(ticks)), step };
 }
 
 /** Tick simetris di sekitar nol — dipakai chart dua arah (Cash Flow).
@@ -39,10 +42,12 @@ export function getNiceTicksFromZero(maxValue: number, tickCount = 5) {
 export function getNiceSymmetricTicks(maxAbsValue: number, halfTickCount = 4) {
   const safeMax = Math.max(maxAbsValue, 1);
   const step = niceStep(safeMax / halfTickCount);
+  const norm = (v: number) => (step >= 1 ? Math.round(v) : Number(v.toFixed(6)));
   const positives: number[] = [];
-  for (let v = step; v <= safeMax + step * 1e-6; v += step) positives.push(Math.round(v));
-  if (positives.length === 0) positives.push(Math.round(safeMax));
-  const ticks = [...positives.map((v) => -v).reverse(), 0, ...positives];
+  for (let i = 1; i * step <= safeMax + step * 1e-6; i++) positives.push(norm(i * step));
+  if (positives.length === 0) positives.push(norm(safeMax));
+  const uniq = Array.from(new Set(positives));
+  const ticks = [...uniq.map((v) => -v).reverse(), 0, ...uniq];
   return { ticks, step };
 }
 

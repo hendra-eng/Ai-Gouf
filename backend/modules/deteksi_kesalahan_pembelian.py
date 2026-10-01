@@ -797,7 +797,7 @@ DAFTAR_PENGECEKAN = {
 
 
 def jalankan_deteksi_kesalahan_pembelian(
-    client_id: int,
+    client_id: str,
     dbc_module,
     checks: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
@@ -859,7 +859,7 @@ def jalankan_deteksi_kesalahan_pembelian(
 #
 # @app.post("/api/client/{client_id}/deteksi-kesalahan-pembelian")
 # def api_deteksi_kesalahan_pembelian(
-#     client_id: int,
+#     client_id: str,
 #     body: DeteksiKesalahanPembelianRequest,
 #     user: dict = Depends(auth.get_current_user),
 # ):

@@ -40,6 +40,9 @@ const nextConfig = {
   // Next yang lebih baru menamainya `proxyClientMaxBodySize`.
   experimental: {
     middlewareClientMaxBodySize: '2gb',
+    // Timeout proxy /api/* -> FastAPI (default 30 detik). Import Purchase/Sales besar
+    // (ratusan transaksi) bisa lebih lama, jadinya "socket hang up"/ECONNRESET.
+    proxyTimeout: 300000, // 5 menit
   },
   typescript: {
     ignoreBuildErrors: true,
@@ -59,13 +62,21 @@ const nextConfig = {
     }
   ) {
     if (dev) {
-      config.module.rules.push({
-        test: /\.(jsx|tsx)$/,
-        exclude: [/node_modules/],
-        use: [{
-          loader: '@dhiwise/component-tagger/nextLoader',
-        }],
-      });
+      // [DIMATIKAN] Loader @dhiwise/component-tagger dipasang di SEMUA
+      // file .tsx/.jsx setiap kali dev server compile -- ini fitur untuk
+      // integrasi dengan editor visual DhiWise/Rocket. Karena project ini
+      // sekarang dikerjakan manual di VS Code (bukan lewat DhiWise lagi),
+      // loader ini cuma nambah beban compile tanpa manfaat, jadi
+      // dimatikan biar pindah halaman lebih cepat. Kalau suatu saat balik
+      // pakai DhiWise, tinggal un-comment blok ini lagi.
+      //
+      // config.module.rules.push({
+      //   test: /\.(jsx|tsx)$/,
+      //   exclude: [/node_modules/],
+      //   use: [{
+      //     loader: '@dhiwise/component-tagger/nextLoader',
+      //   }],
+      // });
       const ignoredPaths = (process.env.WATCH_IGNORED_PATHS || '')
         .split(',')
         .map((p) => p.trim())

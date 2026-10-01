@@ -9,28 +9,11 @@ import { useCurrency, formatMoney } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 
-// [UBAH] Data contoh di bawah cuma FALLBACK -- lihat LiabilitiesContent.tsx
+// [UBAH] Fallback kosong -- lihat LiabilitiesContent.tsx
 // (useLiabilitiesData()) untuk sumber data ASLI client aktif.
-const mockCompositionData: LiabCompositionSlice[] = [
-  { name: 'Accounts Payable', value: 860, pct: 40.2, color: '#2563eb' },
-  { name: 'Tax Payable', value: 182, pct: 8.5, color: '#d97706' },
-  { name: 'Accrued Expenses', value: 118, pct: 5.5, color: '#16a34a' },
-  { name: 'Short-Term Debt', value: 240, pct: 11.2, color: '#0891b2' },
-  { name: 'Long-Term Debt', value: 620, pct: 29.0, color: '#7c3aed' },
-  { name: 'Lease Liabilities', value: 80, pct: 3.7, color: '#be185d' },
-  { name: 'Other Liabilities', value: 40, pct: 1.9, color: '#64748b' },
-];
+const mockCompositionData: LiabCompositionSlice[] = [];
 
-const mockTrendData: LiabTrendRow[] = [
-  { month: 'Jan', total: 1800, current: 1050, nonCurrent: 750 },
-  { month: 'Feb', total: 1840, current: 1080, nonCurrent: 760 },
-  { month: 'Mar', total: 1880, current: 1100, nonCurrent: 780 },
-  { month: 'Apr', total: 1920, current: 1130, nonCurrent: 790 },
-  { month: 'May', total: 1960, current: 1160, nonCurrent: 800 },
-  { month: 'Jun', total: 2000, current: 1190, nonCurrent: 810 },
-  { month: 'Jul', total: 2080, current: 1240, nonCurrent: 840 },
-  { month: 'Aug', total: 2140, current: 1280, nonCurrent: 860 },
-];
+const mockTrendData: LiabTrendRow[] = [];
 
 const periodOptions = ['6M', 'YTD', '12M', '3Y'];
 
@@ -71,7 +54,7 @@ export default function LiabilitiesChartsSection({ trendData, compositionData, c
   const { t } = useLanguage();
   const trend = trendData && trendData.length > 0 ? trendData : mockTrendData;
   const composition = compositionData && compositionData.length > 0 ? compositionData : mockCompositionData;
-  const subtitle = companyName ? `Monthly liability values — ${companyName}` : 'Monthly liability values — PT Nusantara Teknologi Indonesia';
+  const subtitle = companyName ? `Monthly liability values — ${companyName}` : 'Monthly liability values';
 
   // ── Fitur 1: Drag-zoom skala sumbu Y (harga) — tarik naik/turun di area
   // label sumbu Y buat zoom in/out skala, double-click buat reset. Data
@@ -234,7 +217,7 @@ export default function LiabilitiesChartsSection({ trendData, compositionData, c
 
   // Dot tak terlihat di SETIAP titik data: cuma untuk merekam posisi piksel
   // (cy) & nilai asli tiap titik ke trendDotsRef, dipakai buat kalibrasi drag.
-  const renderTrendCalibrationDot = (key: TrendKey) => (props: any) => {
+  const renderTrendCalibrationDot = (key: TrendKey) => function TrendCalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     trendDotsRef.current[key][index] = { value: payload[key], cy };
     return <circle key={`cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
@@ -242,7 +225,7 @@ export default function LiabilitiesChartsSection({ trendData, compositionData, c
 
   // Dot yang terlihat & bisa digenggam di bulan yang sedang di-hover — tarik
   // vertikal untuk preview, lepas untuk spring-back ke nilai asli.
-  const renderTrendActiveDot = (key: TrendKey, color: string) => (props: any) => {
+  const renderTrendActiveDot = (key: TrendKey, color: string) => function TrendActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = trendDragPoint?.key === key && trendDragPoint?.index === index;
@@ -371,7 +354,7 @@ export default function LiabilitiesChartsSection({ trendData, compositionData, c
       <div className="bg-card border border-border rounded-lg p-5 shadow-card">
         <div className="mb-4">
           <h3 className="text-md font-600 text-foreground">{t('Liability Composition')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{t('By category')}{periodLabel ? ` — ${periodLabel}` : ' — Aug 2026'}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('By category')}{periodLabel ? ` — ${periodLabel}` : ''}</p>
         </div>
         <InteractiveDonutChart
           data={composition}

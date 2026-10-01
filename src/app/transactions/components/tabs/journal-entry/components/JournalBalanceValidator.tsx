@@ -7,9 +7,9 @@ import { CheckCircle, AlertTriangle } from 'lucide-react';
 const JournalActivityChart = dynamic(() => import('./JournalActivityChart'), { ssr: false });
 
 const periodSummary = [
-  { period: 'Sep 2026', totalDebit: 1284600, totalCredit: 1284600, entries: 48, status: 'balanced' as const },
-  { period: 'Aug 2026', totalDebit: 1148200, totalCredit: 1148200, entries: 52, status: 'balanced' as const },
-  { period: 'Jul 2026', totalDebit: 1091400, totalCredit: 1091400, entries: 44, status: 'balanced' as const },
+  { period: 'Sep 2026', totalDebit: 0, totalCredit: 0, entries: 0, status: 'balanced' as const },
+  { period: 'Aug 2026', totalDebit: 0, totalCredit: 0, entries: 0, status: 'balanced' as const },
+  { period: 'Jul 2026', totalDebit: 0, totalCredit: 0, entries: 0, status: 'balanced' as const },
 ];
 
 export default function JournalBalanceValidator() {

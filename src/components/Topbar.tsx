@@ -39,13 +39,9 @@ const periods = [
   { id: 'p-2025-fy', label: 'Jan 2025 – Dec 2025', sub: 'FY 2025' },
 ];
 
-const initialNotifications = [
-  { id: 'notif-001', type: 'warning', title: 'Tax Deadline Approaching', body: 'PPN Masa due in 5 days (30 Aug 2026)', time: '2h ago', read: false },
-  { id: 'notif-002', type: 'negative', title: 'Overdue Receivable', body: 'PT Garuda Solusi — Rp 185M overdue 72 days', time: '4h ago', read: false },
-  { id: 'notif-003', type: 'warning', title: 'Budget Variance Alert', body: 'Marketing expenses exceeded budget by 24.3%', time: '6h ago', read: false },
-  { id: 'notif-004', type: 'ai', title: 'AI Insight Available', body: 'New cash flow forecast ready for review', time: '1d ago', read: true },
-  { id: 'notif-005', type: 'positive', title: 'Payment Received', body: 'PT Teknindo — Rp 320M received', time: '1d ago', read: true },
-];
+// Belum ada backend notifikasi (GET /api/notifications) -- dikosongkan dulu,
+// nanti diisi dari sana begitu tersedia.
+const initialNotifications: { id: string; type: string; title: string; body: string; time: string; read: boolean }[] = [];
 
 function getNotifIcon(type: string) {
   switch (type) {

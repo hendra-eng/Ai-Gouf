@@ -8,17 +8,9 @@ import EmptyState from '@/components/ui/EmptyState';
 import { useCurrency, formatMoney } from '@/lib/currency';
 import type { LiabilityTxRow } from '../lib/liabilitiesBridge';
 
-// Data contoh — tampil hanya kalau belum ada client aktif / belum ada jurnal (isSampleData).
-const SAMPLE_ROWS: LiabilityTxRow[] = [
-  { id: 'TXN-LIB-0892', date: '2026-08-26', txId: 'TXN-LIB-0892', account: 'Hutang PPh 21', description: 'Accrual pajak penghasilan Agustus 2026', debit: 0, credit: 182_000_000, party: 'DJP', reference: 'JE-2026-0892', jeId: 'JE-2026-0892', variant: 'active' },
-  { id: 'TXN-LIB-0885', date: '2026-08-25', txId: 'TXN-LIB-0885', account: 'Hutang Dagang', description: 'Pembelian bahan baku dari PT Sinar Abadi', debit: 0, credit: 142_000_000, party: 'PT Sinar Abadi Makmur', reference: 'PO-2026-0488', jeId: 'JE-2026-0885', variant: 'active' },
-  { id: 'TXN-LIB-0878', date: '2026-08-22', txId: 'TXN-LIB-0878', account: 'Hutang Dagang', description: 'Pembayaran hutang dagang CV Maju Jaya', debit: 95_000_000, credit: 0, party: 'CV Maju Jaya Teknik', reference: 'PAY-2026-0312', jeId: 'JE-2026-0878', variant: 'paid' },
-  { id: 'TXN-LIB-0871', date: '2026-08-20', txId: 'TXN-LIB-0871', account: 'Hutang Bank BRI', description: 'Cicilan kredit modal kerja Agustus 2026', debit: 20_000_000, credit: 0, party: 'Bank Rakyat Indonesia', reference: 'PAY-2026-0305', jeId: 'JE-2026-0871', variant: 'paid' },
-  { id: 'TXN-LIB-0864', date: '2026-08-15', txId: 'TXN-LIB-0864', account: 'Beban Akrual', description: 'Accrual beban gaji Agustus 2026', debit: 0, credit: 68_000_000, party: 'Internal Payroll', reference: 'JE-2026-0864', jeId: 'JE-2026-0864', variant: 'active' },
-  { id: 'TXN-LIB-0857', date: '2026-08-10', txId: 'TXN-LIB-0857', account: 'Hutang Sewa', description: 'Kewajiban sewa kantor Bandung Q4 2026', debit: 0, credit: 24_000_000, party: 'PT Graha Properti', reference: 'JE-2026-0857', jeId: 'JE-2026-0857', variant: 'scheduled' },
-  { id: 'TXN-LIB-0850', date: '2026-08-05', txId: 'TXN-LIB-0850', account: 'Hutang PPN', description: 'Accrual PPN Masa Juli 2026', debit: 58_000_000, credit: 0, party: 'DJP', reference: 'PAY-2026-0291', jeId: 'JE-2026-0850', variant: 'paid' },
-  { id: 'TXN-LIB-0843', date: '2026-08-01', txId: 'TXN-LIB-0843', account: 'Hutang Obligasi BNI', description: 'Pembayaran bunga obligasi semester 1 2026', debit: 24_100_000, credit: 0, party: 'Bank Negara Indonesia', reference: 'PAY-2026-0280', jeId: 'JE-2026-0843', variant: 'paid' },
-];
+// [UBAH] Data contoh dikosongkan — tampil hanya kalau belum ada client aktif
+// / belum ada jurnal (isSampleData); sekarang tetap 0 baris.
+const SAMPLE_ROWS: LiabilityTxRow[] = [];
 
 interface LiabilityTransactionsProps {
   isSampleData: boolean;

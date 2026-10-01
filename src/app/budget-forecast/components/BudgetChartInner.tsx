@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import type { MonthBudgetRow } from '../lib/budgetBridge';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
@@ -46,13 +46,13 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
   } | null>(null);
   const pointAnimRef = useRef<number | null>(null);
 
-  const stopPointSpring = () => {
+  const stopPointSpring = useCallback(() => {
     if (pointAnimRef.current) cancelAnimationFrame(pointAnimRef.current);
     pointAnimRef.current = null;
-  };
+  }, []);
   const easeOutQuintPoint = (t: number) => 1 - Math.pow(1 - t, 5);
 
-  const springBackPoint = () => {
+  const springBackPoint = useCallback(() => {
     const drag = dragPointRef.current;
     if (!drag) return;
     stopPointSpring();
@@ -77,7 +77,7 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
       }
     };
     pointAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopPointSpring]);
 
   const handleDotPointerDown = (key: string, index: number, startValue: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -120,7 +120,7 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBackPoint]);
 
   // Reset drag & kalibrasi kalau resetKey berubah (mis. ganti metric/horizon)
   useEffect(() => {
@@ -128,12 +128,11 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
     dragPointRef.current = null;
     setDragPoint(null);
     dotsRef.current = {};
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
+  }, [resetKey, stopPointSpring]);
 
   // Dot yang SELALU tampil (persis gaya semula: lingkaran kecil r=3) + area
   // genggam tak kasat mata di atasnya supaya bisa ditarik.
-  const renderPersistentDot = (key: string, color: string) => (props: any) => {
+  const renderPersistentDot = (key: string, color: string) => function PersistentDot(props: any) {
     const { cx, cy, index, payload, value } = props;
     if (cx == null || cy == null || value == null) return null;
     if (!dotsRef.current[key]) dotsRef.current[key] = [];
@@ -155,7 +154,7 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
   };
 
   // Dot yang tampil membesar saat bulan tsb sedang di-hover (activeDot bawaan Recharts).
-  const renderActiveDot = (key: string, color: string) => (props: any) => {
+  const renderActiveDot = (key: string, color: string) => function ActiveDot(props: any) {
     const { cx, cy, index, value } = props;
     if (cx == null || cy == null || value == null) return null;
     const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
@@ -192,39 +191,43 @@ function useDragZoomChart(baseMax: number, resetKey: unknown) {
   // Seluruh badan bar bisa digenggam & ditarik naik/turun (bukan cuma strip
   // tipis di ujungnya), supaya terasa alami -- sama seperti kotak Budget di
   // Financial Overview.
-  const renderInteractiveBar = (key: string, fillColor: string, fillOpacity: number = 1) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
-    const h = Math.max(0, height);
-    return (
-      <g>
-        <rect
-          x={x}
-          y={y}
-          width={width}
-          height={h}
-          fill={fillColor}
-          fillOpacity={fillOpacity}
-          rx={3}
-          ry={3}
-          stroke={isDraggingThis ? fillColor : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
-        />
-        {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek */}
-        <rect
-          x={x}
-          y={y - 10}
-          width={width}
-          height={10}
-          fill="transparent"
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
-        />
-      </g>
-    );
+  const renderInteractiveBar = (key: string, fillColor: string, fillOpacity: number = 1) => {
+    const InteractiveBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
+      const h = Math.max(0, height);
+      return (
+        <g>
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={h}
+            fill={fillColor}
+            fillOpacity={fillOpacity}
+            rx={3}
+            ry={3}
+            stroke={isDraggingThis ? fillColor : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
+          />
+          {/* Perluas area genggam ke atas sedikit, biar mudah ditarik walau bar-nya pendek */}
+          <rect
+            x={x}
+            y={y - 10}
+            width={width}
+            height={10}
+            fill="transparent"
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={handleBarPointerDown(key, index, payload[key], h)}
+          />
+        </g>
+      );
+    };
+    InteractiveBar.displayName = 'InteractiveBar';
+    return InteractiveBar;
   };
 
   function applyDragPreview<T extends Record<string, any>>(data: T[]): T[] {
