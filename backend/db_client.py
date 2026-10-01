@@ -7073,6 +7073,199 @@ def soft_delete_sales_account_mapping(mapping_id: str, deleted_by: Optional[str]
     return _sales_crud_soft_delete(SalesAccountMapping, mapping_id, deleted_by)
 
 
+# --- 4b) Akun default Sales per klien, mapping otomatis, validasi posting ---
+# Akun default dibaca dari mapping_rules template Sales AKTIF milik klien
+# (financial_transaction_sales_import_templates), dengan kunci:
+#   piutang_account    : {"account_code": "...", "account_name": "..."}   (Dr Piutang Usaha)
+#   pendapatan_account : {...}                                            (Cr Penjualan, default)
+#   pendapatan_account_by_cabang : {"CRS": {...}, "NGY": {...}, ...}      (opsional, menimpa default per cabang)
+#   ppn_account        : {...}                                            (Cr PPN Keluaran)
+#   pph_account        : {...}                                            (opsional)
+# Nama kunci meniru pola template Purchase (ap_account/tax_account/line_account_by_dept).
+# Kalau klien belum punya akun default, pastikan_mapping_sales() mengembalikan None
+# (dilewati diam-diam), dan invoice baru tidak bisa diposting sampai mapping dibuat
+# manual atau template dilengkapi (lihat validasi_posting_sales()).
+
+_cache_akun_default_sales: Dict[str, Any] = {}
+_TTL_CACHE_AKUN_DEFAULT_SALES = 30  # detik -- cukup lama untuk promote ribuan invoice, cukup singkat untuk ikut edit template
+
+
+def _akun_kode_nama(nilai: Any) -> tuple:
+    if isinstance(nilai, dict):
+        kode = str(nilai.get("account_code") or "").strip()
+        nama = str(nilai.get("account_name") or "").strip()
+        return (kode or None, nama or None)
+    return (None, None)
+
+
+def _uuid_atau_none(nilai: Any) -> Optional[str]:
+    try:
+        return str(uuid.UUID(str(nilai)))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def ambil_akun_default_sales(client_id: Optional[str], cabang: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Akun default Sales klien (gabungan semua template Sales aktif; template
+    yang paling sering dipakai menang). Return None kalau piutang/pendapatan
+    belum ada. Hasil di-cache sebentar per klien."""
+    import time
+    if not client_id:
+        return None
+    kunci = str(client_id)
+    sekarang = time.time()
+    tersimpan = _cache_akun_default_sales.get(kunci)
+    if tersimpan and sekarang - tersimpan[0] < _TTL_CACHE_AKUN_DEFAULT_SALES:
+        gabungan = tersimpan[1]
+    else:
+        gabungan = {}
+        session = SessionLocal()
+        try:
+            templates = session.query(SalesImportTemplate).filter(
+                SalesImportTemplate.client_id == client_id,
+                SalesImportTemplate.deleted_at.is_(None),
+                SalesImportTemplate.is_active.is_(True),
+            ).order_by(SalesImportTemplate.usage_count.desc()).all()
+            for t in templates:
+                rules = t.mapping_rules or {}
+                for k in ("piutang_account", "pendapatan_account", "pendapatan_account_by_cabang", "ppn_account", "pph_account"):
+                    if k not in gabungan and rules.get(k):
+                        gabungan[k] = rules[k]
+        except Exception as e:
+            session.rollback()
+            print(f"Error ambil akun default sales: {e}")
+            return None
+        finally:
+            session.close()
+        _cache_akun_default_sales[kunci] = (sekarang, gabungan)
+
+    piutang = _akun_kode_nama(gabungan.get("piutang_account"))
+    pendapatan = _akun_kode_nama(gabungan.get("pendapatan_account"))
+    per_cabang = gabungan.get("pendapatan_account_by_cabang") or {}
+    if cabang and isinstance(per_cabang, dict):
+        peta = {str(k).strip().upper(): v for k, v in per_cabang.items()}
+        khusus = _akun_kode_nama(peta.get(str(cabang).strip().upper()))
+        if khusus[0]:
+            pendapatan = khusus
+    if not piutang[0] or not pendapatan[0]:
+        return None
+    return {
+        "piutang": piutang,
+        "pendapatan": pendapatan,
+        "ppn": _akun_kode_nama(gabungan.get("ppn_account")),
+        "pph": _akun_kode_nama(gabungan.get("pph_account")),
+    }
+
+
+def pastikan_mapping_sales(invoice_id: str, dibuat_oleh: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Pastikan invoice punya mapping akun (Piutang/Pendapatan/PPN/PPh).
+    Sudah ada -> dikembalikan apa adanya. Belum ada -> dibuat dari akun default
+    klien (template Sales). Return None kalau invoice tidak ada atau klien
+    belum punya akun default."""
+    user_uuid = _uuid_atau_none(dibuat_oleh)
+    session = SessionLocal()
+    try:
+        invoice = session.query(SalesInvoice).filter(
+            SalesInvoice.id == invoice_id, SalesInvoice.deleted_at.is_(None)
+        ).first()
+        if invoice is None:
+            return None
+        ada = session.query(SalesAccountMapping).filter(SalesAccountMapping.invoice_id == invoice.id).first()
+        if ada is not None and ada.deleted_at is None:
+            return _sales_row_ke_dict(ada, CRUD_FIELDS_SALES_ACCOUNT_MAPPING)
+
+        akun = ambil_akun_default_sales(invoice.management_client_id or invoice.client_id, invoice.cabang)
+        if akun is None:
+            return None
+
+        nilai = {
+            "piutang_account_code": akun["piutang"][0], "piutang_account_name": akun["piutang"][1],
+            "pendapatan_account_code": akun["pendapatan"][0], "pendapatan_account_name": akun["pendapatan"][1],
+            "ppn_account_code": akun["ppn"][0], "ppn_account_name": akun["ppn"][1],
+            "pph_account_code": akun["pph"][0], "pph_account_name": akun["pph"][1],
+            "is_ai_suggested": False, "mapped_by": user_uuid, "mapped_at": datetime.now(),
+        }
+        if ada is not None:  # mapping lama yang sudah di-soft-delete: hidupkan lagi (invoice_id unik)
+            for k, v in nilai.items():
+                setattr(ada, k, v)
+            ada.deleted_at = None
+            ada.deleted_by = None
+            ada.edited_at = datetime.now()
+            ada.edited_by = user_uuid
+            obj = ada
+        else:
+            obj = SalesAccountMapping(client_id=invoice.client_id, invoice_id=invoice.id, created_by=user_uuid, **nilai)
+            session.add(obj)
+        session.flush()
+        hasil = _sales_row_ke_dict(obj, CRUD_FIELDS_SALES_ACCOUNT_MAPPING)
+        session.commit()
+        return hasil
+    except IntegrityError:
+        session.rollback()
+        return get_sales_account_mapping_by_invoice(invoice_id)  # dibuat bersamaan oleh request lain
+    except Exception as e:
+        session.rollback()
+        print(f"Error pastikan mapping sales: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def validasi_posting_sales(invoice_id: str) -> List[str]:
+    """Alasan invoice Sales TIDAK boleh diposting (list kosong = boleh):
+    mapping akun harus ada & lengkap, dan semua akun harus ada di master COA
+    klien (kalau klien punya COA)."""
+    session = SessionLocal()
+    try:
+        invoice = session.query(SalesInvoice).filter(
+            SalesInvoice.id == invoice_id, SalesInvoice.deleted_at.is_(None)
+        ).first()
+        if invoice is None:
+            return ["Invoice not found."]
+        m = session.query(SalesAccountMapping).filter(
+            SalesAccountMapping.invoice_id == invoice.id, SalesAccountMapping.deleted_at.is_(None)
+        ).first()
+        if m is None:
+            return ["Invoice has no account mapping (set the client's default sales accounts or map the accounts manually)."]
+
+        alasan: List[str] = []
+        if Decimal(str(invoice.gross_amount or 0)) <= 0:
+            alasan.append("Invoice total must be greater than 0.")
+        if not (m.piutang_account_code or "").strip():
+            alasan.append("Receivable account is not set.")
+        if not (m.pendapatan_account_code or "").strip():
+            alasan.append("Revenue account is not set.")
+        if Decimal(str(invoice.ppn or 0)) > 0 and not (m.ppn_account_code or "").strip():
+            alasan.append("VAT account is not set.")
+        if Decimal(str(invoice.pph or 0)) > 0 and not (m.pph_account_code or "").strip():
+            alasan.append("Withholding tax account is not set.")
+
+        company_id = invoice.management_client_id or invoice.client_id
+        if company_id:
+            coa = {
+                r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
+                    ManagementClientCoa.client_id == company_id,
+                    ManagementClientCoa.deleted_at.is_(None),
+                ).all()
+            }
+            if coa:
+                dipakai = {m.piutang_account_code, m.pendapatan_account_code}
+                if Decimal(str(invoice.ppn or 0)) > 0:
+                    dipakai.add(m.ppn_account_code)
+                if Decimal(str(invoice.pph or 0)) > 0:
+                    dipakai.add(m.pph_account_code)
+                tidak_ada = sorted(k for k in dipakai if k and k not in coa)
+                if tidak_ada:
+                    alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
+        return alasan
+    except Exception as e:
+        session.rollback()
+        print(f"Error validasi posting sales: {e}")
+        return ["Could not validate the invoice accounts (database error)."]
+    finally:
+        session.close()
+
+
 # --- 5) financial_transaction_sales_exceptions ---
 
 CRUD_FIELDS_SALES_EXCEPTION = [
@@ -8026,6 +8219,81 @@ def touch_purchase_import_template_usage(template_id: str) -> bool:
     except Exception as e:
         session.rollback()
         print(f"Error touch usage purchase_import_template: {e}")
+        return False
+    finally:
+        session.close()
+
+
+def list_purchase_nos_by_client(client_id: str, purchase_nos: List[str]) -> set:
+    """Satu query: purchase_no (dari daftar) yang SUDAH ada untuk client ini
+    (belum dihapus). Dipakai import massal supaya cek duplikat tidak 1 query
+    per transaksi."""
+    if not purchase_nos:
+        return set()
+    session = SessionLocal()
+    try:
+        rows = session.query(PurchaseTransaction.purchase_no).filter(
+            PurchaseTransaction.client_id == client_id,
+            PurchaseTransaction.purchase_no.in_(list(purchase_nos)),
+            PurchaseTransaction.deleted_at.is_(None),
+        ).all()
+        return {r[0] for r in rows}
+    except Exception as e:
+        session.rollback()
+        print(f"Error list_purchase_nos_by_client: {e}")
+        return set()
+    finally:
+        session.close()
+
+
+def create_purchase_transactions_bulk(items: List[Dict[str, Any]], created_by: Optional[str] = None) -> bool:
+    """Simpan BANYAK Purchase Transaction + baris itemnya dalam SATU sesi &
+    SATU commit (atomik: semua berhasil atau tidak ada yang masuk). ID
+    dibuat di sisi aplikasi (uuid4) jadi tidak perlu flush per transaksi --
+    insert baris memakai batch. Jauh lebih cepat daripada memanggil
+    create_purchase_transaction_with_lines() per transaksi (1 sesi + beberapa
+    round-trip ke Supabase per transaksi).
+
+    items: [{"transaction": {...}, "lines": [{...}]}, ...]. Header dihitung
+    ULANG dari SUM(lines), aturan sama dengan create_purchase_transaction_with_lines.
+    Return True kalau semua tersimpan, False kalau gagal (sudah rollback)."""
+    if not items:
+        return True
+    session = SessionLocal()
+    try:
+        for item in items:
+            transaction_data = item["transaction"]
+            lines_data = item["lines"]
+            subtotal = sum(Decimal(str(l.get("subtotal") or 0)) for l in lines_data)
+            discount = sum(Decimal(str(l.get("discount") or 0)) for l in lines_data)
+            tax_amount = sum(Decimal(str(l.get("tax_amount") or 0)) for l in lines_data)
+            total = sum(Decimal(str(l.get("total") or 0)) for l in lines_data)
+            accounts_payable = Decimal(str(transaction_data.get("accounts_payable"))) if transaction_data.get("accounts_payable") is not None else total
+
+            tx_id = str(uuid.uuid4())
+            session.add(PurchaseTransaction(
+                **{k: v for k, v in transaction_data.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION and k not in ("subtotal", "discount", "tax_amount", "total", "accounts_payable")},
+                id=tx_id,
+                subtotal=subtotal,
+                discount=discount,
+                tax_amount=tax_amount,
+                total=total,
+                accounts_payable=accounts_payable,
+                created_by=created_by,
+            ))
+            for idx, line in enumerate(lines_data, start=1):
+                session.add(PurchaseTransactionLine(
+                    **{k: v for k, v in line.items() if k in CRUD_FIELDS_PURCHASE_TRANSACTION_LINE and k != "line_no"},
+                    transaction_id=tx_id,
+                    client_id=transaction_data.get("client_id"),
+                    line_no=line.get("line_no") or idx,
+                    created_by=created_by,
+                ))
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"Error create_purchase_transactions_bulk: {e}")
         return False
     finally:
         session.close()

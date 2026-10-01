@@ -368,7 +368,10 @@ async def upload_purchase_import(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    client_id = current_user.get("id")  # management_users.id_user -- pemilik transaksi (akun yang login)
+    user_id = current_user.get("id")  # management_users.id_user -- akun yang login (untuk created_by)
+    # client_id di financial_transaction_purchase_transactions = FK ke management_clients.id,
+    # jadi HARUS company yang sedang diupload, bukan ID user.
+    client_id = management_client_id
     created_by_name = current_user.get("nama") or current_user.get("username")
 
     cocok = None
@@ -408,12 +411,16 @@ async def upload_purchase_import(
     skipped_invalid = 0
     skipped_duplicate = 0
 
+    # Cek duplikat sekali jalan (1 query), bukan 1 query per transaksi.
+    sudah_ada = dbc.list_purchase_nos_by_client(client_id, [t["purchase_no"] for t in blok if t["purchase_no"]])
+    antrean: List[Dict[str, Any]] = []  # transaksi valid yang menunggu disimpan sekaligus
+
     for t in blok:
         if t["errors"]:
             skipped_invalid += 1
             hasil_tx.append({"purchase_no": t["purchase_no"] or "-", "ok": False, "message": " ".join(t["errors"])})
             continue
-        if dbc.get_purchase_transaction_by_client_and_no(client_id, t["purchase_no"]):
+        if t["purchase_no"] in sudah_ada:
             skipped_duplicate += 1
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "This purchase number has already been imported previously."})
             continue
@@ -448,12 +455,27 @@ async def upload_purchase_import(
             "tax_account_code": akun_pajak.get("account_code") or None,
             "tax_account_name": akun_pajak.get("account_name") or None,
         }
-        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id)
-        if dibuat is None:
-            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
-            continue
-        created += 1
-        hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."})
+        sudah_ada.add(t["purchase_no"])  # duplikat nomor di file yang sama ikut terdeteksi
+        antrean.append({"t": t, "transaction": transaction_data, "lines": t["lines"]})
+
+    # Simpan semua sekaligus (1 sesi, 1 commit). Kalau gagal, ulangi satu-satu
+    # supaya transaksi bermasalah saja yang ditandai gagal.
+    if antrean:
+        if dbc.create_purchase_transactions_bulk(
+            [{"transaction": a["transaction"], "lines": a["lines"]} for a in antrean], created_by=user_id
+        ):
+            hasil_ok = [(a["t"], True) for a in antrean]
+        else:
+            hasil_ok = []
+            for a in antrean:
+                dibuat = dbc.create_purchase_transaction_with_lines(a["transaction"], a["lines"], created_by=user_id)
+                hasil_ok.append((a["t"], dibuat is not None))
+        for t, ok in hasil_ok:
+            if not ok:
+                hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
+                continue
+            created += 1
+            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."})
 
     dbc.touch_purchase_import_template_usage(template["id"])
 

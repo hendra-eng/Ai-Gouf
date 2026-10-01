@@ -40,6 +40,9 @@ const nextConfig = {
   // Next yang lebih baru menamainya `proxyClientMaxBodySize`.
   experimental: {
     middlewareClientMaxBodySize: '2gb',
+    // Timeout proxy /api/* -> FastAPI (default 30 detik). Import Purchase/Sales besar
+    // (ratusan transaksi) bisa lebih lama, jadinya "socket hang up"/ECONNRESET.
+    proxyTimeout: 300000, // 5 menit
   },
   typescript: {
     ignoreBuildErrors: true,
