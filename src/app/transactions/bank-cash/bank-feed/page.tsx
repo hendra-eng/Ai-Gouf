@@ -8,7 +8,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatIDR } from '../../lib/groupAnalytics';
 import { useBankFeed, BankFeedMutation } from '../context/BankFeedContext';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { rekonDaftarAkun } from '@/app/agent-ai/lib/api';
 
 // [BARU] Satu akun bank untuk dropdown upload — dibangun dari COA client
 // aktif, HANYA akun rekening bank (jenis_kas = 'bank'). Kas kecil, kas tunai
@@ -34,11 +34,12 @@ function useAkunBankClientAktif() {
     }
     let batal = false;
     setLoading(true);
-    ambilCoaClient(activeClientId)
-      .then((res: { coa: Array<{ no_akun: string; nama_akun: string; sub_kategori?: string | null; jenis_kas?: string | null }> }) => {
+    // Akun dari management_client_coa (/bank-reconciliation/accounts); jenis_kas diturunkan backend.
+    rekonDaftarAkun(activeClientId)
+      .then((res: { coa: Array<{ no_akun: string; nama_akun: string; jenis_kas?: string | null }> }) => {
         if (batal) return;
         const daftar = (res?.coa || [])
-          .filter((a) => a.sub_kategori === 'Kas' && a.jenis_kas === 'bank')
+          .filter((a) => a.jenis_kas === 'bank')
           .map((a) => ({ value: `${a.no_akun} - ${a.nama_akun}`, label: `${a.no_akun} - ${a.nama_akun}` }));
         setAkun(daftar);
       })

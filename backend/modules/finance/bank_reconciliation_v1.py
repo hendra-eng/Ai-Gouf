@@ -46,6 +46,20 @@ Aturan yang dijaga di sini (sisanya dijaga trigger DB fn_bcp_validate):
     trigger fn_bcp_apply memulihkan outstanding invoice (hanya untuk pembayaran yang sudah
     diterapkan); mutasi bank jadi
     bebas dicocokkan ulang. Semuanya satu transaksi DB (semua berhasil / batal).
+
+[ADAPTASI playground-willi] Versi asli (playground-hendra) membaca tabel `coa`
+dan menulis ke journal_entries/journal_lines (UUID) di Supabase Hendra. Di DB
+playground-willi:
+  - Akun diambil dari `management_client_coa` (master COA per klien). Jenis kas
+    (bank/kas_tunai/kas_kecil/transit) diturunkan dari standard_account_code
+    lewat db_client._tentukan_jenis_kas(), bukan kolom `jenis_kas`.
+  - Jurnal ditulis ke financial_transaction_journal_entry_drafts + draft_lines
+    (fitur Journal Entry), source_type "Bank", status draft/approved/posted/
+    rejected (huruf kecil). Jurnal rekon dikenali dari prefix je_number "BR-";
+    jurnal pembaliknya "RV-<je_number asal>". Yang POSTED otomatis ikut GL &
+    Financial Statements (db_client.ambil_baris_jurnal_posted_transaksi).
+  - Respons API tetap memakai bentuk lama (journal_no, status HURUF BESAR,
+    no_akun/nama_akun/jenis_kas) supaya frontend Cash & Bank tidak berubah.
 """
 
 from __future__ import annotations
@@ -73,8 +87,12 @@ logger = get_module_logger("finance_bank_reconciliation_v1")
 router = APIRouter(prefix="/api/v1/finance/bank-reconciliation", tags=["bank-reconciliation-v1"])
 
 TOLERANSI = Decimal("0.50")
-SUMBER_JURNAL = "BANK_RECONCILIATION"
-SUMBER_JURNAL_PEMBALIK = "BANK_RECONCILIATION_REVERSAL"
+SOURCE_TYPE_JURNAL = "Bank"          # nilai source_type fitur Journal Entry
+PREFIX_JURNAL = "BR-"                # je_number jurnal rekon: BR-<tahun>-<8 hex>
+PREFIX_PEMBALIK = "RV-"              # je_number jurnal pembalik: RV-<je_number asal>
+SUB_AKUN_KAS = "CASH & CASH EQUIVALENTS"
+SUB_AKUN_LAWAN = {"purchase": "TRADE PAYABLES", "sales": "TRADE RECEIVABLES"}
+_BULAN_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
 LEVEL_APPROVE = 3    # Supervisor (tahap_3) ke atas
 LEVEL_POST = 4       # Manager (tahap_4) ke atas
 LEVEL_REVERSAL = 4   # Manager (tahap_4) ke atas
@@ -257,7 +275,8 @@ def _prioritas(nominal: Decimal) -> str:
 def _muat_kandidat(session, client_id: str) -> Dict[str, List[Dict[str, Any]]]:
     """Invoice yang masih punya sisa tagihan (sisa sudah dikurangi pembayaran yang menunggu
     posting). Kriteria SAMA dengan trigger
-    fn_bcp_validate (Purchase: status 'posted'; Sales: 'Posted'/'Partial'; pemilik =
+    fn_bcp_validate (Purchase: status 'posted' -- di DB willi tersimpan sbg label "Posted",
+    makanya dibandingkan lower(); Sales: 'Posted'/'Partial'; pemilik =
     coalesce(management_client_id, client_id))."""
     purchase = session.execute(text("""
         select id::text as id, purchase_no, invoice_number, vendor_name as party,
@@ -267,7 +286,7 @@ def _muat_kandidat(session, client_id: str) -> Dict[str, List[Dict[str, Any]]]:
                     where b.purchase_transaction_id = financial_transaction_purchase_transactions.id
                       and b.deleted_at is null and b.applied_at is null), 0) as outstanding
           from financial_transaction_purchase_transactions
-         where deleted_at is null and status = 'posted'
+         where deleted_at is null and lower(status) = 'posted'
            and coalesce(management_client_id, client_id) = cast(:cid as uuid)
            and coalesce(accounts_payable, total) - coalesce((
                    select sum(b.amount) from financial_transaction_bank_cash_payments b
@@ -402,24 +421,49 @@ def _saran_untuk_mutasi(m: MutasiIn, kandidat: Dict[str, List[Dict[str, Any]]], 
 # AKUN (COA)
 # ============================================================
 
+# Sumber akun = management_client_coa (master COA klien, UUID). Kolomnya dialiaskan ke
+# nama lama (no_akun/nama_akun/...) supaya sisa modul & frontend tidak berubah.
+_SQL_AKUN = """
+    select id::text as id, acc_no as no_akun, account_name as nama_akun,
+           account_classification as kategori, account_sub as sub_kategori,
+           standard_account_code, coalesce(is_active, true) as aktif
+      from management_client_coa
+     where client_id = cast(:c as uuid) and deleted_at is null
+"""
+
+
+def _jenis_kas(akun: Dict[str, Any]) -> Optional[str]:
+    """bank / kas_tunai / kas_kecil / transit untuk akun Kas & Setara Kas; None untuk akun lain."""
+    if str(akun.get("sub_kategori") or "").strip().upper() != SUB_AKUN_KAS:
+        return None
+    return dbc._tentukan_jenis_kas("Kas", akun.get("nama_akun"), standard_code=akun.get("standard_account_code"))
+
+
+def _dengan_jenis_kas(r: Any) -> Dict[str, Any]:
+    akun = dict(r)
+    akun["jenis_kas"] = _jenis_kas(akun)
+    return akun
+
+
+def _daftar_akun(session, client_id: str, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
+    sql = _SQL_AKUN + (" and coalesce(is_active, true)" if hanya_aktif else "") + " order by acc_no"
+    return [_dengan_jenis_kas(r) for r in session.execute(text(sql), {"c": client_id}).mappings().all()]
+
+
 def _coa_row(session, client_id: str, coa_id: str) -> Optional[Dict[str, Any]]:
-    r = session.execute(text("""
-        select id::text as id, no_akun, nama_akun from coa
-         where id = cast(:i as uuid) and client_id = cast(:c as uuid) and deleted_at is null
-    """), {"i": coa_id, "c": client_id}).mappings().first()
-    return dict(r) if r else None
+    if not _uuid_atau_none(coa_id):
+        return None
+    r = session.execute(text(_SQL_AKUN + " and id = cast(:i as uuid)"),
+                        {"i": coa_id, "c": client_id}).mappings().first()
+    return _dengan_jenis_kas(r) if r else None
 
 
-def _coa_dari_role(session, client_id: str, role_code: str) -> Optional[Dict[str, Any]]:
-    rows = session.execute(text("""
-        select c.id::text as id, c.no_akun, c.nama_akun
-          from company_account_roles car
-          join account_roles r on r.id = car.role_id
-          join coa c on c.id = car.coa_id
-         where car.client_id = cast(:c as uuid) and car.active and r.active
-           and r.role_code = :role and c.deleted_at is null
-    """), {"c": client_id, "role": role_code}).mappings().all()
-    return dict(rows[0]) if len(rows) == 1 else None
+def _coa_dari_kode(session, client_id: str, acc_no: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not acc_no:
+        return None
+    rows = session.execute(text(_SQL_AKUN + " and acc_no = :n and coalesce(is_active, true)"),
+                           {"c": client_id, "n": acc_no}).mappings().all()
+    return _dengan_jenis_kas(rows[0]) if len(rows) == 1 else None
 
 
 def _no_akun_dari_label(label: Optional[str]) -> Optional[str]:
@@ -439,28 +483,17 @@ def _resolve_bank(session, client_id: str, explicit_id: Optional[str], bank_hint
     # memuat nomor akun COA -> cocokkan LANGSUNG lewat nomor akun (pasti), bukan
     # menebak dari kata-kata nama akun. Dipakai hanya kalau nomor itu cocok tepat
     # 1 akun aktif milik client; selain itu jatuh ke logika lama di bawah.
-    no_akun = _no_akun_dari_label(bank_hint)
-    if no_akun:
-        langsung = session.execute(text("""
-            select id::text as id, no_akun, nama_akun from coa
-             where client_id = cast(:c as uuid) and no_akun = :n
-               and deleted_at is null and coalesce(aktif, true)
-        """), {"c": client_id, "n": no_akun}).mappings().all()
-        if len(langsung) == 1:
-            return dict(langsung[0])
-    banks = [dict(x) for x in session.execute(text("""
-        select id::text as id, no_akun, nama_akun from coa
-         where client_id = cast(:c as uuid) and deleted_at is null and coalesce(aktif, true)
-           and jenis_kas = 'bank' order by no_akun
-    """), {"c": client_id}).mappings().all()]
+    langsung = _coa_dari_kode(session, client_id, _no_akun_dari_label(bank_hint))
+    if langsung:
+        return langsung
+    banks = [a for a in _daftar_akun(session, client_id) if a["jenis_kas"] == "bank"]
     tok_hint = _token(bank_hint)
     if tok_hint:
         cocok = [b for b in banks if _token(b["nama_akun"]) & tok_hint]
         if len(cocok) == 1:
             return cocok[0]
-    r = _coa_dari_role(session, client_id, "BANK_DEFAULT")
-    if r:
-        return r
+    # (Role BANK_DEFAULT via company_account_roles tidak dipakai: di DB willi tabel itu
+    # menunjuk ke `coa` legacy, bukan management_client_coa.)
     if len(banks) == 1:
         return banks[0]
     raise _Gagal(
@@ -469,22 +502,34 @@ def _resolve_bank(session, client_id: str, explicit_id: Optional[str], bank_hint
     )
 
 
-def _resolve_lawan(session, client_id: str, tipe: str, explicit_id: Optional[str]) -> Dict[str, Any]:
+def _kode_akun_lawan_invoice(session, tipe: str, ids: List[str]) -> Optional[str]:
+    """Akun Hutang/Piutang yang DIPAKAI saat invoice diposting (Purchase: ap_account_code per
+    transaksi; Sales: piutang_account_code di account mapping invoice). Pelunasan harus mendebit/
+    mengkredit akun yang sama supaya saldonya nol. None kalau kosong atau invoice-invoice di
+    alokasi memakai akun berbeda (biar user memilih)."""
+    if tipe == "purchase":
+        sql = """select distinct ap_account_code from financial_transaction_purchase_transactions
+                  where id = any(cast(:ids as uuid[]))"""
+    else:
+        sql = """select distinct piutang_account_code from financial_transaction_sales_account_mappings
+                  where invoice_id = any(cast(:ids as uuid[])) and deleted_at is null"""
+    kode = {k for k in session.execute(text(sql), {"ids": ids}).scalars().all() if k}
+    return kode.pop() if len(kode) == 1 else None
+
+
+def _resolve_lawan(session, client_id: str, tipe: str, explicit_id: Optional[str],
+                   kode_invoice: Optional[str] = None) -> Dict[str, Any]:
     if explicit_id:
         r = _coa_row(session, client_id, explicit_id)
         if not r:
             raise _Gagal("Akun Hutang/Piutang tidak ditemukan pada COA client ini.")
         return r
-    role = "AP_CONTROL" if tipe == "purchase" else "AR_CONTROL"
-    r = _coa_dari_role(session, client_id, role)
+    r = _coa_dari_kode(session, client_id, kode_invoice)
     if r:
         return r
-    sub = "TRADE PAYABLES" if tipe == "purchase" else "TRADE RECEIVABLES"
-    rows = [dict(x) for x in session.execute(text("""
-        select id::text as id, no_akun, nama_akun from coa
-         where client_id = cast(:c as uuid) and deleted_at is null and coalesce(aktif, true)
-           and sub_kategori = :sub order by no_akun
-    """), {"c": client_id, "sub": sub}).mappings().all()]
+    sub = SUB_AKUN_LAWAN[tipe]
+    rows = [a for a in _daftar_akun(session, client_id)
+            if str(a["sub_kategori"] or "").strip().upper() == sub]
     if len(rows) > 1:  # buang akun perantara (clearance / other)
         utama = [x for x in rows if not re.search(r"clearance|other|lain", x["nama_akun"] or "", re.I)]
         rows = utama or rows
@@ -504,19 +549,71 @@ def _resolve_lawan(session, client_id: str, tipe: str, explicit_id: Optional[str
 # INTI: MATCH (tulis payments + jurnal DRAFT dalam SATU transaksi)
 # ============================================================
 
+# ------------------------------------------------------------
+# JURNAL (financial_transaction_journal_entry_drafts + draft_lines)
+# ------------------------------------------------------------
+# Jurnal rekon = draft dengan je_number berprefix PREFIX_JURNAL milik company
+# (management_client_id). Mutasi bank-nya disimpan di source_reference.
+# Pembalik = draft "RV-<je_number asal>" berstatus posted.
+
+_SQL_JURNAL_REKON = """
+    from financial_transaction_journal_entry_drafts je
+   where je.management_client_id = cast(:c as uuid) and je.deleted_at is null
+     and je.je_number like 'BR-%'
+"""
+_SQL_BELUM_DIBALIK = """
+     and not exists (select 1 from financial_transaction_journal_entry_drafts rv
+                      where rv.management_client_id = je.management_client_id
+                        and rv.je_number = 'RV-' || je.je_number and rv.deleted_at is null)
+"""
+
+
+def _period_label(d: date) -> str:
+    return f"{_BULAN_ID[d.month - 1]} {d.year}"
+
+
+def _tulis_jurnal(session, *, client_id: str, user_id: Optional[str], username: Optional[str], je_number: str,
+                  tgl: date, description: str, reference: str, status_jurnal: str,
+                  baris: List[Dict[str, Any]], posted: bool = False) -> Any:
+    """Insert 1 draft + barisnya. `baris` = [{akun: {no_akun, nama_akun}, debit, credit, desc, partner}].
+    TIDAK commit. Kembalikan objek JournalEntryDraft (id sudah terisi)."""
+    total_d = sum((_dec(b["debit"]) for b in baris), Decimal("0"))
+    total_k = sum((_dec(b["credit"]) for b in baris), Decimal("0"))
+    je = dbc.JournalEntryDraft(
+        client_id=user_id, management_client_id=client_id, je_number=je_number[:100],
+        entry_date=tgl, posting_date=tgl, period_label=_period_label(tgl),
+        description=description[:2000], source_type=SOURCE_TYPE_JURNAL, source_reference=reference[:100],
+        total_debit=total_d, total_credit=total_k, currency="IDR", status=status_jurnal,
+        created_by=user_id, created_by_name=username,
+        approved_by_name=username if posted else None,
+        posted_at=datetime.now() if posted else None, posted_by=user_id if posted else None,
+    )
+    session.add(je)
+    session.flush()
+    for no, b in enumerate(baris, 1):
+        ket = b.get("desc") or ""
+        if b.get("partner") and b["partner"] not in ket:
+            ket = f"{ket} - {b['partner']}"
+        session.add(dbc.JournalEntryDraftLine(
+            draft_id=je.id, client_id=user_id, line_no=no,
+            account_code=b["akun"]["no_akun"], account_name=(b["akun"]["nama_akun"] or "")[:200],
+            description=ket[:2000], debit=_dec(b["debit"]), credit=_dec(b["credit"]),
+            cost_center=b.get("cost_center"), created_by=user_id,
+        ))
+    session.flush()
+    return je
+
+
 def _ref_sudah_dicocokkan(session, client_id: str) -> set:
     """Semua ref mutasi yang sedang terpakai: pembayaran aktif (jalur invoice) ATAU jurnal rekon
-    DRAFT/APPROVED/POSTED yang belum dibalik (jalur invoice maupun non-invoice)."""
-    rows = session.execute(text("""
+    draft/approved/posted yang belum dibalik (jalur invoice maupun non-invoice)."""
+    rows = session.execute(text(f"""
         select bank_mutation_ref as r from financial_transaction_bank_cash_payments
          where client_id = cast(:c as uuid) and deleted_at is null
         union
-        select je.source_transaction_id as r from journal_entries je
-         where je.client_id = cast(:c as uuid) and je.source_module = :src and je.deleted_at is null
-           and je.status in ('DRAFT', 'APPROVED', 'POSTED')
-           and not exists (select 1 from journal_entries rv
-                            where rv.reversed_from_id = je.id and rv.deleted_at is null)
-    """), {"c": client_id, "src": SUMBER_JURNAL}).all()
+        select je.source_reference as r {_SQL_JURNAL_REKON}
+           and lower(je.status) in ('draft', 'approved', 'posted') {_SQL_BELUM_DIBALIK}
+    """), {"c": client_id}).all()
     return {r[0] for r in rows if r[0]}
 
 
@@ -536,6 +633,7 @@ def _jurnal_non_invoice(session, client_id: str, je_id: str) -> bool:
 def _lakukan_match(
     session, *, client_id: str, m: MutasiIn, alokasi: List[Dict[str, Any]],
     bank_coa_id: Optional[str], counter_coa_id: Optional[str], notes: Optional[str], user_id: Optional[str],
+    username: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Tulis payments + jurnal. TIDAK commit -- pemanggil yang commit/rollback."""
     tipe, nominal = _arah_dan_nominal(m)
@@ -575,7 +673,7 @@ def _lakukan_match(
         raise _Gagal(f"Invoice {'Purchase' if tipe == 'purchase' else 'Sales'} tidak ditemukan: {', '.join(hilang)}.")
 
     bank = _resolve_bank(session, client_id, bank_coa_id, m.bank_account)
-    lawan = _resolve_lawan(session, client_id, tipe, counter_coa_id)
+    lawan = _resolve_lawan(session, client_id, tipe, counter_coa_id, _kode_akun_lawan_invoice(session, tipe, ids))
 
     # --- jurnal DRAFT: Purchase -> Dr Hutang / Cr Bank ; Sales -> Dr Bank / Cr Piutang
     baris: List[Dict[str, Any]] = []
@@ -584,31 +682,20 @@ def _lakukan_match(
         jumlah = _dec(a["amount"])
         ket = f"{'Pembayaran' if tipe == 'purchase' else 'Penerimaan'} invoice {inv['no']} - {inv['party']}"
         if tipe == "purchase":
-            baris.append({"coa_id": lawan["id"], "debit": jumlah, "credit": Decimal("0"), "desc": ket, "partner": inv["party"]})
+            baris.append({"akun": lawan, "debit": jumlah, "credit": Decimal("0"), "desc": ket, "partner": inv["party"]})
         else:
-            baris.append({"coa_id": lawan["id"], "debit": Decimal("0"), "credit": jumlah, "desc": ket, "partner": inv["party"]})
+            baris.append({"akun": lawan, "debit": Decimal("0"), "credit": jumlah, "desc": ket, "partner": inv["party"]})
     ket_bank = (m.description or "").strip()[:200] or f"Mutasi bank {m.ref}"
     if tipe == "purchase":
-        baris.append({"coa_id": bank["id"], "debit": Decimal("0"), "credit": total_alokasi, "desc": ket_bank, "partner": None})
+        baris.append({"akun": bank, "debit": Decimal("0"), "credit": total_alokasi, "desc": ket_bank, "partner": None})
     else:
-        baris.insert(0, {"coa_id": bank["id"], "debit": total_alokasi, "credit": Decimal("0"), "desc": ket_bank, "partner": None})
+        baris.insert(0, {"akun": bank, "debit": total_alokasi, "credit": Decimal("0"), "desc": ket_bank, "partner": None})
 
-    je = dbc.JournalEntry(
-        client_id=client_id, journal_no=f"TEMP-{uuid.uuid4().hex}", source_module=SUMBER_JURNAL,
-        source_transaction_id=m.ref[:100], document_date=tgl, posting_date=tgl,
-        description=f"Rekonsiliasi bank {m.ref}: {ket_bank}"[:500], reference=m.ref[:150],
-        status="DRAFT", currency="IDR", exchange_rate=Decimal("1"), created_by=user_id,
+    je = _tulis_jurnal(
+        session, client_id=client_id, user_id=user_id, username=username,
+        je_number=f"{PREFIX_JURNAL}{tgl.year}-{uuid.uuid4().hex[:8].upper()}", tgl=tgl,
+        description=f"Rekonsiliasi bank {m.ref}: {ket_bank}", reference=m.ref, status_jurnal="draft", baris=baris,
     )
-    session.add(je)
-    session.flush()
-    je.journal_no = f"JE-{tgl.year}-{str(je.id).replace('-', '')[:8].upper()}"
-    for no, b in enumerate(baris, 1):
-        session.add(dbc.JournalLine(
-            journal_entry_id=je.id, client_id=client_id, line_no=no, coa_id=b["coa_id"],
-            description=b["desc"], debit=b["debit"], credit=b["credit"], partner_name=b["partner"],
-            reconciliation_no=m.ref[:100],
-        ))
-    session.flush()
 
     # --- payments (trigger fn_bcp_validate + fn_bcp_apply berjalan di sini)
     payment_ids: List[str] = []
@@ -636,20 +723,21 @@ def _lakukan_match(
     return {
         "bank_mutation_ref": m.ref, "direction": "cash_payment" if tipe == "purchase" else "cash_receipt",
         "amount": float(nominal), "payment_ids": payment_ids,
-        "journal_entry_id": str(je.id), "journal_no": je.journal_no, "journal_status": "DRAFT",
+        "journal_entry_id": str(je.id), "journal_no": je.je_number, "journal_status": "DRAFT",
         "bank_account": {"id": bank["id"], "no_akun": bank["no_akun"], "nama_akun": bank["nama_akun"]},
         "counter_account": {"id": lawan["id"], "no_akun": lawan["no_akun"], "nama_akun": lawan["nama_akun"]},
     }
 
 
 def _match_satu(client_id: str, m: MutasiIn, alokasi: List[Dict[str, Any]], bank_coa_id: Optional[str],
-                counter_coa_id: Optional[str], notes: Optional[str], user_id: Optional[str]) -> Dict[str, Any]:
+                counter_coa_id: Optional[str], notes: Optional[str], user_id: Optional[str],
+                username: Optional[str] = None) -> Dict[str, Any]:
     """Sesi sendiri + commit/rollback. Ubah error DB (trigger) jadi _Gagal yang bisa dibaca."""
     session = dbc.SessionLocal()
     try:
         hasil = _lakukan_match(
             session, client_id=client_id, m=m, alokasi=alokasi, bank_coa_id=bank_coa_id,
-            counter_coa_id=counter_coa_id, notes=notes, user_id=user_id,
+            counter_coa_id=counter_coa_id, notes=notes, user_id=user_id, username=username,
         )
         session.commit()
         return hasil
@@ -667,7 +755,8 @@ def _match_satu(client_id: str, m: MutasiIn, alokasi: List[Dict[str, Any]], bank
 
 
 def _lakukan_non_invoice(session, *, client_id: str, m: MutasiIn, category: str, lines: List[Dict[str, Any]],
-                         bank_coa_id: Optional[str], notes: Optional[str], user_id: Optional[str]) -> Dict[str, Any]:
+                         bank_coa_id: Optional[str], notes: Optional[str], user_id: Optional[str],
+                         username: Optional[str] = None) -> Dict[str, Any]:
     """Jurnal DRAFT untuk mutasi tanpa invoice. Baris Bank dibuat otomatis dari arah mutasi:
     uang masuk -> Dr Bank; uang keluar -> Cr Bank. Baris akun lawan dipilih user (boleh banyak,
     dua sisi, mis. bunga: Dr Bank + Dr Pajak dibayar dimuka / Cr Pendapatan bunga). TIDAK commit."""
@@ -690,12 +779,12 @@ def _lakukan_non_invoice(session, *, client_id: str, m: MutasiIn, category: str,
             raise _Gagal("Akun lawan tidak boleh sama dengan akun Bank mutasi ini.")
         jumlah = _dec(ln["amount"])
         baris.append({
-            "coa_id": coa["id"], "desc": (ln.get("description") or category)[:200], "partner": None,
+            "akun": coa, "desc": (ln.get("description") or category)[:200], "partner": None,
             "debit": jumlah if ln["side"] == "debit" else Decimal("0"),
             "credit": jumlah if ln["side"] == "credit" else Decimal("0"),
         })
     ket_bank = (m.description or "").strip()[:200] or f"Mutasi bank {m.ref}"
-    bank_line = {"coa_id": bank["id"], "desc": ket_bank, "partner": None,
+    bank_line = {"akun": bank, "desc": ket_bank, "partner": None,
                  "debit": nominal if masuk else Decimal("0"), "credit": Decimal("0") if masuk else nominal}
     baris.insert(0, bank_line) if masuk else baris.append(bank_line)
 
@@ -709,26 +798,17 @@ def _lakukan_non_invoice(session, *, client_id: str, m: MutasiIn, category: str,
             kode="UNBALANCED",
         )
 
-    je = dbc.JournalEntry(
-        client_id=client_id, journal_no=f"TEMP-{uuid.uuid4().hex}", source_module=SUMBER_JURNAL,
-        source_transaction_id=m.ref[:100], document_date=tgl, posting_date=tgl,
-        description=f"{category}: {ket_bank}"[:500], reference=m.ref[:150],
-        status="DRAFT", currency="IDR", exchange_rate=Decimal("1"), created_by=user_id,
+    je = _tulis_jurnal(
+        session, client_id=client_id, user_id=user_id, username=username,
+        je_number=f"{PREFIX_JURNAL}{tgl.year}-{uuid.uuid4().hex[:8].upper()}", tgl=tgl,
+        description=f"{category}: {ket_bank}", reference=m.ref, status_jurnal="draft", baris=baris,
     )
-    session.add(je)
-    session.flush()
-    je.journal_no = f"JE-{tgl.year}-{str(je.id).replace('-', '')[:8].upper()}"
-    for no, b in enumerate(baris, 1):
-        session.add(dbc.JournalLine(
-            journal_entry_id=je.id, client_id=client_id, line_no=no, coa_id=b["coa_id"],
-            description=b["desc"], debit=b["debit"], credit=b["credit"], partner_name=b["partner"],
-            reconciliation_no=m.ref[:100],
-        ))
-    session.flush()
+    if notes:
+        je.notes = notes
     return {
         "bank_mutation_ref": m.ref, "kind": "non_invoice", "category": category,
         "direction": "cash_receipt" if masuk else "cash_payment", "amount": float(nominal),
-        "journal_entry_id": str(je.id), "journal_no": je.journal_no, "journal_status": "DRAFT",
+        "journal_entry_id": str(je.id), "journal_no": je.je_number, "journal_status": "DRAFT",
         "bank_account": {"id": bank["id"], "no_akun": bank["no_akun"], "nama_akun": bank["nama_akun"]},
     }
 
@@ -820,6 +900,7 @@ def api_match(payload: MatchRequest, current_user: Dict[str, Any] = Depends(_req
         hasil = _match_satu(
             payload.client_id, payload.mutation, [a.model_dump() for a in payload.allocations],
             payload.bank_coa_id, payload.counter_coa_id, payload.notes, user_id,
+            str(current_user.get("username") or "")[:255] or None,
         )
     except _Gagal as e:
         return _balas_gagal(e)
@@ -852,7 +933,8 @@ def api_auto_match(payload: AutoMatchRequest, current_user: Dict[str, Any] = Dep
         if saran["auto_match"]:
             alok = [{"invoice_id": a["invoice_id"], "amount": a["amount"]} for a in saran["candidates"][0]["allocations"]]
             try:
-                hasil = _match_satu(payload.client_id, m, alok, payload.bank_coa_id, None, "Auto-match rekonsiliasi", user_id)
+                hasil = _match_satu(payload.client_id, m, alok, payload.bank_coa_id, None, "Auto-match rekonsiliasi",
+                                    user_id, str(current_user.get("username") or "")[:255] or None)
             except _Gagal as e:
                 unmatched.append({"ref": m.ref, "alasan": e.pesan, "kode": e.kode, "detail": e.detail})
                 if payload.catat_exception and e.kode not in ("ALREADY_MATCHED",):
@@ -887,7 +969,7 @@ def api_match_non_invoice(payload: NonInvoiceRequest, current_user: Dict[str, An
         hasil = _lakukan_non_invoice(
             session, client_id=payload.client_id, m=payload.mutation, category=payload.category.strip(),
             lines=[l.model_dump() for l in payload.lines], bank_coa_id=payload.bank_coa_id,
-            notes=payload.notes, user_id=user_id,
+            notes=payload.notes, user_id=user_id, username=str(current_user.get("username") or "")[:255] or None,
         )
         session.commit()
     except _Gagal as e:
@@ -913,15 +995,13 @@ def api_unmatch(payload: UnmatchRequest, current_user: Dict[str, Any] = Depends(
         """), {"c": payload.client_id, "r": payload.bank_mutation_ref}).mappings().all()
         if not pay:
             # Jalur non-invoice: tidak ada pembayaran; jurnalnya dicari lewat ref mutasi.
-            nj = session.execute(text("""
-                select je.id::text as id, je.journal_no, je.status from journal_entries je
-                 where je.client_id = cast(:c as uuid) and je.source_module = :src and je.deleted_at is null
-                   and je.source_transaction_id = :r and je.status in ('DRAFT', 'APPROVED', 'POSTED')
+            nj = session.execute(text(f"""
+                select je.id::text as id, je.je_number as journal_no, upper(je.status) as status {_SQL_JURNAL_REKON}
+                   and je.source_reference = :r and lower(je.status) in ('draft', 'approved', 'posted')
                    and not exists (select 1 from financial_transaction_bank_cash_payments p
                                     where p.journal_entry_id = je.id)
-                   and not exists (select 1 from journal_entries rv
-                                    where rv.reversed_from_id = je.id and rv.deleted_at is null)
-            """), {"c": payload.client_id, "src": SUMBER_JURNAL, "r": payload.bank_mutation_ref}).mappings().all()
+                   {_SQL_BELUM_DIBALIK}
+            """), {"c": payload.client_id, "r": payload.bank_mutation_ref}).mappings().all()
             if not nj:
                 raise _Gagal("Tidak ada pencocokan aktif untuk mutasi ini.", kode="NOT_FOUND", status_code=404)
             if any(j["status"] == "POSTED" for j in nj):
@@ -931,9 +1011,10 @@ def api_unmatch(payload: UnmatchRequest, current_user: Dict[str, Any] = Depends(
                     kode="JOURNAL_POSTED", status_code=409,
                 )
             session.execute(text("""
-                update journal_entries set status = 'REJECTED', edited_at = now()
-                 where id = any(cast(:ids as uuid[])) and status <> 'POSTED'
-            """), {"ids": [j["id"] for j in nj]})
+                update financial_transaction_journal_entry_drafts
+                   set status = 'rejected', edited_at = now(), edited_by = cast(:by as uuid)
+                 where id = any(cast(:ids as uuid[])) and lower(status) <> 'posted'
+            """), {"ids": [j["id"] for j in nj], "by": user_id})
             session.commit()
             _buka_lagi_exception_unmatched(payload.client_id, payload.bank_mutation_ref, user_id)
             return sukses(
@@ -944,8 +1025,8 @@ def api_unmatch(payload: UnmatchRequest, current_user: Dict[str, Any] = Depends(
         je_ids = sorted({p["je"] for p in pay if p["je"]})
         if je_ids:
             terposting = session.execute(text("""
-                select journal_no from journal_entries
-                 where id = any(cast(:ids as uuid[])) and status = 'POSTED'
+                select je_number from financial_transaction_journal_entry_drafts
+                 where id = any(cast(:ids as uuid[])) and lower(status) = 'posted'
             """), {"ids": je_ids}).scalars().all()
             if terposting:
                 raise _Gagal(
@@ -962,9 +1043,10 @@ def api_unmatch(payload: UnmatchRequest, current_user: Dict[str, Any] = Depends(
                "alasan": f"Dibatalkan: {payload.alasan or 'unmatch'}"})
         if je_ids:
             session.execute(text("""
-                update journal_entries set status = 'REJECTED', edited_at = now()
-                 where id = any(cast(:ids as uuid[])) and status <> 'POSTED'
-            """), {"ids": je_ids})
+                update financial_transaction_journal_entry_drafts
+                   set status = 'rejected', edited_at = now(), edited_by = cast(:by as uuid)
+                 where id = any(cast(:ids as uuid[])) and lower(status) <> 'posted'
+            """), {"ids": je_ids, "by": user_id})
         session.commit()
         _buka_lagi_exception_unmatched(payload.client_id, payload.bank_mutation_ref, user_id)
         return sukses(
@@ -986,14 +1068,15 @@ def _kunci_jurnal_rekon(session, client_id: str, je_id: str):
     if not client_id or not je_id:
         raise _Gagal("client_id / journal_entry_id tidak valid.")
     je = session.execute(text("""
-        select id::text as id, journal_no, status, source_module
-          from journal_entries
-         where id = cast(:id as uuid) and client_id = cast(:c as uuid) and deleted_at is null
+        select id::text as id, je_number as journal_no, upper(status) as status, posting_date, entry_date,
+               source_reference, currency
+          from financial_transaction_journal_entry_drafts
+         where id = cast(:id as uuid) and management_client_id = cast(:c as uuid) and deleted_at is null
            for update
     """), {"id": je_id, "c": client_id}).mappings().first()
     if not je:
         raise _Gagal("Jurnal tidak ditemukan.", kode="NOT_FOUND", status_code=404)
-    if je["source_module"] != SUMBER_JURNAL:
+    if not str(je["journal_no"] or "").startswith(PREFIX_JURNAL):
         raise _Gagal("Hanya jurnal hasil rekonsiliasi bank yang bisa diproses dari sini.",
                      kode="NOT_RECONCILIATION_JOURNAL")
     return je
@@ -1018,8 +1101,8 @@ def api_approve(payload: JurnalAksiRequest, current_user: Dict[str, Any] = Depen
             raise _Gagal(f"Jurnal {je['journal_no']} tidak punya pembayaran aktif (mungkin sudah di-unmatch).",
                          kode="NO_PAYMENT", status_code=409)
         session.execute(text("""
-            update journal_entries
-               set status = 'APPROVED', approved_by = :u, edited_at = now(), edited_by = cast(:uid as uuid)
+            update financial_transaction_journal_entry_drafts
+               set status = 'approved', approved_by_name = :u, edited_at = now(), edited_by = cast(:uid as uuid)
              where id = cast(:id as uuid)
         """), {"u": username, "uid": user_id, "id": je_id})
         session.commit()
@@ -1055,7 +1138,8 @@ def api_post(payload: JurnalAksiRequest, current_user: Dict[str, Any] = Depends(
             )
         total = session.execute(text("""
             select coalesce(sum(debit), 0) as d, coalesce(sum(credit), 0) as k, count(*) as n
-              from journal_lines where journal_entry_id = cast(:id as uuid) and deleted_at is null
+              from financial_transaction_journal_entry_draft_lines
+             where draft_id = cast(:id as uuid) and deleted_at is null
         """), {"id": je_id}).mappings().first()
         if not total["n"] or _dec(total["d"]) <= 0:
             raise _Gagal(f"Jurnal {je['journal_no']} tidak punya baris.", kode="NO_LINES")
@@ -1076,10 +1160,11 @@ def api_post(payload: JurnalAksiRequest, current_user: Dict[str, Any] = Depends(
                          kode="NO_PAYMENT", status_code=409)
 
         session.execute(text("""
-            update journal_entries
-               set status = 'POSTED', posted_by = :u, posted_at = now(), edited_at = now(), edited_by = cast(:uid as uuid)
+            update financial_transaction_journal_entry_drafts
+               set status = 'posted', posted_by = cast(:uid as uuid), posted_at = now(),
+                   edited_at = now(), edited_by = cast(:uid as uuid)
              where id = cast(:id as uuid)
-        """), {"u": username, "uid": user_id, "id": je_id})
+        """), {"uid": user_id, "id": je_id})
         session.commit()
         hasil = {"journal_entry_id": je_id, "journal_no": je["journal_no"], "status": "POSTED",
                  "posted_by": username, "payments_diterapkan": len(diterapkan)}
@@ -1113,27 +1198,18 @@ def api_reverse(payload: ReverseRequest, current_user: Dict[str, Any] = Depends(
             raise _Gagal("Alasan pembalikan wajib diisi (minimal 5 karakter).")
 
         # Kunci baris jurnal asal supaya dua permintaan bersamaan tidak membalik dua kali.
-        je = session.execute(text("""
-            select id::text as id, journal_no, status, source_module, source_transaction_id,
-                   posting_date, currency, exchange_rate
-              from journal_entries
-             where id = cast(:id as uuid) and client_id = cast(:c as uuid) and deleted_at is null
-               for update
-        """), {"id": je_id, "c": client_id}).mappings().first()
-        if not je:
-            raise _Gagal("Jurnal tidak ditemukan.", kode="NOT_FOUND", status_code=404)
-        if je["source_module"] != SUMBER_JURNAL:
-            raise _Gagal("Hanya jurnal hasil rekonsiliasi bank yang bisa dibalik dari sini.", kode="NOT_RECONCILIATION_JOURNAL")
+        je = _kunci_jurnal_rekon(session, client_id, je_id)
         if je["status"] != "POSTED":
             raise _Gagal(
                 f"Jurnal {je['journal_no']} berstatus {je['status']}. Hanya jurnal yang sudah diposting yang perlu dibalik; "
                 "jurnal DRAFT cukup dibatalkan lewat unmatch di tab Reconciliation.",
                 kode="NOT_POSTED", status_code=409,
             )
+        no_pembalik = f"{PREFIX_PEMBALIK}{je['journal_no']}"
         sudah = session.execute(text("""
-            select journal_no from journal_entries
-             where reversed_from_id = cast(:id as uuid) and deleted_at is null limit 1
-        """), {"id": je_id}).scalar()
+            select je_number from financial_transaction_journal_entry_drafts
+             where management_client_id = cast(:c as uuid) and je_number = :n and deleted_at is null limit 1
+        """), {"c": client_id, "n": no_pembalik}).scalar()
         if sudah:
             raise _Gagal(f"Jurnal {je['journal_no']} sudah dibalik oleh {sudah}.", kode="ALREADY_REVERSED", status_code=409)
 
@@ -1144,41 +1220,34 @@ def api_reverse(payload: ReverseRequest, current_user: Dict[str, Any] = Depends(
                 raise _Gagal(f"Tanggal jurnal pembalik tidak valid: '{payload.tanggal}'.")
         else:
             tgl = date.today()
-        if je["posting_date"] and tgl < je["posting_date"]:
+        tgl_asal = je["posting_date"] or je["entry_date"]
+        if tgl_asal and tgl < tgl_asal:
             raise _Gagal(
-                f"Tanggal jurnal pembalik ({tgl.isoformat()}) tidak boleh sebelum tanggal jurnal asal ({je['posting_date'].isoformat()}).",
+                f"Tanggal jurnal pembalik ({tgl.isoformat()}) tidak boleh sebelum tanggal jurnal asal ({tgl_asal.isoformat()}).",
                 kode="DATE_BEFORE_ORIGINAL",
             )
 
         baris = session.execute(text("""
-            select coa_id::text as coa_id, line_no, description, debit, credit, partner_name,
-                   tax_code, branch, department, cost_center, project
-              from journal_lines
-             where journal_entry_id = cast(:id as uuid) and deleted_at is null
+            select account_code, account_name, description, debit, credit, cost_center
+              from financial_transaction_journal_entry_draft_lines
+             where draft_id = cast(:id as uuid) and deleted_at is null
              order by line_no
         """), {"id": je_id}).mappings().all()
         if not baris:
             raise _Gagal("Jurnal ini tidak punya baris, tidak ada yang bisa dibalik.", kode="NO_LINES")
 
-        rv = dbc.JournalEntry(
-            client_id=client_id, journal_no=f"TEMP-{uuid.uuid4().hex}", source_module=SUMBER_JURNAL_PEMBALIK,
-            source_transaction_id=je["source_transaction_id"], document_date=tgl, posting_date=tgl,
-            description=f"Pembalik {je['journal_no']}: {alasan}"[:500], reference=str(je["journal_no"])[:150],
-            status="POSTED", currency=je["currency"] or "IDR", exchange_rate=je["exchange_rate"] or Decimal("1"),
-            created_by=user_id, approved_by=username, posted_by=username, posted_at=datetime.now(),
-            reversed_from_id=je["id"],
+        # Jurnal pembalik: debit/kredit ditukar, langsung posted (buku besar nettonya nol).
+        rv = _tulis_jurnal(
+            session, client_id=client_id, user_id=user_id, username=username, je_number=no_pembalik, tgl=tgl,
+            description=f"Pembalik {je['journal_no']}: {alasan}", reference=je["source_reference"] or je["journal_no"],
+            status_jurnal="posted", posted=True,
+            baris=[{
+                "akun": {"no_akun": b["account_code"], "nama_akun": b["account_name"]},
+                "debit": b["credit"], "credit": b["debit"], "cost_center": b["cost_center"], "partner": None,
+                "desc": f"Pembalik {je['journal_no']}: {b['description'] or ''}".strip(),
+            } for b in baris],
         )
-        session.add(rv)
-        session.flush()
-        rv.journal_no = f"RV-{tgl.year}-{str(rv.id).replace('-', '')[:8].upper()}"
-        for no, b in enumerate(baris, 1):
-            session.add(dbc.JournalLine(
-                journal_entry_id=rv.id, client_id=client_id, line_no=no, coa_id=b["coa_id"],
-                description=f"Pembalik {je['journal_no']}: {b['description'] or ''}".strip(),
-                debit=b["credit"], credit=b["debit"], partner_name=b["partner_name"], tax_code=b["tax_code"],
-                branch=b["branch"], department=b["department"], cost_center=b["cost_center"], project=b["project"],
-            ))
-        session.flush()
+        rv.notes = alasan
 
         # Batalkan pembayaran jurnal asal; trigger fn_bcp_apply memulihkan outstanding invoice.
         dibatalkan = session.execute(text("""
@@ -1188,12 +1257,12 @@ def api_reverse(payload: ReverseRequest, current_user: Dict[str, Any] = Depends(
              where client_id = cast(:c as uuid) and journal_entry_id = cast(:je as uuid) and deleted_at is null
          returning id::text
         """), {"c": client_id, "je": je_id, "by": user_id,
-               "ket": f"Dibatalkan: jurnal dibalik oleh {rv.journal_no} ({alasan})"}).scalars().all()
+               "ket": f"Dibatalkan: jurnal dibalik oleh {rv.je_number} ({alasan})"}).scalars().all()
 
         session.commit()
         hasil = {
             "journal_entry_id": je_id, "journal_no": je["journal_no"],
-            "reversal_id": str(rv.id), "reversal_no": rv.journal_no, "reversal_date": tgl.isoformat(),
+            "reversal_id": str(rv.id), "reversal_no": rv.je_number, "reversal_date": tgl.isoformat(),
             "payments_dibatalkan": len(dibatalkan),
         }
     except _Gagal as e:
@@ -1229,15 +1298,16 @@ def api_daftar_payments(
                    coalesce(pt.invoice_number, pt.purchase_no, si.invoice_no) as invoice_no,
                    coalesce(pt.vendor_name, si.customer_name) as party,
                    coalesce(pt.total, si.gross_amount) as invoice_total,
-                   p.journal_entry_id::text as journal_entry_id, je.journal_no, je.status as journal_status,
-                   cb.no_akun as bank_no_akun, cb.nama_akun as bank_nama_akun,
-                   cc.no_akun as counter_no_akun, cc.nama_akun as counter_nama_akun
+                   p.journal_entry_id::text as journal_entry_id, je.je_number as journal_no,
+                   upper(je.status) as journal_status,
+                   cb.acc_no as bank_no_akun, cb.account_name as bank_nama_akun,
+                   cc.acc_no as counter_no_akun, cc.account_name as counter_nama_akun
               from financial_transaction_bank_cash_payments p
               left join financial_transaction_purchase_transactions pt on pt.id = p.purchase_transaction_id
               left join financial_transaction_sales_invoices si on si.id = p.sales_invoice_id
-              left join journal_entries je on je.id = p.journal_entry_id
-              left join coa cb on cb.id = p.bank_coa_id
-              left join coa cc on cc.id = p.counter_coa_id
+              left join financial_transaction_journal_entry_drafts je on je.id = p.journal_entry_id
+              left join management_client_coa cb on cb.id = p.bank_coa_id
+              left join management_client_coa cc on cc.id = p.counter_coa_id
              where p.client_id = cast(:c as uuid)
                and (cast(:dir as text) is null or p.direction = cast(:dir as text))
                and (cast(:semua as boolean) or p.deleted_at is null)
@@ -1257,36 +1327,61 @@ def api_journal_preview(
     session = dbc.SessionLocal()
     try:
         entries = session.execute(text("""
-            select je.id::text as id, je.journal_no, je.posting_date, je.description, je.reference, je.status,
-                   je.approved_by, je.posted_by, je.posted_at,
+            select je.id::text as id, je.je_number as journal_no, coalesce(je.posting_date, je.entry_date) as posting_date,
+                   je.description, je.source_reference as reference, upper(je.status) as status,
+                   je.approved_by_name as approved_by, coalesce(pu.username, je.approved_by_name) as posted_by,
+                   je.posted_at,
                    not exists (select 1 from financial_transaction_bank_cash_payments pp
                                 where pp.journal_entry_id = je.id) as non_invoice,
-                   rv.id::text as reversal_id, rv.journal_no as reversal_no, rv.posting_date as reversal_date,
-                   rv.posted_by as reversal_by, rv.posted_at as reversal_at, rv.description as reversal_description
-              from journal_entries je
+                   rv.id::text as reversal_id, rv.je_number as reversal_no,
+                   coalesce(rv.posting_date, rv.entry_date) as reversal_date,
+                   rv.approved_by_name as reversal_by, rv.posted_at as reversal_at, rv.description as reversal_description
+              from financial_transaction_journal_entry_drafts je
               left join lateral (
-                    select r.id, r.journal_no, r.posting_date, r.posted_by, r.posted_at, r.description
-                      from journal_entries r
-                     where r.reversed_from_id = je.id and r.deleted_at is null
+                    select r.id, r.je_number, r.posting_date, r.entry_date, r.approved_by_name, r.posted_at, r.description
+                      from financial_transaction_journal_entry_drafts r
+                     where r.management_client_id = je.management_client_id
+                       and r.je_number = 'RV-' || je.je_number and r.deleted_at is null
                      order by r.created_at desc limit 1
               ) rv on true
-             where je.client_id = cast(:c as uuid) and je.source_module = :src and je.deleted_at is null
-               and (cast(:st as text) is null or je.status = cast(:st as text))
-             order by je.posting_date desc, je.journal_no desc
-        """), {"c": client_id, "src": SUMBER_JURNAL, "st": status_jurnal}).mappings().all()
+              left join management_users pu on pu.id_user = je.posted_by
+             where je.management_client_id = cast(:c as uuid) and je.deleted_at is null
+               and je.je_number like 'BR-%'
+               and (cast(:st as text) is null or lower(je.status) = lower(cast(:st as text)))
+             order by coalesce(je.posting_date, je.entry_date) desc, je.je_number desc
+        """), {"c": client_id, "st": status_jurnal}).mappings().all()
         if not entries:
             return sukses(data=[], message="OK")
+        jenis_kas = {a["no_akun"]: a["jenis_kas"] for a in _daftar_akun(session, client_id, hanya_aktif=False)}
         baris = session.execute(text("""
-            select l.journal_entry_id::text as je, l.line_no, c.no_akun, c.nama_akun, c.jenis_kas,
-                   l.debit, l.credit, l.description, l.partner_name
-              from journal_lines l join coa c on c.id = l.coa_id
-             where l.journal_entry_id = any(cast(:ids as uuid[])) and l.deleted_at is null
-             order by l.journal_entry_id, l.line_no
+            select l.draft_id::text as je, l.line_no, l.account_code as no_akun, l.account_name as nama_akun,
+                   l.debit, l.credit, l.description, null as partner_name
+              from financial_transaction_journal_entry_draft_lines l
+             where l.draft_id = any(cast(:ids as uuid[])) and l.deleted_at is null
+             order by l.draft_id, l.line_no
         """), {"ids": [e["id"] for e in entries]}).mappings().all()
         per_je: Dict[str, List[Dict[str, Any]]] = {}
         for b in baris:
-            per_je.setdefault(b["je"], []).append({k: v for k, v in dict(b).items() if k != "je"})
+            baris_dict = {k: v for k, v in dict(b).items() if k != "je"}
+            baris_dict["jenis_kas"] = jenis_kas.get(b["no_akun"])
+            per_je.setdefault(b["je"], []).append(baris_dict)
         data = [{**dict(e), "lines": per_je.get(e["id"], [])} for e in entries]
         return sukses(data=data, message="OK")
+    finally:
+        session.close()
+
+
+@router.get("/accounts", summary="Akun COA client (management_client_coa) + jenis_kas, untuk dropdown akun Bank & akun lawan")
+def api_daftar_akun(
+    client_id: str = Query(..., description="management_clients.id"),
+    _user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    if not _uuid_atau_none(client_id):
+        return gagal(message="client_id tidak valid.", errors={"code": "VALIDATION"}, status_code=422)
+    session = dbc.SessionLocal()
+    try:
+        akun = _daftar_akun(session, client_id)
+        return sukses(data={"coa": [{k: v for k, v in a.items() if k != "standard_account_code"} for a in akun]},
+                      message="OK")
     finally:
         session.close()

@@ -127,11 +127,11 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
   };
 
   return (
-    <header className="h-16 bg-card border-b border-border flex items-center px-4 lg:px-6 gap-3 flex-shrink-0 z-30">
+    <header className="h-16 bg-dark border-b border-dark flex items-center px-4 lg:px-6 gap-3 flex-shrink-0 z-30">
       {/* Mobile menu */}
       <button
         onClick={onMobileMenuToggle}
-        className="lg:hidden p-2 rounded-lg hover:bg-muted text-muted-foreground"
+        className="lg:hidden p-2 rounded-lg hover:bg-white/10 text-white"
         aria-label="Open menu"
       >
         <Menu size={20} />
@@ -140,13 +140,13 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
       {/* Mobile logo */}
       <div className="lg:hidden flex items-center gap-2">
         <AppLogo size={28} />
-        <span className="font-bold text-sm text-foreground">Gouf Consulting</span>
+        <span className="font-bold text-sm text-white">Gouf Consulting</span>
       </div>
 
       {/* Search */}
       <div className="relative hidden md:block">
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-150 ${
-          searchFocused ? 'border-ring bg-card shadow-sm w-72' : 'border-border bg-muted w-52'
+          searchFocused ? 'border-ring bg-card shadow-sm w-72' : 'border-border bg-card w-52'
         }`}>
           <Search size={15} className="text-muted-foreground flex-shrink-0" />
           <input
@@ -315,7 +315,7 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
       <div className="relative">
         <button
           onClick={() => { setHelpOpen((p) => !p); setCompanyOpen(false); setPeriodOpen(false); setLanguageOpen(false); setNotifOpen(false); setUserMenuOpen(false); }}
-          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          className="p-2 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
           aria-label="Help"
         >
           <HelpCircle size={18} />
@@ -343,7 +343,7 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
       <div className="relative">
         <button
           onClick={() => { setNotifOpen((p) => !p); setCompanyOpen(false); setPeriodOpen(false); setLanguageOpen(false); }}
-          className="relative p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          className="relative p-2 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
           aria-label={`Notifications — ${unreadCount} unread`}
         >
           <Bell size={18} />
@@ -398,14 +398,14 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
           onClick={() => { setUserMenuOpen((p) => !p); setCompanyOpen(false); setPeriodOpen(false); setLanguageOpen(false); setNotifOpen(false); setHelpOpen(false); }}
           className="flex items-center gap-2 pl-1 cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
+          <div className="w-8 h-8 rounded-full bg-highlight flex items-center justify-center">
+            <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
           </div>
           <div className="hidden xl:block">
-            <p className="text-sm font-semibold text-foreground leading-none">{displayName}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">{user?.role_label || '—'}</p>
+            <p className="text-sm font-semibold text-white leading-none">{displayName}</p>
+            <p className="text-[10px] text-white/70 mt-0.5">{user?.role_label || '—'}</p>
           </div>
-          <ChevronDown size={14} className={`text-muted-foreground hidden xl:block transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown size={14} className={`text-white/70 hidden xl:block transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
         </div>
         {userMenuOpen && (
           <div className="absolute right-0 top-full mt-1 w-52 bg-card border border-border rounded-xl shadow-card-lg z-50 py-1 fade-in">

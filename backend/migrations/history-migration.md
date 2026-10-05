@@ -25,3 +25,13 @@ seed_coa_nbm.sql
 18-add_posting_accounts_to_purchase_transactions.py
 19-fix_sau_purchase_accounts.sql
 20-set_sau_sales_accounts.sql
+13-bank_reconciliation_hash_dan_fk.sql
+21-add_client_id_to_management_audit_trails.py
+23-drop_legacy_and_finance_tables.py
+24-rename_core_tables_to_management.py
+25-create_coa_opening_balances.py
+26-add_status_type_to_management_users.py
+27-create_management_setting_purchase.py
+28-create_management_setting_product.py
+29-create_management_setting_account_mappings.py
+30-create_management_coa_industry_templates.py

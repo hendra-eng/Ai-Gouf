@@ -399,7 +399,7 @@ export default function AuditPage() {
   }
 
   const kpis = [
-    { label: 'Audit Completion', value: `${kpiData.completionPct}%`, color: '#1B4FD8', bg: '#EFF6FF', icon: '📊' },
+    { label: 'Audit Completion', value: `${kpiData.completionPct}%`, color: '#0F7D4E', bg: '#ECFDF5', icon: '📊' },
     { label: 'Open Findings', value: String(kpiData.openFindings), color: '#D97706', bg: '#FFFBEB', icon: '🔍' },
     { label: 'High Risk', value: String(kpiData.highRisk), color: '#DC2626', bg: '#FEF2F2', icon: '⚠️' },
     { label: 'Pending Evidence', value: String(kpiData.pendingEvidence), color: '#7C3AED', bg: '#F5F3FF', icon: '📎' },

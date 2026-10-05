@@ -2645,6 +2645,16 @@ export function rekonDaftarPembayaran(clientId, direction = null, termasukDibata
 }
 
 /**
+ * Akun COA client untuk Cash & Bank (master management_client_coa) -> { coa: [{ id, no_akun, nama_akun,
+ * kategori, sub_kategori, jenis_kas, aktif }] }. jenis_kas: bank / kas_tunai / kas_kecil / transit / null.
+ * Menggantikan ambilCoaClient (tabel `coa` legacy) di halaman Bank Feed & Reconciliation.
+ * @param {string} clientId
+ */
+export function rekonDaftarAkun(clientId) {
+  return requestEnvelope(`${REKON_BASE}/accounts?${new URLSearchParams({ client_id: clientId }).toString()}`);
+}
+
+/**
  * Jurnal Kas vs Hutang/Piutang hasil rekonsiliasi (Journal Preview jalur pendek).
  * @param {string} clientId
  * @param {string | null} [status] DRAFT | APPROVED | POSTED | REJECTED | REVERSED; kosong = semua.

@@ -9,7 +9,7 @@ import {
   type ClientStatus,
 } from '@/lib/clientsMockData';
 import { useClientActivity } from '@/app/clients/lib/clientActivityBridge';
-import { useClientsList, addClient as addClientToStore, addImportedClients, updateClient as updateClientInStore, deleteClient as deleteClientFromStore } from '@/lib/clientsStore';
+import { useClientsList, addClient as addClientToStore, addImportedClients, updateClient as updateClientInStore, deleteClient as deleteClientFromStore, useCoaIndustries } from '@/lib/clientsStore';
 import {
   RadialBarChart, RadialBar, ResponsiveContainer,
   LineChart, Line, Tooltip,
@@ -18,25 +18,6 @@ import { useCurrency } from '@/lib/currency';
 import { fileToLogoDataUrl } from '@/lib/imageUtils';
 
 const PAGE_SIZE = 8;
-
-const INDUSTRY_OPTIONS = [
-  'Technology',
-  'Manufacturing',
-  'Distribution',
-  'Retail',
-  'Food & Beverage',
-  'Healthcare',
-  'Real Estate',
-  'Construction',
-  'Logistics',
-  'Energy',
-  'Agriculture',
-  'Financial Services',
-  'Education',
-  'Hospitality & Tourism',
-  'Professional Services',
-  'Other',
-];
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
 
@@ -708,7 +689,11 @@ function AddClientModal({
   const isEditMode = !!initialClient;
   const [clientCode, setClientCode] = useState(initialClient?.clientCode ?? '');
   const [companyName, setCompanyName] = useState(initialClient?.companyName ?? '');
-  const [industry, setIndustry] = useState(initialClient?.industry ?? '');
+  const [industry, setIndustry] = useState(initialClient?.industry && initialClient.industry !== '-' ? initialClient.industry : '');
+  // Pilihan industri = INDUSTRY (ENGLISH) dari COA_Industry.xlsx; client baru
+  // otomatis dapat COA default dari template industri yang dipilih.
+  const { industries, loading: industriesLoading } = useCoaIndustries();
+  const industriTerpilih = industries.find(i => i.name === industry);
   const [contactName, setContactName] = useState(initialClient?.contactName ?? '');
   const [contactEmail, setContactEmail] = useState(initialClient?.contactEmail ?? '');
   const [contactPhone, setContactPhone] = useState(initialClient?.contactPhone ?? '');
@@ -830,11 +815,20 @@ function AddClientModal({
                 onChange={e => setIndustry(e.target.value)}
                 className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground"
               >
-                <option value="" disabled>Select industry</option>
-                {INDUSTRY_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
+                <option value="" disabled>{industriesLoading ? 'Loading industries…' : 'Select industry'}</option>
+                {industries.map(opt => (
+                  <option key={opt.id} value={opt.name}>{opt.kbli_category} · {opt.name}</option>
                 ))}
+                {industry && !industriesLoading && !industriTerpilih && <option value={industry}>{industry}</option>}
               </select>
+              {industriTerpilih && !isEditMode && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {industriTerpilih.account_count} default COA accounts will be created ({industriTerpilih.template_sheet}).
+                </p>
+              )}
+              {isEditMode && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Changing the industry does not change the existing chart of accounts.</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Status</label>
@@ -1022,7 +1016,10 @@ export default function ClientsPageClient() {
     try {
       const client = await addClientToStore(newClient);
       setShowAddModal(false);
-      toast.success('Klien ditambahkan', { description: `${client.companyName} berhasil ditambahkan ke portfolio.` });
+      const coa = client.coaTemplate?.created
+        ? ` ${client.coaTemplate.created} akun COA dibuat otomatis dari template ${client.coaTemplate.template}.`
+        : '';
+      toast.success('Klien ditambahkan', { description: `${client.companyName} berhasil ditambahkan ke portfolio.${coa}` });
     } catch (err) {
       toast.error('Gagal menambah klien', { description: err instanceof Error ? err.message : 'Terjadi kesalahan.' });
     }

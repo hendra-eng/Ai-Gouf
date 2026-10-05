@@ -92,6 +92,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-clients', label: 'Clients', icon: Building2, href: '/clients' },
       { id: 'nav-coa', label: 'Chart of Accounts', icon: ListTree, href: '/coa' },
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
+      { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
     ],
   },
 ];
@@ -154,11 +155,17 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
     });
   };
 
-  const isActive = (href?: string) => href === currentPath || (href === '/' && currentPath === '/');
+  // prefix=true: halaman turunan ikut menandai menu aktif (mis. /settings/users -> Settings,
+  // /coa/new -> Chart of Accounts). Hanya untuk menu TANPA sub-menu, supaya menu induk
+  // (Transactions, Financial Statements) tetap seperti semula.
+  const isActive = (href?: string, prefix = false) =>
+    href === currentPath ||
+    (href === '/' && currentPath === '/') ||
+    (prefix && !!href && href !== '/' && !!currentPath && currentPath.startsWith(`${href}/`));
 
   const renderNavItem = (item: NavItem, depth = 0) => {
-    const active = isActive(item.href);
     const hasChildren = item.children && item.children.length > 0;
+    const active = isActive(item.href, !hasChildren);
     const isExpanded = expandedItems.has(item.id);
     const Icon = item.icon;
 
@@ -196,7 +203,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
             </button>
           </div>
           {isExpanded && (
-            <div className="ml-4 mt-0.5 border-l border-border pl-3 space-y-0.5">
+            <div className="ml-4 mt-0.5 border-l border-white/15 pl-3 space-y-0.5">
               {item.children!.map((child) => renderNavItem(child, depth + 1))}
             </div>
           )}
@@ -243,13 +250,13 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      <div className={`flex items-center h-16 border-b border-border flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'}`}>
+      <div className={`flex items-center h-16 border-b border-white/10 flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'px-4 justify-between'}`}>
         {!collapsed && (
           <div className="flex items-center gap-2.5">
             <AppLogo size={32} />
             <div>
-              <span className="font-bold text-sm text-foreground tracking-tight">Gouf Consulting</span>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">{t('Accounting')}</p>
+              <span className="font-bold text-sm text-white tracking-tight">Gouf Consulting</span>
+              <p className="text-[10px] text-white/60 leading-none mt-0.5">{t('Accounting')}</p>
             </div>
           </div>
         )}
@@ -257,7 +264,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         {!collapsed && (
           <button
             onClick={onToggle}
-            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
             aria-label={t('Collapse sidebar')}
           >
             <ChevronLeft size={16} />
@@ -268,18 +275,18 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
       {collapsed && (
         <button
           onClick={onToggle}
-          className="flex items-center justify-center w-8 h-8 mx-auto mt-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center justify-center w-8 h-8 mx-auto mt-2 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors"
           aria-label={t('Expand sidebar')}
         >
           <ChevronRight size={16} />
         </button>
       )}
 
-      <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2 space-y-4">
+      <nav className="flex-1 overflow-y-auto scrollbar-thin scrollbar-on-dark py-3 px-2 space-y-4">
         {navGroups.map((group) => (
           <div key={`group-${group.label}`}>
             {!collapsed && (
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 mb-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50 px-3 mb-1.5">
                 {t(group.label)}
               </p>
             )}
@@ -290,32 +297,32 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         ))}
       </nav>
 
-      <div className={`border-t border-border p-3 flex-shrink-0 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}>
+      <div className={`border-t border-white/10 p-3 flex-shrink-0 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}>
         {!collapsed ? (
           <>
             <div
               onClick={goToSettings}
-              className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors cursor-pointer mb-1"
+              className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 transition-colors cursor-pointer mb-1"
             >
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
+              <div className="w-8 h-8 rounded-full bg-highlight flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{displayName}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.role_label || '—'}</p>
+                <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+                <p className="text-xs text-white/60 truncate">{user?.role_label || '—'}</p>
               </div>
             </div>
             <div className="flex gap-1">
               <button
                 onClick={goToSettings}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-white/70 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <Settings size={14} />
                 <span>{t('Settings')}</span>
               </button>
               <button
                 onClick={handleLogout}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-negative-subtle hover:text-negative transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-white/70 hover:bg-red-500/20 hover:text-red-100 transition-colors"
               >
                 <LogOut size={14} />
                 <span>{t('Logout')}</span>
@@ -324,13 +331,13 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           </>
         ) : (
           <>
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">{userInitials(displayName)}</span>
+            <div className="w-8 h-8 rounded-full bg-highlight flex items-center justify-center">
+              <span className="text-xs font-bold text-white">{userInitials(displayName)}</span>
             </div>
-            <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors" aria-label={t('Settings')}>
+            <button onClick={goToSettings} className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition-colors" aria-label={t('Settings')}>
               <Settings size={16} />
             </button>
-            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-negative-subtle text-muted-foreground hover:text-negative transition-colors" aria-label={t('Logout')}>
+            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-red-500/20 text-white/70 hover:text-red-100 transition-colors" aria-label={t('Logout')}>
               <LogOut size={16} />
             </button>
           </>
@@ -342,7 +349,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
   return (
     <>
       <aside
-        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden bg-card border-r border-border transition-sidebar flex-shrink-0 ${
+        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden bg-dark border-r border-dark transition-sidebar flex-shrink-0 ${
           collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'
         }`}
       >
@@ -350,28 +357,28 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
       </aside>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-card border-r border-border lg:hidden transition-transform duration-300 ${
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-dark border-r border-dark lg:hidden transition-transform duration-300 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between h-16 px-4 border-b border-border">
+        <div className="flex items-center justify-between h-16 px-4 border-b border-white/10">
           <div className="flex items-center gap-2.5">
             <AppLogo size={32} />
-            <span className="font-bold text-sm text-foreground">Gouf Consulting</span>
+            <span className="font-bold text-sm text-white">Gouf Consulting</span>
           </div>
-          <button onClick={onMobileClose} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground">
+          <button onClick={onMobileClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white">
             <X size={16} />
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2 space-y-4">
+        <nav className="flex-1 overflow-y-auto scrollbar-thin scrollbar-on-dark py-3 px-2 space-y-4">
           {navGroups.map((group) => (
             <div key={`mobile-group-${group.label}`}>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 mb-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/50 px-3 mb-1.5">
                 {t(group.label)}
               </p>
               <div className="space-y-0.5">
                 {group.items.map((item) => {
-                  const active = isActive(item.href);
+                  const active = isActive(item.href, !item.children?.length);
                   const Icon = item.icon;
                   return (
                     <Link

@@ -48,6 +48,9 @@ Akun (mapping_rules template):
                                      cabang/Dept. tsb (mis. persediaan per cabang SAU)
     - ap_account / tax_account     : akun Cr Hutang Usaha & Dr PPN Masukan,
                                      disimpan per transaksi (ap_account_* / tax_account_*)
+    Akun umum di atas (line/biaya/ap/tax) ditimpa Settings > Account Mapping
+    company (purchase_cogs / purchase_shipping / account_payable /
+    purchase_tax_receivable) kalau sudah diatur.
 
 File TIDAK disimpan ke disk -- diproses di memory saja.
 """
@@ -399,7 +402,13 @@ async def upload_purchase_import(
             status_code=201,
         )
 
-    recipe = template.get("mapping_rules") or {}
+    recipe = dict(template.get("mapping_rules") or {})
+    # Settings > Account Mapping company menimpa akun UMUM template (akun per
+    # cabang line_account_by_dept tetap paling spesifik).
+    akun_setting = dbc.akun_purchase_setting(management_client_id)
+    for kunci_recipe, kunci_setting in (("line_account", "line"), ("biaya_account", "biaya"), ("ap_account", "ap"), ("tax_account", "tax")):
+        if akun_setting.get(kunci_setting):
+            recipe[kunci_recipe] = {k: akun_setting[kunci_setting][k] for k in ("account_code", "account_name")}
     currency = recipe.get("currency_default", "IDR")
     category = recipe.get("category_default", "Inventory")
 
