@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import dynamic from 'next/dynamic';
 import { type ActiveAnalysisType } from './AIAnalystLayout';
+import { useActiveClient } from '@/lib/activeClient';
 
 const ProfitAnalysis = dynamic(() => import('./analyses/ProfitAnalysis'), { ssr: false });
 const ARRiskAnalysis = dynamic(() => import('./analyses/ARRiskAnalysis'), { ssr: false });
@@ -30,6 +31,7 @@ const analysisLabels: Record<NonNullable<ActiveAnalysisType>, string> = {
 
 export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnalysis }: Props) {
   const router = useRouter();
+  const { activeClientName } = useActiveClient();
 
   if (!activeAnalysis) {
     return (
@@ -68,7 +70,7 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
             <span className="text-xs font-semibold text-ai-purple uppercase tracking-wider">AI Financial Analysis</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{analysisLabels[activeAnalysis]}</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">PT Nusantara Teknologi Indonesia · Jan–Aug 2026 · Confidence: 94%</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{activeClientName ?? 'No client selected'}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={() => toast.success('Analysis saved')} className="flex items-center gap-1.5 text-sm border border-border rounded-md px-2.5 py-1.5 text-foreground hover:bg-secondary transition-colors">

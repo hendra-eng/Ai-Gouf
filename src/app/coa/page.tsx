@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import CoaPageClient from './components/CoaPageClient';
 
 export const metadata = {
@@ -7,5 +7,10 @@ export const metadata = {
 };
 
 export default function CoaPage() {
-  return <CoaPageClient />;
+  // Suspense wajib: CoaPageClient membaca ?view= lewat useSearchParams().
+  return (
+    <Suspense fallback={null}>
+      <CoaPageClient />
+    </Suspense>
+  );
 }

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import { type ActiveAnalysisType } from './AIAnalystLayout';
 import { useCurrency } from '@/lib/currency';
+import { useActiveClient } from '@/lib/activeClient';
 
 interface Props {
   activeAnalysis: ActiveAnalysisType;
@@ -10,39 +11,32 @@ interface Props {
   collapsed: boolean;
 }
 
-const healthMetrics = [
-  { label: 'Liquidity', score: 78, trend: 'up', color: 'text-success' },
-  { label: 'Profitability', score: 82, trend: 'stable', color: 'text-success' },
-  { label: 'Cash Flow', score: 85, trend: 'up', color: 'text-success' },
-  { label: 'Solvency', score: 90, trend: 'stable', color: 'text-success' },
-  { label: 'Working Capital', score: 68, trend: 'down', color: 'text-warning' },
+// [UBAH] Skor, risiko, dan insight contoh dikosongkan -- diisi backend AI
+// setelah client aktif punya cukup data transaksi untuk dianalisis.
+const healthMetrics: { label: string; score: number; trend: 'up' | 'down' | 'stable'; color: string }[] = [
+  { label: 'Liquidity', score: 0, trend: 'stable', color: 'text-muted-foreground' },
+  { label: 'Profitability', score: 0, trend: 'stable', color: 'text-muted-foreground' },
+  { label: 'Cash Flow', score: 0, trend: 'stable', color: 'text-muted-foreground' },
+  { label: 'Solvency', score: 0, trend: 'stable', color: 'text-muted-foreground' },
+  { label: 'Working Capital', score: 0, trend: 'stable', color: 'text-muted-foreground' },
 ];
 
-const keyRisks = [
-  { id: 'risk-001', title: 'Rp 320M overdue receivables', severity: 'HIGH', icon: 'ArrowTrendingUpIcon', color: 'text-danger', bg: 'bg-danger-bg', border: 'border-red-200' },
-  { id: 'risk-002', title: 'Operating expenses +7.1%', severity: 'MODERATE', icon: 'ArrowTrendingUpIcon', color: 'text-warning', bg: 'bg-warning-bg', border: 'border-yellow-200' },
-  { id: 'risk-003', title: 'Cash runway 4.8 months', severity: 'LOW', icon: 'ClockIcon', color: 'text-success', bg: 'bg-success-bg', border: 'border-green-200' },
-  { id: 'risk-004', title: 'AP obligations Rp 142M due', severity: 'MODERATE', icon: 'ArrowTrendingDownIcon', color: 'text-warning', bg: 'bg-warning-bg', border: 'border-yellow-200' },
-];
+const keyRisks: { id: string; title: string; severity: string; icon: string; color: string; bg: string; border: string }[] = [];
 
-const aiInsights = [
-  { id: 'ins-001', type: 'warning', title: 'Margin Pressure', desc: 'Gross margin compressed 1.2pp YoY. Monitor COGS closely.' },
-  { id: 'ins-002', type: 'critical', title: 'Receivable Risk', desc: 'PT Mitra Solusi 74+ days overdue. Escalate immediately.' },
-  { id: 'ins-003', type: 'positive', title: 'Revenue Growth', desc: '+12.8% YoY revenue growth is above industry average.' },
-  { id: 'ins-004', type: 'warning', title: 'Expense Anomaly', desc: '5 expense items outside normal range detected.' },
-];
+const aiInsights: { id: string; type: string; title: string; desc: string }[] = [];
 
 const dataSources = [
-  { name: 'Financial Statements', status: 'connected', updated: '28 Aug 2026' },
-  { name: 'General Ledger', status: 'connected', updated: '28 Aug 2026' },
-  { name: 'Transactions', status: 'connected', updated: '28 Aug 2026' },
-  { name: 'Budget Report', status: 'connected', updated: '25 Aug 2026' },
-  { name: 'AR Module', status: 'connected', updated: '28 Aug 2026' },
-  { name: 'AP Module', status: 'connected', updated: '28 Aug 2026' },
+  { name: 'Financial Statements', status: 'connected', updated: '—' },
+  { name: 'General Ledger', status: 'connected', updated: '—' },
+  { name: 'Transactions', status: 'connected', updated: '—' },
+  { name: 'Budget Report', status: 'connected', updated: '—' },
+  { name: 'AR Module', status: 'connected', updated: '—' },
+  { name: 'AP Module', status: 'connected', updated: '—' },
 ];
 
 export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }: Props) {
   const { fx } = useCurrency();
+  const { activeClientName } = useActiveClient();
   const [expandedSection, setExpandedSection] = useState<string | null>('confidence');
 
   const toggleSection = (id: string) => {
@@ -51,8 +45,8 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
 
   if (collapsed) return null;
 
-  const overallScore = 82;
-  const confidence = 94;
+  const overallScore = 0;
+  const confidence = 0;
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin flex flex-col">
@@ -98,8 +92,8 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-ai-purple">High Confidence</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Based on 6 connected data sources with complete data coverage</p>
+                  <p className="text-sm font-bold text-ai-purple">{confidence > 0 ? 'High Confidence' : 'No analysis yet'}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Based on {dataSources.length} connected data sources</p>
                 </div>
               </div>
               <div className="mt-3 space-y-1.5">
@@ -148,7 +142,7 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
                 </div>
                 <div>
                   <p className="text-sm font-bold text-success">{overallScore} / 100</p>
-                  <p className="text-2xs text-muted-foreground">Good financial health</p>
+                  <p className="text-2xs text-muted-foreground">{overallScore > 0 ? 'Good financial health' : 'Not enough data yet'}</p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -187,12 +181,15 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
             <div className="flex items-center gap-2">
               <Icon name="ExclamationTriangleIcon" size={14} className="text-danger" />
               <span className="text-sm font-semibold text-foreground">Key Risks</span>
-              <span className="text-2xs bg-danger-bg text-danger-foreground px-1.5 py-0.5 rounded-full font-semibold">4</span>
+              <span className="text-2xs bg-danger-bg text-danger-foreground px-1.5 py-0.5 rounded-full font-semibold">{keyRisks.length}</span>
             </div>
             <Icon name={expandedSection === 'risks' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
           {expandedSection === 'risks' && (
             <div className="px-3 pb-3 border-t border-border">
+              {keyRisks.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-3">No risks flagged yet.</p>
+              )}
               <div className="space-y-2 mt-3">
                 {keyRisks.map((risk) => (
                   <div key={risk.id} className={`flex items-start gap-2 p-2 rounded-md border ${risk.bg} ${risk.border}`}>
@@ -217,12 +214,15 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
             <div className="flex items-center gap-2">
               <Icon name="SparklesIcon" size={14} className="text-ai-purple" />
               <span className="text-sm font-semibold text-foreground">AI Insights</span>
-              <span className="text-2xs bg-ai-purple-bg text-ai-purple px-1.5 py-0.5 rounded-full font-semibold">4</span>
+              <span className="text-2xs bg-ai-purple-bg text-ai-purple px-1.5 py-0.5 rounded-full font-semibold">{aiInsights.length}</span>
             </div>
             <Icon name={expandedSection === 'insights' ? 'ChevronUpIcon' : 'ChevronDownIcon'} size={13} className="text-muted-foreground" />
           </button>
           {expandedSection === 'insights' && (
             <div className="px-3 pb-3 border-t border-border">
+              {aiInsights.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-3">No insights yet.</p>
+              )}
               <div className="space-y-2 mt-3">
                 {aiInsights.map((ins) => (
                   <div
@@ -258,11 +258,11 @@ export default function AIContextPanel({ activeAnalysis, onCollapse, collapsed }
             <div className="px-3 pb-3 border-t border-border">
               <div className="space-y-2 mt-3 text-xs">
                 {[
-                  { label: 'Company', value: 'PT Nusantara Teknologi Indonesia' },
+                  { label: 'Company', value: activeClientName ?? 'No client selected' },
                   { label: 'Period', value: 'Jan 2026 – Aug 2026' },
                   { label: 'Currency', value: 'IDR (Indonesian Rupiah)' },
                   { label: 'Branch', value: 'All Branches' },
-                  { label: 'Last Updated', value: '28 Aug 2026, 16:11 WIB' },
+                  { label: 'Last Updated', value: '—' },
                 ].map((row) => (
                   <div key={`scope-${row.label}`} className="flex justify-between">
                     <span className="text-muted-foreground">{row.label}</span>

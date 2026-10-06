@@ -235,7 +235,7 @@ export default function FinancialPositionChartInner({
 
   // Invisible per-point dot: renders nothing visible, just keeps `dotsRef`
   // calibrated to the current chart's pixel scale on every render.
-  const makeCalibrationDot = (seriesKey: SeriesKey) => (props: any) => {
+  const makeCalibrationDot = (seriesKey: SeriesKey) => function CalibrationDot(props: any) {
     const { cx, cy, index, payload } = props;
     // NOTE: recharts' Area component passes `value` as [baseline, value] —
     // always read the real number off `payload` instead, which is a plain
@@ -248,7 +248,7 @@ export default function FinancialPositionChartInner({
   // larger invisible hit-target circle on top of it — dragging the
   // invisible circle is much easier to grab than the small visible dot
   // alone (same pattern as the Financial Overview chart).
-  const makeActiveDot = (seriesKey: SeriesKey) => (props: any) => {
+  const makeActiveDot = (seriesKey: SeriesKey) => function ActiveDot(props: any) {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
     const isDraggingThis = dragPreview?.seriesKey === seriesKey && dragPreview?.index === index;

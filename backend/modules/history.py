@@ -18,7 +18,7 @@ logger = get_module_logger("history")
 
 
 def catat_riwayat(
-    client_id: Optional[int],
+    client_id: Optional[str],
     user: str,
     aksi: str,
     detail: Optional[Dict[str, Any]] = None,
@@ -44,7 +44,7 @@ def catat_riwayat(
         return False
 
 
-def ambil_riwayat(client_id: Optional[int] = None, limit: int = 100) -> List[Dict[str, Any]]:
+def ambil_riwayat(client_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
     """Ambil riwayat perubahan terbaru (kosong kalau database tidak aktif)."""
     try:
         import db_client as dbc

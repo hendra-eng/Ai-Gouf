@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import {
   useSalesInvoices, useSalesActivityLogs, formatTanggalSingkat, formatTanggalWaktu,
   type BackendSalesInvoice,
@@ -55,7 +56,11 @@ function downloadCSV(rows: (BackendSalesInvoice & { payStatus: PayStatus })[], f
 export default function SalesPosted() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  // userId = akun yang login (management_users) -- untuk kolom "siapa" (posted_by, mapped_by, assigned_to, resolved_by).
+  // clientId = company aktif dari Switch Company (management_clients) -- untuk client_id & filter data, sama seperti Purchase.
+  const userId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  const clientId = activeClientId ?? null;
 
   const { invoices: allInvoices, loading, error, refresh } = useSalesInvoices(clientId);
   const { logs: activityLogs } = useSalesActivityLogs(clientId);
@@ -385,7 +390,7 @@ export default function SalesPosted() {
                     <td className="py-2.5 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${RECONCILE_STYLE[row.reconcile_status] || 'bg-muted text-muted-foreground'}`}>{t(row.reconcile_status)}</span>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{row.posted_by ? (row.posted_by === clientId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{row.posted_by ? (row.posted_by === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
                     <td className="py-2.5 px-2">
                       <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">{t(row.posting_status)}</span>
                     </td>

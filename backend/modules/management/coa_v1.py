@@ -32,6 +32,7 @@ bukan aksi bebas staf junior.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -170,6 +171,35 @@ def daftar_coa_client(
         hanya_aktif=active_only,
         limit=limit,
     )
+    return sukses(data=data, message="OK")
+
+
+@router.get("/client/{client_id}/balances", summary="Saldo per akun COA 1 klien (dari jurnal POSTED)")
+def saldo_coa_client(
+    client_id: str,
+    as_of: Optional[date] = Query(None, description="Saldo s.d. tanggal ini (inklusif). Kosong = semua jurnal POSTED."),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    """Total debit & kredit per acc_no dari SEMUA jurnal POSTED klien -- sumber
+    sama persis dengan Financial Statements (dbc.ambil_baris_jurnal_posted_transaksi:
+    Journal Entry termasuk Opening Balance, Sales, Purchase), jadi angkanya
+    konsisten dengan Trial Balance. Saldo bertanda (debit - kredit); frontend
+    mengubahnya ke sisi saldo normal akun."""
+    if dbc.get_management_client_by_id(client_id) is None:
+        return gagal(message="Client tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+    total: Dict[str, Dict[str, float]] = {}
+    for baris in dbc.ambil_baris_jurnal_posted_transaksi(management_client_id=client_id, sampai_tanggal=as_of):
+        kode = (baris.get("account_code") or "").strip()
+        if not kode:
+            continue
+        t = total.setdefault(kode, {"debit": 0.0, "credit": 0.0})
+        t["debit"] += float(baris.get("debit") or 0)
+        t["credit"] += float(baris.get("kredit") or 0)
+    data = [
+        {"acc_no": kode, "debit": round(t["debit"], 2), "credit": round(t["credit"], 2),
+         "balance": round(t["debit"] - t["credit"], 2)}
+        for kode, t in sorted(total.items())
+    ]
     return sukses(data=data, message="OK")
 
 

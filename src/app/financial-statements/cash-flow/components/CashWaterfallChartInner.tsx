@@ -215,6 +215,7 @@ export default function CashWaterfallChartInner({
       </g>
     );
   };
+  renderBar.displayName = 'RenderBar';
 
   const chartData = useMemo(() => displayData.map((d, i) => ({ ...d, __index: i })), [displayData]);
 

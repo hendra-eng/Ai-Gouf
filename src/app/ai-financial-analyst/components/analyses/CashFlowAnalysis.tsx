@@ -1,20 +1,22 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
 import { getNiceSymmetricTicks, formatAxisValue } from '@/lib/chartTicks';
 
+// [UBAH] Data contoh dikosongkan -- diisi backend cash flow bulanan setelah
+// client aktif punya jurnal yang cukup untuk periode ini.
 const cashFlowData = [
-  { month: 'Jan', operating: 285000000, investing: -120000000, financing: -45000000, net: 120000000 },
-  { month: 'Feb', operating: 310000000, investing: -85000000, financing: -50000000, net: 175000000 },
-  { month: 'Mar', operating: 265000000, investing: -145000000, financing: -42000000, net: 78000000 },
-  { month: 'Apr', operating: 298000000, investing: -98000000, financing: -48000000, net: 152000000 },
-  { month: 'May', operating: 245000000, investing: -210000000, financing: -52000000, net: -17000000 },
-  { month: 'Jun', operating: 322000000, investing: -115000000, financing: -55000000, net: 152000000 },
-  { month: 'Jul', operating: 338000000, investing: -92000000, financing: -58000000, net: 188000000 },
-  { month: 'Aug', operating: 195000000, investing: -68000000, financing: -42000000, net: 85000000 },
+  { month: 'Jan', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Feb', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Mar', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Apr', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'May', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Jun', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Jul', operating: 0, investing: 0, financing: 0, net: 0 },
+  { month: 'Aug', operating: 0, investing: 0, financing: 0, net: 0 },
 ];
 
 const fmtM = (v: number) => `${(v / 1000000).toFixed(0)}M`;
@@ -106,12 +108,12 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
   } | null>(null);
   const springAnimRef = useRef<number | null>(null);
 
-  const stopSpring = () => {
+  const stopSpring = useCallback(() => {
     if (springAnimRef.current) cancelAnimationFrame(springAnimRef.current);
     springAnimRef.current = null;
-  };
+  }, []);
 
-  const springBack = () => {
+  const springBack = useCallback(() => {
     const drag = dragBarRef.current;
     if (!drag) return;
     stopSpring();
@@ -135,9 +137,9 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
       }
     };
     springAnimRef.current = requestAnimationFrame(step);
-  };
+  }, [stopSpring]);
 
-  useEffect(() => stopSpring, []);
+  useEffect(() => stopSpring, [stopSpring]);
 
   const handleBarPointerDown = (key: CFKey, index: number, startValue: number, barHeight: number) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -188,7 +190,7 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleUp);
     };
-  }, []);
+  }, [springBack]);
 
   const displayData = useMemo(() => {
     const withIndex = cashFlowData.map((d, i) => ({ ...d, __index: i }));
@@ -199,28 +201,32 @@ function CashFlowMonthlyChart({ fx }: { fx: (v: string) => string }) {
   // Badan bar custom: seluruh kotak bisa digenggam & ditarik naik/turun.
   // Untuk nilai negatif, Recharts kadang mengirim `height` negatif (y = titik
   // bawah, height = jarak ke atas) -- normalisasi pakai Math.abs + geser y.
-  const renderInteractiveBar = (key: CFKey) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null) return null;
-    const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
-    const color = getBarColor(key);
-    const h = Math.abs(height);
-    const rectY = height < 0 ? y + height : y;
-    const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
-    return (
-      <g>
-        <rect
-          x={x} y={rectY} width={width} height={h}
-          fill={color} rx={2} ry={2}
-          stroke={isDraggingThis ? color : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={dragHandlers}
-        />
-        {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
-        <rect x={x} y={rectY - 10} width={width} height={h + 20} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
-      </g>
-    );
+  const renderInteractiveBar = (key: CFKey) => {
+    const CFBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null) return null;
+      const isDraggingThis = dragBar?.key === key && dragBar?.index === index;
+      const color = getBarColor(key);
+      const h = Math.abs(height);
+      const rectY = height < 0 ? y + height : y;
+      const dragHandlers = handleBarPointerDown(key, index, payload[key], h);
+      return (
+        <g>
+          <rect
+            x={x} y={rectY} width={width} height={h}
+            fill={color} rx={2} ry={2}
+            stroke={isDraggingThis ? color : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={dragHandlers}
+          />
+          {/* Perluas area genggam di atas & bawah, biar mudah ditarik walau bar-nya pendek/kecil */}
+          <rect x={x} y={rectY - 10} width={width} height={h + 20} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
+        </g>
+      );
+    };
+    CFBar.displayName = 'CashFlowBar';
+    return CFBar;
   };
 
   return (
@@ -272,23 +278,22 @@ export default function CashFlowAnalysis() {
           <h3 className="text-md font-semibold text-foreground">Executive Summary</h3>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
-          Operating cash flow YTD is <strong>{fx('Rp 2.26M')}</strong>, healthy and sufficient to cover operations.
-          However, investing activities consumed <strong>{fx('Rp 933M')}</strong> — primarily the IT infrastructure investment in Q2.
-          Net cash position stands at <strong>{fx('Rp 2.96M')}</strong> with an estimated <strong>4.8 month runway</strong> at current burn rate.
-          May was the only negative net cash flow month (-{fx('Rp 17M')}) due to peak infrastructure spend. Cash runway is adequate but AR collection improvement would significantly strengthen the position.
+          Operating cash flow YTD is <strong>{fx('Rp 0')}</strong>. Investing activities consumed <strong>{fx('Rp 0')}</strong>.
+          Net cash position stands at <strong>{fx('Rp 0')}</strong> with an estimated <strong>0 month runway</strong> at current burn rate.
+          No monthly cash flow data is available yet for this period.
         </p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Opening Cash (Jan)', value: 'Rp 2.07M', color: 'text-foreground', bg: 'bg-card' },
-          { label: 'Operating CF', value: 'Rp 2.26M', color: 'text-success', bg: 'bg-success-bg' },
-          { label: 'Investing CF', value: '-Rp 933M', color: 'text-danger', bg: 'bg-danger-bg' },
-          { label: 'Financing CF', value: '-Rp 392M', color: 'text-warning', bg: 'bg-warning-bg' },
-          { label: 'Net Cash Flow', value: 'Rp 933M', color: 'text-success', bg: 'bg-success-bg' },
-          { label: 'Closing Cash (Aug)', value: 'Rp 2.96M', color: 'text-primary', bg: 'bg-info-bg' },
-          { label: 'Cash Runway', value: '4.8 months', color: 'text-success', bg: 'bg-success-bg' },
-          { label: 'AR Impact', value: 'Rp 320M', color: 'text-warning', bg: 'bg-warning-bg' },
+          { label: 'Opening Cash (Jan)', value: 'Rp 0', color: 'text-foreground', bg: 'bg-card' },
+          { label: 'Operating CF', value: 'Rp 0', color: 'text-success', bg: 'bg-success-bg' },
+          { label: 'Investing CF', value: 'Rp 0', color: 'text-danger', bg: 'bg-danger-bg' },
+          { label: 'Financing CF', value: 'Rp 0', color: 'text-warning', bg: 'bg-warning-bg' },
+          { label: 'Net Cash Flow', value: 'Rp 0', color: 'text-success', bg: 'bg-success-bg' },
+          { label: 'Closing Cash (Aug)', value: 'Rp 0', color: 'text-primary', bg: 'bg-info-bg' },
+          { label: 'Cash Runway', value: '0 months', color: 'text-success', bg: 'bg-success-bg' },
+          { label: 'AR Impact', value: 'Rp 0', color: 'text-warning', bg: 'bg-warning-bg' },
         ].map((m) => (
           <div key={`cfm-${m.label}`} className={`${m.bg} border border-border rounded-lg p-3`}>
             <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{m.label}</p>
@@ -310,9 +315,7 @@ export default function CashFlowAnalysis() {
         </div>
         <div className="space-y-3">
           {[
-            { priority: 'High', title: 'Accelerate AR Collections to Improve Cash', desc: 'Collecting Rp 320M overdue AR would increase cash position by 10.8%, extending runway to 5.3+ months.', action: 'View AR', route: '/accounts-receivable' },
-            { priority: 'Medium', title: 'Monitor Investing Outflows', desc: 'IT infrastructure investment is winding down. Ensure Q4 investing CF stays below Rp 100M to maintain healthy net cash.', action: 'View Transactions', route: '/transactions' },
-            { priority: 'Low', title: 'Review AP Payment Timing', desc: 'Optimizing AP payment timing (pay closer to due dates) could improve working capital by Rp 80–120M.', action: 'View AP', route: '/accounts-payable' },
+            { priority: 'Low', title: 'No recommendations yet', desc: 'Recommendations will appear here once there is enough posted transaction data to analyze cash flow.', action: 'View Transactions', route: '/transactions' },
           ].map((rec) => (
             <div key={`cf-rec-${rec.title}`} className="flex items-start gap-3 p-3 border border-border rounded-lg">
               <span className={`text-2xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5 ${

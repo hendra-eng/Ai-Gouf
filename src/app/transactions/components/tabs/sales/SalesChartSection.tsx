@@ -4,14 +4,7 @@ import dynamic from 'next/dynamic';
 
 const SalesAreaChart = dynamic(() => import('./SalesAreaChart'), { ssr: false });
 
-const topCustomers = [
-  { id: 'cust-01', name: 'Meridian Tech Solutions', amount: '$42,800', pct: 100 },
-  { id: 'cust-02', name: 'Apex Manufacturing Co.', amount: '$36,150', pct: 84 },
-  { id: 'cust-03', name: 'Horizon Retail Group', amount: '$28,400', pct: 66 },
-  { id: 'cust-04', name: 'Cascade Logistics Ltd.', amount: '$21,960', pct: 51 },
-  { id: 'cust-05', name: 'Pinnacle Healthcare', amount: '$18,200', pct: 43 },
-  { id: 'cust-06', name: 'Summit Capital Group', amount: '$14,750', pct: 34 },
-];
+const topCustomers: { id: string; name: string; amount: string; pct: number }[] = [];
 
 export default function SalesChartSection() {
   return (
@@ -43,6 +36,9 @@ export default function SalesChartSection() {
         <h3 className="text-sm font-600 text-foreground mb-1">Top Customers</h3>
         <p className="text-xs text-muted-foreground mb-4">By revenue — Sep 2026</p>
         <div className="space-y-3">
+          {topCustomers.length === 0 && (
+            <p className="text-xs text-muted-foreground">No data yet</p>
+          )}
           {topCustomers?.map((c, i) => (
             <div key={`top-cust-${c?.id}`} className="flex items-center gap-3">
               <span className="text-xs font-600 text-muted-foreground w-4 text-right">{i + 1}</span>

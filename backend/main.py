@@ -61,7 +61,6 @@ if not _ENV_PATH.exists():
 
 import asyncio
 import base64
-import hashlib
 import io
 import json
 import math
@@ -69,9 +68,7 @@ import os
 import queue
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -82,7 +79,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse, Response
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -90,23 +87,29 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import akuntansi_ai as ak
 import db_client as dbc
 from modules import (
-    accounting_export, accounting_core, ai_analysis, auth, calk_aset_tetap, calk_export,
-    cross_matching, dashboard, dedup_transaksi,
+    accounting_export, accounting_core, ai_analysis, auth,
+    cross_matching,
     deteksi_kesalahan_pembelian as dkp, history,
-    laporan_keuangan as lapkeu, notifikasi,
     kertas_kerja,  # [BARU] Generator Kertas Kerja Laporan Keuangan dari PDF rekening koran
     ai_file_reader,  # [BARU] Kirim file (teks/gambar/PDF) langsung ke Claude API, tanpa parsing manual
     cache_cleanup,  # [BARU -- POIN 1] Pembersihan terjadwal cache ekstraksi PDF & Office (TTL + LRU)
     excel_export_worker,  # [BARU -- POINT 2] Generate Excel hasil proses lewat ProcessPoolExecutor
-    claude_client,  # [BARU] Narasi AI (CALK/Asumsi/Ringkasan) di export 18-sheet, lihat _lengkapi_narasi_ai_export_18_sheet()
 )
 from modules.kertas_kerja_router import router as kertas_kerja_router  # [BARU] Endpoint Kertas Kerja Laporan Keuangan
 from modules.tax_router import router as tax_router
 from modules.tax_case_router import router as tax_case_router
 from modules import tax_scheduler
 from modules.auth import v1 as auth_v1  # [BARU] Fitur Auth REST API standar: /api/v1/auth/...
+from modules.management import documents_v1 as management_documents_v1  # [BARU] /api/v1/management/documents/...
+from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
+from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
+from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
+from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
+from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
+from modules.management import settings_v1 as management_settings_v1  # [BARU] Management > Settings: /api/v1/management/settings/...
+from modules.management import coa_industry_v1 as management_coa_industry_v1  # [BARU] template COA per industri: /api/v1/management/coa-industries
 from modules.transactions import sales_v1 as transactions_sales_v1  # [BARU] CRUD financial_transaction_sales_*: /api/v1/transactions/sales/...
 from modules.transactions import sales_import_v1 as transactions_sales_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Sales Import Template
 from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
@@ -120,7 +123,13 @@ from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {s
 # kepakai saat startup -- supaya "diam-diam jatuh ke sqlite lokal" tidak
 # bisa lolos tanpa ketahuan lagi. Password/detail koneksi disensor,
 # cukup tunjukkan jenis DB + host-nya saja.
-_db_url_terpakai = os.environ.get("DATABASE_URL", "sqlite:///ai_gouf.db")
+#
+# [FIX v6] Kalau DATABASE_URL benar-benar tidak diset, `import db_client
+# as dbc` di atas SUDAH raise RuntimeError duluan (lihat get_database_url()
+# di db_client.py) -- baris-baris di bawah ini cuma jalan kalau
+# DATABASE_URL memang ada isinya (baik itu Postgres/Supabase, ATAU
+# sqlite:///... yang SENGAJA diset eksplisit di .env).
+_db_url_terpakai = os.environ.get("DATABASE_URL", "")
 if _db_url_terpakai.startswith("sqlite"):
     print(f"[DB] Memakai SQLite LOKAL: {_db_url_terpakai}  <-- BUKAN Supabase! Cek .env kalau ini tidak diinginkan.")
 else:
@@ -142,6 +151,62 @@ app = FastAPI(
                 "tombol Authorize di atas untuk mengisi token sekali, lalu "
                 "otomatis dipakai di semua percobaan endpoint di grup ini."
             ),
+        },
+        {
+            "name": "clients",
+            "description": "CRUD daftar client (management_clients) -- dipakai selector client aktif di seluruh halaman.",
+        },
+        {
+            "name": "purchase",
+            "description": "Halaman Purchase: vendor, tagihan, source data, line items, exceptions, activity log (schema 3_Financial).",
+        },
+        {
+            "name": "bank-cash",
+            "description": "Halaman Bank & Cash: transaksi kas/bank client (finance_transaction_bank_cash, schema 3_Financial).",
+        },
+        {
+            "name": "other",
+            "description": "Halaman Other: entri jurnal umum di luar Purchase/Bank & Cash (finance_transaction_other, schema 3_Financial).",
+        },
+        {
+            "name": "ar",
+            "description": "Halaman Accounts Receivable: customer, invoice, pembayaran, catatan penagihan (schema 3_Financial).",
+        },
+        {
+            "name": "ap",
+            "description": "Halaman Accounts Payable: vendor & bill (dipakai ulang dari modul Purchase) + pembayaran & catatan AP (schema 3_Financial).",
+        },
+        {
+            "name": "overview",
+            "description": "Halaman Financial Overview: daftar cabang & Anggaran (Budget) P&L per cabang/bulan (schema 2_Overview).",
+        },
+        {
+            "name": "budget-forecast",
+            "description": "Halaman Budget & Forecast: asumsi budget tahunan & skenario custom tersimpan (schema 5_Planning).",
+        },
+        {
+            "name": "tax-compliance",
+            "description": "Halaman Tax & Compliance: koreksi fiskal & tugas kepatuhan pajak (fiscal_correction, tax_compliance_task).",
+        },
+        {
+            "name": "audit",
+            "description": "Halaman Audit: temuan, bukti (evidence), dan tahapan audit trail (4 tabel Intelligence_Audit_*).",
+        },
+        {
+            "name": "financial-statements",
+            "description": "Halaman Financial Statements: Anggaran P&L, insight AI, dan proyeksi cash flow (3 tabel \"financial statement\" schema 3_Financial).",
+        },
+        {
+            "name": "assets",
+            "description": "Halaman Assets: register aset tetap & penyusutan (asset_fixed_assets, schema 4_Assets_Equity).",
+        },
+        {
+            "name": "documents",
+            "description": "Halaman Documents: metadata dokumen client (management_documents, schema 7_Management).",
+        },
+        {
+            "name": "reports",
+            "description": "Halaman Reports: daftar laporan tercatat & jadwal laporan berkala (report_registry, report_schedule, schema 7_Management).",
         },
     ],
 )
@@ -197,8 +262,18 @@ async def _enforce_client_data_isolation(request: Request, call_next):
     if path.startswith("/api/client/"):
         parts = [x for x in path.split("/") if x]
         # /api/client/<id>/... => parts = [api, client, <id>, ...]
-        if len(parts) >= 3 and parts[2].isdigit():
-            client_id = int(parts[2])
+        # [DIPERBAIKI] Sebelumnya cek ini pakai `parts[2].isdigit()` --
+        # peninggalan dari zaman client_id masih integer. Semua client_id
+        # sekarang UUID (lihat management_clients.id), jadi .isdigit() SELALU
+        # False dan blok pengecekan akses di bawah ini TIDAK PERNAH jalan --
+        # setiap request ke ~60 endpoint /api/client/{id}/... lolos tanpa
+        # user_has_client_access() sama sekali. Diganti jadi: selama ada
+        # segmen ke-3 di path (ID apapun bentuknya), selalu jalankan
+        # pengecekan -- user_has_client_access() sendiri menerima client_id
+        # sebagai string apa adanya (lihat db_client.py), jadi tidak perlu
+        # int(...) atau validasi format UUID di sini.
+        if len(parts) >= 3 and parts[2]:
+            client_id = parts[2]
             user = auth.user_from_authorization_header(request.headers.get("Authorization"))
             if user is None:
                 return JSONResponse(
@@ -269,48 +344,20 @@ _LOCK_CACHE_EXPORT_18_SHEET = threading.Lock()
 _BATAS_ENTRI_CACHE_EXPORT_18_SHEET = 200
 
 
-def _kunci_cache_export_18_sheet(client_id: int, req: "Export18SheetRequest") -> str:
-    """
-    Kunci cache = client_id + SEMUA parameter request yang memengaruhi
-    hasil (bukan cuma tahun) -- req.tahun_sebelumnya, metode_penyusutan,
-    prive_atau_dividen, dst semuanya ikut menentukan hasil akhir, jadi
-    dua request dengan tahun sama tapi parameter lain beda HARUS
-    dianggap kunci cache berbeda (kalau tidak, user bisa dapat hasil
-    generate dengan parameter yang salah karena "kena" cache request
-    sebelumnya).
-    """
-    bahan = json.dumps(
-        {"client_id": client_id, **req.dict()}, sort_keys=True, default=str,
-    )
-    return hashlib.sha256(bahan.encode("utf-8")).hexdigest()[:24]
-
-
-def _ambil_cache_export_18_sheet(kunci: str, signature_saat_ini: str) -> Optional[Any]:
-    """Cache-hit hanya kalau kunci ADA dan signature datanya masih sama."""
-    with _LOCK_CACHE_EXPORT_18_SHEET:
-        entri = _CACHE_EXPORT_18_SHEET.get(kunci)
-        if entri and entri.get("signature") == signature_saat_ini:
-            return entri.get("hasil")
-    return None
-
-
-def _simpan_cache_export_18_sheet(kunci: str, signature_saat_ini: str, hasil: Any) -> None:
-    with _LOCK_CACHE_EXPORT_18_SHEET:
-        if len(_CACHE_EXPORT_18_SHEET) >= _BATAS_ENTRI_CACHE_EXPORT_18_SHEET and kunci not in _CACHE_EXPORT_18_SHEET:
-            kunci_terlama = min(
-                _CACHE_EXPORT_18_SHEET, key=lambda k: _CACHE_EXPORT_18_SHEET[k]["waktu"],
-            )
-            del _CACHE_EXPORT_18_SHEET[kunci_terlama]
-        _CACHE_EXPORT_18_SHEET[kunci] = {
-            "signature": signature_saat_ini, "hasil": hasil, "waktu": datetime.now(),
-        }
-
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
 app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
+app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
+app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
+app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
+app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
+app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
+app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
+app.include_router(management_settings_v1.router)  # [BARU] /api/v1/management/settings/users|accountants|purchase|product|account-mapping
+app.include_router(management_coa_industry_v1.router)  # [BARU] /api/v1/management/coa-industries -- pilihan Industry + template COA
 app.include_router(transactions_sales_v1.router)  # [BARU] /api/v1/transactions/sales/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_sales_import_v1.router)  # [BARU] /api/v1/transactions/sales/source-files/upload
 app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
@@ -334,52 +381,25 @@ def _startup_buat_tabel_db():
         print(f"[PERINGATAN] Gagal inisialisasi tabel database saat startup: {e}")
 
 
-# [BARU] Sistem reminder/deadline proaktif SPT -- lihat modules/notifikasi.py.
-# proses_spt() di akuntansi_ai.py sudah menghitung jumlah_terlambat_lapor &
-# jumlah_berisiko_terlambat_setor per baris; sebelumnya angka itu cuma
-# muncul di response upload/Excel (dilaporkan SETELAH data diupload).
-# Scheduler ini jalan tiap hari (jam bisa diatur lewat REMINDER_JAM_CEK di
-# .env, default 07:00) utk mengecek tabel reminder_deadline_spt dan kirim
-# notifikasi in-app + WA SEBELUM jatuh tempo (H-3/H-1), bukan cuma setelah
-# terlambat.
+# Scheduler latar belakang: pembersihan cache ekstraksi PDF & Office
+# (modules/cache_cleanup.py). [DIUBAH 2026-10-04] Job reminder deadline SPT
+# dibuang bersama tabel reminder_deadline_spt (migration 23).
 _scheduler = BackgroundScheduler(timezone="Asia/Jakarta")
 
 
 @app.on_event("startup")
-def _startup_scheduler_reminder():
-    jam_str = os.environ.get("REMINDER_JAM_CEK", "07:00")
+def _startup_scheduler_cache():
     try:
-        jam, menit = [int(x) for x in jam_str.split(":")]
-    except ValueError:
-        jam, menit = 7, 0
-    try:
-        _scheduler.add_job(
-            notifikasi.jalankan_pengecekan_reminder_spt,
-            "cron",
-            hour=jam,
-            minute=menit,
-            id="cek_reminder_deadline_spt",
-            replace_existing=True,
-        )
-        # [BARU -- POIN 1] Daftarkan job pembersihan cache ekstraksi
-        # (PDF di kertas_kerja.py + Office di ai_file_reader.py) ke
-        # SCHEDULER YANG SAMA -- 1 BackgroundScheduler proses cukup utk
-        # semua job terjadwal, tidak perlu scheduler APScheduler baru.
-        # Jam berbeda (default 03:00, di luar jam kantor) dari reminder
-        # SPT (default 07:00) supaya tidak numpuk I/O disk di jam yang
-        # sama -- bisa dioverride lewat CACHE_CLEANUP_JAM/CACHE_CLEANUP_MENIT
-        # di .env kalau perlu.
         jam_cache = int(os.environ.get("CACHE_CLEANUP_JAM", "3"))
         menit_cache = int(os.environ.get("CACHE_CLEANUP_MENIT", "0"))
         cache_cleanup.daftarkan_job_pembersihan_cache(_scheduler, jam=jam_cache, menit=menit_cache)
         _scheduler.start()
-        print(f"[notifikasi] Scheduler reminder deadline SPT aktif, jalan tiap hari jam {jam:02d}:{menit:02d} WIB.")
     except Exception as e:  # noqa: BLE001
-        print(f"[PERINGATAN] Gagal menyalakan scheduler reminder deadline: {e}")
+        print(f"[PERINGATAN] Gagal menyalakan scheduler cache cleanup: {e}")
 
 
 @app.on_event("shutdown")
-def _shutdown_scheduler_reminder():
+def _shutdown_scheduler_cache():
     try:
         _scheduler.shutdown(wait=False)
     except Exception:
@@ -406,31 +426,6 @@ def _shutdown_tax_scheduler():
         tax_scheduler.stop_scheduler()
     except Exception:
         pass
-
-
-class PesanRiwayat(BaseModel):
-    role: str
-    content: str
-
-
-class ChatRequest(BaseModel):
-    pesan: str
-    riwayat: Optional[List[PesanRiwayat]] = None
-    # [BARU] Konteks data yang sudah diproses di percakapan ini, supaya AI
-    # tidak "buta" soal hasil upload sebelumnya. Lihat ChatPage.jsx --
-    # ringkasan_data dibangun dari resultsByCategory tiap kategori yang
-    # sudah punya hasil. client_id (opsional) dipakai untuk mengambil
-    # jumlah pola & temuan mencurigakan MILIK CLIENT ITU dari file pola
-    # yang sudah tersimpan (lihat akuntansi_ai.muat_pola/_path_pola).
-    ringkasan_data: Optional[List[str]] = None
-    client_id: Optional[int] = None
-    # [BARU] Isi kalau percakapan ini di jalur "esb_account" (spesifik soal
-    # 1 akun ESB) -- dipakai untuk kasih AI konteks detail akun itu (nama,
-    # tipe, status aktif), bukan cuma status ESB client secara umum.
-    esb_account_id: Optional[int] = None
-    # [BARU] Id percakapan (dari /api/percakapan) supaya pesan user & balasan
-    # AI disimpan permanen ke database, bukan cuma hidup di state React.
-    percakapan_id: Optional[int] = None
 
 
 @app.get("/api/health")
@@ -467,7 +462,33 @@ def login(username: str = Form(...), password: str = Form(...)):
     }
 
 
-@app.get("/api/client")
+class ClientSkema(BaseModel):
+    """Satu client -- lihat daftar_client(). `dibuat_at`/`jumlah_akun_esb`
+    kosong di respons POST (endpoint tambah client tidak mengembalikan
+    keduanya, cukup echo data yang baru disimpan)."""
+    id: str
+    nama: str
+    lokasi: Optional[str] = None
+    tipe: Optional[str] = None
+    nomor_wa: Optional[str] = None
+    email: Optional[str] = None
+    industry: Optional[str] = None
+    status: Optional[str] = None
+    assigned_accountant: Optional[str] = None
+    contact_name: Optional[str] = None
+    npwp: Optional[str] = None
+    address: Optional[str] = None
+    dibuat_at: Optional[str] = None
+    jumlah_akun_esb: Optional[int] = None
+
+class DaftarClientResponse(BaseModel):
+    clients: List[ClientSkema]
+
+class HapusClientResponse(BaseModel):
+    berhasil: bool
+
+
+@app.get("/api/client", tags=["clients"], response_model=DaftarClientResponse)
 def api_daftar_client(
     tipe: Optional[str] = None,
     punya_esb: Optional[bool] = None,
@@ -484,15 +505,21 @@ def api_daftar_client(
     # eksplisit diberikan melalui tabel user_client_access. Ini mencegah
     # user menebak client_id atau melihat metadata semua client dari
     # company switcher.
+    #
+    # [FIX -- crash 500 utk semua role non-admin] client_id SEKARANG UUID
+    # (management_clients.id), bukan integer lagi -- `int(...)` di sini
+    # akan melempar ValueError utk UUID apapun ("invalid literal for
+    # int()"), jadi endpoint ini SELALU 500 utk siapapun yang bukan
+    # tahap_5/super_admin. Dibandingkan sebagai string apa adanya.
     if user.get("role") not in ("tahap_5", "super_admin"):
         allowed_ids = {
-            int(x["client_id"]) for x in dbc.daftar_user_client_access(str(user.get("id") or ""))
+            str(x["client_id"]) for x in dbc.daftar_user_client_access(str(user.get("id") or ""))
         }
-        clients = [c for c in clients if int(c.get("id") or 0) in allowed_ids]
+        clients = [c for c in clients if str(c.get("id") or "") in allowed_ids]
     return {"clients": clients}
 
 
-@app.post("/api/client")
+@app.post("/api/client", tags=["clients"], response_model=ClientSkema)
 def api_tambah_client(
     nama: str = Form(...),
     lokasi: Optional[str] = Form(None),
@@ -523,7 +550,7 @@ def api_tambah_client(
         # "client_lv_1" (org_owner) = level paling senior di CLIENT_LEVELS
         # (lihat RBAC.md & modules/auth/core.py) -- staf yang bikin client
         # ini otomatis jadi pemegang akses penuh KHUSUS untuk client tsb.
-        dbc.set_user_client_access(str(user["id"]), int(client_id), active=True, access_role="client_lv_1")
+        dbc.set_user_client_access(str(user["id"]), client_id, active=True, access_role="client_lv_1")
     return {
         "id": client_id, "nama": nama, "lokasi": lokasi, "tipe": tipe,
         "nomor_wa": nomor_wa, "email": email, "industry": industry, "status": status,
@@ -543,7 +570,7 @@ class UpdateProfilClientRequest(BaseModel):
 
 @app.put("/api/client/{client_id}/profil")
 def api_update_profil_client(
-    client_id: int,
+    client_id: str,
     req: UpdateProfilClientRequest,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -566,7 +593,7 @@ class UpdateKontakClientRequest(BaseModel):
 
 @app.put("/api/client/{client_id}/kontak")
 def api_update_kontak_client(
-    client_id: int,
+    client_id: str,
     req: UpdateKontakClientRequest,
     user: dict = Depends(auth.require_level(3)),
 ):
@@ -579,9 +606,9 @@ def api_update_kontak_client(
     return {"berhasil": True}
 
 
-@app.delete("/api/client/{client_id}")
+@app.delete("/api/client/{client_id}", tags=["clients"], response_model=HapusClientResponse)
 def api_hapus_client(
-    client_id: int,
+    client_id: str,
     user: dict = Depends(auth.require_level(3)),
 ):
     """[BARU] Hapus client -- dipakai menu titik-3 (Edit/Delete) di
@@ -598,88 +625,10 @@ def api_hapus_client(
 # [BARU] AKUN ESB (integrasi API POS/kasir) per client
 # ============================================================
 
-class TambahEsbAccountRequest(BaseModel):
-    account_name: str
-    esb_type: Optional[str] = None
-    api_base_url: Optional[str] = None
-    consumer_key: Optional[str] = None
-    consumer_secret: Optional[str] = None
-    is_active: bool = True
-    is_default: bool = False
-    auto_discover: bool = False
-
-
-@app.get("/api/client/{client_id}/esb-accounts")
-def api_esb_accounts_client(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """List akun ESB milik satu client. consumer_secret dikirim ter-mask
-    (mis. '••••6321'), TIDAK PERNAH dalam bentuk asli -- lihat
-    db_client._mask_secret()."""
-    return {"esb_accounts": dbc.ambil_esb_accounts_client(client_id)}
-
-
-@app.post("/api/client/{client_id}/esb-accounts")
-def api_tambah_esb_account(
-    client_id: int,
-    req: TambahEsbAccountRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    akun_id = dbc.tambah_esb_account(
-        client_id=client_id, account_name=req.account_name, esb_type=req.esb_type,
-        api_base_url=req.api_base_url, consumer_key=req.consumer_key,
-        consumer_secret=req.consumer_secret, is_active=req.is_active,
-        is_default=req.is_default, auto_discover=req.auto_discover,
-    )
-    if akun_id is None:
-        raise HTTPException(status_code=500, detail="Gagal menambah akun ESB.")
-    return {"id": akun_id, "client_id": client_id, "account_name": req.account_name}
-
-
-@app.delete("/api/client/{client_id}/esb-accounts/{esb_account_id}")
-def api_hapus_esb_account(client_id: int, esb_account_id: int, user: dict = Depends(auth.get_current_user)):
-    berhasil = dbc.hapus_esb_account(esb_account_id)
-    if not berhasil:
-        raise HTTPException(status_code=404, detail="Akun ESB tidak ditemukan.")
-    return {"berhasil": True}
-
-
-@app.get("/api/client/{client_id}/riwayat")
-def api_riwayat_client(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """Riwayat hasil UMUM CLIENT (tabel 'hasil'). Untuk riwayat akun ESB,
-    pakai /api/esb-account/{esb_account_id}/riwayat."""
-    hasil = dbc.ambil_hasil_client(client_id)
-    riwayat = [
-        {
-            "jenis_dokumen": h["jenis"],
-            "hasil": h["data"],
-            "nama_file": h["data"].get("nama_file", "-") if isinstance(h["data"], dict) else "-",
-            "tanggal": h["dibuat_at"],
-        }
-        for h in hasil
-    ]
-    return {"riwayat": riwayat}
-
-
-@app.get("/api/esb-account/{esb_account_id}/riwayat")
-def api_riwayat_esb_account(esb_account_id: int, user: dict = Depends(auth.get_current_user)):
-    """Riwayat hasil khusus 1 akun ESB (tabel 'hasil_esb', terpisah dari
-    hasil umum client di tabel 'hasil')."""
-    hasil = dbc.ambil_hasil_esb(esb_account_id)
-    riwayat = [
-        {
-            "jenis_dokumen": h["jenis"],
-            "hasil": h["data"],
-            "nama_file": h["data"].get("nama_file", "-") if isinstance(h["data"], dict) else "-",
-            "tanggal": h["dibuat_at"],
-            "esb_account_id": h["esb_account_id"],
-        }
-        for h in hasil
-    ]
-    return {"riwayat": riwayat}
-
 
 @app.get("/api/client/{client_id}/audit-log")
 def api_audit_log_client(
-    client_id: int,
+    client_id: str,
     limit: int = 200,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -693,23 +642,150 @@ def api_audit_log_client(
     return {"audit_log": history.ambil_riwayat(client_id=client_id, limit=limit)}
 
 
-@app.get("/api/client/{client_id}/dashboard")
-def api_dashboard_client(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """[BARU] Live Dashboard per client -- dihitung dari riwayat hasil proses
-    yang sudah tersimpan di database (lihat modules/dashboard.py::
-    ringkas_dashboard_dari_riwayat untuk penjelasan kenapa tidak memakai
-    get_live_stats() versi Streamlit lama)."""
-    hasil = dbc.ambil_hasil_client(client_id)
-    riwayat = [
-        {"jenis_dokumen": h["jenis"], "hasil": h["data"]}
-        for h in hasil
-    ]
-    return dashboard.ringkas_dashboard_dari_riwayat(riwayat)
+# ============================================================
+# [DIPINDAH] MODUL PURCHASE -- kini di modules/finance/purchase_v1.py
+# (lihat modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_purchase_v1.router) di bawah -- path, auth,
+# & response TIDAK berubah.
+#
+# VendorSkema tetap dipakai di modul Accounts Payable (DataAPResponse di
+# bawah, Vendor & Bill dipakai ulang dari Purchase) -- di-import dari
+# modules.finance.purchase_v1, BUKAN didefinisikan ulang.
+# ============================================================
+
+
+class DocumentSkema(BaseModel):
+    id: str
+    name: str
+    category: Optional[str] = None
+    file_format: Optional[str] = None
+    file_size: Optional[str] = None
+    storage_url: Optional[str] = None
+    uploaded_by: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[str] = None
+    related_record: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class DataDocumentsResponse(BaseModel):
+    documents: List[DocumentSkema]
+
+
+@app.get("/api/v1/management/getDocuments", tags=["documents"], response_model=DataDocumentsResponse)
+def api_data_documents(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [DIUBAH] Data mentah tabel Documents (schema "7_Management",
+    "management_documents") untuk satu client -- tabel dibuat
+    manual oleh user lewat Supabase SQL Editor, sama pola dengan modul
+    Purchase. Frontend memetakan hasilnya ke tipe FinancialDocument lewat
+    src/app/documents/lib/documentsDbBridge.ts.
+
+    Path diubah dari /api/client/{client_id}/documents ke pola standar
+    /api/[version]/[group]/[nama_fitur] -- client_id sekarang lewat query
+    string (?client_id=...), bukan path segment, karena pola baru tidak
+    menyisakan tempat untuk resource id di path.
+    """
+    return {"documents": dbc.ambil_data_documents(client_id)}
+
+
+class ReportRegistryItemSkema(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    period: Optional[str] = None
+    created_by: Optional[str] = None
+    formats: Optional[str] = None
+    status: Optional[str] = None
+    file_size: Optional[str] = None
+    tags: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+class ReportRegistryResponse(BaseModel):
+    report_registry: List[ReportRegistryItemSkema]
+
+
+@app.get("/api/client/{client_id}/reports-registry", tags=["reports"], response_model=ReportRegistryResponse)
+def api_data_reports_registry(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_registry (schema "7_Management",
+    "management_report_registry") untuk satu client -- laporan yang
+    dicatat manual/oleh proses lain, di luar 3 sumber otomatis (Laporan
+    Keuangan/CALK/PPh Badan). Digabung ke daftar reports oleh
+    src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_registry": dbc.ambil_data_report_registry(client_id)}
+
+
+class ReportScheduleItemSkema(BaseModel):
+    id: str
+    report_name: str
+    frequency: Optional[str] = None
+    recipients: Optional[str] = None
+    format: Optional[str] = None
+    next_run: Optional[str] = None
+    status: Optional[str] = None
+
+class ReportScheduleResponse(BaseModel):
+    report_schedule: List[ReportScheduleItemSkema]
+
+
+@app.get("/api/client/{client_id}/report-schedule", tags=["reports"], response_model=ReportScheduleResponse)
+def api_data_report_schedule(client_id: str, user: dict = Depends(auth.get_current_user)):
+    """
+    [BARU] Data mentah tabel report_schedule (schema "7_Management",
+    "management_report_schedule") untuk satu client -- jadwal
+    laporan berkala (tab "Report Scheduler"). Frontend memetakan hasilnya
+    ke tipe ScheduledReport lewat src/app/reports/lib/reportsDbBridge.ts.
+    """
+    return {"report_schedule": dbc.ambil_data_report_schedule(client_id)}
+
+
+# ============================================================
+# [BARU] MODUL ACCOUNTS PAYABLE -- pola endpoint SAMA persis dengan AR di
+# atas. Vendor & bill dipakai ulang dari modul Purchase; payment & note
+# adalah 2 tabel baru khusus AP. Lihat db_client.py::ambil_data_ap() dkk.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL BUDGET & FORECAST -- kini di
+# modules/planning/budget_forecast_v1.py (lihat modules/planning/__init__.py).
+# Router didaftarkan lewat app.include_router(planning_budget_forecast_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL TAX & COMPLIANCE -- kini di
+# modules/planning/tax_compliance_v1.py (lihat modules/planning/__init__.py).
+# Router didaftarkan lewat app.include_router(planning_tax_compliance_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL AUDIT -- kini di modules/intelligence/audit_v1.py
+# (lihat modules/intelligence/__init__.py). Router didaftarkan lewat
+# app.include_router(intelligence_audit_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL PURCHASE (lanjutan: update status, bulk update,
+# exception status) -- kini di modules/finance/purchase_v1.py (lihat
+# modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_purchase_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
 
 
 @app.get("/api/client/{client_id}/rekonsiliasi-lintas-dokumen")
 def api_rekonsiliasi_lintas_dokumen(
-    client_id: int,
+    client_id: str,
     npwp_perusahaan: Optional[str] = None,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -735,7 +811,7 @@ class DeteksiKesalahanPembelianRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/deteksi-kesalahan-pembelian")
 def api_deteksi_kesalahan_pembelian(
-    client_id: int,
+    client_id: str,
     req: DeteksiKesalahanPembelianRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -758,65 +834,6 @@ def api_deteksi_kesalahan_pembelian(
 # endpoint di bawah (api_buat_analisis_ai / api_buat_ringkasan_eksekutif).
 # ============================================================
 
-@app.post("/api/client/{client_id}/analisis-ai")
-def api_buat_analisis_ai(
-    client_id: int,
-    esb_account_id: Optional[int] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """[UBAH -- pindah DeepSeek ke Claude] Minta Claude generate ringkasan
-    & temuan dari data hasil yang sudah tersimpan untuk client ini, lalu
-    simpan ke tabel hasil_analisis. esb_account_id opsional -- kalau
-    diisi, analisis dari tabel hasil_esb (khusus akun ESB itu); kalau
-    tidak, dari tabel hasil (umum client).
-
-    [CATATAN MIGRASI] Sebelumnya lewat ai_analysis.analisis_ringkasan_keuangan()
-    (DeepSeek) -- sekarang lewat claude_client.analisis_ringkasan_keuangan_claude(),
-    fungsi Claude yang SUDAH ada di claude_client.py (dibuat "setara"
-    fungsi DeepSeek lama, tool_schema-nya identik: ringkasan/temuan_penting/
-    potensi_masalah) -- format `hasil` yang tersimpan ke DB & dikembalikan
-    ke frontend TIDAK BERUBAH, jadi tidak perlu ubah apa pun di sisi
-    frontend. ai_analysis.py TIDAK dihapus -- masih dipakai modul lain
-    (mis. kertas_kerja)."""
-    if esb_account_id is not None:
-        riwayat = dbc.ambil_hasil_esb(esb_account_id)
-    else:
-        riwayat = dbc.ambil_hasil_client(client_id)
-
-    if not riwayat:
-        raise HTTPException(status_code=400, detail="Belum ada data hasil untuk client ini, tidak bisa dianalisis.")
-
-    try:
-        hasil_claude = claude_client.analisis_ringkasan_keuangan_claude(
-            riwayat, client_id=str(client_id),
-        )
-    except claude_client.ClaudeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-    analisis_id = dbc.simpan_hasil_analisis(
-        client_id=client_id,
-        jenis_analisis="ringkasan_keuangan",
-        hasil=hasil_claude,
-        prompt=f"Ringkasan keuangan (Claude) dari {len(riwayat)} data hasil proses.",
-        model_ai=claude_client.MODEL_DEFAULT,
-        esb_account_id=esb_account_id,
-    )
-
-    return {"id": analisis_id, "hasil": hasil_claude, "model_ai": claude_client.MODEL_DEFAULT}
-
-
-@app.get("/api/client/{client_id}/analisis-ai")
-def api_riwayat_analisis_ai(
-    client_id: int,
-    jenis_analisis: Optional[str] = None,
-    esb_account_id: Optional[int] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Ambil riwayat analisis AI yang sudah pernah dibuat untuk client ini."""
-    return {"riwayat": dbc.ambil_hasil_analisis_client(
-        client_id, jenis_analisis=jenis_analisis, esb_account_id=esb_account_id,
-    )}
-
 
 # ============================================================
 # [BARU] RINGKASAN EKSEKUTIF (#4) -- versi ringkas laporan utk klien
@@ -831,407 +848,39 @@ def api_riwayat_analisis_ai(
 # ringkasan_eksekutif kalau suatu saat dibutuhkan, tanpa endpoint terpisah.
 # ============================================================
 
-def _hitung_angka_ringkasan_eksekutif(client_id: int) -> dict:
-    hasil = dbc.ambil_hasil_client(client_id)
-    riwayat = [
-        {"jenis_dokumen": h["jenis"], "hasil": h["data"], "tanggal": h["dibuat_at"]}
-        for h in hasil
-    ]
-    return dashboard.ringkas_eksekutif_dari_riwayat(riwayat)
-
-
-@app.get("/api/client/{client_id}/ringkasan-eksekutif")
-def api_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """Kartu angka utama, dihitung real-time dari data tersimpan (tanpa
-    panggil AI, jadi selalu boleh diakses berkali-kali) + narasi AI
-    TERAKHIR yang pernah digenerate (kalau ada), supaya klien tetap lihat
-    sesuatu tanpa harus menunggu POST baru setiap buka halaman."""
-    angka = _hitung_angka_ringkasan_eksekutif(client_id)
-    riwayat_narasi = dbc.ambil_hasil_analisis_client(
-        client_id, jenis_analisis="ringkasan_eksekutif", limit=1,
-    )
-    narasi_terakhir = riwayat_narasi[0] if riwayat_narasi else None
-    return {"angka": angka, "narasi_terakhir": narasi_terakhir}
-
-
-@app.post("/api/client/{client_id}/ringkasan-eksekutif")
-def api_buat_ringkasan_eksekutif(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """[UBAH -- pindah DeepSeek ke Claude] Generate ULANG narasi AI dari
-    angka terkini & simpan sbg riwayat baru. Dipisah dari GET di atas krn
-    ini yang benar-benar memanggil Claude (ada biaya/kuota) -- jadi harus
-    eksplisit diminta akuntan/klien lewat tombol, bukan otomatis jalan
-    tiap kartu di-load.
-
-    [CATATAN MIGRASI] Sebelumnya lewat ai_analysis.buat_ringkasan_eksekutif()
-    (DeepSeek) -- sekarang lewat claude_client.generate_ringkasan_eksekutif_claude(),
-    fungsi baru khusus dibuat untuk endpoint ini (bahasa awam utk klien
-    non-akuntan, bukan istilah teknis akuntansi) -- lihat docstring-nya di
-    claude_client.py. Response shape TIDAK berubah, frontend tidak perlu
-    diubah."""
-    angka = _hitung_angka_ringkasan_eksekutif(client_id)
-    if angka["total_dokumen_diproses"] == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Belum ada data hasil untuk client ini, tidak bisa dibuat ringkasan.",
-        )
-
-    try:
-        narasi_claude = claude_client.generate_ringkasan_eksekutif_claude(
-            angka["kartu_utama"], angka["per_kategori"], client_id=str(client_id),
-        )
-    except claude_client.ClaudeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-    analisis_id = dbc.simpan_hasil_analisis(
-        client_id=client_id,
-        jenis_analisis="ringkasan_eksekutif",
-        hasil=narasi_claude,
-        prompt="Ringkasan eksekutif (Claude) dari kartu angka & data per kategori terkini.",
-        model_ai=claude_client.MODEL_DEFAULT,
-    )
-
-    return {
-        "id": analisis_id,
-        "angka": angka,
-        "narasi": narasi_claude,
-        "model_ai": claude_client.MODEL_DEFAULT,
-    }
-
 
 # ============================================================
 # [BARU] KPI BENTO DASHBOARD (8 kartu utama halaman Dashboard --
-# KPIBentoGrid.tsx) -- BEDA dari ringkasan-eksekutif di atas (itu utk
-# kartu ringkas non-akuntan + narasi AI opsional). Ini murni angka
-# akuntansi (Revenue/Net Profit/Gross Profit/Cash & Bank/AR/AP/EBITDA/
-# Tax Payable) dgn perubahan % dan sparkline bulanan, dihitung
-# real-time dari jurnal+COA (TANPA panggil AI, GET biasa) -- lihat
-# lapkeu.susun_kpi_bento_dashboard() utk detail & keterbatasan
-# (heuristik nama akun utk AP/Tax Payable, pendekatan EBITDA, dst).
+# KPIBentoGrid.tsx) -- endpoint ini, GET /api/v1/overview/getBranches, dan
+# GET /api/v1/overview/getFinancialBudget SUDAH DIPINDAH ke
+# modules/overview/overview_v1.py (router & router_legacy, didaftarkan di
+# bawah lewat app.include_router). Logic hitungnya (lapkeu.
+# susun_kpi_bento_dashboard) TETAP di modules/laporan_keuangan.py.
 # ============================================================
 
-@app.get("/api/client/{client_id}/kpi-bento")
-def api_kpi_bento_dashboard(
-    client_id: int,
-    tahun: Optional[int] = None,
-    cabang: Optional[str] = None,
-    user: dict = Depends(auth.get_current_user),
-):
-    """Angka 8 kartu KPIBentoGrid.tsx, dihitung real-time dari jurnal
-    terposting + COA client tahun berjalan (atau `tahun` kalau diisi).
 
-    [BARU - filter Cabang Financial Overview] `cabang` opsional (mis.
-    "Jakarta"/"Surabaya", cocok dgn dropdown OverviewContent.tsx) --
-    kalau diisi, jurnal disaring dulu lewat
-    lapkeu.filter_jurnal_per_cabang() berdasarkan tag Coa.cabang per akun
-    SEBELUM dihitung ke 8 kartu. Kosong/None/"All Branches" = tidak
-    difilter (semua cabang digabung, perilaku lama)."""
-    tahun_dipakai = tahun or date.today().year
-    # Accounting Core V2: Dashboard Actual hanya memakai journal lines POSTED.
-    jurnal = accounting_core.list_posted_lines(
-        client_id,
-        tanggal_mulai=f"{tahun_dipakai}-01-01",
-        tanggal_akhir=f"{tahun_dipakai}-12-31",
-    )
-    coa = dbc.ambil_coa_client(client_id)
-    jurnal = lapkeu.filter_jurnal_per_cabang(jurnal, coa, cabang)
-    hasil = lapkeu.susun_kpi_bento_dashboard(jurnal, coa, tahun=tahun_dipakai)
-    return hasil
+# ============================================================
+# [DIPINDAH] MODUL FINANCIAL STATEMENTS -- kini di
+# modules/finance/profit_loss_v1.py (getProfitLossBudget,
+# getProfitLossInsights) & modules/finance/cash_flow_v1.py
+# (getCashFlowForecast). Lihat modules/finance/__init__.py. Router
+# didaftarkan lewat app.include_router(finance_profit_loss_v1.router) &
+# app.include_router(finance_cash_flow_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
+
+
+# ============================================================
+# [DIPINDAH] MODUL ASSETS -- Fixed Asset Register & Depreciation, kini
+# di modules/asset/fixed_assets_v1.py (lihat modules/asset/__init__.py).
+# Router didaftarkan lewat app.include_router(asset_fixed_assets_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
 
 
 # ============================================================
 # [BARU] RIWAYAT PERCAKAPAN (sidebar chat history, mirip ChatGPT/Claude)
 # ============================================================
-
-class BuatPercakapanRequest(BaseModel):
-    client_id: Optional[int] = None
-    # [BARU] Isi ini kalau percakapan spesifik soal 1 akun ESB tertentu --
-    # jalurnya otomatis kepisah dari percakapan umum client (lihat jalur
-    # di api_daftar_percakapan di bawah).
-    esb_account_id: Optional[int] = None
-    judul: Optional[str] = None
-
-
-@app.post("/api/percakapan")
-def api_buat_percakapan(req: BuatPercakapanRequest, user: dict = Depends(auth.get_current_user)):
-    """Mulai sesi percakapan baru. Judul sementara "Percakapan Baru" --
-    akan diganti otomatis begitu pesan pertama user terkirim (lihat
-    chat_stream di bawah), sama seperti ChatGPT/Claude auto-title chat baru."""
-    percakapan_id = dbc.buat_percakapan(
-        username=user["username"],
-        client_id=req.client_id,
-        esb_account_id=req.esb_account_id,
-        judul=req.judul or "Percakapan Baru",
-    )
-    if percakapan_id is None:
-        raise HTTPException(status_code=500, detail="Gagal membuat percakapan baru.")
-    return {"id": percakapan_id, "judul": req.judul or "Percakapan Baru"}
-
-
-@app.get("/api/percakapan")
-def api_daftar_percakapan(
-    client_id: Optional[int] = None,
-    esb_account_id: Optional[int] = None,
-    jalur: Optional[str] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """List percakapan milik user yang sedang login, terbaru dulu.
-
-    [BARU] `jalur` memisahkan 2 tab riwayat di sidebar, mis:
-        GET /api/percakapan?jalur=client       -> tab "Percakapan Client"
-        GET /api/percakapan?jalur=esb_account  -> tab "Percakapan Akun ESB"
-    """
-    return {"percakapan": dbc.daftar_percakapan(
-        user["username"], client_id=client_id, esb_account_id=esb_account_id, jalur=jalur,
-    )}
-
-
-@app.get("/api/percakapan/{percakapan_id}/pesan")
-def api_pesan_percakapan(percakapan_id: int, user: dict = Depends(auth.get_current_user)):
-    """Ambil seluruh isi chat dari satu percakapan, untuk direstore ke UI
-    saat user membuka kembali percakapan lama dari sidebar."""
-    return {"pesan": dbc.ambil_pesan_percakapan(percakapan_id)}
-
-
-@app.delete("/api/percakapan/{percakapan_id}")
-def api_hapus_percakapan(percakapan_id: int, user: dict = Depends(auth.get_current_user)):
-    berhasil = dbc.hapus_percakapan(percakapan_id)
-    if not berhasil:
-        raise HTTPException(status_code=404, detail="Percakapan tidak ditemukan.")
-    return {"berhasil": True}
-
-
-def _format_sse(data: str) -> str:
-    return f"data: {json.dumps({'delta': data})}\n\n"
-
-
-@app.post("/api/chat/stream")
-def chat_stream(req: ChatRequest, user: dict = Depends(auth.get_current_user)):
-    # [FIX -- DELAY CHAT] Sebelumnya bagian konteks (pola, ESB, KPI) di bawah
-    # ini dijalankan BERURUTAN satu-satu -- tiap panggilan ke Supabase (ESB,
-    # KPI) adalah round-trip jaringan terpisah, jadi totalnya bisa numpuk
-    # jadi 1-3 detik jeda SEBELUM AI (Groq) sempat mulai menjawab, walau
-    # Groq sendiri sangat cepat begitu dipanggil. Ketiga bagian ini saling
-    # independen (tidak saling butuh hasil satu sama lain), jadi sekarang
-    # dijalankan PARALEL lewat ThreadPoolExecutor -- totalnya jadi sekitar
-    # selama panggilan TERLAMA saja, bukan jumlah semuanya.
-    def _ambil_konteks_pola():
-        jumlah_pola_ = 0
-        jumlah_temuan_mencurigakan_ = 0
-        if req.client_id is not None:
-            try:
-                pola_bank = ak.muat_pola(ak._path_pola("pola_bank", req.client_id))
-                pola_penjualan = ak.muat_pola(ak._path_pola("pola_penjualan", req.client_id))
-                jumlah_pola_ = len(pola_bank.aturan) + len(pola_penjualan.aturan)
-                jumlah_temuan_mencurigakan_ = len(ak.deteksi_pola_mencurigakan(pola_bank))
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil konteks pola untuk chat: {e}")
-        return jumlah_pola_, jumlah_temuan_mencurigakan_
-
-    def _ambil_konteks_client_aktif():
-        # [BARU] Kasih tahu AI profil client yang sedang aktif di percakapan
-        # ini (nama/tipe/lokasi) -- supaya AI sadar dia sedang membantu
-        # client SPESIFIK di dashboard ini, bukan menjawab general seolah
-        # tidak tahu sedang di project siapa.
-        if req.client_id is not None:
-            try:
-                client = dbc.ambil_client(req.client_id)
-                if client:
-                    return (
-                        f"\n- Client aktif di percakapan ini: '{client['nama']}' "
-                        f"(tipe: {client.get('tipe') or '-'}, lokasi: {client.get('lokasi') or '-'})."
-                    )
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil profil client aktif untuk chat: {e}")
-        return ""
-
-    def _ambil_info_esb():
-        # [BARU] Kasih tahu AI status integrasi ESB, dengan 2 mode:
-        # - kalau req.esb_account_id diisi (percakapan jalur "esb_account"):
-        #   kasih detail akun ESB itu spesifik.
-        # - kalau tidak, tapi ada req.client_id: kasih ringkasan umum status
-        #   ESB client tersebut (perilaku lama, tetap dipertahankan).
-        if req.esb_account_id is not None:
-            try:
-                akun_esb_client = dbc.ambil_esb_accounts_client(req.client_id) if req.client_id else []
-                akun = next((a for a in akun_esb_client if a["id"] == req.esb_account_id), None)
-                if akun:
-                    status = "aktif" if akun.get("is_active") else "TIDAK aktif"
-                    return (
-                        f"\n- Percakapan ini spesifik soal akun ESB '{akun['account_name']}' "
-                        f"(tipe: {akun.get('esb_type') or '-'}, status: {status})."
-                    )
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil detail akun ESB untuk chat: {e}")
-        elif req.client_id is not None:
-            try:
-                akun_esb = dbc.ambil_esb_accounts_client(req.client_id)
-                if akun_esb:
-                    aktif = [a for a in akun_esb if a.get("is_active")]
-                    nama_akun = ", ".join(a["account_name"] for a in akun_esb)
-                    return (
-                        f"\n- Integrasi ESB: client ini SUDAH punya {len(akun_esb)} akun ESB "
-                        f"({len(aktif)} aktif) -- {nama_akun}."
-                    )
-                return "\n- Integrasi ESB: client ini BELUM punya akun ESB sama sekali."
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil info ESB untuk chat: {e}")
-        return ""
-
-    def _ambil_konteks_kpi():
-        # ============================================================
-        # [BARU] Tanya-jawab natural language ke data yang sudah tersimpan
-        # ============================================================
-        # Sebelumnya AI cuma tahu HITUNGAN (mis. "Piutang: 12 baris diproses,
-        # 2 perlu direview" dari ringkasan_data) -- bukan ANGKA ASLI (total
-        # piutang berapa rupiah, dst), jadi tidak bisa jawab pertanyaan spt
-        # "berapa total piutang klien X bulan ini?". Konteks di bawah ini
-        # menyuntikkan angka ASLI dari ringkasan tersimpan (lihat
-        # modules/dashboard.py::bangun_kpi_kunci_dari_riwayat /
-        # bangun_ringkasan_lintas_client untuk detail & asumsi datanya).
-        if req.client_id is not None:
-            # Mode 1: percakapan sedang fokus ke SATU client -- kasih semua
-            # angka terbaru per jenis dokumen client itu.
-            try:
-                riwayat_lengkap = dbc.ambil_hasil_client(req.client_id)
-                riwayat_utk_kpi = [
-                    {"jenis_dokumen": h["jenis"], "hasil": h["data"]} for h in riwayat_lengkap
-                ]
-                kpi_per_jenis = dashboard.bangun_kpi_kunci_dari_riwayat(riwayat_utk_kpi)
-                if kpi_per_jenis:
-                    return (
-                        "\n- Data angka TERBARU per jenis dokumen client ini (format JSON, "
-                        "field sama seperti di tampilan hasil). PAKAI ANGKA INI untuk jawab "
-                        "pertanyaan spesifik soal jumlah/total -- JANGAN mengarang angka lain, "
-                        "dan kalau field yang ditanya tidak ada di sini, bilang terus terang "
-                        "belum ada datanya:\n"
-                        + json.dumps(kpi_per_jenis, ensure_ascii=False, default=str)
-                    )
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil konteks KPI client untuk chat: {e}")
-        else:
-            # Mode 2: TIDAK ada client aktif -- kemungkinan pertanyaan LINTAS
-            # CLIENT (mis. "klien mana yang score-nya di bawah 70?"). Baru
-            # dukung jenis "penilaian" dulu (lihat
-            # dashboard.FIELD_HEADLINE_LINTAS_CLIENT utk nambah jenis lain).
-            try:
-                semua_client = dbc.daftar_client()
-                ringkasan_lintas = dashboard.bangun_ringkasan_lintas_client(
-                    semua_client, dbc.ambil_hasil_client, jenis="penilaian"
-                )
-                if ringkasan_lintas:
-                    return (
-                        "\n- Ringkasan Penilaian Klien/Maker LINTAS CLIENT (format JSON), "
-                        "dipakai kalau user tanya perbandingan antar client (mis. 'klien mana "
-                        "yang score-nya di bawah 70?'). JANGAN mengarang client/angka di luar "
-                        "daftar ini:\n"
-                        + json.dumps(ringkasan_lintas, ensure_ascii=False, default=str)
-                    )
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal ambil konteks KPI lintas-client untuk chat: {e}")
-        return ""
-
-    # [BARU -- TRANSPARANSI PROSES] Sebelumnya bagian konteks (pola, ESB,
-    # KPI) dibangun DI SINI secara blocking, SEBELUM StreamingResponse
-    # dibuka -- user tidak melihat apa-apa sampai semuanya selesai (1-3
-    # detik diam). Sekarang dipindah KE DALAM event_generator() supaya
-    # setiap tahap bisa mengirim event "progress" (step mulai -> step
-    # selesai) ke frontend SEBELUM AI mulai menjawab -- pola yang SAMA
-    # dengan _format_sse_progress() yang sudah dipakai di
-    # /api/proses-file/stream & /generate-kertas-kerja/stream. Frontend
-    # (ChatBubble + ProcessingSteps) menampilkan event ini sebagai daftar
-    # langkah yang sedang/sudah dikerjakan AI, mirip panel "Menjalankan N
-    # perintah..." ala Claude Code.
-    #
-    # [FIX -- DELAY CHAT] Generate judul (buat_judul_percakapan, panggilan
-    # AI TERPISAH) TETAP dijalankan di THREAD TERPISAH ("fire and forget")
-    # sebelum stream dimulai -- bukan sesuatu yang user tunggu aktif (cuma
-    # label sidebar), jadi tidak perlu jadi salah satu step yang ditampilkan.
-    percakapan_baru = req.percakapan_id is not None and not (req.riwayat or [])
-    if percakapan_baru:
-        def _buat_judul_di_background():
-            try:
-                judul = ak.buat_judul_percakapan(req.pesan)
-                dbc.ubah_judul_percakapan(req.percakapan_id, judul)
-            except Exception as e:  # noqa: BLE001
-                print(f"[PERINGATAN] Gagal auto-generate judul percakapan: {e}")
-        threading.Thread(target=_buat_judul_di_background, daemon=True).start()
-
-    # [BARU] Simpan pesan user ke database SEBELUM memanggil AI, supaya
-    # pesan tidak hilang meski panggilan AI di bawah gagal total.
-    if req.percakapan_id is not None:
-        dbc.simpan_pesan_chat(req.percakapan_id, "user", req.pesan)
-
-    def event_generator():
-        jawaban_lengkap = []
-        try:
-            # [BARU] Step 1 -- kumpulkan konteks (pola, ESB, KPI) paralel
-            # lewat ThreadPoolExecutor, TAPI sekarang di dalam generator
-            # supaya event "processing" bisa dikirim SEBELUM mulai, dan
-            # "done" SETELAH selesai -- ganti label di bawah ini sesuka
-            # kamu, ini yang muncul di UI (ProcessingSteps).
-            yield _format_sse_progress(
-                type="progress", step="konteks",
-                label="Membaca pola transaksi & data client",
-                status="processing",
-            )
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                future_pola = executor.submit(_ambil_konteks_pola)
-                future_esb = executor.submit(_ambil_info_esb)
-                future_kpi = executor.submit(_ambil_konteks_kpi)
-                future_client = executor.submit(_ambil_konteks_client_aktif)
-
-                jumlah_pola, jumlah_temuan_mencurigakan = future_pola.result()
-                info_esb = future_esb.result()
-                konteks_data_kpi = future_kpi.result()
-                info_client_aktif = future_client.result()
-            yield _format_sse_progress(
-                type="progress", step="konteks",
-                label="Membaca pola transaksi & data client",
-                status="done",
-            )
-
-            # [BARU] Step 2 -- susun system prompt dari konteks yang
-            # sudah dikumpulkan.
-            yield _format_sse_progress(
-                type="progress", step="susun_prompt",
-                label="Menyusun konteks jawaban",
-                status="processing",
-            )
-            konteks = ak.buat_ringkasan_konteks_data(
-                req.ringkasan_data or [], jumlah_pola, jumlah_temuan_mencurigakan
-            )
-            system_prompt = ak.buat_system_prompt_akuntansi() + konteks + info_client_aktif + info_esb + konteks_data_kpi
-            riwayat_untuk_ai = [{"role": p.role, "content": p.content} for p in (req.riwayat or [])]
-            yield _format_sse_progress(
-                type="progress", step="susun_prompt",
-                label="Menyusun konteks jawaban",
-                status="done",
-            )
-
-            # [BARU] Step 3 -- panggil AI & mulai stream token jawaban.
-            # Event "processing" dikirim SEKALI di awal (bukan per-token);
-            # frontend menandai step ini "done" begitu token PERTAMA
-            # diterima (lihat catatan di ChatPage.jsx).
-            yield _format_sse_progress(
-                type="progress", step="jawab",
-                label="Menyusun jawaban",
-                status="processing",
-            )
-            for potongan in ak.tanya_ai_stream(
-                req.pesan, system_prompt=system_prompt, riwayat=riwayat_untuk_ai
-            ):
-                jawaban_lengkap.append(potongan)
-                yield _format_sse(potongan)
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        finally:
-            # [BARU] Simpan balasan AI (sepanjang apa pun yang berhasil
-            # terkirim sebelum error, kalau ada) ke database.
-            if req.percakapan_id is not None and jawaban_lengkap:
-                dbc.simpan_pesan_chat(req.percakapan_id, "assistant", "".join(jawaban_lengkap))
-            yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 def _bersihkan_untuk_json(nilai: Any) -> Any:
@@ -1686,81 +1335,11 @@ _POLA_PER_JENIS = {
 }
 
 
-def _coba_simpan_sebagai_coa(isi: bytes, nama_file: str, client_id: Optional[int]) -> Optional[dict]:
-    """
-    [BARU] Coba baca file sbg sheet COA (ak.muat_coa) & langsung simpan ke
-    COA permanen client (dbc.simpan_coa_bulk) -- supaya file COA yang
-    diupload lewat KOTAK CHAT (bukan lewat panel terpisah) tetap tersimpan,
-    bukan berakhir "tidak dikenali".
-
-    COA beda dari 15 jenis dokumen transaksi di _PEMROSES_DOKUMEN: dia
-    bukan dokumen yang menghasilkan draf jurnal, cuma data referensi
-    (dipakai buat cross-check akun di dokumen LAIN) -- makanya ditangani
-    terpisah di sini, DICOBA DULUAN sebelum file dicoba ke semua
-    proses_file_xxx yang lain.
-
-    Return None kalau file ini TIDAK mengandung sheet COA (berarti bukan
-    file COA -- lanjut ke alur deteksi 15 jenis dokumen seperti biasa).
-    Return dict kalau file ini COA -- baik berhasil disimpan, maupun gagal
-    karena alasan spesifik ke COA (mis. belum ada client aktif), supaya
-    pesan errornya jelas & tertuju, bukan "tidak dikenali" yang membingungkan.
-    """
-    try:
-        buf = io.BytesIO(isi)
-        wb = openpyxl.load_workbook(buf, data_only=True, read_only=True)
-    except Exception:
-        return None
-
-    try:
-        df_coa = ak.muat_coa(wb)
-    finally:
-        try:
-            wb.close()
-        except Exception:
-            pass
-
-    if df_coa.empty:
-        return None  # tidak ada sheet COA di file ini -- bukan urusan fungsi ini
-
-    if client_id is None:
-        return {
-            "sukses": False,
-            "pesan": "File ini terdeteksi sebagai COA, tapi belum ada client aktif -- "
-                     "pilih client dulu (dropdown 'Pilih Klien' di kiri atas), lalu upload ulang.",
-        }
-
-    akun = [
-        {
-            "no_akun": str(row["no_akun"]).strip(),
-            "nama_akun": str(row["nama_akun"]).strip(),
-            "kategori": (str(row["kategori"]).strip()
-                         if row.get("kategori") not in (None, "") else None),
-            "sub_kategori": None,
-            "normal_saldo": None,
-            "saldo_awal": 0,
-        }
-        for _, row in df_coa.iterrows()
-        if str(row.get("no_akun") or "").strip() and str(row.get("nama_akun") or "").strip()
-    ]
-    if not akun:
-        return None
-
-    # ganti_semua=False -- upload cepat lewat chat cuma NAMBAH/PERBARUI akun
-    # yang ada di file ini, TIDAK menghapus akun COA lain yang sudah
-    # tersimpan.
-    jumlah = dbc.simpan_coa_bulk(client_id, akun, ganti_semua=False)
-    return {
-        "sukses": True,
-        "jumlah_akun_tersimpan": jumlah,
-        "pesan": f"{jumlah} akun COA berhasil disimpan/diperbarui untuk client ini.",
-    }
-
-
 def _proses_semua_jenis(
     isi: bytes,
     nama_file: str,
     jenis_dokumen: Optional[str],
-    client_id: Optional[int] = None,
+    client_id: Optional[str] = None,
     on_progress: Optional[Callable[..., None]] = None,
     pakai_ai: bool = True,
 ):
@@ -1799,7 +1378,9 @@ def _proses_semua_jenis(
             # bukan selalu jatuh ke label generik. client_id=None (proses
             # tanpa konteks client) -> df_coa_client kosong, fungsi tetap
             # jalan (fallback label generik / AI kalau pakai_ai=True).
-            df_coa_client = pd.DataFrame(dbc.ambil_coa_client(client_id)) if client_id is not None else None
+            # [DIUBAH 2026-10-04] Tabel `coa` legacy sudah di-drop (migration
+            # 23) -- df_coa_client selalu None, fungsi pakai fallback-nya.
+            df_coa_client = None
             return fungsi(
                 _buat_buffer(), nama_file, client_id=client_id, pakai_ai=pakai_ai,
                 df_coa_client=df_coa_client,
@@ -1844,20 +1425,6 @@ def _proses_semua_jenis(
     hasil_semua: dict = {}
     error_per_jenis: dict = {}
 
-    # [BARU] Cek dulu apakah ini file COA -- lihat penjelasan lengkap di
-    # _coba_simpan_sebagai_coa(). Cuma dicek kalau user TIDAK secara
-    # eksplisit minta jenis_dokumen lain (mis. upload lewat panel khusus
-    # yang sudah menentukan jenisnya sendiri).
-    if not jenis_dokumen:
-        hasil_coa = _coba_simpan_sebagai_coa(isi, nama_file, client_id)
-        if hasil_coa is not None:
-            if hasil_coa["sukses"]:
-                _lapor("coa", "Chart of Accounts (COA)", "done", pesan=hasil_coa["pesan"])
-                return {"coa": hasil_coa}, {}
-            else:
-                _lapor("coa", "Chart of Accounts (COA)", "error", pesan=hasil_coa["pesan"])
-                return {}, {"coa": hasil_coa["pesan"]}
-
     if jenis_dokumen:
         if jenis_dokumen not in _PEMROSES_DOKUMEN:
             raise HTTPException(
@@ -1896,7 +1463,7 @@ def _proses_dan_simpan_satu_file(
     isi: bytes,
     nama_file: str,
     jenis_dokumen: Optional[str],
-    client_id: Optional[int],
+    client_id: Optional[str],
     conv_id: Optional[str],
     esb_account_id: Optional[int],
     konfirmasi_duplikat: bool,
@@ -1904,54 +1471,16 @@ def _proses_dan_simpan_satu_file(
     pakai_ai: bool = True,
 ) -> dict:
     """
-    [RIWAYAT -- Supabase dihapus, sempat TANPA DATABASE] Untuk sementara
-    (lihat riwayat git), fungsi ini kalau client_id diisi TIDAK menyimpan
-    apa pun -- file cuma diparsing (_proses_semua_jenis) lalu hasilnya
-    dikembalikan apa adanya ke caller, tanpa satu pun tulisan ke database.
-    Itu menyebabkan TEMUAN AUDIT #1 (KRITIS): halaman Transaksi menampilkan
-    toast sukses setelah import, padahal tidak ada baris yang benar-benar
-    tersimpan -- begitu ada refetch berikutnya (termasuk yang dipicu oleh
-    import itu sendiri lewat loadFromBackend() di TransactionsContext.tsx),
-    seluruh hasil upload hilang tanpa peringatan.
+    Parse satu file (_proses_semua_jenis) lalu kembalikan hasilnya.
 
-    [FIX -- TEMUAN #1] Sekarang, kalau client_id diisi, fungsi ini
-    KEMBALI menyimpan hasil ke database -- persis logika "Menyimpan hasil
-    ke riwayat client" di /api/proses-file/stream (lihat
-    proses_file_stream() lebih bawah di file ini): dbc.simpan_hasil() /
-    simpan_hasil_esb() untuk tiap jenis dokumen yang terdeteksi, lalu
-    dbc.tarik_draf_jurnal_ke_posting() untuk jenis yang punya draf_jurnal
-    (rekening_koran, jurnal_penjualan_kasir, dst) supaya baris-barisnya
-    masuk ke antrean review akuntan (tabel jurnal_posting) -- lihat blok
-    di akhir fungsi ini, setelah voucher & dedup diproses.
-
-    SENGAJA TIDAK mengembalikan efek samping LAIN dari jalur /stream:
-    log_audit(auto_fix_data), simpan_reminder_deadline_spt,
-    buat_pertanyaan_klarifikasi, buat_alert_anomali, simpan_evaluasi_pola,
-    auto-generate laporan 18-sheet. Itu semua tetap TIDAK dipanggil di
-    sini -- kalau memang dibutuhkan juga di halaman Transaksi, itu
-    perbaikan terpisah menyusul, supaya perubahan untuk #1 ini tetap fokus
-    & mudah diverifikasi (satu perbaikan = data upload benar-benar
-    tersimpan & muncul kembali setelah refetch).
-
-    conv_id/esb_account_id/user KINI DIPAKAI LAGI (untuk penyimpanan di
-    atas) -- konfirmasi_duplikat masih belum dipakai di sini secara
-    langsung (guard duplikat yang jalan sekarang ada di blok dedup di
-    bawah, lewat dedup_transaksi.evaluasi_upload_rekening_koran(), bukan
-    parameter ini).
-
-    client_id juga tetap dipakai untuk mint nomor voucher permanen ke
-    baris draf_jurnal hasil rekening_koran/jurnal_penjualan_kasir (lihat
-    dbc.beri_nomor_voucher_draf_jurnal() di bawah, menyentuh tabel
-    VoucherCounter) SEBELUM baris itu disimpan ke jurnal_posting -- supaya
-    voucher yang ditampilkan di respons upload SAMA dengan voucher yang
-    akhirnya tersimpan (lihat parameter sudah_diberi_nomor di
-    dbc.tarik_draf_jurnal_ke_posting()).
+    [DIUBAH 2026-10-04 -- migrations/23-drop_legacy_and_finance_tables.py]
+    Penyimpanan ke tabel legacy (hasil/hasil_esb, jurnal_posting,
+    upload_batches, voucher_counter) sudah dibuang bersama tabelnya --
+    fungsi ini sekarang TANPA DATABASE. Nama & parameter dipertahankan
+    supaya caller tidak berubah; client_id/conv_id/esb_account_id/
+    konfirmasi_duplikat/user tidak dipakai lagi.
     """
-    import time as _time_debug  # [DEBUG SEMENTARA] hapus setelah selesai profiling
-    _t0 = _time_debug.perf_counter()
     hasil_semua, error_per_jenis = _proses_semua_jenis(isi, nama_file, jenis_dokumen, client_id=None, pakai_ai=pakai_ai)
-    print(f"[DEBUG-TIMING] _proses_semua_jenis untuk '{nama_file}' selesai dalam {_time_debug.perf_counter() - _t0:.2f} detik")
-
     if not hasil_semua:
         return {
             "nama_file": nama_file,
@@ -1960,167 +1489,12 @@ def _proses_dan_simpan_satu_file(
             "pesan": "Tidak ada jenis dokumen yang dikenali di file ini.",
             "detail_error": error_per_jenis or None,
         }
-
-    hasil_json = _bersihkan_untuk_json(hasil_semua)
-
-    # [BARU] Beri nomor voucher PERMANEN (dari counter database, lihat
-    # db_client.beri_nomor_voucher_draf_jurnal/ambil_blok_nomor_voucher) ke
-    # baris draf_jurnal hasil rekening_koran (semua baris) & jurnal_penjualan_kasir
-    # (hanya baris yang no_invoice-nya kosong di PDF) -- HANYA kalau client_id
-    # diisi (upload tanpa client aktif tidak tersimpan ke mana pun, jadi
-    # tidak ada dasar untuk nomor voucher permanen; frontend akan pakai
-    # nomor sementara sendiri untuk kasus itu, lihat ImportRekeningKoranModal.tsx).
-    # SENGAJA TIDAK memanggil tarik_draf_jurnal_ke_posting() di sini --
-    # itu akan mengaktifkan kembali seluruh pipeline posting/audit/dedup
-    # yang sengaja dilepas saat Supabase dihapus (lihat docstring fungsi
-    # ini). Cuma counter voucher (VoucherCounter, tabel terpisah &
-    # independen dari jurnal_posting) yang disentuh di sini.
-    peringatan_voucher: list = []
-    if client_id is not None:
-        for kode, hasil in hasil_json.items():
-            draf_jurnal = hasil.get("draf_jurnal") if isinstance(hasil, dict) else None
-            if draf_jurnal:
-                peringatan_voucher.extend(
-                    dbc.beri_nomor_voucher_draf_jurnal(client_id, draf_jurnal, kode, pakai_ai=pakai_ai)
-                )
-
-    # [FIX - audit #12] Sebelumnya guard anti-duplikat (pisahkanTransaksiDuplikat
-    # di ImportRekeningKoranModal.tsx) MURNI mengecek di frontend, terhadap
-    # transaksi yang KEBETULAN sedang di-load di layar -- backend tidak pernah
-    # melakukan dedup-nya sendiri sama sekali. Sekarang backend juga
-    # mengevaluasi & MENCATAT tiap upload rekening_koran (kalau ada client
-    # aktif) lewat dedup_transaksi.evaluasi_upload_rekening_koran() +
-    # dbc.catat_upload_batch(), lalu menyertakan hasilnya (`deteksi_duplikat`)
-    # di response supaya frontend bisa tampilkan sinyal yang BENAR-BENAR
-    # tersimpan di server, bukan cuma tebakan dari state lokal yang bisa
-    # hilang begitu client di-switch/reload.
-    #
-    # CATATAN (terkait temuan #1): deteksi FILE_IDENTIK (hash SHA-256
-    # seluruh file, dicocokkan ke tabel UploadBatch yang independen dari
-    # jurnal_posting) sudah akurat sejak fix dedup #12. Deteksi
-    # REVISI_SEBAGIAN/DUPLIKAT_PENUH (fingerprint per baris, dicocokkan ke
-    # dbc.ambil_hash_transaksi_aktif() yang MEMBACA tabel jurnal_posting)
-    # dulu TIDAK bisa menangkap upload rekening_koran baru sebagai duplikat
-    # selama #1 belum diperbaiki -- jurnal_posting memang belum pernah
-    # diisi oleh /api/proses-file, jadi tidak ada apa pun di sana untuk
-    # dibandingkan. Evaluasi di atas (`evaluasi_upload_rekening_koran`)
-    # dipanggil SEBELUM blok penyimpanan di bawah (yang baru mengisi
-    # jurnal_posting untuk upload INI) -- jadi baris di upload yang sama
-    # tetap tidak akan saling terdeteksi duplikat satu sama lain (memang
-    # tidak masuk akal, karena belum ada yang lain untuk dibandingkan);
-    # yang sekarang benar adalah upload FILE BERIKUTNYA akan bisa
-    # mendeteksi baris dari upload ini sebagai duplikat, karena upload ini
-    # sudah benar-benar tersimpan ke jurnal_posting begitu #1 diperbaiki.
-    deteksi_duplikat: dict = {}
-    if client_id is not None:
-        file_hash = dedup_transaksi.hitung_file_hash(isi)
-        for kode, hasil in hasil_json.items():
-            if kode != "rekening_koran":
-                continue
-            draf_jurnal = hasil.get("draf_jurnal") if isinstance(hasil, dict) else None
-            if not draf_jurnal:
-                continue
-            evaluasi = dedup_transaksi.evaluasi_upload_rekening_koran(client_id, draf_jurnal, file_hash)
-            # Simpan riwayat batch SATU KALI PER KELOMPOK (kode_bank, periode)
-            # -- satu file rekening koran bisa berisi >1 bank/periode
-            # sekaligus (multi-sheet), jadi tidak bisa dicatat sebagai satu
-            # batch tunggal. Baris tiap kelompok diambil lewat
-            # kelompokkan_draf_jurnal() (fungsi pengelompokan YANG SAMA
-            # persis dipakai evaluasi_upload_rekening_koran() di atas, supaya
-            # isi draf_jurnal yang disimpan konsisten dengan status_deteksi
-            # kelompoknya).
-            kelompok_baris = dedup_transaksi.kelompokkan_draf_jurnal(draf_jurnal)
-            for k in evaluasi.kelompok:
-                baris_kelompok = kelompok_baris.get((k.kode_bank, k.periode), [])
-                # FILE_IDENTIK adalah sinyal GLOBAL (byte-for-byte match ke
-                # file lain) yang "menang" dibanding status per-kelompok
-                # (lihat evaluasi_upload_rekening_koran -- status_keseluruhan
-                # dipromosikan ke FILE_IDENTIK di luar loop per-kelompok,
-                # k.status individual TIDAK ikut berubah). Terapkan promosi
-                # yang sama di sini supaya batch yang dicatat konsisten
-                # dengan status_keseluruhan yang dikirim ke frontend.
-                status_efektif = (
-                    evaluasi.status_keseluruhan
-                    if evaluasi.status_keseluruhan == dedup_transaksi.STATUS_FILE_IDENTIK
-                    else k.status
-                )
-                dbc.catat_upload_batch(
-                    client_id=client_id,
-                    kode_bank=k.kode_bank,
-                    periode=k.periode,
-                    status="menunggu_konfirmasi" if status_efektif != dedup_transaksi.STATUS_BARU else "aktif",
-                    nama_file=nama_file,
-                    file_hash=file_hash,
-                    jumlah_baris_total=k.jumlah_baris_total,
-                    jumlah_baris_baru=k.jumlah_baris_baru,
-                    jumlah_baris_overlap=k.jumlah_baris_overlap,
-                    status_deteksi=status_efektif,
-                    draf_jurnal=baris_kelompok,
-                    diupload_oleh=user.get("username", "unknown") if isinstance(user, dict) else None,
-                )
-            hasil["draf_jurnal"] = dedup_transaksi.hapus_kolom_internal(draf_jurnal)
-            deteksi_duplikat[kode] = evaluasi.to_dict()
-
-    # [FIX -- TEMUAN #1 AUDIT: upload tidak tersimpan ke DB] Sebelumnya
-    # fungsi ini berhenti di sini -- hasil_json cuma dikembalikan ke
-    # caller, TIDAK PERNAH ditulis ke tabel manapun (lihat paragraf
-    # panjang di docstring fungsi ini soal "Supabase dihapus"). Modal
-    # import di halaman Transaksi (ImportRekeningKoranModal.tsx) &
-    # TransactionsContext.tsx (importTransactions/replaceGroup) sudah
-    # lebih dulu diperbaiki dengan ASUMSI upload ini benar-benar tersimpan
-    # permanen begitu ada client aktif (makanya keduanya memanggil
-    # loadFromBackend() setelah import) -- tapi asumsi itu sebelumnya
-    # SALAH, sehingga hasil upload lenyap tanpa peringatan begitu ada
-    # refetch berikutnya.
-    #
-    # Blok ini menyalin PERSIS bagian "Menyimpan hasil ke riwayat client"
-    # dari /api/proses-file/stream (proses_file_stream() di atas, satu-
-    # satunya jalur yang sebelumnya benar menyimpan) -- dbc.simpan_hasil()/
-    # simpan_hasil_esb() dulu (supaya ada baris `hasil` sebagai induk),
-    # baru dbc.tarik_draf_jurnal_ke_posting() kalau ada draf_jurnal, supaya
-    # baris-barisnya masuk ke antrean review akuntan (tabel jurnal_posting)
-    # -- inilah satu-satunya sumber data yang benar-benar dibaca kembali
-    # oleh loadFromBackend() (lewat GET jurnal-posting).
-    #
-    # SENGAJA HANYA menyalin bagian PENYIMPANAN-nya saja -- efek samping
-    # lain di jalur /stream (reminder deadline SPT, pertanyaan klarifikasi,
-    # deteksi anomali/pola mencurigakan, auto-generate laporan 18-sheet)
-    # TIDAK diikutkan di sini, supaya perubahan ini tetap fokus & risiko
-    # rendah untuk memperbaiki temuan #1 (data hilang tanpa peringatan).
-    # Kalau efek samping itu memang dibutuhkan juga di halaman Transaksi,
-    # itu perbaikan terpisah menyusul.
-    #
-    # `sudah_diberi_nomor=True` dikirim ke tarik_draf_jurnal_ke_posting()
-    # supaya TIDAK memint ulang nomor voucher -- baris di atas (blok
-    # "peringatan_voucher") sudah memintnya sekali dengan `pakai_ai` sesuai
-    # pilihan user; memint ulang di sini akan dobel-boroskan nomor dari
-    # VoucherCounter untuk voucher yang tidak pernah dipakai.
-    if client_id is not None:
-        conv_id_final = conv_id or datetime.now().isoformat()
-        for kode, hasil in hasil_json.items():
-            data_disimpan = dict(hasil)
-            data_disimpan["nama_file"] = nama_file
-
-            if esb_account_id is not None:
-                dbc.simpan_hasil_esb(client_id, esb_account_id, conv_id_final, kode, data_disimpan)
-                continue
-
-            dbc.simpan_hasil(client_id, conv_id_final, kode, data_disimpan)
-
-            draf_jurnal_final = data_disimpan.get("draf_jurnal") or []
-            if draf_jurnal_final:
-                hasil_tersimpan = dbc.ambil_hasil_client(client_id, jenis=kode, limit=1)
-                hasil_id = hasil_tersimpan[0]["id"] if hasil_tersimpan else None
-                dbc.tarik_draf_jurnal_ke_posting(
-                    client_id, hasil_id, kode, draf_jurnal_final, sudah_diberi_nomor=True,
-                )
-
     return {
         "nama_file": nama_file,
-        "hasil": hasil_json,
+        "hasil": _bersihkan_untuk_json(hasil_semua),
         "tidak_terdeteksi": False,
-        "peringatan_voucher": peringatan_voucher or None,
-        "deteksi_duplikat": deteksi_duplikat or None,
+        "peringatan_voucher": None,
+        "deteksi_duplikat": None,
     }
 
 
@@ -2138,7 +1512,7 @@ async def proses_file(
     # di UI ("tidak menampilkan apa-apa"). Form(None) memaksa FastAPI
     # membaca field ini dari body form-data yang sama dengan file.
     jenis_dokumen: Optional[str] = Form(None),
-    client_id: Optional[int] = Form(None),
+    client_id: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     esb_account_id: Optional[int] = Form(None),
     # [BARU - dedup upload] Kalau True, akuntan SUDAH melihat
@@ -2335,123 +1709,9 @@ _JENIS_DOKUMEN_18_SHEET: Dict[str, str] = {
 _AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET = 3
 
 
-def _cek_kelengkapan_dokumen_18_sheet(client_id: int) -> Dict[str, Any]:
-    """
-    [BARU] Mengecek berapa dari 7 jenis dokumen (lihat
-    _JENIS_DOKUMEN_18_SHEET) yang sudah tersedia untuk client ini di
-    database -- dipakai _auto_generate_laporan_18_sheet() untuk
-    menentukan (a) apakah laporan 18-sheet layak digenerate otomatis
-    sekarang (lihat _AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET), dan (b)
-    jenis apa saja yang masih kosong -- supaya bisa disampaikan balik
-    ke chat sebagai pemberitahuan kelengkapan, BUKAN error yang
-    menahan laporan.
-
-    Returns:
-        dict: {"jumlah_terpenuhi": int, "terpenuhi": List[str] (label),
-        "kurang": List[str] (label)}.
-    """
-    terpenuhi: List[str] = []
-    kurang: List[str] = []
-
-    coa_client = dbc.ambil_coa_client(client_id)
-    if coa_client:
-        terpenuhi.append(_JENIS_DOKUMEN_18_SHEET["coa"])
-    else:
-        kurang.append(_JENIS_DOKUMEN_18_SHEET["coa"])
-
-    for kode in ("rekening_koran", "penjualan", "pembelian", "aset_tetap", "buku_bantu_piutang", "ap_aging"):
-        hasil = dbc.ambil_hasil_client(client_id, jenis=kode, limit=1)
-        if hasil:
-            terpenuhi.append(_JENIS_DOKUMEN_18_SHEET[kode])
-        else:
-            kurang.append(_JENIS_DOKUMEN_18_SHEET[kode])
-
-    return {"jumlah_terpenuhi": len(terpenuhi), "terpenuhi": terpenuhi, "kurang": kurang}
-
-
-def _auto_generate_laporan_18_sheet(
-    client_id: Optional[int], tahun_set: set, user: dict,
-    on_progress: Optional[Callable[..., None]] = None,
-) -> List[dict]:
-    """
-    Dipakai bersama oleh proses_file_batch() dan proses_file_stream().
-    Accounting Core V2 tetap dapat memicu proses export otomatis, tetapi
-    angka Actual dalam 18-sheet hanya berasal dari jurnal POSTED. Jika upload
-    baru masih DRAFT, user perlu review/posting terlebih dahulu agar angka
-    tersebut masuk ke laporan resmi.
-
-    [UBAH] Sebelumnya diblokir kalau COA kosong. Sekarang dipakai aturan
-    "minimal N dari 7 jenis dokumen" (lihat _cek_kelengkapan_dokumen_
-    18_sheet & _AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET) -- begitu
-    ambang itu terpenuhi, laporan TETAP digenerate apa adanya (jenis
-    yang belum diupload otomatis kosong di sheet terkait, karena
-    accounting_export.py sudah pakai .get(...) or {}/[] di semua key).
-    Jenis yang masih kurang TIDAK menggagalkan laporan -- cuma
-    dilaporkan balik lewat field "pesan_kelengkapan" supaya bisa
-    ditampilkan sebagai pemberitahuan di chat setelah file keluar.
-
-    [BARU] on_progress: callback opsional (step, label, status, pesan) --
-    diteruskan APA ADANYA ke _bangun_export_18_sheet() (yang lalu
-    meneruskannya lagi ke _susun_data_export_18_sheet()) supaya SETIAP
-    sub-tahap penyusunan laporan (COA, jurnal, laporan keuangan, lampiran
-    SPT, laporan bulanan, aset tetap, PPh Badan, piutang/hutang, tren
-    saldo, narasi AI, susun file Excel) ikut terlapor -- dipakai endpoint
-    SSE /api/client/{client_id}/proses-file-batch/stream supaya user
-    lihat proses ini step-by-step, bukan cuma satu baris besar "generate
-    laporan 18-sheet".
-    """
-    laporan_18_sheet: List[dict] = []
-    if client_id is None or not tahun_set:
-        return laporan_18_sheet
-
-    kelengkapan = _cek_kelengkapan_dokumen_18_sheet(client_id)
-    if kelengkapan["jumlah_terpenuhi"] < _AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET:
-        laporan_18_sheet.append({
-            "status": "perlu_file",
-            "pesan": (
-                f"Laporan 18-sheet belum digenerate otomatis -- baru "
-                f"{kelengkapan['jumlah_terpenuhi']} dari 7 jenis dokumen yang "
-                f"terdeteksi (minimal {_AMBANG_JUMLAH_JENIS_UNTUK_AUTO_18_SHEET} "
-                f"dibutuhkan). Yang masih kurang: {', '.join(kelengkapan['kurang'])}."
-            ),
-        })
-        return laporan_18_sheet
-
-    for tahun in sorted(tahun_set):
-        try:
-            isi_excel = _bangun_export_18_sheet(
-                client_id, Export18SheetRequest(tahun=tahun), user, on_progress=on_progress,
-            )
-            pesan_kelengkapan = None
-            if kelengkapan["kurang"]:
-                pesan_kelengkapan = (
-                    "Laporan 18-sheet berhasil dibuat. File yang Anda kirim masih "
-                    f"kurang di bagian: {', '.join(kelengkapan['kurang'])} -- "
-                    "sheet yang terkait bagian tersebut dikosongkan di file ini."
-                )
-            laporan_18_sheet.append({
-                "status": "berhasil",
-                "tahun": tahun,
-                "nama_file": f"Laporan_Keuangan_{tahun}_18_Sheet.xlsx",
-                "file_base64": base64.b64encode(isi_excel).decode("ascii"),
-                "pesan_kelengkapan": pesan_kelengkapan,
-            })
-        except HTTPException as e:
-            laporan_18_sheet.append({
-                "status": "perlu_file", "tahun": tahun,
-                "pesan": e.detail if isinstance(e.detail, str) else str(e.detail),
-            })
-        except Exception as e:  # noqa: BLE001
-            laporan_18_sheet.append({
-                "status": "gagal", "tahun": tahun,
-                "pesan": f"Gagal membuat laporan 18-sheet otomatis untuk tahun {tahun}: {e}",
-            })
-    return laporan_18_sheet
-
-
 @app.post("/api/client/{client_id}/proses-file-batch")
 async def proses_file_batch(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
@@ -2651,13 +1911,9 @@ async def proses_file_batch(
     # [BARU -- PARITAS KECEPATAN] Sekarang cuma jalan kalau diminta
     # eksplisit (auto_generate_laporan=True) -- lihat catatan di param
     # auto_generate_laporan di atas.
-    if auto_generate_laporan:
-        laporan_18_sheet = await asyncio.to_thread(
-            _auto_generate_laporan_18_sheet,
-            client_id, _tahun_dari_hasil_batch(hasil_per_file), user,
-        )
-    else:
-        laporan_18_sheet = []
+    # [DIUBAH 2026-10-04] Auto laporan 18-sheet dibuang (sumbernya tabel
+    # legacy jurnal_posting/laporan_keuangan sudah di-drop, migration 23).
+    laporan_18_sheet = []
 
     dbc.log_audit(
         client_id=client_id, user=user.get("username", "unknown"),
@@ -2696,7 +1952,7 @@ async def proses_file_batch(
 # perlu disesuaikan.
 @app.post("/api/client/{client_id}/proses-file-batch/stream")
 async def proses_file_batch_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     jenis_dokumen: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
@@ -2969,36 +2225,16 @@ async def proses_file_batch_stream(
                         "status": "error", "pesan": str(e),
                     })
 
-            # -- 5. AUTO-GENERATE LAPORAN 18-SHEET -- [BARU] on_progress
-            # diteruskan ke _auto_generate_laporan_18_sheet() supaya
-            # SEMUA sub-tahap internalnya (COA, jurnal, laporan keuangan,
-            # lampiran SPT, laporan bulanan, aset tetap, PPh Badan,
-            # piutang/hutang, tren saldo, narasi AI, susun file Excel --
-            # lihat _susun_data_export_18_sheet() & _bangun_export_18_sheet())
-            # ikut tampil sebagai step SENDIRI ("18sheet:<sub_step>"),
-            # bukan cuma 1 baris besar "generate 18-sheet".
-            def on_progress_18_sheet(step, label, status, pesan=None):
-                q.put({
-                    "type": "progress", "step": f"18sheet:{step}",
-                    "label": label, "status": status, "pesan": pesan,
-                })
-
-            # [BARU -- PARITAS KECEPATAN] Default OFF -- lihat catatan di
-            # param auto_generate_laporan pada endpoint ini. Kirim 1 event
-            # "skip" supaya UI (ProcessingSteps.jsx) tetap tahu tahap ini
-            # sengaja dilewati, bukan diam-diam hilang.
-            if auto_generate_laporan:
-                tahun_set = _tahun_dari_hasil_batch(hasil_per_file)
-                laporan_18_sheet = _auto_generate_laporan_18_sheet(
-                    client_id, tahun_set, user, on_progress=on_progress_18_sheet,
-                )
-            else:
-                laporan_18_sheet = []
-                q.put({
-                    "type": "progress", "step": "18sheet",
-                    "label": "Laporan 18-Sheet tidak dibuat otomatis -- gunakan panel \"Buat Laporan Keuangan Lengkap\" kapan saja.",
-                    "status": "skip",
-                })
+            # -- 5. LAPORAN 18-SHEET
+            # [DIUBAH 2026-10-04] Auto laporan 18-sheet dibuang (sumbernya
+            # tabel legacy sudah di-drop, migration 23). Tetap kirim 1 event
+            # "skip" supaya UI (ProcessingSteps.jsx) tahu tahap ini dilewati.
+            laporan_18_sheet = []
+            q.put({
+                "type": "progress", "step": "18sheet",
+                "label": "Laporan 18-Sheet tidak dibuat otomatis.",
+                "status": "skip",
+            })
 
             dbc.log_audit(
                 client_id=client_id, user=user.get("username", "unknown"),
@@ -3039,98 +2275,9 @@ async def proses_file_batch_stream(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.post("/api/upload-batch/{batch_id}/konfirmasi")
-async def konfirmasi_upload_batch(
-    batch_id: int,
-    aksi: str = Form(...),  # "lanjutkan_semua" | "hanya_baris_baru" | "batalkan"
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas, sama seperti /api/proses-file
-):
-    """
-    [BARU - dedup upload] Tindak lanjut atas batch berstatus
-    'menunggu_konfirmasi' (dibuat oleh /api/proses-file saat
-    terdeteksi indikasi duplikat/revisi rekening koran).
-
-    aksi:
-      "lanjutkan_semua"   -- tetap tarik SEMUA baris ke jurnal_posting
-                              apa adanya (dipakai kalau overlap
-                              ternyata memang kebetulan/sah, BUKAN
-                              duplikat sungguhan).
-      "hanya_baris_baru"  -- tarik HANYA baris yang fingerprint-nya
-                              belum pernah ada (kasus revisi yang sah:
-                              buang baris lama yang sudah tercatat,
-                              simpan baris tambahan yang genuinely baru).
-      "batalkan"          -- tolak batch ini sepenuhnya, tidak ada
-                              baris yang ditarik ke jurnal_posting.
-    """
-    batch = dbc.ambil_upload_batch_by_id(batch_id)
-    if batch is None:
-        raise HTTPException(status_code=404, detail="Batch upload tidak ditemukan.")
-    if batch["status"] != "menunggu_konfirmasi":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Batch ini sudah diproses sebelumnya (status saat ini: {batch['status']}).",
-        )
-    if aksi not in ("lanjutkan_semua", "hanya_baris_baru", "batalkan"):
-        raise HTTPException(status_code=422, detail="aksi harus salah satu: lanjutkan_semua, hanya_baris_baru, batalkan.")
-
-    draf_jurnal = batch.get("draf_jurnal") or []
-
-    if aksi == "batalkan":
-        dbc.perbarui_status_upload_batch(batch_id, "dibatalkan", user=user.get("username", "unknown"))
-        history.catat_riwayat(
-            client_id=batch["client_id"], user=user.get("username", "unknown"),
-            aksi="batalkan_upload_duplikat",
-            detail={"batch_id": batch_id, "nama_file": batch.get("nama_file"), "kode_bank": batch["kode_bank"], "periode": batch["periode"]},
-        )
-        return {"batch_id": batch_id, "status": "dibatalkan", "jumlah_baris_ditarik": 0}
-
-    # [FIX -- GAP EVENT LOOP] hash_lama bisa berisi ribuan fingerprint (dari
-    # dbc.ambil_hash_transaksi_aktif) & draf_jurnal juga bisa ribuan baris --
-    # list comprehension buat_signature_baris per baris + query DB ini sync,
-    # dibungkus to_thread biar tidak memblokir event loop.
-    def _susun_draf_dipakai() -> list:
-        if aksi == "hanya_baris_baru":
-            hash_lama = dbc.ambil_hash_transaksi_aktif(batch["client_id"], batch["kode_bank"], batch["periode"])
-            return [b for b in draf_jurnal if dedup_transaksi.buat_signature_baris(b) not in hash_lama]
-        return draf_jurnal  # lanjutkan_semua
-
-    draf_dipakai = await asyncio.to_thread(_susun_draf_dipakai)
-    jumlah = await asyncio.to_thread(
-        dbc.tarik_draf_jurnal_ke_posting, batch["client_id"], batch["hasil_id"], "rekening_koran", draf_dipakai
-    )
-
-    dbc.perbarui_status_upload_batch(batch_id, "aktif", user=user.get("username", "unknown"))
-    if batch["status_deteksi"] in ("REVISI_SEBAGIAN", "DUPLIKAT_PENUH"):
-        batch_lama = dbc.ambil_batch_aktif(batch["client_id"], batch["kode_bank"], batch["periode"])
-        if batch_lama and batch_lama["id"] != batch_id:
-            dbc.tandai_batch_diganti(batch_lama["id"], batch_id)
-
-    history.catat_riwayat(
-        client_id=batch["client_id"], user=user.get("username", "unknown"),
-        aksi="konfirmasi_upload_duplikat",
-        detail={
-            "batch_id": batch_id, "aksi": aksi, "nama_file": batch.get("nama_file"),
-            "kode_bank": batch["kode_bank"], "periode": batch["periode"], "jumlah_baris_ditarik": jumlah,
-        },
-    )
-    return {"batch_id": batch_id, "status": "aktif", "aksi": aksi, "jumlah_baris_ditarik": jumlah}
-
-
-@app.get("/api/client/{client_id}/upload-batch")
-async def daftar_upload_batch(
-    client_id: int,
-    limit: int = 100,
-    user: dict = Depends(auth.get_current_user),
-):
-    """[BARU - dedup upload] Riwayat upload rekening koran per
-    client -- termasuk yang masih 'menunggu_konfirmasi' (utk UI
-    menampilkan badge "ada upload perlu ditinjau")."""
-    return {"batch": dbc.daftar_upload_batch_client(client_id, limit=limit)}
-
-
 @app.post("/api/client/{client_id}/bootstrap-pola-bank")
 async def api_bootstrap_pola_bank(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     min_samples: int = Form(2),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -3236,7 +2383,7 @@ async def api_bootstrap_pola_bank(
 # ============================================================
 
 def _siapkan_df_coa_untuk_kertas_kerja(
-    client_id: int, coa_bytes: Optional[bytes], nama_coa_file: Optional[str],
+    client_id: str, coa_bytes: Optional[bytes], nama_coa_file: Optional[str],
 ) -> Tuple[pd.DataFrame, List[str]]:
     """
     [FIX -- Supabase dihapus, TANPA DATABASE] Sebelumnya fungsi ini punya
@@ -3278,7 +2425,7 @@ def _siapkan_df_coa_untuk_kertas_kerja(
 
 @app.post("/api/client/{client_id}/generate-kertas-kerja")
 async def api_generate_kertas_kerja(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     pakai_ai: bool = Form(True),
@@ -3386,7 +2533,7 @@ async def api_generate_kertas_kerja(
 # keduanya cuma beda cara mengirim hasil balik ke browser (JSON sekali vs
 # event SSE bertahap).
 def _jalankan_generate_kertas_kerja(
-    client_id: int,
+    client_id: str,
     daftar_file_pdf: List[Tuple[Any, str]],
     df_coa: pd.DataFrame,
     peringatan_coa: List[str],
@@ -3456,7 +2603,7 @@ def _jalankan_generate_kertas_kerja(
 
 @app.post("/api/client/{client_id}/generate-kertas-kerja/stream")
 async def api_generate_kertas_kerja_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     pakai_ai: bool = Form(True),
@@ -3597,7 +2744,7 @@ async def api_generate_kertas_kerja_stream(
 # kertas_kerja.generate_kertas_kerja() masih berjalan di thread terpisah.
 @app.post("/api/client/{client_id}/kertas-kerja/generate/stream")
 async def api_generate_kertas_kerja_per_file_stream(
-    client_id: int,
+    client_id: str,
     files: List[UploadFile] = File(...),
     coa_file: Optional[UploadFile] = File(None),
     tahun: Optional[int] = Form(None),
@@ -3813,7 +2960,7 @@ class KonfirmasiKertasKerjaKe18SheetRequest(BaseModel):
 
 
 def _bangun_data_export_18_sheet_dari_kertas_kerja(
-    client_id: int, isi_file: bytes, nama_file: str,
+    client_id: str, isi_file: bytes, nama_file: str,
     req: "KonfirmasiKertasKerjaKe18SheetRequest", user: dict,
 ) -> Tuple[dict, List[str]]:
     """Badan logic bareng utk endpoint Excel & JSON di bawah -- baca file,
@@ -3836,7 +2983,7 @@ def _bangun_data_export_18_sheet_dari_kertas_kerja(
 
 @app.post("/api/client/{client_id}/kertas-kerja/konfirmasi-ke-18-sheet")
 async def api_konfirmasi_kertas_kerja_ke_18_sheet(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     nama_perusahaan: Optional[str] = Form(None),
     prive_atau_dividen: float = Form(0),
@@ -3926,7 +3073,7 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet(
 
 @app.post("/api/client/{client_id}/kertas-kerja/konfirmasi-ke-18-sheet-json")
 async def api_konfirmasi_kertas_kerja_ke_18_sheet_json(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     nama_perusahaan: Optional[str] = Form(None),
     prive_atau_dividen: float = Form(0),
@@ -3984,7 +3131,7 @@ async def api_konfirmasi_kertas_kerja_ke_18_sheet_json(
 
 @app.post("/api/client/{client_id}/upload-hasil-koreksi")
 async def api_upload_hasil_koreksi(
-    client_id: int,
+    client_id: str,
     file: UploadFile = File(...),
     min_samples: int = Form(1),
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
@@ -4035,30 +3182,9 @@ async def api_upload_hasil_koreksi(
 # diukur LANGSUNG begitu rekening koran mentah diupload -- tanpa
 # akuntan/kamu perlu hitung baris satu-satu.
 
-@app.get("/api/client/{client_id}/hasil/{hasil_id}/metrik-kategorisasi")
-def api_metrik_kategorisasi(
-    client_id: int, hasil_id: int,
-    user: dict = Depends(auth.get_current_user),
-):
-    """
-    Hitung % baris yang berhasil otomatis dikategorikan (dipecah per
-    sumber: pola historis / kata kunci COA / AI / data asli dari file /
-    belum terkategori) untuk SATU hasil upload rekening koran (hasil_id
-    dari response /api/proses-file). Pakai ini setelah upload rekening
-    koran MENTAH client baru untuk dapat angka konkret Prioritas #3,
-    bukan tebak-tebakan.
-    """
-    hasil = dbc.ambil_hasil_by_id(hasil_id)
-    if hasil is None or hasil.get("client_id") != client_id:
-        raise HTTPException(status_code=404, detail="Hasil tidak ditemukan untuk client ini.")
-    data = hasil.get("data") or {}
-    df_hasil = pd.DataFrame(data.get("df") or [])
-    metrik = accounting_export.hitung_metrik_kategorisasi(df_hasil)
-    return {"client_id": client_id, "hasil_id": hasil_id, "nama_file": data.get("nama_file"), **metrik}
-
 
 @app.get("/api/client/{client_id}/pola-bank")
-def api_lihat_pola_bank(client_id: int, user: dict = Depends(auth.get_current_user)):
+def api_lihat_pola_bank(client_id: str, user: dict = Depends(auth.get_current_user)):
     """
     [BARU] Lihat isi pola_bank_client_{client_id}.json apa adanya -- untuk
     verifikasi hasil bootstrap (item di atas) atau pola yang terkumpul dari
@@ -4094,73 +3220,6 @@ def api_lihat_pola_bank(client_id: int, user: dict = Depends(auth.get_current_us
 # dbc.ambil_coa_client) -- endpoint ini murni menyambungkannya, tidak
 # menambah logic baru di akuntansi_ai.py/db_client.py.
 
-@app.post("/api/client/{client_id}/retrain-pola")
-def api_retrain_pola(
-    client_id: int,
-    jenis: Optional[str] = None,  # "rekening_koran" | "penjualan" | None (proses keduanya)
-    limit: int = 500,
-    paksa_commit: bool = False,  # [BARU] lanjutkan commit walau evaluasi staging menyarankan review manual
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Latih ulang pola_bank_client_{id}.json / pola_penjualan_client_{id}.json
-    dari feedback klarifikasi yang sudah terkumpul (konfirmasi "ya benar"
-    atau koreksi ke akun lain) -- supaya transaksi serupa berikutnya bisa
-    langsung dikenali otomatis, tidak perlu ditanya manual lagi ke akuntan.
-
-    [BARU -- STAGING] Sebelum benar-benar commit, batch feedback diuji dulu
-    lewat ak.evaluasi_pola_sebelum_commit() (pola kandidat dilatih dari
-    sebagian feedback, diuji ke sisanya yang sengaja disisihkan). Kalau
-    hasilnya "PERLU_REVIEW_MANUAL" (akurasi terlalu rendah atau justru lebih
-    buruk dari pola yang sedang live), retraining DITAHAN -- tidak ada
-    perubahan tersimpan -- dan response berisi detail evaluasi supaya
-    supervisor bisa putuskan manual. Kirim ulang dengan paksa_commit=true
-    kalau setelah dicek tetap mau lanjut.
-
-    jenis=None (default) memproses "rekening_koran" DAN "penjualan"
-    sekaligus dalam 1 panggilan. Aman dipanggil berkali-kali/dijadwalkan
-    rutin -- feedback yang sudah pernah dipakai tetap ada di tabel
-    pola_augmentasi (tidak dihapus), gabung_pola() di akuntansi_ai.py akan
-    menimpa pola lama dengan yang baru kalau signature+arah sama, bukan
-    dobel-tambah.
-    """
-    daftar_jenis = [jenis] if jenis else sorted(_JENIS_DENGAN_POLA_PER_CLIENT)
-    tidak_dikenal = [j for j in daftar_jenis if j not in _JENIS_DENGAN_POLA_PER_CLIENT]
-    if tidak_dikenal:
-        raise HTTPException(
-            status_code=400,
-            detail=f"jenis tidak dikenal: {tidak_dikenal}. Pilih dari {sorted(_JENIS_DENGAN_POLA_PER_CLIENT)}.",
-        )
-
-    df_coa = pd.DataFrame(dbc.ambil_coa_client(client_id))
-
-    hasil_per_jenis: Dict[str, Any] = {}
-    for j in daftar_jenis:
-        augmentasi_rows = dbc.ambil_pola_augmentasi(client_id=client_id, jenis=j, limit=limit)
-        if not augmentasi_rows:
-            hasil_per_jenis[j] = {
-                "jenis": j,
-                "jumlah_feedback_total": 0,
-                "pesan": "Belum ada feedback klarifikasi tersimpan untuk jenis ini.",
-            }
-            continue
-        hasil_per_jenis[j] = ak.latih_ulang_pola_dengan_staging(
-            augmentasi_rows, jenis=j, client_id=client_id, df_coa=df_coa,
-            paksa_commit=paksa_commit,
-        )
-
-    dbc.log_audit(
-        client_id=client_id,
-        user=user.get("username", "unknown"),
-        aksi="retrain_pola_dari_feedback",
-        detail={
-            "jenis_diproses": daftar_jenis, "paksa_commit": paksa_commit,
-            "hasil": hasil_per_jenis,
-        },
-    )
-
-    return {"client_id": client_id, "hasil": hasil_per_jenis}
-
 
 # ============================================================
 # [BARU] RIWAYAT VERSI & ROLLBACK POLA
@@ -4180,7 +3239,7 @@ def api_retrain_pola(
 
 @app.get("/api/client/{client_id}/pola/{jenis}/riwayat")
 def api_riwayat_pola(
-    client_id: int,
+    client_id: str,
     jenis: str,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
 ):
@@ -4214,7 +3273,7 @@ class RollbackPolaRequest(BaseModel):
 
 @app.post("/api/client/{client_id}/pola/{jenis}/rollback")
 def api_rollback_pola(
-    client_id: int,
+    client_id: str,
     jenis: str,
     req: RollbackPolaRequest,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama dgn retrain-pola
@@ -4279,7 +3338,7 @@ def api_rollback_pola(
 
 @app.get("/api/client/{client_id}/metrik-akurasi")
 def api_metrik_akurasi(
-    client_id: int,
+    client_id: str,
     jenis: Optional[str] = None,  # "rekening_koran" | "penjualan" | None (gabungan keduanya)
     n_bulan_terakhir: int = 6,
     user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama seperti retrain-pola
@@ -4364,7 +3423,7 @@ def _format_sse_progress(**kwargs) -> str:
 async def proses_file_stream(
     file: UploadFile = File(...),
     jenis_dokumen: Optional[str] = Form(None),
-    client_id: Optional[int] = Form(None),
+    client_id: Optional[str] = Form(None),
     conv_id: Optional[str] = Form(None),
     esb_account_id: Optional[int] = Form(None),
     user: dict = Depends(auth.require_level(3)),
@@ -4474,128 +3533,11 @@ async def proses_file_stream(
 
             hasil_json = _bersihkan_untuk_json(hasil_semua)
 
-            if client_id is not None:
-                q.put({"type": "progress", "step": "simpan", "label": "Menyimpan hasil ke riwayat client", "status": "processing"})
-
-                conv_id_final = conv_id or datetime.now().isoformat()
-                for kode, hasil in hasil_json.items():
-                    data_disimpan = dict(hasil)
-                    data_disimpan["nama_file"] = nama_file
-
-                    koreksi_otomatis = hasil.get("koreksi_otomatis") or []
-                    if koreksi_otomatis:
-                        dbc.log_audit(
-                            client_id=client_id,
-                            user=user.get("username", "unknown"),
-                            aksi="auto_fix_data",
-                            detail={
-                                "jenis_dokumen": kode,
-                                "nama_file": nama_file,
-                                "total_koreksi": len(koreksi_otomatis),
-                                "koreksi": koreksi_otomatis[:200],
-                            },
-                        )
-
-                    if esb_account_id is not None:
-                        dbc.simpan_hasil_esb(client_id, esb_account_id, conv_id_final, kode, data_disimpan)
-                    else:
-                        dbc.simpan_hasil(client_id, conv_id_final, kode, data_disimpan)
-
-                        draf_jurnal = data_disimpan.get("draf_jurnal") or []
-                        if draf_jurnal:
-                            hasil_tersimpan = dbc.ambil_hasil_client(client_id, jenis=kode, limit=1)
-                            hasil_id = hasil_tersimpan[0]["id"] if hasil_tersimpan else None
-                            dbc.tarik_draf_jurnal_ke_posting(client_id, hasil_id, kode, draf_jurnal)
-
-                q.put({"type": "progress", "step": "simpan", "label": "Menyimpan hasil ke riwayat client", "status": "done"})
-
-                q.put({"type": "progress", "step": "reminder_spt", "label": "Mengecek reminder deadline SPT", "status": "processing"})
-                hasil_mentah_spt = hasil_semua.get("spt_masa")
-                if hasil_mentah_spt:
-                    df_spt_mentah = hasil_mentah_spt.get("df")
-                    item_reminder = notifikasi.ekstrak_item_reminder_dari_df(df_spt_mentah)
-                    if item_reminder:
-                        dbc.simpan_reminder_deadline_spt(client_id, item_reminder)
-                q.put({"type": "progress", "step": "reminder_spt", "label": "Mengecek reminder deadline SPT", "status": "done"})
-
-                q.put({"type": "progress", "step": "klarifikasi", "label": "Mencari baris yang perlu klarifikasi", "status": "processing"})
-                for kode in _JENIS_DENGAN_POLA_PER_CLIENT:
-                    hasil_mentah = hasil_semua.get(kode)
-                    if not hasil_mentah:
-                        continue
-                    df_mentah = hasil_mentah.get("df")
-                    for item in ak.cari_baris_perlu_klarifikasi(df_mentah):
-                        dbc.buat_pertanyaan_klarifikasi(
-                            client_id=client_id,
-                            jenis=kode,
-                            pertanyaan=item["pertanyaan"],
-                            conv_id=conv_id_final,
-                            baris_index=item["baris_index"],
-                            konteks=item,
-                            tebakan_kategori=item.get("tebakan_kategori"),
-                            butuh_konfirmasi_saja=item.get("butuh_konfirmasi_saja", False),
-                        )
-                q.put({"type": "progress", "step": "klarifikasi", "label": "Mencari baris yang perlu klarifikasi", "status": "done"})
-
-                q.put({"type": "progress", "step": "anomali", "label": "Mendeteksi anomali & pola mencurigakan", "status": "processing"})
-                for kode in _JENIS_DENGAN_POLA_PER_CLIENT:
-                    hasil_mentah = hasil_semua.get(kode)
-                    nama_pola = _POLA_PER_JENIS.get(kode)
-                    if not hasil_mentah or not nama_pola:
-                        continue
-                    try:
-                        pola_client = ak.muat_pola(ak._path_pola(nama_pola, client_id))
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[PERINGATAN] Gagal muat pola utk deteksi anomali ({kode}): {e}")
-                        continue
-
-                    df_mentah = hasil_mentah.get("df")
-                    for item in ak.cari_anomali_untuk_alert(df_mentah, pola_client):
-                        dbc.buat_alert_anomali(
-                            client_id=client_id,
-                            jenis=kode,
-                            tipe_alert="nominal_ekstrim",
-                            pesan=item["pesan"],
-                            conv_id=conv_id_final,
-                            baris_index=item["baris_index"],
-                            konteks=item,
-                            skor=item.get("anomaly_score"),
-                        )
-
-                    temuan_mencurigakan = ak.deteksi_pola_mencurigakan(pola_client)
-                    if temuan_mencurigakan:
-                        path_evaluasi = ak._path_pola(f"evaluasi_{nama_pola}", client_id)
-                        temuan_benar_baru = ak.simpan_evaluasi_pola(path_evaluasi, temuan_mencurigakan)
-                        for temuan in temuan_benar_baru:
-                            pesan = (
-                                f"Akun \"{temuan['nama_akun_debet']}\" (debet) / "
-                                f"\"{temuan['nama_akun_kredit']}\" (kredit) dipakai oleh "
-                                f"{temuan['jumlah_signature_berbeda']} pola transaksi berbeda "
-                                f"yang masing2 baru muncul 1x -- cek apakah kategorisasi ini benar."
-                            )
-                            dbc.buat_alert_anomali(
-                                client_id=client_id,
-                                jenis=kode,
-                                tipe_alert="pola_mencurigakan",
-                                pesan=pesan,
-                                conv_id=conv_id_final,
-                                konteks=temuan,
-                                skor=float(temuan["jumlah_signature_berbeda"]),
-                            )
-                q.put({"type": "progress", "step": "anomali", "label": "Mendeteksi anomali & pola mencurigakan", "status": "done"})
-
-                # [BARU] AUTO-GENERATE LAPORAN 14-SHEET -- lihat docstring
-                # _auto_generate_laporan_18_sheet(): begitu file dari chat
-                # ini selesai diproses, laporan 18-sheet langsung disusun
-                # kalau tahun pajaknya kebaca dari draf_jurnal & COA client
-                # sudah ada -- TANPA menunggu koreksi/posting manual dulu.
-                q.put({"type": "progress", "step": "laporan_18_sheet", "label": "Menyusun laporan 18-sheet", "status": "processing"})
-                laporan_18_sheet = _auto_generate_laporan_18_sheet(
-                    client_id, _tahun_dari_hasil_json(hasil_json), user,
-                )
-                q.put({"type": "progress", "step": "laporan_18_sheet", "label": "Menyusun laporan 18-sheet", "status": "done"})
-            else:
-                laporan_18_sheet = []
+            # [DIUBAH 2026-10-04 -- migrations/23-drop_legacy_and_finance_tables.py]
+            # Simpan ke riwayat client (hasil/jurnal_posting), reminder SPT,
+            # pertanyaan klarifikasi, alert anomali & auto laporan 18-sheet
+            # dibuang bersama tabelnya -- hasil parsing cuma dikembalikan.
+            laporan_18_sheet = []
 
             q.put({
                 "type": "result", "nama_file": nama_file, "hasil": hasil_json,
@@ -4629,46 +3571,6 @@ async def proses_file_stream(
 # otomatis di dalam /api/proses-file di atas, lewat
 # ak.cari_baris_perlu_klarifikasi().
 
-@app.get("/api/klarifikasi")
-def api_daftar_klarifikasi(
-    client_id: Optional[int] = None,
-    status: Optional[str] = "pending",
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Daftar pertanyaan klarifikasi. Default cuma yang 'pending' --
-    kirim status=None (atau status kosong) utk lihat semua termasuk yg
-    sudah 'answered'."""
-    return {
-        "pertanyaan": dbc.daftar_pertanyaan_klarifikasi(client_id=client_id, status=status)
-    }
-
-
-class JawabKlarifikasiRequest(BaseModel):
-    jawaban: str
-
-
-@app.post("/api/klarifikasi/{pertanyaan_id}/jawab")
-def api_jawab_klarifikasi(
-    pertanyaan_id: int,
-    req: JawabKlarifikasiRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Simpan jawaban akuntan atas 1 pertanyaan klarifikasi. Begitu
-    dijawab, otomatis juga tercatat sbg feedback koreksi di tabel
-    pola_augmentasi (lihat dbc.jawab_pertanyaan_klarifikasi) supaya
-    transaksi serupa berikutnya tidak perlu ditanya lagi."""
-    berhasil = dbc.jawab_pertanyaan_klarifikasi(
-        pertanyaan_id=pertanyaan_id,
-        jawaban=req.jawaban,
-        username=user.get("username", "unknown"),
-    )
-    if not berhasil:
-        raise HTTPException(
-            status_code=404,
-            detail="Pertanyaan tidak ditemukan atau gagal menyimpan jawaban.",
-        )
-    return {"berhasil": True}
-
 
 # ============================================================
 # [BARU] ALERT ANOMALI -- endpoint (mirip mekanisme klarifikasi di atas)
@@ -4676,67 +3578,6 @@ def api_jawab_klarifikasi(
 # Ditinjau oleh akuntan internal lewat dashboard React. Alert-nya sendiri
 # dibuat otomatis di dalam /api/proses-file di atas, lewat
 # ak.cari_anomali_untuk_alert() & ak.deteksi_pola_mencurigakan().
-
-@app.get("/api/client/{client_id}/reminder-spt")
-def api_reminder_spt_client(
-    client_id: int,
-    hanya_belum_selesai: bool = True,
-    user: dict = Depends(auth.get_current_user),
-):
-    """Kalender kewajiban lapor/setor SPT 1 client (SEMUA yang belum
-    selesai, bukan cuma yang sudah/lagi diingatkan) -- beda dari
-    /api/alert-anomali yang isinya notifikasi yang SUDAH terkirim."""
-    return {"reminder": dbc.daftar_reminder_spt_client(client_id, hanya_belum_selesai=hanya_belum_selesai)}
-
-
-@app.post("/api/notifikasi/jalankan-sekarang")
-def api_jalankan_reminder_sekarang(user: dict = Depends(auth.require_level(3))):
-    """Jalankan pengecekan reminder deadline SPT SEKARANG JUGA (tidak
-    nunggu jadwal harian) -- utk testing manual bahwa WA/in-app benar2
-    terkirim setelah setting FONNTE_TOKEN & nomor_wa client."""
-    return notifikasi.jalankan_pengecekan_reminder_spt()
-
-
-@app.get("/api/alert-anomali")
-def api_daftar_alert_anomali(
-    client_id: Optional[int] = None,
-    status: Optional[str] = "baru",
-    tipe_alert: Optional[str] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Daftar alert anomali. Default cuma yang 'baru' -- kirim status=None
-    (atau status kosong) utk lihat semua termasuk yg sudah 'dilihat'/
-    'diabaikan'. tipe_alert opsional: 'nominal_ekstrim' atau
-    'pola_mencurigakan'."""
-    return {
-        "alert": dbc.daftar_alert_anomali(
-            client_id=client_id, status=status, tipe_alert=tipe_alert,
-        )
-    }
-
-
-class TandaiAlertAnomaliRequest(BaseModel):
-    status: str  # "dilihat" atau "diabaikan"
-
-
-@app.post("/api/alert-anomali/{alert_id}/tandai")
-def api_tandai_alert_anomali(
-    alert_id: int,
-    req: TandaiAlertAnomaliRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Tandai 1 alert sbg 'dilihat' atau 'diabaikan' oleh akuntan yang login."""
-    berhasil = dbc.tandai_alert_anomali(
-        alert_id=alert_id,
-        status=req.status,
-        username=user.get("username", "unknown"),
-    )
-    if not berhasil:
-        raise HTTPException(
-            status_code=404,
-            detail="Alert tidak ditemukan atau status tidak valid ('dilihat'/'diabaikan').",
-        )
-    return {"berhasil": True}
 
 
 @app.post("/api/proses-dan-buat-excel")
@@ -4808,307 +3649,15 @@ async def proses_dan_buat_excel(
 # berurutan, formula VLOOKUP ke COA, dan formula cek saldo berjalan.
 # Lihat modules/accounting_export.py -> export_rekening_koran_format_akuntan().
 
-@app.get("/api/client/{client_id}/rekening-koran/export-format-akuntan/{hasil_id}")
-async def api_export_rekening_koran_format_akuntan(
-    client_id: int,
-    hasil_id: int,
-    file_piutang: Optional[UploadFile] = File(None),
-    user: dict = Depends(auth.get_current_user),
-):
-    """
-    [BERUBAH - Prioritas #7] Sebelumnya endpoint ini menerima UPLOAD FILE
-    dan memanggil ak.proses_file_rekening_koran() dari nol -- artinya
-    file yang sama bisa di-parse & dipanggil ke AI DUA KALI kalau
-    akuntan juga sudah upload lewat /api/proses-file (yang otomatis
-    menarik hasilnya ke antrean jurnal_posting). Sekarang endpoint ini
-    TIDAK menerima file lagi -- ia membaca ULANG hasil yang SUDAH
-    tersimpan dari upload sebelumnya (hasil_id, didapat dari response
-    /api/proses-file atau /api/client/{client_id}/hasil), digabung
-    dengan voucher & status posting terkini dari tabel jurnal_posting.
-
-    Alur yang benar sekarang:
-      1. Upload rekening koran SEKALI lewat /api/proses-file (Supervisor+).
-         -> tersimpan ke tabel hasil, DAN baris2nya otomatis masuk
-         antrean jurnal_posting (status draft, voucher SUDAH digenerate
-         saat itu juga -- lihat dbc.tarik_draf_jurnal_ke_posting()).
-      2. Panggil endpoint INI kapan saja dengan hasil_id dari langkah 1
-         untuk mengunduh Excel format kerja akuntan. Voucher di Excel
-         akan SAMA PERSIS setiap kali di-export ulang (idempoten), dan
-         kolom "Status Posting" menunjukkan draft/terposting terkini --
-         jadi Excel yang sama bisa dipakai baik SEBELUM maupun SESUDAH
-         supervisor menekan "Posting" di layar review, tanpa perlu
-         parse ulang file atau bikin endpoint terpisah untuk masing2.
-      3. (Opsional, sebelum atau sesudah unduh Excel) Supervisor
-         mengonfirmasi baris2 di jurnal_posting -- satu-satu lewat
-         /api/client/{client_id}/jurnal-posting/{posting_id}/konfirmasi,
-         atau sekaligus lewat endpoint konfirmasi-semua di bawah utk
-         baris yang akunnya bukan placeholder.
-
-    file_piutang tetap opsional: kalau dikasih, dipakai untuk auto-isi
-    kolom Supplier/Cust pada baris uang masuk yang belum ketahuan
-    pasangannya (lihat _cocokkan_supplier_opsional di accounting_export.py).
-    """
-    hasil_row = dbc.ambil_hasil_by_id(hasil_id)
-    if hasil_row is None or hasil_row["client_id"] != client_id or hasil_row["jenis"] != "rekening_koran":
-        raise HTTPException(
-            status_code=404,
-            detail="Hasil rekening koran dengan id ini tidak ditemukan untuk client tersebut. "
-                   "Upload dulu lewat /api/proses-file, lalu pakai hasil_id dari response-nya.",
-        )
-
-    data = hasil_row["data"] or {}
-    df_hasil = pd.DataFrame(data.get("df") or [])
-    if df_hasil.empty:
-        raise HTTPException(
-            status_code=400,
-            detail="Hasil tersimpan ini tidak punya baris rekening koran (df kosong).",
-        )
-    df_hasil = df_hasil.reset_index(drop=True)
-
-    # --- Gabungkan voucher & status posting terkini dari jurnal_posting ---
-    # Dicocokkan via posisi baris asli (baris_asal = index+1, lihat catatan
-    # di db_client.JurnalPosting.baris_asal) -- BUKAN via isi baris, karena
-    # rekening koran sering punya transaksi identik (nominal & keterangan
-    # sama persis) yang bikin pencocokan berbasis konten ambigu.
-    posting_rows = dbc.ambil_jurnal_posting_by_hasil(client_id, hasil_id)
-    peta_posting = {p["baris_asal"]: p for p in posting_rows if p.get("baris_asal")}
-
-    label_status = {
-        "draft": "Draft (belum diposting)",
-        "terposting": "Terposting",
-        "ditolak": "Ditolak",
-    }
-    daftar_voucher, daftar_status = [], []
-    for i in range(len(df_hasil)):
-        p = peta_posting.get(i + 1)  # baris_asal 1-based, sama seperti "baris": i+1 di draf_jurnal
-        if p:
-            daftar_voucher.append(p.get("voucher"))
-            daftar_status.append(label_status.get(p.get("status"), p.get("status")))
-        else:
-            daftar_voucher.append(None)
-            daftar_status.append("Belum Terkategori (belum masuk antrean posting)")
-    df_hasil["voucher"] = daftar_voucher
-    df_hasil["status_posting"] = daftar_status
-
-    df_coa = pd.DataFrame(data.get("coa") or [])
-
-    df_piutang = None
-    if file_piutang is not None:
-        isi_piutang = await file_piutang.read()
-        buf_piutang = io.BytesIO(isi_piutang)
-        buf_piutang.name = file_piutang.filename or "piutang.xlsx"
-        hasil_piutang = ak.proses_file_piutang(buf_piutang, buf_piutang.name)
-        df_piutang = hasil_piutang.get("df")
-
-    # [FIX -- GAP EVENT LOOP + POINT 2] Sebelumnya endpoint ini memanggil
-    # accounting_export.export_rekening_koran_format_akuntan() LANGSUNG
-    # secara sync -- tanpa to_thread maupun ProcessPoolExecutor sama
-    # sekali -- padahal fungsi ini openpyxl susun sheet per bank + formula
-    # VLOOKUP/saldo berjalan, murni CPU-bound persis seperti kasus di
-    # /api/proses-dan-buat-excel (Point 2). THREAD saja tidak cukup
-    # (GIL-bound), jadi dipakai worker yang sama di
-    # modules/excel_export_worker.py lewat ProcessPoolExecutor, dibungkus
-    # asyncio.to_thread di sini supaya event loop juga tidak ikut terblokir
-    # selama menunggu hasil dari proses worker.
-    try:
-        isi_excel = await asyncio.to_thread(
-            excel_export_worker.jalankan_export_rekening_koran_format_akuntan_di_proses,
-            df_hasil, df_coa, df_piutang,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    nama_file_asal = data.get("nama_file") or "rekening_koran.xlsx"
-    nama_unduh = f"Rekening_Koran_{nama_file_asal.rsplit('.', 1)[0]}.xlsx"
-    return StreamingResponse(
-        io.BytesIO(isi_excel),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{nama_unduh}"'},
-    )
-
-
-@app.post("/api/client/{client_id}/jurnal-posting/hasil/{hasil_id}/konfirmasi-semua")
-async def api_konfirmasi_posting_massal(
-    client_id: int,
-    hasil_id: int,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas, sama seperti /api/proses-file
-):
-    """
-    [BARU - Prioritas #7] Konfirmasi SEKALIGUS semua baris jurnal_posting
-    berstatus 'draft' milik satu hasil_id (satu file upload) -- supaya
-    supervisor tidak perlu klik "Posting" satu-satu untuk rekening koran
-    yang bisa berisi ratusan/ribuan baris. Baris dengan akun placeholder
-    (butuh keputusan manual akun lawannya) TETAP dilewati & harus
-    dikonfirmasi satu-satu lewat endpoint /konfirmasi yang sudah ada,
-    setelah akuntan mengisi akun yang benar -- lihat
-    dbc.konfirmasi_posting_massal() untuk detail.
-    """
-    hasil_row = dbc.ambil_hasil_by_id(hasil_id)
-    if hasil_row is None or hasil_row["client_id"] != client_id:
-        raise HTTPException(status_code=404, detail="Hasil dengan id ini tidak ditemukan untuk client tersebut.")
-
-    ringkasan = dbc.konfirmasi_posting_massal(client_id, hasil_id, user.get("username", "unknown"))
-    return {
-        "pesan": f"{ringkasan['diposting']} baris berhasil diposting, "
-                 f"{ringkasan['dilewati_placeholder']} baris dilewati (akun masih placeholder, perlu isi manual).",
-        **ringkasan,
-    }
-
 
 # ============================================================
 # [BARU] CHART OF ACCOUNTS (COA) PERMANEN PER CLIENT
 # ============================================================
 
-class AkunCoaRequest(BaseModel):
-    no_akun: str
-    nama_akun: str
-    kategori: Optional[str] = None  # ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN
-    sub_kategori: Optional[str] = None
-    normal_saldo: Optional[str] = None  # DEBET/KREDIT
-    saldo_awal: float = 0
-    segment: Optional[str] = None       # [BARU] mis. "Excavator"/"Scaffolding"/"Umum"/"Semua"
-    arus_kas: Optional[str] = None      # [BARU] "Operasi"/"Investasi"/"Pendanaan"/"Nonkas"/dst
-    keterangan: Optional[str] = None    # [BARU] catatan bebas per akun
-    # [BARU] Dipakai khusus sheet "Neraca Saldo Awal" -- kolom "Lawan
-    # Transaksi" & "Project/Asset Unit" per akun, supaya baris saldo awal
-    # tidak hardcode "Pemilik"/"HO" utk semua akun (mis. akun excavator
-    # bisa punya project_unit "EXC-01 & EXC-02", akun modal Tuan A bisa
-    # punya lawan_transaksi "Tuan A"). Opsional -- kalau kosong, sheet
-    # export tetap jalan dengan fallback "-".
-    lawan_transaksi_saldo_awal: Optional[str] = None
-    project_unit_saldo_awal: Optional[str] = None
-
-
-class CoaBulkRequest(BaseModel):
-    akun: List[AkunCoaRequest]
-    ganti_semua: bool = True
-
-
-@app.get("/api/client/{client_id}/coa")
-def api_ambil_coa(client_id: int, user: dict = Depends(auth.get_current_user)):
-    """Ambil seluruh Chart of Accounts (COA) permanen milik satu client."""
-    return {"coa": dbc.ambil_coa_client(client_id)}
-
-
-@app.post("/api/client/{client_id}/coa")
-def api_simpan_coa_bulk(client_id: int, req: CoaBulkRequest, user: dict = Depends(auth.get_current_user)):
-    """
-    Simpan COA client sekaligus (dari form input manual atau hasil impor
-    sheet 'COA' file Excel yang sudah diparse frontend). Default
-    ganti_semua=True (replace total) -- kirim ganti_semua=false kalau
-    cuma mau menambah/memperbarui sebagian akun.
-    """
-    jumlah = dbc.simpan_coa_bulk(
-        client_id, [a.model_dump() for a in req.akun], ganti_semua=req.ganti_semua
-    )
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="simpan_coa_bulk",
-        detail={"ganti_semua": req.ganti_semua, "jumlah_akun": jumlah},
-    )
-    return {"berhasil": True, "jumlah_akun_tersimpan": jumlah}
-
-
-@app.post("/api/client/{client_id}/coa/akun")
-def api_tambah_akun_coa(client_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
-    """Tambah satu akun COA baru untuk client."""
-    berhasil = dbc.tambah_akun_coa(
-        client_id, req.no_akun, req.nama_akun, req.kategori,
-        req.sub_kategori, req.normal_saldo, req.saldo_awal,
-        segment=req.segment, arus_kas=req.arus_kas, keterangan=req.keterangan,
-        lawan_transaksi_saldo_awal=req.lawan_transaksi_saldo_awal,  # [BARU]
-        project_unit_saldo_awal=req.project_unit_saldo_awal,  # [BARU]
-    )
-    if not berhasil:
-        raise HTTPException(status_code=500, detail="Gagal menambah akun COA.")
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="tambah_akun_coa",
-        detail={"no_akun": req.no_akun, "nama_akun": req.nama_akun, "kategori": req.kategori},
-    )
-    return {"berhasil": True}
-
-
-@app.put("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_update_akun_coa(client_id: int, akun_id: int, req: AkunCoaRequest, user: dict = Depends(auth.get_current_user)):
-    """Perbarui satu akun COA (mis. mengisi kategori yang tadinya kosong)."""
-    sebelum = dbc.ambil_akun_coa_by_id(akun_id)
-    berhasil = dbc.update_akun_coa(
-        akun_id, no_akun=req.no_akun, nama_akun=req.nama_akun, kategori=req.kategori,
-        sub_kategori=req.sub_kategori, normal_saldo=req.normal_saldo, saldo_awal=req.saldo_awal,
-        segment=req.segment, arus_kas=req.arus_kas, keterangan=req.keterangan,
-        lawan_transaksi_saldo_awal=req.lawan_transaksi_saldo_awal,  # [BARU]
-        project_unit_saldo_awal=req.project_unit_saldo_awal,  # [BARU]
-    )
-    if not berhasil:
-        raise HTTPException(status_code=404, detail="Akun COA tidak ditemukan.")
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="update_akun_coa",
-        detail={
-            "akun_id": akun_id,
-            "sebelum": sebelum,
-            "sesudah": req.model_dump(exclude_none=True),
-        },
-    )
-    return {"berhasil": True}
-
-
-@app.delete("/api/client/{client_id}/coa/akun/{akun_id}")
-def api_hapus_akun_coa(client_id: int, akun_id: int, user: dict = Depends(auth.get_current_user)):
-    """Nonaktifkan (soft-delete) satu akun COA."""
-    sebelum = dbc.ambil_akun_coa_by_id(akun_id)
-    berhasil = dbc.hapus_akun_coa(akun_id)
-    if not berhasil:
-        raise HTTPException(status_code=404, detail="Akun COA tidak ditemukan.")
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="hapus_akun_coa",
-        detail={"akun_id": akun_id, "sebelum": sebelum},
-    )
-    return {"berhasil": True}
-
-
 
 # ============================================================
 # ACCOUNTING CORE V2 — multi-line journal, taxonomy & account role
 # ============================================================
-
-class StandardMappingRequest(BaseModel):
-    standard_code: str
-
-
-class CompanyAccountRoleRequest(BaseModel):
-    coa_id: int
-
-
-class NativeJournalLineRequest(BaseModel):
-    account_code: str
-    account_name: Optional[str] = None
-    # Decimal menjaga presisi nominal sejak payload API, lalu disimpan ke
-    # SQL NUMERIC(24,2) di JournalLine.
-    debit: Decimal = Decimal("0.00")
-    credit: Decimal = Decimal("0.00")
-    description: Optional[str] = None
-    partner_name: Optional[str] = None
-    tax_code: Optional[str] = None
-    branch: Optional[str] = None
-    department: Optional[str] = None
-    cost_center: Optional[str] = None
-    project: Optional[str] = None
-    reconciliation_no: Optional[str] = None
-    account_role: Optional[str] = None
-
-
-class NativeJournalEntryRequest(BaseModel):
-    source_module: str = "GENERAL_JOURNAL"
-    posting_date: str
-    description: str
-    source_transaction_id: Optional[str] = None
-    reference: Optional[str] = None
-    currency: str = "IDR"
-    status: str = "DRAFT"
-    lines: List[NativeJournalLineRequest]
 
 
 @app.get("/api/accounting/standard-accounts")
@@ -5141,98 +3690,6 @@ def api_account_roles(user: dict = Depends(auth.get_current_user)):
         session.close()
 
 
-@app.get("/api/client/{client_id}/accounting/mapping-health")
-def api_accounting_mapping_health(client_id: int, user: dict = Depends(auth.require_level(3))):
-    return accounting_core.mapping_health(client_id)
-
-
-@app.put("/api/client/{client_id}/accounting/coa/{coa_id}/standard-mapping")
-def api_set_standard_mapping(
-    client_id: int, coa_id: int, req: StandardMappingRequest,
-    user: dict = Depends(auth.require_level(4)),
-):
-    try:
-        result = accounting_core.set_coa_mapping(client_id, coa_id, req.standard_code, user.get("username", "unknown"))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    dbc.log_audit(client_id, user.get("username", "unknown"), "set_standard_mapping", result)
-    return {"berhasil": True, "mapping": result}
-
-
-@app.put("/api/client/{client_id}/accounting/account-role/{role_code}")
-def api_set_company_account_role(
-    client_id: int, role_code: str, req: CompanyAccountRoleRequest,
-    user: dict = Depends(auth.require_level(4)),
-):
-    try:
-        result = accounting_core.set_company_account_role(client_id, role_code.upper(), req.coa_id, user.get("username", "unknown"))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    dbc.log_audit(client_id, user.get("username", "unknown"), "set_company_account_role", result)
-    return {"berhasil": True, "mapping": result}
-
-
-@app.get("/api/client/{client_id}/journal-entries")
-def api_list_journal_entries(
-    client_id: int,
-    status: Optional[str] = None,
-    limit: Optional[int] = None,
-    user: dict = Depends(auth.require_level(3)),
-):
-    """Endpoint baru untuk UI. Legacy jurnal_posting disinkronkan otomatis.
-
-    status kosong/None = semua; DRAFT/POSTED/REJECTED = filter status.
-    """
-    return {"journal_entries": accounting_core.list_journal_entries(client_id, status=status, limit=limit)}
-
-
-@app.post("/api/client/{client_id}/journal-entries")
-def api_create_native_journal_entry(
-    client_id: int, req: NativeJournalEntryRequest,
-    user: dict = Depends(auth.require_level(3)),
-):
-    try:
-        entry = accounting_core.create_journal_entry(
-            client_id,
-            source_module=req.source_module,
-            posting_date=req.posting_date,
-            description=req.description,
-            lines=[x.model_dump() for x in req.lines],
-            created_by=user.get("username", "unknown"),
-            status=req.status,
-            source_transaction_id=req.source_transaction_id,
-            reference=req.reference,
-            currency=req.currency,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    dbc.log_audit(client_id, user.get("username", "unknown"), "create_journal_entry", {"journal_entry_id": entry["id"]})
-    return {"berhasil": True, "journal_entry": entry}
-
-
-@app.post("/api/client/{client_id}/journal-entries/{journal_entry_id}/post")
-def api_post_native_journal_entry(
-    client_id: int, journal_entry_id: int,
-    user: dict = Depends(auth.require_level(3)),
-):
-    try:
-        entry = accounting_core.post_journal_entry(client_id, journal_entry_id, user.get("username", "unknown"))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    dbc.log_audit(client_id, user.get("username", "unknown"), "post_journal_entry", {"journal_entry_id": journal_entry_id})
-    return {"berhasil": True, "journal_entry": entry}
-
-
-@app.get("/api/client/{client_id}/general-ledger")
-def api_general_ledger_core(
-    client_id: int,
-    tanggal_mulai: Optional[str] = None,
-    tanggal_akhir: Optional[str] = None,
-    user: dict = Depends(auth.require_level(3)),
-):
-    return {"lines": accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)}
-
-
 class UserClientAccessRequest(BaseModel):
     user_id: str
     active: bool = True
@@ -5241,7 +3698,7 @@ class UserClientAccessRequest(BaseModel):
 
 @app.get("/api/client/{client_id}/access")
 def api_daftar_client_access(
-    client_id: int,
+    client_id: str,
     user: dict = Depends(auth.require_roles(["tahap_5"])),
 ):
     """[BARU] Siapa saja yang punya akses ke client ini & access_role
@@ -5254,7 +3711,7 @@ def api_daftar_client_access(
 
 @app.post("/api/client/{client_id}/access")
 def api_set_client_access(
-    client_id: int, req: UserClientAccessRequest,
+    client_id: str, req: UserClientAccessRequest,
     user: dict = Depends(auth.require_roles(["tahap_5"])),
 ):
     if req.access_role is not None and req.access_role not in auth.CLIENT_ROLE_CODES:
@@ -5273,117 +3730,6 @@ def api_set_client_access(
 # ============================================================
 # [BARU] REVIEW & POSTING JURNAL (draf placeholder -> siap laporan)
 # ============================================================
-
-@app.get("/api/client/{client_id}/jurnal-posting")
-def api_daftar_jurnal_posting(
-    client_id: int,
-    status: Optional[str] = "draft",
-    # [FIX -- baris hilang setelah import besar] Sebelumnya endpoint ini
-    # TIDAK meneruskan parameter limit sama sekali ke dbc.daftar_jurnal_posting(),
-    # jadi selalu terkunci ke default lama (500 baris backend = 1.000 baris
-    # di tabel Transaksi, karena tiap baris dipecah jadi 2 leg debet+kredit)
-    # -- import rekening koran ribuan/puluhan ribu baris jadi kepotong
-    # diam-diam tanpa peringatan apa pun. Default sekarang None -- lihat
-    # docstring dbc.daftar_jurnal_posting(): artinya BENAR-BENAR TANPA
-    # BATAS, bukan cuma angka besar yang bisa kelampaui lagi nanti. Override
-    # eksplisit lewat ?limit= tetap didukung untuk kasus lain (mis. preview
-    # ringan) yang memang sengaja mau baris terbatas.
-    limit: Optional[int] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Daftar baris jurnal yang perlu direview/diposting (default status=draft).
-    Pakai ?status=terposting atau ?status=ditolak untuk lihat histori,
-    atau ?status= (kosong) untuk semua status.
-    ?limit= opsional -- kosongkan untuk mengambil SEMUA baris (default),
-    isi dengan angka untuk membatasi jumlah baris yang diambil.
-    """
-    status_final = status if status else None
-    return {"jurnal": dbc.daftar_jurnal_posting(client_id, status=status_final, limit=limit)}
-
-
-class KonfirmasiPostingRequest(BaseModel):
-    no_akun_debet: Optional[str] = None
-    nama_akun_debet: Optional[str] = None
-    no_akun_kredit: Optional[str] = None
-    nama_akun_kredit: Optional[str] = None
-    tanggal: Optional[str] = None
-    keterangan: Optional[str] = None
-    # [BARU - fix GL 2025] field tambahan supaya akuntan bisa mengisi
-    # kolom Lawan Transaksi/Project/Unit/Invoice-Referensi/Jatuh Tempo
-    # sheet "GL 2025" saat konfirmasi posting -- sebelumnya tidak ada
-    # jalur sama sekali untuk mengisi field-field ini.
-    lawan_transaksi: Optional[str] = None
-    no_dokumen: Optional[str] = None
-    project_unit: Optional[str] = None
-    jatuh_tempo: Optional[str] = None
-
-
-@app.post("/api/client/{client_id}/jurnal-posting/{posting_id}/konfirmasi")
-def api_konfirmasi_posting(
-    client_id: int, posting_id: int, req: KonfirmasiPostingRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Konfirmasi satu baris jurnal jadi 'terposting'. Kalau akun asalnya
-    masih placeholder (mis. "KAS", "PIUTANG/KAS"), WAJIB isi no_akun_debet
-    & no_akun_kredit dengan nomor akun COA yang sebenarnya lewat body
-    request ini -- endpoint ini menolak dengan 400 kalau akun akhir masih
-    mengandung "/" (tanda placeholder yang belum diisi).
-    """
-    daftar = dbc.daftar_jurnal_posting(client_id, status=None)
-    baris = next((j for j in daftar if j["id"] == posting_id), None)
-    if baris is None:
-        raise HTTPException(status_code=404, detail="Baris jurnal tidak ditemukan.")
-
-    no_debet_final = req.no_akun_debet or baris["no_akun_debet"]
-    no_kredit_final = req.no_akun_kredit or baris["no_akun_kredit"]
-    if "/" in no_debet_final or "/" in no_kredit_final:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Akun debet/kredit masih placeholder (mis. 'KAS/PIUTANG'). "
-                "Isi no_akun_debet & no_akun_kredit dengan nomor akun COA yang "
-                "sebenarnya sebelum diposting."
-            ),
-        )
-
-    berhasil = dbc.konfirmasi_posting_jurnal(
-        posting_id, user.get("username", "unknown"),
-        no_akun_debet=req.no_akun_debet, nama_akun_debet=req.nama_akun_debet,
-        no_akun_kredit=req.no_akun_kredit, nama_akun_kredit=req.nama_akun_kredit,
-        tanggal=req.tanggal, keterangan=req.keterangan,
-        lawan_transaksi=req.lawan_transaksi, no_dokumen=req.no_dokumen,
-        project_unit=req.project_unit, jatuh_tempo=req.jatuh_tempo,
-    )
-    if not berhasil:
-        raise HTTPException(status_code=500, detail="Gagal memposting jurnal.")
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="posting_jurnal", detail={"posting_id": posting_id, **req.model_dump(exclude_none=True)},
-    )
-    return {"berhasil": True}
-
-
-class TolakPostingRequest(BaseModel):
-    alasan: Optional[str] = None
-
-
-@app.post("/api/client/{client_id}/jurnal-posting/{posting_id}/tolak")
-def api_tolak_posting(
-    client_id: int, posting_id: int, req: TolakPostingRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Tolak satu baris jurnal (mis. duplikat/salah deteksi) -- tidak akan masuk laporan keuangan."""
-    berhasil = dbc.tolak_posting_jurnal(posting_id, user.get("username", "unknown"), req.alasan)
-    if not berhasil:
-        raise HTTPException(status_code=404, detail="Baris jurnal tidak ditemukan.")
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="tolak_jurnal", detail={"posting_id": posting_id, "alasan": req.alasan},
-    )
-    return {"berhasil": True}
 
 
 # [BARU - persist edit/posting halaman Transaksi frontend] Status ala
@@ -5404,539 +3750,35 @@ _STATUS_FRONTEND_KE_BACKEND = {
 }
 
 
-def _map_status_frontend_ke_backend(status_frontend: Optional[str]) -> Optional[str]:
-    if status_frontend is None:
-        return None
-    hasil = _STATUS_FRONTEND_KE_BACKEND.get(status_frontend)
-    if hasil is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Status '{status_frontend}' tidak dikenal. Nilai sah: {list(_STATUS_FRONTEND_KE_BACKEND.keys())}",
-        )
-    return hasil
+# ============================================================
+# [DIPINDAH] MODUL BANK & CASH -- kini di modules/finance/bank_cash_v1.py
+# (lihat modules/finance/__init__.py). Router didaftarkan lewat
+# app.include_router(finance_bank_cash_v1.router) di bawah -- path,
+# auth, & response TIDAK berubah.
+# ============================================================
 
 
-class UpdateJurnalPostingRequest(BaseModel):
-    """[BARU] Body PATCH edit satu baris jurnal -- lihat api_update_jurnal_posting().
-    Semua field opsional; hanya field yang DIKIRIM (bukan None secara default
-    Pydantic exclude_unset) yang benar-benar diubah di database, lihat
-    dbc.update_jurnal_posting()."""
-    tanggal: Optional[str] = None
-    keterangan: Optional[str] = None
-    lawan_transaksi: Optional[str] = None
-    no_dokumen: Optional[str] = None
-    project_unit: Optional[str] = None
-    jatuh_tempo: Optional[str] = None
-    no_akun_debet: Optional[str] = None
-    nama_akun_debet: Optional[str] = None
-    jml_debet: Optional[float] = None
-    no_akun_kredit: Optional[str] = None
-    nama_akun_kredit: Optional[str] = None
-    jml_kredit: Optional[float] = None
-    # Status ala frontend (Unposted/Posted/Draft/Reconciled/Voided) --
-    # diterjemahkan ke nilai backend lewat _map_status_frontend_ke_backend()
-    # sebelum disimpan, supaya frontend tidak perlu tahu representasi
-    # internal backend sama sekali.
-    status: Optional[str] = None
-    payment_status: Optional[str] = None
-    paid_amount: Optional[float] = None
-
-
-@app.patch("/api/client/{client_id}/jurnal-posting/{posting_id}")
-def api_update_jurnal_posting(
-    client_id: int, posting_id: int, req: UpdateJurnalPostingRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    [BARU] Edit satu baris jurnal yang sudah ada -- dipakai halaman
-    Transaksi (TransactionEditModal, tombol "Simpan Perubahan") supaya
-    hasil edit BENAR-BENAR tersimpan ke database. Sebelumnya endpoint ini
-    tidak ada sama sekali; edit di UI cuma mengubah state React lokal
-    (hilang saat refresh/pindah client lalu kembali).
-
-    Beda dari /konfirmasi (di atas): endpoint itu SELALU memposting baris
-    (status jadi 'terposting'). Endpoint ini murni menyimpan perubahan isi
-    baris -- status ikut berubah HANYA kalau field `status` dikirim di body.
-
-    req.model_dump(exclude_unset=True) dipakai (bukan exclude_none) supaya
-    field yang memang dikirim dengan nilai null (mis. user mengosongkan
-    catatan) tetap dianggap "field ini mau diubah jadi kosong", beda dari
-    field yang sama sekali tidak dikirim (dibiarkan apa adanya).
-    """
-    fields = req.model_dump(exclude_unset=True)
-    if "status" in fields:
-        fields["status"] = _map_status_frontend_ke_backend(fields["status"])
-
-    try:
-        hasil = dbc.update_jurnal_posting(posting_id, client_id, user.get("username", "unknown"), **fields)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    if hasil is None:
-        raise HTTPException(status_code=404, detail="Baris jurnal tidak ditemukan untuk client ini.")
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="edit_jurnal", detail={"posting_id": posting_id, **fields},
-    )
-    return {"berhasil": True, "jurnal": hasil}
-
-
-class BuatJurnalManualRequest(BaseModel):
-    """[BARU] Body POST buat jurnal manual baru -- lihat api_buat_jurnal_manual().
-    Baik sisi debet maupun kredit WAJIB diisi (jurnal double-entry lengkap,
-    bukan satu kaki saja) -- konsisten dengan constraint NOT NULL kolom
-    no_akun_debet/no_akun_kredit di database."""
-    tanggal: str
-    keterangan: str
-    no_akun_debet: str
-    nama_akun_debet: Optional[str] = None
-    jml_debet: float
-    no_akun_kredit: str
-    nama_akun_kredit: Optional[str] = None
-    jml_kredit: float
-    lawan_transaksi: Optional[str] = None
-    no_dokumen: Optional[str] = None
-    # [FIX - audit #8, diperluas] Sebelumnya field ini tidak ada sama sekali
-    # di model ini -- walau kolom project_unit sudah ada di JurnalPosting
-    # dan sudah dipakai jalur edit (UpdateJurnalPostingRequest di atas),
-    # jalur "+ Jurnal Baru" tidak punya cara mengirimkannya sama sekali,
-    # jadi Catatan yang diisi user saat membuat jurnal baru selalu hilang
-    # (tidak pernah tersimpan, bahkan sebelum sampai ke database).
-    project_unit: Optional[str] = None
-    jatuh_tempo: Optional[str] = None
-    status: str = "Unposted"  # ala frontend, diterjemahkan sebelum disimpan
-    payment_status: Optional[str] = None
-    paid_amount: Optional[float] = None
-
-
-@app.post("/api/client/{client_id}/jurnal-posting/manual")
-def api_buat_jurnal_manual(
-    client_id: int, req: BuatJurnalManualRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    [BARU] Buat baris jurnal BARU secara manual -- dipakai tombol
-    "+ Jurnal Baru" di halaman Transaksi & 5 sub halamannya. Sebelumnya
-    tombol ini cuma menambah baris ke state React lokal (hilang saat
-    refresh) -- sekarang tersimpan permanen ke database.
-
-    Jurnal HARUS balance (total debet == total kredit) -- ditolak 400 kalau
-    tidak, supaya tidak ada jurnal timpang yang lolos ke buku besar lewat
-    jalur manual ini (beda dari baris hasil import yang boleh sementara
-    "Belum Terkategori" tapi tetap sepasang debet=kredit).
-    """
-    if round(req.jml_debet, 2) != round(req.jml_kredit, 2):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Jurnal tidak balance: Debet Rp{req.jml_debet:,.0f} vs Kredit Rp{req.jml_kredit:,.0f}.",
-        )
-    if req.jml_debet <= 0:
-        raise HTTPException(status_code=400, detail="Nominal jurnal harus lebih besar dari 0.")
-
-    status_backend = _map_status_frontend_ke_backend(req.status) or "draft"
-
-    posting_id = dbc.buat_jurnal_manual(
-        client_id=client_id, user=user.get("username", "unknown"),
-        tanggal=req.tanggal, keterangan=req.keterangan,
-        no_akun_debet=req.no_akun_debet, nama_akun_debet=req.nama_akun_debet, jml_debet=req.jml_debet,
-        no_akun_kredit=req.no_akun_kredit, nama_akun_kredit=req.nama_akun_kredit, jml_kredit=req.jml_kredit,
-        lawan_transaksi=req.lawan_transaksi, no_dokumen=req.no_dokumen, project_unit=req.project_unit,
-        jatuh_tempo=req.jatuh_tempo,
-        status=status_backend, payment_status=req.payment_status, paid_amount=req.paid_amount,
-    )
-    if posting_id is None:
-        raise HTTPException(status_code=500, detail="Gagal menyimpan jurnal baru.")
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="buat_jurnal_manual", detail={"posting_id": posting_id, "keterangan": req.keterangan},
-    )
-    return {"berhasil": True, "posting_id": posting_id}
-
-
-class PostingMassalByIdsRequest(BaseModel):
-    posting_ids: List[int]
-
-
-@app.post("/api/client/{client_id}/jurnal-posting/posting-massal-by-ids")
-def api_posting_massal_by_ids(
-    client_id: int, req: PostingMassalByIdsRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    [BARU] Posting banyak baris 'draft' sekaligus jadi 'terposting', dipilih
-    lewat daftar posting_id eksplisit -- dipakai tombol "Posting Semua" di
-    halaman Transaksi utama (semua baris Unposted yang sedang tampil,
-    lintas hasil_id) dan versi per-kelompok di 5 sub halaman (Sales/
-    Expense/dll -- daftar id dibatasi ke kelompok itu saja oleh frontend
-    sebelum dikirim). Beda dari /hasil/{hasil_id}/konfirmasi-semua yang
-    sudah ada (itu untuk SATU file upload saja).
-
-    Baris dengan akun masih placeholder tetap dilewati (sama seperti
-    endpoint konfirmasi-semua yang sudah ada) -- lihat
-    dbc.konfirmasi_posting_by_ids().
-    """
-    hasil = dbc.konfirmasi_posting_by_ids(client_id, req.posting_ids, user.get("username", "unknown"))
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="posting_massal_by_ids",
-        detail={"jumlah_diminta": len(req.posting_ids), **hasil},
-    )
-    return {"berhasil": True, **hasil}
+# ============================================================
+# [DIPINDAH] MODUL OTHER (JURNAL LAIN-LAIN) -- kini di
+# modules/finance/other_v1.py (lihat modules/finance/__init__.py).
+# Router didaftarkan lewat app.include_router(finance_other_v1.router)
+# di bawah -- path, auth, & response TIDAK berubah.
+# ============================================================
 
 
 # ============================================================
 # [BARU] 5 LAPORAN KEUANGAN STANDAR
 # ============================================================
 
-class GenerateLaporanKeuanganRequest(BaseModel):
-    periode: str  # mis. "2026-07"
-    tanggal_mulai: Optional[str] = None
-    tanggal_akhir: Optional[str] = None
-    prive_atau_dividen: float = 0
-    setoran_modal_baru: float = 0
-    penyesuaian_ekuitas_manual: float = 0
-
-
-@app.post("/api/client/{client_id}/laporan-keuangan/generate")
-def api_generate_laporan_keuangan(
-    client_id: int, req: GenerateLaporanKeuanganRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Generate 5 Laporan Keuangan Standar (Neraca, Laba Rugi, Perubahan
-    Ekuitas, Arus Kas, CALK) dari jurnal + COA client, lalu simpan sebagai
-    snapshot baru (histori tidak ditimpa -- generate ulang untuk periode
-    yang sama akan membuat snapshot baru).
-
-    [ACCOUNTING CORE V2] Laporan Actual hanya memakai journal lines dari
-    JournalEntry berstatus POSTED. Draft tetap dapat direview di halaman
-    transaksi, tetapi tidak memengaruhi laporan resmi.
-    """
-    coa = dbc.ambil_coa_client(client_id)
-    # Laporan resmi hanya berasal dari JournalEntry POSTED. Draft tetap
-    # tersedia di halaman review/transaksi, tetapi tidak memengaruhi Actual.
-    jurnal = accounting_core.list_posted_lines(client_id, req.tanggal_mulai, req.tanggal_akhir)
-
-    hasil = lapkeu.generate_5_laporan_keuangan(
-        jurnal, coa, req.periode,
-        prive_atau_dividen=req.prive_atau_dividen,
-        setoran_modal_baru=req.setoran_modal_baru,
-        penyesuaian_ekuitas_manual=req.penyesuaian_ekuitas_manual,
-    )
-
-    lap_id = dbc.simpan_laporan_keuangan(
-        client_id, req.periode, hasil, dibuat_oleh=user.get("username", "unknown"),
-        tanggal_mulai=req.tanggal_mulai, tanggal_akhir=req.tanggal_akhir,
-    )
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="generate_laporan_keuangan",
-        detail={"periode": req.periode, "laporan_id": lap_id, "balance": hasil["neraca"]["balance"]},
-    )
-
-    return {"laporan_id": lap_id, "laporan": hasil}
-
-
-@app.get("/api/client/{client_id}/laporan-keuangan")
-def api_ambil_laporan_keuangan(
-    client_id: int, periode: Optional[str] = None,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Ambil snapshot laporan keuangan. Kalau ?periode=2026-07 diisi, return
-    snapshot TERBARU untuk periode itu. Kalau tidak diisi, return daftar
-    riwayat semua snapshot (tanpa isi lengkap -- panggil lagi dengan
-    ?periode=... untuk ambil isinya).
-    """
-    if periode:
-        lap = dbc.ambil_laporan_keuangan_terbaru(client_id, periode)
-        if lap is None:
-            raise HTTPException(status_code=404, detail=f"Belum ada laporan keuangan untuk periode {periode}.")
-        return lap
-    return {"riwayat": dbc.daftar_riwayat_laporan_keuangan(client_id)}
-
 
 # ============================================================
 # [BARU] LAMPIRAN SPT TAHUNAN BADAN (A01-A09 / L01-L05 / E01-E04)
 # ============================================================
 
-@app.get("/api/client/{client_id}/laporan-keuangan/{periode}/lampiran-spt")
-def api_lampiran_spt(
-    client_id: int,
-    periode: str,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Susun Lampiran SPT Tahunan Badan (A01-A09 Neraca, L01-L05 Laba Rugi,
-    E01-E04 Perubahan Ekuitas) dari snapshot laporan keuangan yang SUDAH
-    digenerate untuk periode ini (lihat POST .../laporan-keuangan/generate).
-    Tidak menyimpan snapshot baru -- murni turunan dari data yang sudah ada.
-    """
-    lap = dbc.ambil_laporan_keuangan_terbaru(client_id, periode)
-    if not lap:
-        raise HTTPException(404, f"Belum ada laporan keuangan untuk periode {periode}")
-
-    return lapkeu.susun_lampiran_spt_lengkap(lap["data"])
-
 
 # ============================================================
 # [BARU] PPh BADAN PASAL 31E - ENDPOINT
 # ============================================================
-
-class GeneratePPhBadanRequest(BaseModel):
-    # [FIX] PPh Badan adalah pajak TAHUNAN -- field "periode" (string bebas,
-    # dulu dicontohkan "2026-07" seperti periode BULANAN laporan keuangan)
-    # DIHAPUS supaya tidak ada jalan bagi caller utk secara tidak sengaja
-    # menghitung PPh Badan dari data 1 bulan. "tahun_pajak" sekarang WAJIB
-    # dan jadi SATU-SATUNYA sumber kebenaran periode -- dipakai untuk
-    # membangun rentang tanggal 1 Jan - 31 Des tahun tsb sendiri di bawah.
-    tahun_pajak: int  # 2026
-    nama_perusahaan: Optional[str] = None
-    kompensasi_kerugian_fiskal: float = 0
-    kredit_pajak: Optional[Dict[str, float]] = None  # pph_22, pph_23, pph_24, angsuran_pph_25
-    # [BARU] Skema pajak client -- HANYA "Tarif Umum Pasal 17/31E" (default,
-    # nilai persis harus sama dgn pph_badan.SKEMA_TARIF_UMUM_31E) yang
-    # berhak atas fasilitas 31E. Ubah kalau client sebenarnya pakai PPh
-    # Final UMKM -- fasilitas 31E akan otomatis di-nolkan dgn peringatan.
-    skema_pajak: str = "Tarif Umum Pasal 17/31E"
-    # [BARU] 2 komponen tambahan Peredaran Bruto, di luar "Peredaran Bruto
-    # Usaha dari PNL" (yang otomatis diambil dari total_pendapatan laporan
-    # keuangan tahunan) -- lihat pph_badan.hitung_total_peredaran_bruto().
-    tambahan_peredaran_bruto_lainnya: float = 0
-    retur_pengurangan_peredaran_bruto: float = 0
-    # [BARU] Label bebas ttg sumber peredaran bruto usaha, beda per
-    # perusahaan (mis. "Pendapatan sewa dan mobilisasi", "Pendapatan jasa
-    # konstruksi") -- ditulis di kolom "Status/Keterangan" sheet export.
-    keterangan_peredaran_bruto: Optional[str] = None
-
-
-@app.post("/api/client/{client_id}/pph-badan/generate")
-def api_generate_pph_badan(
-    client_id: int,
-    req: GeneratePPhBadanRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Generate PPh Badan 31E untuk SATU TAHUN PAJAK penuh (1 Jan - 31 Des):
-    1. Ambil laba_rugi_bersih & total_pendapatan SETAHUN PENUH -- pakai
-       snapshot laporan_keuangan yang periode-nya = str(tahun_pajak) kalau
-       sudah pernah digenerate; kalau belum ada, generate OTOMATIS di sini
-       dari jurnal terposting tanggal_mulai={tahun}-01-01 s/d
-       {tahun}-12-31, supaya endpoint ini TIDAK PERNAH diam-diam memakai
-       laporan bulanan yang salah lingkup (ini yang jadi bug sebelumnya:
-       req.periode bebas bisa saja "2026-07" / 1 bulan, padahal PPh Badan
-       butuh angka setahun).
-    2. Ambil rekonsiliasi_fiskal dari hasil proses_aset_tetap() yang
-       tersimpan -- [FIX] sekarang dicocokkan ke tahun_pajak yang diminta
-       (via tanggal upload), bukan asal ambil upload Aset Tetap TERBARU
-       apa pun tahunnya seperti sebelumnya. Kalau tidak ada yang cocok,
-       tetap fallback ke upload terbaru TAPI hasil diberi flag peringatan
-       eksplisit supaya akuntan sadar & mengecek manual.
-    3. Hitung dengan pph_badan.hitung_pph_pasal_31e()
-    """
-    from modules import pph_badan
-    from modules import fiscal_reconciliation
-
-    tahun = req.tahun_pajak
-    periode_tahunan = str(tahun)
-    tanggal_mulai = f"{tahun}-01-01"
-    tanggal_akhir = f"{tahun}-12-31"
-
-    # -- 1. Laporan keuangan SETAHUN PENUH --
-    lap = dbc.ambil_laporan_keuangan_terbaru(client_id, periode_tahunan)
-    if not lap:
-        # Belum pernah ada snapshot laporan tahunan untuk tahun ini --
-        # generate otomatis dari jurnal terposting sepanjang tahun tsb
-        # (pola yang sama dgn endpoint laporan-bulanan/generate di bawah),
-        # supaya user tidak perlu tahu harus generate laporan-keuangan
-        # dgn periode tahunan secara manual dulu sebelum bisa hitung PPh.
-        coa = dbc.ambil_coa_client(client_id)
-        jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
-        if not jurnal:
-            raise HTTPException(
-                404,
-                f"Belum ada laporan keuangan maupun jurnal untuk tahun pajak {tahun}. "
-                f"Pastikan ada data yang sudah diproses (draft maupun terposting) antara "
-                f"{tanggal_mulai} dan {tanggal_akhir} sebelum generate PPh Badan.",
-            )
-        data_laporan = lapkeu.generate_5_laporan_keuangan(jurnal, coa, periode_tahunan)
-        lap_id = dbc.simpan_laporan_keuangan(
-            client_id, periode_tahunan, data_laporan,
-            dibuat_oleh=user.get("username", "unknown"),
-            tanggal_mulai=tanggal_mulai, tanggal_akhir=tanggal_akhir,
-        )
-        lap = {"id": lap_id, "periode": periode_tahunan, "data": data_laporan}
-
-    laba_bersih = lap["data"]["laba_rugi"]["laba_rugi_bersih"]
-    total_pendapatan = lap["data"]["laba_rugi"]["total_pendapatan"]
-
-    # -- 2. Rekonsiliasi fiskal dari Aset Tetap, dicocokkan ke tahun_pajak --
-    hasil_aset_semua = dbc.ambil_hasil_client(client_id, jenis="aset_tetap", limit=100)
-    hasil_aset_tahun_ini = [
-        h for h in hasil_aset_semua
-        if h.get("dibuat_at") and str(h["dibuat_at"]).startswith(periode_tahunan)
-    ]
-
-    rekon_fiskal: Dict[str, Any] = {}
-    peringatan_aset: Optional[str] = None
-    if hasil_aset_tahun_ini:
-        data = hasil_aset_tahun_ini[0]["data"]
-        rekon_fiskal = fiscal_reconciliation.ringkas_rekonsiliasi_fiskal_dari_aset_tetap(data)
-    elif hasil_aset_semua:
-        # [FIX] Fallback ke upload Aset Tetap TERBARU apa pun tahunnya
-        # (perilaku lama) -- tapi sekarang diberi peringatan eksplisit,
-        # bukan diam-diam dipakai seolah datanya memang utk tahun ini.
-        data = hasil_aset_semua[0]["data"]
-        rekon_fiskal = fiscal_reconciliation.ringkas_rekonsiliasi_fiskal_dari_aset_tetap(data)
-        peringatan_aset = (
-            f"Tidak ditemukan upload Aset Tetap yang bertanggal tahun {tahun} -- "
-            f"koreksi fiskal di bawah memakai upload Aset Tetap TERBARU yang tersedia "
-            f"(diupload {hasil_aset_semua[0].get('dibuat_at')}). Mohon verifikasi manual "
-            f"apakah data ini memang mewakili tahun pajak {tahun}."
-        )
-    # Kalau tidak ada data Aset Tetap sama sekali, rekon_fiskal tetap {}
-    # (perilaku lama) -- koreksi fiskal dianggap 0, PKP = laba komersial saja.
-
-    hasil = pph_badan.hitung_pph_pasal_31e(
-        peredaran_bruto=total_pendapatan,
-        laba_bersih_komersial=laba_bersih,
-        tambahan_peredaran_bruto_lainnya=req.tambahan_peredaran_bruto_lainnya or 0,
-        retur_pengurangan_peredaran_bruto=req.retur_pengurangan_peredaran_bruto or 0,
-        koreksi_fiskal_positif=rekon_fiskal.get("koreksi_fiskal_positif", 0),
-        koreksi_fiskal_negatif=rekon_fiskal.get("koreksi_fiskal_negatif", 0),
-        kompensasi_kerugian_fiskal=req.kompensasi_kerugian_fiskal or 0,
-        kredit_pajak=req.kredit_pajak,
-        tahun_pajak=tahun,
-        nama_perusahaan=req.nama_perusahaan,
-        skema_pajak=req.skema_pajak or "Tarif Umum Pasal 17/31E",
-        keterangan_peredaran_bruto=req.keterangan_peredaran_bruto,
-    )
-    if peringatan_aset:
-        hasil["peringatan_data_aset_tetap"] = peringatan_aset
-
-    analisis_id = dbc.simpan_hasil_analisis(
-        client_id=client_id,
-        jenis_analisis="pph_badan_31e",
-        hasil=hasil,
-        prompt=f"Tahun pajak {tahun}, peredaran bruto {total_pendapatan:,.0f}",
-        model_ai="rule_based",
-    )
-
-    dbc.log_audit(
-        client_id=client_id,
-        user=user.get("username", "unknown"),
-        aksi="generate_pph_badan",
-        detail={"tahun_pajak": tahun, "pph_terutang": hasil["pph_badan_terutang"]},
-    )
-
-    return {"laporan_id": analisis_id, "hasil": hasil}
-
-
-@app.get("/api/client/{client_id}/pph-badan/riwayat")
-def api_riwayat_pph_badan(
-    client_id: int,
-    tahun_pajak: Optional[int] = None,
-    user: dict = Depends(auth.require_level(3)),
-):
-    """
-    Ambil riwayat perhitungan PPh Badan yang sudah pernah dibuat.
-    [BARU] filter opsional ?tahun_pajak=2026 -- karena satu client bisa
-    punya riwayat PPh Badan dari beberapa tahun pajak sekaligus di bawah
-    jenis_analisis yang sama ("pph_badan_31e"), tanpa filter ini caller
-    harus menyaring sendiri dari field "hasil.tahun_pajak" di tiap baris.
-    """
-    riwayat = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="pph_badan_31e")
-    if tahun_pajak is not None:
-        riwayat = [r for r in riwayat if (r.get("hasil") or {}).get("tahun_pajak") == tahun_pajak]
-    return {"riwayat": riwayat}
-
-
-@app.get("/api/client/{client_id}/pph-badan/export/{analisis_id}")
-def api_export_pph_badan_excel(
-    client_id: int,
-    analisis_id: int,
-    user: dict = Depends(auth.require_level(3)),
-):
-    """Export hasil perhitungan PPh Badan 31E (yang sudah pernah digenerate) ke Excel."""
-    riwayat = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="pph_badan_31e", limit=100)
-    analisis = next((r for r in riwayat if r["id"] == analisis_id), None)
-    if not analisis:
-        raise HTTPException(404, "Analisis PPh Badan tidak ditemukan")
-
-    hasil = analisis["hasil"]
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "PPh Badan 31E"
-
-    ws.append(["LAPORAN PPH BADAN PASAL 31E"])
-    ws.append([f"Periode/Tahun Pajak: {hasil.get('tahun_pajak', '')}"])
-    ws.append([f"Nama Perusahaan: {hasil.get('nama_perusahaan', '')}"])
-    ws.append([])
-
-    ws.append(["A. REKONSILIASI FISKAL"])
-    rekon = hasil.get("rekonsiliasi_fiskal", {})
-    ws.append(["Laba Bersih Komersial", rekon.get("laba_bersih_komersial", 0)])
-    ws.append(["Koreksi Fiskal Positif", rekon.get("koreksi_fiskal_positif", 0)])
-    ws.append(["Koreksi Fiskal Negatif", rekon.get("koreksi_fiskal_negatif", 0)])
-    ws.append(["Penghasilan Neto Fiskal", rekon.get("penghasilan_neto_fiskal", 0)])
-    ws.append(["Kompensasi Kerugian Fiskal", rekon.get("kompensasi_kerugian_fiskal", 0)])
-    ws.append(["PKP (Pembulatan Ribuan)", rekon.get("penghasilan_kena_pajak", 0)])
-    ws.append([])
-
-    ws.append(["B. FASILITAS PASAL 31E"])
-    fasilitas = hasil.get("fasilitas_31e", {})
-    ws.append(["Peredaran Bruto", fasilitas.get("peredaran_bruto", 0)])
-    ws.append(["PKP Mendapat Fasilitas", fasilitas.get("pkp_mendapat_fasilitas", 0)])
-    ws.append(["PKP Tidak Mendapat Fasilitas", fasilitas.get("pkp_tidak_mendapat_fasilitas", 0)])
-    ws.append(["Status Fasilitas", fasilitas.get("status_fasilitas", "")])
-    ws.append([])
-
-    ws.append(["C. PPH TERUTANG"])
-    ws.append(["PPH atas PKP Fasilitas (11%)", hasil.get("pph_atas_pkp_fasilitas", 0)])
-    ws.append(["PPH atas PKP Non-Fasilitas (22%)", hasil.get("pph_atas_pkp_nonfasilitas", 0)])
-    ws.append(["PPH Badan Terutang", hasil.get("pph_badan_terutang", 0)])
-    ws.append(["PPH Tanpa Fasilitas 31E", hasil.get("pph_tanpa_fasilitas_31e", 0)])
-    ws.append(["Penghematan Pajak 31E", hasil.get("penghematan_pajak_pasal_31e", 0)])
-    ws.append(["Tarif Efektif Riil", hasil.get("tarif_pajak_efektif_riil", 0)])
-    ws.append([])
-
-    ws.append(["D. KREDIT PAJAK"])
-    kredit = hasil.get("kredit_pajak", {})
-    ws.append(["PPH 22", kredit.get("pph_22", 0)])
-    ws.append(["PPH 23", kredit.get("pph_23", 0)])
-    ws.append(["PPH 24", kredit.get("pph_24", 0)])
-    ws.append(["Angsuran PPH 25", kredit.get("angsuran_pph_25", 0)])
-    ws.append(["Total Kredit Pajak", kredit.get("total", 0)])
-    ws.append([])
-
-    ws.append(["E. STATUS"])
-    ws.append(["PPH Pasal 29 (Kurang Bayar)", hasil.get("pph_pasal_29_kurang_bayar", 0)])
-    ws.append(["PPH Pasal 28a (Lebih Bayar)", hasil.get("pph_pasal_28a_lebih_bayar", 0)])
-    ws.append(["Status", hasil.get("status", "")])
-    ws.append([])
-    ws.append(["Catatan:", hasil.get("catatan", "")])
-
-    # [BARU] Kalau data Aset Tetap yang dipakai bukan dari tahun pajak yang
-    # diminta (lihat peringatan_aset di endpoint generate), tampilkan juga
-    # di file Excel -- supaya peringatan ini tidak hilang begitu saja kalau
-    # yang dibaca cuma file export-nya, bukan response JSON generate-nya.
-    if hasil.get("peringatan_data_aset_tetap"):
-        ws.append([])
-        ws.append(["⚠️ PERINGATAN DATA ASET TETAP", hasil.get("peringatan_data_aset_tetap")])
-
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="PPh_Badan_{hasil.get("tahun_pajak", "")}.xlsx"'},
-    )
 
 
 # ============================================================
@@ -5953,1157 +3795,45 @@ def api_export_pph_badan_excel(
 # Kalau nanti field ini dipakai fitur LAIN juga (bukan cuma CALK), baru
 # pertimbangkan naik kelas jadi kolom permanen di tabel clients.
 
-class CalkProfilRequest(BaseModel):
-    """Field PERSIS sama dengan CONTOH_PROFIL di modules/calk_export.py --
-    lihat docstring tulis_note_1_umum()/tulis_note_2_kebijakan_akuntansi()
-    utk detail tiap field dipakai di kalimat mana. Semua Optional supaya
-    bisa diisi bertahap (field kosong otomatis jadi placeholder
-    "-- lengkapi data --" saat CALK digenerate, TIDAK error)."""
-    nama_perusahaan: Optional[str] = None
-    nomor_akta_pendirian: Optional[str] = None
-    tanggal_akta_pendirian: Optional[str] = None
-    nama_notaris: Optional[str] = None
-    no_sk_kemenkumham: Optional[str] = None
-    tanggal_sk: Optional[str] = None
-    nomor_akta_perubahan_terakhir: Optional[str] = None
-    tanggal_akta_perubahan_terakhir: Optional[str] = None
-    no_sk_perubahan_terakhir: Optional[str] = None
-    tanggal_sk_perubahan: Optional[str] = None
-    bidang_usaha_id: Optional[str] = None
-    bidang_usaha_en: Optional[str] = None
-    domisili_id: Optional[str] = None
-    domisili_en: Optional[str] = None
-    tahun_mulai_operasi: Optional[str] = None
-    # Tiap item: [jabatan_id, nama_orang, jabatan_en] -- lihat
-    # tulis_note_1_umum() di calk_export.py, dioper apa adanya.
-    komisaris: List[Tuple[str, str, str]] = []
-    direksi: List[Tuple[str, str, str]] = []
-    kepala_cabang: List[Tuple[str, str, str]] = []
-    jumlah_karyawan_lalu: Optional[int] = None
-    tahun_karyawan_lalu: Optional[str] = None
-    jumlah_karyawan_now: Optional[int] = None
-    tahun_karyawan_now: Optional[str] = None
-    umur_manfaat_inventaris: Optional[str] = None
-    umur_manfaat_bangunan: Optional[str] = None
-
-
-@app.post("/api/client/{client_id}/calk/profil")
-def api_simpan_calk_profil(
-    client_id: int, req: CalkProfilRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Simpan/update profil Note 1 (Umum) & Note 2 (Kebijakan Akuntansi)
-    CALK untuk client ini. Histori TIDAK ditimpa -- tiap panggilan bikin
-    entri baru (pola sama dgn laporan-keuangan/generate); endpoint GET
-    di bawah selalu ambil yang TERBARU. Field kosong tetap disimpan apa
-    adanya (None) -- validasi kelengkapan bukan tanggung jawab endpoint
-    ini, tapi tulis_note_1_umum() (placeholder "-- lengkapi data --").
-    """
-    profil_id = dbc.simpan_hasil_analisis(
-        client_id=client_id, jenis_analisis="calk_profil",
-        hasil=req.model_dump(), model_ai="manual_input",
-    )
-    if profil_id is None:
-        raise HTTPException(500, "Gagal menyimpan profil CALK.")
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="simpan_calk_profil", detail={"profil_id": profil_id},
-    )
-    return {"profil_id": profil_id, "profil": req.model_dump()}
-
-
-@app.get("/api/client/{client_id}/calk/profil")
-def api_ambil_calk_profil(
-    client_id: int, user: dict = Depends(auth.require_level(3)),
-):
-    """Ambil profil CALK TERBARU client ini. Balik dict kosong (BUKAN
-    404) kalau belum pernah diisi -- supaya frontend bisa langsung
-    tampilkan form kosong tanpa perlu menangani error khusus dulu."""
-    riwayat = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="calk_profil", limit=1)
-    if not riwayat:
-        return {"profil_id": None, "profil": {}}
-    return {"profil_id": riwayat[0]["id"], "profil": riwayat[0]["hasil"]}
-
-
-def _ambil_atau_generate_laporan_keuangan(
-    client_id: int, periode: str,
-    tanggal_mulai: Optional[str], tanggal_akhir: Optional[str],
-    user: dict,
-) -> Dict[str, Any]:
-    """
-    [FASE 5] Ambil snapshot laporan_keuangan utk 1 periode; kalau belum
-    pernah digenerate, generate OTOMATIS dari jurnal terposting lalu
-    simpan sbg snapshot baru -- pola SAMA PERSIS dgn fallback auto-
-    generate di endpoint pph-badan/generate (lihat komentar di sana).
-    Dipakai 2x oleh calk/generate (utk periode "now" & "lalu").
-
-    Melempar HTTPException(404) kalau snapshot belum ada DAN jurnal utk
-    tanggal_mulai/tanggal_akhir juga tidak diisi/tidak ada datanya --
-    caller wajib tahu, bukan diam-diam dilewati.
-    """
-    lap = dbc.ambil_laporan_keuangan_terbaru(client_id, periode)
-    if lap:
-        return lap
-
-    if not tanggal_mulai or not tanggal_akhir:
-        raise HTTPException(
-            404,
-            f'Belum ada laporan keuangan utk periode "{periode}", dan '
-            f"tanggal_mulai/tanggal_akhir tidak diisi utk generate otomatis. "
-            f"Generate dulu lewat POST .../laporan-keuangan/generate, atau "
-            f"isi tanggal_mulai_now/lalu & tanggal_akhir_now/lalu di request ini.",
-        )
-
-    coa = dbc.ambil_coa_client(client_id)
-    jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
-    if not jurnal:
-        raise HTTPException(
-            404,
-            f'Belum ada laporan keuangan maupun jurnal utk periode "{periode}" '
-            f"({tanggal_mulai} s/d {tanggal_akhir}). Pastikan ada data yang sudah "
-            f"diproses (draft maupun terposting) sebelum generate CALK.",
-        )
-    data_laporan = lapkeu.generate_5_laporan_keuangan(jurnal, coa, periode)
-    lap_id = dbc.simpan_laporan_keuangan(
-        client_id, periode, data_laporan, dibuat_oleh=user.get("username", "unknown"),
-        tanggal_mulai=tanggal_mulai, tanggal_akhir=tanggal_akhir,
-    )
-    return {"id": lap_id, "periode": periode, "data": data_laporan}
-
-
-def _ambil_aset_tetap_untuk_calk(
-    client_id: int, tanggal_lalu: date, tanggal_now: date,
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """
-    [FASE 5] Ambil upload Aset Tetap TERBARU client ini (tabel `hasil`,
-    jenis="aset_tetap" -- hasil proses_aset_tetap() yg disimpan lewat
-    upload/proses-file, lihat akuntansi_ai.py) dan susun jadi format
-    mutasi siap pakai Note 7 lewat calk_aset_tetap.siapkan_aset_tetap_untuk_calk().
-
-    proses_aset_tetap() menyimpan DataFrame mentah per-aset di key "df"
-    -- setelah lewat _bersihkan_untuk_json() (main.py) sebelum disimpan,
-    key itu jadi LIST OF DICT (df.to_dict("records")), jadi di sini
-    tinggal pd.DataFrame(...) lagi utk direkonstruksi. Kalau bentuknya
-    ternyata beda dari yang diharapkan (mis. karena versi lama data
-    sebelum "df" ikut disimpan), TIDAK melempar error ke caller --
-    return (None, pesan_peringatan) supaya CALK tetap bisa digenerate
-    TANPA Note 7 (skip graceful, sama seperti kalau aset_tetap=None
-    dikirim ke susun_dan_tulis_semua_note_calk()), bukan gagal total.
-
-    Returns:
-        (aset_tetap_calk atau None, pesan_peringatan atau None)
-    """
-    hasil_aset = dbc.ambil_hasil_client(client_id, jenis="aset_tetap", limit=1)
-    if not hasil_aset:
-        return None, "Tidak ada data Aset Tetap yang pernah diupload -- Note Aset Tetap dilewati."
-
-    data = hasil_aset[0]["data"] or {}
-    df_records = data.get("df")
-    if not df_records:
-        return None, (
-            f'Data Aset Tetap terbaru (diupload {hasil_aset[0].get("dibuat_at")}) tidak '
-            f'punya field "df" (data mentah per-aset) -- kemungkinan format lama. '
-            f"Note Aset Tetap dilewati, upload ulang file Aset Tetap kalau perlu Note ini."
-        )
-
-    try:
-        df_aset_tetap = pd.DataFrame(df_records)
-        aset_tetap_calk = calk_aset_tetap.siapkan_aset_tetap_untuk_calk(
-            df_aset_tetap, tanggal_lalu=tanggal_lalu, tanggal_now=tanggal_now,
-        )
-    except Exception as e:  # noqa: BLE001
-        # [Fase 4 poin 12 -- konsisten] error di sumber data OPSIONAL ini
-        # TIDAK boleh menggagalkan generate CALK secara keseluruhan --
-        # dicatat sbg peringatan, Note Aset Tetap dilewati.
-        return None, f"Gagal menyusun data Aset Tetap utk CALK ({type(e).__name__}: {e}) -- Note Aset Tetap dilewati."
-
-    if aset_tetap_calk.get("peringatan"):
-        # Peringatan internal calk_aset_tetap (mis. kategori tidak dikenal,
-        # indikasi aset dilepas) digabung ke pesan yg dibalik ke caller,
-        # TAPI aset_tetap_calk TETAP dipakai (bukan None) -- ini
-        # peringatan kualitas data, bukan kegagalan.
-        pesan = "Peringatan data Aset Tetap: " + "; ".join(aset_tetap_calk["peringatan"])
-        return aset_tetap_calk, pesan
-    return aset_tetap_calk, None
-
-
-class CalkGenerateRequest(BaseModel):
-    periode_now: str  # mis. "2026-07" -- key snapshot laporan keuangan "sekarang"
-    tanggal_mulai_now: Optional[str] = None  # dipakai HANYA kalau snapshot belum ada
-    tanggal_akhir_now: str  # mis. "2026-07-31" -- SELALU dipakai sbg tanggal_now CALK
-    periode_lalu: str  # mis. "2025" -- key snapshot pembanding
-    tanggal_mulai_lalu: Optional[str] = None
-    tanggal_akhir_lalu: str  # mis. "2025-12-31" -- SELALU dipakai sbg tanggal_lalu CALK
-    # PPh Badan -- opsional, kalau tidak diisi otomatis dicari dari riwayat
-    # pph-badan/generate tahun yg sama dgn tanggal_akhir_now (lihat di bawah).
-    pph_badan_analisis_id: Optional[int] = None
-    # PPh Final UMKM -- opsional, dipakai kalau client skema PP 55/2022
-    # (bukan Tarif Umum Pasal 17/31E). Isi HANYA SALAH SATU dgn
-    # pph_badan_analisis_id -- kalau dua-duanya kosong, Note Perpajakan
-    # dilewati (lihat susun_dan_tulis_semua_note_calk()).
-    pph_final_umkm: Optional[Dict[str, Any]] = None
-    pihak_berelasi: Optional[Dict[str, List[str]]] = None
-    peristiwa_setelah_neraca: Optional[Dict[str, List[str]]] = None
-    tanggal_persetujuan: Optional[str] = None
-    nama_penanggung_jawab_id: str = "Direksi"
-    nama_penanggung_jawab_en: str = "Board of Directors"
-    # [BARU] Grouping manual Note 4 Piutang Usaha (cabang/channel), by
-    # no_akun -- opsional, lihat calk_mapping.susun_grouping_piutang_usaha()
-    # utk format persis. None/tidak diisi = Note 4 tetap flat (perilaku
-    # lama, tidak berubah).
-    grouping_piutang_usaha: Optional[Dict[str, Any]] = None
-
-
-@app.post("/api/client/{client_id}/calk/generate")
-def api_generate_calk(
-    client_id: int, req: CalkGenerateRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    [FASE 5 poin 14] Generate CALK lengkap (docx + pdf): kumpulkan
-    neraca+laba_rugi 2 periode (auto-generate kalau snapshot belum ada,
-    lihat _ambil_atau_generate_laporan_keuangan()) + profil (Note 1/2) +
-    Aset Tetap (Note 7, best-effort -- lihat _ambil_aset_tetap_untuk_calk())
-    + PPh Badan/PPh Final UMKM (Note 15) -> panggil
-    calk_export.export_calk() (Fase 4) -> simpan metadata hasil (path
-    file, peringatan QA) ke tabel hasil_analisis -> log audit.
-
-    TIDAK menyimpan isi file (docx/pdf) sbg BLOB di database -- file
-    fisik tersimpan di FOLDER_HASIL (disk), yang disimpan di DB cuma
-    NAMA filenya (lihat catatan keamanan path di endpoint download di
-    bawah, pola sama dgn /api/unduh/{nama_file} yg sudah ada).
-    """
-    tanggal_now = datetime.strptime(req.tanggal_akhir_now, "%Y-%m-%d").date()
-    tanggal_lalu = datetime.strptime(req.tanggal_akhir_lalu, "%Y-%m-%d").date()
-
-    lap_now = _ambil_atau_generate_laporan_keuangan(
-        client_id, req.periode_now, req.tanggal_mulai_now, req.tanggal_akhir_now, user,
-    )
-    lap_lalu = _ambil_atau_generate_laporan_keuangan(
-        client_id, req.periode_lalu, req.tanggal_mulai_lalu, req.tanggal_akhir_lalu, user,
-    )
-
-    # --- Profil (Note 1 & 2) ---
-    riwayat_profil = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="calk_profil", limit=1)
-    profil = riwayat_profil[0]["hasil"] if riwayat_profil else {}
-
-    # --- Aset Tetap (Note 7, best-effort) ---
-    aset_tetap_calk, peringatan_aset = _ambil_aset_tetap_untuk_calk(client_id, tanggal_lalu, tanggal_now)
-
-    # --- PPh Badan / PPh Final UMKM (Note 15) ---
-    hasil_pph_badan = None
-    peringatan_pph = None
-    if req.pph_final_umkm:
-        pass  # dipakai apa adanya, lihat kwargs_orchestrator di bawah
-    elif req.pph_badan_analisis_id:
-        rec = dbc.ambil_hasil_analisis_by_id(req.pph_badan_analisis_id)
-        if rec and rec["jenis_analisis"] == "pph_badan_31e":
-            hasil_pph_badan = rec["hasil"]
-        else:
-            peringatan_pph = (
-                f"pph_badan_analisis_id={req.pph_badan_analisis_id} tidak ditemukan/bukan "
-                f"analisis PPh Badan -- Note Perpajakan dicari otomatis dari riwayat tahun "
-                f"{tanggal_now.year} sbg fallback."
-            )
-    if hasil_pph_badan is None and not req.pph_final_umkm:
-        # Fallback: cari otomatis dari riwayat pph-badan/generate tahun yg
-        # sama dgn tanggal_now (pola sama dgn pph-badan/generate sendiri
-        # saat mencari data Aset Tetap yg cocok tahunnya).
-        riwayat_pph = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="pph_badan_31e", limit=50)
-        cocok = next((r for r in riwayat_pph if r["hasil"].get("tahun_pajak") == tanggal_now.year), None)
-        if cocok:
-            hasil_pph_badan = cocok["hasil"]
-        elif not peringatan_pph:
-            peringatan_pph = (
-                f"Tidak ditemukan riwayat PPh Badan utk tahun {tanggal_now.year} -- "
-                f"Note Perpajakan dilewati. Generate dulu lewat POST .../pph-badan/generate, "
-                f"atau isi pph_final_umkm kalau client skema PPh Final UMKM."
-            )
-
-    tanggal_persetujuan = (
-        datetime.strptime(req.tanggal_persetujuan, "%Y-%m-%d").date()
-        if req.tanggal_persetujuan else None
-    )
-
-    # [FIX -- BUG NYATA] Sebelumnya panggilan ini TIDAK dibungkus try/except
-    # sama sekali -- kalau calk_export.export_calk() melempar RuntimeError
-    # (soffice tidak ditemukan/gagal convert/timeout, lihat penanganan error
-    # yang SUDAH rapi & jelas di calk_export._convert_docx_ke_pdf()), error
-    # itu naik TANPA ketangkep dan FastAPI membalasnya sbg 500 generik ke
-    # frontend -- membuang percuma pesan error jelas yang sudah dibangun di
-    # lapisan bawah. Melanggar checklist skill pdf-writing ("Error soffice
-    # tidak ditemukan/gagal/timeout ditangani terpisah dengan pesan yang
-    # bisa ditindaklanjuti, bukan 500 generik"). Disamakan di sini dgn pola
-    # yang SUDAH benar di kertas_kerja_router.py (try/except spesifik,
-    # detail pesan asli diteruskan ke HTTPException, bukan dibungkam).
-    #
-    # 502 Bad Gateway dipakai (bukan 500) -- kegagalan ini berasal dari
-    # dependency eksternal (binary LibreOffice di server), bukan bug logic
-    # aplikasi ini sendiri; docx tetap tersimpan di disk meski convert PDF
-    # gagal (lihat catatan export_calk()), jadi pesan error menyebutkan itu
-    # supaya akuntan/supervisor tahu docx-nya masih bisa diambil manual.
-    try:
-        hasil_export = calk_export.export_calk(
-            output_dir=str(FOLDER_HASIL),
-            nama_file_dasar=f"CALK_client{client_id}_{req.periode_now}",
-            profil=profil,
-            neraca_now=lap_now["data"]["neraca"], neraca_lalu=lap_lalu["data"]["neraca"],
-            laba_rugi_now=lap_now["data"]["laba_rugi"], laba_rugi_lalu=lap_lalu["data"]["laba_rugi"],
-            tanggal_now=tanggal_now, tanggal_lalu=tanggal_lalu,
-            aset_tetap=aset_tetap_calk,
-            hasil_pph_badan=hasil_pph_badan,
-            pph_final_umkm=req.pph_final_umkm,
-            pihak_berelasi=req.pihak_berelasi,
-            peristiwa_setelah_neraca=req.peristiwa_setelah_neraca,
-            tanggal_persetujuan=tanggal_persetujuan,
-            nama_penanggung_jawab_id=req.nama_penanggung_jawab_id,
-            nama_penanggung_jawab_en=req.nama_penanggung_jawab_en,
-            grouping_piutang_usaha=req.grouping_piutang_usaha,
-        )
-    except RuntimeError as e:
-        # [FIX] main.py tidak punya variabel `logger` sendiri -- pakai
-        # logger modul calk_export.py (sudah ada, get_module_logger("calk_export"))
-        # drpd membuat logger baru/bare-name yang tidak ada di namespace ini.
-        calk_export.logger.error(f"❌ Gagal generate CALK utk client {client_id}: {e}")
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Gagal membuat file CALK (docx/PDF): {e} -- dokumen docx "
-                f"kemungkinan tetap tersimpan di server meski convert PDF "
-                f"gagal (lihat pesan di atas), hubungi admin/cek instalasi "
-                f"LibreOffice di server kalau error berulang."
-            ),
-        )
-    except Exception as e:  # noqa: BLE001 -- kegagalan tak terduga lain (mis. permission folder)
-        calk_export.logger.error(f"❌ Gagal generate CALK utk client {client_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Gagal generate CALK utk client {client_id}: {e}",
-        )
-
-    peringatan_gabungan = list(hasil_export["hasil_orchestrator"].get("peringatan") or [])
-    if peringatan_aset:
-        peringatan_gabungan.append(peringatan_aset)
-    if peringatan_pph:
-        peringatan_gabungan.append(peringatan_pph)
-
-    metadata = {
-        "periode_now": req.periode_now, "periode_lalu": req.periode_lalu,
-        "tanggal_now": req.tanggal_akhir_now, "tanggal_lalu": req.tanggal_akhir_lalu,
-        "docx_filename": os.path.basename(hasil_export["docx"]),
-        "pdf_filename": os.path.basename(hasil_export["pdf"]),
-        "nomor_note_terakhir": hasil_export["hasil_orchestrator"]["nomor_note_terakhir"],
-        "daftar_note_ditulis": hasil_export["hasil_orchestrator"]["daftar_note_ditulis"],
-        "peringatan": peringatan_gabungan,
-    }
-    calk_id = dbc.simpan_hasil_analisis(
-        client_id=client_id, jenis_analisis="calk_generate",
-        hasil=metadata, model_ai="rule_based",
-    )
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="generate_calk",
-        detail={
-            "calk_id": calk_id, "periode_now": req.periode_now, "periode_lalu": req.periode_lalu,
-            "jumlah_note": hasil_export["hasil_orchestrator"]["nomor_note_terakhir"],
-            "jumlah_peringatan": len(peringatan_gabungan),
-        },
-    )
-
-    return {"calk_id": calk_id, **metadata}
-
-
-@app.get("/api/client/{client_id}/calk/riwayat")
-def api_riwayat_calk(
-    client_id: int, user: dict = Depends(auth.require_level(3)),
-):
-    """[FASE 5 poin 15] Riwayat semua CALK yang pernah digenerate client
-    ini, terbaru dulu -- pola sama dgn GET .../pph-badan/riwayat."""
-    return {"riwayat": dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="calk_generate", limit=100)}
-
-
-@app.get("/api/client/{client_id}/calk/{calk_id}/download")
-def api_download_calk(
-    client_id: int, calk_id: int, format: str = "pdf",
-    user: dict = Depends(auth.get_current_user),
-):
-    """
-    [FASE 5 poin 15] Serve file CALK (docx/pdf) yang sudah digenerate,
-    lewat FileResponse -- pola sama dgn /api/unduh/{nama_file} yg sudah
-    ada (termasuk pengamanan path yg sama: Path(...).name membuang
-    komponen direktori dari nama file, jadi tidak bisa dipakai utk
-    keluar dari FOLDER_HASIL walau nama file di DB entah bagaimana
-    berisi "../").
-
-    Args:
-        format: "pdf" (default) atau "docx".
-    """
-    if format not in ("pdf", "docx"):
-        raise HTTPException(400, 'Parameter format harus "pdf" atau "docx".')
-
-    rec = dbc.ambil_hasil_analisis_by_id(calk_id)
-    if not rec or rec["jenis_analisis"] != "calk_generate" or rec["client_id"] != client_id:
-        raise HTTPException(404, "Riwayat CALK tidak ditemukan.")
-
-    nama_file = rec["hasil"].get(f"{format}_filename")
-    if not nama_file:
-        raise HTTPException(404, f"File {format} tidak tercatat utk CALK id={calk_id}.")
-
-    nama_aman = Path(nama_file).name
-    path_file = FOLDER_HASIL / nama_aman
-    if not path_file.exists():
-        raise HTTPException(404, "File tidak ditemukan (mungkin sudah dihapus dari server).")
-
-    media_type = (
-        "application/pdf" if format == "pdf"
-        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
-    return FileResponse(path_file, media_type=media_type, filename=nama_aman)
-
 
 # ============================================================
 # [BARU] LAPORAN BULANAN SETAHUN - ENDPOINT
 # ============================================================
 
-class GenerateLaporanBulananRequest(BaseModel):
-    tahun: int  # 2026
 
-
-@app.post("/api/client/{client_id}/laporan-bulanan/generate")
-def api_generate_laporan_bulanan(
-    client_id: int,
-    req: GenerateLaporanBulananRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Generate Trial Balance, Laba Rugi, dan Balance Sheet bulanan
-    Jan-Des dalam SATU tabel per laporan (12 kolom bulan).
-
-    [ACCOUNTING CORE V2] Laporan bulanan hanya memakai POSTED journal lines.
-    """
-    jurnal = accounting_core.list_posted_lines(
-        client_id,
-        tanggal_mulai=f"{req.tahun}-01-01",
-        tanggal_akhir=f"{req.tahun}-12-31",
-    )
-
-    if not jurnal:
-        raise HTTPException(404, f"Belum ada jurnal untuk tahun {req.tahun}")
-
-    coa = dbc.ambil_coa_client(client_id)
-
-    # [FIX -- POINT 3] sertakan_saldo_per_bulan=True: hasil hitung_saldo_per_akun()
-    # utk tiap 12 bulan (yang tetap dihitung DI DALAM fungsi ini) ikut dikembalikan
-    # lewat "_saldo_per_akun_per_bulan", jadi loop di bawah TIDAK perlu menghitung
-    # ulang dari nol dengan filter tanggal yang malah berbeda (string compare vs
-    # _tanggal_jurnal()/_akhir_bulan() yang dipakai internal) -- sumber duplikasi
-    # & potensi hasil beda-tipis sudah dihapus di sini.
-    hasil = lapkeu.susun_laporan_bulanan_setahun(jurnal, coa, req.tahun, sertakan_saldo_per_bulan=True)
-    per_bulan_saldo = hasil.pop("_saldo_per_akun_per_bulan", [])
-
-    # [BARU] Simpan snapshot saldo per akun untuk TIAP bulan ke
-    # riwayat_saldo_bulanan -- ini satu-satunya tempat snapshot bulanan
-    # dibuat (upload AR/AP aging manual TIDAK menyimpan histori bulanan,
-    # cuma data upload TERBARU). Sheet "Ringkasan" pada export 18-sheet
-    # (tren Piutang/Utang per bulan) bergantung pada data ini, jadi
-    # generate laporan bulanan HARUS dijalankan dulu sebelum tren bisa
-    # tampil.
-    baris_tersimpan = 0
-    for bulan in range(1, 13):
-        saldo_per_akun = per_bulan_saldo[bulan - 1] if bulan - 1 < len(per_bulan_saldo) else {}
-        baris_tersimpan += dbc.simpan_riwayat_saldo_bulanan(
-            client_id=client_id, saldo_per_akun=saldo_per_akun, tahun=req.tahun, bulan=bulan,
-        )
-    hasil.setdefault("meta", {})["riwayat_saldo_tersimpan"] = baris_tersimpan
-
-    analisis_id = dbc.simpan_hasil_analisis(
-        client_id=client_id,
-        jenis_analisis=f"laporan_bulanan_{req.tahun}",
-        hasil=hasil,
-        prompt=f"Laporan bulanan tahun {req.tahun}",
-        model_ai="rule_based",
-    )
-
-    dbc.log_audit(
-        client_id=client_id,
-        user=user.get("username", "unknown"),
-        aksi="generate_laporan_bulanan",
-        detail={"tahun": req.tahun, "riwayat_saldo_tersimpan": baris_tersimpan},
-    )
-
-    return {"laporan_id": analisis_id, "hasil": hasil}
+# [FIX -- THUNDERING HERD, 2026-09-26] Kalau snapshot laporan bulanan basi
+# (atau belum ada), SEBELUM ini setiap GET/POST yang datang bersamaan
+# langsung generate ulang sendiri-sendiri secara paralel -- tiap generate
+# itu berat (query semua jurnal setahun, hitung 12 bulan, tulis 12 baris
+# riwayat_saldo_bulanan). Kalau beberapa halaman/report dibuka bersamaan
+# (mis. saat lagi ada proses lain jalan di background seperti import Bank
+# Feed), bisa ada belasan generate PARALEL untuk client+tahun yang SAMA,
+# rebutan CPU (GIL) & koneksi DB sampai sebagian request timeout
+# (socket hang up) meski komputasinya sendiri akhirnya tetap selesai.
+#
+# Fix: satu threading.Lock per (client_id, tahun) -- request pertama yang
+# dapat lock itu yang benar-benar generate; request lain yang datang
+# bersamaan untuk kunci yang sama menunggu, lalu (double-checked locking)
+# cek ulang cache dulu sebelum ikut generate -- kalau request pertama
+# barusan sudah mengisi cache yang segar, mereka tinggal pakai itu, tidak
+# generate lagi dari nol.
+_lock_registry_lock = threading.Lock()
+_laporan_bulanan_locks: Dict[str, threading.Lock] = {}
 
 
 # ============================================================
 # [BARU] RIWAYAT SALDO BULANAN - ENDPOINT (tren Piutang/Utang, dst)
 # ============================================================
 
-@app.get("/api/client/{client_id}/riwayat-saldo")
-def api_ambil_riwayat_saldo(
-    client_id: int,
-    tahun: int,
-    no_akun: Optional[str] = None,
-    kategori: Optional[str] = None,
-    user: dict = Depends(auth.get_current_user),
-):
-    """
-    Ambil riwayat saldo bulanan (snapshot per akun per bulan, lihat
-    endpoint POST .../laporan-bulanan/generate yang mengisinya).
-    Kalau `no_akun` diisi, hanya 1 akun; kalau tidak, semua akun (bisa
-    difilter `kategori`).
-    """
-    if no_akun:
-        return {"tahun": tahun, "no_akun": no_akun, "data": dbc.ambil_riwayat_saldo_bulanan(client_id, no_akun, tahun)}
-    return {"tahun": tahun, "data": dbc.ambil_riwayat_saldo_bulanan_client(client_id, tahun, kategori=kategori)}
-
-
-@app.get("/api/client/{client_id}/riwayat-saldo/tren")
-def api_ambil_tren_saldo(
-    client_id: int,
-    tahun: int,
-    pola_no_akun: Optional[str] = None,
-    kategori: Optional[str] = None,
-    user: dict = Depends(auth.get_current_user),
-):
-    """
-    Ambil tren saldo bulanan dikelompokkan per akun -- `pola_no_akun`
-    dukung wildcard SQL LIKE (mis. "11%%" untuk semua akun Piutang
-    dengan prefix "11").
-    """
-    hasil = dbc.ambil_riwayat_saldo_bulanan_akun_tren(client_id, tahun, pola_no_akun=pola_no_akun, kategori=kategori)
-    return {"tahun": tahun, "jumlah_akun": len(hasil), "data": hasil}
-
-
-@app.get("/api/client/{client_id}/riwayat-saldo/ringkasan")
-def api_ringkasan_riwayat_saldo(
-    client_id: int,
-    tahun: int,
-    user: dict = Depends(auth.get_current_user),
-):
-    """Ambil ringkasan tren saldo dikelompokkan per KATEGORI (ASET/LIABILITAS/dst) per bulan, untuk dashboard."""
-    data = dbc.ambil_riwayat_saldo_bulanan_client(client_id, tahun)
-    ringkasan: Dict[str, Dict[int, float]] = {}
-    for item in data:
-        kat = item.get("kategori") or "TIDAK_DIKENALI"
-        ringkasan.setdefault(kat, {b: 0.0 for b in range(1, 13)})
-        ringkasan[kat][item["bulan"]] += item.get("saldo_akhir", 0)
-
-    hasil = [
-        {
-            "kategori": kat,
-            "per_bulan": [round(per_bulan[b], 2) for b in range(1, 13)],
-            "total": round(sum(per_bulan.values()), 2),
-        }
-        for kat, per_bulan in ringkasan.items()
-    ]
-    return {"tahun": tahun, "data": hasil}
-
-
-@app.get("/api/client/{client_id}/laporan-bulanan/{tahun}")
-def api_ambil_laporan_bulanan(
-    client_id: int,
-    tahun: int,
-    user: dict = Depends(auth.require_level(3)),
-):
-    """Ambil laporan bulanan yang sudah pernah digenerate."""
-    riwayat = dbc.ambil_hasil_analisis_client(
-        client_id, jenis_analisis=f"laporan_bulanan_{tahun}", limit=1
-    )
-    if not riwayat:
-        raise HTTPException(404, f"Belum ada laporan bulanan untuk tahun {tahun}")
-    return riwayat[0]
-
-
 
 # ============================================================
 # [BARU] JADWAL PENYUSUTAN 12 BULAN - EXPORT
 # ============================================================
 
-@app.get("/api/client/{client_id}/jadwal-penyusutan/export")
-def api_export_jadwal_penyusutan(
-    client_id: int,
-    tahun: int,
-    metode: str = "komersial",  # "komersial" atau "fiskal"
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """
-    Export jadwal penyusutan 12 bulan (sheet "Buku Bantu Aktiva Tetap")
-    ke Excel, dari upload Aset Tetap TERBARU milik client.
-    """
-    if metode not in ("komersial", "fiskal"):
-        raise HTTPException(400, "Parameter 'metode' harus 'komersial' atau 'fiskal'.")
-
-    hasil_aset = dbc.ambil_hasil_client(client_id, jenis="aset_tetap", limit=1)
-    if not hasil_aset:
-        raise HTTPException(404, "Belum ada data Aset Tetap untuk client ini -- upload Daftar Aset Tetap terlebih dahulu.")
-
-    records = hasil_aset[0]["data"].get("df") or []
-    jadwal = lapkeu.susun_jadwal_penyusutan_bulanan(records, tahun, metode=metode)
-    if not jadwal.get("aset"):
-        raise HTTPException(404, f"Tidak ada aset yang disusutkan (metode {metode}) untuk tahun {tahun}.")
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = f"Jadwal Penyusutan {metode.capitalize()}"
-
-    ws.append([f"JADWAL PENYUSUTAN {metode.upper()} -- TAHUN {tahun}"])
-    ws.append([f"Jumlah Aset: {jadwal['jumlah_aset']}"])
-    ws.append([f"Total Penyusutan per Tahun: {jadwal['total_per_tahun']:,.0f}"])
-    ws.append([])
-
-    headers = (
-        ["No", "Kode Aset", "Nama Aset", "Kategori", "Golongan", "Harga Perolehan",
-         "Penyusutan/Bulan", "Penyusutan/Tahun", "Akumulasi Awal"]
-        + [f"Bln {i}" for i in range(1, 13)]
-        + ["Akumulasi Akhir", "Nilai Buku Akhir"]
-    )
-    baris_header = ws.max_row + 1
-    for col, h in enumerate(headers, 1):
-        cell = ws.cell(row=baris_header, column=col, value=h)
-        cell.font = openpyxl.styles.Font(bold=True)
-        cell.fill = openpyxl.styles.PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-
-    for idx, aset in enumerate(jadwal["aset"], 1):
-        baris = [
-            idx, aset.get("kode_aset"), aset.get("nama_aset"), aset.get("kategori"),
-            aset.get("golongan_fiskal"), aset.get("harga_perolehan", 0),
-            aset.get("penyusutan_per_bulan", 0), aset.get("penyusutan_per_tahun", 0),
-            aset.get("akumulasi_awal_tahun", 0),
-        ]
-        baris += [b.get("penyusutan_bulan_ini", 0) for b in aset.get("jadwal_bulanan", [])]
-        baris += [aset.get("akumulasi_akhir_tahun", 0), aset.get("nilai_buku_akhir_tahun", 0)]
-        ws.append(baris)
-
-    for row in range(baris_header + 1, ws.max_row + 1):
-        for col in [6, 7, 8, 9] + list(range(10, 22)):
-            cell = ws.cell(row=row, column=col)
-            if isinstance(cell.value, (int, float)):
-                cell.number_format = "#,##0"
-
-    for column in ws.columns:
-        lebar = max((len(str(c.value)) for c in column if c.value is not None), default=0)
-        ws.column_dimensions[column[0].column_letter].width = min(lebar + 2, 30)
-
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="Jadwal_Penyusutan_{metode}_{tahun}.xlsx"'},
-    )
-
 
 # ============================================================
 # [BARU] EXPORT 14-SHEET LENGKAP
 # ============================================================
-
-class Export18SheetRequest(BaseModel):
-    tahun: int  # 2026
-    tahun_sebelumnya: Optional[int] = None
-    metode_penyusutan: str = "komersial"  # "komersial" atau "fiskal"
-    # Dipakai HANYA kalau laporan-keuangan/PPh Badan untuk tahun ini
-    # belum pernah digenerate -- akan digenerate otomatis (sama seperti
-    # endpoint pph-badan/generate & laporan-keuangan/generate).
-    prive_atau_dividen: float = 0
-    setoran_modal_baru: float = 0
-    penyesuaian_ekuitas_manual: float = 0
-    nama_perusahaan: Optional[str] = None
-    kompensasi_kerugian_fiskal: float = 0
-    kredit_pajak: Optional[Dict[str, float]] = None
-    # [BARU] sama seperti di GeneratePPhBadanRequest -- dipakai HANYA kalau
-    # PPh Badan tahun ini belum pernah digenerate lewat endpoint
-    # pph-badan/generate (lihat blok "5. PPh Badan 31E" di bawah).
-    skema_pajak: str = "Tarif Umum Pasal 17/31E"
-    tambahan_peredaran_bruto_lainnya: float = 0
-    retur_pengurangan_peredaran_bruto: float = 0
-    keterangan_peredaran_bruto: Optional[str] = None
-
-
-def _bangun_export_18_sheet(
-    client_id: int, req: "Export18SheetRequest", user: dict,
-    on_progress: Optional[Callable[..., None]] = None,
-) -> bytes:
-    """
-    Export 18-sheet Excel lengkap (COA, Buku Bantu Piutang/Hutang/Aktiva
-    Tetap, Trial Balance/Laba Rugi/Balance Sheet Bulanan, PPh Badan 31E,
-    Lampiran SPT BS/PNL/Ekuitas rinci per kode akun, GL, Neraca Saldo
-    Awal, Ringkasan) untuk SATU TAHUN PAJAK penuh.
-
-    [REFACTOR] Bagian "kumpulkan & hitung data" dipindah ke
-    _susun_data_export_18_sheet() (dipakai bareng oleh endpoint JSON
-    preview di bawah) -- fungsi ini sekarang tinggal panggil itu lalu
-    serialize ke .xlsx lewat modules.accounting_export.export_18_sheet_lengkap().
-
-    Melempar HTTPException(404, ...) kalau data yang dibutuhkan (jurnal/
-    laporan keuangan) belum ada sama sekali untuk tahun ini -- pemanggil
-    (endpoint manual maupun auto-generate di proses_file_batch) yang
-    memutuskan cara menampilkan pesan itu ke user.
-
-    [BARU] on_progress: callback opsional dipanggil dgn (step: str,
-    label: str, status: "processing"|"done", pesan: Optional[str]=None)
-    di tiap tahap -- dipakai endpoint SSE
-    /api/client/{client_id}/export-18-sheet/stream (lihat di bawah) untuk
-    mengalirkan progress ke chat, PERSIS pola yang sama dengan
-    _jalankan_generate_kertas_kerja(). Kalau None (dipanggil endpoint
-    blocking lama / auto-generate di proses_file_batch), perilaku SAMA
-    PERSIS seperti sebelumnya -- tidak ada efek samping tambahan.
-    """
-    def _lapor(step: str, label: str, status: str, pesan: Optional[str] = None) -> None:
-        if on_progress:
-            on_progress(step, label, status, pesan)
-
-    # [BARU -- Point 3] Cek cache dulu -- kalau signature data client+tahun
-    # ini belum berubah sejak generate terakhir, langsung pakai file Excel
-    # yang sudah pernah dibuat, skip total (query DB + hitung ulang semua
-    # sheet + serialize openpyxl). Lihat catatan struktur cache di atas
-    # (dekat FOLDER_HASIL).
-    kunci_cache = _kunci_cache_export_18_sheet(client_id, req)
-    signature = dbc.hitung_signature_data_laporan(client_id, req.tahun)
-    isi_excel = _ambil_cache_export_18_sheet(kunci_cache, signature)
-    if isi_excel is not None:
-        _lapor("cache", "Memakai laporan yang sudah pernah dibuat (belum ada perubahan data)", "done")
-        dbc.log_audit(
-            client_id=client_id, user=user.get("username", "unknown"),
-            aksi="export_18_sheet_cache_hit",
-            detail={"tahun": req.tahun},
-        )
-        return isi_excel
-
-    data_export = _susun_data_export_18_sheet(client_id, req, user, on_progress=on_progress)
-    _lapor("generate_excel", "Menyusun file Excel 18-sheet", "processing")
-    isi_excel = accounting_export.export_18_sheet_lengkap(data_export)
-    _lapor("generate_excel", "Menyusun file Excel 18-sheet", "done")
-    _simpan_cache_export_18_sheet(kunci_cache, signature, isi_excel)
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="export_18_sheet",
-        detail={
-            "tahun": req.tahun,
-            "jumlah_baris_jurnal": len(data_export.get("jurnal") or []),
-            "jumlah_akun_coa": len(data_export.get("coa") or []),
-        },
-    )
-
-    return isi_excel
-
-
-def _bangun_preview_18_sheet_json(client_id: int, req: "Export18SheetRequest", user: dict) -> dict:
-    """
-    [BARU] Versi JSON dari _bangun_export_18_sheet() -- dipakai endpoint
-    GET .../export-18-sheet-json supaya ke-18 sheet bisa ditampilkan
-    LANGSUNG DI LAYAR (bukan cuma lewat file .xlsx yang di-download).
-
-    Memakai _susun_data_export_18_sheet() yang SAMA PERSIS dipakai versi
-    Excel -- data yang tampil di layar dijamin sinkron dengan yang ada di
-    file .xlsx kalau di-download, karena berasal dari sumber yang sama.
-    """
-    # [BARU -- Point 3] Kunci cache SENGAJA dipisah dari versi Excel di atas
-    # (prefix "json:") -- isinya beda bentuk (dict vs bytes), jangan
-    # sampai versi JSON kebagian bytes Excel dari cache atau sebaliknya.
-    # Signature-nya boleh sama (data sumbernya identik), cuma kunci &
-    # slot cache-nya yang dipisah.
-    kunci_cache = "json:" + _kunci_cache_export_18_sheet(client_id, req)
-    signature = dbc.hitung_signature_data_laporan(client_id, req.tahun)
-    hasil_json = _ambil_cache_export_18_sheet(kunci_cache, signature)
-    if hasil_json is not None:
-        dbc.log_audit(
-            client_id=client_id, user=user.get("username", "unknown"),
-            aksi="preview_export_18_sheet_json_cache_hit",
-            detail={"tahun": req.tahun},
-        )
-        return hasil_json
-
-    data_export = _susun_data_export_18_sheet(client_id, req, user)
-    hasil_json = accounting_export.export_18_sheet_sebagai_json(data_export)
-    _simpan_cache_export_18_sheet(kunci_cache, signature, hasil_json)
-
-    dbc.log_audit(
-        client_id=client_id, user=user.get("username", "unknown"),
-        aksi="preview_export_18_sheet_json",
-        detail={
-            "tahun": req.tahun,
-            "jumlah_baris_jurnal": len(data_export.get("jurnal") or []),
-            "jumlah_akun_coa": len(data_export.get("coa") or []),
-        },
-    )
-
-    return hasil_json
-
-
-def _lengkapi_narasi_ai_export_18_sheet(
-    calk: Dict[str, Any],
-    asumsi: Dict[str, Any],
-    neraca: Dict[str, Any],
-    laba_rugi: Dict[str, Any],
-    client_id: int,
-) -> Dict[str, Any]:
-    """
-    [BARU] Lengkapi data export 18-sheet dengan narasi hasil Claude API:
-    - calk["narasi_catatan"]  -> lewat claude_client.generate_narasi_calk_claude()
-    - asumsi["narasi_ai"]     -> lewat claude_client.generate_narasi_asumsi_claude()
-    - ringkasan_analisis      -> lewat claude_client.analisis_ringkasan_keuangan_claude()
-      (dipakai sheet "Ringkasan", lihat return value fungsi ini)
-
-    `calk`/`asumsi` dimutasi LANGSUNG (in-place) karena keduanya sudah
-    dict yang akan diteruskan apa adanya ke accounting_export -- lebih
-    simpel drpd bikin salinan yang isinya sama.
-
-    SENGAJA best-effort per panggilan (try/except terpisah tiap fungsi,
-    BUKAN 1 try/except besar): kalau salah satu panggilan Claude gagal
-    (timeout/rate limit/dll), 2 panggilan lainnya TETAP jalan, dan
-    export 18-sheet TETAP lanjut tanpa narasi yang gagal itu saja --
-    bukan gagal total. Ini konsisten dgn cara accounting_export.py
-    didesain: field2 narasi ini opsional, sheet tetap ter-generate
-    normal kalau kosong (lihat komentar "[BARU -- integrasi Claude API]"
-    di modules/accounting_export.py).
-
-    Dipanggil SEBELUM data di-cache (lihat _susun_data_export_18_sheet)
-    supaya panggilan Claude API cuma terjadi sekali per signature data,
-    bukan tiap kali endpoint dipanggil.
-    """
-    ringkasan_analisis: Dict[str, Any] = {}
-    cid = str(client_id)
-
-    if calk.get("kerangka_catatan"):
-        try:
-            calk["narasi_catatan"] = claude_client.generate_narasi_calk_claude(
-                calk["kerangka_catatan"], neraca, laba_rugi, asumsi, client_id=cid,
-            )
-        except Exception as e:
-            claude_client.logger.warning(
-                f"⚠️ Gagal generate narasi CALK (export 18-sheet) utk client {client_id}: {e}"
-            )
-
-    try:
-        asumsi["narasi_ai"] = claude_client.generate_narasi_asumsi_claude(asumsi, client_id=cid)
-    except Exception as e:
-        claude_client.logger.warning(
-            f"⚠️ Gagal generate narasi asumsi (export 18-sheet) utk client {client_id}: {e}"
-        )
-
-    try:
-        ringkasan_analisis = claude_client.analisis_ringkasan_keuangan_claude(
-            [{"neraca": neraca, "laba_rugi": laba_rugi}], client_id=cid,
-        )
-    except Exception as e:
-        claude_client.logger.warning(
-            f"⚠️ Gagal generate ringkasan analisis (export 18-sheet) utk client {client_id}: {e}"
-        )
-
-    return ringkasan_analisis
-
-
-def _susun_data_export_18_sheet(
-    client_id: int, req: "Export18SheetRequest", user: dict,
-    on_progress: Optional[Callable[..., None]] = None,
-) -> dict:
-    """
-    [REFACTOR] Badan asli dari _bangun_export_18_sheet() DIPINDAH ke sini
-    apa adanya (logic "kumpulkan & hitung data" tidak diubah sama sekali)
-    supaya bisa dipanggil dari 2 tempat: versi Excel (_bangun_export_18_sheet,
-    dipakai endpoint download & auto-generate proses_file_batch) DAN versi
-    JSON preview (_bangun_preview_18_sheet_json, dipakai endpoint
-    .../export-18-sheet-json) -- tanpa duplikasi logic pengumpulan data,
-    cuma beda di langkah terakhir (serialize ke .xlsx vs ke JSON).
-
-    Menggabungkan data dari beberapa sumber yang sudah ada (menghitung
-    ulang / menggenerate otomatis kalau snapshot untuk tahun ini belum
-    pernah dibuat, mengikuti pola endpoint laporan-keuangan/generate dan
-    pph-badan/generate).
-
-    Melempar HTTPException(404, ...) kalau data yang dibutuhkan (jurnal/
-    laporan keuangan) belum ada sama sekali untuk tahun ini -- pemanggil
-    yang memutuskan cara menampilkan pesan itu ke user.
-
-    Returns:
-        dict: "data_export" siap dikirim ke
-        modules.accounting_export.export_18_sheet_lengkap() ATAU
-        modules.accounting_export.export_18_sheet_sebagai_json().
-
-    [BARU] on_progress: callback opsional (step, label, status, pesan) --
-    lihat docstring _bangun_export_18_sheet() untuk detail. Nama step
-    ("coa", "jurnal", dst) & label bisa diganti bebas di sisi pemanggil
-    (endpoint SSE) kalau mau teks lain di chat -- di sini cuma dipanggil
-    apa adanya per tahap.
-    """
-    def _lapor(step: str, label: str, status: str, pesan: Optional[str] = None) -> None:
-        if on_progress:
-            on_progress(step, label, status, pesan)
-
-    from modules import pph_badan, fiscal_reconciliation
-
-    tahun = req.tahun
-    periode_tahunan = str(tahun)
-    tanggal_mulai = f"{tahun}-01-01"
-    tanggal_akhir = f"{tahun}-12-31"
-
-    _lapor("coa", "Membaca Chart of Account (COA)", "processing")
-    coa = dbc.ambil_coa_client(client_id)
-    _lapor("coa", "Membaca Chart of Account (COA)", "done")
-
-    # [ACCOUNTING CORE V2] Export 18-sheet mengikuti sumber Actual yang sama
-    # dengan Dashboard dan Financial Statements: hanya POSTED journal lines.
-    _lapor("jurnal", "Mengambil jurnal transaksi tahun berjalan", "processing")
-    # Export 18-sheet memakai ledger resmi POSTED untuk seluruh angka Actual.
-    # Draft tetap tersedia di transaction/review queue dan tidak boleh
-    # membuat snapshot laporan resmi secara diam-diam.
-    jurnal = accounting_core.list_posted_lines(client_id, tanggal_mulai, tanggal_akhir)
-    _lapor("jurnal", "Mengambil jurnal transaksi tahun berjalan", "done")
-
-    # -- 1. Laporan keuangan (Neraca/Laba Rugi/Perubahan Ekuitas) setahun penuh --
-    _lapor("laporan_keuangan", "Menyusun Neraca, Laba Rugi & Perubahan Ekuitas", "processing")
-    lap = dbc.ambil_laporan_keuangan_terbaru(client_id, periode_tahunan)
-    if not lap:
-        if not jurnal:
-            _lapor(
-                "laporan_keuangan", "Menyusun Neraca, Laba Rugi & Perubahan Ekuitas", "error",
-                f"Belum ada laporan keuangan maupun jurnal untuk tahun {tahun}.",
-            )
-            raise HTTPException(
-                404,
-                f"Belum ada laporan keuangan maupun jurnal untuk tahun {tahun}. "
-                f"Pastikan ada data yang sudah diproses (draft maupun terposting) antara {tanggal_mulai} dan {tanggal_akhir}.",
-            )
-        data_laporan = lapkeu.generate_5_laporan_keuangan(
-            jurnal, coa, periode_tahunan,
-            prive_atau_dividen=req.prive_atau_dividen,
-            setoran_modal_baru=req.setoran_modal_baru,
-            penyesuaian_ekuitas_manual=req.penyesuaian_ekuitas_manual,
-        )
-        lap_id = dbc.simpan_laporan_keuangan(
-            client_id, periode_tahunan, data_laporan, dibuat_oleh=user.get("username", "unknown"),
-            tanggal_mulai=tanggal_mulai, tanggal_akhir=tanggal_akhir,
-        )
-        lap = {"id": lap_id, "periode": periode_tahunan, "data": data_laporan}
-    _lapor("laporan_keuangan", "Menyusun Neraca, Laba Rugi & Perubahan Ekuitas", "done")
-
-    neraca = lap["data"]["neraca"]
-    laba_rugi = lap["data"]["laba_rugi"]
-    perubahan_ekuitas = lap["data"]["perubahan_ekuitas"]
-    # [FIX] Sebelumnya "arus_kas"/"calk" TIDAK PERNAH diteruskan ke
-    # data_export padahal lapkeu.generate_5_laporan_keuangan() sudah
-    # menghitung keduanya (lihat laporan_keuangan.py) -- akibatnya sheet
-    # 12 "Laporan Arus Kas" & 13 "CALK" tidak pernah punya data untuk
-    # ditampilkan sama sekali walau sudah dihitung. .get() dgn fallback {}
-    # supaya tetap aman kalau ada snapshot laporan_keuangan LAMA yang
-    # tersimpan sebelum "arus_kas"/"calk" ada di generate_5_laporan_keuangan().
-    arus_kas = lap["data"].get("arus_kas") or {}
-    calk = lap["data"].get("calk") or {}
-
-    # -- 2. Lampiran SPT rinci per kode akun --
-    _lapor("lampiran_spt", "Menyusun Lampiran SPT rinci per kode akun", "processing")
-    lampiran_rinci = lapkeu.susun_lampiran_spt_lengkap_rinci(
-        lap["data"], tahun_sebelumnya=req.tahun_sebelumnya, coa=coa,
-    )
-    _lapor("lampiran_spt", "Menyusun Lampiran SPT rinci per kode akun", "done")
-
-    # -- 3. Laporan bulanan (Trial Balance/Laba Rugi/Balance Sheet 12 kolom) --
-    _lapor("laporan_bulanan", "Menyusun Trial Balance/Laba Rugi/Balance Sheet bulanan", "processing")
-    # Digenerate otomatis (dan disimpan, TERMASUK snapshot riwayat_saldo_
-    # bulanan) kalau belum pernah ada untuk tahun ini -- supaya tren
-    # Piutang/Utang di sheet Ringkasan selalu terisi walau user belum
-    # pernah memanggil endpoint laporan-bulanan/generate secara terpisah.
-    riwayat_lb = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis=f"laporan_bulanan_{tahun}", limit=1)
-    if riwayat_lb:
-        laporan_bulanan = riwayat_lb[0]["hasil"]
-    else:
-        # [FIX -- POINT 3] sama seperti api_generate_laporan_bulanan() di atas --
-        # pakai_ulang hasil per-bulan yang sudah dihitung, bukan hitung_saldo_per_akun()
-        # ulang 12x dengan filter tanggal yang beda dari logic internalnya.
-        laporan_bulanan = lapkeu.susun_laporan_bulanan_setahun(jurnal, coa, tahun, sertakan_saldo_per_bulan=True)
-        per_bulan_saldo = laporan_bulanan.pop("_saldo_per_akun_per_bulan", [])
-        for bulan in range(1, 13):
-            saldo_per_akun = per_bulan_saldo[bulan - 1] if bulan - 1 < len(per_bulan_saldo) else {}
-            dbc.simpan_riwayat_saldo_bulanan(client_id=client_id, saldo_per_akun=saldo_per_akun, tahun=tahun, bulan=bulan)
-        dbc.simpan_hasil_analisis(
-            client_id=client_id, jenis_analisis=f"laporan_bulanan_{tahun}",
-            hasil=laporan_bulanan, prompt=f"Laporan bulanan tahun {tahun} (auto, dari export 18-sheet)",
-            model_ai="rule_based",
-        )
-    _lapor("laporan_bulanan", "Menyusun Trial Balance/Laba Rugi/Balance Sheet bulanan", "done")
-
-    # -- 4. Jadwal penyusutan (sheet "Buku Bantu Aktiva Tetap") --
-    _lapor("aset_tetap", "Menghitung jadwal penyusutan Aktiva Tetap", "processing")
-    hasil_aset = dbc.ambil_hasil_client(client_id, jenis="aset_tetap", limit=1)
-    jadwal_aset: Dict[str, Any] = {}
-    if hasil_aset:
-        records_aset = hasil_aset[0]["data"].get("df") or []
-        jadwal_aset = lapkeu.susun_jadwal_penyusutan_bulanan(records_aset, tahun, metode=req.metode_penyusutan)
-    _lapor(
-        "aset_tetap", "Menghitung jadwal penyusutan Aktiva Tetap",
-        "done" if hasil_aset else "skip",
-        None if hasil_aset else "Belum ada file Aset Tetap diupload -- sheet ini dikosongkan.",
-    )
-
-    # -- 5. PPh Badan 31E -- pakai riwayat yang cocok tahun_pajak, kalau
-    # belum ada dihitung otomatis (sama seperti endpoint pph-badan/generate).
-    _lapor("pph_badan", "Menghitung PPh Badan Pasal 31E", "processing")
-    riwayat_pph = dbc.ambil_hasil_analisis_client(client_id, jenis_analisis="pph_badan_31e", limit=100)
-    pph_cocok = next((r for r in riwayat_pph if (r.get("hasil") or {}).get("tahun_pajak") == tahun), None)
-    if pph_cocok:
-        pph_hasil = pph_cocok["hasil"]
-    else:
-        rekon_fiskal: Dict[str, Any] = {}
-        if hasil_aset:
-            rekon_fiskal = fiscal_reconciliation.ringkas_rekonsiliasi_fiskal_dari_aset_tetap(hasil_aset[0]["data"])
-        pph_hasil = pph_badan.hitung_pph_pasal_31e(
-            peredaran_bruto=laba_rugi.get("total_pendapatan", 0),
-            laba_bersih_komersial=laba_rugi.get("laba_rugi_bersih", 0),
-            tambahan_peredaran_bruto_lainnya=req.tambahan_peredaran_bruto_lainnya or 0,
-            retur_pengurangan_peredaran_bruto=req.retur_pengurangan_peredaran_bruto or 0,
-            koreksi_fiskal_positif=rekon_fiskal.get("koreksi_fiskal_positif", 0),
-            koreksi_fiskal_negatif=rekon_fiskal.get("koreksi_fiskal_negatif", 0),
-            kompensasi_kerugian_fiskal=req.kompensasi_kerugian_fiskal,
-            kredit_pajak=req.kredit_pajak,
-            tahun_pajak=tahun,
-            nama_perusahaan=req.nama_perusahaan,
-            skema_pajak=req.skema_pajak or "Tarif Umum Pasal 17/31E",
-            keterangan_peredaran_bruto=req.keterangan_peredaran_bruto,
-        )
-        dbc.simpan_hasil_analisis(
-            client_id=client_id, jenis_analisis="pph_badan_31e", hasil=pph_hasil,
-            prompt=f"Tahun pajak {tahun} (auto, dari export 18-sheet)", model_ai="rule_based",
-        )
-    # [FIX] Sebelumnya TIDAK ADA _lapor(..., "done") di sini -- step
-    # "pph_badan" jadi tersangkut selamanya di status "processing" di
-    # tampilan chat (ProcessingSteps.jsx), walau perhitungannya sendiri
-    # sudah selesai baris di atas.
-    _lapor("pph_badan", "Menghitung PPh Badan Pasal 31E", "done")
-
-    # -- 6. Buku Bantu Piutang / Hutang (upload TERBARU) --
-    _lapor("piutang_hutang", "Membaca Buku Bantu Piutang & Hutang", "processing")
-    _lapor("piutang_hutang", "Membaca Buku Bantu Piutang & Hutang", "processing")
-    hasil_piutang = dbc.ambil_hasil_client(client_id, jenis="buku_bantu_piutang", limit=1)
-    df_piutang = hasil_piutang[0]["data"].get("df") if hasil_piutang else None
-    hasil_hutang = dbc.ambil_hasil_client(client_id, jenis="ap_aging", limit=1)
-    df_hutang = hasil_hutang[0]["data"].get("df") if hasil_hutang else None
-    _lapor(
-        "piutang_hutang", "Membaca Buku Bantu Piutang & Hutang",
-        "done" if (hasil_piutang or hasil_hutang) else "skip",
-        None if (hasil_piutang or hasil_hutang) else "Belum ada file Piutang/Hutang diupload -- sheet terkait dikosongkan.",
-    )
-
-    # -- 7. Tren Piutang/Utang per bulan (dari riwayat_saldo_bulanan) --
-    _lapor("tren_saldo", "Menghitung tren saldo Piutang/Utang per bulan", "processing")
-    akun_piutang = [
-        a.get("no_akun") for a in coa
-        if a.get("kategori") == "ASET" and (
-            a.get("sub_kategori") == "Piutang" or "PIUTANG" in str(a.get("nama_akun") or "").upper()
-        )
-    ]
-    akun_utang = [
-        a.get("no_akun") for a in coa
-        if a.get("kategori") == "LIABILITAS" and (
-            a.get("sub_kategori") == "Utang" or "UTANG" in str(a.get("nama_akun") or "").upper()
-            or "HUTANG" in str(a.get("nama_akun") or "").upper()
-        )
-    ]
-    riwayat_tren = dbc.ambil_riwayat_saldo_bulanan_akun_tren(client_id, tahun)
-    tren_piutang = accounting_export.get_tren_saldo_per_bulan(riwayat_tren, akun_piutang)
-    tren_utang = accounting_export.get_tren_saldo_per_bulan(riwayat_tren, akun_utang)
-    _lapor("tren_saldo", "Menghitung tren saldo Piutang/Utang per bulan", "done")
-
-    # -- 8. Petunjuk & Asumsi --
-    # [FIX] Sebelumnya key "asumsi" TIDAK PERNAH dikirim ke data_export,
-    # padahal accounting_export.export_18_sheet_lengkap() membaca
-    # data.get("asumsi") untuk mengisi sheet "Petunjuk & Asumsi" -- akibatnya
-    # Periode Awal/Periode Akhir selalu kosong (padahal tanggal_mulai/
-    # tanggal_akhir sudah dihitung di atas), dan Nama Perusahaan cuma
-    # kebetulan terisi kalau sudah nempel di cache pph_hasil dari generate
-    # sebelumnya (tidak konsisten). Nama perusahaan sekarang diambil
-    # langsung dari data client (sumber yang selalu ada), req.nama_perusahaan
-    # dipakai sebagai override kalau eksplisit dikirim di request.
-    info_client = dbc.ambil_client(client_id) or {}
-    asumsi = {
-        "nama_perusahaan": req.nama_perusahaan or info_client.get("nama") or "",
-        "periode_awal": tanggal_mulai,
-        "periode_akhir": tanggal_akhir,
-        # [BARU] Sebelumnya tidak dikirim -- accounting_export.py sudah
-        # sedia baris "Tanggal Laporan / Aging" tapi selalu kosong.
-        # Dipakai tanggal_akhir (akhir periode laporan) sebagai cutoff
-        # aging piutang/hutang, konsisten dgn field yg sama dipakai di
-        # proses_ap_aging()/proses_piutang() saat generate laporan bulanan.
-        "tanggal_laporan": tanggal_akhir,
-    }
-
-    # -- 9. Narasi AI (CALK naratif, catatan asumsi, ringkasan analisis) --
-    # [BARU] Best-effort, lihat _lengkapi_narasi_ai_export_18_sheet() --
-    # dipanggil di sini (SEBELUM return, SEBELUM hasil di-cache oleh
-    # pemanggil) supaya Claude API cuma dipanggil sekali per signature
-    # data client+tahun, bukan tiap kali endpoint diakses selama cache
-    # masih valid.
-    _lapor("narasi_ai", "Menyusun narasi CALK & ringkasan analisis (AI)", "processing")
-    ringkasan_analisis = _lengkapi_narasi_ai_export_18_sheet(
-        calk, asumsi, neraca, laba_rugi, client_id,
-    )
-    _lapor("narasi_ai", "Menyusun narasi CALK & ringkasan analisis (AI)", "done")
-
-    # -- 10. Kembalikan data siap-pakai (pemanggil yang memutuskan Excel/JSON) --
-    return {
-        "periode": periode_tahunan,
-        "tahun_sebelumnya": req.tahun_sebelumnya,
-        "coa": coa,
-        "jurnal": jurnal,
-        "df_piutang": df_piutang,
-        "df_hutang": df_hutang,
-        "jadwal_aset": jadwal_aset,
-        "laporan_bulanan": laporan_bulanan,
-        "pph_hasil": pph_hasil,
-        "neraca": neraca,
-        "laba_rugi": laba_rugi,
-        "perubahan_ekuitas": perubahan_ekuitas,
-        "arus_kas": arus_kas,
-        "calk": calk,
-        "lampiran_rinci": lampiran_rinci,
-        "tren_piutang": tren_piutang,
-        "tren_utang": tren_utang,
-        "asumsi": asumsi,
-        "ringkasan_analisis": ringkasan_analisis,
-    }
-
-
-@app.post("/api/client/{client_id}/export-18-sheet")
-def api_export_18_sheet(
-    client_id: int,
-    req: Export18SheetRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas
-):
-    """Endpoint tipis -- badan logic ada di _bangun_export_18_sheet()
-    supaya bisa dipakai ulang dari proses_file_batch() (auto-generate)."""
-    isi_excel = _bangun_export_18_sheet(client_id, req, user)
-    return StreamingResponse(
-        io.BytesIO(isi_excel),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="Laporan_Keuangan_{req.tahun}_18_Sheet.xlsx"'},
-    )
-
-
-@app.post("/api/client/{client_id}/export-18-sheet-json")
-def api_export_18_sheet_json(
-    client_id: int,
-    req: Export18SheetRequest,
-    user: dict = Depends(auth.require_level(3)),  # Supervisor ke atas -- sama seperti versi Excel
-):
-    """
-    [BARU] Versi JSON dari POST .../export-18-sheet -- supaya ke-18 sheet
-    (Petunjuk & Asumsi, COA, Neraca Saldo Awal, GL, Buku Bantu Piutang/
-    Hutang/Aktiva Tetap, Trial Balance/Laba Rugi/Balance Sheet Bulanan,
-    Ringkasan, BS/PNL Lampiran SPT, PPh Badan 31E) bisa ditampilkan
-    LANGSUNG DI LAYAR (tab per-sheet), bukan cuma lewat file .xlsx yang
-    di-download. Menerima parameter request yang SAMA PERSIS dengan
-    endpoint Excel-nya (tahun, tahun_sebelumnya, dst).
-
-    Badan logic ada di _bangun_preview_18_sheet_json() -- memakai ulang
-    _susun_data_export_18_sheet() yang sama dengan versi Excel, supaya
-    data yang tampil di layar selalu sinkron dengan file yang di-download.
-    """
-    return _bangun_preview_18_sheet_json(client_id, req, user)
 
 
 @app.get("/api/template-laporan-keuangan")

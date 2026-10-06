@@ -8,24 +8,23 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import dynamic from 'next/dynamic';
 import { formatRupiah, riskColors, apStatusColors, type Vendor, type Bill, type APStatus } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
-// [BARU] Data vendors/bills/KPI di halaman ini TIDAK LAGI dari mock statis —
-// semuanya diturunkan langsung dari transaksi kelompok Expense di halaman
-// Transaksi lewat TransactionsContext + apBridge.ts. Kalau ada transaksi
-// Expense baru/diedit/status pembayarannya berubah, halaman ini otomatis
-// ikut berubah (re-render) karena sama-sama membaca context yang sama.
-import { useTransactions } from '@/app/transactions/context/TransactionsContext';
+// [DIUBAH -- halaman AP disambungkan ke tabel resmi, pola sama dengan AR]
+// Sumber data TUNGGAL halaman ini sekarang = vendor & bill dari modul
+// Purchase + 2 tabel AP (payment, note) di Supabase (schema "3_Financial")
+// lewat useAPData() -> GET /api/client/{id}/ap. Tidak ada lagi fallback ke
+// turunan transaksi Expense, karena hanya baris di tabel-tabel inilah yang
+// bisa dicatat pembayarannya / diberi catatan / ditandai Disputed/On Hold.
+// Fungsi hitung KPI/aging/tren/forecast/vendor tetap dipakai dari
+// apBridge.ts (murni menghitung dari Bill[]/Vendor[]).
 import {
   getApReferenceDate,
-  billsFromTransactions,
-  vendorsFromBills,
   apKpisFromBills,
   apAgingFromBills,
   apTrendFromBills,
   sparklineFromTrend,
   paymentForecastFromBills,
-  markPurchaseTxPaid,
-  reschedulePurchaseTx,
 } from '@/app/transactions/lib/apBridge';
+import { useAPData } from '../lib/apDbBridge';
 
 const APCharts = dynamic(() => import('./APCharts'), { ssr: false });
 const VendorDetailPanel = dynamic(() => import('./VendorDetailPanel'), { ssr: false });
@@ -40,29 +39,38 @@ type APTab = 'overview' | 'vendors' | 'bills' | 'payment-planning' | 'error-dete
 export default function APContent() {
   const router = useRouter();
   const { fx } = useCurrency();
-  const { transactions, saveEdit } = useTransactions();
+  const {
+    bills, vendors, loading, isFetching, error,
+    refetch, recordPayment, setBillStatus,
+  } = useAPData();
+  const hasData = bills.length > 0 || vendors.length > 0;
 
-  // [BARU] Aksi "Mark Paid" / "Schedule payment" di halaman AP menulis balik
-  // ke transaksi Expense sumbernya (bill.id === transaction.id), bukan cuma
-  // toast kosong — supaya perubahan di AP benar-benar sinkron dua arah
-  // dengan Expense, bukan cuma satu arah (Expense -> AP saja).
-  const markBillPaid = (bill: Bill) => {
-    const tx = transactions.find((t) => t.id === bill.id);
-    if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
-    saveEdit(markPurchaseTxPaid(tx));
-    toast.success(`${bill.number} ditandai Lunas`, { description: `Status pembayaran ikut berubah di halaman Expense.` });
+  // [DIUBAH] Aksi "Mark Paid" / "Schedule payment" sekarang benar-benar
+  // menulis ke tabel financial_account_payable_ap_payment lewat
+  // recordPayment() dari useAPData() -- bukan lagi mengedit transaksi
+  // Expense lokal. "Schedule" dicatat sebagai pembayaran berstatus
+  // 'Scheduled' (rencana bayar, belum mengurangi sisa tagihan -- lihat
+  // comment tabel di Supabase), "Mark Paid" berstatus 'Paid' senilai sisa
+  // tagihan saat ini.
+  const markBillPaid = async (bill: Bill) => {
+    try {
+      await recordPayment({ billId: bill.id, paymentDate: getApReferenceDate(), amount: bill.outstanding, status: 'Paid' });
+      toast.success(`${bill.number} ditandai Lunas`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal mencatat pembayaran');
+    }
   };
 
-  const scheduleBillPayment = (bill: Bill, newDueDate: string) => {
-    const tx = transactions.find((t) => t.id === bill.id);
-    if (!tx) { toast.error(`Transaksi untuk ${bill.number} tidak ditemukan`); return; }
-    saveEdit(reschedulePurchaseTx(tx, newDueDate));
-    toast.success(`Jatuh tempo ${bill.number} dijadwalkan ulang`, { description: `Tanggal baru: ${newDueDate}` });
+  const scheduleBillPayment = async (bill: Bill, newDueDate: string) => {
+    try {
+      await recordPayment({ billId: bill.id, paymentDate: newDueDate, amount: bill.outstanding, status: 'Scheduled' });
+      toast.success(`Pembayaran ${bill.number} dijadwalkan`, { description: `Tanggal rencana: ${newDueDate}` });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal menjadwalkan pembayaran');
+    }
   };
 
-  // ─── Turunan dari transaksi Expense (sumber tunggal) ───────────────────
-  const bills = useMemo(() => billsFromTransactions(transactions), [transactions]);
-  const vendors = useMemo(() => vendorsFromBills(bills), [bills]);
+  // ─── Turunan dari bills/vendors (tabel resmi) ───────────────────
   const kpiValues = useMemo(() => apKpisFromBills(bills, vendors), [bills, vendors]);
   const agingData = useMemo(() => apAgingFromBills(bills), [bills]);
   const trendData = useMemo(() => apTrendFromBills(bills), [bills]);
@@ -127,7 +135,7 @@ export default function APContent() {
   const currentPct = kpiValues.totalAP > 0 ? Math.round((kpiValues.currentAP / kpiValues.totalAP) * 1000) / 10 : 0;
 
   const kpis: { id: string; label: string; value: string; subLabel: string; change: string; changeNeutral: boolean; changePositive?: boolean; alert?: boolean; sparkline: number[]; color: string }[] = [
-    { id: 'kpi-ap-total', label: 'TOTAL ACCOUNTS PAYABLE', value: formatRupiah(kpiValues.totalAP, true), subLabel: `Dari ${bills.length} transaksi Expense`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
+    { id: 'kpi-ap-total', label: 'TOTAL ACCOUNTS PAYABLE', value: formatRupiah(kpiValues.totalAP, true), subLabel: `Dari ${bills.length} tagihan vendor`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--primary)' },
     { id: 'kpi-ap-current', label: 'CURRENT PAYABLES', value: formatRupiah(kpiValues.currentAP, true), subLabel: `${currentPct}% dari total AP`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--info)' },
     { id: 'kpi-ap-overdue', label: 'OVERDUE PAYABLES', value: formatRupiah(kpiValues.overdueAP, true), subLabel: `${overduePct}% dari total AP`, change: '', changeNeutral: true, alert: kpiValues.overdueAP > 0, sparkline: trendSparkline, color: 'var(--danger)' },
     { id: 'kpi-ap-week', label: 'DUE THIS WEEK', value: formatRupiah(kpiValues.dueThisWeek, true), subLabel: `${kpiValues.dueThisWeekCount} tagihan`, change: '', changeNeutral: true, sparkline: trendSparkline, color: 'var(--warning)' },
@@ -145,7 +153,7 @@ export default function APContent() {
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Payable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor vendor obligations, upcoming payments, liabilities, and cash requirements.</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="badge-info">Tersinkron dari Transaksi → Expense</span>
+            <span className="badge-info">Tersinkron dari database AP (Supabase)</span>
             <span className="badge-neutral">{bills.length} tagihan · {vendors.length} vendor</span>
             <span className="text-xs text-muted-foreground">
               Per {new Date(getApReferenceDate()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -164,11 +172,40 @@ export default function APContent() {
             <Icon name="ArrowDownTrayIcon" size={14} />
             Export
           </button>
-          <button className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors" onClick={() => toast.info('Refreshing AP data...')}>
-            <Icon name="ArrowPathIcon" size={16} />
+          <button
+            className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors"
+            title="Muat ulang data AP"
+            onClick={() => { refetch(); toast.info('Memuat ulang data AP…'); }}
+          >
+            <Icon name="ArrowPathIcon" size={16} className={isFetching ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center justify-between gap-3 bg-danger-bg border border-red-200 rounded-lg px-4 py-3">
+          <p className="text-sm text-danger-foreground">Gagal memuat data AP: {error}</p>
+          <button onClick={() => refetch()} className="text-sm font-medium text-danger hover:underline flex-shrink-0">Coba lagi</button>
+        </div>
+      )}
+      {!hasData && loading && (
+        <div className="bg-card border border-border rounded-lg shadow-card px-4 py-16 text-center">
+          <p className="text-sm font-medium text-muted-foreground">Memuat data Accounts Payable…</p>
+        </div>
+      )}
+      {!hasData && !loading && !error && (
+        <div className="bg-card border border-border rounded-lg shadow-card px-4 py-16 text-center">
+          <div className="flex flex-col items-center gap-2">
+            <Icon name="DocumentTextIcon" size={32} className="text-muted-foreground/40" />
+            <p className="text-sm font-medium text-foreground">Belum ada data Accounts Payable untuk client ini</p>
+            <p className="text-xs text-muted-foreground max-w-md">
+              Data AP diambil dari vendor & bill modul Purchase, ditambah tabel pembayaran dan catatan AP di schema 3_Financial. Isi tabel tersebut lalu muat ulang halaman ini.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {hasData && (<>
 
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4 gap-4">
@@ -482,6 +519,7 @@ export default function APContent() {
           onSchedule={(newDueDate) => { scheduleBillPayment(selectedBill, newDueDate); setSelectedBill(null); }}
         />
       )}
+      </>)}
     </div>
   );
 }

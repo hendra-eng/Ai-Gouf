@@ -37,42 +37,12 @@ interface OtherTransaction {
 }
 
 // ─── Sample Data ──────────────────────────────────────────────────────────────
-const otherData: OtherTransaction[] = [
-  { id: 'OTH-2026-0088', date: '09/13/2026', txType: 'Depreciation', description: 'Monthly depreciation — IT Equipment (Sep 2026)', reference: 'DEP-SEP-2026-01', accountCode: '6700', accountName: 'Depreciation Expense', debit: 8400, credit: 8400, source: 'Fixed Asset Register', accountingPeriod: 'Sep 2026', status: 'posted', createdBy: 'System', approvedBy: 'L. Chen', postingStatus: 'posted', notes: 'Straight-line depreciation on IT equipment pool. Useful life 5 years.' },
-  { id: 'OTH-2026-0087', date: '09/13/2026', txType: 'Depreciation', description: 'Monthly depreciation — Office Furniture (Sep 2026)', reference: 'DEP-SEP-2026-02', accountCode: '6700', accountName: 'Depreciation Expense', debit: 1250, credit: 1250, source: 'Fixed Asset Register', accountingPeriod: 'Sep 2026', status: 'posted', createdBy: 'System', approvedBy: 'L. Chen', postingStatus: 'posted' },
-  { id: 'OTH-2026-0086', date: '09/12/2026', txType: 'Accrual', description: 'Accrued salaries — Sep 2026 (unpaid portion)', reference: 'ACR-SEP-2026-01', accountCode: '6100', accountName: 'Salaries Expense', debit: 42000, credit: 42000, source: 'Payroll Estimate', accountingPeriod: 'Sep 2026', status: 'approved', createdBy: 'M. Patel', approvedBy: 'R. Holloway', postingStatus: 'posted', notes: 'Accrual for last 2 weeks of Sep 2026 salaries not yet paid.' },
-  { id: 'OTH-2026-0085', date: '09/12/2026', txType: 'Accrual', description: 'Accrued interest expense — Sep 2026', reference: 'ACR-SEP-2026-02', accountCode: '6800', accountName: 'Interest Expense', debit: 3200, credit: 3200, source: 'Loan Schedule', accountingPeriod: 'Sep 2026', status: 'approved', createdBy: 'L. Chen', approvedBy: 'R. Holloway', postingStatus: 'posted' },
-  { id: 'OTH-2026-0084', date: '09/10/2026', txType: 'Prepayment', description: 'Prepaid insurance — Q4 2026 amortization', reference: 'PRE-SEP-2026-01', accountCode: '1300', accountName: 'Prepaid Insurance', debit: 4800, credit: 4800, source: 'Insurance Policy INS-2026', accountingPeriod: 'Sep 2026', status: 'posted', createdBy: 'M. Patel', approvedBy: 'L. Chen', postingStatus: 'posted', notes: 'Monthly amortization of annual insurance premium paid Jan 2026.' },
-  { id: 'OTH-2026-0083', date: '09/10/2026', txType: 'Prepayment', description: 'Prepaid software subscriptions — Sep 2026', reference: 'PRE-SEP-2026-02', accountCode: '1310', accountName: 'Prepaid Software', debit: 2100, credit: 2100, source: 'Subscription Schedule', accountingPeriod: 'Sep 2026', status: 'posted', createdBy: 'M. Patel', approvedBy: 'L. Chen', postingStatus: 'posted' },
-  { id: 'OTH-2026-0082', date: '09/08/2026', txType: 'Tax Adjustment', description: 'GST/VAT input tax correction — Aug 2026', reference: 'TAX-ADJ-2026-08', accountCode: '2300', accountName: 'Tax Payable', debit: 1840, credit: 1840, source: 'Tax Review AUG-2026', accountingPeriod: 'Sep 2026', status: 'approved', createdBy: 'L. Chen', approvedBy: 'R. Holloway', postingStatus: 'posted', notes: 'Correction of input tax credit misclassification in Aug 2026.' },
-  { id: 'OTH-2026-0081', date: '09/07/2026', txType: 'Reclassification', description: 'Reclassify marketing expense to R&D', reference: 'RCL-SEP-2026-01', accountCode: '6200', accountName: 'Marketing Expense', debit: 5500, credit: 5500, source: 'Budget Review Q3-2026', accountingPeriod: 'Sep 2026', status: 'approved', createdBy: 'R. Holloway', approvedBy: 'L. Chen', postingStatus: 'posted', notes: 'Product marketing costs reclassified per management decision.' },
-  { id: 'OTH-2026-0080', date: '09/05/2026', txType: 'FX Adjustment', description: 'Foreign exchange revaluation — USD receivables', reference: 'FX-SEP-2026-01', accountCode: '4800', accountName: 'FX Gain/Loss', debit: 2280, credit: 2280, source: 'FX Rate Sep 13 2026', accountingPeriod: 'Sep 2026', status: 'posted', createdBy: 'System', approvedBy: 'L. Chen', postingStatus: 'posted', notes: 'USD/local currency revaluation at period-end rate.' },
-  { id: 'OTH-2026-0079', date: '09/04/2026', txType: 'Asset Adjustment', description: 'Write-down — obsolete inventory items', reference: 'AST-ADJ-2026-09', accountCode: '1500', accountName: 'Inventory', debit: 6800, credit: 6800, source: 'Inventory Review SEP-2026', accountingPeriod: 'Sep 2026', status: 'approved', createdBy: 'M. Patel', approvedBy: 'R. Holloway', postingStatus: 'posted', notes: 'Write-down of slow-moving inventory per NRV assessment.' },
-  { id: 'OTH-2026-0078', date: '09/03/2026', txType: 'Intercompany', description: 'Intercompany charge — shared services Q3', reference: 'IC-SEP-2026-01', accountCode: '1800', accountName: 'Intercompany Receivable', debit: 18500, credit: 18500, source: 'IC Agreement 2026', accountingPeriod: 'Sep 2026', status: 'pending', createdBy: 'L. Chen', approvedBy: '—', postingStatus: 'pending', notes: 'Quarterly intercompany recharge for shared IT and HR services.' },
-  { id: 'OTH-2026-0077', date: '09/02/2026', txType: 'Closing Adjustment', description: 'Period-end closing adjustment — accrued revenue', reference: 'CLO-AUG-2026-01', accountCode: '1150', accountName: 'Accrued Revenue', debit: 9200, credit: 9200, source: 'Month-end Close AUG-2026', accountingPeriod: 'Aug 2026', status: 'posted', createdBy: 'R. Holloway', approvedBy: 'L. Chen', postingStatus: 'posted' },
-  { id: 'OTH-2026-0076', date: '09/01/2026', txType: 'Accrual', description: 'Accrued utilities — Aug 2026 (estimated)', reference: 'ACR-AUG-2026-03', accountCode: '6400', accountName: 'Utilities Expense', debit: 3840, credit: 3840, source: 'Utility Estimate AUG-2026', accountingPeriod: 'Aug 2026', status: 'posted', createdBy: 'M. Patel', approvedBy: 'L. Chen', postingStatus: 'posted' },
-  { id: 'OTH-2026-0075', date: '08/31/2026', txType: 'Depreciation', description: 'Monthly depreciation — Vehicles (Aug 2026)', reference: 'DEP-AUG-2026-03', accountCode: '6700', accountName: 'Depreciation Expense', debit: 2800, credit: 2800, source: 'Fixed Asset Register', accountingPeriod: 'Aug 2026', status: 'posted', createdBy: 'System', approvedBy: 'L. Chen', postingStatus: 'posted' },
-  { id: 'OTH-2026-0074', date: '08/30/2026', txType: 'Tax Adjustment', description: 'Corporate tax provision — Q3 2026', reference: 'TAX-PRV-2026-Q3', accountCode: '2310', accountName: 'Income Tax Payable', debit: 28400, credit: 28400, source: 'Tax Provision Q3-2026', accountingPeriod: 'Aug 2026', status: 'approved', createdBy: 'L. Chen', approvedBy: 'R. Holloway', postingStatus: 'posted', notes: 'Estimated corporate income tax provision for Q3 2026.' },
-];
+const otherData: OtherTransaction[] = [];
 
 // ─── Chart Data ───────────────────────────────────────────────────────────────
-const typeDistribution = [
-  { name: 'Depreciation', value: 3, color: '#6366f1' },
-  { name: 'Accrual', value: 4, color: '#f59e0b' },
-  { name: 'Prepayment', value: 2, color: '#10b981' },
-  { name: 'Tax Adjustment', value: 2, color: '#ef4444' },
-  { name: 'Reclassification', value: 1, color: '#3b82f6' },
-  { name: 'Other', value: 3, color: '#94a3b8' },
-];
+const typeDistribution: { name: string; value: number; color: string }[] = [];
 
-const monthlyOtherActivity = [
-  { month: 'Apr', amount: 88000 },
-  { month: 'May', amount: 94000 },
-  { month: 'Jun', amount: 102000 },
-  { month: 'Jul', amount: 87000 },
-  { month: 'Aug', amount: 118000 },
-  { month: 'Sep', amount: 112110 },
-];
+const monthlyOtherActivity: { month: string; amount: number }[] = [];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const fmt = (n: number) =>
@@ -196,19 +166,7 @@ const otherCSVRows = otherData.map((r) => ({
   'Posting Status': r.postingStatus,
 }));
 
-const otherGLEntries = [
-  { accountCode: '1300', accountName: 'Prepaid Insurance', openingBalance: 57600, totalDebits: 0, totalCredits: 4800, closingBalance: 52800, period: 'Sep 2026' },
-  { accountCode: '1310', accountName: 'Prepaid Software', openingBalance: 12600, totalDebits: 0, totalCredits: 2100, closingBalance: 10500, period: 'Sep 2026' },
-  { accountCode: '1500', accountName: 'Inventory', openingBalance: 84200, totalDebits: 0, totalCredits: 6800, closingBalance: 77400, period: 'Sep 2026' },
-  { accountCode: '1800', accountName: 'Intercompany Receivable', openingBalance: 0, totalDebits: 18500, totalCredits: 0, closingBalance: 18500, period: 'Sep 2026' },
-  { accountCode: '2300', accountName: 'Tax Payable', openingBalance: 14200, totalDebits: 1840, totalCredits: 28400, closingBalance: 40760, period: 'Sep 2026' },
-  { accountCode: '4800', accountName: 'FX Gain/Loss', openingBalance: 0, totalDebits: 0, totalCredits: 2280, closingBalance: 2280, period: 'Sep 2026' },
-  { accountCode: '6100', accountName: 'Salaries Expense', openingBalance: 0, totalDebits: 42000, totalCredits: 0, closingBalance: 42000, period: 'Sep 2026' },
-  { accountCode: '6200', accountName: 'Marketing Expense', openingBalance: 0, totalDebits: 5500, totalCredits: 5500, closingBalance: 0, period: 'Sep 2026' },
-  { accountCode: '6400', accountName: 'Utilities Expense', openingBalance: 0, totalDebits: 3840, totalCredits: 0, closingBalance: 3840, period: 'Sep 2026' },
-  { accountCode: '6700', accountName: 'Depreciation Expense', openingBalance: 0, totalDebits: 12450, totalCredits: 0, closingBalance: 12450, period: 'Sep 2026' },
-  { accountCode: '6800', accountName: 'Interest Expense', openingBalance: 0, totalDebits: 3200, totalCredits: 0, closingBalance: 3200, period: 'Sep 2026' },
-];
+const otherGLEntries: { accountCode: string; accountName: string; openingBalance: number; totalDebits: number; totalCredits: number; closingBalance: number; period: string }[] = [];
 
 // ─── Type Color Map ───────────────────────────────────────────────────────────
 const typeColorMap: Record<OtherTxType, string> = {
@@ -322,9 +280,9 @@ export default function OtherTabContent() {
       <div className="space-y-5">
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-          <KpiCard label="Total Adjustments (Sep)" value="$112,110" subValue="15 transactions this period" trend={-5.0} trendLabel="vs Aug 2026" icon={<Layers size={18} />} variant="info" />
-          <KpiCard label="Depreciation (Sep)" value="$12,450" subValue="3 asset groups" trend={0} trendLabel="Consistent with prior" icon={<TrendingDown size={18} />} variant="default" />
-          <KpiCard label="Accruals (Sep)" value="$49,040" subValue="4 accrual entries" trend={8.2} trendLabel="vs Aug 2026" icon={<Calendar size={18} />} variant="warning" />
+          <KpiCard label="Total Adjustments (Sep)" value="$0" subValue="0 transactions this period" trend={0} trendLabel="vs Aug 2026" icon={<Layers size={18} />} variant="info" />
+          <KpiCard label="Depreciation (Sep)" value="$0" subValue="0 asset groups" trend={0} trendLabel="Consistent with prior" icon={<TrendingDown size={18} />} variant="default" />
+          <KpiCard label="Accruals (Sep)" value="$0" subValue="0 accrual entries" trend={0} trendLabel="vs Aug 2026" icon={<Calendar size={18} />} variant="warning" />
           <KpiCard label="Pending Approval" value={String(pendingCount)} subValue={`${pendingCount} transactions awaiting`} icon={<FileWarning size={18} />} variant="negative" />
           <KpiCard label="Posted Transactions" value={String(postedCount)} subValue={`${postedCount} of ${otherData.length} posted`} trend={allBalanced ? 0 : undefined} icon={<CheckCircle2 size={18} />} variant="positive" />
         </div>

@@ -3,14 +3,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
-import { Upload, Download, Settings, CheckCircle, MoreHorizontal, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import KpiCard from '@/components/shared/KpiCard';
 import { downloadBlob } from '../../components/exportTemplates/exportExcelShared';
 import {
-  useSalesSourceFiles, uploadSalesSourceFile, updateSalesSourceFile,
+  useSalesSourceFiles, uploadSalesSourceFile, updateSalesSourceFile, deleteSalesSourceFile,
   useSalesSourceRows, promoteSourceFileToInvoices, formatTanggalWaktu, formatTanggalSingkat,
   type BackendSalesSourceFile,
 } from '@/lib/salesStore';
@@ -60,7 +60,7 @@ const statusBadge = (s: string) => {
 export default function SalesSourceData() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const userId = user?.id ?? null;
 
   // [FIX] Klien untuk upload diambil dari dropdown "Switch Company" di header
   // (useActiveClient) -- TIDAK ada lagi dropdown klien terpisah di halaman ini.
@@ -68,6 +68,7 @@ export default function SalesSourceData() {
   // dipakai backend sebagai key pencocokan/pembuatan template pola kolom
   // (lihat root/SALES_IMPORT_TEMPLATES.md).
   const { activeClientId: managementClientId } = useActiveClient();
+  const clientId = managementClientId ?? null; // filter list = company aktif (client_id di DB = management_clients)
 
   const { files: sourceFiles, loading, error, refresh } = useSalesSourceFiles(clientId);
   // [FIX] Menyimpan ID saja (bukan salinan objek BackendSalesSourceFile) --
@@ -94,6 +95,26 @@ export default function SalesSourceData() {
   const previewTotalPages = Math.max(1, Math.ceil(previewRows.length / PREVIEW_PAGE_SIZE));
   const previewPageSafe = Math.min(previewPage, previewTotalPages);
   const pagedPreviewRows = previewRows.slice((previewPageSafe - 1) * PREVIEW_PAGE_SIZE, previewPageSafe * PREVIEW_PAGE_SIZE);
+
+  // [BARU] Menu aksi "···" per baris file: hapus (soft-delete) source file.
+  const [menuFileId, setMenuFileId] = useState<string | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const handleDeleteFile = async (f: BackendSalesSourceFile) => {
+    setMenuFileId(null);
+    const ok = window.confirm(
+      `${t('Hapus file')} "${f.file_name}"?\n\n${t('Invoice yang sudah dibuat dari file ini tidak ikut terhapus.')}`
+    );
+    if (!ok) return;
+    setDeletingFileId(f.id);
+    try {
+      await deleteSalesSourceFile(f.id);
+      toast.success(t('File dihapus'), { description: f.file_name });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('Gagal menghapus file'));
+    } finally {
+      setDeletingFileId(null);
+    }
+  };
 
   const [isPromoting, setIsPromoting] = useState(false);
   const handlePromoteToInvoices = async () => {
@@ -164,7 +185,7 @@ export default function SalesSourceData() {
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
-    if (!clientId) {
+    if (!userId) {
       toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
       return;
     }
@@ -374,7 +395,29 @@ export default function SalesSourceData() {
                   </td>
                   <td className="py-2.5 px-3 text-xs text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
                   <td className="py-2.5 px-3">
-                    <button className="p-1 hover:bg-muted rounded transition-colors"><MoreHorizontal size={14} className="text-muted-foreground" /></button>
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
+                        disabled={deletingFileId === f.id}
+                        className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-50"
+                        aria-label={t('Aksi')}
+                      >
+                        <MoreHorizontal size={14} className="text-muted-foreground" />
+                      </button>
+                      {menuFileId === f.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setMenuFileId(null)} />
+                          <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-border bg-card shadow-lg py-1">
+                            <button
+                              onClick={() => handleDeleteFile(f)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 text-left"
+                            >
+                              <Trash2 size={12} /> {t('Hapus file')}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

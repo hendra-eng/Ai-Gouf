@@ -29,6 +29,7 @@ const CLIENTS_CHANGED_EVENT = 'gouf-clients-changed';
 // dipakai untuk override kalau backend di-deploy di domain terpisah.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const MANAGEMENT_CLIENTS_URL = `${API_BASE_URL}/api/v1/management/clients`;
+const COA_INDUSTRIES_URL = `${API_BASE_URL}/api/v1/management/coa-industries`;
 
 // [FIX] Sebelumnya fungsi ini membaca token dari localStorage (ambilToken(),
 // sisa alur login LAMA) dan kalau dapat 401, langsung hard-redirect ke
@@ -210,16 +211,64 @@ export async function getAllClients(): Promise<Client[]> {
 /** Tambah client baru lewat backend, lalu beri tahu komponen lain (mis. header switcher).
  *  Endpoint ini dibatasi role tahap_5/super_admin di backend -- staf non-admin akan
  *  mendapat 403. */
-export async function addClient(newClient: ClientFormInput): Promise<Client> {
+export async function addClient(newClient: ClientFormInput): Promise<Client & { coaTemplate: CoaTemplateResult | null }> {
   const res = await authenticatedFetch(MANAGEMENT_CLIENTS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(keBackendPayload(newClient)),
   });
-  const row = await baca<BackendManagementClient>(res);
+  const row = await baca<BackendManagementClient & { coa_template?: CoaTemplateResult }>(res);
   const client = petakanDariBackend(row);
   notifyClientsChanged();
-  return client;
+  return { ...client, coaTemplate: row.coa_template ?? null };
+}
+
+/** COA yang otomatis dibuat backend dari template industri saat client baru disimpan. */
+export interface CoaTemplateResult {
+  /** Nama sheet template (mis. "COA I HOSPITALITY"); null = industri tanpa template. */
+  template: string | null;
+  created: number;
+}
+
+/** 1 industri (KBLI 2020 A..U) + template COA default-nya
+ *  (backend modules/management/coa_industry_v1.py, data dari COA_Industry.xlsx). */
+export interface CoaIndustry {
+  id: string;
+  kbli_category: string;
+  /** INDUSTRY (ENGLISH) -- nilai yang disimpan ke management_clients.industry. */
+  name: string;
+  name_id: string | null;
+  template_sheet: string;
+  account_count: number;
+  framework_note: string | null;
+}
+
+let cacheIndustri: Promise<CoaIndustry[]> | null = null;
+
+/** Daftar industri (di-cache per sesi halaman; gagal -> cache dibuang supaya bisa dicoba lagi). */
+export function fetchCoaIndustries(): Promise<CoaIndustry[]> {
+  if (!cacheIndustri) {
+    cacheIndustri = authenticatedFetch(COA_INDUSTRIES_URL)
+      .then(res => baca<CoaIndustry[]>(res))
+      .catch(e => { cacheIndustri = null; throw e; });
+  }
+  return cacheIndustri;
+}
+
+/** Pilihan Industry untuk form client / Settings > Company. */
+export function useCoaIndustries(): { industries: CoaIndustry[]; loading: boolean; error: string | null } {
+  const [industries, setIndustries] = useState<CoaIndustry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let batal = false;
+    fetchCoaIndustries()
+      .then(d => { if (!batal) setIndustries(d); })
+      .catch(e => { if (!batal) setError(e instanceof Error ? e.message : 'Failed to load industries.'); })
+      .finally(() => { if (!batal) setLoading(false); });
+    return () => { batal = true; };
+  }, []);
+  return { industries, loading, error };
 }
 
 /** Update data client (nama perusahaan kini BISA diubah -- endpoint baru mendukung

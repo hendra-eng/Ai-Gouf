@@ -41,13 +41,13 @@ function useMatrixData(): { rows: MatrixRow[]; isSampleData: boolean; previousLa
         previousLabel: 'Previous Year',
         growthLabel: 'YoY Growth',
         rows: [
-          { id: 'mx-rev', metric: 'Revenue', current: 8_420_000_000, previous: 7_466_000_000, budget: 10_200_000_000, variance: -1_780_000_000, growth: 12.8, isCurrency: true },
-          { id: 'mx-gp', metric: 'Gross Profit', current: 3_720_000_000, previous: 3_194_000_000, budget: 4_590_000_000, variance: -870_000_000, growth: 16.5, isCurrency: true },
-          { id: 'mx-ebitda', metric: 'EBITDA', current: 2_310_000_000, previous: 1_951_000_000, budget: 2_550_000_000, variance: -240_000_000, growth: 18.4, isCurrency: true },
-          { id: 'mx-np', metric: 'Net Profit', current: 1_840_000_000, previous: 1_584_000_000, budget: 1_760_000_000, variance: 80_000_000, growth: 16.2, isCurrency: true },
-          { id: 'mx-cash', metric: 'Cash', current: 2_960_000_000, previous: 2_480_000_000, budget: 3_200_000_000, variance: -240_000_000, growth: 19.4, isCurrency: true },
-          { id: 'mx-ar', metric: 'Accounts Receivable', current: 1_240_000_000, previous: 1_080_000_000, budget: 1_100_000_000, variance: 140_000_000, growth: 14.8, isCurrency: true },
-          { id: 'mx-ap', metric: 'Accounts Payable', current: 860_000_000, previous: 780_000_000, budget: 820_000_000, variance: 40_000_000, growth: 10.3, isCurrency: true },
+          { id: 'mx-rev', metric: 'Revenue', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-gp', metric: 'Gross Profit', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-ebitda', metric: 'EBITDA', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-np', metric: 'Net Profit', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-cash', metric: 'Cash', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-ar', metric: 'Accounts Receivable', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
+          { id: 'mx-ap', metric: 'Accounts Payable', current: 0, previous: 0, budget: 0, variance: 0, growth: 0, isCurrency: true },
         ],
       };
     }

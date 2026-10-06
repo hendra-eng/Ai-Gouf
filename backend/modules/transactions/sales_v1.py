@@ -525,9 +525,11 @@ def daftar_invoice(
     client_id: Optional[str] = Query(None),
     posting_status: Optional[str] = Query(None, description="Draft/Review/Approved/Posted/Partial/Paid"),
     termasuk_nonaktif: bool = Query(False),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id) -- filter utama semua tab Sales."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_sales_invoices(client_id=client_id, posting_status=posting_status, termasuk_nonaktif=termasuk_nonaktif)
+    data = dbc.list_sales_invoices(client_id=client_id, posting_status=posting_status, termasuk_nonaktif=termasuk_nonaktif,
+                                   management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 
@@ -752,9 +754,11 @@ def daftar_exception(
     client_id: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status", description="Open/In Review/Resolved"),
     termasuk_nonaktif: bool = Query(False),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id)."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_sales_exceptions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif)
+    data = dbc.list_sales_exceptions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif,
+                                     management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 
@@ -834,9 +838,10 @@ def buat_activity_log(
 def daftar_activity_log(
     client_id: Optional[str] = Query(None),
     invoice_id: Optional[str] = Query(None),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id)."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_sales_activity_logs(client_id=client_id, invoice_id=invoice_id)
+    data = dbc.list_sales_activity_logs(client_id=client_id, invoice_id=invoice_id, management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 

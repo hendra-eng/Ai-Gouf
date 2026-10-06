@@ -10,6 +10,7 @@ import SalesExceptions from './SalesExceptions';
 import SalesPosted from './SalesPosted';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { useSalesExceptions } from '@/lib/salesStore';
 
 const TABS: { key: string; label: string }[] = [
@@ -24,12 +25,13 @@ const TABS: { key: string; label: string }[] = [
 export default function SalesClient() {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const { activeClientId } = useActiveClient();
   const [activeTab, setActiveTab] = useState('overview');
 
   // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
   // (Open/In Review), dari data asli (financial_transaction_sales_
   // exceptions), bukan lagi angka statis "24".
-  const { exceptions } = useSalesExceptions(user?.id ?? null);
+  const { exceptions } = useSalesExceptions(activeClientId ?? null);
   const openExceptionCount = exceptions.filter(e => e.status !== 'Resolved').length;
 
   return (

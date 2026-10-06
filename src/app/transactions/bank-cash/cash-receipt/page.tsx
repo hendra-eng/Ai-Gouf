@@ -2,15 +2,21 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';
-import TransactionDrawer from '../../components/TransactionDrawer';
-import TransactionsGroupPanel from '../../components/TransactionsGroupPanel';
-import { Transaction } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
-import { formatIDR, formatDate, txAmount, uniqueJournalCount, countJournalsByStatus, monthlyTrendFor, categoryBreakdown, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../../lib/groupAnalytics';
+import DataTable from '@/components/shared/DataTable';
+import Pagination from '@/components/shared/Pagination';
+import { formatIDR, formatDate, CHART_COLORS } from '../../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
 import CashBankTabs from '../components/CashBankTabs';
+import { MutasiBankCell, JurnalCell, DalamProsesBadge } from '../components/RekonInfoCells';
+import {
+  useCashReceiptsFromSales,
+  trenBulananDiterima,
+  rincianPerKategori,
+  customerTerbesar,
+  type CashReceiptRow,
+} from '../lib/useSalesCashReceipts';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/Cash Payment). ──
 const RECEIPT_AXIS_WIDTH = 65;
@@ -49,71 +55,50 @@ function ReceiptTrendTooltip({
   );
 }
 
-const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
+const PAGE_SIZE = 8;
+
+const RECEIPT_STATUS_LABEL: Record<string, string> = {
+  paid: 'Lunas', partial: 'Sebagian', unpaid: 'Belum Diterima',
+};
+const RECEIPT_STATUS_VARIANT: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
+  paid: 'positive', partial: 'warning', unpaid: 'neutral',
 };
 
-// [BARU] Kelompok 'cash_receipt' = pergerakan kas/bank & pendanaan (akun Kas
-// & Bank, Deposito, kategori 'Financing') — lihat getTransactionGroup().
+// Cash Receipt = penerimaan pembayaran dari customer. Sumber data: invoice Sales
+// (lihat lib/useSalesCashReceipts.ts) -- TIDAK membaca tabel Cash & Bank lagi.
 export default function CashReceiptPage() {
-  const { getByGroup } = useTransactions();
-  const receiptTx = useMemo(() => getByGroup('cash_receipt'), [getByGroup]);
+  const { rows, loading, error, refresh } = useCashReceiptsFromSales();
 
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
-  // [TIDAK DIUBAH] inflow/outflow/netMovement sengaja TETAP dijumlah per
-  // BARIS (bukan per jeId seperti Sales/Purchase/Cash Payment). Beda dengan
-  // "Total Sales/Purchase" yang rawan dobel karena 1 nilai ekonomi dicatat di
-  // 2 kaki jurnal (Kas & Pendapatan/Beban), di sini SETIAP baris kas/bank
-  // ADALAH satu pergerakan fisik kas yang nyata sendiri-sendiri (mis. transfer
-  // antar-bank = 1 jeId tapi 2 baris Kas & Bank yang berbeda: satu keluar dari
-  // Bank A, satu masuk ke Bank B — keduanya harus tetap terhitung terpisah,
-  // kalau di-dedup per jeId salah satu pergerakannya akan hilang).
-  // [BARU] Baris berstatus 'Draft' (pending approval) dikeluarkan dari
-  // inflow/outflow di sini — sama alasannya dengan Sales/Purchase/Cash
-  // Payment/Other lewat groupByJournalRealized() (lihat groupAnalytics.ts):
-  // pergerakan kas yang belum disetujui secara bisnis belum seharusnya
-  // dianggap terjadi. Nilainya tetap dihitung terpisah di bawah
-  // (draftInflow/draftOutflow) supaya tidak hilang begitu saja dari UI.
-  const realizedReceiptTx = receiptTx.filter((t) => t.status !== 'Draft');
-  const inflow = realizedReceiptTx.reduce((s, t) => s + t.debit, 0); // masuk ke Kas & Bank
-  const outflow = realizedReceiptTx.reduce((s, t) => s + t.credit, 0); // keluar dari Kas & Bank
-  const netMovement = inflow - outflow;
-  // [DIUBAH] "Jumlah Transaksi" beda konsep dari inflow/outflow di atas — ini
-  // menghitung jumlah TRANSAKSI (jeId unik), konsisten dengan kartu yang sama
-  // di Sales/Purchase/Cash Payment/Other, supaya 1 transfer antar-bank (1
-  // jeId, 2 baris) dihitung sebagai 1 transaksi, bukan 2.
-  const txCount = uniqueJournalCount(receiptTx);
-  // [BARU] Nilai pergerakan kas berstatus Draft yang dikeluarkan dari
-  // inflow/outflow di atas — ditampilkan terpisah (bukan dihilangkan begitu
-  // saja) lewat banner & subLabel KPI di bawah.
-  const draftCount = countJournalsByStatus(receiptTx, 'Draft');
-  const draftReceiptTx = receiptTx.filter((t) => t.status === 'Draft');
-  const draftInflow = draftReceiptTx.reduce((s, t) => s + t.debit, 0);
-  const draftOutflow = draftReceiptTx.reduce((s, t) => s + t.credit, 0);
+  const totalReceived = useMemo(() => rows.reduce((s, r) => s + r.received, 0), [rows]);
+  const totalOutstanding = useMemo(() => rows.reduce((s, r) => s + r.outstanding, 0), [rows]);
+  const txCount = rows.length;
+  const avgTxValue = txCount > 0 ? rows.reduce((s, r) => s + r.total, 0) / txCount : 0;
+  const overdueCount = useMemo(() => rows.filter(r => r.isOverdue).length, [rows]);
+  const totalDalamProses = useMemo(() => rows.reduce((s, r) => s + r.dalamProses, 0), [rows]);
 
-  // [BARU] Peringatan integritas data — sama seperti Sales/Purchase/Cash
-  // Payment. Lihat transactionsMissingJeId() di groupAnalytics.ts. Relevan
-  // juga di sini karena "Jumlah Transaksi" (txCount) di atas tetap dihitung
-  // per jeId, walau inflow/outflow sengaja dijumlah per baris (lihat catatan
-  // di atas).
-  const missingJeIdCount = useMemo(() => transactionsMissingJeId(receiptTx).length, [receiptTx]);
-  const unbalanced = useMemo(() => unbalancedJournals(receiptTx), [receiptTx]);
-  const latestBalance = useMemo(() => {
-    const sorted = [...receiptTx].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return sorted[0]?.saldoAkhir ?? 0;
-  }, [receiptTx]);
+  const trend = useMemo(() => trenBulananDiterima(rows), [rows]);
+  const byCategory = useMemo(() => rincianPerKategori(rows).slice(0, 6), [rows]);
+  const topCustomers = useMemo(() => customerTerbesar(rows, 5), [rows]);
 
-  const trend = useMemo(() => monthlyTrendFor(receiptTx), [receiptTx]);
-  const byCategory = useMemo(() => categoryBreakdown(receiptTx).slice(0, 6), [receiptTx]);
-  const byAccount = useMemo(() => {
-    const byAcc = new Map<string, number>();
-    receiptTx.forEach(tx => byAcc.set(tx.accountName, (byAcc.get(tx.accountName) || 0) + txAmount(tx)));
-    return Array.from(byAcc.entries()).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
-  }, [receiptTx]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (statusFilter !== 'all' && r.receiptStatus !== statusFilter) return false;
+      if (!q) return true;
+      return [r.invoiceNo, r.customer, r.description].some(v => (v || '').toLowerCase().includes(q));
+    });
+  }, [rows, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
-  // Sales / Purchase / Cash Payment / Financial Overview. ──
+  // Sales / Purchase / Financial Overview. ──
   const receiptBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
   const [receiptPriceZoom, setReceiptPriceZoom] = useState(1);
   const receiptZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
@@ -285,81 +270,58 @@ export default function CashReceiptPage() {
   };
 
   const columns = [
-    { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'txId', label: 'TX ID', render: (r: Transaction) => <span className="font-mono text-xs text-teal-600">{r.txId}</span> },
-    { key: 'accountName', label: 'Akun Kas/Bank', render: (r: Transaction) => <span className="font-medium text-xs">{r.accountName}</span> },
-    { key: 'description', label: 'Deskripsi', render: (r: Transaction) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description}</span> },
-    { key: 'category', label: 'Kategori', render: (r: Transaction) => <span className="badge badge-info">{r.category}</span> },
-    { key: 'debit', label: 'Masuk', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs font-semibold text-emerald-700">{r.debit ? formatIDR(r.debit, true) : '—'}</span> },
-    { key: 'credit', label: 'Keluar', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs font-semibold text-rose-700">{r.credit ? formatIDR(r.credit, true) : '—'}</span> },
-    { key: 'saldoAkhir', label: 'Saldo Akhir', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatIDR(r.saldoAkhir, true)}</span> },
-    { key: 'status', label: 'Status', render: (r: Transaction) => <StatusBadge variant={statusVariant[r.status] || 'neutral'} label={r.status} dot /> },
+    { key: 'date', label: 'Tanggal', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
+    { key: 'invoiceNo', label: 'No. Invoice', render: (r: CashReceiptRow) => <span className="font-mono text-xs text-teal-600">{r.invoiceNo}</span> },
+    { key: 'customer', label: 'Customer', render: (r: CashReceiptRow) => <span className="font-medium text-xs">{r.customer}</span> },
+    { key: 'description', label: 'Deskripsi', render: (r: CashReceiptRow) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description || '—'}</span> },
+    { key: 'category', label: 'Tipe', render: (r: CashReceiptRow) => <span className="badge badge-neutral">{r.category}</span> },
+    { key: 'dueDate', label: 'Jatuh Tempo', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{r.dueDate ? formatDate(r.dueDate) : '—'}</span> },
+    { key: 'total', label: 'Total', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{formatIDR(r.total, true)}</span> },
+    { key: 'received', label: 'Diterima', render: (r: CashReceiptRow) => <span className="font-mono text-xs font-semibold text-blue-700">{r.received ? formatIDR(r.received, true) : '—'}</span> },
+    { key: 'outstanding', label: 'Sisa', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
+    { key: 'receiptStatus', label: 'Status', render: (r: CashReceiptRow) => (
+      <div>
+        <StatusBadge variant={r.isOverdue ? 'negative' : (RECEIPT_STATUS_VARIANT[r.receiptStatus] || 'neutral')}
+          label={r.isOverdue ? 'Jatuh Tempo' : (RECEIPT_STATUS_LABEL[r.receiptStatus] || r.receiptStatus)} dot />
+        <DalamProsesBadge nominal={r.dalamProses} />
+      </div>
+    ) },
+    { key: 'mutasi', label: 'Mutasi Bank', render: (r: CashReceiptRow) => <MutasiBankCell items={r.rekon} /> },
+    { key: 'jurnal', label: 'Jurnal', render: (r: CashReceiptRow) => <JurnalCell items={r.rekon} /> },
   ];
 
   return (
     <div className="space-y-5">
       <CashBankTabs />
 
-      {missingJeIdCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {missingJeIdCount} baris transaksi Cash Receipt tidak memiliki nomor jurnal (jeId). KPI di bawah tetap
-            dihitung memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
-          </span>
+      {error && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
+          <span className="font-semibold">Gagal memuat data Sales:</span>
+          <span>{error}</span>
+          <button onClick={refresh} className="underline font-medium ml-auto">Coba lagi</button>
         </div>
       )}
 
-      {unbalanced.length > 0 && (
+      {overdueCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <span className="font-semibold">Perhatian:</span>
-          <span>
-            {unbalanced.length} jurnal Cash Receipt tidak balance (total debit ≠ total kredit) — contoh:{' '}
-            {unbalanced[0].jeId} (selisih {formatIDR(unbalanced[0].diff, true)}). Grafik tren & breakdown kategori di
-            bawah tetap dihitung dari sisi yang lebih besar, tapi sebaiknya jurnal ini diperbaiki di halaman
-            Transaksi utama.
-          </span>
-        </div>
-      )}
-
-      {draftCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>
-            {draftCount} transaksi Cash Receipt (masuk {formatIDR(draftInflow, true)}, keluar{' '}
-            {formatIDR(draftOutflow, true)}) masih berstatus Draft (menunggu approval) — belum termasuk dalam Kas
-            Masuk/Kas Keluar di bawah sampai disetujui.
-          </span>
+          <span>{overdueCount} invoice customer sudah lewat jatuh tempo dan belum lunas (total piutang {formatIDR(totalOutstanding, true)} untuk seluruh invoice yang belum lunas).</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Saldo Terakhir" value={latestBalance} icon="BanknotesIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
-        <KpiCard
-          title="Kas Masuk"
-          value={inflow}
-          icon="ArrowDownCircleIcon"
-          iconColor="text-teal-600"
-          iconBg="bg-teal-50"
-          subLabel={draftCount > 0 && draftInflow > 0 ? `+ ${formatIDR(draftInflow, true)} pending approval` : undefined}
-        />
-        <KpiCard
-          title="Kas Keluar"
-          value={outflow}
-          icon="ArrowUpCircleIcon"
-          iconColor="text-rose-600"
-          iconBg="bg-rose-50"
-          subLabel={draftCount > 0 && draftOutflow > 0 ? `+ ${formatIDR(draftOutflow, true)} pending approval` : undefined}
-        />
-        <KpiCard title="Pergerakan Bersih" value={netMovement} icon="ScaleIcon" iconColor={netMovement >= 0 ? 'text-emerald-600' : 'text-rose-600'} iconBg={netMovement >= 0 ? 'bg-emerald-50' : 'bg-rose-50'} />
-        <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+        <KpiCard title="Total Diterima" value={totalReceived} icon="ArrowDownCircleIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+        <KpiCard title="Belum Diterima (Piutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} dalam proses (menunggu posting)` : undefined} />
+        <KpiCard title="Jumlah Invoice" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+        <KpiCard title="Rata-rata / Invoice" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
+        <KpiCard title="Lewat Jatuh Tempo" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
             <h2 className="text-sm font-bold text-foreground">Tren Cash Receipt Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Berdasarkan transaksi yang tercatat di halaman Transaksi</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Nominal diterima per bulan: tanggal bayar untuk pembayaran rekonsiliasi yang sudah diposting, tanggal invoice untuk sisanya</p>
           </div>
           {trend.every(t => t.total === 0) ? (
             <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Receipt untuk ditampilkan.</p>
@@ -412,20 +374,20 @@ export default function CashReceiptPage() {
         </div>
 
         <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">Berdasarkan Akun</h2>
-          <p className="text-xs text-muted-foreground mb-3">Kontribusi per akun Kas/Bank</p>
-          {byAccount.length === 0 ? (
+          <h2 className="text-sm font-bold text-foreground mb-1">Receipt per Tipe</h2>
+          <p className="text-xs text-muted-foreground mb-3">Total invoice per tipe transaksi Sales</p>
+          {byCategory.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
           ) : (
             <div className="space-y-2.5">
-              {byAccount.map((acc, i) => {
-                const total = byAccount.reduce((s, c) => s + c.amount, 0);
-                const pct = total > 0 ? (acc.amount / total) * 100 : 0;
+              {byCategory.map((cat, i) => {
+                const total = byCategory.reduce((s, c) => s + c.value, 0);
+                const pct = total > 0 ? (cat.value / total) * 100 : 0;
                 return (
-                  <div key={acc.name}>
+                  <div key={cat.name}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{acc.name}</span>
-                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(acc.amount, true)}</span>
+                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name}</span>
+                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 rounded-full">
                       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
@@ -438,17 +400,68 @@ export default function CashReceiptPage() {
         </div>
       </div>
 
-      {/* Aksi & Upload Data + Tabel Transaksi Cash Receipt — digabung jadi 1
-          kolom, aksi & filter di atas tabel. */}
-      <TransactionsGroupPanel
-        group="cash_receipt"
-        groupLabel="Cash Receipt"
-        defaultCategory="Financing"
-        columns={columns}
-        onRowClick={setSelectedTx}
-      />
+      <div className="card-elevated-md rounded-xl p-5 mb-6">
+        <h2 className="text-sm font-bold text-foreground mb-1">Top Customer</h2>
+        <p className="text-xs text-muted-foreground mb-4">Berdasarkan total invoice</p>
+        {topCustomers.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+        ) : (
+          <div className="space-y-3">
+            {topCustomers.map((c, i) => {
+              const max = topCustomers[0].amount || 1;
+              return (
+                <div key={c.name} className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-text-muted w-4">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
+                      <span className="text-xs font-semibold font-mono text-blue-600 ml-2">{formatIDR(c.amount, true)}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
+                      <div className="h-full rounded-full bg-blue-400" style={{ width: `${(c.amount / max) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-      {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
+      <div className="card-elevated-md rounded-xl p-5 mb-6">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+          <h2 className="text-sm font-bold text-foreground">Invoice Customer (dari halaman Sales)</h2>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Cari no. invoice, customer..."
+              className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground w-64"
+            />
+            <select
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
+            >
+              <option value="all">Semua status</option>
+              <option value="unpaid">Belum Diterima</option>
+              <option value="partial">Sebagian</option>
+              <option value="paid">Lunas</option>
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Hanya invoice Sales yang sudah diposting. Diterima dan sisa baru berubah setelah jurnal rekonsiliasinya diposting; sebelum itu invoice ditandai "Dalam proses".
+        </p>
+        <DataTable
+          columns={columns}
+          data={paged}
+          loading={loading}
+          emptyMessage="Belum ada invoice Sales yang sudah diposting."
+        />
+        <Pagination page={pageSafe} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
+      </div>
     </div>
   );
 }

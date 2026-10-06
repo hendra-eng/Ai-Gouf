@@ -39,9 +39,9 @@ export default function AssetsContent() {
       {/* Balance Sheet Validation */}
       <div className="mb-5">
         <BalanceValidationCard
-          assets={fx(assetsData.isSampleData ? 'Rp 6,84M' : formatMoney(assetsData.totalAssets, 'IDR'))}
-          liabilities={fx('Rp 2,14M')}
-          equity={fx('Rp 4,70M')}
+          assets={fx(assetsData.isSampleData ? 'Rp 0' : formatMoney(assetsData.totalAssets, 'IDR'))}
+          liabilities={fx('Rp 0')}
+          equity={fx('Rp 0')}
           difference={fx('Rp 0')}
           balanced={true}
         />

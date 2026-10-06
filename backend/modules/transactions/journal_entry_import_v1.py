@@ -248,7 +248,7 @@ async def upload_journal_entry_import(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    client_id = current_user.get("id")  # management_users.id_user -- pemilik draft yang dibuat (akun yang login)
+    client_id = current_user.get("id")  # management_users.id -- pemilik draft yang dibuat (akun yang login)
     created_by_name = current_user.get("nama") or current_user.get("username")
 
     cocok = None

@@ -6,29 +6,88 @@ import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { type Invoice, formatRupiah, arStatusColors } from '@/lib/mockData';
 import { useCurrency } from '@/lib/currency';
+import type {
+  AddNoteInput,
+  CollectionNoteView,
+  ManualInvoiceStatus,
+  PaymentView,
+  RecordPaymentInput,
+  RecordPaymentResult,
+} from '../lib/arDbBridge';
+import { exportInvoiceDetailCsv } from '../lib/arExport';
+import { CollectionNotesSection, RecordPaymentForm } from './ARActionForms';
 
+// [DIUBAH -- halaman AR dituntaskan] Panel ini sekarang membaca & menulis
+// ke tabel AR di Supabase: catat pembayaran (ar_payment), riwayat pembayaran,
+// catatan penagihan (ar_collection_note), dan penanda Disputed / Written Off
+// (ar_invoice.manual_status). Sebelumnya semua tombolnya hanya menampilkan toast.
 interface Props {
   invoice: Invoice;
+  /** Pembayaran milik invoice ini (terbaru dulu). */
+  payments: PaymentView[];
+  /** Catatan penagihan milik invoice ini (terbaru dulu). */
+  notes: CollectionNoteView[];
+  /** Aksi yang langsung dibuka saat panel muncul (dari tombol di tabel/kartu collections). */
+  initialAction?: 'payment' | 'note';
   onClose: () => void;
+  onRecordPayment: (input: RecordPaymentInput) => Promise<RecordPaymentResult>;
+  onAddNote: (input: AddNoteInput) => Promise<void>;
+  onSetStatus: (invoiceId: string, status: ManualInvoiceStatus, alasan?: string) => Promise<void>;
+  onViewCustomer: (customerId: string) => void;
 }
 
-export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
+type StatusAction = { target: ManualInvoiceStatus; label: string; hint: string };
+
+function hariAntara(dariISO: string, keISO: string): number {
+  const a = new Date(dariISO).getTime();
+  const b = new Date(keISO).getTime();
+  if (isNaN(a) || isNaN(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
+
+export default function InvoiceDetailPanel({
+  invoice, payments, notes, initialAction, onClose, onRecordPayment, onAddNote, onSetStatus, onViewCustomer,
+}: Props) {
   const { fx } = useCurrency();
   const router = useRouter();
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentDate, setPaymentDate] = useState('2026-08-28');
-  const [note, setNote] = useState('');
-
-  const handleRecordPayment = () => {
-    if (!paymentAmount) { toast.error('Please enter a payment amount'); return; }
-    if (!paymentDate) { toast.error('Please select a payment date'); return; }
-    toast.success(fx(`Payment of Rp ${Number(paymentAmount).toLocaleString('id-ID')} recorded for ${invoice.number} on ${paymentDate}`));
-    setShowPaymentForm(false);
-    setPaymentAmount('');
-  };
+  const writtenOff = invoice.status === 'Written Off';
+  const canPay = invoice.outstanding > 0 && !writtenOff;
+  const [showPaymentForm, setShowPaymentForm] = useState(initialAction === 'payment' && canPay);
+  const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const [pendingAction, setPendingAction] = useState<StatusAction | null>(null);
+  const [alasan, setAlasan] = useState('');
+  const [savingStatus, setSavingStatus] = useState(false);
 
   const progressPct = invoice.amount > 0 ? Math.round((invoice.paid / invoice.amount) * 100) : 0;
+  const netDays = hariAntara(invoice.invoiceDate, invoice.dueDate);
+
+  // Pilihan penanda manual sesuai status invoice sekarang.
+  const flagOptions: StatusAction[] = [];
+  if (invoice.status === 'Disputed') {
+    flagOptions.push({ target: null, label: 'Clear dispute', hint: 'Status invoice kembali dihitung otomatis' });
+  } else if (writtenOff) {
+    flagOptions.push({ target: null, label: 'Cancel write-off', hint: 'Piutang kembali dihitung sebagai AR berjalan' });
+  } else {
+    flagOptions.push({ target: 'Disputed', label: 'Mark as Disputed', hint: 'Pelanggan menolak / mempersoalkan tagihan' });
+    if (invoice.outstanding > 0) {
+      flagOptions.push({ target: 'Written Off', label: 'Write off', hint: 'Sisa tagihan dihapuskan, tidak lagi dihitung sebagai AR' });
+    }
+  }
+
+  const konfirmasiStatus = async () => {
+    if (!pendingAction) return;
+    setSavingStatus(true);
+    try {
+      await onSetStatus(invoice.id, pendingAction.target, alasan.trim() || undefined);
+      toast.success(`${invoice.number}: ${pendingAction.label} berhasil`);
+      setPendingAction(null);
+      setAlasan('');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal mengubah status invoice');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
@@ -54,8 +113,10 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
           {/* Actions */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <button
-              onClick={() => setShowPaymentForm(!showPaymentForm)}
-              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors"
+              onClick={() => setShowPaymentForm((v) => !v)}
+              disabled={!canPay}
+              title={canPay ? 'Catat pembayaran invoice ini' : writtenOff ? 'Invoice sudah di-write-off' : 'Invoice sudah lunas'}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md px-2.5 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Icon name="BanknotesIcon" size={12} />
               Record Payment
@@ -68,57 +129,80 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
               AI Risk
             </button>
             <button
-              onClick={() => toast.success('Invoice exported as PDF')}
+              onClick={() => { exportInvoiceDetailCsv(invoice, payments); toast.success('Detail invoice diekspor (CSV)'); }}
               className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground border border-border rounded-md px-2.5 py-1.5 hover:bg-secondary transition-colors"
             >
               <Icon name="ArrowDownTrayIcon" size={12} />
               Export
             </button>
-            <button
-              onClick={() => toast.warning('Invoice flagged as high risk')}
-              className="flex items-center gap-1.5 text-xs font-medium text-danger border border-red-200 rounded-md px-2.5 py-1.5 hover:bg-danger-bg transition-colors"
-            >
-              <Icon name="FlagIcon" size={12} />
-              Flag Risk
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowFlagMenu((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium text-danger border border-red-200 rounded-md px-2.5 py-1.5 hover:bg-danger-bg transition-colors"
+              >
+                <Icon name="FlagIcon" size={12} />
+                Flag Risk
+              </button>
+              {showFlagMenu && (
+                <div className="absolute left-0 mt-1 w-64 bg-card border border-border rounded-md shadow-card-lg z-20 py-1">
+                  {flagOptions.map((opt) => (
+                    <button
+                      key={`flag-opt-${opt.label}`}
+                      onClick={() => { setPendingAction(opt); setShowFlagMenu(false); }}
+                      className="w-full text-left px-3 py-2 hover:bg-secondary transition-colors"
+                    >
+                      <p className="text-sm font-medium text-foreground">{opt.label}</p>
+                      <p className="text-2xs text-muted-foreground">{opt.hint}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Payment Form */}
-          {showPaymentForm && (
-            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 slide-up">
-              <h4 className="text-sm font-semibold text-foreground mb-3">Record Payment</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground block mb-1">Payment Amount (IDR)</label>
-                  <input
-                    type="number"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    placeholder={invoice.outstanding.toString()}
-                    className="w-full text-sm border border-border rounded-md px-3 py-2 bg-card focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-muted-foreground block mb-1">Payment Date</label>
-                  <input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="w-full text-sm border border-border rounded-md px-3 py-2 bg-card focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={handleRecordPayment} className="flex-1 bg-primary text-white text-sm font-medium rounded-md py-2 hover:bg-primary/90 transition-colors">
-                    Save Payment
-                  </button>
-                  <button onClick={() => setShowPaymentForm(false)} className="px-4 text-sm font-medium text-muted-foreground border border-border rounded-md hover:bg-secondary transition-colors">
-                    Cancel
-                  </button>
-                </div>
+          {/* Konfirmasi perubahan status manual */}
+          {pendingAction && (
+            <div className="bg-warning-bg border border-yellow-200 rounded-lg p-4 slide-up">
+              <h4 className="text-sm font-semibold text-foreground mb-1">{pendingAction.label}?</h4>
+              <p className="text-xs text-muted-foreground mb-3">{pendingAction.hint}. Perubahan dicatat otomatis di catatan penagihan.</p>
+              <textarea
+                value={alasan}
+                onChange={(e) => setAlasan(e.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder="Alasan (opsional)"
+                className="w-full text-sm border border-border rounded-md px-3 py-2 bg-card focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
+              />
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={konfirmasiStatus}
+                  disabled={savingStatus}
+                  className="flex-1 bg-primary text-white text-sm font-medium rounded-md py-2 hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  {savingStatus ? 'Menyimpan…' : 'Confirm'}
+                </button>
+                <button
+                  onClick={() => { setPendingAction(null); setAlasan(''); }}
+                  disabled={savingStatus}
+                  className="px-4 text-sm font-medium text-muted-foreground border border-border rounded-md hover:bg-secondary transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
+          )}
+
+          {/* Payment Form */}
+          {showPaymentForm && canPay && (
+            <RecordPaymentForm
+              invoices={[invoice]}
+              fixedInvoiceId={invoice.id}
+              onRecord={onRecordPayment}
+              onDone={() => setShowPaymentForm(false)}
+              onCancel={() => setShowPaymentForm(false)}
+            />
           )}
 
           {/* Invoice Summary */}
@@ -128,7 +212,11 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
               {[
                 { label: 'Invoice Amount', value: fx(formatRupiah(invoice.amount, true)), bold: true },
                 { label: 'Amount Paid', value: invoice.paid > 0 ? fx(formatRupiah(invoice.paid, true)) : '—', color: 'text-success' },
-                { label: 'Outstanding', value: fx(formatRupiah(invoice.outstanding, true)), color: invoice.outstanding > 0 ? 'text-danger font-bold' : 'text-success' },
+                {
+                  label: writtenOff ? 'Written Off' : 'Outstanding',
+                  value: writtenOff ? fx(formatRupiah(Math.max(0, invoice.amount - invoice.paid), true)) : fx(formatRupiah(invoice.outstanding, true)),
+                  color: writtenOff ? 'text-muted-foreground' : invoice.outstanding > 0 ? 'text-danger font-bold' : 'text-success',
+                },
               ].map((row) => (
                 <div key={`inv-row-${row.label}`} className="flex justify-between">
                   <span className="text-muted-foreground">{row.label}</span>
@@ -160,7 +248,7 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
                 { label: 'Invoice Date', value: invoice.invoiceDate },
                 { label: 'Due Date', value: invoice.dueDate },
                 { label: 'Days Overdue', value: invoice.daysOverdue > 0 ? `${invoice.daysOverdue} days` : 'Not overdue', color: invoice.daysOverdue > 0 ? 'text-danger font-semibold' : 'text-success' },
-                { label: 'Payment Terms', value: 'Net 30' },
+                { label: 'Payment Terms', value: netDays > 0 ? `Net ${netDays}` : 'Due on receipt' },
                 { label: 'Priority', value: invoice.priority },
               ].map((row) => (
                 <div key={`inv-date-${row.label}`} className="flex justify-between">
@@ -171,25 +259,45 @@ export default function InvoiceDetailPanel({ invoice, onClose }: Props) {
             </div>
           </div>
 
+          {/* Payment History */}
+          <div className="bg-card border border-border rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-foreground mb-3">Payment History</h4>
+            {payments.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">Belum ada pembayaran untuk invoice ini.</p>
+            ) : (
+              <div className="space-y-2">
+                {payments.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between border-b border-border last:border-0 pb-2 last:pb-0">
+                    <div>
+                      <p className="text-sm font-semibold tabular-nums text-foreground">{fx(formatRupiah(p.amount, true))}</p>
+                      <p className="text-2xs text-muted-foreground">{p.method} · {p.reference}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">{p.date}</p>
+                      <p className="text-2xs text-muted-foreground">oleh {p.createdBy}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Collection Notes */}
           <div className="bg-card border border-border rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-foreground">Collection Notes</h4>
-              <button onClick={() => toast.info('Note saved')} className="text-xs text-primary hover:underline font-medium">Save Note</button>
-            </div>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a collection note..."
-              rows={3}
-              className="w-full text-sm border border-border rounded-md px-3 py-2 bg-secondary/30 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
+            <h4 className="text-sm font-semibold text-foreground mb-3">Collection Notes</h4>
+            <CollectionNotesSection
+              notes={notes}
+              customerId={invoice.customerId}
+              invoiceId={invoice.id}
+              onAdd={onAddNote}
+              autoFocus={initialAction === 'note'}
             />
           </div>
 
           {/* Navigate to customer */}
           <button
             className="w-full flex items-center justify-between p-3 bg-secondary/50 rounded-lg hover:bg-secondary transition-colors text-sm"
-            onClick={() => toast.info('Opening customer profile...')}
+            onClick={() => onViewCustomer(invoice.customerId)}
           >
             <span className="font-medium text-foreground">View Customer Profile</span>
             <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground" />

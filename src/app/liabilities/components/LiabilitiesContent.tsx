@@ -111,9 +111,9 @@ export default function LiabilitiesContent() {
 
       <div className="mb-5">
         <BalanceValidationCard
-          assets={fx('Rp 6,84M')}
-          liabilities={fx(liabData.isSampleData ? 'Rp 2,14M' : formatMoney(liabData.totalLiabilities, 'IDR'))}
-          equity={fx('Rp 4,70M')}
+          assets={fx('Rp 0')}
+          liabilities={fx(liabData.isSampleData ? 'Rp 0' : formatMoney(liabData.totalLiabilities, 'IDR'))}
+          equity={fx('Rp 0')}
           difference={fx('Rp 0')}
           balanced={true}
         />

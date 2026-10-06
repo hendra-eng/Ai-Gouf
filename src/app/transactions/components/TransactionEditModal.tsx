@@ -556,7 +556,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
               )}
               <p className="text-2xs text-muted-foreground">
                 Berapapun status posting jurnal di atas (Unposted/Posted/dll), baris ini akan tetap muncul sebagai
-                tagihan di halaman Account Payable selama Status Pembayaran belum "Lunas".
+                tagihan di halaman Account Payable selama Status Pembayaran belum &quot;Lunas&quot;.
               </p>
             </div>
           )}

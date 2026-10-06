@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import { type ActiveAnalysisType } from './AIAnalystLayout';
+import { useActiveClient } from '@/lib/activeClient';
 
 interface Props {
   onClose: () => void;
@@ -19,6 +20,7 @@ const templates: { id: ActiveAnalysisType; icon: string; name: string; desc: str
 ];
 
 export default function NewAnalysisModal({ onClose, onStart }: Props) {
+  const { activeClientName } = useActiveClient();
   const [selectedTemplate, setSelectedTemplate] = useState<ActiveAnalysisType>(null);
   const [customQuestion, setCustomQuestion] = useState('');
   const [step, setStep] = useState<'template' | 'config'>('template');
@@ -54,7 +56,7 @@ export default function NewAnalysisModal({ onClose, onStart }: Props) {
           {/* Config selectors */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'Company', value: 'PT Nusantara Teknologi', icon: 'BuildingOfficeIcon' },
+              { label: 'Company', value: activeClientName ?? 'No client selected', icon: 'BuildingOfficeIcon' },
               { label: 'Period', value: 'Jan–Aug 2026', icon: 'CalendarIcon' },
               { label: 'Branch', value: 'All Branches', icon: 'MapPinIcon' },
               { label: 'Currency', value: 'IDR', icon: 'CurrencyDollarIcon' },

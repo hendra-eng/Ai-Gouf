@@ -205,33 +205,37 @@ export default function WaterfallChartInner({ items }: { items: WaterfallItem[] 
   // Custom bar shape (dipakai untuk stack "positive" & "negative"): seluruh
   // badan bar bisa digenggam & ditarik, plus overlay transparan di atas biar
   // area genggam tetap besar walau bar-nya pendek — persis pola waterfall lain.
-  const renderBarFactory = (isNegativeStack: boolean) => (props: any) => {
-    const { x, y, width, height, index, payload } = props;
-    if (x == null || y == null || !height) return null;
-    const isDraggingThis = dragPreview?.index === index;
-    const invertDrag = isNegativeStack;
-    const dragStartValue = isNegativeStack ? payload.negative : payload.positive;
-    const fillColor = payload.isBase ? 'var(--chart-2)' : (isNegativeStack ? 'var(--negative)' : 'var(--positive)');
-    const dragHandlers = handleBarPointerDown(index, dragStartValue, height, invertDrag);
-    return (
-      <g>
-        <rect
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          fill={fillColor}
-          rx={3}
-          ry={3}
-          stroke={isDraggingThis ? fillColor : 'none'}
-          strokeWidth={isDraggingThis ? 1.5 : 0}
-          style={{ cursor: 'ns-resize' }}
-          onPointerDown={dragHandlers}
-        />
-        {/* Perluas area genggam ke atas, biar mudah ditarik walau bar-nya pendek/kecil */}
-        <rect x={x} y={y - 10} width={width} height={10} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
-      </g>
-    );
+  const renderBarFactory = (isNegativeStack: boolean) => {
+    const WaterfallBar = (props: any) => {
+      const { x, y, width, height, index, payload } = props;
+      if (x == null || y == null || !height) return null;
+      const isDraggingThis = dragPreview?.index === index;
+      const invertDrag = isNegativeStack;
+      const dragStartValue = isNegativeStack ? payload.negative : payload.positive;
+      const fillColor = payload.isBase ? 'var(--chart-2)' : (isNegativeStack ? 'var(--negative)' : 'var(--positive)');
+      const dragHandlers = handleBarPointerDown(index, dragStartValue, height, invertDrag);
+      return (
+        <g>
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            fill={fillColor}
+            rx={3}
+            ry={3}
+            stroke={isDraggingThis ? fillColor : 'none'}
+            strokeWidth={isDraggingThis ? 1.5 : 0}
+            style={{ cursor: 'ns-resize' }}
+            onPointerDown={dragHandlers}
+          />
+          {/* Perluas area genggam ke atas, biar mudah ditarik walau bar-nya pendek/kecil */}
+          <rect x={x} y={y - 10} width={width} height={10} fill="transparent" style={{ cursor: 'ns-resize' }} onPointerDown={dragHandlers} />
+        </g>
+      );
+    };
+    WaterfallBar.displayName = 'WaterfallBar';
+    return WaterfallBar;
   };
   const renderPositiveBar = renderBarFactory(false);
   const renderNegativeBar = renderBarFactory(true);

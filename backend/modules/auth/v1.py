@@ -120,6 +120,20 @@ async def jwt_v1_middleware(request: Request, call_next):
     login, karena tidak ada cara bagi kode client-side untuk mengisi
     header Authorization dari cookie httpOnly itu.
     """
+    # [FIX] Request preflight CORS ("OPTIONS") dari browser TIDAK PERNAH
+    # membawa header Authorization (memang begitu spesifikasi CORS) --
+    # sebelumnya middleware ini ikut menolaknya dengan 401 karena token
+    # kosong, PADAHAL respons 401 itu keluar SEBELUM sempat lewat
+    # CORSMiddleware (middleware ini terpasang di luar/lebih dulu -- lihat
+    # main.py), sehingga browser tidak pernah dapat header
+    # "Access-Control-Allow-Origin" dan menampilkannya sebagai error CORS
+    # ("Failed to fetch") walau backend sebenarnya hidup & sehat. Preflight
+    # tidak pernah menyentuh endpoint asli (FastAPI/Starlette sudah
+    # menjawabnya secara khusus), jadi aman diteruskan langsung tanpa cek
+    # token di sini.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     path = request.url.path
     if path.startswith("/api/v1/") and path not in PUBLIC_PATHS_V1:
         header_value = request.headers.get("Authorization")

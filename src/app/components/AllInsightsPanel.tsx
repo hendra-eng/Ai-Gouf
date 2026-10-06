@@ -5,51 +5,22 @@ import { Sparkles, TrendingUp, AlertTriangle, CheckCircle, ArrowRight, ChevronRi
 import Icon from '@/components/ui/AppIcon';
 import { useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
+import EmptyState from '@/components/ui/EmptyState';
 
 
 // Backend integration point: replace with /api/ai/insights?company=&period=
-const insights = [
-  {
-    id: 'ins-001',
-    severity: 'warning' as const,
-    icon: AlertTriangle,
-    title: 'Marketing Expense Spike',
-    body: 'Marketing expenses increased 24.3% compared with last month, exceeding budget by Rp 85M. This is the largest single-category variance this period.',
-    metric: '+Rp 85M vs budget',
-    metricVariant: 'negative' as const,
-    action: 'Analyze Expenses',
-  },
-  {
-    id: 'ins-002',
-    severity: 'negative' as const,
-    icon: AlertTriangle,
-    title: 'Receivable Collection Risk',
-    body: 'Rp 320M of receivables are more than 60 days overdue across 3 customers. PT Garuda Solusi (Rp 185M) has not responded to 2 reminders.',
-    metric: 'Rp 320M at risk',
-    metricVariant: 'negative' as const,
-    action: 'Review AR',
-  },
-  {
-    id: 'ins-003',
-    severity: 'positive' as const,
-    icon: CheckCircle,
-    title: 'Cash Position Healthy',
-    body: 'Current cash reserves of Rp 2,96M cover approximately 4.8 months of projected operating expenses. Cash generation is trending positively.',
-    metric: '4.8 months runway',
-    metricVariant: 'positive' as const,
-    action: 'View Cash Flow',
-  },
-  {
-    id: 'ins-004',
-    severity: 'positive' as const,
-    icon: TrendingUp,
-    title: 'Revenue Growth Accelerating',
-    body: 'Revenue increased 12.8% YoY, with Q3 2026 tracking above Q3 2025 by 15.4%. Enterprise segment contributing 68% of new revenue.',
-    metric: '+12.8% YoY',
-    metricVariant: 'positive' as const,
-    action: 'Revenue Analysis',
-  },
-];
+// [UBAH] Data contoh dikosongkan -- hanya tampil kalau backend AI insight
+// sudah mengembalikan hasil nyata untuk client aktif.
+const insights: {
+  id: string;
+  severity: 'warning' | 'negative' | 'positive' | 'info';
+  icon: typeof AlertTriangle;
+  title: string;
+  body: string;
+  metric: string;
+  metricVariant: 'positive' | 'negative';
+  action: string;
+}[] = [];
 
 const bgMap = {
   warning: 'bg-warning-subtle border-warning/30',
@@ -79,12 +50,18 @@ export default function AIInsightsPanel() {
           </div>
           <div>
             <h2 className="text-base font-bold text-foreground">{t('AI Financial Insights')}</h2>
-            <p className="text-xs text-muted-foreground">{t('Generated')} 25 Aug 2026, 05:48 WIB</p>
           </div>
         </div>
         <span className="badge-ai">{insights.length} {t(insights.length > 1 ? 'insights' : 'insight')}</span>
       </div>
 
+      {insights.length === 0 ? (
+        <EmptyState
+          icon={Sparkles}
+          title={t('No insights yet')}
+          description={t('AI-generated insights will appear here once there is enough posted transaction data to analyze.')}
+        />
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {insights.map((ins) => {
           const Icon = ins.icon;
@@ -131,6 +108,7 @@ export default function AIInsightsPanel() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

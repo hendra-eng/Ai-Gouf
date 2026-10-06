@@ -11,6 +11,7 @@ import {
   type BackendSalesInvoice, type BackendSalesAccountMapping,
 } from '@/lib/salesStore';
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
+import { useActiveClient } from '@/lib/activeClient';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -127,11 +128,12 @@ export default function SalesJournalPreview() {
   const { t } = useLanguage();
   const { user } = useAuth();
   const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
 
   // Journal Preview cuma menampilkan invoice yang BELUM final "Paid"
   // (masih dalam proses klasifikasi/posting) -- invoice yang sudah lunas
   // penuh ada di tab Posted.
-  const { invoices: backendInvoices, loading, refresh } = useSalesInvoices(clientId);
+  const { invoices: backendInvoices, loading, refresh } = useSalesInvoices(activeClientId ?? null);
   const invoices = useMemo(() => backendInvoices.filter(i => i.posting_status !== 'Paid'), [backendInvoices]);
 
   // Mapping tersimpan per invoice; null = sudah dicek, belum ada mapping.
@@ -272,6 +274,8 @@ export default function SalesJournalPreview() {
     try {
       await updateSalesInvoice(selectedInvoice.id, {
         posting_status: 'Posted',
+        // Invoice Posted langsung terbaca GL/Financial Statements (ambil_baris_jurnal_posted_transaksi).
+        journal_sync_status: 'Synced',
         posted_at: new Date().toISOString(),
         posted_by: clientId ?? undefined,
       });

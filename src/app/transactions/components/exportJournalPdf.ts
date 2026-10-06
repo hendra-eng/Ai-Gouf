@@ -22,7 +22,7 @@ function formatTanggal(d: string): string {
 
 export function exportJournalToPdf(
   transactions: Transaction[],
-  companyName: string = 'PT Nusantara Teknologi Indonesia'
+  companyName: string = ''
 ): void {
   if (transactions.length === 0) return;
 

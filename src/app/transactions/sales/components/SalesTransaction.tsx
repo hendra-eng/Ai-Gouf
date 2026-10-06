@@ -188,7 +188,8 @@ export default function SalesTransaction() {
   const { clients, activeClientId, activeClientName } = useActiveClient();
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
   const printedBy = user?.nama || user?.username || undefined;
-  const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(clientId);
+  // Daftar invoice per company aktif (bukan per user login).
+  const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(activeClientId ?? null);
   const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
 
   // Filters
@@ -332,6 +333,8 @@ export default function SalesTransaction() {
     try {
       await updateSalesInvoice(uuid, {
         posting_status: 'Posted',
+        // Invoice Posted langsung terbaca GL/Financial Statements (ambil_baris_jurnal_posted_transaksi).
+        journal_sync_status: 'Synced',
         posted_at: new Date().toISOString(),
         posted_by: clientId ?? undefined,
       });

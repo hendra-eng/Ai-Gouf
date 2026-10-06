@@ -12,15 +12,15 @@ import {
 } from 'recharts';
 
 const data = [
-  { month: 'Jan', technology: 42000, materials: 28000, services: 18000 },
-  { month: 'Feb', technology: 38000, materials: 31000, services: 22000 },
-  { month: 'Mar', technology: 51000, materials: 24000, services: 19000 },
-  { month: 'Apr', technology: 45000, materials: 36000, services: 25000 },
-  { month: 'May', technology: 39000, materials: 29000, services: 21000 },
-  { month: 'Jun', technology: 58000, materials: 33000, services: 28000 },
-  { month: 'Jul', technology: 44000, materials: 27000, services: 24000 },
-  { month: 'Aug', technology: 52000, materials: 38000, services: 26000 },
-  { month: 'Sep', technology: 48200, materials: 36800, services: 28100 },
+  { month: 'Jan', technology: 0, materials: 0, services: 0 },
+  { month: 'Feb', technology: 0, materials: 0, services: 0 },
+  { month: 'Mar', technology: 0, materials: 0, services: 0 },
+  { month: 'Apr', technology: 0, materials: 0, services: 0 },
+  { month: 'May', technology: 0, materials: 0, services: 0 },
+  { month: 'Jun', technology: 0, materials: 0, services: 0 },
+  { month: 'Jul', technology: 0, materials: 0, services: 0 },
+  { month: 'Aug', technology: 0, materials: 0, services: 0 },
+  { month: 'Sep', technology: 0, materials: 0, services: 0 },
 ];
 
 function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {

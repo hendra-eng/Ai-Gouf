@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
 
@@ -49,8 +49,9 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 }
 
 export default function PurchaseSourceDataPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
+  const { activeClientId } = useActiveClient();
+  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  const clientId = activeClientId ?? null;
   const { records: backendRecords } = usePurchaseSourceRecords(clientId);
   const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);
 

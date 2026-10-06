@@ -9,7 +9,7 @@
 // context yang sama (dan sebaliknya juga berlaku).
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ALL_TRANSACTIONS, Transaction, TransactionGroup, getTransactionGroup } from '../components/transactionData';
+import { Transaction, TransactionGroup, getTransactionGroup } from '../components/transactionData';
 import {
   transactionsFromJurnalPosting,
   extractPostingId,
@@ -17,19 +17,43 @@ import {
   buildManualCreatePayload,
   type BackendJurnalRow,
 } from '../lib/jurnalBridge';
+// [BARU] Sumber data KHUSUS kelompok Cash Payment & Cash Receipt --
+// menggantikan baris jurnal_posting yang dulu jatuh ke 2 kelompok ini lewat
+// classifyJournalPairCategory (Tax/AP Payment/Financing dsb). Lihat
+// bankCashBridge.ts untuk penjelasan lengkap & alasan prefix jeId "BC-".
+import {
+  transactionsFromBankCash,
+  extractBankCashId,
+  buildBankCashUpdatePayload,
+  buildBankCashManualCreatePayload,
+  type BackendBankCashRow,
+} from '../lib/bankCashBridge';
+// [BARU] Sumber data KHUSUS kelompok Other -- menggantikan baris jurnal_posting
+// yang dulu jatuh ke kelompok ini lewat tebakan kategori/nama akun. Lihat
+// otherBridge.ts untuk penjelasan lengkap & alasan prefix jeId "OTH-".
+import {
+  transactionsFromFinanceOther,
+  extractOtherJeId,
+  buildOtherUpdatePayload,
+  buildOtherManualCreatePayload,
+  type BackendFinanceOtherRow,
+} from '../lib/otherBridge';
 import { useActiveClient } from '@/lib/activeClient';
 // [BARU] Dengarkan notifikasi "data client berubah" yang dikirim Agent AI
 // begitu selesai upload & auto-posting file (lihat dataSync.ts) -- supaya
 // tabel Transaksi otomatis refresh tanpa user harus ganti client atau
 // reload halaman manual dulu.
 import { listenClientDataChanged } from '@/lib/dataSync';
-// [BARU] Sumber transaksi sekarang REAL: diambil dari backend
+// [DIUBAH] Sumber transaksi REAL sepenuhnya: diambil dari backend
 // GET /api/client/{id}/jurnal-posting (semua status) dan diterjemahkan lewat
-// jurnalBridge.ts. Data statis ALL_TRANSACTIONS (transactionData.ts) hanya
-// dipakai sbg FALLBACK — saat belum ada client aktif dipilih, atau saat
-// fetch ke backend gagal/belum ada data sama sekali — supaya UI tidak
-// pernah kosong total dan tetap bisa didemokan tanpa backend menyala.
+// jurnalBridge.ts. TIDAK ADA fallback ke data contoh lagi — kalau Supabase
+// kosong (atau fetch gagal), `transactions` untuk kelompok terkait memang
+// kosong/tidak berubah; UI tidak lagi menyamarkan itu sebagai "data contoh".
 import { daftarJurnalPosting, updateJurnalPosting, buatJurnalManual, postingMassalByIds, tolakPosting } from '@/app/agent-ai/lib/api';
+// [BARU] Lihat catatan import bankCashBridge di atas.
+import { daftarBankCash, updateBankCash, buatBankCashManual, postingMassalBankCashByIds, tolakBankCash } from '@/app/agent-ai/lib/api';
+// [BARU] Lihat catatan import otherBridge di atas.
+import { daftarFinanceOther, updateFinanceOther, buatFinanceOtherManual, postingMassalFinanceOtherByJeIds, tolakFinanceOther } from '@/app/agent-ai/lib/api';
 
 interface TransactionsContextValue {
   transactions: Transaction[];
@@ -37,9 +61,9 @@ interface TransactionsContextValue {
   unpostedCount: number;
   /** true selagi memuat data transaksi (jurnal) dari backend untuk client aktif. */
   loading: boolean;
-  /** Pesan error terakhir dari fetch ke backend (null kalau tidak ada / lagi pakai data contoh). */
+  /** Pesan error terakhir dari fetch ke backend (null kalau tidak ada error). */
   error: string | null;
-  /** true kalau `transactions` saat ini adalah data contoh (fallback), bukan data asli client. */
+  /** true kalau client aktif memang belum punya data sama sekali (bukan berarti `transactions` diisi data contoh -- itu selalu data asli/kosong). */
   isSampleData: boolean;
   /** Muat ulang transaksi dari backend untuk client aktif. */
   refetch: () => void;
@@ -133,9 +157,14 @@ const TransactionsContext = createContext<TransactionsContextValue | null>(null)
 
 export function TransactionsProvider({ children }: { children: React.ReactNode }) {
   const { activeClientId } = useActiveClient();
-  const [transactions, setTransactions] = useState<Transaction[]>(ALL_TRANSACTIONS);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // [DIUBAH] `isSampleData` sekarang HANYA sinyal "client aktif belum punya
+  // data sama sekali" (dipakai halaman lain seperti Overview/Tax Compliance
+  // untuk keputusan tampilan mereka sendiri) -- BUKAN lagi ditimpa jadi true
+  // saat fetch gagal. `transactions` sendiri TIDAK PERNAH diisi data contoh;
+  // kalau kosong di Supabase, ya kosong di sini juga.
   const [isSampleData, setIsSampleData] = useState(true);
   // Dipakai supaya respons fetch client LAMA yang telat datang (mis. user
   // pindah client dengan cepat) tidak menimpa data client yang sekarang aktif.
@@ -143,7 +172,7 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
 
   const loadFromBackend = React.useCallback(() => {
     if (!activeClientId) {
-      setTransactions(ALL_TRANSACTIONS);
+      setTransactions([]);
       setIsSampleData(true);
       setError(null);
       setLoading(false);
@@ -152,28 +181,87 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
-    daftarJurnalPosting(activeClientId, '') // '' -> semua status (draft + terposting + ditolak)
-      .then((res: { jurnal: BackendJurnalRow[] }) => {
+    // [DIUBAH] Ambil dari 3 sumber sekaligus: jurnal_posting (Sales/Expense),
+    // finance_transaction_bank_cash (Cash Payment/Cash Receipt -- lihat
+    // bankCashBridge.ts), DAN finance_transaction_other (Other -- lihat
+    // otherBridge.ts). '' -> semua status di ketiga endpoint.
+    Promise.all([
+      daftarJurnalPosting(activeClientId, ''),
+      daftarBankCash(activeClientId, ''),
+      daftarFinanceOther(activeClientId, ''),
+    ])
+      .then(([jurnalRes, bankCashRes, financeOtherRes]: [
+        { jurnal: BackendJurnalRow[] },
+        { bank_cash: BackendBankCashRow[] },
+        { finance_other: BackendFinanceOtherRow[] },
+      ]) => {
         if (requestIdRef.current !== requestId) return; // sudah usang, ada request client lain setelah ini
-        const rows = res?.jurnal || [];
-        if (rows.length === 0) {
-          // Client aktif belum punya jurnal sama sekali — tampilkan data
-          // contoh supaya halaman tidak kosong total, tapi tandai jelas
-          // lewat isSampleData supaya UI bisa kasih tahu user.
-          setTransactions(ALL_TRANSACTIONS);
-          setIsSampleData(true);
-        } else {
-          setTransactions(transactionsFromJurnalPosting(rows));
-          setIsSampleData(false);
+        const jurnalRows = jurnalRes?.jurnal || [];
+        const bankCashRows = bankCashRes?.bank_cash || [];
+        const financeOtherRows = financeOtherRes?.finance_other || [];
+        // [DIUBAH] Tidak ada lagi cabang "semua kosong -> data contoh".
+        // isSampleData sekadar MENCATAT kondisi itu (dipakai halaman lain
+        // seperti Overview/Tax Compliance) -- `transactions` di bawah tetap
+        // dibangun dari data asli (otomatis kosong kalau memang kosong).
+        setIsSampleData(jurnalRows.length === 0 && bankCashRows.length === 0 && financeOtherRows.length === 0);
+        {
+          // [BARU] Baris jurnal_posting yang KEBETULAN terklasifikasi
+          // cash_payment/cash_receipt/other (lewat classifyJournalPairCategory
+          // di legFromRow, fallback lama berbasis nama akun) SENGAJA dibuang
+          // di sini — finance_transaction_bank_cash & finance_transaction_
+          // other sekarang SATU-SATUNYA sumber untuk 3 kelompok itu, supaya
+          // tidak ada baris dobel/tertukar sumber di sub halaman terkait.
+          // Kelompok lain (sales/purchase) tidak terpengaruh.
+          //
+          // [DIUBAH -- fix dobel hitung, susulan nomor 2/3] Filter
+          // classifyJournalPairCategory/getTransactionGroup di atas cuma
+          // menangkap baris yang KEBETULAN lolos tebakan kategori
+          // (mis. "AP Payment"/"Tax" -> grup cash_payment) -- bukan
+          // authoritative. Sejak daftarBankCash() digabung dengan
+          // v_kas_bank_dari_jurnal (nomor 2), backend sudah tahu PERSIS
+          // baris jurnal_posting mana saja yang benar-benar menyentuh akun
+          // Kas & Bank (berdasar coa.sub_kategori='Kas', bukan tebakan nama
+          // akun) -- baris itu ikut balik lewat bankCashRows dengan
+          // sumber='jurnal_posting'. Kalau baris begini TIDAK ikut dibuang
+          // dari jurnalTx (mis. "Beban Gaji dibayar tunai" -> category
+          // 'Payroll' -> grup 'purchase', LOLOS dari filter kategori di
+          // atas), dia akan muncul DUA KALI di array `transactions`: sekali
+          // di sini (sebagai Purchase), sekali lagi di bankCashTx (sebagai
+          // Cash Payment) -- KPI/total apa pun yang menjumlah seluruh
+          // `transactions` tanpa dikelompokkan per tab (Overview, Tax
+          // Reconciliation, Anomaly Detection, dst -- lihat komponen yang
+          // konsumsi `transactions` langsung tanpa getByGroup) akan
+          // menghitung nominalnya dua kali.
+          //
+          // Fix: buang juga dari jurnalTx SEMUA jeId yang backend sendiri
+          // sudah tandai sumber='jurnal_posting' di bankCashRows -- ini
+          // klasifikasi otoritatif (berbasis COA), jadi dipakai untuk
+          // menggantikan/menang atas tebakan kategori yang lama, persis
+          // sesuai niat komentar di atas ("SATU-SATUNYA sumber").
+          const kasBankJeIdsDariJurnal = new Set(
+            bankCashRows.filter((r) => r.sumber === 'jurnal_posting').map((r) => `JE-${r.id}`)
+          );
+          const jurnalTx = transactionsFromJurnalPosting(jurnalRows).filter((tx) => {
+            const grup = getTransactionGroup(tx);
+            if (grup === 'cash_payment' || grup === 'cash_receipt' || grup === 'other') return false;
+            if (tx.jeId && kasBankJeIdsDariJurnal.has(tx.jeId)) return false;
+            return true;
+          });
+          const bankCashTx = transactionsFromBankCash(bankCashRows);
+          const otherTx = transactionsFromFinanceOther(financeOtherRows);
+          setTransactions([...jurnalTx, ...bankCashTx, ...otherTx]);
         }
       })
       .catch((err: Error) => {
         if (requestIdRef.current !== requestId) return;
-        console.error('Gagal memuat jurnal dari backend:', err);
+        console.error('Gagal memuat transaksi dari backend:', err);
+        // [DIUBAH] Tidak lagi diam-diam diganti data contoh & tidak lagi
+        // menandai isSampleData=true saat gagal -- itu dulu membuat error
+        // asli tertutupi seolah "cuma data contoh". Data yang sebelumnya
+        // sudah termuat dibiarkan apa adanya; `error` diisi supaya halaman
+        // bisa menampilkan pesan gagal-muat yang sebenarnya (lihat
+        // penggunaan `error` di TransactionsContent.tsx & CashBankTabContent.tsx).
         setError(err?.message || 'Gagal memuat transaksi dari server.');
-        // Fallback ke data contoh supaya halaman tetap bisa dipakai/didemokan.
-        setTransactions(ALL_TRANSACTIONS);
-        setIsSampleData(true);
       })
       .finally(() => {
         if (requestIdRef.current !== requestId) return;
@@ -210,8 +298,15 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
   // baris lokal murni (data contoh / import belum direfetch / jurnal manual
   // yang gagal tersimpan) tetap diedit di state saja seperti sebelumnya.
   const saveEdit = async (updated: Transaction, syncedSibling?: Transaction) => {
+    // [DIUBAH] Baris bisa berasal dari jurnal_posting (jeId "JE-<id>"),
+    // finance_transaction_bank_cash (jeId "BC-<id>", lihat bankCashBridge.ts),
+    // ATAU finance_transaction_other (jeId "OTH-<suffix>", lihat
+    // otherBridge.ts) -- tentukan dulu sumbernya sebelum kirim PATCH, supaya
+    // baris Cash Payment/Cash Receipt/Other tersimpan ke tabel yang benar.
     const postingId = extractPostingId(updated.jeId);
-    if (postingId === null || !activeClientId) {
+    const bankCashId = extractBankCashId(updated.jeId);
+    const otherJeId = extractOtherJeId(updated.jeId);
+    if ((postingId === null && bankCashId === null && otherJeId === null) || !activeClientId) {
       setTransactions((prev) =>
         prev.map((tx) => {
           if (tx.id === updated.id) return updated;
@@ -230,9 +325,17 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     // -- supaya backend menerima kedua sisi jurnal yang sudah balance,
     // bukan nominal sibling yang belum diubah.
     const sibling = syncedSibling ?? transactions.find((tx) => tx.jeId === updated.jeId && tx.id !== updated.id) ?? null;
-    const payload = buildUpdatePayloadFromPair(updated, sibling);
     try {
-      await updateJurnalPosting(activeClientId, postingId, payload);
+      if (postingId !== null) {
+        const payload = buildUpdatePayloadFromPair(updated, sibling);
+        await updateJurnalPosting(activeClientId, postingId, payload);
+      } else if (bankCashId !== null) {
+        const payload = buildBankCashUpdatePayload(updated, sibling);
+        await updateBankCash(activeClientId, bankCashId, payload);
+      } else {
+        const payload = buildOtherUpdatePayload(updated, sibling);
+        await updateFinanceOther(activeClientId, otherJeId as string, payload);
+      }
       setTransactions((prev) =>
         prev.map((tx) => {
           if (tx.id === updated.id) return updated;
@@ -260,17 +363,34 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
   const postAllUnposted = async () => {
     const unposted = transactions.filter((tx) => tx.status === 'Unposted');
     if (unposted.length === 0) return;
-    const backendIds = Array.from(
+    // [DIUBAH] Pisahkan id per sumber (jurnal_posting vs finance_transaction_
+    // bank_cash vs finance_transaction_other) -- lihat catatan saveEdit di
+    // atas soal prefix jeId "JE-"/"BC-"/"OTH-".
+    const jurnalIds = Array.from(
       new Set(unposted.map((tx) => extractPostingId(tx.jeId)).filter((id): id is number => id !== null))
     );
-    const adaBarisLokal = unposted.some((tx) => extractPostingId(tx.jeId) === null);
+    const bankCashIds = Array.from(
+      new Set(unposted.map((tx) => extractBankCashId(tx.jeId)).filter((id): id is string => id !== null))
+    );
+    const otherJeIds = Array.from(
+      new Set(unposted.map((tx) => extractOtherJeId(tx.jeId)).filter((id): id is string => id !== null))
+    );
+    const adaBarisLokal = unposted.some(
+      (tx) => extractPostingId(tx.jeId) === null && extractBankCashId(tx.jeId) === null && extractOtherJeId(tx.jeId) === null
+    );
 
-    if (backendIds.length > 0 && activeClientId) {
+    if ((jurnalIds.length > 0 || bankCashIds.length > 0 || otherJeIds.length > 0) && activeClientId) {
       try {
-        const hasil = await postingMassalByIds(activeClientId, backendIds);
+        const [hasilJurnal, hasilBankCash, hasilOther] = await Promise.all([
+          jurnalIds.length > 0 ? postingMassalByIds(activeClientId, jurnalIds) : Promise.resolve(null),
+          bankCashIds.length > 0 ? postingMassalBankCashByIds(activeClientId, bankCashIds) : Promise.resolve(null),
+          otherJeIds.length > 0 ? postingMassalFinanceOtherByJeIds(activeClientId, otherJeIds) : Promise.resolve(null),
+        ]);
+        const totalDiposting = (hasilJurnal?.diposting || 0) + (hasilBankCash?.diposting || 0) + (hasilOther?.diposting || 0);
+        const totalDilewati = (hasilJurnal?.dilewati_placeholder || 0) + (hasilBankCash?.dilewati_placeholder || 0) + (hasilOther?.dilewati_placeholder || 0);
         toast.success('Transaksi berhasil diposting', {
-          description: `${hasil.diposting} transaksi Unposted kini berstatus Posted${
-            hasil.dilewati_placeholder ? `, ${hasil.dilewati_placeholder} dilewati (akun placeholder)` : ''
+          description: `${totalDiposting} transaksi Unposted kini berstatus Posted${
+            totalDilewati ? `, ${totalDilewati} dilewati (akun placeholder)` : ''
           }`,
         });
         loadFromBackend(); // sinkronkan ulang status dari server
@@ -286,10 +406,12 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     if (adaBarisLokal) {
       setTransactions((prev) =>
         prev.map((tx) =>
-          tx.status === 'Unposted' && extractPostingId(tx.jeId) === null ? { ...tx, status: 'Posted' } : tx
+          tx.status === 'Unposted' && extractPostingId(tx.jeId) === null && extractBankCashId(tx.jeId) === null && extractOtherJeId(tx.jeId) === null
+            ? { ...tx, status: 'Posted' }
+            : tx
         )
       );
-      if (backendIds.length === 0) {
+      if (jurnalIds.length === 0 && bankCashIds.length === 0 && otherJeIds.length === 0) {
         toast.success('Transaksi berhasil diposting (lokal)', {
           description: 'Baris ini belum tersinkron ke server — status akan kembali saat refresh.',
         });
@@ -349,6 +471,14 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     const [a, b] = txs;
     const debetLeg = a.type === 'credit' ? b : a;
     const kreditLeg = a.type === 'credit' ? a : b;
+    // [BARU] Jurnal baru dari sub halaman Cash Payment/Cash Receipt (dilihat
+    // dari `category` yang sudah dipilihkan blankTransaction() di
+    // TransactionsGroupPanel.tsx) disimpan ke finance_transaction_bank_cash,
+    // dan dari sub halaman Other disimpan ke finance_transaction_other --
+    // bukan jurnal_posting -- konsisten dengan sumber baca 3 kelompok itu.
+    const grup = getTransactionGroup(debetLeg);
+    const grupBankCash = grup === 'cash_payment' || grup === 'cash_receipt';
+    const grupOther = grup === 'other';
 
     if (!activeClientId) {
       setTransactions((prev) => [...txs, ...prev]);
@@ -358,9 +488,18 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
       return;
     }
 
-    const payload = buildManualCreatePayload(debetLeg, kreditLeg);
     try {
-      await buatJurnalManual(activeClientId, payload);
+      if (grupBankCash) {
+        const jenisDokumen = grup === 'cash_receipt' ? 'cash_receipt' : 'cash_payment';
+        const payload = buildBankCashManualCreatePayload(debetLeg, kreditLeg, jenisDokumen);
+        await buatBankCashManual(activeClientId, payload);
+      } else if (grupOther) {
+        const payload = buildOtherManualCreatePayload(debetLeg, kreditLeg);
+        await buatFinanceOtherManual(activeClientId, payload);
+      } else {
+        const payload = buildManualCreatePayload(debetLeg, kreditLeg);
+        await buatJurnalManual(activeClientId, payload);
+      }
       toast.success('Jurnal baru ditambahkan', { description: `${debetLeg.txId} berhasil disimpan ke server` });
       loadFromBackend();
     } catch (err) {
@@ -374,17 +513,37 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
   const postAllUnpostedInGroup = async (group: TransactionGroup) => {
     const unposted = transactions.filter((tx) => tx.status === 'Unposted' && getTransactionGroup(tx) === group);
     if (unposted.length === 0) return;
-    const backendIds = Array.from(
+    // [DIUBAH] Sama seperti postAllUnposted() -- pisahkan id per sumber.
+    // Untuk group cash_payment/cash_receipt, seluruh baris seharusnya
+    // memang dari bank_cash; untuk group other, dari finance_transaction_
+    // other (otherJeIds); untuk group lain, dari jurnal_posting. Tetap
+    // ditangani ketiganya di sini supaya aman walau ada baris "sisa" dari
+    // sumber lama.
+    const jurnalIds = Array.from(
       new Set(unposted.map((tx) => extractPostingId(tx.jeId)).filter((id): id is number => id !== null))
     );
-    const adaBarisLokal = unposted.some((tx) => extractPostingId(tx.jeId) === null);
+    const bankCashIds = Array.from(
+      new Set(unposted.map((tx) => extractBankCashId(tx.jeId)).filter((id): id is string => id !== null))
+    );
+    const otherJeIds = Array.from(
+      new Set(unposted.map((tx) => extractOtherJeId(tx.jeId)).filter((id): id is string => id !== null))
+    );
+    const adaBarisLokal = unposted.some(
+      (tx) => extractPostingId(tx.jeId) === null && extractBankCashId(tx.jeId) === null && extractOtherJeId(tx.jeId) === null
+    );
 
-    if (backendIds.length > 0 && activeClientId) {
+    if ((jurnalIds.length > 0 || bankCashIds.length > 0 || otherJeIds.length > 0) && activeClientId) {
       try {
-        const hasil = await postingMassalByIds(activeClientId, backendIds);
+        const [hasilJurnal, hasilBankCash, hasilOther] = await Promise.all([
+          jurnalIds.length > 0 ? postingMassalByIds(activeClientId, jurnalIds) : Promise.resolve(null),
+          bankCashIds.length > 0 ? postingMassalBankCashByIds(activeClientId, bankCashIds) : Promise.resolve(null),
+          otherJeIds.length > 0 ? postingMassalFinanceOtherByJeIds(activeClientId, otherJeIds) : Promise.resolve(null),
+        ]);
+        const totalDiposting = (hasilJurnal?.diposting || 0) + (hasilBankCash?.diposting || 0) + (hasilOther?.diposting || 0);
+        const totalDilewati = (hasilJurnal?.dilewati_placeholder || 0) + (hasilBankCash?.dilewati_placeholder || 0) + (hasilOther?.dilewati_placeholder || 0);
         toast.success('Transaksi berhasil diposting', {
-          description: `${hasil.diposting} transaksi Unposted kini berstatus Posted${
-            hasil.dilewati_placeholder ? `, ${hasil.dilewati_placeholder} dilewati (akun placeholder)` : ''
+          description: `${totalDiposting} transaksi Unposted kini berstatus Posted${
+            totalDilewati ? `, ${totalDilewati} dilewati (akun placeholder)` : ''
           }`,
         });
         loadFromBackend();
@@ -400,12 +559,13 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     if (adaBarisLokal) {
       setTransactions((prev) =>
         prev.map((tx) =>
-          tx.status === 'Unposted' && getTransactionGroup(tx) === group && extractPostingId(tx.jeId) === null
+          tx.status === 'Unposted' && getTransactionGroup(tx) === group &&
+          extractPostingId(tx.jeId) === null && extractBankCashId(tx.jeId) === null && extractOtherJeId(tx.jeId) === null
             ? { ...tx, status: 'Posted' }
             : tx
         )
       );
-      if (backendIds.length === 0) {
+      if (jurnalIds.length === 0 && bankCashIds.length === 0 && otherJeIds.length === 0) {
         toast.success('Transaksi berhasil diposting (lokal)', {
           description: 'Baris ini belum tersinkron ke server — status akan kembali saat refresh.',
         });
@@ -417,23 +577,42 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
   const deleteTransactions = async (ids: string[]) => {
     const targets = transactions.filter((tx) => ids.includes(tx.id));
     if (targets.length === 0) return;
+    // [DIUBAH] Pisahkan target per sumber (jurnal_posting vs
+    // finance_transaction_bank_cash vs finance_transaction_other) supaya
+    // "tolak" dikirim ke endpoint yang benar-benar menyimpan baris itu.
     const backendPostingIds = Array.from(
       new Set(targets.map((tx) => extractPostingId(tx.jeId)).filter((id): id is number => id !== null))
     );
+    const backendBankCashIds = Array.from(
+      new Set(targets.map((tx) => extractBankCashId(tx.jeId)).filter((id): id is string => id !== null))
+    );
+    const backendOtherJeIds = Array.from(
+      new Set(targets.map((tx) => extractOtherJeId(tx.jeId)).filter((id): id is string => id !== null))
+    );
     const jeIdsBackend = new Set(
-      targets.filter((tx) => extractPostingId(tx.jeId) !== null).map((tx) => tx.jeId)
+      targets
+        .filter((tx) => extractPostingId(tx.jeId) !== null || extractBankCashId(tx.jeId) !== null || extractOtherJeId(tx.jeId) !== null)
+        .map((tx) => tx.jeId)
     );
     const localIds = new Set(
-      targets.filter((tx) => extractPostingId(tx.jeId) === null).map((tx) => tx.id)
+      targets
+        .filter((tx) => extractPostingId(tx.jeId) === null && extractBankCashId(tx.jeId) === null && extractOtherJeId(tx.jeId) === null)
+        .map((tx) => tx.id)
     );
 
-    if (backendPostingIds.length > 0 && activeClientId) {
+    if ((backendPostingIds.length > 0 || backendBankCashIds.length > 0 || backendOtherJeIds.length > 0) && activeClientId) {
       try {
-        await Promise.all(
-          backendPostingIds.map((postingId) =>
+        await Promise.all([
+          ...backendPostingIds.map((postingId) =>
             tolakPosting(activeClientId, postingId, 'Dihapus dari halaman Transaksi')
-          )
-        );
+          ),
+          ...backendBankCashIds.map((bankCashId) =>
+            tolakBankCash(activeClientId, bankCashId, 'Dihapus dari halaman Transaksi')
+          ),
+          ...backendOtherJeIds.map((jeId) =>
+            tolakFinanceOther(activeClientId, jeId, 'Dihapus dari halaman Transaksi')
+          ),
+        ]);
       } catch (err) {
         console.error('Gagal menghapus transaksi di backend:', err);
         toast.error('Gagal menghapus transaksi', {
@@ -448,7 +627,7 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     setTransactions((prev) => prev.filter((tx) => !localIds.has(tx.id) && !jeIdsBackend.has(tx.jeId)));
 
     toast.success(`${targets.length} transaksi dihapus`, {
-      description: backendPostingIds.length > 0
+      description: (backendPostingIds.length > 0 || backendBankCashIds.length > 0 || backendOtherJeIds.length > 0)
         ? 'Jurnal yang tersinkron ke server ditandai ditolak (tidak lagi masuk laporan keuangan) — jurnal ledger tidak dihapus permanen dari database, sesuai praktik akuntansi.'
         : undefined,
     });
