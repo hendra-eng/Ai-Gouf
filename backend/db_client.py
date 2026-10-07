@@ -1306,6 +1306,171 @@ class ManagementSettingAccountMapping(Base):
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+# ============================================================
+# FINANCIAL STATEMENTS -- mapping laporan keuangan & CALK
+# (Task Plan 16-20, migrations/31-create_financial_statement_mapping.py).
+# Laporan dibangun dari GL posted + COA klien; tabel di bawah menyimpan
+# mapping per akun (cash flow, komponen ekuitas, note CALK, override
+# seksi/baris laporan) dan framework CALK (template -> note per klien ->
+# isi per periode + override angka ber-audit-trail). Mesin hitungnya
+# modules/financial_statements/mapped.py.
+# ============================================================
+
+class ManagementFsMappingRule(Base):
+    """Aturan mapping DEFAULT lintas klien, dicocokkan ke
+    management_client_coa.standard_account_code dengan PREFIX TERPANJANG
+    (mis. aturan 'std_asset_current_cash' berlaku untuk
+    std_asset_current_cash_bank/_petty/...). Di-seed lewat
+    migrations/seed_fs_mapping_rules.sql. Tidak memakai nama akun klien."""
+    __tablename__ = "management_fs_mapping_rules"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    standard_account_code = Column(String(100), nullable=False, unique=True)  # prefix
+    cash_flow_category = Column(String(20), nullable=True)   # CASH/OPERATING/INVESTING/FINANCING/NON_CASH (NULL utk akun laba rugi)
+    cash_flow_line = Column(String(150), nullable=True)
+    equity_component = Column(String(40), nullable=True)     # share_capital/additional_paid_in_capital/retained_earnings/...
+    note_key = Column(String(60), nullable=True)             # management_fs_note_templates.note_key
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+class ManagementClientFsMapping(Base):
+    """Mapping laporan keuangan per akun COA milik 1 klien -- "master per
+    client". Kolom NULL = ikut default (COA head/sub atau aturan
+    ManagementFsMappingRule). Baris dibuat lewat tombol "Apply defaults" /
+    edit manual di halaman Financial Statements > Mapping."""
+    __tablename__ = "management_client_fs_mappings"
+    __table_args__ = (
+        UniqueConstraint("client_id", "coa_id", name="uq_management_client_fs_mappings_client_coa"),
+        Index("idx_management_client_fs_mappings_client", "client_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id", ondelete="CASCADE"), nullable=False)
+    fs_section = Column(String(40), nullable=True)           # override seksi laporan (current_assets, revenue, ...)
+    fs_line = Column(String(150), nullable=True)             # override label baris laporan
+    equity_component = Column(String(40), nullable=True)
+    cash_flow_category = Column(String(20), nullable=True)
+    cash_flow_line = Column(String(150), nullable=True)
+    note_key = Column(String(60), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementFsNoteTemplate(Base):
+    """Template note CALK global (Cash & Cash Equivalents, Receivables, ...).
+    Di-seed lewat migrations/seed_fs_note_templates.sql. Narasi boleh
+    memakai placeholder {company}, {period_start}, {period_end}, {year}."""
+    __tablename__ = "management_fs_note_templates"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    note_key = Column(String(60), nullable=False, unique=True)
+    title = Column(String(200), nullable=False)
+    statement = Column(String(30), nullable=False)           # GENERAL/BALANCE_SHEET/PROFIT_LOSS/EQUITY/CASH_FLOW
+    note_type = Column(String(20), nullable=False)           # policy (narasi saja) / account (narasi + tabel angka)
+    sort_order = Column(Integer, nullable=False, default=0)
+    default_narrative = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+class ManagementClientFsNote(Base):
+    """Note CALK milik 1 klien (salinan template, atau note custom kalau
+    template_id NULL). narrative = narasi tetap klien (berlaku semua
+    periode, NULL = pakai narasi template)."""
+    __tablename__ = "management_client_fs_notes"
+    __table_args__ = (
+        UniqueConstraint("client_id", "note_key", name="uq_management_client_fs_notes_client_key"),
+        Index("idx_management_client_fs_notes_client", "client_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_fs_note_templates.id"), nullable=True)
+    note_key = Column(String(60), nullable=False)
+    title = Column(String(200), nullable=False)
+    statement = Column(String(30), nullable=False)
+    note_type = Column(String(20), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    narrative = Column(Text, nullable=True)
+    is_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementClientFsNoteContent(Base):
+    """Isi note khusus 1 periode (tanggal laporan): narasi periode +
+    status draft/final. Mengalahkan narasi klien & template."""
+    __tablename__ = "management_client_fs_note_contents"
+    __table_args__ = (
+        UniqueConstraint("client_note_id", "period_end", name="uq_management_client_fs_note_contents_note_period"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_note_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_fs_notes.id", ondelete="CASCADE"), nullable=False)
+    period_end = Column(Date, nullable=False)
+    narrative = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementClientFsNoteOverride(Base):
+    """Controlled override angka hasil sistem di tabel note (per akun per
+    periode). Wajib alasan; dihapus = soft-delete. Riwayat lengkap di
+    ManagementClientFsNoteAudit."""
+    __tablename__ = "management_client_fs_note_overrides"
+    __table_args__ = (
+        Index(
+            "uq_management_client_fs_note_overrides_aktif", "client_note_id", "period_end", "row_key", unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_note_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_fs_notes.id", ondelete="CASCADE"), nullable=False)
+    period_end = Column(Date, nullable=False)
+    row_key = Column(String(50), nullable=False)             # acc_no
+    system_value = Column(Numeric(24, 2), nullable=True)     # angka sistem saat override dibuat
+    override_value = Column(Numeric(24, 2), nullable=False)
+    reason = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementClientFsNoteAudit(Base):
+    """Audit trail CALK (append-only): ubah narasi, ubah pengaturan note,
+    pasang/hapus override."""
+    __tablename__ = "management_client_fs_note_audit"
+    __table_args__ = (
+        Index("idx_management_client_fs_note_audit_note", "client_note_id", "created_at"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_note_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_fs_notes.id", ondelete="CASCADE"), nullable=False)
+    period_end = Column(Date, nullable=True)
+    action = Column(String(40), nullable=False)              # narrative_update/note_update/override_set/override_remove/note_create
+    field = Column(String(60), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    reason = Column(Text, nullable=True)
+    user_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    user_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
 class ManagementCoaIndustryTemplate(Base):
     """Master industri (KBLI 2020 kategori A..U) + template COA default-nya.
     Sumber: dataset/COA/COA_Industry.xlsx sheet "COA_JENIS INDUSTRY", dimuat
@@ -5181,7 +5346,9 @@ def ambil_baris_jurnal_posted_transaksi(
     utama Financial Statements) dan/atau `client_id` (id_user
     management_users, akun yang login). Minimal salah satu WAJIB diisi.
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
-    account_code, account_name, debit, kredit."""
+    account_code, account_name, debit, kredit, segmen (dimensi untuk filter
+    segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
+    Purchase belum punya dimensi)."""
     if not client_id and not management_client_id:
         raise ValueError("client_id atau management_client_id wajib diisi.")
 
@@ -5219,6 +5386,7 @@ def ambil_baris_jurnal_posted_transaksi(
                 "account_name": line.account_name,
                 "debit": _angka_gl(line.debit),
                 "kredit": _angka_gl(line.credit),
+                "segmen": {"cost_center": line.cost_center},
             })
 
         # --- 2) Sales ---
@@ -5256,6 +5424,7 @@ def ambil_baris_jurnal_posted_transaksi(
                 "tanggal": inv.invoice_date,
                 "keterangan": inv.description or f"Penjualan {inv.invoice_no}",
                 "pihak": inv.customer_name,
+                "segmen": {"branch": inv.cabang, "project": inv.project_name},
             }
             for kunci, debit, kredit in (("piutang", gross, 0.0), ("pendapatan", 0.0, dpp), ("ppn", 0.0, ppn)):
                 if debit or kredit:
@@ -5285,6 +5454,7 @@ def ambil_baris_jurnal_posted_transaksi(
                 "tanggal": tx.purchase_date,
                 "keterangan": tx.description or f"Pembelian {tx.purchase_no}",
                 "pihak": tx.vendor_name,
+                "segmen": {},
             }
             per_akun: Dict[str, List[Any]] = {}
             for line in baris_per_tx.get(tx.id, []):

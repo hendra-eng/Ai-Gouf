@@ -26,6 +26,8 @@ module.exports = {
           DEFAULT: 'rgb(var(--dark-rgb) / <alpha-value>)',
           foreground: 'var(--dark-foreground)',
         },
+        // Latar header & sidebar.
+        nav: 'rgb(var(--nav-rgb) / <alpha-value>)',
         // Palet "blue" Tailwind DIARAHKAN ke skala hijau brand: ratusan class
         // blue-* (bg-blue-50, text-blue-600, hover:bg-blue-800, ring-blue-100, ...)
         // tersebar di halaman-halaman lama, jadi semuanya ikut tema dari sini.

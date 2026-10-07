@@ -1,15 +1,11 @@
 import React from 'react';
-import ReportsPageClient from './components/ReportsPageClient';
+import ReportsCatalog from './components/ReportsCatalog';
 
 export const metadata = {
   title: 'Reports — FinovaAI',
-  description: 'Financial report studio — create, analyze, export, and manage financial reports.',
+  description: 'Explore operational and financial reports across your business modules.',
 };
 
 export default function ReportsPage() {
-  return (
-    <>
-      <ReportsPageClient />
-    </>
-  );
+  return <ReportsCatalog />;
 }

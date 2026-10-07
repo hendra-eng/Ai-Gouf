@@ -6,17 +6,14 @@ import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
+import { PreviewSection, FieldList, FieldGroupTitle, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   DocumentTextIcon,
-  BuildingStorefrontIcon,
-  CalendarIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 const PICKER_PAGE_SIZE = 20;
@@ -134,7 +131,7 @@ export default function PurchasePreviewPage() {
     return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
-        <div className="je-card p-12 text-center text-sm text-muted-foreground">No purchase transactions yet.</div>
+        <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>No purchase transactions yet.</div>
       </div>
     );
   }
@@ -169,7 +166,7 @@ export default function PurchasePreviewPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Selector Panel */}
-          <div className="je-card p-4 lg:col-span-1">
+          <div className={`${PREVIEW_CARD} p-4 lg:col-span-1 self-start`}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Select Purchase</h3>
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-thin">
               {pickerItems.map(t => (
@@ -191,136 +188,104 @@ export default function PurchasePreviewPage() {
                 </button>
               ))}
             </div>
-            {pickerTotalPages > 1 && (
-              <div className="flex items-center justify-between pt-3 mt-3 border-t border-border text-xs text-muted-foreground">
-                <button
-                  onClick={() => setPickerPage(pickerPageSafe - 1)}
-                  disabled={pickerPageSafe <= 1}
-                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeftIcon className="w-3.5 h-3.5" />
-                </button>
-                <span>
-                  Page <span className="font-medium text-foreground">{pickerPageSafe}</span> of {pickerTotalPages} · {purchaseTransactions.length} purchases
-                </span>
-                <button
-                  onClick={() => setPickerPage(pickerPageSafe + 1)}
-                  disabled={pickerPageSafe >= pickerTotalPages}
-                  className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                  aria-label="Next page"
-                >
-                  <ChevronRightIcon className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
+            <PickerPagination
+              page={pickerPageSafe}
+              totalPages={pickerTotalPages}
+              total={purchaseTransactions.length}
+              itemLabel="purchases"
+              onPageChange={setPickerPage}
+            />
           </div>
 
-          {/* Preview Document */}
+          {/* Preview Document — bagian ditumpuk dari atas ke bawah */}
           <div className="lg:col-span-3 space-y-4">
             {/* Header */}
-            <div className="je-card p-6">
-              <div className="flex items-start justify-between mb-5">
+            <div className={`${PREVIEW_CARD} p-5`}>
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <DocumentTextIcon className="w-5 h-5 text-primary" />
                     <h2 className="text-lg font-bold text-foreground">Purchase Invoice Preview</h2>
                   </div>
                   <p className="text-sm text-muted-foreground">{tx.description}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[tx.status]}`}>{statusLabels[tx.status]}</span>
                   <span className={`px-3 py-1 rounded-full text-xs font-medium ${paymentColors[tx.paymentStatus]}`}>{paymentLabels[tx.paymentStatus]}</span>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <BuildingStorefrontIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vendor</p>
-                  </div>
-                  <p className="text-sm font-bold text-foreground">{tx.vendor}</p>
-                  <p className="text-xs text-muted-foreground">{tx.vendorId}</p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <DocumentTextIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reference</p>
-                  </div>
-                  <p className="text-sm font-medium text-foreground">Invoice: <span className="font-mono font-bold">{tx.invoiceNumber}</span></p>
-                  <p className="text-xs text-muted-foreground">PO: <span className="font-mono">{tx.poNumber}</span></p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dates</p>
-                  </div>
-                  <p className="text-xs text-foreground">Purchase: <span className="font-medium">{tx.purchaseDate}</span></p>
-                  <p className="text-xs text-foreground">Invoice: <span className="font-medium">{tx.invoiceDate}</span></p>
-                  <p className="text-xs text-foreground">Due: <span className={`font-medium ${tx.paymentStatus === 'overdue' ? 'text-red-600' : ''}`}>{tx.dueDate}</span></p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Purchase Details</p>
-                  <p className="text-xs text-foreground">ID: <span className="font-mono font-medium">{tx.purchaseId}</span></p>
-                  <p className="text-xs text-foreground">Category: <span className="font-medium">{tx.category}</span></p>
-                  <p className="text-xs text-foreground">Period: <span className="font-medium">{tx.period}</span></p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Payment Terms</p>
-                  <p className="text-xs text-foreground">Terms: <span className="font-medium">{tx.paymentTerms}</span></p>
-                  <p className="text-xs text-foreground">Currency: <span className="font-medium">{tx.currency}</span></p>
-                  <p className="text-xs text-foreground">Source: <span className="font-medium">{tx.sourceDocType}</span></p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Workflow</p>
-                  <p className="text-xs text-foreground">Prepared by: <span className="font-medium">{tx.createdBy}</span></p>
-                  <p className="text-xs text-foreground">Approved by: <span className="font-medium">{tx.approvedBy || '— Pending —'}</span></p>
-                  {tx.postedBy && <p className="text-xs text-foreground">Posted by: <span className="font-medium">{tx.postedBy}</span></p>}
-                </div>
-              </div>
             </div>
 
-            {/* Line Items */}
-            <div className="je-card overflow-hidden">
-              <div className="px-5 py-3 border-b border-border bg-muted/30">
-                <h3 className="text-sm font-semibold text-foreground">Purchase Line Items</h3>
-              </div>
+            {/* 1. Purchase Information */}
+            <PreviewSection step={1} stepColor="blue" title="Purchase Information">
+              <FieldGroupTitle>Vendor</FieldGroupTitle>
+              <FieldList rows={[
+                { label: 'Vendor Name', value: tx.vendor },
+                { label: 'Vendor ID', value: <span className="font-mono">{tx.vendorId || '—'}</span> },
+              ]} />
+              <FieldGroupTitle>Reference</FieldGroupTitle>
+              <FieldList rows={[
+                { label: 'Invoice Number', value: <span className="font-mono">{tx.invoiceNumber || '—'}</span> },
+                { label: 'PO Number', value: <span className="font-mono">{tx.poNumber || '—'}</span> },
+                { label: 'Purchase ID', value: <span className="font-mono">{tx.purchaseId}</span> },
+              ]} />
+              <FieldGroupTitle>Dates</FieldGroupTitle>
+              <FieldList rows={[
+                { label: 'Purchase Date', value: tx.purchaseDate || '—' },
+                { label: 'Invoice Date', value: tx.invoiceDate || '—' },
+                { label: 'Due Date', value: <span className={tx.paymentStatus === 'overdue' ? 'text-red-600' : ''}>{tx.dueDate || '—'}</span> },
+                { label: 'Period', value: tx.period || '—' },
+              ]} />
+              <FieldGroupTitle>Details &amp; Payment Terms</FieldGroupTitle>
+              <FieldList rows={[
+                { label: 'Category', value: tx.category || '—' },
+                { label: 'Payment Terms', value: tx.paymentTerms || '—' },
+                { label: 'Currency', value: tx.currency || '—' },
+                { label: 'Source', value: tx.sourceDocType || '—' },
+              ]} />
+              <FieldGroupTitle>Workflow</FieldGroupTitle>
+              <FieldList rows={[
+                { label: 'Prepared by', value: tx.createdBy || '—' },
+                { label: 'Approved by', value: tx.approvedBy || '— Pending —' },
+                tx.postedBy ? { label: 'Posted by', value: tx.postedBy } : null,
+              ]} />
+            </PreviewSection>
+
+            {/* 2. Line Items */}
+            <PreviewSection step={2} stepColor="purple" title="Purchase Line Items" flush>
               <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/20">
+                    <tr className="border-b border-border bg-slate-50 text-[11px] uppercase tracking-wide">
+                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground w-12">No.</th>
                       <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Item / Service</th>
                       <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Code</th>
                       <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Qty</th>
                       <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Unit</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Unit Price</th>
+                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground whitespace-nowrap">Unit Price</th>
                       <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Discount</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Tax Rate</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Tax Amt</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Subtotal</th>
+                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground whitespace-nowrap">Tax Rate</th>
+                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground whitespace-nowrap">Tax Amt</th>
                       <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Total</th>
-                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">GL Account</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground whitespace-nowrap">GL Code</th>
+                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground whitespace-nowrap">GL Account</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border">
-                    {tx.lines.map(line => (
-                      <tr key={line.id} className="table-row-hover">
-                        <td className="px-4 py-2.5 font-medium text-foreground max-w-[200px]">
-                          <p>{line.description}</p>
-                        </td>
+                  <tbody className="divide-y divide-slate-100">
+                    {tx.lines.map((line, i) => (
+                      <tr key={line.id}>
+                        <td className="px-4 py-2.5 text-muted-foreground">{i + 1}</td>
+                        <td className="px-4 py-2.5 font-medium text-foreground min-w-[180px]">{line.description}</td>
                         <td className="px-4 py-2.5 font-mono text-muted-foreground whitespace-nowrap">{line.itemCode || '—'}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums">{line.quantity.toLocaleString()}</td>
                         <td className="px-4 py-2.5 text-muted-foreground">{line.unit}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{fmt(line.unitPrice)}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-red-600">{line.discount > 0 ? `-${fmt(line.discount)}` : '—'}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmt(line.unitPrice)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap text-red-600">{line.discount > 0 ? `-${fmt(line.discount)}` : '—'}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{line.taxRate}%</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{fmt(line.taxAmount)}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{fmt(line.subtotal)}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmt(line.total)}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                          <span className="font-mono">{line.accountCode}</span> · {line.accountName}
-                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">{fmt(line.taxAmount)}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-semibold">{fmt(line.total)}</td>
+                        <td className="px-4 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">{line.accountCode || '—'}</td>
+                        <td className="px-4 py-2.5 text-foreground min-w-[160px]">{line.accountName || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -329,43 +294,25 @@ export default function PurchasePreviewPage() {
 
               {/* Financial Summary */}
               <div className="border-t border-border p-5">
-                <div className="flex justify-end">
-                  <div className="w-full max-w-xs space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span className="tabular-nums font-medium">{fmt(tx.subtotal)}</span>
-                    </div>
-                    {tx.discount > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Discount</span>
-                        <span className="tabular-nums font-medium text-red-600">-{fmt(tx.discount)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Input Tax (VAT 12%)</span>
-                      <span className="tabular-nums font-medium">{fmt(tx.taxAmount)}</span>
-                    </div>
-                    <div className="flex justify-between text-base font-bold pt-2 border-t border-border">
-                      <span className="text-foreground">Total Payable</span>
-                      <span className="tabular-nums text-primary">{fmt(tx.total)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Accounts Payable</span>
-                      <span className="tabular-nums font-semibold text-red-700">{fmt(tx.accountsPayable)}</span>
-                    </div>
-                  </div>
-                </div>
+                <FieldList className="max-w-md ml-auto" rows={[
+                  { label: 'Subtotal', value: <span className="tabular-nums">{fmt(tx.subtotal)}</span> },
+                  tx.discount > 0 ? { label: 'Discount', value: <span className="tabular-nums text-red-600">-{fmt(tx.discount)}</span> } : null,
+                  { label: 'Input Tax (VAT 12%)', value: <span className="tabular-nums">{fmt(tx.taxAmount)}</span> },
+                  { label: 'Total Payable', strong: true, value: <span className="tabular-nums text-primary">{fmt(tx.total)}</span> },
+                  { label: 'Accounts Payable', value: <span className="tabular-nums font-semibold text-red-700">{fmt(tx.accountsPayable)}</span> },
+                ]} />
               </div>
-            </div>
+            </PreviewSection>
 
-            {/* Accounting Impact */}
-            <div className="je-card overflow-hidden">
-              <button
-                className="w-full px-5 py-3 border-b border-border bg-muted/30 flex items-center justify-between"
-                onClick={() => setShowAccounting(!showAccounting)}
-              >
-                <h3 className="text-sm font-semibold text-foreground">Accounting Impact (Journal Entry)</h3>
-                <div className="flex items-center gap-2">
+            {/* 3. Accounting Impact */}
+            <PreviewSection
+              step={3}
+              stepColor="emerald"
+              title="Accounting Impact (Journal Entry)"
+              onHeaderClick={() => setShowAccounting(!showAccounting)}
+              flush
+              aside={
+                <>
                   {isBalanced ? (
                     <span className="flex items-center gap-1 text-xs text-green-700 font-medium bg-green-50 px-2 py-0.5 rounded-full">
                       <CheckCircleIcon className="w-3.5 h-3.5" />Balanced
@@ -376,51 +323,25 @@ export default function PurchasePreviewPage() {
                     </span>
                   )}
                   {showAccounting ? <ChevronUpIcon className="w-4 h-4 text-muted-foreground" /> : <ChevronDownIcon className="w-4 h-4 text-muted-foreground" />}
-                </div>
-              </button>
+                </>
+              }
+            >
               {showAccounting && (
-                <div className="overflow-x-auto scrollbar-thin">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/20">
-                        <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Account Code</th>
-                        <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Account Name</th>
-                        <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Description</th>
-                        <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Debit</th>
-                        <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Credit</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {accountingEntries.map((entry, idx) => (
-                        <tr key={idx} className={`table-row-hover ${entry.debit > 0 ? '' : 'bg-slate-50/50'}`}>
-                          <td className="px-4 py-2.5 font-mono font-semibold text-primary">{entry.code}</td>
-                          <td className="px-4 py-2.5 font-medium text-foreground">{entry.account}</td>
-                          <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">{entry.description}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-foreground">
-                            {entry.debit > 0 ? fmt(entry.debit) : '—'}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-foreground">
-                            {entry.credit > 0 ? fmt(entry.credit) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className={`border-t-2 ${isBalanced ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'}`}>
-                        <td colSpan={3} className={`px-4 py-2.5 font-bold text-sm ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>
-                          {isBalanced ? '✓ Balanced — Total Debit = Total Credit' : '⚠ Unbalanced — Debit ≠ Credit'}
-                        </td>
-                        <td className={`px-4 py-2.5 text-right font-bold tabular-nums text-sm ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalDebit)}</td>
-                        <td className={`px-4 py-2.5 text-right font-bold tabular-nums text-sm ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalCredit)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                <JournalTable
+                  lines={accountingEntries.map((e, idx) => ({
+                    key: idx, code: e.code, name: e.account, description: e.description, debit: e.debit, credit: e.credit,
+                  }))}
+                  totalDebit={totalDebit}
+                  totalCredit={totalCredit}
+                  formatAmount={fmt}
+                  showDescription
+                  labels={{ total: isBalanced ? '✓ Balanced — Total Debit = Total Credit' : '⚠ Unbalanced — Debit ≠ Credit' }}
+                />
               )}
-            </div>
+            </PreviewSection>
 
             {/* Action Bar */}
-            <div className="je-card p-4">
+            <div className={`${PREVIEW_CARD} p-4`}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>Created: {tx.createdDate}</span>

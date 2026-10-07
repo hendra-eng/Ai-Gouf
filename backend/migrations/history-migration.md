@@ -35,3 +35,6 @@ seed_coa_nbm.sql
 28-create_management_setting_product.py
 29-create_management_setting_account_mappings.py
 30-create_management_coa_industry_templates.py
+31-create_financial_statement_mapping.py
+seed_fs_mapping_rules.sql
+seed_fs_note_templates.sql

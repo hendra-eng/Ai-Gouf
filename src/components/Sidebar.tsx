@@ -46,6 +46,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
           { id: 'nav-cf', label: 'Cash Flow', icon: Activity, href: '/financial-statements/cash-flow' },
           { id: 'nav-coe', label: 'Statement of Changes in Equity', icon: RefreshCcw, href: '/financial-statements/changes-in-equity' },
           { id: 'nav-notes', label: 'Notes to Financial Statements', icon: NotebookText, href: '/financial-statements/notes' },
+          { id: 'nav-fs-mapping', label: 'Statement Mapping', icon: ListTree, href: '/financial-statements/mapping' },
         ],
       },
       {
@@ -349,7 +350,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
   return (
     <>
       <aside
-        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden bg-dark border-r border-dark transition-sidebar flex-shrink-0 ${
+        className={`hidden lg:flex flex-col h-screen sticky top-0 self-start overflow-hidden bg-nav border-r border-nav transition-sidebar flex-shrink-0 ${
           collapsed ? 'sidebar-collapsed' : 'sidebar-expanded'
         }`}
       >
@@ -357,7 +358,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
       </aside>
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-dark border-r border-dark lg:hidden transition-transform duration-300 ${
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 bg-nav border-r border-nav lg:hidden transition-transform duration-300 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

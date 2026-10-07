@@ -117,6 +117,9 @@ from modules.transactions import journal_entry_import_v1 as transactions_journal
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
+from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
+from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
+from modules.financial_statements import fs_mapping_v1 as management_fs_mapping_v1  # [BARU] master mapping FS per klien: /api/v1/management/fs-mapping
 from modules.api_response import gagal as _gagal_v1  # [BARU] amplop response {status,message,data,errors}
 
 # [FIX v5] Konfirmasi eksplisit di terminal, database mana yang BENAR-BENAR
@@ -365,6 +368,9 @@ app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
+app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
+app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes
+app.include_router(management_fs_mapping_v1.router)  # [BARU] /api/v1/management/fs-mapping -- mapping FS per klien
 
 
 @app.on_event("startup")

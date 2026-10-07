@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Search, ChevronLeft, ChevronRight, CheckCircle, ChevronRight as Arrow, X, Eye } from 'lucide-react';
+import { Search, CheckCircle, X, Eye } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/lib/salesStore';
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { useActiveClient } from '@/lib/activeClient';
+import { PreviewSection, FieldList, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -182,7 +183,7 @@ export default function SalesJournalPreview() {
 
   if (!selectedInvoice) {
     return (
-      <div className="card p-8 text-center text-xs text-muted-foreground">
+      <div className={`${PREVIEW_CARD} p-8 text-center text-xs text-muted-foreground`}>
         {loading ? t('Memuat...') : t('Belum ada invoice penjualan untuk diproses ke jurnal.')}
       </div>
     );
@@ -304,7 +305,7 @@ export default function SalesJournalPreview() {
   return (
     <div className="flex gap-4 h-full">
       {/* Left: Invoice List */}
-      <div className="w-72 flex-shrink-0 card overflow-hidden self-start">
+      <div className={`w-72 flex-shrink-0 ${PREVIEW_CARD} overflow-hidden self-start`}>
         <div className="p-3 border-b border-border">
           <h3 className="text-sm font-semibold text-foreground mb-2">{t('Daftar Invoice Penjualan')}</h3>
           <div className="relative">
@@ -350,44 +351,20 @@ export default function SalesJournalPreview() {
             );
           })}
         </div>
-        <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {filteredInvoices.length === 0
-              ? t('0 invoice')
-              : `${t('Menampilkan')} ${pageStart + 1} – ${Math.min(pageStart + ITEMS_PER_PAGE, filteredInvoices.length)} ${t('dari')} ${filteredInvoices.length} ${t('invoice')}`}
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => goToPage(safePage - 1)}
-              disabled={safePage <= 1}
-              className="p-0.5 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft size={12} />
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-              <button
-                key={p}
-                onClick={() => goToPage(p)}
-                className={`w-5 h-5 rounded text-[11px] ${p === safePage ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-              >
-                {p}
-              </button>
-            ))}
-            <button
-              onClick={() => goToPage(safePage + 1)}
-              disabled={safePage >= totalPages}
-              className="p-0.5 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronRight size={12} />
-            </button>
-          </div>
-        </div>
+        <PickerPagination
+          page={safePage}
+          totalPages={totalPages}
+          total={filteredInvoices.length}
+          itemLabel="invoices"
+          onPageChange={goToPage}
+          className="p-3"
+        />
       </div>
 
       {/* Right: Detail */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Header */}
-        <div className="card p-4">
+        <div className={`${PREVIEW_CARD} p-4`}>
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-foreground">{t('Detail Journal Preview')}</h3>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[uiStatus]}`}>{t(uiStatus)}</span>
@@ -413,207 +390,136 @@ export default function SalesJournalPreview() {
           </div>
         </div>
 
-        {/* Content Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          {/* 1. Source Document */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">1</span>
-              {t('Source Document')}
-            </h4>
-            <div className="bg-muted/30 rounded-lg p-3 mb-3 flex items-center gap-3">
-              <div className="w-10 h-12 bg-white border border-border rounded flex items-center justify-center text-[9px] text-muted-foreground">INV</div>
-              <div className="text-xs space-y-1">
-                {[
-                  ['No. Invoice', selectedInvoice.invoice_no],
-                  ['Pelanggan', selectedInvoice.customer_name],
-                  ['Tanggal Invoice', formatTanggal(selectedInvoice.invoice_date)],
-                  ['Total Invoice', formatIDR(selectedInvoice.gross_amount)],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex gap-2">
-                    <span className="text-muted-foreground w-24 flex-shrink-0">{t(k)}</span>
-                    <span className="font-medium text-foreground">{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+        {/* Bagian-bagian ditumpuk dari atas ke bawah: 1 → 5 */}
+        {/* 1. Source Document */}
+        <PreviewSection
+          step={1}
+          stepColor="blue"
+          title={t('Source Document')}
+          aside={
             <button
               onClick={() => setShowDocPreview(true)}
-              className="w-full py-1.5 border border-border rounded-lg text-xs text-muted-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+              className="px-2.5 py-1 border border-border rounded-lg text-xs text-muted-foreground bg-card hover:bg-muted transition-colors flex items-center gap-1.5"
             >
               <Eye size={12} /> {t('Lihat Dokumen')}
             </button>
-          </div>
+          }
+        >
+          <FieldList rows={[
+            { label: t('No. Invoice'), value: selectedInvoice.invoice_no },
+            { label: t('Pelanggan'), value: selectedInvoice.customer_name },
+            { label: t('Tanggal Invoice'), value: formatTanggal(selectedInvoice.invoice_date) },
+            { label: t('Total Invoice'), value: formatIDR(selectedInvoice.gross_amount) },
+          ]} />
+        </PreviewSection>
 
-          {/* 2. AI Extraction */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-purple-100 text-purple-700 rounded text-[10px] font-bold flex items-center justify-center">2</span>
-              {t('AI Extraction')}
-            </h4>
-            <div className="space-y-2 text-xs">
-              {[
-                ['No. Invoice', selectedInvoice.invoice_no],
-                ['Pelanggan', selectedInvoice.customer_name],
-                ['Tipe Transaksi', <span key="t" className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t(selectedInvoice.transaction_type || 'Penjualan Jasa')}</span>],
-                ['Status Pajak', <span key="s" className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t(selectedInvoice.tax_invoice_status)}</span>],
-                ['Total DPP', formatIDR(dpp)],
-                ['PPN (11%)', formatIDR(ppn)],
-                ['Total Invoice', formatIDR(selectedInvoice.gross_amount)],
-              ].map(([k, v]) => (
-                <div key={String(k)} className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground flex-shrink-0">{t(k as string)}</span>
-                  <span className="font-medium text-foreground text-right">{v}</span>
+        {/* 2. AI Extraction */}
+        <PreviewSection step={2} stepColor="purple" title={t('AI Extraction')}>
+          <FieldList rows={[
+            { label: t('Tipe Transaksi'), value: <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">{t(selectedInvoice.transaction_type || 'Penjualan Jasa')}</span> },
+            { label: t('Status Pajak'), value: <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">{t(selectedInvoice.tax_invoice_status)}</span> },
+            { label: t('Total DPP'), value: formatIDR(dpp) },
+            { label: t('PPN (11%)'), value: formatIDR(ppn) },
+            { label: t('Total Invoice'), value: formatIDR(selectedInvoice.gross_amount), strong: true },
+          ]} />
+        </PreviewSection>
+
+        {/* 3. Accounting Classification */}
+        <PreviewSection
+          step={3}
+          stepColor="emerald"
+          title={t('Accounting Classification')}
+          aside={isEditingMapping && <span className="text-[11px] text-primary font-medium">{t('Mode Edit')}</span>}
+        >
+          {!isEditingMapping ? (
+            <FieldList rows={[
+              { label: t('Akun Piutang Usaha'), acc: piutangAcc },
+              { label: t('Akun Pendapatan'), acc: pendapatanAcc },
+              { label: t('Akun PPN Keluaran'), acc: ppnAcc },
+              { label: t('Akun PPh (Jika ada)'), acc: pphAcc },
+            ].map(r => ({
+              label: r.label,
+              value: r.acc.code
+                ? <><span className="font-mono text-primary">{r.acc.code}</span> — {t(r.acc.name)}</>
+                : t(r.acc.name),
+            }))} />
+          ) : (
+            <div className="space-y-3 max-w-xl">
+              {([
+                { label: 'Akun Piutang Usaha', key: 'piutang' },
+                { label: 'Akun Pendapatan', key: 'pendapatan' },
+                { label: 'Akun PPN Keluaran', key: 'ppn' },
+                { label: 'Akun PPh (Jika ada)', key: 'pph' },
+              ] as const).map(({ label, key }) => ({
+                label, key, value: draftMapping[key].code, options: denganAkunAktif(opsiAkun[key], draftMapping[key]),
+              })).map(f => (
+                <div key={f.label}>
+                  <label className="text-[11px] text-muted-foreground block mb-1">{t(f.label)}</label>
+                  <select
+                    value={f.value ?? ''}
+                    onChange={e => {
+                      const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
+                      setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
+                    }}
+                    className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
+                  >
+                    {f.options.map(opt => (
+                      <option key={String(opt.code)} value={opt.code ?? ''}>
+                        {opt.code ? `${opt.code} - ${t(opt.name)}` : t(opt.name)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* 3. Accounting Classification */}
-          <div className="card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
-                <span className="w-5 h-5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-bold flex items-center justify-center">3</span>
-                {t('Accounting Classification')}
-              </h4>
-              {isEditingMapping && <span className="text-[10px] text-primary font-medium">{t('Mode Edit')}</span>}
-            </div>
-
-            {!isEditingMapping ? (
-              <div className="space-y-2">
-                {[
-                  { label: 'Akun Piutang Usaha', code: piutangAcc.code, name: piutangAcc.name },
-                  { label: 'Akun Pendapatan', code: pendapatanAcc.code, name: pendapatanAcc.name },
-                  { label: 'Akun PPN Keluaran', code: ppnAcc.code, name: ppnAcc.name },
-                  { label: 'Akun PPh (Jika ada)', code: pphAcc.code, name: pphAcc.name },
-                ].map(a => (
-                  <div key={a.label} className="flex items-center justify-between py-1.5 border-b border-border/50">
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">{t(a.label)}</p>
-                      <p className="text-xs font-medium text-foreground">{a.code ? `${a.code} - ${t(a.name)}` : t(a.name)}</p>
-                    </div>
-                    <Arrow size={12} className="text-muted-foreground flex-shrink-0" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {([
-                  { label: 'Akun Piutang Usaha', key: 'piutang' },
-                  { label: 'Akun Pendapatan', key: 'pendapatan' },
-                  { label: 'Akun PPN Keluaran', key: 'ppn' },
-                  { label: 'Akun PPh (Jika ada)', key: 'pph' },
-                ] as const).map(({ label, key }) => ({
-                  label, key, value: draftMapping[key].code, options: denganAkunAktif(opsiAkun[key], draftMapping[key]),
-                })).map(f => (
-                  <div key={f.label}>
-                    <label className="text-[11px] text-muted-foreground block mb-1">{t(f.label)}</label>
-                    <select
-                      value={f.value ?? ''}
-                      onChange={e => {
-                        const dipilih = f.options.find(o => (o.code ?? '') === e.target.value) ?? NO_PPH;
-                        setDraftMapping(prev => ({ ...prev, [f.key]: dipilih }));
-                      }}
-                      className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
-                    >
-                      {f.options.map(opt => (
-                        <option key={String(opt.code)} value={opt.code ?? ''}>
-                          {opt.code ? `${opt.code} - ${t(opt.name)}` : t(opt.name)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={saveEditMapping}
-                    disabled={savingMapping}
-                    className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    {savingMapping ? t('Menyimpan...') : t('Simpan')}
-                  </button>
-                  <button
-                    onClick={cancelEditMapping}
-                    className="flex-1 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors"
-                  >
-                    {t('Batal')}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {/* 4. Tax Treatment */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold flex items-center justify-center">4</span>
-              {t('Tax Treatment')}
-            </h4>
-            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mb-3 flex items-start gap-2">
-              <CheckCircle size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-semibold text-emerald-700">{t('Dikenakan PPN (Taxable)')}</p>
-                <p className="text-[11px] text-emerald-600">{t('Transaksi ini dikenakan PPN sesuai ketentuan yang berlaku.')}</p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={saveEditMapping}
+                  disabled={savingMapping}
+                  className="px-4 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {savingMapping ? t('Menyimpan...') : t('Simpan')}
+                </button>
+                <button
+                  onClick={cancelEditMapping}
+                  className="px-4 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors"
+                >
+                  {t('Batal')}
+                </button>
               </div>
             </div>
-            <div className="space-y-1.5 text-xs">
-              {[
-                ['Dasar Pengenaan Pajak (DPP)', formatIDR(dpp)],
-                ['Tarif PPN', '11%'],
-                ['PPN Keluaran', formatIDR(ppn)],
-                ['Total Termasuk PPN', formatIDR(selectedInvoice.gross_amount)],
-              ].map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span className="text-muted-foreground">{t(k)}</span>
-                  <span className="font-medium text-foreground">{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
+        </PreviewSection>
 
-          {/* 5. Journal Entry */}
-          <div className="card p-4">
-            <h4 className="text-xs font-semibold text-foreground mb-3 flex items-center gap-2">
-              <span className="w-5 h-5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold flex items-center justify-center">5</span>
-              {t('Journal Entry')}
-            </h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('No.')}</th>
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Code')}</th>
-                    <th className="text-left py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Account Name')}</th>
-                    <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Debit (IDR)')}</th>
-                    <th className="text-right py-1.5 px-2 text-[11px] font-semibold text-muted-foreground">{t('Credit (IDR)')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {journalLines.map(l => (
-                    <tr key={l.no} className="border-b border-border/50">
-                      <td className="py-1.5 px-2 text-muted-foreground">{l.no}</td>
-                      <td className="py-1.5 px-2 text-primary font-medium">{l.code}</td>
-                      <td className="py-1.5 px-2 text-foreground">{t(l.name)}</td>
-                      <td className="py-1.5 px-2 text-right">{l.debit > 0 ? l.debit.toLocaleString('id-ID') : '—'}</td>
-                      <td className="py-1.5 px-2 text-right">{l.credit > 0 ? l.credit.toLocaleString('id-ID') : '—'}</td>
-                    </tr>
-                  ))}
-                  <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={3} className="py-1.5 px-2 text-xs">{t('Total')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.gross_amount.toLocaleString('id-ID')}</td>
-                    <td className="py-1.5 px-2 text-right text-xs">{selectedInvoice.gross_amount.toLocaleString('id-ID')}</td>
-                  </tr>
-                </tbody>
-              </table>
+        {/* 4. Tax Treatment */}
+        <PreviewSection step={4} stepColor="amber" title={t('Tax Treatment')}>
+          <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg mb-4 flex items-start gap-2">
+            <CheckCircle size={14} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-emerald-700">{t('Dikenakan PPN (Taxable)')}</p>
+              <p className="text-[11px] text-emerald-600">{t('Transaksi ini dikenakan PPN sesuai ketentuan yang berlaku.')}</p>
             </div>
           </div>
-        </div>
+          <FieldList rows={[
+            { label: t('Dasar Pengenaan Pajak (DPP)'), value: formatIDR(dpp) },
+            { label: t('Tarif PPN'), value: '11%' },
+            { label: t('PPN Keluaran'), value: formatIDR(ppn) },
+            { label: t('Total Termasuk PPN'), value: formatIDR(selectedInvoice.gross_amount), strong: true },
+          ]} />
+        </PreviewSection>
+
+        {/* 5. Journal Entry */}
+        <PreviewSection step={5} stepColor="blue" title={t('Journal Entry')} flush>
+          <JournalTable
+            lines={journalLines.map(l => ({ key: l.no, code: l.code, name: t(l.name), debit: l.debit, credit: l.credit }))}
+            totalDebit={journalLines.reduce((s, l) => s + l.debit, 0)}
+            totalCredit={journalLines.reduce((s, l) => s + l.credit, 0)}
+            formatAmount={n => n.toLocaleString('id-ID')}
+            labels={{ no: t('No.'), code: t('Account Code'), name: t('Account Name'), debit: t('Debit (IDR)'), credit: t('Credit (IDR)'), total: t('Total') }}
+          />
+        </PreviewSection>
 
         {/* Footer Action Bar */}
-        <div className="card p-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className={`${PREVIEW_CARD} p-3 flex items-center justify-between gap-3 flex-wrap`}>
           <div className="flex items-center gap-2 text-xs text-blue-600">
             <span className="w-4 h-4 bg-blue-100 rounded-full flex items-center justify-center text-[9px]">ℹ</span>
             <span>{footerMessage}</span>

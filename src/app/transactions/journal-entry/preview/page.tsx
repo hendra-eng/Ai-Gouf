@@ -6,11 +6,11 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   DocumentTextIcon,
-  CalendarIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
 import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiStatus } from '@/lib/journalEntryStore';
-import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import { PreviewSection, FieldList, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
+import { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 
 type JEStatus = JeUiStatus;
 
@@ -61,7 +61,7 @@ export default function JournalPreviewPage() {
     return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="preview" />
-        <div className="je-card p-12 text-center text-sm text-muted-foreground">Loading journal entries…</div>
+        <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>Loading journal entries…</div>
       </div>
     );
   }
@@ -70,7 +70,7 @@ export default function JournalPreviewPage() {
     return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="preview" />
-        <div className="je-card p-12 text-center text-sm text-muted-foreground">No journal entries to preview yet.</div>
+        <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>No journal entries to preview yet.</div>
       </div>
     );
   }
@@ -81,7 +81,7 @@ export default function JournalPreviewPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Selector Panel */}
-          <div className="je-card p-4 lg:col-span-1">
+          <div className={`${PREVIEW_CARD} p-4 lg:col-span-1 self-start`}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Select Journal Entry</h3>
             <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-thin">
               {paginatedEntries.map(t => (
@@ -103,22 +103,28 @@ export default function JournalPreviewPage() {
                 </button>
               ))}
             </div>
-            <JePagination page={selectorPageSafe} pageSize={JE_PAGE_SIZE} total={journalEntries.length} onPageChange={setSelectorPage} itemLabel="journal entries" />
+            <PickerPagination
+              page={selectorPageSafe}
+              totalPages={selectorTotalPages}
+              total={journalEntries.length}
+              itemLabel="journal entries"
+              onPageChange={setSelectorPage}
+            />
           </div>
 
-          {/* Preview Document */}
+          {/* Preview Document — bagian ditumpuk dari atas ke bawah */}
           <div className="lg:col-span-3 space-y-4">
             {/* Header */}
-            <div className="je-card p-6">
-              <div className="flex items-start justify-between mb-5">
+            <div className={`${PREVIEW_CARD} p-5`}>
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <DocumentTextIcon className="w-5 h-5 text-primary" />
                     <h2 className="text-lg font-bold text-foreground">Journal Entry Preview</h2>
                   </div>
                   <p className="text-sm text-muted-foreground">{je.description}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2 flex-shrink-0">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[je.status]}`}>{statusLabels[je.status]}</span>
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${isBalanced ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                     {isBalanced ? <CheckCircleIcon className="w-3.5 h-3.5" /> : <ExclamationTriangleIcon className="w-3.5 h-3.5" />}
@@ -126,74 +132,52 @@ export default function JournalPreviewPage() {
                   </span>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <DocumentTextIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reference</p>
-                  </div>
-                  <p className="text-sm font-bold text-foreground">{je.jeNumber}</p>
-                  <p className="text-xs text-muted-foreground">Source: {je.sourceType} — {je.sourceReference}</p>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dates</p>
-                  </div>
-                  <p className="text-xs text-foreground">Entry: <span className="font-medium">{je.date}</span></p>
-                  <p className="text-xs text-foreground">Posting: <span className="font-medium">{je.postingDate}</span></p>
-                  <p className="text-xs text-foreground">Period: <span className="font-medium">{je.period}</span></p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Workflow</p>
-                  <p className="text-xs text-foreground">Created by: <span className="font-medium">{je.createdBy}</span></p>
-                  <p className="text-xs text-foreground">Reviewed by: <span className="font-medium">{je.reviewedBy || '— Pending —'}</span></p>
-                  <p className="text-xs text-foreground">Approved by: <span className="font-medium">{je.approvedBy || '— Pending —'}</span></p>
-                </div>
-              </div>
             </div>
 
-            {/* Journal Lines */}
-            <div className="je-card overflow-hidden">
-              <div className="px-5 py-3 border-b border-border bg-muted/30">
-                <h3 className="text-sm font-semibold text-foreground">Journal Lines</h3>
-              </div>
-              <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/20">
-                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Account</th>
-                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Description</th>
-                      <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground">Cost Center</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Debit</th>
-                      <th className="px-4 py-2.5 text-right font-semibold text-muted-foreground">Credit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {lines.map(line => (
-                      <tr key={line.id} className="table-row-hover">
-                        <td className="px-4 py-2.5 font-medium text-foreground whitespace-nowrap">{line.accountCode} · {line.accountName}</td>
-                        <td className="px-4 py-2.5 text-foreground max-w-[240px] truncate">{line.description}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{line.costCenter || '—'}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{line.debit > 0 ? fmt(line.debit) : '—'}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">{line.credit > 0 ? fmt(line.credit) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className={`border-t ${isBalanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                      <td colSpan={3} className={`px-4 py-2.5 text-right font-bold ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>Total</td>
-                      <td className={`px-4 py-2.5 text-right font-bold tabular-nums ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalDebit)}</td>
-                      <td className={`px-4 py-2.5 text-right font-bold tabular-nums ${isBalanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totalCredit)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
+            {/* 1. Reference */}
+            <PreviewSection step={1} stepColor="blue" title="Reference">
+              <FieldList rows={[
+                { label: 'JE Number', value: <span className="font-mono">{je.jeNumber}</span> },
+                { label: 'Source Type', value: je.sourceType || '—' },
+                { label: 'Source Reference', value: je.sourceReference || '—' },
+              ]} />
+            </PreviewSection>
+
+            {/* 2. Dates */}
+            <PreviewSection step={2} stepColor="purple" title="Dates">
+              <FieldList rows={[
+                { label: 'Entry Date', value: je.date || '—' },
+                { label: 'Posting Date', value: je.postingDate || '—' },
+                { label: 'Period', value: je.period || '—' },
+              ]} />
+            </PreviewSection>
+
+            {/* 3. Workflow */}
+            <PreviewSection step={3} stepColor="emerald" title="Workflow">
+              <FieldList rows={[
+                { label: 'Created by', value: je.createdBy || '—' },
+                { label: 'Reviewed by', value: je.reviewedBy || '— Pending —' },
+                { label: 'Approved by', value: je.approvedBy || '— Pending —' },
+              ]} />
+            </PreviewSection>
+
+            {/* 4. Journal Lines */}
+            <PreviewSection step={4} stepColor="amber" title="Journal Lines" flush>
+              <JournalTable
+                lines={lines.map(l => ({
+                  key: l.id, code: l.accountCode, name: l.accountName,
+                  description: l.description, costCenter: l.costCenter, debit: l.debit, credit: l.credit,
+                }))}
+                totalDebit={totalDebit}
+                totalCredit={totalCredit}
+                formatAmount={fmt}
+                showDescription
+                showCostCenter
+              />
+            </PreviewSection>
 
             {je.notes && (
-              <div className="je-card p-4 bg-amber-50">
+              <div className="rounded-xl border border-amber-200 p-4 bg-amber-50">
                 <p className="text-xs text-amber-700">{je.notes}</p>
               </div>
             )}
