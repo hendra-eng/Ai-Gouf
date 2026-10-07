@@ -55,3 +55,6 @@ backend/migrations/history-migration.md
 task-claude.md
 backend/logs/*.log*
 backend/encryption.key
+
+Gouf Task Documents.xlsx
+dataset/picture/*

@@ -8,11 +8,13 @@
      highlight #22C55E  highlight, icon        (token "secondary" brand; --secondary
                                                  tetap abu netral karena dipakai sbg
                                                  latar netral di banyak halaman)
-     background #ECFDF5 latar section/halaman
-     dark      #0B5E5C  header, teks kuat
+     background #FFFFFF latar section/halaman (2026-10-07: dari hijau muda
+                        #ECFDF5 ke putih atas permintaan user)
+     dark      #0B5E5C  teks kuat
+     nav       #0E2F26  latar header (Topbar) & sidebar
      card      #FFFFFF  konten utama
      *-rgb = channel RGB supaya modifier opacity Tailwind (bg-primary/10) jalan. */
-  --background: #ECFDF5;
+  --background: #FFFFFF;
   --foreground: #0F172A;
   --primary: #0F7D4E;
   --primary-rgb: 15 125 78;
@@ -23,6 +25,8 @@
   --dark: #0B5E5C;
   --dark-rgb: 11 94 92;
   --dark-foreground: #FFFFFF;
+  --nav: #0E2F26;
+  --nav-rgb: 14 47 38;
   --secondary: #F1F5F9;
   --secondary-foreground: #334155;
   --accent: #7C3AED;
@@ -520,7 +524,7 @@
   .table-row-hover  {
     @apply transition-colors duration-100 cursor-pointer;
   }
-  /* Menu Sidebar (latar dark #0B5E5C): aktif = latar putih tipis + garis &
+  /* Menu Sidebar (latar nav #0E2F26): aktif = latar putih tipis + garis &
      ikon highlight #22C55E; tidak aktif = putih redup. */
   .nav-item-active  {
     @apply bg-white/10 text-white font-semibold;
