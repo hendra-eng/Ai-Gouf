@@ -63,8 +63,9 @@ const paymentLabels: Record<PaymentStatus, string> = {
 
 export default function PurchaseTransactionPage() {
   const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const { clients, activeClientId, activeClientName } = useActiveClient();
+  // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
+  const { transactions: backendTransactions } = usePurchaseTransactions(activeClientId ?? null);
   const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
   const [search, setSearch] = useState('');
@@ -126,7 +127,6 @@ export default function PurchaseTransactionPage() {
     else { setSortField(field); setSortDir('desc'); }
   };
 
-  const { clients, activeClientId, activeClientName } = useActiveClient();
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
   const printedBy = user?.nama || user?.username || undefined;
 

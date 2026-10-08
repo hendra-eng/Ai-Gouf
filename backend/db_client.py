@@ -15,7 +15,7 @@ import pandas as pd
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime,
     Text, Boolean, ForeignKey, text, UniqueConstraint, Index,
-    Numeric, Date, func, JSON, or_,
+    Numeric, Date, func, JSON, or_, select,
     Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
@@ -4537,13 +4537,16 @@ def _purchase_crud_get_by_id(model, fields: List[str], row_id: str, termasuk_non
         session.close()
 
 
-def _purchase_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+def _purchase_crud_list(model, fields: List[str], filters: Optional[Dict[str, Any]] = None, termasuk_nonaktif: bool = False,
+                        kondisi_tambahan: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
     session = SessionLocal()
     try:
         query = session.query(model)
         for kolom, nilai in (filters or {}).items():
             if nilai is not None:
                 query = query.filter(getattr(model, kolom) == nilai)
+        for kondisi in kondisi_tambahan or []:
+            query = query.filter(kondisi)
         if not termasuk_nonaktif:
             query = query.filter(model.deleted_at.is_(None))
         return [_purchase_row_ke_dict(obj, fields) for obj in query.order_by(model.created_at.desc()).all()]
@@ -4626,11 +4629,29 @@ def get_purchase_source_record_by_client_and_code(client_id: Optional[str], sour
     finally:
         session.close()
 
-def list_purchase_source_records(client_id: Optional[str] = None, source_type: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+def _filter_company_purchase(management_client_id: Optional[str]):
+    """Subquery id transaksi purchase milik 1 company (management_clients.id)
+    -- dipakai filter company untuk source_records & exceptions, yang (beda
+    dari purchase_transactions) TIDAK punya kolom management_client_id
+    sendiri. None kalau filter company tidak diminta."""
+    if management_client_id is None:
+        return None
+    return select(PurchaseTransaction.id, PurchaseTransaction.source_record_id).where(
+        PurchaseTransaction.management_client_id == management_client_id
+    ).subquery()
+
+def list_purchase_source_records(client_id: Optional[str] = None, source_type: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False,
+                                 management_client_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """client_id = id_user (akun yang login); management_client_id = company
+    (dropdown "Switch Company") -- source record ikut company transaksi yang
+    dibuat darinya (purchase_transactions.source_record_id). Source record
+    yang belum jadi transaksi tidak punya company, jadi tidak ikut terfilter."""
+    tx = _filter_company_purchase(management_client_id)
     hasil = _purchase_crud_list(
         PurchaseSourceRecord, CRUD_FIELDS_PURCHASE_SOURCE_RECORD,
         {"client_id": client_id, "source_type": source_type, "status": status},
         termasuk_nonaktif,
+        kondisi_tambahan=None if tx is None else [PurchaseSourceRecord.id.in_(select(tx.c.source_record_id))],
     )
     # relatedPurchaseId (frontend) TIDAK disimpan sebagai kolom (hindari FK
     # sirkular, lihat catatan di DDL) -- dicari lewat reverse query 1x per
@@ -4701,10 +4722,13 @@ def get_purchase_transaction_by_client_and_no(client_id: Optional[str], purchase
     finally:
         session.close()
 
-def list_purchase_transactions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+def list_purchase_transactions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False,
+                               management_client_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """client_id = id_user (akun yang login); management_client_id = company
+    (dropdown "Switch Company") -- filter yang dipakai semua tab Purchase."""
     return _purchase_crud_list(
         PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION,
-        {"client_id": client_id, "status": status},
+        {"client_id": client_id, "status": status, "management_client_id": management_client_id},
         termasuk_nonaktif,
     )
 
@@ -4758,11 +4782,19 @@ def create_purchase_exception(data: Dict[str, Any], created_by: Optional[str] = 
 def get_purchase_exception_by_id(exception_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _purchase_crud_get_by_id(PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION, exception_id, termasuk_nonaktif)
 
-def list_purchase_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+def list_purchase_exceptions(client_id: Optional[str] = None, status: Optional[str] = None, termasuk_nonaktif: bool = False,
+                             management_client_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """management_client_id = company -- exception ikut company transaksinya
+    (lewat transaction_id, atau source_record_id yang sudah jadi transaksi)."""
+    tx = _filter_company_purchase(management_client_id)
     return _purchase_crud_list(
         PurchaseException, CRUD_FIELDS_PURCHASE_EXCEPTION,
         {"client_id": client_id, "status": status},
         termasuk_nonaktif,
+        kondisi_tambahan=None if tx is None else [or_(
+            PurchaseException.transaction_id.in_(select(tx.c.id)),
+            PurchaseException.source_record_id.in_(select(tx.c.source_record_id)),
+        )],
     )
 
 def update_purchase_exception(exception_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:

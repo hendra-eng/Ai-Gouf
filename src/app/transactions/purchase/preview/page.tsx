@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
-import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
 import { toast } from 'sonner';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';
 import { PreviewSection, FieldList, FieldGroupTitle, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
@@ -99,9 +99,9 @@ function getAccountingEntries(tx: PurchaseTransaction) {
 }
 
 export default function PurchasePreviewPage() {
-  const { user } = useAuth();
-  const clientId = user?.id ?? null;
-  const { transactions: backendTransactions } = usePurchaseTransactions(clientId);
+  const { activeClientId } = useActiveClient();
+  // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
+  const { transactions: backendTransactions } = usePurchaseTransactions(activeClientId ?? null);
   const purchaseTransactions = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
