@@ -50,7 +50,7 @@ function ValidationBadge({ status }: { status: ValidationStatus }) {
 
 export default function PurchaseSourceDataPage() {
   const { activeClientId } = useActiveClient();
-  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
   const clientId = activeClientId ?? null;
   const { records: backendRecords } = usePurchaseSourceRecords(clientId);
   const purchaseSourceRecords = useMemo(() => backendRecords.map(mapSourceRecordToUi), [backendRecords]);

@@ -51,7 +51,7 @@ const paymentLabels: Record<string, string> = {
 
 export default function PurchasePostedPage() {
   const { activeClientId } = useActiveClient();
-  // client_id data Purchase = management_clients.id (company aktif di "Switch Company"), BUKAN user.id.
+  // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
   const clientId = activeClientId ?? null;
   const { transactions: backendTransactions } = usePurchaseTransactions(clientId, 'posted');
   const postedPurchases = useMemo(() => backendTransactions.map(t => mapTransactionToUi(t)), [backendTransactions]);

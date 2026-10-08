@@ -394,12 +394,14 @@ def buat_source_record(
 )
 def daftar_source_record(
     client_id: Optional[str] = Query(None),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id) -- filter utama semua tab Purchase."),
     source_type: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status", description="Mapped/Pending Mapping/Validation Error/Imported"),
     termasuk_nonaktif: bool = Query(False),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_purchase_source_records(client_id=client_id, source_type=source_type, status=status_filter, termasuk_nonaktif=termasuk_nonaktif)
+    data = dbc.list_purchase_source_records(client_id=client_id, source_type=source_type, status=status_filter, termasuk_nonaktif=termasuk_nonaktif,
+                                         management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 
@@ -574,11 +576,13 @@ def post_transactions(
 )
 def daftar_transaction(
     client_id: Optional[str] = Query(None),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id) -- filter utama semua tab Purchase."),
     status_filter: Optional[str] = Query(None, alias="status", description="draft/pending_review/approved/pending_posting/posted/rejected/exception/cancelled"),
     termasuk_nonaktif: bool = Query(False),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_purchase_transactions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif)
+    data = dbc.list_purchase_transactions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif,
+                                         management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 
@@ -736,11 +740,13 @@ def buat_exception(
 )
 def daftar_exception(
     client_id: Optional[str] = Query(None),
+    management_client_id: Optional[str] = Query(None, description="Company (management_clients.id) -- filter utama semua tab Purchase."),
     status_filter: Optional[str] = Query(None, alias="status", description="Open/Under Review/Requires Correction/Resolved/Ignored"),
     termasuk_nonaktif: bool = Query(False),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    data = dbc.list_purchase_exceptions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif)
+    data = dbc.list_purchase_exceptions(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif,
+                                         management_client_id=management_client_id)
     return sukses(data=data, message="OK")
 
 

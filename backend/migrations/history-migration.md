@@ -38,3 +38,4 @@ seed_coa_nbm.sql
 31-create_financial_statement_mapping.py
 seed_fs_mapping_rules.sql
 seed_fs_note_templates.sql
+32-repoint_sales_client_id_fk_to_management_clients.py

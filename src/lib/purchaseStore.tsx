@@ -9,10 +9,11 @@
 // useXxxList yang dengar custom event) -- baca komentar di file-file itu
 // untuk alasan detailnya.
 //
-// [PENTING] client_id: 4 tabel financial_transaction_purchase_* di backend
-// FK ke management_users(id_user) -- pola sama persis dengan Sales & JE.
-// client_id yang dikirim/dipakai untuk filter di SELURUH fungsi di bawah
-// adalah id_user milik akun yang SEDANG LOGIN (`useAuth().user.id`).
+// [PENTING] client_id di tabel financial_transaction_purchase_* = id_user
+// akun yang meng-import (management_users). Filter list di SELURUH hook di
+// bawah BUKAN client_id itu, tapi COMPANY aktif (`useActiveClient().
+// activeClientId` = management_clients.id) yang dikirim sebagai
+// management_client_id -- pola sama dengan useSalesInvoices di salesStore.tsx.
 //
 // Mapper di bagian bawah file ini mengubah bentuk snake_case backend
 // menjadi bentuk UI (`PurchaseTransaction`/`PurchaseLine`/
@@ -130,12 +131,12 @@ export interface BackendPurchaseSourceRecord {
 }
 
 export async function listPurchaseSourceRecords(
-  clientId?: string | null,
+  companyId?: string | null,
   sourceType?: string,
   status?: string,
 ): Promise<BackendPurchaseSourceRecord[]> {
   const res = await authenticatedFetch(
-    `${PURCHASE_BASE_URL}/source-records${qs({ client_id: clientId, source_type: sourceType, status })}`,
+    `${PURCHASE_BASE_URL}/source-records${qs({ management_client_id: companyId, source_type: sourceType, status })}`,
   );
   return baca<BackendPurchaseSourceRecord[]>(res);
 }
@@ -157,7 +158,7 @@ export async function deletePurchaseSourceRecord(id: string): Promise<void> {
   notifyPurchaseChanged();
 }
 
-export function usePurchaseSourceRecords(clientId: string | null | undefined): {
+export function usePurchaseSourceRecords(companyId: string | null | undefined): {
   records: BackendPurchaseSourceRecord[]; loading: boolean; error: string | null; refresh: () => void;
 } {
   const [records, setRecords] = useState<BackendPurchaseSourceRecord[]>([]);
@@ -165,13 +166,13 @@ export function usePurchaseSourceRecords(clientId: string | null | undefined): {
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
-    if (!clientId) { setRecords([]); setLoading(false); return; }
+    if (!companyId) { setRecords([]); setLoading(false); return; }
     setLoading(true);
-    listPurchaseSourceRecords(clientId)
+    listPurchaseSourceRecords(companyId)
       .then(data => { setRecords(data); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source records'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [companyId]);
 
   useEffect(() => {
     muatUlang();
@@ -235,8 +236,8 @@ export interface BackendPurchaseTransaction {
   aktif: boolean;
 }
 
-export async function listPurchaseTransactions(clientId?: string | null, status?: string): Promise<BackendPurchaseTransaction[]> {
-  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/transactions${qs({ client_id: clientId, status })}`);
+export async function listPurchaseTransactions(companyId?: string | null, status?: string): Promise<BackendPurchaseTransaction[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/transactions${qs({ management_client_id: companyId, status })}`);
   return baca<BackendPurchaseTransaction[]>(res);
 }
 
@@ -374,7 +375,7 @@ export async function uploadPurchaseSourceFile(file: File, managementClientId: s
   return row;
 }
 
-export function usePurchaseTransactions(clientId: string | null | undefined, status?: string): {
+export function usePurchaseTransactions(companyId: string | null | undefined, status?: string): {
   transactions: BackendPurchaseTransaction[]; loading: boolean; error: string | null; refresh: () => void;
 } {
   const [transactions, setTransactions] = useState<BackendPurchaseTransaction[]>([]);
@@ -382,13 +383,13 @@ export function usePurchaseTransactions(clientId: string | null | undefined, sta
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
-    if (!clientId) { setTransactions([]); setLoading(false); return; }
+    if (!companyId) { setTransactions([]); setLoading(false); return; }
     setLoading(true);
-    listPurchaseTransactions(clientId, status)
+    listPurchaseTransactions(companyId, status)
       .then(data => { setTransactions(data); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load purchase transactions'))
       .finally(() => setLoading(false));
-  }, [clientId, status]);
+  }, [companyId, status]);
 
   useEffect(() => {
     muatUlang();
@@ -499,8 +500,8 @@ export interface BackendPurchaseException {
   aktif: boolean;
 }
 
-export async function listPurchaseExceptions(clientId?: string | null, status?: string): Promise<BackendPurchaseException[]> {
-  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/exceptions${qs({ client_id: clientId, status })}`);
+export async function listPurchaseExceptions(companyId?: string | null, status?: string): Promise<BackendPurchaseException[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/exceptions${qs({ management_client_id: companyId, status })}`);
   return baca<BackendPurchaseException[]>(res);
 }
 
@@ -521,7 +522,7 @@ export async function deletePurchaseException(id: string): Promise<void> {
   notifyPurchaseChanged();
 }
 
-export function usePurchaseExceptions(clientId: string | null | undefined): {
+export function usePurchaseExceptions(companyId: string | null | undefined): {
   exceptions: BackendPurchaseException[]; loading: boolean; error: string | null; refresh: () => void;
 } {
   const [exceptions, setExceptions] = useState<BackendPurchaseException[]>([]);
@@ -529,13 +530,13 @@ export function usePurchaseExceptions(clientId: string | null | undefined): {
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
-    if (!clientId) { setExceptions([]); setLoading(false); return; }
+    if (!companyId) { setExceptions([]); setLoading(false); return; }
     setLoading(true);
-    listPurchaseExceptions(clientId)
+    listPurchaseExceptions(companyId)
       .then(data => { setExceptions(data); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load exceptions'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [companyId]);
 
   useEffect(() => {
     muatUlang();
