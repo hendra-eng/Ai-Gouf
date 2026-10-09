@@ -144,3 +144,59 @@ export function buildOtherExceptions(journals: OtherJournal[]): OtherException[]
   });
   return out;
 }
+
+// ── Status, checklist & kesiapan posting ────────────────────────────────────
+
+export const OTHER_STATUS_VARIANT: Record<JournalStatus, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
+  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
+};
+
+export interface JournalCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  /** true = menghalangi posting; false = peringatan saja */
+  blocking: boolean;
+}
+
+export function journalChecks(j: OtherJournal): JournalCheck[] {
+  return [
+    { key: 'je', label: 'Nomor jurnal ada', ok: !j.missingJeId, blocking: true },
+    { key: 'bal', label: 'Debit = Kredit', ok: j.balanced, blocking: true },
+    { key: 'map', label: 'Akun terpetakan', ok: !j.unmapped, blocking: false },
+    { key: 'notes', label: 'Tanpa catatan review', ok: j.notes.length === 0, blocking: false },
+  ];
+}
+
+export type Readiness = 'draft' | 'fix' | 'ready';
+
+export function readinessOf(j: OtherJournal): Readiness {
+  if (j.status === 'Draft') return 'draft';
+  return journalChecks(j).some((c) => c.blocking && !c.ok) ? 'fix' : 'ready';
+}
+
+/** Masalah per baris sumber (dipakai tab Source Data). */
+export function lineIssues(tx: Transaction): string[] {
+  const out: string[] = [];
+  if (!(tx.jeId || '').trim()) out.push('Tanpa no. jurnal');
+  if (!tx.standardAccountCode) out.push('Akun belum dipetakan');
+  if ((tx.notes || '').trim()) out.push('Ada catatan');
+  return out;
+}
+
+export const REMEDIATION: Record<ExceptionType, string> = {
+  'Tanpa Nomor Jurnal': 'Lengkapi nomor jurnal (jeId) di halaman Transaksi utama agar kedua kaki jurnal terpasang benar.',
+  'Jurnal Tidak Balance': 'Periksa nominal debit dan kredit tiap baris, lalu samakan totalnya.',
+  'Draft Menunggu Approval': 'Minta approver menyetujui draft; sebelum itu nilainya belum masuk total Other.',
+  'Perlu Ditinjau': 'Baca catatan pada baris jurnal, selesaikan tindak lanjutnya, lalu hapus catatan.',
+  'Akun Belum Dipetakan': 'Petakan akun ke akun standar (COA) supaya laporan keuangan membacanya benar.',
+};
+
+export function monthKeyOf(date: string): string {
+  return (date || '').slice(0, 7);
+}
+
+export function monthLabelOf(key: string): string {
+  const d = new Date(`${key}-01T00:00:00`);
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+}
