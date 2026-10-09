@@ -697,6 +697,27 @@ function AddScheduleModal({
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
+// Tab utama halaman Reports -- desain pill/segmented disamakan dengan
+// halaman Sales (SalesClient.tsx). Isi tiap tab dibuat di step berikutnya.
+// 'library' & 'scheduled' = konten lama (Report Library / Scheduled Reports),
+// belum punya tab sendiri di bar ini.
+type ReportsTabKey =
+  | 'business-overview' | 'sales' | 'purchases' | 'inventory'
+  | 'fixed-assets' | 'banking' | 'tax' | 'production'
+  | 'library' | 'scheduled';
+
+const REPORT_TABS: { key: ReportsTabKey; label: string }[] = [
+  { key: 'business-overview', label: 'Business Overview' },
+  { key: 'sales', label: 'Sales' },
+  { key: 'purchases', label: 'Purchases' },
+  { key: 'inventory', label: 'Inventory' },
+  { key: 'fixed-assets', label: 'Fixed Assets' },
+  { key: 'banking', label: 'Banking' },
+  { key: 'tax', label: 'Tax' },
+  { key: 'production', label: 'Production' },
+  { key: 'scheduled', label: 'Scheduled Reports' },
+];
+
 export default function ReportsPageClient() {
   const { reports: liveReports, isSampleData, loading: loadingReports, addReport } = useReportsData();
   const [reportList, setReportList] = useState<Report[]>(initialReports);
@@ -725,7 +746,7 @@ export default function ReportsPageClient() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
-  const [activeTab, setActiveTab] = useState<'library' | 'scheduled'>('library');
+  const [activeTab, setActiveTab] = useState<ReportsTabKey>('business-overview');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'category'>('date');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -886,18 +907,20 @@ export default function ReportsPageClient() {
       )}
 
       <div className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Tabs */}
-        <div className="flex items-center gap-1 mb-6 bg-muted/40 rounded-lg p-1 w-fit">
-          {(['library', 'scheduled'] as const).map(tab => (
+        {/* Tabs — desain pill/segmented, disamakan dengan halaman Sales */}
+        <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin mb-6">
+          {REPORT_TABS.map(tab => (
             <button
-              key={`tab-${tab}`}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeTab === tab ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              key={`tab-${tab.key}`}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
+                activeTab === tab.key
+                  ? 'bg-card text-foreground shadow-card'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab === 'library' ? 'Report Library' : 'Scheduled Reports'}
-              {tab === 'scheduled' && (
+              {tab.label}
+              {tab.key === 'scheduled' && (
                 <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">
                   {scheduleList.filter(s => s.status === 'Active').length}
                 </span>
@@ -905,6 +928,16 @@ export default function ReportsPageClient() {
             </button>
           ))}
         </div>
+
+        {/* Isi tab (masih kosong) -- diisi di step selanjutnya */}
+        {activeTab === 'business-overview' && <div />}
+        {activeTab === 'sales' && <div />}
+        {activeTab === 'purchases' && <div />}
+        {activeTab === 'inventory' && <div />}
+        {activeTab === 'fixed-assets' && <div />}
+        {activeTab === 'banking' && <div />}
+        {activeTab === 'tax' && <div />}
+        {activeTab === 'production' && <div />}
 
         {activeTab === 'library' && (
           <div className="flex gap-6">
