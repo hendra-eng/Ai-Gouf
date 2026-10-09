@@ -196,7 +196,12 @@ def buat_client(
     )
     if dibuat is None:
         return gagal(message="Gagal membuat data klien (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Data klien berhasil dibuat.", status_code=201)
+    # COA otomatis dari template industri (db_client.salin_coa_template_industri).
+    coa = dibuat.get("coa_template") or {}
+    pesan = "Data klien berhasil dibuat."
+    if coa.get("created"):
+        pesan += f" {coa['created']} akun COA dibuat dari template {coa['template']}."
+    return sukses(data=dibuat, message=pesan, status_code=201)
 
 
 @router.get(

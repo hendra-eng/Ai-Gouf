@@ -253,6 +253,7 @@ export default function ImportJournalModal({
       try {
         await createJeDraftWithLines({
           client_id: clientId,
+          management_client_id: activeClientId,
           je_number: g.je_number,
           entry_date: g.entry_date,
           period_label: (() => {

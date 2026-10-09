@@ -260,6 +260,7 @@ CREATE INDEX idx_sales_source_rows_file ON financial_transaction_sales_source_ro
 CREATE TABLE financial_transaction_sales_invoices (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id               UUID REFERENCES management_users(id_user),
+    management_client_id    UUID REFERENCES management_clients(id), -- [BARU] klien/perusahaan pemilik transaksi (filter per client di Financial Statements); BEDA dari client_id (akun yang login). Lihat backend/migrations/14-add_management_client_id_to_transactions.py
     invoice_no              VARCHAR(100) NOT NULL,                  -- mis. "INV-2024-0001"
     invoice_date            DATE NOT NULL,
     due_date                DATE,
@@ -458,6 +459,7 @@ CREATE INDEX idx_je_source_records_client_status ON financial_transaction_journa
 CREATE TABLE financial_transaction_journal_entry_drafts (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id               UUID REFERENCES management_users(id_user),
+    management_client_id    UUID REFERENCES management_clients(id), -- [BARU] klien/perusahaan pemilik transaksi (filter per client di Financial Statements); BEDA dari client_id (akun yang login). Lihat backend/migrations/14-add_management_client_id_to_transactions.py
     je_number               VARCHAR(100) NOT NULL,                 -- mis. "JE-2026-09-0042"
     entry_date              DATE NOT NULL,
     posting_date            DATE,                                  -- NULL sampai benar-benar diposting
@@ -604,7 +606,7 @@ CREATE TABLE financial_transaction_purchase_source_records (
     amount                     NUMERIC(24,2) NOT NULL DEFAULT 0,      -- net, belum termasuk pajak
     tax_amount                 NUMERIC(24,2) NOT NULL DEFAULT 0,
     total_amount                NUMERIC(24,2) NOT NULL DEFAULT 0,
-    currency                    VARCHAR(10) NOT NULL DEFAULT 'USD',
+    currency                    VARCHAR(10) NOT NULL DEFAULT 'IDR',
     status                      VARCHAR(20) NOT NULL DEFAULT 'Imported', -- Mapped/Pending Mapping/Validation Error/Imported
     validation_status            VARCHAR(20) NOT NULL DEFAULT 'Pending Validation', -- Valid/Pending Validation/Invalid
     -- [FIX] relatedPurchaseId (interface PurchaseSourceRecord) SENGAJA
@@ -632,6 +634,7 @@ CREATE INDEX idx_purchase_source_records_client_status ON financial_transaction_
 CREATE TABLE financial_transaction_purchase_transactions (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id               UUID REFERENCES management_users(id_user),
+    management_client_id    UUID REFERENCES management_clients(id), -- [BARU] klien/perusahaan pemilik transaksi (filter per client di Financial Statements); BEDA dari client_id (akun yang login). Lihat backend/migrations/14-add_management_client_id_to_transactions.py
     purchase_no             VARCHAR(100) NOT NULL,                 -- mis. "PUR-2026-09-0042"
     purchase_date            DATE NOT NULL,
     invoice_date              DATE,
@@ -649,7 +652,7 @@ CREATE TABLE financial_transaction_purchase_transactions (
     tax_amount                  NUMERIC(24,2) NOT NULL DEFAULT 0,
     total                       NUMERIC(24,2) NOT NULL DEFAULT 0,
     accounts_payable             NUMERIC(24,2) NOT NULL DEFAULT 0,
-    currency                     VARCHAR(10) NOT NULL DEFAULT 'USD',
+    currency                     VARCHAR(10) NOT NULL DEFAULT 'IDR',
     payment_status                VARCHAR(20) NOT NULL DEFAULT 'unpaid', -- unpaid/partially_paid/paid/overdue/on_hold (PaymentStatus)
     payment_terms                 VARCHAR(50),                           -- mis. "Net 30"
     due_date                      DATE,
@@ -662,6 +665,11 @@ CREATE TABLE financial_transaction_purchase_transactions (
     journal_entry_id               INTEGER REFERENCES journal_entries(id), -- diisi begitu transaksi ini disinkronkan ke jurnal native (Accounting Core V2)
     posting_date                   DATE,
     posted_at                      TIMESTAMPTZ,
+    ap_account_code                VARCHAR(50),                           -- [BARU migration 18] akun Cr Hutang Usaha; NULL = default 2100
+    ap_account_name                VARCHAR(255),
+    tax_account_code               VARCHAR(50),                           -- [BARU migration 18] akun Dr PPN Masukan; NULL = default 1300
+    tax_account_name               VARCHAR(255),
+    approved_at                    TIMESTAMPTZ,                           -- [BARU migration 18] diisi saat status -> approved
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_by                  UUID,
     edited_at                   TIMESTAMPTZ,
@@ -728,7 +736,7 @@ CREATE TABLE financial_transaction_purchase_exceptions (
     invoice_number               VARCHAR(100),
     purchase_date                DATE,
     amount                       NUMERIC(24,2) NOT NULL DEFAULT 0,
-    currency                     VARCHAR(10) NOT NULL DEFAULT 'USD',
+    currency                     VARCHAR(10) NOT NULL DEFAULT 'IDR',
     description                  TEXT NOT NULL,
     detected_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     assigned_to                  VARCHAR(255),                          -- nama user (teks bebas, pola sama dgn created_by_name di tabel #2) -- BUKAN UUID FK, exception ini bisa ditugaskan ke siapa saja bukan cuma akun client login
@@ -745,3 +753,43 @@ CREATE TABLE financial_transaction_purchase_exceptions (
 
 CREATE INDEX idx_purchase_exceptions_client_status ON financial_transaction_purchase_exceptions(client_id, status);
 CREATE INDEX idx_purchase_exceptions_transaction ON financial_transaction_purchase_exceptions(transaction_id);
+
+-- ============================================================
+-- FITUR MANAGEMENT > COA
+-- ============================================================
+-- Master Chart of Accounts per klien (management_clients). Kolom mengikuti
+-- sheet "COA <KODE>" di dataset/COA/COA_Clients_GOUF.xlsx: nomor & nama akun
+-- ASLI klien + lapisan semantik standar lintas-klien (IFRS-aligned).
+-- normal_balance tidak ada di Excel -- diturunkan dari account_classification
+-- (+ akun kontra), lihat backend/migrations/generate_seed_coa.py.
+-- TERPISAH dari tabel `coa` lama (FK ke clients integer).
+-- Migration: backend/migrations/16-create_management_client_coa.py
+-- Seed     : backend/migrations/seed_coa_{sau,npi,nbm}.sql
+CREATE TABLE management_client_coa (
+    id                           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id                    UUID REFERENCES management_clients(id),         -- NULL = akun unassigned (belum terhubung ke klien), lihat migrations/17-allow_unassigned_management_client_coa.py
+    client_code                  VARCHAR(50),
+    acc_no                       VARCHAR(50) NOT NULL,                 -- ACC NO asli klien, mis. "11100002" / "1-1100"
+    account_name                 VARCHAR(255) NOT NULL,                -- ACCOUNT NAME
+    account_classification       VARCHAR(30) NOT NULL,                 -- ASSET/LIABILITY/EQUITY/REVENUE/COST OF SALES/EXPENSE/OTHER INCOME/OTHER EXPENSE/INCOME TAX
+    account_head                 VARCHAR(50),                          -- CURRENT ASSET/NON-CURRENT ASSET/CURRENT LIABILITY/OPERATING EXPENSE/dst
+    account_sub                  VARCHAR(100),                         -- CASH & CASH EQUIVALENTS/TRADE RECEIVABLES/INVENTORIES/dst
+    normal_balance               VARCHAR(10),                          -- DEBIT/CREDIT
+    description                  TEXT,
+    international_standard_group VARCHAR(255),                         -- mis. "Assets > Current assets > Cash and cash equivalents"
+    standard_account_code        VARCHAR(100),                         -- kunci master lintas klien, mis. "std_asset_current_cash_bank"
+    ifrs_taxonomy_reference      VARCHAR(255),
+    ifrs_source                  VARCHAR(255),
+    is_active                    BOOLEAN NOT NULL DEFAULT true,
+    created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by                   UUID,
+    edited_at                    TIMESTAMPTZ,
+    edited_by                    UUID,
+    deleted_at                   TIMESTAMPTZ,
+    deleted_by                   UUID,
+    CONSTRAINT uq_management_client_coa_client_acc_no UNIQUE (client_id, acc_no)
+);
+
+CREATE INDEX idx_management_client_coa_client ON management_client_coa(client_id);
+CREATE UNIQUE INDEX uq_management_client_coa_unassigned_acc_no ON management_client_coa(acc_no) WHERE client_id IS NULL AND deleted_at IS NULL; -- UNIQUE (client_id, acc_no) tidak berlaku antar baris NULL
+CREATE INDEX idx_management_client_coa_standard_code ON management_client_coa(standard_account_code);

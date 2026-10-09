@@ -328,8 +328,10 @@ export interface BackendSalesInvoice {
   aktif: boolean;
 }
 
-export async function listSalesInvoices(clientId?: string | null, postingStatus?: string): Promise<BackendSalesInvoice[]> {
-  const res = await authenticatedFetch(`${SALES_BASE_URL}/invoices${qs({ client_id: clientId, posting_status: postingStatus })}`);
+/** companyId = management_clients.id (company aktif). Sebelumnya dikirim sbg `client_id`, padahal kolom
+ *  client_id di tabel invoice berisi id user (management_users) -> tab yang mengirim id company selalu kosong. */
+export async function listSalesInvoices(companyId?: string | null, postingStatus?: string): Promise<BackendSalesInvoice[]> {
+  const res = await authenticatedFetch(`${SALES_BASE_URL}/invoices${qs({ management_client_id: companyId, posting_status: postingStatus })}`);
   return baca<BackendSalesInvoice[]>(res);
 }
 
@@ -465,8 +467,9 @@ export interface BackendSalesException {
   aktif: boolean;
 }
 
-export async function listSalesExceptions(clientId?: string | null, status?: string): Promise<BackendSalesException[]> {
-  const res = await authenticatedFetch(`${SALES_BASE_URL}/exceptions${qs({ client_id: clientId, status })}`);
+/** companyId = management_clients.id (company aktif). */
+export async function listSalesExceptions(companyId?: string | null, status?: string): Promise<BackendSalesException[]> {
+  const res = await authenticatedFetch(`${SALES_BASE_URL}/exceptions${qs({ management_client_id: companyId, status })}`);
   return baca<BackendSalesException[]>(res);
 }
 
@@ -522,8 +525,9 @@ export interface BackendSalesActivityLog {
   created_at: string;
 }
 
-export async function listSalesActivityLogs(clientId?: string | null, invoiceId?: string): Promise<BackendSalesActivityLog[]> {
-  const res = await authenticatedFetch(`${SALES_BASE_URL}/activity-log${qs({ client_id: clientId, invoice_id: invoiceId })}`);
+/** companyId = management_clients.id (company aktif). */
+export async function listSalesActivityLogs(companyId?: string | null, invoiceId?: string): Promise<BackendSalesActivityLog[]> {
+  const res = await authenticatedFetch(`${SALES_BASE_URL}/activity-log${qs({ management_client_id: companyId, invoice_id: invoiceId })}`);
   return baca<BackendSalesActivityLog[]>(res);
 }
 

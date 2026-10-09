@@ -48,6 +48,9 @@ Akun (mapping_rules template):
                                      cabang/Dept. tsb (mis. persediaan per cabang SAU)
     - ap_account / tax_account     : akun Cr Hutang Usaha & Dr PPN Masukan,
                                      disimpan per transaksi (ap_account_* / tax_account_*)
+    Akun umum di atas (line/biaya/ap/tax) ditimpa Settings > Account Mapping
+    company (purchase_cogs / purchase_shipping / account_payable /
+    purchase_tax_receivable) kalau sudah diatur.
 
 File TIDAK disimpan ke disk -- diproses di memory saja.
 """
@@ -368,10 +371,7 @@ async def upload_purchase_import(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    user_id = current_user.get("id")  # management_users.id_user -- akun yang login (untuk created_by)
-    # client_id di financial_transaction_purchase_transactions = FK ke management_clients.id,
-    # jadi HARUS company yang sedang diupload, bukan ID user.
-    client_id = management_client_id
+    client_id = current_user.get("id")  # management_users.id_user -- pemilik transaksi (akun yang login)
     created_by_name = current_user.get("nama") or current_user.get("username")
 
     cocok = None
@@ -402,7 +402,13 @@ async def upload_purchase_import(
             status_code=201,
         )
 
-    recipe = template.get("mapping_rules") or {}
+    recipe = dict(template.get("mapping_rules") or {})
+    # Settings > Account Mapping company menimpa akun UMUM template (akun per
+    # cabang line_account_by_dept tetap paling spesifik).
+    akun_setting = dbc.akun_purchase_setting(management_client_id)
+    for kunci_recipe, kunci_setting in (("line_account", "line"), ("biaya_account", "biaya"), ("ap_account", "ap"), ("tax_account", "tax")):
+        if akun_setting.get(kunci_setting):
+            recipe[kunci_recipe] = {k: akun_setting[kunci_setting][k] for k in ("account_code", "account_name")}
     currency = recipe.get("currency_default", "IDR")
     category = recipe.get("category_default", "Inventory")
 
@@ -411,16 +417,12 @@ async def upload_purchase_import(
     skipped_invalid = 0
     skipped_duplicate = 0
 
-    # Cek duplikat sekali jalan (1 query), bukan 1 query per transaksi.
-    sudah_ada = dbc.list_purchase_nos_by_client(client_id, [t["purchase_no"] for t in blok if t["purchase_no"]])
-    antrean: List[Dict[str, Any]] = []  # transaksi valid yang menunggu disimpan sekaligus
-
     for t in blok:
         if t["errors"]:
             skipped_invalid += 1
             hasil_tx.append({"purchase_no": t["purchase_no"] or "-", "ok": False, "message": " ".join(t["errors"])})
             continue
-        if t["purchase_no"] in sudah_ada:
+        if dbc.get_purchase_transaction_by_client_and_no(client_id, t["purchase_no"]):
             skipped_duplicate += 1
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "This purchase number has already been imported previously."})
             continue
@@ -455,27 +457,12 @@ async def upload_purchase_import(
             "tax_account_code": akun_pajak.get("account_code") or None,
             "tax_account_name": akun_pajak.get("account_name") or None,
         }
-        sudah_ada.add(t["purchase_no"])  # duplikat nomor di file yang sama ikut terdeteksi
-        antrean.append({"t": t, "transaction": transaction_data, "lines": t["lines"]})
-
-    # Simpan semua sekaligus (1 sesi, 1 commit). Kalau gagal, ulangi satu-satu
-    # supaya transaksi bermasalah saja yang ditandai gagal.
-    if antrean:
-        if dbc.create_purchase_transactions_bulk(
-            [{"transaction": a["transaction"], "lines": a["lines"]} for a in antrean], created_by=user_id
-        ):
-            hasil_ok = [(a["t"], True) for a in antrean]
-        else:
-            hasil_ok = []
-            for a in antrean:
-                dibuat = dbc.create_purchase_transaction_with_lines(a["transaction"], a["lines"], created_by=user_id)
-                hasil_ok.append((a["t"], dibuat is not None))
-        for t, ok in hasil_ok:
-            if not ok:
-                hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
-                continue
-            created += 1
-            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."})
+        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id)
+        if dibuat is None:
+            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
+            continue
+        created += 1
+        hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."})
 
     dbc.touch_purchase_import_template_usage(template["id"])
 

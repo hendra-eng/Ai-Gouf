@@ -160,6 +160,8 @@ export function useJeSourceRecords(clientId: string | null | undefined): {
 export interface BackendJeDraft {
   id: string;
   client_id: string | null;
+  /** id management_clients -- klien pemilik transaksi (filter Financial Statements). */
+  management_client_id?: string | null;
   je_number: string;
   entry_date: string;
   posting_date: string | null;
@@ -220,6 +222,8 @@ export interface JeDraftLineInput {
 
 export interface JeDraftWithLinesInput {
   client_id?: string | null;
+  /** id management_clients -- klien pemilik transaksi (filter Financial Statements). */
+  management_client_id?: string | null;
   je_number: string;
   entry_date: string;
   posting_date?: string | null;

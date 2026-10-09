@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 import { XMarkIcon, PlusIcon, TrashIcon, PrinterIcon } from '@heroicons/react/24/outline';
 import { createJeDraftWithLines, type JeDraftLineInput } from '@/lib/journalEntryStore';
 import { useActiveClient } from '@/lib/activeClient';
+import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { exportJournalEntryPdf } from './exportJournalEntryPdf';
+import AccountNameAutocomplete from './AccountNameAutocomplete';
 
 // Jumlah baris jurnal yang langsung tersedia saat form dibuka. Tetap bisa
 // ditambah (Add Line) atau dikurangi sampai minimal 2 (syarat 1 debit + 1 kredit).
@@ -73,6 +75,20 @@ export default function NewJournalEntryModal({
   // Kop PDF (nama + logo) mengikuti perusahaan yang sedang aktif di dropdown header.
   const { clients, activeClientId, activeClientName } = useActiveClient();
   const activeClient = clients.find(c => c.id === activeClientId) ?? null;
+
+  // Saran Account Name = COA milik klien yang dipilih di dropdown header.
+  const { accounts: coaAccounts, loading: coaLoading } = useClientCoa(activeClientId, { activeOnly: true });
+  const coaByAccNo = useMemo(() => new Map(coaAccounts.map(a => [a.acc_no, a])), [coaAccounts]);
+
+  const pilihAkun = (key: number, akun: CoaAccount) => {
+    setLines(prev => prev.map(l => (l.key === key ? { ...l, account_code: akun.acc_no, account_name: akun.account_name } : l)));
+  };
+
+  // Account Code diketik manual & persis ada di COA -> nama akun ikut terisi.
+  const lengkapiDariKode = (key: number, kode: string) => {
+    const akun = coaByAccNo.get(kode.trim());
+    if (akun) pilihAkun(key, akun);
+  };
 
   const totals = useMemo(() => {
     const debit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
@@ -154,6 +170,7 @@ export default function NewJournalEntryModal({
     try {
       const dibuat = await createJeDraftWithLines({
         client_id: clientId,
+        management_client_id: activeClientId,
         je_number: jeNumber.trim(),
         entry_date: entryDate,
         period_label: periodLabel.trim(),
@@ -235,8 +252,19 @@ export default function NewJournalEntryModal({
               <tbody className="divide-y divide-border">
                 {lines.map((l, idx) => (
                   <tr key={l.key}>
-                    <td className="px-2 py-1.5"><input value={l.account_code} onChange={e => updateLine(l.key, 'account_code', e.target.value)} placeholder="1100" className="je-input w-full text-xs" /></td>
-                    <td className="px-2 py-1.5"><input value={l.account_name} onChange={e => updateLine(l.key, 'account_name', e.target.value)} placeholder="Cash" className="je-input w-full text-xs" /></td>
+                    <td className="px-2 py-1.5"><input value={l.account_code} onChange={e => updateLine(l.key, 'account_code', e.target.value)} onBlur={e => lengkapiDariKode(l.key, e.target.value)} placeholder="1100" className="je-input w-full text-xs font-mono" /></td>
+                    <td className="px-2 py-1.5">
+                      <AccountNameAutocomplete
+                        value={l.account_name}
+                        accounts={coaAccounts}
+                        loading={coaLoading}
+                        noClient={!activeClientId}
+                        onChange={v => updateLine(l.key, 'account_name', v)}
+                        onSelect={akun => pilihAkun(l.key, akun)}
+                        placeholder="Type to search account…"
+                        className="je-input w-full text-xs"
+                      />
+                    </td>
                     <td className="px-2 py-1.5"><input value={l.description} onChange={e => updateLine(l.key, 'description', e.target.value)} className="je-input w-full text-xs" /></td>
                     <td className="px-2 py-1.5"><input value={l.cost_center} onChange={e => updateLine(l.key, 'cost_center', e.target.value)} className="je-input w-full text-xs" /></td>
                     <td className="px-2 py-1.5"><input type="number" min="0" step="0.01" value={l.debit} onChange={e => updateLine(l.key, 'debit', e.target.value)} placeholder="0.00" className="je-input w-full text-xs text-right" /></td>

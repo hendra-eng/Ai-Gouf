@@ -7,19 +7,9 @@ Fitur Management > COA (master Chart of Accounts per klien):
 Standar SAMA dengan modules/management/clients_v1.py (amplop response
 {status, message, data, errors}, auth lewat middleware jwt_v1_middleware).
 
-Data di tabel `coa` (ORM db_client.py::ManagementClientCoa). client_id =
-management_clients.id (UUID). client_id NULL = akun "unassigned".
-
-Nilai memakai bahasa Indonesia, sesuai data existing:
-  account_classification : ASET, LIABILITAS, EKUITAS, PENDAPATAN,
-                           HARGA POKOK PENJUALAN, BEBAN, PENDAPATAN LAIN,
-                           BEBAN LAIN, PAJAK PENGHASILAN
-  normal_balance         : DEBET, KREDIT
-Input bahasa Inggris (ASSET, LIABILITY, EQUITY, REVENUE, COST OF SALES,
-EXPENSE, OTHER INCOME, OTHER EXPENSE, INCOME TAX, DEBIT, CREDIT) tetap
-diterima dan otomatis diubah ke padanan Indonesia.
-Kolom `kategori` (ASET/LIABILITAS/EKUITAS/PENDAPATAN/BEBAN -- dipakai laporan
-keuangan) diisi otomatis dari account_classification.
+Data di tabel `management_client_coa` (ORM db_client.py::ManagementClientCoa,
+DDL root/ddl-table, seed awal dari dataset/COA/COA_Clients_GOUF.xlsx lewat
+migrations/seed_coa_*.sql). client_id = management_clients.id (UUID).
 
 Endpoint:
     GET    /api/v1/management/coa/client/{client_id}   daftar COA 1 klien
@@ -42,6 +32,7 @@ bukan aksi bebas staf junior.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -60,44 +51,18 @@ router = APIRouter(prefix="/api/v1/management/coa", tags=["management-coa-v1"])
 
 LEVEL_MINIMAL_UBAH_COA = 3
 
-# Klasifikasi akun (versi Indonesia) -> kategori besar yang dipakai laporan keuangan.
-KATEGORI_DARI_KLASIFIKASI = {
-    "ASET": "ASET",
-    "LIABILITAS": "LIABILITAS",
-    "EKUITAS": "EKUITAS",
-    "PENDAPATAN": "PENDAPATAN",
-    "HARGA POKOK PENJUALAN": "BEBAN",
-    "BEBAN": "BEBAN",
-    "PENDAPATAN LAIN": "PENDAPATAN",
-    "BEBAN LAIN": "BEBAN",
-    "PAJAK PENGHASILAN": "BEBAN",
-}
-KLASIFIKASI_AKUN = tuple(KATEGORI_DARI_KLASIFIKASI)
-
-# Padanan bahasa Inggris (dari playground-willi) -> Indonesia.
-ALIAS_KLASIFIKASI = {
-    "ASSET": "ASET",
-    "LIABILITY": "LIABILITAS",
-    "EQUITY": "EKUITAS",
-    "REVENUE": "PENDAPATAN",
-    "COST OF SALES": "HARGA POKOK PENJUALAN",
-    "EXPENSE": "BEBAN",
-    "OTHER INCOME": "PENDAPATAN LAIN",
-    "OTHER EXPENSE": "BEBAN LAIN",
-    "INCOME TAX": "PAJAK PENGHASILAN",
-}
-
-SALDO_NORMAL = ("DEBET", "KREDIT")
-ALIAS_SALDO = {"DEBIT": "DEBET", "CREDIT": "KREDIT"}
+KLASIFIKASI_AKUN = (
+    "ASSET", "LIABILITY", "EQUITY", "REVENUE", "COST OF SALES",
+    "EXPENSE", "OTHER INCOME", "OTHER EXPENSE", "INCOME TAX",
+)
+SALDO_NORMAL = ("DEBIT", "CREDIT")
 
 
-def _normalisasi_klasifikasi(nilai: Optional[str]) -> Optional[str]:
-    """Rapikan & terjemahkan ke klasifikasi Indonesia. ValueError kalau tidak dikenal."""
+def _validasi_klasifikasi(nilai: Optional[str]) -> Optional[str]:
     if nilai is None:
         return None
-    nilai = " ".join(nilai.strip().upper().split())
-    nilai = ALIAS_KLASIFIKASI.get(nilai, nilai)
-    if nilai not in KATEGORI_DARI_KLASIFIKASI:
+    nilai = nilai.strip().upper()
+    if nilai not in KLASIFIKASI_AKUN:
         raise ValueError(f"account_classification harus salah satu dari: {', '.join(KLASIFIKASI_AKUN)}.")
     return nilai
 
@@ -106,9 +71,8 @@ def _validasi_saldo_normal(nilai: Optional[str]) -> Optional[str]:
     if nilai is None or nilai.strip() == "":
         return None
     nilai = nilai.strip().upper()
-    nilai = ALIAS_SALDO.get(nilai, nilai)
     if nilai not in SALDO_NORMAL:
-        raise ValueError("normal_balance harus DEBET atau KREDIT.")
+        raise ValueError("normal_balance harus DEBIT atau CREDIT.")
     return nilai
 
 
@@ -128,7 +92,7 @@ class CoaCreateRequest(BaseModel):
     client_id: Optional[str] = None
     acc_no: str = Field(..., min_length=1, max_length=50)
     account_name: str = Field(..., min_length=1, max_length=255)
-    account_classification: str = Field(..., max_length=40)
+    account_classification: str = Field(..., max_length=30)
     account_head: Optional[str] = Field(None, max_length=50)
     account_sub: Optional[str] = Field(None, max_length=100)
     normal_balance: Optional[str] = Field(None, max_length=10)
@@ -139,7 +103,7 @@ class CoaCreateRequest(BaseModel):
     ifrs_source: Optional[str] = Field(None, max_length=255)
     is_active: bool = True
 
-    _cek_klasifikasi = field_validator("account_classification")(_normalisasi_klasifikasi)
+    _cek_klasifikasi = field_validator("account_classification")(_validasi_klasifikasi)
     _cek_saldo = field_validator("normal_balance")(_validasi_saldo_normal)
 
 
@@ -147,7 +111,7 @@ class CoaUpdateRequest(BaseModel):
     """Semua field opsional -- partial update. client_id tidak bisa dipindah."""
     acc_no: Optional[str] = Field(None, min_length=1, max_length=50)
     account_name: Optional[str] = Field(None, min_length=1, max_length=255)
-    account_classification: Optional[str] = Field(None, max_length=40)
+    account_classification: Optional[str] = Field(None, max_length=30)
     account_head: Optional[str] = Field(None, max_length=50)
     account_sub: Optional[str] = Field(None, max_length=100)
     normal_balance: Optional[str] = Field(None, max_length=10)
@@ -158,7 +122,7 @@ class CoaUpdateRequest(BaseModel):
     ifrs_source: Optional[str] = Field(None, max_length=255)
     is_active: Optional[bool] = None
 
-    _cek_klasifikasi = field_validator("account_classification")(_normalisasi_klasifikasi)
+    _cek_klasifikasi = field_validator("account_classification")(_validasi_klasifikasi)
     _cek_saldo = field_validator("normal_balance")(_validasi_saldo_normal)
 
 
@@ -169,11 +133,7 @@ class CoaAssignRequest(BaseModel):
 
 def _payload_bersih(payload: BaseModel) -> Dict[str, Any]:
     data = payload.model_dump(exclude_unset=True)
-    data = {k: (_rapikan_teks(v) if isinstance(v, str) else v) for k, v in data.items()}
-    # kategori (5 kategori besar untuk laporan) selalu ikut klasifikasi.
-    if data.get("account_classification"):
-        data["kategori"] = KATEGORI_DARI_KLASIFIKASI[data["account_classification"]]
-    return data
+    return {k: (_rapikan_teks(v) if isinstance(v, str) else v) for k, v in data.items()}
 
 
 def _acc_no_bentrok(client_id: Optional[str], acc_no: str, kecuali_id: Optional[str] = None):
@@ -189,17 +149,6 @@ def _label_tempat(client_id: Optional[str]) -> str:
     return "klien ini" if client_id else "daftar akun unassigned"
 
 
-def _filter_klasifikasi_query(classification: Optional[str]):
-    """Normalisasi query ?classification= (terima Indonesia/Inggris).
-    Return (nilai, None) kalau valid/kosong, (None, pesan_error) kalau tidak dikenal."""
-    if not classification or not classification.strip():
-        return None, None
-    try:
-        return _normalisasi_klasifikasi(classification), None
-    except ValueError as e:
-        return None, str(e)
-
-
 # ============================================================
 # ENDPOINTS
 # ============================================================
@@ -208,41 +157,64 @@ def _filter_klasifikasi_query(classification: Optional[str]):
 def daftar_coa_client(
     client_id: str,
     search: Optional[str] = Query(None, description="Cari di acc_no atau account_name (substring, tidak case-sensitive)."),
-    classification: Optional[str] = Query(None, description="Filter klasifikasi/kategori, mis. ASET (ASSET juga diterima)."),
+    classification: Optional[str] = Query(None, description="Filter account_classification, mis. ASSET."),
     active_only: bool = Query(False, description="Hanya akun is_active = true (mis. untuk autocomplete jurnal)."),
     limit: Optional[int] = Query(None, ge=1, le=5000),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     if dbc.get_management_client_by_id(client_id) is None:
         return gagal(message="Client tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    klasifikasi, error = _filter_klasifikasi_query(classification)
-    if error:
-        return gagal(message=error, errors={"code": "INVALID_CLASSIFICATION"}, status_code=422)
     data = dbc.list_management_client_coa(
         client_id,
         search=search,
-        account_classification=klasifikasi,
+        account_classification=classification,
         hanya_aktif=active_only,
         limit=limit,
     )
     return sukses(data=data, message="OK")
 
 
+@router.get("/client/{client_id}/balances", summary="Saldo per akun COA 1 klien (dari jurnal POSTED)")
+def saldo_coa_client(
+    client_id: str,
+    as_of: Optional[date] = Query(None, description="Saldo s.d. tanggal ini (inklusif). Kosong = semua jurnal POSTED."),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    """Total debit & kredit per acc_no dari SEMUA jurnal POSTED klien -- sumber
+    sama persis dengan Financial Statements (dbc.ambil_baris_jurnal_posted_transaksi:
+    Journal Entry termasuk Opening Balance, Sales, Purchase), jadi angkanya
+    konsisten dengan Trial Balance. Saldo bertanda (debit - kredit); frontend
+    mengubahnya ke sisi saldo normal akun."""
+    if dbc.get_management_client_by_id(client_id) is None:
+        return gagal(message="Client tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+    total: Dict[str, Dict[str, float]] = {}
+    for baris in dbc.ambil_baris_jurnal_posted_transaksi(management_client_id=client_id, sampai_tanggal=as_of):
+        kode = (baris.get("account_code") or "").strip()
+        if not kode:
+            continue
+        t = total.setdefault(kode, {"debit": 0.0, "credit": 0.0})
+        t["debit"] += float(baris.get("debit") or 0)
+        t["credit"] += float(baris.get("kredit") or 0)
+    data = [
+        {"acc_no": kode, "debit": round(t["debit"], 2), "credit": round(t["credit"], 2),
+         "balance": round(t["debit"] - t["credit"], 2)}
+        for kode, t in sorted(total.items())
+    ]
+    return sukses(data=data, message="OK")
+
+
 @router.get("/unassigned", summary="Daftar akun COA yang belum terhubung ke klien")
 def daftar_coa_unassigned(
     search: Optional[str] = Query(None, description="Cari di acc_no atau account_name (substring, tidak case-sensitive)."),
-    classification: Optional[str] = Query(None, description="Filter klasifikasi/kategori, mis. ASET (ASSET juga diterima)."),
+    classification: Optional[str] = Query(None, description="Filter account_classification, mis. ASSET."),
     active_only: bool = Query(False, description="Hanya akun is_active = true."),
     limit: Optional[int] = Query(None, ge=1, le=5000),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    klasifikasi, error = _filter_klasifikasi_query(classification)
-    if error:
-        return gagal(message=error, errors={"code": "INVALID_CLASSIFICATION"}, status_code=422)
     data = dbc.list_management_client_coa(
         None,
         search=search,
-        account_classification=klasifikasi,
+        account_classification=classification,
         hanya_aktif=active_only,
         limit=limit,
     )
@@ -303,7 +275,7 @@ def buat_coa(
 
     status_bentrok, lama = _acc_no_bentrok(client_id, data["acc_no"])
     if status_bentrok == "terhapus" and not client_id:
-        # Pool unassigned tidak terkena UNIQUE (client_id, no_akun) -- cukup buat baris baru.
+        # Pool unassigned tidak terkena UNIQUE (client_id, acc_no) -- cukup buat baris baru.
         status_bentrok = None
     if status_bentrok == "aktif":
         return gagal(
@@ -312,7 +284,7 @@ def buat_coa(
             status_code=409,
         )
     if status_bentrok == "terhapus":
-        # UNIQUE (client_id, no_akun) tetap berlaku untuk baris terhapus --
+        # UNIQUE (client_id, acc_no) tetap berlaku untuk baris terhapus --
         # hidupkan lagi baris lama dengan isi baru.
         dibuat = dbc.restore_management_client_coa(lama["id"], data, updated_by=current_user.get("id"))
     else:

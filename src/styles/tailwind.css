@@ -3,10 +3,30 @@
 @tailwind utilities;
 
 :root {
-  --background: #F8FAFC;
+  /* ===== Tema brand hijau (2026-10-05) =====
+     primary   #0F7D4E  tombol, link aktif
+     highlight #22C55E  highlight, icon        (token "secondary" brand; --secondary
+                                                 tetap abu netral karena dipakai sbg
+                                                 latar netral di banyak halaman)
+     background #FFFFFF latar section/halaman (2026-10-07: dari hijau muda
+                        #ECFDF5 ke putih atas permintaan user)
+     dark      #0B5E5C  teks kuat
+     nav       #0E2F26  latar header (Topbar) & sidebar
+     card      #FFFFFF  konten utama
+     *-rgb = channel RGB supaya modifier opacity Tailwind (bg-primary/10) jalan. */
+  --background: #FFFFFF;
   --foreground: #0F172A;
-  --primary: #1B4FD8;
+  --primary: #0F7D4E;
+  --primary-rgb: 15 125 78;
   --primary-foreground: #FFFFFF;
+  --highlight: #22C55E;
+  --highlight-rgb: 34 197 94;
+  --highlight-foreground: #FFFFFF;
+  --dark: #0B5E5C;
+  --dark-rgb: 11 94 92;
+  --dark-foreground: #FFFFFF;
+  --nav: #0E2F26;
+  --nav-rgb: 14 47 38;
   --secondary: #F1F5F9;
   --secondary-foreground: #334155;
   --accent: #7C3AED;
@@ -17,7 +37,7 @@
   --card-foreground: #0F172A;
   --border: #E2E8F0;
   --input: #E2E8F0;
-  --ring: #1B4FD8;
+  --ring: #0F7D4E;
   --radius: 0.5rem;
   --font-sans: var(--font-plus-jakarta-sans), sans-serif;
   --font-mono: var(--font-ibm-plex-mono), monospace;
@@ -33,7 +53,7 @@
   --ai: #7C3AED;
   --ai-bg: #F5F3FF;
 
-  --chart-1: #1B4FD8;
+  --chart-1: #0F7D4E;
   --chart-2: #7C3AED;
   --chart-3: #059669;
   --chart-4: #D97706;
@@ -311,7 +331,7 @@
   }
   .fin-btn-primary:hover {
     opacity: 0.9;
-    box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+    box-shadow: 0 2px 8px rgba(15,125,78,0.3);
   }
   .fin-btn-secondary {
     background-color: var(--secondary);
@@ -345,7 +365,7 @@
     color: var(--foreground);
   }
   .nav-item.active {
-    background-color: #eff6ff;
+    background-color: var(--background);
     color: var(--primary);
   }
   .section-label {
@@ -393,7 +413,7 @@
   }
   .filter-btn.active {
     border-color: var(--primary);
-    background-color: #eff6ff;
+    background-color: var(--background);
     color: var(--primary);
   }
 
@@ -504,12 +524,26 @@
   .table-row-hover  {
     @apply transition-colors duration-100 cursor-pointer;
   }
+  /* Menu Sidebar (latar nav #0E2F26): aktif = latar putih tipis + garis &
+     ikon highlight #22C55E; tidak aktif = putih redup. */
   .nav-item-active  {
-    @apply text-primary font-semibold;
+    @apply bg-white/10 text-white font-semibold;
+    box-shadow: inset 3px 0 0 var(--highlight);
+  }
+  .nav-item-active svg {
+    color: var(--highlight);
   }
 
   .nav-item-inactive {
-    @apply text-muted-foreground hover:bg-muted hover:text-foreground;
+    @apply text-white/75 hover:bg-white/10 hover:text-white;
+  }
+
+  /* Scrollbar di atas latar gelap. */
+  .scrollbar-on-dark {
+    scrollbar-color: rgba(255,255,255,0.25) transparent;
+  }
+  .scrollbar-on-dark::-webkit-scrollbar-thumb {
+    background-color: rgba(255,255,255,0.25);
   }
 }
 
@@ -517,4 +551,10 @@
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
+}
+
+/* Teks kuat (judul & bold) memakai warna dark brand. Selector 2 kelas supaya
+   menang atas .text-foreground biasa tanpa menyentuh tiap komponen. */
+.text-foreground:is(h1, h2, h3, h4, .font-bold) {
+  color: var(--dark);
 }

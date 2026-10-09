@@ -47,8 +47,14 @@ backend/*.log
 backend/pola_data/**/*.bak
 backend/tests/__pycache__/
 backend/debug_routes*_output.txt
+backend/logs/
+backend/migrations/history-migration.md
 
 .env
+
+task-claude.md
 backend/logs/*.log*
-backend/logs/
 backend/encryption.key
+
+Gouf Task Documents.xlsx
+dataset/picture/*

@@ -135,6 +135,7 @@ class JeSourceRecordUpdateRequest(BaseModel):
 
 class JeDraftCreateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     je_number: str = Field(..., min_length=1, max_length=100)
     entry_date: date
     posting_date: Optional[date] = None
@@ -158,6 +159,7 @@ class JeDraftCreateRequest(BaseModel):
 
 class JeDraftUpdateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     je_number: Optional[str] = Field(None, min_length=1, max_length=100)
     entry_date: Optional[date] = None
     posting_date: Optional[date] = None
@@ -198,6 +200,7 @@ class JeDraftLineInput(BaseModel):
 
 class JeDraftWithLinesCreateRequest(BaseModel):
     client_id: Optional[str] = None
+    management_client_id: Optional[str] = None  # [BARU] id management_clients pemilik transaksi (filter Financial Statements)
     je_number: str = Field(..., min_length=1, max_length=100)
     entry_date: date
     posting_date: Optional[date] = None

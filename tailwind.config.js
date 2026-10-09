@@ -14,8 +14,36 @@ module.exports = {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
         primary: {
-          DEFAULT: 'var(--primary)',
+          DEFAULT: 'rgb(var(--primary-rgb) / <alpha-value>)',
           foreground: 'var(--primary-foreground)',
+        },
+        // Tema brand (lihat :root di src/styles/tailwind.css)
+        highlight: {
+          DEFAULT: 'rgb(var(--highlight-rgb) / <alpha-value>)',
+          foreground: 'var(--highlight-foreground)',
+        },
+        dark: {
+          DEFAULT: 'rgb(var(--dark-rgb) / <alpha-value>)',
+          foreground: 'var(--dark-foreground)',
+        },
+        // Latar header & sidebar.
+        nav: 'rgb(var(--nav-rgb) / <alpha-value>)',
+        // Palet "blue" Tailwind DIARAHKAN ke skala hijau brand: ratusan class
+        // blue-* (bg-blue-50, text-blue-600, hover:bg-blue-800, ring-blue-100, ...)
+        // tersebar di halaman-halaman lama, jadi semuanya ikut tema dari sini.
+        // 600 = primary, 500 = highlight, 800 = dark.
+        blue: {
+          50: '#ECFDF5',
+          100: '#D1FAE5',
+          200: '#A7F3D0',
+          300: '#6EE7B7',
+          400: '#4ADE80',
+          500: '#22C55E',
+          600: '#0F7D4E',
+          700: '#0D6B4A',
+          800: '#0B5E5C',
+          900: '#094B49',
+          950: '#063331',
         },
         secondary: {
           DEFAULT: 'var(--secondary)',
@@ -117,8 +145,8 @@ module.exports = {
         'card-lg': '0 16px 28px -6px rgba(15,23,42,0.16), 0 8px 12px -6px rgba(15,23,42,0.08)',
         drawer: '-4px 0 24px rgba(0,0,0,0.12)',
         'card-hover': '0 4px 12px rgba(0,0,0,0.5)',
-        glow: '0 0 20px rgba(59,130,246,0.15)',
-        'glow-sm': '0 0 10px rgba(59,130,246,0.1)',
+        glow: '0 0 20px rgba(15,125,78,0.15)',
+        'glow-sm': '0 0 10px rgba(15,125,78,0.1)',
 
         // Baru dari Kodingan 2
         dropdown: '0 4px 16px rgba(0,0,0,0.10)',

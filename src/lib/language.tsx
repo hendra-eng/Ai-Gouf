@@ -1167,6 +1167,7 @@ const translations: Dict = {
   'Audit': { en: 'Audit', id: 'Audit', zh: '审计' },
   'Reports': { en: 'Reports', id: 'Laporan', zh: '报告' },
   'Clients': { en: 'Clients', id: 'Klien', zh: '客户' },
+  'Chart of Accounts': { en: 'Chart of Accounts', id: 'Bagan Akun (COA)', zh: '会计科目表' },
   'Documents': { en: 'Documents', id: 'Dokumen', zh: '文档' },
 
   // ─── Sidebar: footer & aria labels ───

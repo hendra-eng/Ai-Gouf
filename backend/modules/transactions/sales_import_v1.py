@@ -806,7 +806,7 @@ def promote_source_file_to_invoices(
             dibuat += 1
             # Akun jurnal langsung mengikuti akun default klien (COA klien) --
             # dilewati diam-diam kalau klien belum punya pengaturan akun.
-            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=user_id)
+            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=client_id)
         else:
             dilewati_invoice_bentrok += 1  # gagal simpan (mis. race condition duplikat) -- hitung sbg dilewati, bukan error keras
 

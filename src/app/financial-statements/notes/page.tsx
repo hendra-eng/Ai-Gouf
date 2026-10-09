@@ -1,14 +1,11 @@
 import React from 'react';
-import NotesHeader from './components/NotesHeader';
-import NotesOverviewGrid from './components/NotesOverviewGrid';
-import NotesMainContent from './components/NotesMainContent';
+import NotesClient from '../components/fs/NotesClient';
 
-export default function NotesToFinancialStatementsPage() {
-  return (
-    <div className="space-y-5 fade-in">
-      <NotesHeader />
-      <NotesOverviewGrid />
-      <NotesMainContent />
-    </div>
-  );
+export const metadata = {
+  title: 'Notes to Financial Statements — FinovaAI',
+  description: 'CALK framework with GL-linked tables, overrides and audit trail.',
+};
+
+export default function NotesPage() {
+  return <NotesClient />;
 }

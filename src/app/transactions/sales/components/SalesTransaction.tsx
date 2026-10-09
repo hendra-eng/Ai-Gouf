@@ -2,8 +2,10 @@
 
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import PrintMenu from '@/components/shared/PrintMenu';
+import { printReport, type PrintColumn, type PrintFormat, type PrintReport } from '@/lib/printExport';
 import {
-  Download, Plus, Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
+  Plus, Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
   Calendar, CheckCircle, Send, Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
@@ -90,6 +92,81 @@ const STATUS_STYLE: Record<string, string> = {
   Approved: 'bg-purple-100 text-purple-700',
 };
 
+// Laporan Print (CSV / Excel / PDF): daftar = 1 baris per invoice sesuai
+// kolom tabel; detail = 1 invoice dengan rincian DPP/PPN/PPh/Gross.
+const SALES_PRINT_COLUMNS: PrintColumn[] = [
+  { key: 'date', header: 'Date', width: 12 },
+  { key: 'id', header: 'Invoice', width: 20 },
+  { key: 'customer', header: 'Customer', width: 26 },
+  { key: 'cabang', header: 'Branch', width: 14 },
+  { key: 'desc', header: 'Description', width: 30 },
+  { key: 'dpp', header: 'Tax Base (DPP)', type: 'money' },
+  { key: 'ppn', header: 'VAT (PPN)', type: 'money' },
+  { key: 'pph', header: 'WHT (PPh)', type: 'money' },
+  { key: 'gross', header: 'Gross', type: 'money' },
+  { key: 'paid', header: 'Paid', type: 'money' },
+  { key: 'outstanding', header: 'Outstanding', type: 'money' },
+  { key: 'dueDate', header: 'Due Date', width: 12 },
+  { key: 'type', header: 'Type', width: 16 },
+  { key: 'journal', header: 'Journal', width: 10 },
+  { key: 'status', header: 'Status', width: 10 },
+];
+
+function buildSalesListReport(rows: TrxItem[], companyName?: string, printedBy?: string): PrintReport {
+  const sum = (k: 'dpp' | 'ppn' | 'pph' | 'gross' | 'paid' | 'outstanding') => rows.reduce((s, r) => s + r[k], 0);
+  return {
+    title: 'Sales Transactions',
+    fileBase: 'Sales-Transactions',
+    companyName,
+    printedBy,
+    subtitle: `${rows.length} transactions`,
+    orientation: 'landscape',
+    table: {
+      columns: SALES_PRINT_COLUMNS,
+      rows: rows.map(r => ({ ...r, journal: r.journal || '' })),
+      totals: { desc: 'TOTAL', dpp: sum('dpp'), ppn: sum('ppn'), pph: sum('pph'), gross: sum('gross'), paid: sum('paid'), outstanding: sum('outstanding') },
+    },
+  };
+}
+
+function buildSalesDetailReport(r: TrxItem, companyName?: string, printedBy?: string): PrintReport {
+  return {
+    title: 'Sales Invoice',
+    fileBase: `Sales-${r.id}`,
+    companyName,
+    printedBy,
+    subtitle: r.id,
+    orientation: 'portrait',
+    fields: [
+      ['Invoice', r.id],
+      ['Status', r.status],
+      ['Invoice Date', r.date],
+      ['Due Date', r.dueDate],
+      ['Customer', r.customer],
+      ['Branch', r.cabang],
+      ['Transaction Type', r.type],
+      ['Project', r.project],
+      ['Tax Invoice Status', r.taxStatus],
+      ['Journal', r.journal || '—'],
+    ],
+    table: {
+      columns: [
+        { key: 'desc', header: 'Description', width: 40 },
+        { key: 'dpp', header: 'Tax Base (DPP)', type: 'money' },
+        { key: 'ppn', header: 'VAT (PPN 11%)', type: 'money' },
+        { key: 'pph', header: 'WHT (PPh 1%)', type: 'money' },
+        { key: 'gross', header: 'Gross', type: 'money' },
+      ],
+      rows: [{ desc: r.desc || '—', dpp: r.dpp, ppn: r.ppn, pph: r.pph, gross: r.gross }],
+    },
+    summary: [
+      ['Total (Gross)', r.gross, 'money'],
+      ['Paid', r.paid, 'money'],
+      ['Outstanding', r.outstanding, 'money'],
+    ],
+  };
+}
+
 const TRANSACTION_TYPES = ['Penjualan Barang', 'Penjualan Jasa'];
 const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 'Partial', 'Paid'];
 
@@ -107,12 +184,12 @@ const emptyForm = {
 export default function SalesTransaction() {
   const { t } = useLanguage();
   const { user } = useAuth();
-  // userId = akun yang login (management_users) -- untuk kolom "siapa" (posted_by, mapped_by, assigned_to, resolved_by).
-  // clientId = company aktif dari Switch Company (management_clients) -- untuk client_id & filter data, sama seperti Purchase.
-  const userId = user?.id ?? null;
-  const { activeClientId } = useActiveClient();
-  const clientId = activeClientId ?? null;
-  const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(clientId);
+  const clientId = user?.id ?? null;
+  const { clients, activeClientId, activeClientName } = useActiveClient();
+  const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
+  const printedBy = user?.nama || user?.username || undefined;
+  // Daftar invoice per company aktif (bukan per user login).
+  const { invoices: backendInvoices, loading, error, refresh } = useSalesInvoices(activeClientId ?? null);
   const transactions = useMemo(() => backendInvoices.map(petakanDariBackend), [backendInvoices]);
 
   // Filters
@@ -256,8 +333,10 @@ export default function SalesTransaction() {
     try {
       await updateSalesInvoice(uuid, {
         posting_status: 'Posted',
+        // Invoice Posted langsung terbaca GL/Financial Statements (ambil_baris_jurnal_posted_transaksi).
+        journal_sync_status: 'Synced',
         posted_at: new Date().toISOString(),
-        posted_by: userId ?? undefined,
+        posted_by: clientId ?? undefined,
       });
       await createSalesActivityLog({
         client_id: clientId ?? undefined,
@@ -285,18 +364,14 @@ export default function SalesTransaction() {
     setOpenMenuId(null);
   };
 
-  const handleExport = () => {
-    const headers = ['Date', 'Invoice', 'Customer', 'Branch', 'Description', 'Tax Base (DPP)', 'VAT', 'Withholding Tax (PPh)', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Type', 'Journal', 'Status'];
-    const rows = filtered.map(r => [r.date, r.id, r.customer, r.cabang, r.desc, r.dpp, r.ppn, r.pph, r.gross, r.paid, r.outstanding, r.dueDate, t(r.type), r.journal, r.status]);
-    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sales-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(t('Export berhasil'), { description: `${filtered.length} ${t('baris diunduh sebagai CSV.')}` });
+  // Print daftar = semua transaksi yang lolos filter (bukan cuma halaman aktif).
+  const printList = async (format: PrintFormat) => {
+    await printReport(buildSalesListReport(filtered.map(r => ({ ...r, type: t(r.type) })), companyName, printedBy), format);
+    toast.success(t('Export berhasil'), { description: `${filtered.length} ${t('transaksi')}` });
+  };
+  const printDetail = async (format: PrintFormat) => {
+    if (!selectedTrx) return;
+    await printReport(buildSalesDetailReport({ ...selectedTrx, type: t(selectedTrx.type), taxStatus: t(selectedTrx.taxStatus) }, companyName, printedBy), format);
   };
 
   const submitAddTransaction = async () => {
@@ -304,7 +379,7 @@ export default function SalesTransaction() {
       toast.error(t('Lengkapi Customer, Deskripsi, dan DPP terlebih dahulu.'));
       return;
     }
-    if (!userId || !clientId) {
+    if (!clientId) {
       toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
       return;
     }
@@ -438,9 +513,7 @@ export default function SalesTransaction() {
 
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
 
-          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs text-foreground hover:bg-muted transition-colors ml-auto">
-            <Download size={12} /> {t('Export')}
-          </button>
+          <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} className="ml-auto" />
           <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
             <Plus size={12} /> {t('Tambah Transaksi')}
           </button>
@@ -679,7 +752,8 @@ export default function SalesTransaction() {
 
             {!isEditing && (
               <>
-                <div className="flex gap-2 pt-2 border-t border-border">
+                <PrintMenu onPrint={printDetail} label={t('Print')} align="left" className="pt-2 border-t border-border" />
+                <div className="flex gap-2">
                   <button onClick={() => { setDrawerTab('detail'); }} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
                     <Eye size={12} /> {t('Lihat')}
                   </button>

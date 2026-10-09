@@ -91,6 +91,59 @@ export async function fetchUnassignedCoa(params: CoaQuery = {}): Promise<CoaAcco
   return baca<CoaAccount[]>(await fetch(`${COA_URL}/unassigned${queryString(params)}`, { cache: 'no-store' }));
 }
 
+export interface CoaBalance {
+  acc_no: string;
+  debit: number;
+  credit: number;
+  /** debit - kredit (bertanda). Lihat balanceOnNormalSide() untuk tampilan. */
+  balance: number;
+}
+
+/** Saldo per akun dari SEMUA jurnal POSTED klien (sumber sama dengan Financial Statements). */
+export async function fetchCoaBalances(clientId: string, asOf?: string): Promise<CoaBalance[]> {
+  const qs = asOf ? `?as_of=${encodeURIComponent(asOf)}` : '';
+  return baca<CoaBalance[]>(await fetch(`${COA_URL}/client/${encodeURIComponent(clientId)}/balances${qs}`, { cache: 'no-store' }));
+}
+
+/** Saldo dilihat dari sisi saldo normal akun: positif = wajar, negatif = abnormal. */
+export function balanceOnNormalSide(balance: number, normal: NormalBalance | null): number {
+  return normal === 'CREDIT' ? -balance : balance;
+}
+
+/** Peta acc_no -> saldo untuk 1 klien. Refresh saat klien berganti / refresh() dipanggil. */
+export function useCoaBalances(clientId: string | null) {
+  const [balances, setBalances] = useState<Record<string, CoaBalance>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    if (!clientId) {
+      setBalances({});
+      return;
+    }
+    let batal = false;
+    setLoading(true);
+    fetchCoaBalances(clientId)
+      .then(rows => {
+        if (batal) return;
+        setBalances(Object.fromEntries(rows.map(r => [r.acc_no, r])));
+        setError(null);
+      })
+      .catch(e => { if (!batal) setError(e instanceof Error ? e.message : 'Failed to load balances.'); })
+      .finally(() => { if (!batal) setLoading(false); });
+    return () => { batal = true; };
+  }, [clientId, tick]);
+
+  return { balances, loading, error, refresh };
+}
+
+/** Detail 1 akun (dipakai halaman edit /coa/[id]/edit). */
+export async function fetchCoaAccount(id: string): Promise<CoaAccount> {
+  return baca<CoaAccount>(await fetch(`${COA_URL}/${encodeURIComponent(id)}`, { cache: 'no-store' }));
+}
+
 export interface CoaAssignResult {
   assigned: CoaAccount[];
   skipped: { id: string; acc_no: string | null; account_name: string | null; reason: string }[];

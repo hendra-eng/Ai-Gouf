@@ -284,6 +284,10 @@ def authenticate(username: str, password: str) -> Optional[Dict[str, Any]]:
 
     if _db_aktif():
         user = _cari_user_db(username)
+        if user and user.get("aktif") is False:
+            # User dinonaktifkan (Settings > User Management) atau sudah dihapus.
+            logger.warning(f"❌ Login ditolak (user nonaktif): {username}")
+            return None
         if user and verify_password(password, user.get("password_hash", "")):
             logger.info(f"✅ Login berhasil (database): {username}")
             return {

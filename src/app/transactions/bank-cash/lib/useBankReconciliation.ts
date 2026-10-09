@@ -18,7 +18,7 @@ import {
   rekonAutoCocokkan,
   rekonBatalkan,
   rekonDaftarPembayaran,
-  ambilCoaClient,
+  rekonDaftarAkun,
 } from '@/app/agent-ai/lib/api';
 
 export interface SaranAlokasi {
@@ -126,7 +126,7 @@ export function useBankReconciliation() {
       return;
     }
     let batal = false;
-    ambilCoaClient(clientId)
+    rekonDaftarAkun(clientId)
       .then((res: any) => {
         if (batal) return;
         const daftar: any[] = Array.isArray(res) ? res : res?.coa || [];
