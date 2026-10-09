@@ -59,7 +59,7 @@ export default function JournalPreviewPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="preview" />
         <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>Loading journal entries…</div>
       </div>
@@ -68,7 +68,7 @@ export default function JournalPreviewPage() {
 
   if (!je) {
     return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="preview" />
         <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>No journal entries to preview yet.</div>
       </div>
@@ -76,7 +76,7 @@ export default function JournalPreviewPage() {
   }
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="preview" />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">

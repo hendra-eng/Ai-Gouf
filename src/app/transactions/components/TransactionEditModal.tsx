@@ -260,7 +260,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-border flex-shrink-0">
           <div>
-            <h2 className="text-xl font-700 text-foreground">{isNew ? 'Tambah Jurnal Baru' : 'Edit Transaksi'}</h2>
+            <h2 className="text-xl font-bold text-foreground">{isNew ? 'Tambah Jurnal Baru' : 'Edit Transaksi'}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isNew ? 'Isi detail transaksi di bawah, lalu simpan.' : `${form.txId} · ${form.jeId}`}
             </p>
@@ -308,7 +308,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
             // lengkap wajib sejak dibuat — lihat komentar onSave di Props).
             <div className="space-y-3">
               <div className="rounded-lg border border-border p-3 space-y-3">
-                <p className="text-xs font-700 text-foreground">Sisi Debet</p>
+                <p className="text-xs font-bold text-foreground">Sisi Debet</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
@@ -327,7 +327,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
                 </div>
               </div>
               <div className="rounded-lg border border-border p-3 space-y-3">
-                <p className="text-xs font-700 text-foreground">Sisi Kredit</p>
+                <p className="text-xs font-bold text-foreground">Sisi Kredit</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-muted-foreground mb-1.5">Kode Akun</label>
@@ -606,7 +606,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
 
         {/* Footer */}
         <div className="flex items-center justify-between p-5 border-t border-border bg-secondary/30 flex-shrink-0">
-          <button onClick={onClose} className="text-sm font-500 text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={onClose} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
             Batal
           </button>
           <button

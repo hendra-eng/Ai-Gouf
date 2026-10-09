@@ -186,7 +186,7 @@ export default function BankFeedPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       <UploadPanel />
@@ -238,7 +238,7 @@ export default function BankFeedPage() {
               <thead>
                 <tr className="border-b border-border bg-muted/20">
                   {['Tanggal', 'Keterangan', 'Akun Bank', 'Masuk', 'Keluar', 'Saldo', 'Status', ''].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+                    <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
                       {h}
                     </th>
                   ))}

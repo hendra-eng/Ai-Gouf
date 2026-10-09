@@ -17,11 +17,11 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload) return null;
   return (
     <div className="fin-card p-3 text-[11px] shadow-lg min-w-[160px]">
-      <div className="font-600 text-foreground mb-2">{label}</div>
+      <div className="font-semibold text-foreground mb-2">{label}</div>
       {payload.map((p, i) => (
         <div key={`tt-${i}`} className="flex justify-between gap-4">
           <span className="text-muted-foreground">{p.name}</span>
-          <span className="font-600" style={{ color: p.color }}>Rp {p.value.toLocaleString('id-ID')}M</span>
+          <span className="font-semibold" style={{ color: p.color }}>Rp {p.value.toLocaleString('id-ID')}M</span>
         </div>
       ))}
     </div>
@@ -244,7 +244,7 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
       <div className="xl:col-span-2 fin-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-[14px] font-600 text-foreground">Total Assets Trend</div>
+            <div className="text-[14px] font-semibold text-foreground">Total Assets Trend</div>
             <div className="text-[11px] text-muted-foreground">{subtitle}</div>
           </div>
           <div className="flex gap-1">
@@ -252,7 +252,7 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
               <button
                 key={`assets-period-${p}`}
                 onClick={() => setActivePeriod(p)}
-                className={`px-2.5 py-1 text-[11px] font-500 rounded transition-colors ${activePeriod === p ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors ${activePeriod === p ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               >
                 {p}
               </button>
@@ -346,7 +346,7 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
 
       {/* Composition */}
       <div className="fin-card p-5">
-        <div className="text-[14px] font-600 text-foreground mb-0.5">Asset Composition</div>
+        <div className="text-[14px] font-semibold text-foreground mb-0.5">Asset Composition</div>
         <div className="text-[11px] text-muted-foreground mb-4">By category{periodLabel ? ` — ${periodLabel}` : ''}</div>
         <div className="flex justify-center">
           <InteractiveDonutChart
@@ -371,11 +371,11 @@ export default function AssetsChartsSection({ trendData, compositionData, compan
               >
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ background: d.color }} />
-                  <span className={`truncate ${activeComp === i ? 'text-foreground font-600' : 'text-muted-foreground'}`}>{d.name}</span>
+                  <span className={`truncate ${activeComp === i ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>{d.name}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-muted-foreground">{displayPct.toFixed(1)}%</span>
-                  <span className="font-600 text-foreground financial-value">Rp {displayValue.toLocaleString('id-ID')}M</span>
+                  <span className="font-semibold text-foreground financial-value">Rp {displayValue.toLocaleString('id-ID')}M</span>
                 </div>
               </div>
             );

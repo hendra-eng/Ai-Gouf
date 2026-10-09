@@ -6,7 +6,7 @@ import CashBankJournalPreview from '../components/CashBankJournalPreview';
 
 export default function CashBankJournalPreviewPage() {
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
       <CashBankJournalPreview />
     </div>

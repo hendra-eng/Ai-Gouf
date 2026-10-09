@@ -1,5 +1,7 @@
 'use client';
 import React, { useMemo, useState } from 'react';
+import TabNav from '@/components/ui/TabNav';
+import { CalendarClock, FileText, LayoutDashboard, ShieldAlert, Users } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
@@ -88,12 +90,12 @@ export default function APContent() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const pageSize = 8;
 
-  const tabs: { id: APTab; label: string; count?: number }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'vendors', label: 'Vendors', count: vendors.length },
-    { id: 'bills', label: 'Bills', count: bills.length },
-    { id: 'payment-planning', label: 'Payment Planning' },
-    { id: 'error-detection', label: 'AI Error Detection' },
+  const tabs: { id: APTab; label: string; count?: number; icon: React.ComponentType<{ size?: number | string; className?: string }> }[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'vendors', label: 'Vendors', icon: Users, count: vendors.length },
+    { id: 'bills', label: 'Bills', icon: FileText, count: bills.length },
+    { id: 'payment-planning', label: 'Payment Planning', icon: CalendarClock },
+    { id: 'error-detection', label: 'AI Error Detection', icon: ShieldAlert },
   ];
 
   const filteredBills = bills
@@ -150,7 +152,7 @@ export default function APContent() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Payable</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Accounts Payable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor vendor obligations, upcoming payments, liabilities, and cash requirements.</p>
           <div className="flex items-center gap-3 mt-1.5">
             <span className="badge-info">Tersinkron dari database AP (Supabase)</span>
@@ -226,23 +228,12 @@ export default function APContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={`ap-tab-${tab.id}`}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === tab.id
-                ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {tab.label}
-            {tab.count !== undefined && (
-              <span className="text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full">{tab.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <TabNav
+        
+        activeKey={activeTab}
+        onSelect={(key) => setActiveTab(key as any)}
+        items={tabs.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon, badge: tab.count, badgeClassName: 'text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full' }))}
+      />
 
       {activeTab === 'overview' && (
         <APCharts
@@ -541,7 +532,7 @@ function APPaymentPlanning({ bills, forecastData, onMarkPaid }: { bills: Bill[];
         </div>
         <StatusBadge label={bill.status} className={apStatusColors[bill.status]} />
       </div>
-      <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(bill.outstanding, true))}</p>
+      <p className="number-display text-xl font-bold text-foreground leading-none">{fx(formatRupiah(bill.outstanding, true))}</p>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-muted-foreground">Due: {bill.dueDate}</span>
         <div className="flex gap-1">
@@ -559,7 +550,7 @@ function APPaymentPlanning({ bills, forecastData, onMarkPaid }: { bills: Bill[];
         {forecastData.map((pf) => (
           <div key={`pf-${pf.period}`} className="bg-card border border-border rounded-lg p-4 shadow-card">
             <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">{pf.period}</p>
-            <p className="text-2xl font-bold tabular-nums text-foreground">{fx(formatRupiah(pf.amount, true))}</p>
+            <p className="number-display text-xl font-bold text-foreground leading-none">{fx(formatRupiah(pf.amount, true))}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{pf.bills} bill{pf.bills !== 1 ? 's' : ''} due</p>
           </div>
         ))}

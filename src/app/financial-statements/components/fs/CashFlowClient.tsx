@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -92,27 +93,20 @@ export default function CashFlowClient() {
   const { activeClientId, hydrated } = useActiveClient();
   const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodQuery>(() => ({ ...defaultPeriod(), compare: 'none' }));
-  const [data, setData] = useState<CashFlow | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
-  const load = useCallback((signal?: AbortSignal) => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchCashFlow(activeClientId, period, signal)
-      .then(d => { setData(d); setOpen(new Set()); })
-      .catch(e => { if ((e as Error).name !== 'AbortError') { setError((e as Error).message); setData(null); } })
-      .finally(() => setLoading(false));
-  }, [activeClientId, period]);
+  const fsQuery = useQuery({
+    queryKey: ['fs', 'cash-flow', activeClientId, period],
+    queryFn: ({ signal }) => fetchCashFlow(activeClientId!, period, signal),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: CashFlow | null = fsQuery.data ?? null;
+  const loading = fsQuery.isFetching && (fsQuery.isPlaceholderData || !fsQuery.data);
+  const error = fsQuery.error ? (fsQuery.error as Error).message : null;
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [hydrated, load]);
+  // Dulu di-reset di .then(); sekarang saat data baru (bukan placeholder) tiba.
+  useEffect(() => { if (fsQuery.data && !fsQuery.isPlaceholderData) setOpen(new Set()); }, [fsQuery.data, fsQuery.isPlaceholderData]);
 
   const rows = useMemo(() => (data ? susunBaris(data, data.compare) : []), [data]);
   const company = data?.client.company_name ?? '';

@@ -90,7 +90,7 @@ export default function OverviewCharts() {
       <div className="lg:col-span-2 je-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-sm font-700 text-foreground">Journal Entry Volume</h2>
+            <h2 className="text-sm font-bold text-foreground">Journal Entry Volume</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Entries created vs posted per entry date</p>
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function OverviewCharts() {
       {/* Status Distribution */}
       <div className="je-card p-5">
         <div className="mb-4">
-          <h2 className="text-sm font-700 text-foreground">Entry Status Distribution</h2>
+          <h2 className="text-sm font-bold text-foreground">Entry Status Distribution</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{drafts.length} total entries</p>
         </div>
         <StatusDistributionChart data={statusDistribution} />
@@ -110,10 +110,10 @@ export default function OverviewCharts() {
       <div className="lg:col-span-3 je-card p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-sm font-700 text-foreground">Exception Breakdown</h2>
+            <h2 className="text-sm font-bold text-foreground">Exception Breakdown</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Entries that need review before period close</p>
           </div>
-          <a href="/transactions/journal-entry/exceptions" className="text-xs text-primary font-600 hover:underline">View All Exceptions →</a>
+          <a href="/transactions/journal-entry/exceptions" className="text-xs text-primary font-semibold hover:underline">View All Exceptions →</a>
         </div>
         <ExceptionBreakdownChart data={exceptionBreakdown} />
       </div>

@@ -618,7 +618,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
       >
         <div className="flex items-start justify-between p-6 border-b border-border">
           <div>
-            <h2 className="text-xl font-700 text-foreground">
+            <h2 className="text-xl font-bold text-foreground">
               {mode === 'append' && `Upload Data${groupLabel ? ` ${groupLabel}` : ''}`}
               {mode === 'replace-group' && `Ganti Transaksi ${groupLabel} (PDF)`}
               {mode === 'replace' &&
@@ -645,7 +645,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
           {activeClientId ? (
             <>
               Upload ini akan tersimpan untuk client:{' '}
-              <span className="font-600 text-foreground">{activeClientName || '—'}</span>
+              <span className="font-semibold text-foreground">{activeClientName || '—'}</span>
             </>
           ) : (
             <>
@@ -675,7 +675,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                         : 'border-border text-muted-foreground hover:bg-secondary/50'
                     }`}
                   >
-                    <p className="font-600">Rekening Koran</p>
+                    <p className="font-semibold">Rekening Koran</p>
                     <p className="text-2xs mt-0.5">Mutasi bank — Excel/PDF</p>
                   </button>
                   <button
@@ -687,7 +687,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                         : 'border-border text-muted-foreground hover:bg-secondary/50'
                     }`}
                   >
-                    <p className="font-600">Jurnal Penjualan Kasir</p>
+                    <p className="font-semibold">Jurnal Penjualan Kasir</p>
                     <p className="text-2xs mt-0.5">Laporan penjualan detail — PDF</p>
                   </button>
                 </div>
@@ -707,7 +707,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
               >
                 <Upload size={28} className="text-muted-foreground" />
                 <div className="text-center">
-                  <p className="text-sm font-600 text-foreground">Klik untuk pilih file, atau tarik &amp; lepas di sini</p>
+                  <p className="text-sm font-semibold text-foreground">Klik untuk pilih file, atau tarik &amp; lepas di sini</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {jenisSumber === 'jurnal_penjualan_kasir'
                       ? 'Format: .pdf laporan "Data Penjualan Detail" per-transaksi (kasir/POS)'
@@ -733,7 +733,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   className="mt-0.5"
                 />
                 <div>
-                  <p className="text-xs font-600 text-foreground">Gunakan AI untuk baris yang sulit dikategorikan</p>
+                  <p className="text-xs font-semibold text-foreground">Gunakan AI untuk baris yang sulit dikategorikan</p>
                   <p className="text-2xs text-muted-foreground mt-0.5">
                     Kalau dimatikan (default), kategorisasi hanya dari pola historis &amp; kata kunci COA —
                     tanpa API key, tanpa panggilan ke server AI pihak ketiga. Baris yang tidak cocok akan
@@ -755,7 +755,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
           {step === 'processing' && (
             <div className="py-16 flex flex-col items-center justify-center gap-3">
               <Loader2 size={28} className="text-primary animate-spin" />
-              <p className="text-sm font-600 text-foreground">Memproses {fileName}…</p>
+              <p className="text-sm font-semibold text-foreground">Memproses {fileName}…</p>
               <p className="text-xs text-muted-foreground">Membaca sheet, mencocokkan pola akun, dan menjurnalkan tiap mutasi</p>
             </div>
           )}
@@ -763,7 +763,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
           {step === 'error' && (
             <div className="py-10 flex flex-col items-center justify-center gap-3 text-center">
               <AlertTriangle size={28} className="text-negative" />
-              <p className="text-sm font-600 text-foreground">Gagal mengimpor file</p>
+              <p className="text-sm font-semibold text-foreground">Gagal mengimpor file</p>
               <p className="text-xs text-muted-foreground max-w-sm">{errorMsg}</p>
               <button onClick={() => setStep('upload')} className="btn-secondary text-xs py-1.5 px-3 mt-2">
                 Coba File Lain
@@ -775,7 +775,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
             <div className="py-6 flex flex-col items-center text-center gap-3">
               <AlertTriangle size={28} className="text-warning" />
               <div>
-                <p className="text-sm font-600 text-foreground">
+                <p className="text-sm font-semibold text-foreground">
                   {pendingImport.jumlahDuplikat > 0
                     ? `${pendingImport.jumlahDuplikat} dari ${hasil.draf_jurnal.length} transaksi tampak sudah pernah diimpor`
                     : 'Server mendeteksi kemungkinan file ini sudah pernah diupload'}
@@ -792,7 +792,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 {pendingImport.jumlahDuplikat > 0 && (
                   <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                     Tanggal, akun, nominal, dan keterangannya cocok dengan transaksi yang sudah ada di halaman ini
-                    saat ini. Ini bisa berarti file <span className="font-600">{fileName}</span> ini pernah
+                    saat ini. Ini bisa berarti file <span className="font-semibold">{fileName}</span> ini pernah
                     diimpor sebelumnya, atau kebetulan ada transaksi mirip. Silakan pilih:
                   </p>
                 )}
@@ -819,7 +819,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 </button>
                 <button
                   onClick={() => { setPendingImport(null); setStep('preview'); }}
-                  className="text-sm font-500 text-muted-foreground hover:text-foreground transition-colors py-1.5"
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-1.5"
                 >
                   Batal, kembali ke pratinjau
                 </button>
@@ -831,14 +831,14 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <FileSpreadsheet size={16} className="text-primary flex-shrink-0" />
-                <span className="font-600 text-foreground truncate">{fileName}</span>
+                <span className="font-semibold text-foreground truncate">{fileName}</span>
               </div>
 
               {mode === 'append' && (
                 <div className="flex items-start gap-2 bg-info-subtle border border-info/20 rounded-lg p-3">
                   <AlertTriangle size={14} className="text-info mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-foreground">
-                    Menekan tombol di bawah akan <span className="font-600">menambahkan</span> data ini ke
+                    Menekan tombol di bawah akan <span className="font-semibold">menambahkan</span> data ini ke
                     transaksi yang sudah ada — transaksi lain (termasuk milik kelompok lain) tidak akan
                     terhapus atau berubah.
                   </p>
@@ -848,10 +848,10 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 <div className="flex items-start gap-2 bg-negative-subtle border border-negative/20 rounded-lg p-3">
                   <AlertTriangle size={14} className="text-negative mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-foreground">
-                    <span className="font-600">Perhatian:</span> menekan tombol di bawah akan{' '}
-                    <span className="font-600">menghapus seluruh transaksi {groupLabel}</span> yang sedang
+                    <span className="font-semibold">Perhatian:</span> menekan tombol di bawah akan{' '}
+                    <span className="font-semibold">menghapus seluruh transaksi {groupLabel}</span> yang sedang
                     tampil di halaman ini dan menggantinya dengan data dari file ini. Transaksi kelompok
-                    lain (Sales, Cash Payment, dll) <span className="font-600">tidak terpengaruh</span>.
+                    lain (Sales, Cash Payment, dll) <span className="font-semibold">tidak terpengaruh</span>.
                     Aksi ini tidak bisa dibatalkan.
                   </p>
                 </div>
@@ -860,8 +860,8 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 <div className="flex items-start gap-2 bg-negative-subtle border border-negative/20 rounded-lg p-3">
                   <AlertTriangle size={14} className="text-negative mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-foreground">
-                    <span className="font-600">Perhatian:</span> menekan tombol di bawah akan{' '}
-                    <span className="font-600">menghapus seluruh transaksi yang sedang ada di tabel</span>{' '}
+                    <span className="font-semibold">Perhatian:</span> menekan tombol di bawah akan{' '}
+                    <span className="font-semibold">menghapus seluruh transaksi yang sedang ada di tabel</span>{' '}
                     dan menggantinya dengan data dari file ini. Aksi ini tidak bisa dibatalkan.
                   </p>
                 </div>
@@ -872,28 +872,28 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                 <AlertTriangle size={14} className="text-info mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-foreground">
                   Seluruh transaksi hasil import ini akan masuk dengan status{' '}
-                  <span className="font-600">Unposted</span>. Tinjau datanya, lalu posting semua
-                  sekaligus lewat tombol <span className="font-600">&quot;Posting Semua&quot;</span> di
+                  <span className="font-semibold">Unposted</span>. Tinjau datanya, lalu posting semua
+                  sekaligus lewat tombol <span className="font-semibold">&quot;Posting Semua&quot;</span> di
                   sebelah Filter Lanjutan pada halaman Transaksi.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-secondary rounded-lg p-3">
-                  <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">Transaksi</p>
-                  <p className="text-sm font-600 text-foreground">{hasil.ringkasan.jumlah_transaksi}</p>
+                  <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Transaksi</p>
+                  <p className="text-sm font-semibold text-foreground">{hasil.ringkasan.jumlah_transaksi}</p>
                 </div>
                 <div className="bg-secondary rounded-lg p-3">
-                  <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">Total Debet</p>
-                  <p className="text-sm font-600 text-foreground">{fx(formatIDR(hasil.ringkasan.total_debet))}</p>
+                  <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Debet</p>
+                  <p className="text-sm font-semibold text-foreground">{fx(formatIDR(hasil.ringkasan.total_debet))}</p>
                 </div>
                 <div className="bg-secondary rounded-lg p-3">
-                  <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">Total Kredit</p>
-                  <p className="text-sm font-600 text-foreground">{fx(formatIDR(hasil.ringkasan.total_kredit))}</p>
+                  <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Total Kredit</p>
+                  <p className="text-sm font-semibold text-foreground">{fx(formatIDR(hasil.ringkasan.total_kredit))}</p>
                 </div>
                 <div className={`rounded-lg p-3 ${hasil.ringkasan.balance ? 'bg-positive-subtle' : 'bg-negative-subtle'}`}>
-                  <p className="text-2xs font-600 text-muted-foreground uppercase tracking-wider mb-1">Status</p>
-                  <p className={`text-sm font-600 flex items-center gap-1 ${hasil.ringkasan.balance ? 'text-positive' : 'text-negative'}`}>
+                  <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                  <p className={`text-sm font-semibold flex items-center gap-1 ${hasil.ringkasan.balance ? 'text-positive' : 'text-negative'}`}>
                     {hasil.ringkasan.balance ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
                     {hasil.ringkasan.balance ? 'Balance' : `Selisih ${fx(formatIDR(hasil.ringkasan.selisih))}`}
                   </p>
@@ -905,7 +905,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
                   <p className="text-xs text-foreground">
                     {hasil.ringkasan.jumlah_perlu_review} baris belum terkategori otomatis — akun yang dipilih
-                    sistem perlu <span className="font-600">dicek manual</span> sebelum baris ini diposting.
+                    sistem perlu <span className="font-semibold">dicek manual</span> sebelum baris ini diposting.
                   </p>
                 </div>
               )}
@@ -920,7 +920,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   <div className="text-xs text-foreground">
                     <p>
                       {peringatanVoucher.length} baris punya kode bank di nomor voucher yang cuma{' '}
-                      <span className="font-600">hasil tebakan otomatis</span> (nama bank/sheet tidak
+                      <span className="font-semibold">hasil tebakan otomatis</span> (nama bank/sheet tidak
                       dikenali) — cek kembali nomor voucher baris tersebut setelah import.
                     </p>
                   </div>
@@ -932,11 +932,11 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
                   <table className="w-full text-xs">
                     <thead className="bg-secondary sticky top-0">
                       <tr>
-                        <th className="text-left font-600 text-muted-foreground px-3 py-2">Tanggal</th>
-                        <th className="text-left font-600 text-muted-foreground px-3 py-2">Keterangan</th>
-                        <th className="text-left font-600 text-muted-foreground px-3 py-2">Debet</th>
-                        <th className="text-left font-600 text-muted-foreground px-3 py-2">Kredit</th>
-                        <th className="text-right font-600 text-muted-foreground px-3 py-2">Nominal</th>
+                        <th className="text-left font-semibold text-muted-foreground px-3 py-2">Tanggal</th>
+                        <th className="text-left font-semibold text-muted-foreground px-3 py-2">Keterangan</th>
+                        <th className="text-left font-semibold text-muted-foreground px-3 py-2">Debet</th>
+                        <th className="text-left font-semibold text-muted-foreground px-3 py-2">Kredit</th>
+                        <th className="text-right font-semibold text-muted-foreground px-3 py-2">Nominal</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -967,7 +967,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
 
         {step === 'preview' && (
           <div className="flex items-center justify-between p-5 border-t border-border bg-secondary/30">
-            <button onClick={onClose} className="text-sm font-500 text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={onClose} className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Batal
             </button>
             <button onClick={handleConfirm} className="btn-primary text-sm py-2 px-4">

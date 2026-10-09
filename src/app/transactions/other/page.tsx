@@ -10,6 +10,7 @@ import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJou
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import StatusBadge from '@/components/ui/StatusBadge';
+import OtherTabs from './components/OtherTabs';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/dst). ──
 const OTHER_AXIS_WIDTH = 65;
@@ -276,10 +277,7 @@ export default function OtherTransactionsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Other</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Transaksi lain-lain (CapEx & belum terkategori) — diambil otomatis dari halaman Transaksi</p>
-      </div>
+      <OtherTabs activeTab="overview" />
 
       {missingJeIdCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">

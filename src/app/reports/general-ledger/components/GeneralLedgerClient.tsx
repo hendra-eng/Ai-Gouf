@@ -536,20 +536,20 @@ export default function GeneralLedgerClient() {
   const selectClass = `${inputClass} appearance-none pr-9`;
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5 fade-in">
+    <div className="space-y-5 fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <Link href="/reports" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-blue-700 mb-2">
             <ArrowLeft size={15} /> Reports
           </Link>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
             <span className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
               <BookOpen size={22} className="text-orange-500" />
             </span>
             General Ledger
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
+          <p className="text-sm text-muted-foreground mt-0.5">
             Account-level postings with opening, running, and closing balances{companyName ? ` · ${companyName}` : ''}.
           </p>
         </div>

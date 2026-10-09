@@ -11,7 +11,8 @@
 // - Account Mapping: GET/PUT /api/v1/management/settings/account-mapping?client_id=
 //   (1 akun COA company per input; PUT parsial, null = kosongkan).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { swrGet, swrSet } from './swrCache';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const CLIENTS_URL = `${API_BASE_URL}/api/v1/management/clients`;
@@ -273,19 +274,37 @@ export async function saveAccountMapping(clientId: string, mappings: Record<stri
 }
 
 /** Hook generik: muat ulang saat `key` berubah atau refresh() dipanggil. key null = tidak fetch. */
+// Tiap loader (fungsi modul yang stabil) dapat id sendiri supaya dua halaman Settings
+// yang sama-sama memakai key client yang sama tidak saling menimpa cache.
+const loaderIds = new WeakMap<object, number>();
+let loaderSeq = 0;
+function loaderId(fn: object): number {
+  let id = loaderIds.get(fn);
+  if (id === undefined) { id = ++loaderSeq; loaderIds.set(fn, id); }
+  return id;
+}
+
 export function useLoader<T>(key: string | null, loader: (key: string) => Promise<T>, initial: T) {
-  const [data, setData] = useState<T>(initial);
+  const cacheKey = key ? `settings:${loaderId(loader)}:${key}` : null;
+  const [data, setData] = useState<T>(() => (cacheKey ? swrGet<T>(cacheKey) : undefined) ?? initial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick(t => t + 1), []);
+  const lastKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!key) return;
+    if (!key || !cacheKey) return;
     let batal = false;
-    setLoading(true);
+    // Pindah tab / ganti client: tampilkan data terakhir langsung, segarkan diam-diam.
+    // refresh() eksplisit (tick berubah, key sama) tetap menampilkan loading dan tidak
+    // menimpa data lokal dengan cache lama.
+    const keyBerubah = lastKey.current !== cacheKey;
+    lastKey.current = cacheKey;
+    const hit = keyBerubah ? swrGet<T>(cacheKey) : undefined;
+    if (hit !== undefined) { setData(hit); setLoading(false); } else { setLoading(true); }
     loader(key)
-      .then(d => { if (!batal) { setData(d); setError(null); } })
+      .then(d => { if (!batal) { swrSet(cacheKey, d); setData(d); setError(null); } })
       .catch(e => { if (!batal) setError(e instanceof Error ? e.message : 'Failed to load data.'); })
       .finally(() => { if (!batal) setLoading(false); });
     return () => { batal = true; };

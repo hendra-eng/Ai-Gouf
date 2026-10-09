@@ -15,7 +15,7 @@ import ComplianceHealthScore from './ComplianceHealthScore';
 
 export default function TaxCompliancePage() {
   return (
-    <div className="px-4 lg:px-6 xl:px-8 2xl:px-10 py-6 max-w-screen-2xl mx-auto space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       <TaxHeader />
       <ComplianceStatusHero />
       <TaxKPICards />

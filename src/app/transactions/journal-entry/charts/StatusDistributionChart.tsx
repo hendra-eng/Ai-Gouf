@@ -16,7 +16,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
     <div className="bg-card border border-border rounded-lg shadow-elevated px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.payload.color }} />
-        <span className="font-700 text-foreground">{item.name}</span>
+        <span className="font-bold text-foreground">{item.name}</span>
       </div>
       <p className="text-muted-foreground mt-0.5">{item.value} entries</p>
     </div>
@@ -58,7 +58,7 @@ export default function StatusDistributionChart({ data }: { data: StatusDistribu
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
               <span className="text-muted-foreground">{item.name}</span>
             </div>
-            <span className="font-700 text-foreground tabular-nums">{item.value}</span>
+            <span className="font-bold text-foreground tabular-nums">{item.value}</span>
           </div>
         ))}
       </div>

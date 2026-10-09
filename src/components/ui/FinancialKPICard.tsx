@@ -42,7 +42,7 @@ export default function FinancialKPICard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">{label}</p>
-          <p className="number-display font-bold text-foreground leading-none text-xl">{value}</p>
+          <p className="number-display text-xl font-bold text-foreground leading-none">{value}</p>
           {subValue && <p className="text-xs text-muted-foreground mt-1">{subValue}</p>}
           <div className={`flex items-center gap-1.5 mt-3 text-xs font-semibold ${changeColor}`}>
             <span>{isPositive ? '↗' : '↘'}</span>

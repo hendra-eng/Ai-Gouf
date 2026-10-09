@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, Loader2, Pencil, RotateCcw, Search, Wand2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -106,26 +107,24 @@ function Editor({ a, m, clientId, onDone }: { a: MappedAccount; m: FsMapping; cl
 
 export default function MappingClient() {
   const { activeClientId, hydrated } = useActiveClient();
-  const [data, setData] = useState<FsMapping | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statement, setStatement] = useState<'all' | 'BS' | 'PL'>('all');
   const [onlyIssues, setOnlyIssues] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
 
-  const load = useCallback(() => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchFsMapping(activeClientId)
-      .then(setData)
-      .catch(e => { setError(e instanceof Error ? e.message : 'Failed to load mapping'); setData(null); })
-      .finally(() => setLoading(false));
-  }, [activeClientId]);
-
-  useEffect(() => { if (hydrated) load(); }, [hydrated, load]);
+  const mapQuery = useQuery({
+    queryKey: ['fs', 'mapping', activeClientId],
+    queryFn: () => fetchFsMapping(activeClientId!),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: FsMapping | null = mapQuery.data ?? null;
+  const loading = mapQuery.isFetching && (mapQuery.isPlaceholderData || !mapQuery.data);
+  const error = mapQuery.error ? (mapQuery.error instanceof Error ? mapQuery.error.message : 'Failed to load mapping') : null;
+  // Mapping berubah -> semua laporan (BS/P&L/CF/dst) ikut dimuat ulang.
+  const load = () => { queryClient.invalidateQueries({ queryKey: ['fs'] }); };
 
   const label = useCallback((list: { key: string; label: string }[] | undefined, key: string | null) => (key ? list?.find(x => x.key === key)?.label ?? key : '—'), []);
 

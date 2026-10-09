@@ -124,7 +124,7 @@
 }
 
 .status-badge {
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   border-radius: var(--chatgpt-radius-sm);

@@ -27,6 +27,7 @@
 // root/ddl-table bagian "FITUR TRANSACTIONS > PURCHASE").
 
 import { useEffect, useState, useCallback } from 'react';
+import { swrClear, swrGet, swrSet } from './swrCache';
 import type {
   PurchaseStatus,
   PaymentStatus,
@@ -51,6 +52,7 @@ async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = 
 }
 
 function notifyPurchaseChanged() {
+  swrClear('purchase:'); // data lama tidak boleh tampil setelah ada perubahan
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(PURCHASE_CHANGED_EVENT));
 }
@@ -161,18 +163,20 @@ export async function deletePurchaseSourceRecord(id: string): Promise<void> {
 export function usePurchaseSourceRecords(companyId: string | null | undefined): {
   records: BackendPurchaseSourceRecord[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [records, setRecords] = useState<BackendPurchaseSourceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `purchase:usePurchaseSourceRecords:${companyId ?? ''}`;
+  const [records, setRecords] = useState<BackendPurchaseSourceRecord[]>(() => swrGet<BackendPurchaseSourceRecord[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!companyId) { setRecords([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof records>(cacheKey);
+    if (hit !== undefined) { setRecords(hit); setLoading(false); } else { setLoading(true); }
     listPurchaseSourceRecords(companyId)
-      .then(data => { setRecords(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setRecords(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source records'))
       .finally(() => setLoading(false));
-  }, [companyId]);
+  }, [companyId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -378,18 +382,20 @@ export async function uploadPurchaseSourceFile(file: File, managementClientId: s
 export function usePurchaseTransactions(companyId: string | null | undefined, status?: string): {
   transactions: BackendPurchaseTransaction[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [transactions, setTransactions] = useState<BackendPurchaseTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `purchase:usePurchaseTransactions:${companyId ?? ''}:${status ?? ''}`;
+  const [transactions, setTransactions] = useState<BackendPurchaseTransaction[]>(() => swrGet<BackendPurchaseTransaction[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!companyId) { setTransactions([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof transactions>(cacheKey);
+    if (hit !== undefined) { setTransactions(hit); setLoading(false); } else { setLoading(true); }
     listPurchaseTransactions(companyId, status)
-      .then(data => { setTransactions(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setTransactions(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load purchase transactions'))
       .finally(() => setLoading(false));
-  }, [companyId, status]);
+  }, [companyId, status, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -452,18 +458,20 @@ export async function deletePurchaseTransactionLine(id: string): Promise<void> {
 export function usePurchaseTransactionLines(transactionId: string | null | undefined): {
   lines: BackendPurchaseTransactionLine[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [lines, setLines] = useState<BackendPurchaseTransactionLine[]>([]);
+  const cacheKey = `purchase:usePurchaseTransactionLines:${transactionId ?? ''}`;
+  const [lines, setLines] = useState<BackendPurchaseTransactionLine[]>(() => swrGet<BackendPurchaseTransactionLine[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!transactionId) { setLines([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof lines>(cacheKey);
+    if (hit !== undefined) { setLines(hit); setLoading(false); } else { setLoading(true); }
     listPurchaseTransactionLines(transactionId)
-      .then(data => { setLines([...data].sort((a, b) => a.line_no - b.line_no)); setError(null); })
+      .then(data => { const value = [...data].sort((a, b) => a.line_no - b.line_no); swrSet(cacheKey, value); setLines(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load item/service lines'))
       .finally(() => setLoading(false));
-  }, [transactionId]);
+  }, [transactionId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -525,18 +533,20 @@ export async function deletePurchaseException(id: string): Promise<void> {
 export function usePurchaseExceptions(companyId: string | null | undefined): {
   exceptions: BackendPurchaseException[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [exceptions, setExceptions] = useState<BackendPurchaseException[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `purchase:usePurchaseExceptions:${companyId ?? ''}`;
+  const [exceptions, setExceptions] = useState<BackendPurchaseException[]>(() => swrGet<BackendPurchaseException[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!companyId) { setExceptions([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof exceptions>(cacheKey);
+    if (hit !== undefined) { setExceptions(hit); setLoading(false); } else { setLoading(true); }
     listPurchaseExceptions(companyId)
-      .then(data => { setExceptions(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setExceptions(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load exceptions'))
       .finally(() => setLoading(false));
-  }, [companyId]);
+  }, [companyId, cacheKey]);
 
   useEffect(() => {
     muatUlang();

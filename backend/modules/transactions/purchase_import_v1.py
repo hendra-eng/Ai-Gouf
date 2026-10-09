@@ -371,7 +371,8 @@ async def upload_purchase_import(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    client_id = current_user.get("id")  # management_users.id_user -- pemilik transaksi (akun yang login)
+    client_id = management_client_id  # kolom client_id di DB = FK ke management_clients (BUKAN id user)
+    user_id = current_user.get("id")  # management_users.id -- akun yang login (untuk created_by)
     created_by_name = current_user.get("nama") or current_user.get("username")
 
     cocok = None
@@ -457,7 +458,7 @@ async def upload_purchase_import(
             "tax_account_code": akun_pajak.get("account_code") or None,
             "tax_account_name": akun_pajak.get("account_name") or None,
         }
-        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id)
+        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=user_id)
         if dibuat is None:
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
             continue

@@ -255,7 +255,7 @@ export default function CashBankPostedPage() {
   const adaFilter = search !== '' || arahFilter !== 'all' || periodeFilter !== 'all' || bankFilter !== 'all';
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       {error && (

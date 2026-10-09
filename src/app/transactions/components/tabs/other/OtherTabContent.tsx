@@ -61,7 +61,7 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
       <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/30">
         <div>
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Other Transaction Detail</p>
-          <h3 className="text-base font-700 text-foreground mt-0.5">{tx.id}</h3>
+          <h3 className="text-base font-bold text-foreground mt-0.5">{tx.id}</h3>
         </div>
         <button onClick={onClose} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
           <X size={18} />
@@ -70,20 +70,20 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
       <div className="flex-1 overflow-y-auto p-5 space-y-5">
         {/* Type Badge */}
         <div className="flex items-center gap-3">
-          <span className="text-xs font-700 px-3 py-1.5 rounded-full bg-primary/10 text-primary">{tx.txType}</span>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-primary/10 text-primary">{tx.txType}</span>
           <StatusBadge status={tx.status as 'posted' | 'draft' | 'pending' | 'approved' | 'rejected'} />
         </div>
 
         {/* Description */}
         <div className="rounded-xl bg-muted/40 border border-border p-4">
-          <p className="text-xs font-600 text-muted-foreground mb-1">Description</p>
+          <p className="text-xs font-semibold text-muted-foreground mb-1">Description</p>
           <p className="text-sm text-foreground">{tx.description}</p>
           {tx.notes && <p className="text-xs text-muted-foreground mt-2 italic">{tx.notes}</p>}
         </div>
 
         {/* Details */}
         <div className="space-y-3">
-          <h4 className="text-xs font-700 uppercase tracking-wider text-muted-foreground">Transaction Information</h4>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transaction Information</h4>
           {[
             ['Transaction ID', tx.id],
             ['Date', tx.date],
@@ -98,7 +98,7 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
           ].map(([k, v]) => (
             <div key={k} className="flex items-start justify-between gap-3 py-1.5 border-b border-border/50 last:border-0">
               <span className="text-xs text-muted-foreground shrink-0 w-36">{k}</span>
-              <span className="text-xs font-500 text-foreground text-right">{v}</span>
+              <span className="text-xs font-medium text-foreground text-right">{v}</span>
             </div>
           ))}
         </div>
@@ -106,34 +106,34 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
         {/* Accounting Entry */}
         <div className="rounded-xl border border-border p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-700 uppercase tracking-wider text-muted-foreground">Accounting Entry</h4>
-            <span className={`text-[11px] font-700 px-2 py-0.5 rounded-full ${isBalanced ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Accounting Entry</h4>
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isBalanced ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
               {isBalanced ? '✓ Balanced' : '✗ Unbalanced'}
             </span>
           </div>
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-1.5 text-muted-foreground font-600">Account</th>
-                <th className="text-right py-1.5 text-muted-foreground font-600">Debit</th>
-                <th className="text-right py-1.5 text-muted-foreground font-600">Credit</th>
+                <th className="text-left py-1.5 text-muted-foreground font-semibold">Account</th>
+                <th className="text-right py-1.5 text-muted-foreground font-semibold">Debit</th>
+                <th className="text-right py-1.5 text-muted-foreground font-semibold">Credit</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-border/50">
                 <td className="py-1.5 text-foreground">{tx.accountCode} — {tx.accountName}</td>
-                <td className="py-1.5 text-right font-600 text-emerald-700">{fmt(tx.debit)}</td>
+                <td className="py-1.5 text-right font-semibold text-emerald-700">{fmt(tx.debit)}</td>
                 <td className="py-1.5 text-right text-muted-foreground">—</td>
               </tr>
               <tr className="border-b border-border/50">
                 <td className="py-1.5 text-foreground">Contra Account</td>
                 <td className="py-1.5 text-right text-muted-foreground">—</td>
-                <td className="py-1.5 text-right font-600 text-red-700">{fmt(tx.credit)}</td>
+                <td className="py-1.5 text-right font-semibold text-red-700">{fmt(tx.credit)}</td>
               </tr>
               <tr className="bg-muted/20">
-                <td className="py-1.5 font-700 text-foreground">Total</td>
-                <td className="py-1.5 text-right font-700 text-foreground">{fmt(tx.debit)}</td>
-                <td className="py-1.5 text-right font-700 text-foreground">{fmt(tx.credit)}</td>
+                <td className="py-1.5 font-bold text-foreground">Total</td>
+                <td className="py-1.5 text-right font-bold text-foreground">{fmt(tx.debit)}</td>
+                <td className="py-1.5 text-right font-bold text-foreground">{fmt(tx.credit)}</td>
               </tr>
             </tbody>
           </table>
@@ -273,7 +273,7 @@ export default function OtherTabContent() {
           onExportPDF={handleExportPDF}
           onExportGLSnapshot={handleExportGLSnapshot}
         />
-        <button className="px-3 py-1.5 text-sm font-600 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95 flex items-center gap-1.5">
+        <button className="px-3 py-1.5 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95 flex items-center gap-1.5">
           <Layers size={14} /> New Adjustment
         </button>
       </div>
@@ -292,7 +292,7 @@ export default function OtherTabContent() {
           {/* Monthly Activity */}
           <div className="lg:col-span-2 bg-card border border-border rounded-xl p-5">
             <div className="mb-4">
-              <h3 className="text-sm font-700 text-foreground">Monthly Other Transaction Activity</h3>
+              <h3 className="text-sm font-bold text-foreground">Monthly Other Transaction Activity</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Total adjustment amounts by month (Apr–Sep 2026)</p>
             </div>
             <ResponsiveContainer width="100%" height={220}>
@@ -309,7 +309,7 @@ export default function OtherTabContent() {
           {/* Type Distribution */}
           <div className="bg-card border border-border rounded-xl p-5">
             <div className="mb-4">
-              <h3 className="text-sm font-700 text-foreground">Transaction Type Distribution</h3>
+              <h3 className="text-sm font-bold text-foreground">Transaction Type Distribution</h3>
               <p className="text-xs text-muted-foreground mt-0.5">Count by transaction type</p>
             </div>
             <ResponsiveContainer width="100%" height={160}>
@@ -329,7 +329,7 @@ export default function OtherTabContent() {
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                     <span className="text-muted-foreground">{item.name}</span>
                   </div>
-                  <span className="font-600 text-foreground">{item.value}</span>
+                  <span className="font-semibold text-foreground">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -388,11 +388,11 @@ export default function OtherTabContent() {
                     { label: 'Status', field: 'status' as SortField },
                     { label: 'Posting', field: 'postingStatus' as SortField },
                   ].map(({ label, field }) => (
-                    <th key={field} onClick={() => handleSort(field)} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none whitespace-nowrap">
+                    <th key={field} onClick={() => handleSort(field)} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none whitespace-nowrap">
                       {label}<SortIcon field={field} />
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground text-right">Actions</th>
+                  <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -400,19 +400,19 @@ export default function OtherTabContent() {
                   const isBalanced = tx.debit === tx.credit;
                   return (
                     <tr key={tx.id} className={`border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer ${selectedId === tx.id ? 'bg-primary/5' : ''}`} onClick={() => setSelectedId(selectedId === tx.id ? null : tx.id)}>
-                      <td className="px-4 py-3 font-600 text-primary text-xs whitespace-nowrap">{tx.id}</td>
+                      <td className="px-4 py-3 font-semibold text-primary text-xs whitespace-nowrap">{tx.id}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.date}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-[11px] font-600 px-2 py-0.5 rounded-full ${typeColorMap[tx.txType]}`}>{tx.txType}</span>
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${typeColorMap[tx.txType]}`}>{tx.txType}</span>
                       </td>
                       <td className="px-4 py-3 text-xs text-foreground max-w-[200px] truncate">{tx.description}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.reference}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
-                        <div className="font-500 text-foreground">{tx.accountName}</div>
+                        <div className="font-medium text-foreground">{tx.accountName}</div>
                         <div className="text-muted-foreground">{tx.accountCode}</div>
                       </td>
-                      <td className="px-4 py-3 text-xs font-600 text-emerald-600 whitespace-nowrap text-right">{fmt(tx.debit)}</td>
-                      <td className="px-4 py-3 text-xs font-600 text-red-600 whitespace-nowrap text-right">{fmt(tx.credit)}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-emerald-600 whitespace-nowrap text-right">{fmt(tx.debit)}</td>
+                      <td className="px-4 py-3 text-xs font-semibold text-red-600 whitespace-nowrap text-right">{fmt(tx.credit)}</td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.accountingPeriod}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <StatusBadge status={tx.status as 'posted' | 'draft' | 'pending' | 'approved' | 'rejected'} size="sm" />
@@ -440,9 +440,9 @@ export default function OtherTabContent() {
             <div className="text-xs text-muted-foreground">
               Showing {Math.min((page - 1) * pageSize + 1, filtered.length)}–{Math.min(page * pageSize, filtered.length)} of {filtered.length}
               &nbsp;·&nbsp;
-              <span className="font-600 text-foreground">Total Debit/Credit: {fmt(totalDebit)}</span>
+              <span className="font-semibold text-foreground">Total Debit/Credit: {fmt(totalDebit)}</span>
               &nbsp;·&nbsp;
-              <span className={`font-600 ${allBalanced ? 'text-emerald-600' : 'text-red-600'}`}>{allBalanced ? '✓ All Balanced' : '✗ Check Entries'}</span>
+              <span className={`font-semibold ${allBalanced ? 'text-emerald-600' : 'text-red-600'}`}>{allBalanced ? '✓ All Balanced' : '✗ Check Entries'}</span>
             </div>
             <div className="flex items-center gap-1">
               <button disabled={page === 1} onClick={() => setPage(page - 1)} className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-40 text-muted-foreground hover:text-foreground transition-colors">

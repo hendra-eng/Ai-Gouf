@@ -23,12 +23,12 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div className="bg-card border border-border rounded-lg shadow-elevated px-3 py-2.5 text-xs">
-      <p className="font-700 text-foreground mb-1.5">{label}</p>
+      <p className="font-bold text-foreground mb-1.5">{label}</p>
       {payload.map((p) => (
         <div key={`tip-${p.name}`} className="flex items-center gap-2 mb-0.5">
           <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
           <span className="text-muted-foreground">{p.name}:</span>
-          <span className="font-600 text-foreground tabular-nums">{p.value}</span>
+          <span className="font-semibold text-foreground tabular-nums">{p.value}</span>
         </div>
       ))}
     </div>

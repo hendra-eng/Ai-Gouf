@@ -163,7 +163,7 @@ export default function SalesPosted() {
     setOpenMenuId(null);
   };
 
-  const openGeneralLedger = (row?: { journal_entry_id: number | null }) => {
+  const openGeneralLedger = (row?: { journal_entry_id: string | null }) => {
     toast.info(t('Buka di General Ledger belum tersedia'), {
       description: row?.journal_entry_id ? `JE-${row.journal_entry_id} — ${t('halaman General Ledger belum terhubung.')}` : t('Halaman General Ledger belum terhubung.'),
     });

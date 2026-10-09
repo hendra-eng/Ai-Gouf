@@ -41,16 +41,16 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   const d = payload[0].payload;
   return (
     <div className="fin-card p-3 text-[11px] shadow-lg min-w-[180px]">
-      <div className="font-600 text-foreground mb-2">{label}</div>
+      <div className="font-semibold text-foreground mb-2">{label}</div>
       <div className="flex justify-between gap-4">
         <span className="text-muted-foreground">Movement</span>
-        <span className={`font-600 ${d.type === 'negative' ? 'text-negative' : d.type === 'positive' ? 'text-positive' : 'text-primary'}`}>
+        <span className={`font-semibold ${d.type === 'negative' ? 'text-negative' : d.type === 'positive' ? 'text-positive' : 'text-primary'}`}>
           {d.type === 'negative' ? '-' : d.type === 'positive' ? '+' : ''}Rp {Math.abs(d.value).toLocaleString('id-ID')}M
         </span>
       </div>
       <div className="flex justify-between gap-4 mt-1">
         <span className="text-muted-foreground">Cumulative</span>
-        <span className="font-600 text-foreground">Rp {d.cumulative.toLocaleString('id-ID')}M</span>
+        <span className="font-semibold text-foreground">Rp {d.cumulative.toLocaleString('id-ID')}M</span>
       </div>
     </div>
   );
@@ -281,7 +281,7 @@ export default function EquityMovementChart({ steps, periodLabel }: EquityMoveme
   return (
     <div className="fin-card p-5">
       <div className="mb-4">
-        <div className="text-[14px] font-600 text-foreground">Equity Movement (Waterfall)</div>
+        <div className="text-[14px] font-semibold text-foreground">Equity Movement (Waterfall)</div>
         <div className="text-[11px] text-muted-foreground">Beginning to ending equity{periodLabel ? ` — ${periodLabel}` : ''}</div>
       </div>
 

@@ -39,7 +39,7 @@ export default function LiabilityTransactions({ isSampleData, rows }: LiabilityT
     <div className="fin-card mb-6">
       <div className="p-5 border-b border-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-[14px] font-600 text-foreground">Recent Liability Transactions</div>
+          <div className="text-[14px] font-semibold text-foreground">Recent Liability Transactions</div>
           <div className="text-[11px] text-muted-foreground">Payables, debt payments, accruals, and tax obligations</div>
         </div>
         <div className="relative">
@@ -65,7 +65,7 @@ export default function LiabilityTransactions({ isSampleData, rows }: LiabilityT
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 {['Date', 'Transaction ID', 'Account', 'Description', 'Debit', 'Credit', 'Vendor / Creditor', 'Reference', 'Status', ''].map(col => (
-                  <th key={`libtxn-col-${col}`} className="text-left px-4 py-3 font-600 text-muted-foreground whitespace-nowrap">{col}</th>
+                  <th key={`libtxn-col-${col}`} className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">{col}</th>
                 ))}
               </tr>
             </thead>
@@ -73,7 +73,7 @@ export default function LiabilityTransactions({ isSampleData, rows }: LiabilityT
               {filtered.map(txn => (
                 <tr key={`libtxn-${txn.id}`} className="border-b border-border hover:bg-muted/30 transition-colors group">
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(txn.date)}</td>
-                  <td className="px-4 py-3 font-500 text-primary whitespace-nowrap">{txn.txId}</td>
+                  <td className="px-4 py-3 font-medium text-primary whitespace-nowrap">{txn.txId}</td>
                   <td className="px-4 py-3 text-foreground whitespace-nowrap">{txn.account}</td>
                   <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
                     <div className="truncate" title={txn.description}>{txn.description}</div>

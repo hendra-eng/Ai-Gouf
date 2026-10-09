@@ -1,5 +1,7 @@
 'use client';
 import React, { useMemo, useState } from 'react';
+import TabNav from '@/components/ui/TabNav';
+import { FileText, LayoutDashboard, Users, Wallet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
@@ -66,11 +68,11 @@ export default function ARContent() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const pageSize = 8;
 
-  const tabs: { id: ARTab; label: string; count?: number }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'customers', label: 'Customers', count: customers.length },
-    { id: 'invoices', label: 'Invoices', count: invoices.length },
-    { id: 'collections', label: 'Collections' },
+  const tabs: { id: ARTab; label: string; count?: number; icon: React.ComponentType<{ size?: number | string; className?: string }> }[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'customers', label: 'Customers', icon: Users, count: customers.length },
+    { id: 'invoices', label: 'Invoices', icon: FileText, count: invoices.length },
+    { id: 'collections', label: 'Collections', icon: Wallet },
   ];
 
   const filteredInvoices = invoices
@@ -138,7 +140,7 @@ export default function ARContent() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Accounts Receivable</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Accounts Receivable</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Monitor receivables, collections, customer exposure, and overdue balances.</p>
           <div className="flex items-center gap-3 mt-1.5">
             <span className="badge-info">Tersinkron dari database AR (Supabase)</span>
@@ -213,23 +215,12 @@ export default function ARContent() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={`ar-tab-${tab.id}`}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === tab.id
-                ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {tab.label}
-            {tab.count !== undefined && (
-              <span className="text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full">{tab.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <TabNav
+        
+        activeKey={activeTab}
+        onSelect={(key) => setActiveTab(key as any)}
+        items={tabs.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon, badge: tab.count, badgeClassName: 'text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full' }))}
+      />
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
@@ -587,7 +578,7 @@ function ARCollections({
           }
         />
       </div>
-      <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(inv.outstanding, true))}</p>
+      <p className="number-display text-xl font-bold text-foreground leading-none">{fx(formatRupiah(inv.outstanding, true))}</p>
       <div className="flex items-center justify-between mt-2">
         <span className={`text-xs font-medium ${inv.daysOverdue > 60 ? 'text-danger' : inv.daysOverdue > 0 ? 'text-warning' : 'text-muted-foreground'}`}>
           {inv.daysOverdue > 0 ? `${inv.daysOverdue} days overdue` : 'Due soon'}
@@ -651,7 +642,7 @@ function ARCollections({
           {forecastData.map((cf) => (
             <div key={`cf-${cf.period}`} className="text-center p-3 bg-secondary rounded-lg">
               <p className="text-xs text-muted-foreground font-medium mb-1">{cf.period}</p>
-              <p className="text-xl font-bold tabular-nums text-foreground">{fx(formatRupiah(cf.expected, true))}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{fx(formatRupiah(cf.expected, true))}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{cf.probability}% probability</p>
             </div>
           ))}

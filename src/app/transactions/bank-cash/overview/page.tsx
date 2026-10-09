@@ -76,7 +76,7 @@ export default function CashBankOverviewPage() {
   }, [mutations]);
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       {error && (

@@ -48,7 +48,7 @@ export default function AnalyticsKPICards() {
               </span>
             </div>
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>
-            <p className="number-display font-bold text-xl text-foreground leading-tight">{card.value}</p>
+            <p className="number-display text-xl font-bold text-foreground leading-none">{card.value}</p>
             <div className="mt-2 pt-2 border-t border-border flex items-center justify-between">
               <span className="text-2xs text-muted-foreground">Prev: {card.prev}</span>
               <span className="text-2xs text-muted-foreground">Target: {card.benchmark}</span>

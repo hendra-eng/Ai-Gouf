@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import TabNav from '@/components/ui/TabNav';
 import { usePathname } from 'next/navigation';
 import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen } from 'lucide-react';
 
@@ -25,39 +26,23 @@ export default function FsShell({ title, subtitle, actions, children }: {
 }) {
   const pathname = usePathname();
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5 fade-in">
+    <div className="space-y-5">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
         <div>
           <Link href="/financial-statements" className="text-sm text-muted-foreground hover:text-blue-700">Financial Statements</Link>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight mt-1">{title}</h1>
-          {subtitle && <div className="text-sm text-muted-foreground mt-1.5">{subtitle}</div>}
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
+          {subtitle && <div className="text-sm text-muted-foreground mt-0.5">{subtitle}</div>}
         </div>
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
 
-      <nav className="flex items-center gap-1 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1 border-b border-border">
-        {FS_TABS.map(t => {
-          const active = pathname === t.href;
-          const Icon = t.icon;
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={`flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${
-                active ? 'border-blue-600 text-blue-800 font-semibold' : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Icon size={16} /> {t.label}
-            </Link>
-          );
-        })}
-        <Link
-          href="/reports/general-ledger"
-          className="ml-auto flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
-        >
-          <BookOpen size={16} /> General Ledger
-        </Link>
-      </nav>
+      <TabNav
+        activeKey={FS_TABS.find(t => t.href === pathname)?.href ?? ''}
+        items={[
+          ...FS_TABS.map(t => ({ key: t.href, label: t.label, href: t.href, icon: t.icon })),
+          { key: '/reports/general-ledger', label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen },
+        ]}
+      />
 
       {children}
     </div>

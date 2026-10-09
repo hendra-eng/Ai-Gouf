@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { Receipt, ShoppingCart, ShoppingBag, BookOpen, Landmark, MoreHorizontal } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 
 // [BARU] Tab bar utama di halaman /transactions (di atas tabel "Transaksi").
 // Ini SET TAB TERPISAH dari sub-halaman /transactions/sales, /transactions/purchase,
@@ -20,15 +22,16 @@ export type TransactionsMainTabId =
 interface MainTab {
   id: TransactionsMainTabId;
   label: string;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
 
 const MAIN_TABS: MainTab[] = [
-  { id: 'transaksi', label: 'Transaksi' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'purchase', label: 'Purchase' },
-  { id: 'journal-entry', label: 'Journal Entry' },
-  { id: 'cash-bank', label: 'Cash & Bank' },
-  { id: 'other', label: 'Other' },
+  { id: 'transaksi', label: 'Transaksi', icon: Receipt },
+  { id: 'sales', label: 'Sales', icon: ShoppingCart },
+  { id: 'purchase', label: 'Purchase', icon: ShoppingBag },
+  { id: 'journal-entry', label: 'Journal Entry', icon: BookOpen },
+  { id: 'cash-bank', label: 'Cash & Bank', icon: Landmark },
+  { id: 'other', label: 'Other', icon: MoreHorizontal },
 ];
 
 interface TransactionsMainTabsProps {
@@ -38,22 +41,10 @@ interface TransactionsMainTabsProps {
 
 export default function TransactionsMainTabs({ activeTab, onTabChange }: TransactionsMainTabsProps) {
   return (
-    <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin">
-      {MAIN_TABS.map((tab) => {
-        const active = tab.id === activeTab;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onTabChange(tab.id)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-              active ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
-    </div>
+    <TabNav
+      activeKey={activeTab}
+      onSelect={(key) => onTabChange(key as TransactionsMainTabId)}
+      items={MAIN_TABS.map(t => ({ key: t.id, label: t.label, icon: t.icon }))}
+    />
   );
 }

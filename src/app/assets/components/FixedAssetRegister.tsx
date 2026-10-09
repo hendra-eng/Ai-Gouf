@@ -88,7 +88,7 @@ export default function FixedAssetRegister() {
       <div className="p-5 border-b border-border">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="text-[14px] font-600 text-foreground">Fixed Asset Register</div>
+            <div className="text-[14px] font-semibold text-foreground">Fixed Asset Register</div>
             <div className="text-[11px] text-muted-foreground">Complete register of company fixed assets and depreciation</div>
           </div>
           <div className="flex items-center gap-2">
@@ -127,7 +127,7 @@ export default function FixedAssetRegister() {
                 <th
                   key={`col-${col}`}
                   onClick={() => handleSort(col.toLowerCase())}
-                  className="text-left px-4 py-3 font-600 text-muted-foreground whitespace-nowrap cursor-pointer hover:text-foreground select-none"
+                  className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap cursor-pointer hover:text-foreground select-none"
                 >
                   <span className="flex items-center gap-1">
                     {col}
@@ -135,23 +135,23 @@ export default function FixedAssetRegister() {
                   </span>
                 </th>
               ))}
-              <th className="text-left px-4 py-3 font-600 text-muted-foreground">Actions</th>
+              <th className="text-left px-4 py-3 font-semibold text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
             {paginated.map(asset => (
               <tr key={`asset-row-${asset.id}`} className="border-b border-border hover:bg-muted/30 transition-colors group">
-                <td className="px-4 py-3 font-500 text-primary whitespace-nowrap">{asset.id}</td>
-                <td className="px-4 py-3 text-foreground font-500 max-w-[180px]">
+                <td className="px-4 py-3 font-medium text-primary whitespace-nowrap">{asset.id}</td>
+                <td className="px-4 py-3 text-foreground font-medium max-w-[180px]">
                   <div className="truncate" title={asset.name}>{asset.name}</div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{asset.category}</td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{asset.purchaseDate}</td>
-                <td className="px-4 py-3 font-500 text-foreground financial-value whitespace-nowrap">{fx(asset.cost)}</td>
+                <td className="px-4 py-3 font-medium text-foreground financial-value whitespace-nowrap">{fx(asset.cost)}</td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{asset.usefulLife}</td>
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{asset.method}</td>
-                <td className="px-4 py-3 text-negative font-500 financial-value whitespace-nowrap">{fx(asset.accDepr)}</td>
-                <td className="px-4 py-3 font-600 text-foreground financial-value whitespace-nowrap">{fx(asset.nbv)}</td>
+                <td className="px-4 py-3 text-negative font-medium financial-value whitespace-nowrap">{fx(asset.accDepr)}</td>
+                <td className="px-4 py-3 font-semibold text-foreground financial-value whitespace-nowrap">{fx(asset.nbv)}</td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <FinancialStatusBadge variant={asset.status} />
                 </td>
@@ -209,7 +209,7 @@ export default function FixedAssetRegister() {
             <button
               key={`page-${p}`}
               onClick={() => setPage(p)}
-              className={`w-7 h-7 rounded text-[11px] font-500 transition-colors ${p === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
+              className={`w-7 h-7 rounded text-[11px] font-medium transition-colors ${p === page ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}`}
             >
               {p}
             </button>

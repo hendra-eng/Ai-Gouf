@@ -234,7 +234,7 @@ export default function DepreciationSection() {
       <div className="xl:col-span-2 fin-card p-5">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <div className="text-[14px] font-600 text-foreground">Depreciation Analysis</div>
+            <div className="text-[14px] font-semibold text-foreground">Depreciation Analysis</div>
             <div className="text-[11px] text-muted-foreground">Monthly depreciation expense</div>
           </div>
         </div>
@@ -243,8 +243,8 @@ export default function DepreciationSection() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {summaryStats.map((s, i) => (
             <div key={`depr-stat-${i}`} className="bg-muted/50 rounded-lg p-3">
-              <div className="text-[10px] font-600 text-muted-foreground uppercase tracking-wide mb-1">{s.label}</div>
-              <div className="text-[16px] font-700 text-foreground financial-value">{fx(s.value)}</div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">{s.label}</div>
+              <div className="text-[16px] font-bold text-foreground financial-value">{fx(s.value)}</div>
               <div className="text-[10px] text-muted-foreground mt-0.5">{s.sub}</div>
             </div>
           ))}
@@ -286,7 +286,7 @@ export default function DepreciationSection() {
 
       {/* Nearly Depreciated */}
       <div className="fin-card p-5">
-        <div className="text-[14px] font-600 text-foreground mb-0.5">Assets Near Full Depreciation</div>
+        <div className="text-[14px] font-semibold text-foreground mb-0.5">Assets Near Full Depreciation</div>
         <div className="text-[11px] text-muted-foreground mb-4">Approaching end of useful life</div>
         <div className="space-y-3">
           {nearlyDepreciated.map(asset => (
@@ -297,10 +297,10 @@ export default function DepreciationSection() {
             >
               <div className="flex items-start justify-between mb-1">
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-500 text-foreground truncate">{asset.name}</div>
+                  <div className="text-[12px] font-medium text-foreground truncate">{asset.name}</div>
                   <div className="text-[10px] text-muted-foreground">{asset.id} · NBV: {fx(asset.nbv)}</div>
                 </div>
-                <div className="text-[11px] font-600 text-foreground ml-2 shrink-0">{asset.remaining}</div>
+                <div className="text-[11px] font-semibold text-foreground ml-2 shrink-0">{asset.remaining}</div>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5">
                 <div

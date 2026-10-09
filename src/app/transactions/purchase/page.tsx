@@ -519,7 +519,7 @@ export default function PurchaseOverviewPage() {
   ];
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <PurchaseTabs />
 
         {/* KPI Grid — desain disamakan dengan shared KpiCard (dipakai di

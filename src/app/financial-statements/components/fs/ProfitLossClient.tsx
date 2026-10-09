@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
@@ -26,38 +27,31 @@ export default function ProfitLossClient() {
   const [segForm, setSegForm] = useState<Segmen>({ type: '', value: '' });
   const [segmen, setSegmen] = useState<Segmen>({ type: '', value: '' });
   const [monthly, setMonthly] = useState(false);
-  const [segTypes, setSegTypes] = useState<SegmentType[]>([]);
-  const [data, setData] = useState<ProfitLoss | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [expandAll, setExpandAll] = useState(false);
 
-  useEffect(() => {
-    setSegTypes([]);
-    if (activeClientId) fetchSegments(activeClientId).then(d => setSegTypes(d.types)).catch(() => setSegTypes([]));
-  }, [activeClientId]);
+  // Cache lewat react-query: pindah tab lalu kembali langsung menampilkan data
+  // terakhir (tanpa skeleton / kedip); data lama dipertahankan saat filter diubah.
+  const segQuery = useQuery({
+    queryKey: ['fs', 'segments', activeClientId],
+    queryFn: () => fetchSegments(activeClientId!),
+    enabled: hydrated && !!activeClientId,
+  });
+  const segTypes: SegmentType[] = segQuery.data?.types ?? [];
 
-  const load = useCallback((signal?: AbortSignal) => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchProfitLoss(activeClientId, {
+  const plQuery = useQuery({
+    queryKey: ['fs', 'profit-loss', activeClientId, period, segmen, monthly],
+    queryFn: ({ signal }) => fetchProfitLoss(activeClientId!, {
       ...period,
       segment_type: segmen.type && segmen.value ? segmen.type : undefined,
       segment_value: segmen.type && segmen.value ? segmen.value : undefined,
       breakdown: monthly ? 'monthly' : 'none',
-    }, signal)
-      .then(setData)
-      .catch(e => { if ((e as Error).name !== 'AbortError') { setError((e as Error).message); setData(null); } })
-      .finally(() => setLoading(false));
-  }, [activeClientId, period, segmen, monthly]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [hydrated, load]);
+    }, signal),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: ProfitLoss | null = plQuery.data ?? null;
+  const loading = plQuery.isFetching && (plQuery.isPlaceholderData || !plQuery.data);
+  const error = plQuery.error ? (plQuery.error as Error).message : null;
 
   const rows = useMemo<StatementRow[]>(() => {
     if (!data) return [];

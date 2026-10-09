@@ -42,7 +42,7 @@ export default function OverviewSourceTable() {
   return (
     <div className="je-card">
       <div className="px-5 pt-5 pb-3 border-b border-border">
-        <h2 className="text-sm font-700 text-foreground">Source Distribution</h2>
+        <h2 className="text-sm font-bold text-foreground">Source Distribution</h2>
         <p className="text-xs text-muted-foreground mt-0.5">by transaction origin</p>
       </div>
       <div className="p-5 space-y-4">
@@ -54,11 +54,11 @@ export default function OverviewSourceTable() {
           <div key={`src-${item.source}`}>
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-600 text-foreground">{item.source}</span>
-                <span className="text-[10px] font-600 text-muted-foreground bg-muted rounded px-1.5 py-0.5 tabular-nums">{item.count} JEs</span>
+                <span className="text-sm font-semibold text-foreground">{item.source}</span>
+                <span className="text-[10px] font-semibold text-muted-foreground bg-muted rounded px-1.5 py-0.5 tabular-nums">{item.count} JEs</span>
               </div>
               <div className="text-right">
-                <span className="text-sm font-700 text-foreground tabular-nums">
+                <span className="text-sm font-bold text-foreground tabular-nums">
                   Rp{(item.totalAmount / 1000).toFixed(0)}K
                 </span>
                 <span className="text-[11px] text-muted-foreground ml-1">({item.percentOfTotal}%)</span>
@@ -75,8 +75,8 @@ export default function OverviewSourceTable() {
       </div>
       <div className="px-5 pb-4 border-t border-border pt-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground font-500">Period Total</span>
-          <span className="font-800 text-foreground tabular-nums">
+          <span className="text-muted-foreground font-medium">Period Total</span>
+          <span className="font-extrabold text-foreground tabular-nums">
             Rp{(periodTotal / 1000000).toFixed(2)}M
           </span>
         </div>

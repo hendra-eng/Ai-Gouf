@@ -157,11 +157,11 @@ export default function OverviewContent() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-700 text-foreground">{t('Financial Overview')}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('Financial Overview')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('Comprehensive financial performance and business health')} — {companyName}</p>
           <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs font-600 text-primary">Jan 2026 – Aug 2026</span>
-            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-500">YTD</span>
+            <span className="text-xs font-semibold text-primary">Jan 2026 – Aug 2026</span>
+            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-medium">YTD</span>
             <span className="text-xs text-muted-foreground">{t('Last updated')}: {lastUpdated ? formatLastUpdated(lastUpdated) : '—'}</span>
           </div>
         </div>
@@ -189,7 +189,7 @@ export default function OverviewContent() {
             <button
               key={`view-${m}`}
               onClick={() => setViewMode(m)}
-              className={`text-sm px-3 py-1.5 rounded-md font-500 transition-colors ${
+              className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${
                 viewMode === m ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'
               }`}
             >
@@ -242,41 +242,41 @@ export default function OverviewContent() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link href="/accounts-receivable" className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all group">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-600 text-foreground">{t('Accounts Receivable')}</span>
+            <span className="text-sm font-semibold text-foreground">{t('Accounts Receivable')}</span>
             <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
           </div>
           {punyaDataAR ? (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{formatMoney(arKpis.totalAR, currency)}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{formatMoney(arKpis.totalAR, currency)}</p>
               <p className="text-xs text-danger mt-0.5">{formatMoney(arKpis.overdueAR, currency)} {t('overdue')} — {t('action required')}</p>
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{fx('Rp 0')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
         <Link href="/accounts-payable" className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all group">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-600 text-foreground">{t('Accounts Payable')}</span>
+            <span className="text-sm font-semibold text-foreground">{t('Accounts Payable')}</span>
             <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
           </div>
           {punyaDataAP ? (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{formatMoney(apKpis.totalAP, currency)}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{formatMoney(apKpis.totalAP, currency)}</p>
               <p className="text-xs text-warning mt-0.5">{formatMoney(apKpis.dueThisWeek, currency)} {t('due this week')}</p>
             </>
           ) : (
             <>
-              <p className="text-2xl font-700 text-foreground tabular-nums">{fx('Rp 0')}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{fx('Rp 0')}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
             </>
           )}
         </Link>
         <Link href="/ai-financial-analyst" className="bg-ai-purple-bg border border-purple-200 rounded-lg p-4 hover:shadow-card-md transition-all group">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-600 text-ai-purple">AI Financial Analyst</span>
+            <span className="text-sm font-semibold text-ai-purple">AI Financial Analyst</span>
             <Icon name="ArrowRightIcon" size={14} className="text-ai-purple group-hover:text-purple-700 transition-colors" />
           </div>
           <p className="text-sm text-ai-purple-foreground">0 analyses ready</p>

@@ -14,6 +14,7 @@
 // adalah id_user milik akun yang SEDANG LOGIN (`useAuth().user.id`).
 
 import { useEffect, useState, useCallback } from 'react';
+import { swrClear, swrGet, swrSet } from './swrCache';
 
 const JE_CHANGED_EVENT = 'gouf-journal-entry-changed';
 
@@ -25,6 +26,7 @@ async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = 
 }
 
 function notifyJeChanged() {
+  swrClear('je:'); // data lama tidak boleh tampil setelah ada perubahan
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(JE_CHANGED_EVENT));
 }
@@ -130,18 +132,20 @@ export async function deleteJeSourceRecord(id: string): Promise<void> {
 export function useJeSourceRecords(clientId: string | null | undefined): {
   records: BackendJeSourceRecord[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [records, setRecords] = useState<BackendJeSourceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `je:useJeSourceRecords:${clientId ?? ''}`;
+  const [records, setRecords] = useState<BackendJeSourceRecord[]>(() => swrGet<BackendJeSourceRecord[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setRecords([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof records>(cacheKey);
+    if (hit !== undefined) { setRecords(hit); setLoading(false); } else { setLoading(true); }
     listJeSourceRecords(clientId)
-      .then(data => { setRecords(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setRecords(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat source records'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [clientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -178,7 +182,7 @@ export interface BackendJeDraft {
   reviewed_by_name: string | null;
   approved_by_name: string | null;
   notes: string | null;
-  journal_entry_id: number | null;
+  journal_entry_id: string | null;
   posted_at: string | null;
   posted_by: string | null;
   created_at: string;
@@ -301,18 +305,20 @@ export async function uploadJeSourceFile(file: File, managementClientId: string)
 export function useJeDrafts(clientId: string | null | undefined, status?: string): {
   drafts: BackendJeDraft[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [drafts, setDrafts] = useState<BackendJeDraft[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `je:useJeDrafts:${clientId ?? ''}:${status ?? ''}`;
+  const [drafts, setDrafts] = useState<BackendJeDraft[]>(() => swrGet<BackendJeDraft[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setDrafts([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof drafts>(cacheKey);
+    if (hit !== undefined) { setDrafts(hit); setLoading(false); } else { setLoading(true); }
     listJeDrafts(clientId, status)
-      .then(data => { setDrafts(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setDrafts(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat journal entry'))
       .finally(() => setLoading(false));
-  }, [clientId, status]);
+  }, [clientId, status, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -369,18 +375,20 @@ export async function deleteJeDraftLine(id: string): Promise<void> {
 export function useJeDraftLines(draftId: string | null | undefined): {
   lines: BackendJeDraftLine[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [lines, setLines] = useState<BackendJeDraftLine[]>([]);
+  const cacheKey = `je:useJeDraftLines:${draftId ?? ''}`;
+  const [lines, setLines] = useState<BackendJeDraftLine[]>(() => swrGet<BackendJeDraftLine[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!draftId) { setLines([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof lines>(cacheKey);
+    if (hit !== undefined) { setLines(hit); setLoading(false); } else { setLoading(true); }
     listJeDraftLines(draftId)
-      .then(data => { setLines([...data].sort((a, b) => a.line_no - b.line_no)); setError(null); })
+      .then(data => { const value = [...data].sort((a, b) => a.line_no - b.line_no); swrSet(cacheKey, value); setLines(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat baris jurnal'))
       .finally(() => setLoading(false));
-  }, [draftId]);
+  }, [draftId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -421,18 +429,20 @@ export async function createJeActivityLog(payload: Partial<BackendJeActivityLog>
 export function useJeActivityLogs(clientId: string | null | undefined): {
   logs: BackendJeActivityLog[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [logs, setLogs] = useState<BackendJeActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `je:useJeActivityLogs:${clientId ?? ''}`;
+  const [logs, setLogs] = useState<BackendJeActivityLog[]>(() => swrGet<BackendJeActivityLog[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setLogs([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof logs>(cacheKey);
+    if (hit !== undefined) { setLogs(hit); setLoading(false); } else { setLoading(true); }
     listJeActivityLogs(clientId)
-      .then(data => { setLogs(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setLogs(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Gagal memuat activity log'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [clientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();

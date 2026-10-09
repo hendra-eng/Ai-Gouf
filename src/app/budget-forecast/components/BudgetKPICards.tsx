@@ -44,7 +44,7 @@ export default function BudgetKPICards() {
               </span>
             </div>
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 leading-tight truncate">{card.label}</p>
-            <p className="number-display font-bold text-xl text-foreground leading-tight">
+            <p className="number-display text-xl font-bold text-foreground leading-none">
               {fx(formatIDR(card.actual, true))}
             </p>
             <div className="mt-2 pt-2 border-t border-border space-y-1">

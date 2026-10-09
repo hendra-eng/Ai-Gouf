@@ -294,8 +294,8 @@ export default function TransactionsContent() {
       {/* [DIUBAH] Urutan disamakan dengan halaman Sales/Purchase/dst:
           Judul + deskripsi dulu, baru tab bar di bawahnya, baru konten. */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Transaksi</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Transaksi</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
           Jurnal entri dan transaksi keuangan — {companyName}
         </p>
       </div>

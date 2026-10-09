@@ -18,7 +18,7 @@ export default function BalanceValidationCard({ assets, liabilities, equity, dif
           size={16}
           className={balanced ? 'text-positive' : 'text-negative'}
         />
-        <span className="text-[13px] font-600 text-foreground">Balance Sheet Validation</span>
+        <span className="text-[13px] font-semibold text-foreground">Balance Sheet Validation</span>
         <span className={`fin-badge text-[10px] px-2 py-0.5 border ${balanced ? 'bg-green-50 text-green-700 border-green-200' : 'bg-negative-subtle text-negative border-red-200'}`}>
           {balanced ? 'Balanced' : 'Unbalanced'}
         </span>
@@ -26,18 +26,18 @@ export default function BalanceValidationCard({ assets, liabilities, equity, dif
       <div className="grid grid-cols-3 gap-3 text-center">
         <div>
           <div className="text-[10px] text-muted-foreground mb-0.5">Assets</div>
-          <div className="text-[13px] font-600 text-foreground financial-value">{assets}</div>
+          <div className="text-[13px] font-semibold text-foreground financial-value">{assets}</div>
         </div>
         <div>
           <div className="text-[10px] text-muted-foreground mb-0.5">Liabilities</div>
-          <div className="text-[13px] font-600 text-foreground financial-value">{liabilities}</div>
+          <div className="text-[13px] font-semibold text-foreground financial-value">{liabilities}</div>
         </div>
         <div>
           <div className="text-[10px] text-muted-foreground mb-0.5">Equity</div>
-          <div className="text-[13px] font-600 text-foreground financial-value">{equity}</div>
+          <div className="text-[13px] font-semibold text-foreground financial-value">{equity}</div>
         </div>
       </div>
-      <div className={`mt-3 pt-3 border-t border-border text-center text-[11px] font-500 ${balanced ? 'text-positive' : 'text-negative'}`}>
+      <div className={`mt-3 pt-3 border-t border-border text-center text-[11px] font-medium ${balanced ? 'text-positive' : 'text-negative'}`}>
         Difference: {difference}
       </div>
     </div>

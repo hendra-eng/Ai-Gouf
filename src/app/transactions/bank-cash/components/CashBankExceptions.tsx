@@ -230,7 +230,7 @@ export default function CashBankExceptions() {
         ].map(k => (
           <div key={k.label} className="card p-4">
             <p className="text-xs text-muted-foreground">{t(k.label)}</p>
-            <p className="text-xl font-bold text-foreground mt-1">{k.value}</p>
+            <p className="number-display text-xl font-bold text-foreground leading-none mt-1">{k.value}</p>
           </div>
         ))}
       </div>

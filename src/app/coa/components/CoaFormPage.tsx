@@ -211,8 +211,8 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-6xl px-6 py-5">
+      <div className="pb-2">
+        <div className="mx-auto max-w-6xl px-6">
           <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
             <ListTree size={13} />
             <Link href={backHref} className="hover:text-foreground">Chart of Accounts</Link>
@@ -224,8 +224,8 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
               <ArrowLeft size={16} />
             </Link>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-foreground">{judul}</h1>
-              <p className="text-xs text-muted-foreground">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{judul}</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 {isEdit
                   ? original?.client_id ? `Linked to ${original.client_code ?? activeClientName ?? 'client'}` : 'Unassigned — not linked to any client'
                   : 'Create an account and map it to the IFRS-aligned standard layer.'}

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarDays, ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronDown, LayoutDashboard, Database, ShoppingCart, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';
@@ -22,6 +23,15 @@ const TABS: { key: string; label: string }[] = [
   { key: 'posted', label: 'Posted' },
 ];
 
+const TAB_ICONS: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {
+  'overview': LayoutDashboard,
+  'source-data': Database,
+  'sales-transaction': ShoppingCart,
+  'journal-preview': Eye,
+  'exceptions': AlertTriangle,
+  'posted': CheckCircle2,
+};
+
 export default function SalesClient() {
   const { t } = useLanguage();
   const { user } = useAuth();
@@ -35,11 +45,11 @@ export default function SalesClient() {
   const openExceptionCount = exceptions.filter(e => e.status !== 'Resolved').length;
 
   return (
-    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
+    <div className="space-y-0">
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('Sales')}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('Sales')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {activeTab === 'overview' && t('Ringkasan performa penjualan dan metrik utama.')}
             {activeTab === 'source-data' && t('Kelola dan proses data sumber penjualan sebelum dilakukan penjurnalan.')}
@@ -56,27 +66,17 @@ export default function SalesClient() {
         </button>
       </div>
 
-      {/* Tabs — desain pill/segmented, disamakan dengan Financial Statements
-          (FinancialStatementsContent.tsx): kontainer bg-muted rounded-xl,
-          tab aktif dapat bg-card + shadow-card, tanpa garis bawah. */}
-      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin mb-0">
-        {TABS?.map(tab => (
-          <button
-            key={tab?.key}
-            onClick={() => setActiveTab(tab?.key)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-              activeTab === tab?.key
-                ? 'bg-card text-foreground shadow-card'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t(tab?.label)}
-            {tab?.key === 'exceptions' && openExceptionCount > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-red-100 text-red-600 rounded-full">{openExceptionCount}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Tabs -- gaya underline, disamakan dengan Financial Statements (TabNav) */}
+      <TabNav
+        activeKey={activeTab}
+        onSelect={setActiveTab}
+        items={TABS.map(tab => ({
+          key: tab.key,
+          label: t(tab.label),
+          icon: TAB_ICONS[tab.key],
+          badge: tab.key === 'exceptions' && openExceptionCount > 0 ? openExceptionCount : undefined,
+        }))}
+      />
 
       {/* Tab Content */}
       <div className="pt-5">

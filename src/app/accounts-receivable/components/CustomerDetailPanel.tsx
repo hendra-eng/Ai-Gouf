@@ -1,5 +1,7 @@
 'use client';
 import React, { useState } from 'react';
+import TabNav from '@/components/ui/TabNav';
+import { FileText, LayoutDashboard, StickyNote, Wallet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Icon from '@/components/ui/AppIcon';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -37,10 +39,10 @@ export default function CustomerDetailPanel({
   const payableInvoices = customerInvoices.filter((i) => i.outstanding > 0 && i.status !== 'Written Off');
 
   const tabs = [
-    { id: 'overview' as const, label: 'Overview' },
-    { id: 'invoices' as const, label: 'Invoices', count: customerInvoices.length },
-    { id: 'payments' as const, label: 'Payment History', count: payments.length },
-    { id: 'notes' as const, label: 'Notes', count: notes.length },
+    { id: 'overview' as const, label: 'Overview', icon: LayoutDashboard },
+    { id: 'invoices' as const, label: 'Invoices', icon: FileText, count: customerInvoices.length },
+    { id: 'payments' as const, label: 'Payment History', icon: Wallet, count: payments.length },
+    { id: 'notes' as const, label: 'Notes', icon: StickyNote, count: notes.length },
   ];
 
   return (
@@ -92,23 +94,12 @@ export default function CustomerDetailPanel({
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 mt-3 -mb-4 border-b border-border pb-0">
-            {tabs.map((tab) => (
-              <button
-                key={`cust-detail-tab-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-                {tab.count !== undefined && (
-                  <span className="text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full">{tab.count}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          <TabNav
+        className="mt-3 -mb-4"
+        activeKey={activeTab}
+        onSelect={(key) => setActiveTab(key as any)}
+        items={tabs.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon, badge: tab.count, badgeClassName: 'text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full' }))}
+      />
         </div>
 
         <div className="p-5 space-y-5 mt-4">

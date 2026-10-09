@@ -19,16 +19,13 @@ export default function BudgetHeader() {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Icon name="PresentationChartLineIcon" size={18} className="text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Budget &amp; Forecast</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Budget &amp; Forecast</h1>
           <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold border border-primary/20">
             FY 2026
           </span>
         </div>
-        <p className="text-sm text-muted-foreground ml-11">
+        <p className="text-sm text-muted-foreground mt-0.5">
           Plan financial performance, monitor budget variance, and forecast future results
         </p>
       </div>

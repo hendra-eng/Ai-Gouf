@@ -55,7 +55,7 @@ export default function TabKpiCard({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 truncate">
             {label}
           </p>
-          <p className="number-display font-bold leading-none text-xl text-foreground">{value}</p>
+          <p className="number-display text-xl font-bold text-foreground leading-none">{value}</p>
           {subValue && <p className="text-xs text-muted-foreground mt-1">{subValue}</p>}
         </div>
         {icon && (

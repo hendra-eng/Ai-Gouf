@@ -110,7 +110,7 @@ export default function APErrorDetection() {
       <div className="fin-card p-5">
         <div className="flex items-center gap-2 mb-1">
           <Icon name="SparklesIcon" size={16} className="text-ai" />
-          <span className="text-[14px] font-600 text-foreground">Agent AI \u2014 Purchase Error Detection</span>
+          <span className="text-[14px] font-semibold text-foreground">Agent AI \u2014 Purchase Error Detection</span>
           <span className="fin-badge bg-ai-subtle text-ai border border-purple-200 text-[10px]">AI</span>
           <button
             onClick={refetch}

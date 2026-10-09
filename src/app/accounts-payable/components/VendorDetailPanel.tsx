@@ -1,5 +1,7 @@
 'use client';
 import React, { useState } from 'react';
+import TabNav from '@/components/ui/TabNav';
+import { FileText, LayoutDashboard, Wallet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
@@ -23,9 +25,9 @@ export default function VendorDetailPanel({ vendor, bills, onClose }: Props) {
   const vendorBills = bills.filter((b) => b.vendorId === vendor.id);
 
   const tabs = [
-    { id: 'overview' as const, label: 'Overview' },
-    { id: 'bills' as const, label: 'Bills', count: vendorBills.length },
-    { id: 'payments' as const, label: 'Payment History' },
+    { id: 'overview' as const, label: 'Overview', icon: LayoutDashboard },
+    { id: 'bills' as const, label: 'Bills', icon: FileText, count: vendorBills.length },
+    { id: 'payments' as const, label: 'Payment History', icon: Wallet },
   ];
 
   // [DIUBAH] Sebelumnya 3 baris riwayat pembayaran difabrikasi (tanggal &
@@ -69,22 +71,12 @@ export default function VendorDetailPanel({ vendor, bills, onClose }: Props) {
               AI Payment Risk
             </button>
           </div>
-          <div className="flex gap-1 mt-3 -mb-4 border-b border-border">
-            {tabs.map((tab) => (
-              <button
-                key={`vend-detail-tab-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  activeTab === tab.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-                {tab.count !== undefined && (
-                  <span className="text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full">{tab.count}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          <TabNav
+        className="mt-3 -mb-4"
+        activeKey={activeTab}
+        onSelect={(key) => setActiveTab(key as any)}
+        items={tabs.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon, badge: tab.count, badgeClassName: 'text-2xs bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full' }))}
+      />
         </div>
 
         <div className="p-5 space-y-5 mt-4">

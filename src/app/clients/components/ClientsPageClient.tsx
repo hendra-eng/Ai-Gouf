@@ -3,7 +3,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown, MoreVertical, Pencil, Trash2,  } from 'lucide-react';
+import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown, MoreVertical, Pencil, Trash2, LayoutDashboard, Wallet, HeartPulse, Sparkles } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 import {
   type Client,
   type ClientStatus,
@@ -225,11 +226,11 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
   }
 
   const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'financial', label: 'Financial' },
-    { id: 'health', label: 'Health Score' },
-    { id: 'activity', label: 'Activity' },
-    { id: 'ai', label: 'AI Insights' },
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'financial', label: 'Financial', icon: Wallet },
+    { id: 'health', label: 'Health Score', icon: HeartPulse },
+    { id: 'activity', label: 'Activity', icon: Activity },
+    { id: 'ai', label: 'AI Insights', icon: Sparkles },
   ];
 
   const healthItems = [
@@ -295,20 +296,12 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-border px-6 overflow-x-auto">
-          {tabs.map(t => (
-            <button
-              key={`dt-${t.id}`}
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === t.id
-                  ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabNav
+          className="!px-6 !mx-0"
+          activeKey={activeTab}
+          onSelect={(key) => setActiveTab(key)}
+          items={tabs.map(t => ({ key: t.id, label: t.label, icon: t.icon }))}
+        />
 
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-6">
@@ -1053,15 +1046,15 @@ export default function ClientsPageClient() {
   return (
     <div className="min-h-screen bg-background">
       {/* Page Header */}
-      <div className="bg-card border-b border-border px-6 py-5">
+      <div className="pb-2">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Users size={20} className="text-primary" />
-                <h1 className="text-2xl font-bold text-foreground tracking-tight">Clients</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Clients</h1>
               </div>
-              <p className="text-sm text-muted-foreground">Monitor client financial health, accounting status, and service activity.</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Monitor client financial health, accounting status, and service activity.</p>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1097,7 +1090,7 @@ export default function ClientsPageClient() {
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-screen-2xl mx-auto pt-4 pb-6 space-y-6">
         {clientsLoading && (
           <div className="text-xs text-muted-foreground px-1">Memuat data klien...</div>
         )}

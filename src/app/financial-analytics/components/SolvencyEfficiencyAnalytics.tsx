@@ -61,7 +61,7 @@ export default function SolvencyEfficiencyAnalytics() {
         {items.map((item) => (
           <div key={`solv-${item.label}`} className="bg-muted rounded-xl p-3">
             <p className="text-2xs text-muted-foreground mb-1">{item.label}</p>
-            <p className="text-xl font-bold tabular-nums text-foreground">{fx(item.value)}</p>
+            <p className="number-display text-xl font-bold text-foreground leading-none">{fx(item.value)}</p>
             <p className="text-2xs text-muted-foreground mt-0.5">{fx(item.sub)}</p>
           </div>
         ))}

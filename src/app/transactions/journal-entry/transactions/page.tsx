@@ -129,7 +129,7 @@ export default function JournalEntryTransactionPage() {
   }), [journalEntries]);
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="transaction" />
 
         {/* Toolbar */}

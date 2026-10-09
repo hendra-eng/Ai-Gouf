@@ -71,21 +71,21 @@ export default function JournalEntryExceptionsPage() {
   }), [flaggedEntries]);
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="exceptions" />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div className="je-card p-4">
-            <p className="text-2xl font-bold tabular-nums text-slate-700">{summary.total}</p>
+            <p className="number-display text-xl font-bold text-slate-700 leading-none">{summary.total}</p>
             <p className="text-xs font-medium text-foreground mt-1">Total Flagged Entries</p>
           </div>
           <div className="je-card p-4">
-            <p className="text-2xl font-bold tabular-nums text-orange-700">{summary.exceptionStatus}</p>
+            <p className="number-display text-xl font-bold text-orange-700 leading-none">{summary.exceptionStatus}</p>
             <p className="text-xs font-medium text-foreground mt-1">Marked as Exception</p>
           </div>
           <div className="je-card p-4">
-            <p className="text-2xl font-bold tabular-nums text-red-700">{summary.imbalanced}</p>
+            <p className="number-display text-xl font-bold text-red-700 leading-none">{summary.imbalanced}</p>
             <p className="text-xs font-medium text-foreground mt-1">Debit/Credit Imbalance</p>
           </div>
         </div>

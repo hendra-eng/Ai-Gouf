@@ -18,6 +18,7 @@
 // FK ke management_users dan tetap diisi id akun login (`useAuth().user.id`).
 
 import { useEffect, useState, useCallback } from 'react';
+import { swrClear, swrGet, swrSet } from './swrCache';
 
 const SALES_CHANGED_EVENT = 'gouf-sales-changed';
 
@@ -29,6 +30,7 @@ async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = 
 }
 
 function notifySalesChanged() {
+  swrClear('sales:'); // data lama tidak boleh tampil setelah ada perubahan
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(SALES_CHANGED_EVENT));
 }
@@ -207,18 +209,20 @@ export async function promoteSourceFileToInvoices(sourceFileId: string): Promise
 export function useSalesSourceFiles(clientId: string | null | undefined): {
   files: BackendSalesSourceFile[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [files, setFiles] = useState<BackendSalesSourceFile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `sales:useSalesSourceFiles:${clientId ?? ''}`;
+  const [files, setFiles] = useState<BackendSalesSourceFile[]>(() => swrGet<BackendSalesSourceFile[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setFiles([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof files>(cacheKey);
+    if (hit !== undefined) { setFiles(hit); setLoading(false); } else { setLoading(true); }
     listSalesSourceFiles(clientId)
-      .then(data => { setFiles(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setFiles(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source files'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [clientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -264,18 +268,20 @@ export async function listSalesSourceRows(sourceFileId?: string | null, clientId
 export function useSalesSourceRows(sourceFileId: string | null | undefined): {
   rows: BackendSalesSourceRow[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [rows, setRows] = useState<BackendSalesSourceRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `sales:useSalesSourceRows:${sourceFileId ?? ''}`;
+  const [rows, setRows] = useState<BackendSalesSourceRow[]>(() => swrGet<BackendSalesSourceRow[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!sourceFileId) { setRows([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof rows>(cacheKey);
+    if (hit !== undefined) { setRows(hit); setLoading(false); } else { setLoading(true); }
     listSalesSourceRows(sourceFileId)
-      .then(data => { setRows(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setRows(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source data rows'))
       .finally(() => setLoading(false));
-  }, [sourceFileId]);
+  }, [sourceFileId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -317,7 +323,7 @@ export interface BackendSalesInvoice {
   posting_status: string;
   reconcile_status: string;
   journal_sync_status: string;
-  journal_entry_id: number | null;
+  journal_entry_id: string | null;
   source_row_id: string | null;
   posted_at: string | null;
   posted_by: string | null;
@@ -355,18 +361,20 @@ export async function deleteSalesInvoice(id: string): Promise<void> {
 export function useSalesInvoices(clientId: string | null | undefined, postingStatus?: string): {
   invoices: BackendSalesInvoice[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [invoices, setInvoices] = useState<BackendSalesInvoice[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `sales:useSalesInvoices:${clientId ?? ''}:${postingStatus ?? ''}`;
+  const [invoices, setInvoices] = useState<BackendSalesInvoice[]>(() => swrGet<BackendSalesInvoice[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setInvoices([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof invoices>(cacheKey);
+    if (hit !== undefined) { setInvoices(hit); setLoading(false); } else { setLoading(true); }
     listSalesInvoices(clientId, postingStatus)
-      .then(data => { setInvoices(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setInvoices(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load invoices'))
       .finally(() => setLoading(false));
-  }, [clientId, postingStatus]);
+  }, [clientId, postingStatus, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -488,18 +496,20 @@ export async function updateSalesException(id: string, payload: Partial<BackendS
 export function useSalesExceptions(clientId: string | null | undefined): {
   exceptions: BackendSalesException[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [exceptions, setExceptions] = useState<BackendSalesException[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `sales:useSalesExceptions:${clientId ?? ''}`;
+  const [exceptions, setExceptions] = useState<BackendSalesException[]>(() => swrGet<BackendSalesException[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setExceptions([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof exceptions>(cacheKey);
+    if (hit !== undefined) { setExceptions(hit); setLoading(false); } else { setLoading(true); }
     listSalesExceptions(clientId)
-      .then(data => { setExceptions(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setExceptions(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load exceptions'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [clientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();
@@ -540,18 +550,20 @@ export async function createSalesActivityLog(payload: Partial<BackendSalesActivi
 export function useSalesActivityLogs(clientId: string | null | undefined): {
   logs: BackendSalesActivityLog[]; loading: boolean; error: string | null; refresh: () => void;
 } {
-  const [logs, setLogs] = useState<BackendSalesActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `sales:useSalesActivityLogs:${clientId ?? ''}`;
+  const [logs, setLogs] = useState<BackendSalesActivityLog[]>(() => swrGet<BackendSalesActivityLog[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const muatUlang = useCallback(() => {
     if (!clientId) { setLogs([]); setLoading(false); return; }
-    setLoading(true);
+    const hit = swrGet<typeof logs>(cacheKey);
+    if (hit !== undefined) { setLogs(hit); setLoading(false); } else { setLoading(true); }
     listSalesActivityLogs(clientId)
-      .then(data => { setLogs(data); setError(null); })
+      .then(data => { const value = data; swrSet(cacheKey, value); setLogs(value); setError(null); })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load activity log'))
       .finally(() => setLoading(false));
-  }, [clientId]);
+  }, [clientId, cacheKey]);
 
   useEffect(() => {
     muatUlang();

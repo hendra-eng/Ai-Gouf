@@ -1,14 +1,16 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Landmark, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 
 interface Tab {
   id: string;
   label: string;
   href: string;
   description: string;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
 
 // [BARU] Overview/Bank Feed/Reconciliation ditambahkan supaya Cash & Bank
@@ -18,48 +20,56 @@ interface Tab {
 const tabs: Tab[] = [
   {
     id: 'tab-overview',
+    icon: LayoutDashboard,
     label: 'Overview',
     href: '/transactions/bank-cash/overview',
     description: 'Ringkasan arus kas, saldo per akun & status rekonsiliasi',
   },
   {
     id: 'tab-cash-payment',
+    icon: ArrowUpRight,
     label: 'Cash Payment',
     href: '/transactions/bank-cash/cash-payment',
     description: 'Pembayaran hutang usaha & pajak — diambil otomatis dari halaman Transaksi',
   },
   {
     id: 'tab-cash-receipt',
+    icon: ArrowDownLeft,
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
     description: 'Pergerakan kas, bank & pendanaan — diambil otomatis dari halaman Transaksi',
   },
   {
     id: 'tab-bank-feed',
+    icon: Landmark,
     label: 'Bank Feed',
     href: '/transactions/bank-cash/bank-feed',
     description: 'Import mutasi rekening koran untuk dicocokkan dengan pembukuan',
   },
   {
     id: 'tab-reconciliation',
+    icon: Scale,
     label: 'Reconciliation',
     href: '/transactions/bank-cash/reconciliation',
     description: 'Cocokkan mutasi Bank Feed dengan Cash Payment/Cash Receipt — termasuk riwayat yang sudah cocok',
   },
   {
     id: 'tab-journal-preview',
+    icon: Eye,
     label: 'Journal Preview',
     href: '/transactions/bank-cash/journal-preview',
     description: 'Lihat bagaimana transaksi kas & bank diubah menjadi jurnal akuntansi',
   },
   {
     id: 'tab-exceptions',
+    icon: AlertTriangle,
     label: 'Exceptions',
     href: '/transactions/bank-cash/exceptions',
     description: 'Kelola dan tindak lanjuti transaksi kas & bank yang memerlukan review',
   },
   {
     id: 'tab-posted',
+    icon: CheckCircle2,
     label: 'Posted',
     href: '/transactions/bank-cash/posted',
     description: 'Jurnal kas & bank yang sudah diposting ke buku besar',
@@ -75,25 +85,14 @@ export default function CashBankTabs() {
 
   return (
     <div className="mb-4">
-      <h1 className="text-2xl font-bold text-foreground">Cash & Bank</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-foreground">Cash & Bank</h1>
       <p className="text-sm text-muted-foreground mt-0.5">{activeTab.description}</p>
 
-      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin mt-4">
-        {tabs.map((tab) => {
-          const active = isActive(tab.href);
-          return (
-            <Link
-              key={tab.id}
-              href={tab.href}
-              className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-                active ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </div>
+      <TabNav
+        className="mt-4"
+        activeKey={activeTab.id}
+        items={tabs.map(t => ({ key: t.id, label: t.label, href: t.href, icon: t.icon }))}
+      />
     </div>
   );
 }

@@ -549,12 +549,12 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
     if (!active || !payload?.length) return null;
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-        <p className="font-600 text-foreground mb-1.5">{label}</p>
+        <p className="font-semibold text-foreground mb-1.5">{label}</p>
         {payload.map((p: any, i: number) => (
           <div key={`tt-${i}`} className="flex items-center gap-2 py-0.5">
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
             <span className="text-muted-foreground">{p.name}:</span>
-            <span className="font-600 text-foreground">{formatMoney(p.value, currency)}</span>
+            <span className="font-semibold text-foreground">{formatMoney(p.value, currency)}</span>
           </div>
         ))}
       </div>
@@ -568,17 +568,17 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
     const variancePct = budget !== 0 ? ((actual - budget) / budget) * 100 : 0;
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs min-w-[180px]">
-        <p className="font-600 text-foreground mb-1.5">{label}</p>
+        <p className="font-semibold text-foreground mb-1.5">{label}</p>
         {payload.map((p: any, i: number) => (
           <div key={`btt-${i}`} className="flex items-center justify-between gap-3 py-0.5">
             <span className="flex items-center gap-2 text-muted-foreground">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.fill }} />
               {p.name}
             </span>
-            <span className="font-600 text-foreground">{formatMoney(p.value, currency)}</span>
+            <span className="font-semibold text-foreground">{formatMoney(p.value, currency)}</span>
           </div>
         ))}
-        <div className={`mt-1.5 pt-1.5 border-t border-border font-600 ${variancePct >= 0 ? 'text-positive' : 'text-negative'}`}>
+        <div className={`mt-1.5 pt-1.5 border-t border-border font-semibold ${variancePct >= 0 ? 'text-positive' : 'text-negative'}`}>
           {variancePct >= 0 ? '+' : ''}{variancePct.toFixed(1)}% {t('vs anggaran')}
         </div>
       </div>
@@ -591,7 +591,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
       <div className="xl:col-span-2 bg-card border border-border rounded-lg p-5 shadow-card">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-md font-600 text-foreground">
+            <h3 className="text-md font-semibold text-foreground">
               {viewMode === 'Budget'
                 ? t('Aktual vs Anggaran')
                 : viewMode === 'Previous Year'
@@ -614,7 +614,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
                 <button
                   key={`period-${p}`}
                   onClick={() => setPeriod(p)}
-                  className={`text-xs px-2.5 py-1 rounded-md font-500 transition-colors ${
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
                     period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
                   }`}
                 >
@@ -794,7 +794,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
       {/* AR Aging Donut */}
       <div className="bg-card border border-border rounded-lg p-5 shadow-card">
         <div className="mb-4">
-          <h3 className="text-md font-600 text-foreground">{t('AR Aging Analysis')}</h3>
+          <h3 className="text-md font-semibold text-foreground">{t('AR Aging Analysis')}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {isAgingSample
               ? fx(t('Total AR: Rp 0 outstanding'))
@@ -826,9 +826,9 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
               >
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                  <span className={activeAging === index ? 'text-foreground font-600' : 'text-muted-foreground'}>{t(item.name)}</span>
+                  <span className={activeAging === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}>{t(item.name)}</span>
                 </div>
-                <span className="font-600 text-foreground tabular-nums">{formatMoney(displayValueJt * 1e6, currency)}</span>
+                <span className="font-semibold text-foreground tabular-nums">{formatMoney(displayValueJt * 1e6, currency)}</span>
                 <span className="text-muted-foreground w-10 text-right">{displayPct.toFixed(0)}%</span>
               </div>
             );

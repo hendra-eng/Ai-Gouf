@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronsDownUp, ChevronsUpDown, Filter, Loader2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
@@ -30,27 +31,17 @@ export default function BalanceSheetClient() {
   const { user } = useAuth();
   const [form, setForm] = useState<BsQuery>({ as_of: todayIso(), compare: 'previous_year_end', show_zero: false });
   const [query, setQuery] = useState<BsQuery>(form);
-  const [data, setData] = useState<BalanceSheet | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [expandAll, setExpandAll] = useState(false);
 
-  const load = useCallback((q: BsQuery, signal?: AbortSignal) => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchBalanceSheet(activeClientId, q, signal)
-      .then(setData)
-      .catch(e => { if ((e as Error).name !== 'AbortError') { setError((e as Error).message); setData(null); } })
-      .finally(() => setLoading(false));
-  }, [activeClientId]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const ctrl = new AbortController();
-    load(query, ctrl.signal);
-    return () => ctrl.abort();
-  }, [hydrated, query, load]);
+  const bsQuery = useQuery({
+    queryKey: ['fs', 'balance-sheet', activeClientId, query],
+    queryFn: ({ signal }) => fetchBalanceSheet(activeClientId!, query, signal),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: BalanceSheet | null = bsQuery.data ?? null;
+  const loading = bsQuery.isFetching && (bsQuery.isPlaceholderData || !bsQuery.data);
+  const error = bsQuery.error ? (bsQuery.error as Error).message : null;
 
   const rows = useMemo<StatementRow[]>(() => {
     if (!data) return [];

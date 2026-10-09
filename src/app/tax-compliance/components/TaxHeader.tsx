@@ -27,17 +27,14 @@ export default function TaxHeader() {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-lg bg-chart-3/10 flex items-center justify-center">
-            <Icon name="DocumentCheckIcon" size={18} className="text-chart-3" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Tax &amp; Compliance</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Tax &amp; Compliance</h1>
           <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border flex items-center gap-1 ${isCompliant ? 'bg-positive-subtle text-positive border-positive/20' : 'bg-negative-subtle text-negative border-negative/20'}`}>
             <Icon name="ShieldCheckIcon" size={11} />
             {isCompliant ? 'Compliant' : 'Needs Attention'}
           </span>
         </div>
-        <p className="text-sm text-muted-foreground ml-11">
+        <p className="text-sm text-muted-foreground mt-0.5">
           Monitor tax obligations, filing deadlines, compliance status, and tax exposure
         </p>
       </div>

@@ -28,16 +28,16 @@ export default function FinancialInsightCard({ title, description, metric, sever
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[12px] font-600 text-foreground">{title}</span>
+            <span className="text-[12px] font-semibold text-foreground">{title}</span>
             <span className={`fin-badge text-[9px] px-1.5 py-0 border ${cfg.border} ${cfg.iconColor} bg-white/60`}>{cfg.label}</span>
           </div>
           <p className="text-[12px] text-muted-foreground mb-2">{description}</p>
-          <div className="text-[11px] font-600 text-foreground">{metric}</div>
+          <div className="text-[11px] font-semibold text-foreground">{metric}</div>
         </div>
         {onAnalyze && (
           <button
             onClick={onAnalyze}
-            className="shrink-0 text-[11px] font-500 text-ai hover:text-accent transition-colors flex items-center gap-1"
+            className="shrink-0 text-[11px] font-medium text-ai hover:text-accent transition-colors flex items-center gap-1"
           >
             <Icon name="SparklesIcon" size={12} />
             Analyze

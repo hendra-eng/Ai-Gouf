@@ -129,7 +129,7 @@ export default function PurchasePreviewPage() {
 
   if (!tx) {
     return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <PurchaseTabs />
         <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>No purchase transactions yet.</div>
       </div>
@@ -161,7 +161,7 @@ export default function PurchasePreviewPage() {
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <PurchaseTabs />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">

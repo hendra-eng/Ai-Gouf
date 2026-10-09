@@ -298,8 +298,8 @@ export default function OpeningBalanceEditorClient() {
   return (
     <div className="min-h-screen bg-background pb-32">
       {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-screen-2xl px-6 py-5">
+      <div className="pb-2">
+        <div className="mx-auto max-w-screen-2xl">
           <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
             <ListTree size={13} />
             <Link href="/coa" className="hover:text-foreground">Chart of Accounts</Link>
@@ -315,11 +315,11 @@ export default function OpeningBalanceEditorClient() {
               </Link>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-bold tracking-tight text-foreground">Opening Balance FY {ob.fiscal_year}</h1>
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground">Opening Balance FY {ob.fiscal_year}</h1>
                   <StatusBadge status={ob.status} />
                   {ob.revision > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Rev {ob.revision}</span>}
                 </div>
-                <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3">
                   <span className="inline-flex items-center gap-1"><GitBranch size={12} /> {branchLabel(ob.branch)}</span>
                   <span>As of {formatDate(ob.as_of_date)} · {ob.is_year_start ? 'Start of year' : 'Mid-year cut-off'}</span>
                   {ob.journal && <span className="inline-flex items-center gap-1"><FileText size={12} /> <span className="font-mono">{ob.journal.je_number}</span></span>}
@@ -352,7 +352,7 @@ export default function OpeningBalanceEditorClient() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-6">
+      <div className="mx-auto max-w-screen-2xl space-y-5 pt-4 pb-6">
         {/* Banner status */}
         {!draft && Math.abs(ob.difference) > 0.004 && ob.suspense_account && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">

@@ -12,7 +12,7 @@ export default function PurchaseChartSection() {
       <div className="xl:col-span-2 bg-card rounded-xl border border-border p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-600 text-foreground">Purchase Trend by Category</h3>
+            <h3 className="text-sm font-semibold text-foreground">Purchase Trend by Category</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Monthly spend breakdown — FY 2026</p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -33,7 +33,7 @@ export default function PurchaseChartSection() {
         <PurchaseBarChart />
       </div>
       <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-        <h3 className="text-sm font-600 text-foreground mb-1">Top Vendors</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-1">Top Vendors</h3>
         <p className="text-xs text-muted-foreground mb-4">By spend — Sep 2026</p>
         <div className="space-y-3">
           {vendorBreakdown.length === 0 && (
@@ -41,11 +41,11 @@ export default function PurchaseChartSection() {
           )}
           {vendorBreakdown?.map((v, i) => (
             <div key={`top-vendor-${v?.id}`} className="flex items-center gap-3">
-              <span className="text-xs font-600 text-muted-foreground w-4 text-right">{i + 1}</span>
+              <span className="text-xs font-semibold text-muted-foreground w-4 text-right">{i + 1}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-xs font-500 text-foreground truncate">{v?.name}</span>
-                  <span className="text-xs font-600 text-foreground font-tabular ml-2">{v?.amount}</span>
+                  <span className="text-xs font-medium text-foreground truncate">{v?.name}</span>
+                  <span className="text-xs font-semibold text-foreground tabular-nums ml-2">{v?.amount}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-muted rounded-full h-1.5">

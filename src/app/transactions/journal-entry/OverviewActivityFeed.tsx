@@ -52,7 +52,7 @@ export default function OverviewActivityFeed() {
     <div className="je-card">
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border">
         <div>
-          <h2 className="text-sm font-700 text-foreground">Recent Activity</h2>
+          <h2 className="text-sm font-bold text-foreground">Recent Activity</h2>
           <p className="text-xs text-muted-foreground mt-0.5">{items.length} recent activities</p>
         </div>
         {items.length > 0 && (
@@ -78,12 +78,12 @@ export default function OverviewActivityFeed() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-700 text-foreground font-mono tracking-tight">{item.je_number ?? '-'}</span>
+                  <span className="text-xs font-bold text-foreground font-mono tracking-tight">{item.je_number ?? '-'}</span>
                   <StatusBadge label={badge.label} variant={badge.variant} size="sm" />
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">{item.description}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  <span className="font-500 text-foreground">{item.event_type}</span>
+                  <span className="font-medium text-foreground">{item.event_type}</span>
                   {' '}by {item.performed_by}
                 </p>
               </div>

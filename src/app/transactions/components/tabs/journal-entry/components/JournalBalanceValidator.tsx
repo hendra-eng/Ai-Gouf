@@ -21,7 +21,7 @@ export default function JournalBalanceValidator() {
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
       {/* Balance validator */}
       <div className="xl:col-span-1 bg-card rounded-xl border border-border p-5 shadow-sm">
-        <h3 className="text-sm font-600 text-foreground mb-1">Debit / Credit Validator</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-1">Debit / Credit Validator</h3>
         <p className="text-xs text-muted-foreground mb-4">Current period balance check — Sep 2026</p>
 
         <div className={`rounded-lg border p-4 mb-4 ${isBalanced ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
@@ -31,7 +31,7 @@ export default function JournalBalanceValidator() {
             ) : (
               <AlertTriangle size={16} className="text-red-600" />
             )}
-            <span className={`text-sm font-700 ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
+            <span className={`text-sm font-bold ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
               {isBalanced ? 'Period is Balanced' : 'Period is Unbalanced'}
             </span>
           </div>
@@ -45,39 +45,39 @@ export default function JournalBalanceValidator() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-5 text-[10px] font-700 text-blue-600 bg-blue-50 rounded px-1 py-0.5 text-center">DR</span>
+              <span className="w-5 text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1 py-0.5 text-center">DR</span>
               <span className="text-sm text-muted-foreground">Total Debit</span>
             </div>
-            <span className="text-sm font-700 font-tabular text-foreground">
+            <span className="text-sm font-bold tabular-nums text-foreground">
               ${currentPeriod.totalDebit.toLocaleString()}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-5 text-[10px] font-700 text-emerald-600 bg-emerald-50 rounded px-1 py-0.5 text-center">CR</span>
+              <span className="w-5 text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded px-1 py-0.5 text-center">CR</span>
               <span className="text-sm text-muted-foreground">Total Credit</span>
             </div>
-            <span className="text-sm font-700 font-tabular text-foreground">
+            <span className="text-sm font-bold tabular-nums text-foreground">
               ${currentPeriod.totalCredit.toLocaleString()}
             </span>
           </div>
           <div className="border-t border-border pt-3 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Difference</span>
-            <span className={`text-sm font-700 font-tabular ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+            <span className={`text-sm font-bold tabular-nums ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
               ${diff.toLocaleString()}
             </span>
           </div>
         </div>
 
         <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-600 mb-2">Prior Periods</p>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">Prior Periods</p>
           <div className="space-y-2">
             {periodSummary.slice(1).map((p) => (
               <div key={`period-${p.period}`} className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">{p.period}</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-tabular text-foreground">${p.totalDebit.toLocaleString()}</span>
-                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px] font-600">
+                  <span className="tabular-nums text-foreground">${p.totalDebit.toLocaleString()}</span>
+                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
                     <CheckCircle size={9} /> Balanced
                   </span>
                 </div>
@@ -91,7 +91,7 @@ export default function JournalBalanceValidator() {
       <div className="xl:col-span-2 bg-card rounded-xl border border-border p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-600 text-foreground">Journal Entry Activity</h3>
+            <h3 className="text-sm font-semibold text-foreground">Journal Entry Activity</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Monthly entries by status — FY 2026</p>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">

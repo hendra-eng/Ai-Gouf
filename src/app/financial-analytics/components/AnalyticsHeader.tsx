@@ -33,18 +33,15 @@ export default function AnalyticsHeader() {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 rounded-lg bg-chart-4/10 flex items-center justify-center">
-            <Icon name="BeakerIcon" size={18} className="text-chart-4" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Financial Analytics</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Financial Analytics</h1>
           {isSampleData && (
             <span className="text-2xs font-medium px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
               Sample data
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground ml-11">
+        <p className="text-sm text-muted-foreground mt-0.5">
           {loading ? 'Loading…' : `${companyName} · ${periodLabel}`}
         </p>
       </div>

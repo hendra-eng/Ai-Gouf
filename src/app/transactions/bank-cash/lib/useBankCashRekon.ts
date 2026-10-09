@@ -8,8 +8,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
+import { swrClear, swrGet, swrSet } from '@/lib/swrCache';
 import { rekonDaftarPembayaran, rekonJurnalPreview, REKON_EVENT } from '@/app/agent-ai/lib/api';
 import type { CashBankTx } from './cashBankMock';
+
+// Data rekonsiliasi berubah (match / unmatch / post / reverse) -> cache lama dibuang,
+// termasuk saat tidak ada halaman yang sedang mendengarkan event ini.
+if (typeof window !== 'undefined') {
+  window.addEventListener(REKON_EVENT, () => swrClear('bankrekon:'));
+}
 
 export interface PembayaranRekon {
   id: string;
@@ -97,7 +104,8 @@ export function tahapPembayaran(p: PembayaranRekon): 'Diposting' | 'Disetujui' |
 export function usePembayaranRekon() {
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
-  const [payments, setPayments] = useState<PembayaranRekon[]>([]);
+  const cacheKey = `bankrekon:payments:${clientId ?? ''}`;
+  const [payments, setPayments] = useState<PembayaranRekon[]>(() => swrGet<PembayaranRekon[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [versi, setVersi] = useState(0);
@@ -119,11 +127,16 @@ export function usePembayaranRekon() {
       return;
     }
     const id = ++reqId.current;
-    setLoading(true);
+    // Pindah tab: tampilkan data terakhir langsung (tanpa "Memuat..."), lalu segarkan diam-diam.
+    // Refresh eksplisit (versi > 0) tetap menampilkan status loading seperti sebelumnya.
+    const hit = versi === 0 ? swrGet<PembayaranRekon[]>(cacheKey) : undefined;
+    if (hit !== undefined) { setPayments(hit); setLoading(false); } else { setLoading(true); }
     rekonDaftarPembayaran(clientId)
       .then((rows: any[]) => {
         if (id !== reqId.current) return;
-        setPayments((rows || []).map(normalisasiPembayaran));
+        const value = (rows || []).map(normalisasiPembayaran);
+        swrSet(cacheKey, value);
+        setPayments(value);
         setError(null);
       })
       .catch((e: any) => {
@@ -134,7 +147,7 @@ export function usePembayaranRekon() {
       .finally(() => {
         if (id === reqId.current) setLoading(false);
       });
-  }, [clientId, versi]);
+  }, [clientId, versi, cacheKey]);
 
   return { payments, loading, error, refresh };
 }
@@ -156,7 +169,8 @@ export function usePostedJurnalRekon() {
 function useJurnalRekonBase(status: 'POSTED' | null) {
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
-  const [txs, setTxs] = useState<CashBankTxReal[]>([]);
+  const cacheKey = `bankrekon:jurnal:${clientId ?? ''}:${status ?? 'ALL'}`;
+  const [txs, setTxs] = useState<CashBankTxReal[]>(() => swrGet<CashBankTxReal[]>(cacheKey) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [versi, setVersi] = useState(0);
@@ -171,13 +185,16 @@ function useJurnalRekonBase(status: 'POSTED' | null) {
       return;
     }
     const id = ++reqId.current;
-    setLoading(true);
+    const hit = versi === 0 ? swrGet<CashBankTxReal[]>(cacheKey) : undefined;
+    if (hit !== undefined) { setTxs(hit); setLoading(false); } else { setLoading(true); }
     // Tab Posted butuh pembayaran yang sudah dibatalkan juga, supaya jurnal yang sudah dibalik
     // (pembayarannya dibatalkan saat reversal) masih bisa dipetakan ke invoice & mutasi bank asalnya.
     Promise.all([rekonJurnalPreview(clientId, status), rekonDaftarPembayaran(clientId, null, status === 'POSTED')])
       .then(([jurnal, bayar]: [any[], any[]]) => {
         if (id !== reqId.current) return;
-        setTxs(susunTx(jurnal || [], (bayar || []).map(normalisasiPembayaran)));
+        const value = susunTx(jurnal || [], (bayar || []).map(normalisasiPembayaran));
+        swrSet(cacheKey, value);
+        setTxs(value);
         setError(null);
       })
       .catch((e: any) => {
@@ -188,7 +205,7 @@ function useJurnalRekonBase(status: 'POSTED' | null) {
       .finally(() => {
         if (id === reqId.current) setLoading(false);
       });
-  }, [clientId, versi, status]);
+  }, [clientId, versi, status, cacheKey]);
 
   return { txs, loading, error, refresh };
 }

@@ -89,7 +89,7 @@ export default function AssetsAIInsights() {
     <div className="fin-card p-5 mb-6">
       <div className="flex items-center gap-2 mb-4">
         <Icon name="SparklesIcon" size={16} className="text-ai" />
-        <span className="text-[14px] font-600 text-foreground">Asset Insights</span>
+        <span className="text-[14px] font-semibold text-foreground">Asset Insights</span>
         {!isSample && <span className="fin-badge bg-ai-subtle text-ai border border-purple-200 text-[10px]">Computed</span>}
         <span className="text-[11px] text-muted-foreground ml-auto">
           {isSample ? 'Sample data' : `Based on ${assetsData.periodLabel || registerData.periodLabel}`}

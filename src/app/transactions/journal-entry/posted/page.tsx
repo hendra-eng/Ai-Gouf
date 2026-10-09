@@ -85,7 +85,7 @@ export default function JournalEntryPostedPage() {
   }), [postedEntries]);
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="posted" />
 
         {/* Summary Cards */}

@@ -72,7 +72,7 @@
   background: radial-gradient(ellipse at 50% 20%, var(--chatgpt-bg-mid) 0%, var(--chatgpt-bg) 55%, var(--chatgpt-bg-deep) 100%);
   background-attachment: fixed;
   color: var(--chatgpt-text);
-  font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans), sans-serif;
 }
 
 .agent-ai-root * {

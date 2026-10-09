@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -43,27 +44,20 @@ export default function EquityClient() {
   const { activeClientId, hydrated } = useActiveClient();
   const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodQuery>(() => ({ ...defaultPeriod(), compare: 'none' }));
-  const [data, setData] = useState<ChangesInEquity | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
-  const load = useCallback((signal?: AbortSignal) => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchChangesInEquity(activeClientId, period, signal)
-      .then(d => { setData(d); setOpen(new Set()); })
-      .catch(e => { if ((e as Error).name !== 'AbortError') { setError((e as Error).message); setData(null); } })
-      .finally(() => setLoading(false));
-  }, [activeClientId, period]);
+  const fsQuery = useQuery({
+    queryKey: ['fs', 'changes-in-equity', activeClientId, period],
+    queryFn: ({ signal }) => fetchChangesInEquity(activeClientId!, period, signal),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: ChangesInEquity | null = fsQuery.data ?? null;
+  const loading = fsQuery.isFetching && (fsQuery.isPlaceholderData || !fsQuery.data);
+  const error = fsQuery.error ? (fsQuery.error as Error).message : null;
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [hydrated, load]);
+  // Dulu di-reset di .then(); sekarang saat data baru (bukan placeholder) tiba.
+  useEffect(() => { if (fsQuery.data && !fsQuery.isPlaceholderData) setOpen(new Set()); }, [fsQuery.data, fsQuery.isPlaceholderData]);
 
   const company = data?.client.company_name ?? '';
   const toggle = (k: string) => setOpen(p => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });

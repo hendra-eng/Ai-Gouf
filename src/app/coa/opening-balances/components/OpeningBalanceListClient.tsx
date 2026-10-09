@@ -25,8 +25,8 @@ export default function OpeningBalanceListClient() {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-screen-2xl px-6 py-6">
+      <div className="pb-2">
+        <div className="mx-auto max-w-screen-2xl">
           <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
             <ListTree size={13} />
             <Link href="/coa" className="hover:text-foreground">Chart of Accounts</Link>
@@ -40,7 +40,7 @@ export default function OpeningBalanceListClient() {
               </span>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Opening Balances</h1>
-                <p className="text-sm text-muted-foreground">Starting balances per fiscal year and branch, posted as an opening journal.</p>
+                <p className="text-sm text-muted-foreground mt-0.5">Starting balances per fiscal year and branch, posted as an opening journal.</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -92,7 +92,7 @@ export default function OpeningBalanceListClient() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-screen-2xl space-y-8 px-6 py-6">
+      <div className="mx-auto max-w-screen-2xl space-y-8 pt-4 pb-6">
         {!activeClientId ? (
           <Kosong icon={Building2} title="No client selected" hint="Pick a client above to manage its opening balances." />
         ) : error ? (

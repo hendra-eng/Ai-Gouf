@@ -59,7 +59,7 @@ export default function ReserveDetailDrawer({ entry, onClose }: ReserveDetailDra
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-text-secondary mb-1">Available Balance</p>
-              <p className="text-2xl font-bold font-mono text-text-primary">
+              <p className="number-display text-xl font-bold text-foreground leading-none">
                 {formatIDR(entry.availableBalance)}
               </p>
               <p className={`text-xs mt-1 ${entry.variance >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>

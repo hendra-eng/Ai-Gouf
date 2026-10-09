@@ -14,11 +14,11 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   if (!active || !payload) return null;
   return (
     <div className="fin-card p-3 text-[11px] shadow-lg min-w-[160px]">
-      <div className="font-600 text-foreground mb-2">{label}</div>
+      <div className="font-semibold text-foreground mb-2">{label}</div>
       {payload.map((p, i) => (
         <div key={`eq-tt-${i}`} className="flex justify-between gap-4">
           <span className="text-muted-foreground">{p.name}</span>
-          <span className="font-600" style={{ color: p.color }}>Rp {p.value.toLocaleString('id-ID')}M</span>
+          <span className="font-semibold" style={{ color: p.color }}>Rp {p.value.toLocaleString('id-ID')}M</span>
         </div>
       ))}
     </div>
@@ -235,7 +235,7 @@ export default function EquityTrendChart({ trendData, companyName }: EquityTrend
     <div className="fin-card p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="text-[14px] font-600 text-foreground">Total Equity Trend</div>
+          <div className="text-[14px] font-semibold text-foreground">Total Equity Trend</div>
           <div className="text-[11px] text-muted-foreground">{subtitle}</div>
         </div>
         <div className="flex gap-1">
@@ -243,7 +243,7 @@ export default function EquityTrendChart({ trendData, companyName }: EquityTrend
             <button
               key={`eq-period-${p}`}
               onClick={() => setActivePeriod(p)}
-              className={`px-2.5 py-1 text-[11px] font-500 rounded transition-colors ${activePeriod === p ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors ${activePeriod === p ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             >
               {p}
             </button>

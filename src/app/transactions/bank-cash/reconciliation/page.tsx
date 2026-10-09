@@ -29,12 +29,12 @@ function ReconciliationSummary({
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
       <div className="card-elevated-md rounded-xl p-5">
         <p className="text-xs text-muted-foreground mb-1">Saldo Menurut Bank</p>
-        <p className="text-xl font-bold text-foreground font-mono">{formatIDR(saldoBank)}</p>
+        <p className="number-display text-xl font-bold text-foreground leading-none">{formatIDR(saldoBank)}</p>
         <p className="text-[11px] text-muted-foreground mt-1">Semua mutasi Bank Feed sesi ini</p>
       </div>
       <div className="card-elevated-md rounded-xl p-5">
         <p className="text-xs text-muted-foreground mb-1">Saldo Menurut Buku</p>
-        <p className="text-xl font-bold text-foreground font-mono">{formatIDR(saldoBuku)}</p>
+        <p className="number-display text-xl font-bold text-foreground leading-none">{formatIDR(saldoBuku)}</p>
         <p className="text-[11px] text-muted-foreground mt-1">Mutasi yang sudah dicocokkan (invoice atau tanpa invoice)</p>
       </div>
       <div className={`rounded-xl p-5 border ${balance ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
@@ -187,7 +187,7 @@ export default function ReconciliationPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       {error && (
@@ -399,7 +399,7 @@ export default function ReconciliationPage() {
                 <thead>
                   <tr className="border-b border-border bg-muted/20">
                     {['Tanggal', 'Mutasi Bank Feed', 'Dicocokkan Dengan', 'Nominal', 'Jurnal', 'Status', ''].map((h) => (
-                      <th key={h} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
+                      <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>

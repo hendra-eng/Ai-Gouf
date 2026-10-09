@@ -16,8 +16,8 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   const item = payload[0];
   return (
     <div className="bg-card border border-border rounded-lg shadow-elevated px-3 py-2.5 text-xs">
-      <p className="font-700 text-foreground mb-1">{label}</p>
-      <p className="text-muted-foreground">Count: <span className="font-700 text-foreground tabular-nums">{item.value}</span></p>
+      <p className="font-bold text-foreground mb-1">{label}</p>
+      <p className="text-muted-foreground">Count: <span className="font-bold text-foreground tabular-nums">{item.value}</span></p>
     </div>
   );
 }

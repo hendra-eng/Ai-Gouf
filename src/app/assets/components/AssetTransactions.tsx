@@ -66,7 +66,7 @@ export default function AssetTransactions() {
     <div className="fin-card mb-6">
       <div className="p-5 border-b border-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-[14px] font-600 text-foreground">Recent Asset Transactions</div>
+          <div className="text-[14px] font-semibold text-foreground">Recent Asset Transactions</div>
           <div className="text-[11px] text-muted-foreground">Acquisitions, depreciation, disposals, and adjustments</div>
         </div>
         <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export default function AssetTransactions() {
           <thead>
             <tr className="border-b border-border bg-muted/40">
               {['Date', 'Transaction ID', 'Asset', 'Type', 'Account', 'Debit', 'Credit', 'Reference', 'User', 'Status', ''].map(col => (
-                <th key={`asttxn-col-${col}`} className="text-left px-4 py-3 font-600 text-muted-foreground whitespace-nowrap">{col}</th>
+                <th key={`asttxn-col-${col}`} className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">{col}</th>
               ))}
             </tr>
           </thead>
@@ -94,7 +94,7 @@ export default function AssetTransactions() {
             {filtered.map(txn => (
               <tr key={`asttxn-${txn.id}`} className="border-b border-border hover:bg-muted/30 transition-colors group">
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{txn.date}</td>
-                <td className="px-4 py-3 font-500 text-primary whitespace-nowrap">{txn.id}</td>
+                <td className="px-4 py-3 font-medium text-primary whitespace-nowrap">{txn.id}</td>
                 <td className="px-4 py-3 text-foreground max-w-[160px]">
                   <div className="truncate" title={txn.asset}>{txn.asset}</div>
                 </td>

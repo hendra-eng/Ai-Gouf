@@ -1,4 +1,5 @@
 'use client';
+import TabNav from '@/components/ui/TabNav';
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -27,7 +28,7 @@ interface ReportDef {
   href: string | null;
 }
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number | string; className?: string }> }[] = [
   { id: 'overview', label: 'Business Overview', icon: PieChart },
   { id: 'sales', label: 'Sales', icon: BarChart3 },
   { id: 'purchases', label: 'Purchases', icon: ShoppingCart },
@@ -282,32 +283,19 @@ export default function ReportsCatalog() {
   const selectClass = 'w-full appearance-none bg-card border border-border rounded-lg pl-10 pr-9 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400';
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5 fade-in">
+    <div className="space-y-5 fade-in">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground mt-1.5">Explore operational and financial reports across your business modules.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Reports</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">Explore operational and financial reports across your business modules.</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          const active = !showFavorites && tab.id === activeTab;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setShowFavorites(false); }}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                active ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-foreground/80 hover:bg-white hover:text-foreground font-medium'
-              }`}
-            >
-              <Icon size={18} className={active ? 'text-blue-600' : 'text-muted-foreground'} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <TabNav
+        activeKey={showFavorites ? '' : activeTab}
+        onSelect={(key) => { setActiveTab(key as TabId); setShowFavorites(false); }}
+        items={TABS.map(tab => ({ key: tab.id, label: tab.label, icon: tab.icon }))}
+      />
 
       {/* Filter bar */}
       <div className="bg-card border border-border rounded-xl shadow-sm p-5 flex flex-col lg:flex-row lg:items-end gap-4">

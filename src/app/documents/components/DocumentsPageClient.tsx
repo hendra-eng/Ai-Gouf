@@ -498,15 +498,15 @@ export default function DocumentsPageClient() {
   return (
     <div className="min-h-screen bg-background">
       {/* Page Header */}
-      <div className="bg-card border-b border-border px-6 py-5">
+      <div className="pb-2">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <FolderOpen size={20} className="text-primary" />
-                <h1 className="text-2xl font-bold text-foreground tracking-tight">Documents</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Documents</h1>
               </div>
-              <p className="text-sm text-muted-foreground">Financial document workspace — manage, process, and link documents.</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Financial document workspace — manage, process, and link documents.</p>
             </div>
             <div className="flex items-center gap-2">
               {needsAttentionCount > 0 && (
@@ -528,7 +528,7 @@ export default function DocumentsPageClient() {
       </div>
 
       {isSampleData && !loadingDocs && (
-        <div className="max-w-screen-2xl mx-auto px-6 pt-4">
+        <div className="max-w-screen-2xl mx-auto pt-4">
           <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <AlertTriangle size={13} className="flex-shrink-0" />
             Showing sample data — select a client with processed documents to see real files.
@@ -538,7 +538,7 @@ export default function DocumentsPageClient() {
 
       {/* Upload Zone */}
       {showUploadZone && (
-        <div className="max-w-screen-2xl mx-auto px-6 pt-4">
+        <div className="max-w-screen-2xl mx-auto pt-4">
           <div
             onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={() => setIsDragOver(false)}
@@ -578,7 +578,7 @@ export default function DocumentsPageClient() {
         </div>
       )}
 
-      <div className="max-w-screen-2xl mx-auto px-6 py-6">
+      <div className="max-w-screen-2xl mx-auto pt-4 pb-6">
         {/* Summary Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {[

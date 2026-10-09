@@ -19,8 +19,8 @@ export default function DashboardHeader() {
   return (
     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('Financial Overview')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('Financial Overview')}</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
           {t('Comprehensive financial performance and business health')}
           {activeClientName ? ` — ${activeClientName}` : ''}
         </p>

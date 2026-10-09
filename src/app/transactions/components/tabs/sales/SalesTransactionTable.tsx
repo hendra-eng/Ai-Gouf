@@ -178,9 +178,9 @@ export default function SalesTransactionTable() {
       {/* Bulk action bar */}
       {selectedRows.size > 0 && (
         <div className="animate-slide-up px-5 py-2.5 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
-          <span className="text-sm font-500 text-primary">{selectedRows.size} selected</span>
-          <button onClick={handleBulkPost} className="text-sm font-500 text-primary hover:underline">Post to GL</button>
-          <button onClick={() => toast.success('Export initiated for selected invoices')} className="text-sm font-500 text-muted-foreground hover:text-foreground">Export Selected</button>
+          <span className="text-sm font-medium text-primary">{selectedRows.size} selected</span>
+          <button onClick={handleBulkPost} className="text-sm font-medium text-primary hover:underline">Post to GL</button>
+          <button onClick={() => toast.success('Export initiated for selected invoices')} className="text-sm font-medium text-muted-foreground hover:text-foreground">Export Selected</button>
           <button onClick={() => setSelectedRows(new Set())} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             <X size={14} />
           </button>
@@ -215,13 +215,13 @@ export default function SalesTransactionTable() {
                 <th
                   key={`col-${col.key}`}
                   onClick={() => handleSort(col.key as SortField)}
-                  className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
+                  className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
                 >
                   {col.label}
                   <SortIcon field={col.key as SortField} />
                 </th>
               ))}
-              <th className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Actions
               </th>
             </tr>
@@ -232,7 +232,7 @@ export default function SalesTransactionTable() {
                 <td colSpan={12} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Filter size={28} className="text-muted-foreground opacity-40" />
-                    <p className="text-sm font-500 text-muted-foreground">No invoices match your filters</p>
+                    <p className="text-sm font-medium text-muted-foreground">No invoices match your filters</p>
                     <p className="text-xs text-muted-foreground">Try adjusting the search or filter criteria</p>
                   </div>
                 </td>
@@ -254,30 +254,30 @@ export default function SalesTransactionTable() {
                       className="rounded border-border"
                     />
                   </td>
-                  <td className="px-4 py-3 font-500 text-primary font-tabular whitespace-nowrap">
+                  <td className="px-4 py-3 font-medium text-primary tabular-nums whitespace-nowrap">
                     {row.invoiceNumber}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap font-tabular">
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap tabular-nums">
                     {row.salesDate}
                   </td>
-                  <td className="px-4 py-3 font-500 text-foreground max-w-[180px] truncate">
+                  <td className="px-4 py-3 font-medium text-foreground max-w-[180px] truncate">
                     {row.customer}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-500">
+                    <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-medium">
                       {row.category}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-tabular text-foreground whitespace-nowrap">
+                  <td className="px-4 py-3 text-right tabular-nums text-foreground whitespace-nowrap">
                     ${row.subtotal.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-right font-tabular text-red-500 whitespace-nowrap">
+                  <td className="px-4 py-3 text-right tabular-nums text-red-500 whitespace-nowrap">
                     {row.discount > 0 ? `-$${row.discount.toLocaleString()}` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right font-tabular text-muted-foreground whitespace-nowrap">
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                     ${row.tax.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-right font-700 font-tabular text-foreground whitespace-nowrap">
+                  <td className="px-4 py-3 text-right font-bold tabular-nums text-foreground whitespace-nowrap">
                     ${row.total.toLocaleString()}
                   </td>
                   <td className="px-4 py-3">
@@ -342,7 +342,7 @@ export default function SalesTransactionTable() {
             <button
               key={`page-${p}`}
               onClick={() => setPage(p)}
-              className={`w-7 h-7 text-xs rounded-md font-500 transition-colors ${
+              className={`w-7 h-7 text-xs rounded-md font-medium transition-colors ${
                 page === p
                   ? 'bg-primary text-primary-foreground'
                   : 'border border-border text-muted-foreground hover:bg-muted'

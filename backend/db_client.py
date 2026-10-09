@@ -267,8 +267,8 @@ class CoaStandardMapping(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
-    coa_id = Column(Integer, nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("management_standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -287,9 +287,9 @@ class CompanyAccountRole(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("management_account_roles.id"), nullable=False)
-    coa_id = Column(Integer, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
     effective_to = Column(Date, nullable=True)
@@ -496,7 +496,7 @@ class SalesInvoice(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
@@ -524,7 +524,7 @@ class SalesInvoice(Base):
     posting_status = Column(String(20), nullable=False, default="Draft")
     reconcile_status = Column(String(20), nullable=False, default="Unreconciled")
     journal_sync_status = Column(String(20), nullable=False, default="Pending")
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
@@ -678,7 +678,7 @@ class JournalEntrySourceRecord(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     source_code = Column(String(100), nullable=False)
     source_type = Column(String(20), nullable=False)
     source_date = Column(Date, nullable=True)
@@ -712,7 +712,7 @@ class JournalEntryDraft(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
@@ -733,7 +733,7 @@ class JournalEntryDraft(Base):
     reviewed_by_name = Column(String(255), nullable=True)
     approved_by_name = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
@@ -758,7 +758,7 @@ class JournalEntryDraftLine(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     line_no = Column(Integer, nullable=False)
     account_code = Column(String(50), nullable=False)
     account_name = Column(String(200), nullable=True)
@@ -783,7 +783,7 @@ class JournalEntryActivityLog(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
     je_number = Column(String(100), nullable=True)
     event_type = Column(String(50), nullable=False)
@@ -900,7 +900,7 @@ class PurchaseTransaction(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
@@ -932,7 +932,7 @@ class PurchaseTransaction(Base):
     approved_by_name = Column(String(255), nullable=True)
     posted_by_name = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     posting_date = Column(Date, nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     # [BARU - migration 18] Akun posting per transaksi (Cr Hutang Usaha, Dr PPN
@@ -1536,7 +1536,7 @@ class UserClientAccess(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -6180,5 +6180,3 @@ def _audit_iso_date(d):
 
 def _audit_iso_dt(dt):
     return dt.isoformat() if dt else None
-
-

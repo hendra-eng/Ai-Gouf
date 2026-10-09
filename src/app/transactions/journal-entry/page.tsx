@@ -9,7 +9,7 @@ import OverviewSourceTable from './OverviewSourceTable';
 
 export default function JournalEntryPage() {
   return (
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="overview" />
         <OverviewKPIGrid />
         <OverviewCharts />

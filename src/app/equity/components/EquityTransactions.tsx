@@ -43,7 +43,7 @@ export default function EquityTransactions({ isSampleData, rows }: EquityTransac
     <div className="fin-card mb-6">
       <div className="p-5 border-b border-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-[14px] font-600 text-foreground">Recent Equity Transactions</div>
+          <div className="text-[14px] font-semibold text-foreground">Recent Equity Transactions</div>
           <div className="text-[11px] text-muted-foreground">Capital movements, profit allocations, dividends, and adjustments</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -80,7 +80,7 @@ export default function EquityTransactions({ isSampleData, rows }: EquityTransac
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 {['Date', 'Transaction ID', 'Account', 'Type', 'Description', 'Debit', 'Credit', 'Net Amount', 'Reference', 'Status', ''].map(col => (
-                  <th key={`eqtxn-col-${col}`} className="text-left px-4 py-3 font-600 text-muted-foreground whitespace-nowrap">{col}</th>
+                  <th key={`eqtxn-col-${col}`} className="text-left px-4 py-3 font-semibold text-muted-foreground whitespace-nowrap">{col}</th>
                 ))}
               </tr>
             </thead>
@@ -88,7 +88,7 @@ export default function EquityTransactions({ isSampleData, rows }: EquityTransac
               {filtered.map(txn => (
                 <tr key={`eqtxn-${txn.id}`} className="border-b border-border hover:bg-muted/30 transition-colors group">
                   <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(txn.date)}</td>
-                  <td className="px-4 py-3 font-500 text-primary whitespace-nowrap">{txn.txId}</td>
+                  <td className="px-4 py-3 font-medium text-primary whitespace-nowrap">{txn.txId}</td>
                   <td className="px-4 py-3 text-foreground whitespace-nowrap">{txn.account}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`fin-badge text-[10px] px-2 py-0.5 border ${
@@ -102,7 +102,7 @@ export default function EquityTransactions({ isSampleData, rows }: EquityTransac
                   </td>
                   <td className="px-4 py-3 text-foreground financial-value whitespace-nowrap">{txn.debit > 0 ? fx(formatMoney(txn.debit, 'IDR')) : '\u2014'}</td>
                   <td className="px-4 py-3 text-foreground financial-value whitespace-nowrap">{txn.credit > 0 ? fx(formatMoney(txn.credit, 'IDR')) : '\u2014'}</td>
-                  <td className={`px-4 py-3 font-600 financial-value whitespace-nowrap ${txn.amount < 0 ? 'text-negative' : 'text-positive'}`}>
+                  <td className={`px-4 py-3 font-semibold financial-value whitespace-nowrap ${txn.amount < 0 ? 'text-negative' : 'text-positive'}`}>
                     {fx(formatMoney(txn.amount, 'IDR'))}
                   </td>
                   <td className="px-4 py-3 text-primary whitespace-nowrap">{txn.reference}</td>

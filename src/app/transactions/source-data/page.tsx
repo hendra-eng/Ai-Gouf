@@ -113,7 +113,7 @@ export default function SourceDataPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6 fade-in">
+      <div className="space-y-6">
         <JournalEntryTabs activeTab="source" />
 
         {/* Summary Cards */}
@@ -128,7 +128,7 @@ export default function SourceDataPage() {
               <div className={`inline-flex items-center justify-center w-9 h-9 rounded-lg ${card.bg} mb-3`}>
                 <span className={`text-sm font-bold ${card.color}`}>{card.value}</span>
               </div>
-              <p className="text-xl font-bold text-foreground tabular-nums">{card.value}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{card.value}</p>
               <p className="text-xs font-medium text-foreground mt-0.5">{card.label}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
             </div>

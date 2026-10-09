@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -345,29 +346,20 @@ export default function NotesClient() {
   const { activeClientId, hydrated } = useActiveClient();
   const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodQuery>(defaultPeriod);
-  const [data, setData] = useState<FsNotes | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
+  const queryClient = useQueryClient();
 
-  const load = useCallback((signal?: AbortSignal) => {
-    if (!activeClientId) return;
-    setLoading(true);
-    setError(null);
-    fetchNotes(activeClientId, period, signal)
-      .then(setData)
-      .catch(e => { if ((e as Error).name !== 'AbortError') { setError(errMsg(e)); setData(null); } })
-      .finally(() => setLoading(false));
-  }, [activeClientId, period]);
+  const notesQuery = useQuery({
+    queryKey: ['fs', 'notes', activeClientId, period],
+    queryFn: ({ signal }) => fetchNotes(activeClientId!, period, signal),
+    enabled: hydrated && !!activeClientId,
+    placeholderData: keepPreviousData,
+  });
+  const data: FsNotes | null = notesQuery.data ?? null;
+  const loading = notesQuery.isFetching && (notesQuery.isPlaceholderData || !notesQuery.data);
+  const error = notesQuery.error ? errMsg(notesQuery.error) : null;
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
-  }, [hydrated, load, tick]);
-
-  const refresh = () => setTick(t => t + 1);
+  // Setelah edit catatan/override, segarkan semua cache laporan.
+  const refresh = () => { queryClient.invalidateQueries({ queryKey: ['fs'] }); };
   const company = data?.client.company_name ?? '';
 
   const downloadMenu = data && activeClientId ? (

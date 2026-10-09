@@ -251,7 +251,7 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
       {/* Debt Maturity Chart */}
       <div className="xl:col-span-2 fin-card p-5">
         <div className="mb-4">
-          <div className="text-[14px] font-600 text-foreground">Debt Maturity Profile</div>
+          <div className="text-[14px] font-semibold text-foreground">Debt Maturity Profile</div>
           <div className="text-[11px] text-muted-foreground">
             Upcoming obligation schedule{companyName ? ` — ${companyName}` : ''}
           </div>
@@ -261,7 +261,7 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
         {!isSampleData && nearestObligation && (
           <div className={`flex items-center gap-2 rounded-lg px-3 py-2 mb-4 border ${nearestObligation.status === 'overdue' ? 'bg-negative-subtle border-red-200' : 'bg-warning-subtle border-amber-200'}`}>
             <span className={`w-2 h-2 rounded-full inline-block ${nearestObligation.status === 'overdue' ? 'bg-negative' : 'bg-warning'}`} />
-            <span className={`text-[12px] font-600 ${nearestObligation.status === 'overdue' ? 'text-negative' : 'text-warning'}`}>
+            <span className={`text-[12px] font-semibold ${nearestObligation.status === 'overdue' ? 'text-negative' : 'text-warning'}`}>
               {nearestObligation.status === 'overdue'
                 ? fx(`${formatMoney(nearestObligation.amount, 'IDR')} overdue by ${Math.abs(nearestObligation.daysRemaining)} days`)
                 : fx(`${formatMoney(nearestObligation.amount, 'IDR')} due within ${nearestObligation.daysRemaining} days`)}
@@ -318,30 +318,30 @@ export default function DebtAnalysisSection({ isSampleData, companyName, metrics
 
       {/* Debt Metrics */}
       <div className="fin-card p-5">
-        <div className="text-[14px] font-600 text-foreground mb-0.5">Debt Analysis</div>
+        <div className="text-[14px] font-semibold text-foreground mb-0.5">Debt Analysis</div>
         <div className="text-[11px] text-muted-foreground mb-4">Key debt ratios and metrics</div>
         <div className="space-y-3">
           {debtMetrics.map((m2, i) => (
             <div key={`debt-metric-${i}`} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
               <div>
-                <div className="text-[12px] font-500 text-foreground">{m2.label}</div>
+                <div className="text-[12px] font-medium text-foreground">{m2.label}</div>
                 <div className="text-[10px] text-muted-foreground">{m2.sub}</div>
               </div>
-              <div className="text-[14px] font-700 text-foreground financial-value">{m2.value}</div>
+              <div className="text-[14px] font-bold text-foreground financial-value">{m2.value}</div>
             </div>
           ))}
         </div>
 
         {/* D/E Ratio visual */}
         <div className="mt-4 pt-4 border-t border-border">
-          <div className="text-[11px] font-600 text-muted-foreground mb-2">Debt-to-Equity Ratio</div>
+          <div className="text-[11px] font-semibold text-muted-foreground mb-2">Debt-to-Equity Ratio</div>
           {m.debtToEquity !== null ? (
             <>
               <div className="flex items-center gap-2">
                 <div className="flex-1 bg-muted rounded-full h-2">
                   <div className={`h-2 rounded-full ${deHealthy ? 'bg-primary' : 'bg-negative'}`} style={{ width: `${deRatioPct}%` }} />
                 </div>
-                <span className={`text-[11px] font-600 ${deHealthy ? 'text-positive' : 'text-negative'}`}>
+                <span className={`text-[11px] font-semibold ${deHealthy ? 'text-positive' : 'text-negative'}`}>
                   {m.debtToEquity}x — {deHealthy ? 'Healthy' : 'Elevated'}
                 </span>
               </div>

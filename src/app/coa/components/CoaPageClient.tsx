@@ -49,7 +49,7 @@ function StatCard({ icon: Icon, label, value, tone }: {
       </span>
       <div className="min-w-0">
         <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p className="text-xl font-bold tabular-nums text-foreground">{value}</p>
+        <p className="number-display text-xl font-bold text-foreground leading-none">{value}</p>
       </div>
     </div>
   );
@@ -186,8 +186,8 @@ export default function CoaPageClient() {
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-screen-2xl px-6 py-6">
+      <div className="pb-2">
+        <div className="mx-auto max-w-screen-2xl">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex items-start gap-3">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 text-white shadow-md shadow-blue-600/25">
@@ -195,7 +195,7 @@ export default function CoaPageClient() {
               </span>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Chart of Accounts</h1>
-                <p className="text-sm text-muted-foreground">Master accounts per client, mapped to the IFRS-aligned standard layer.</p>
+                <p className="text-sm text-muted-foreground mt-0.5">Master accounts per client, mapped to the IFRS-aligned standard layer.</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -268,7 +268,7 @@ export default function CoaPageClient() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-6">
+      <div className="mx-auto max-w-screen-2xl space-y-5 pt-4 pb-6">
         {/* Ringkasan */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard icon={Layers} label="Total accounts" value={accounts.length} tone="bg-blue-50 text-blue-600" />

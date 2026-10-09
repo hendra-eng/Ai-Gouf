@@ -409,11 +409,11 @@ export default function AuditPage() {
 
   return (
     <>
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Audit Center</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Audit Center</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Monitor audit procedures, findings, risks, and supporting evidence.</p>
           </div>
           <div className="flex items-center gap-3">
@@ -498,7 +498,7 @@ export default function AuditPage() {
           {kpis.map((kpi) => (
             <div key={kpi.label} className="bg-card rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
               <p className="text-[10px] font-medium text-muted-foreground mb-2">{kpi.label}</p>
-              <p className="text-xl font-bold font-mono" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
             </div>
           ))}
         </div>

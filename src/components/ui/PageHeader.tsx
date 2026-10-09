@@ -66,9 +66,9 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
           <div className="flex items-center gap-2 mt-1.5">
-            <span className="text-[11px] font-600 text-primary bg-blue-50 px-2 py-0.5 rounded">{selectedPeriod}</span>
+            <span className="text-[11px] font-semibold text-primary bg-blue-50 px-2 py-0.5 rounded">{selectedPeriod}</span>
             <span className="text-[11px] text-muted-foreground bg-muted px-2 py-0.5 rounded">YTD</span>
             <span className="text-[11px] text-muted-foreground">Last updated: 26 Aug 2026, 00:39 WIB</span>
           </div>
@@ -91,7 +91,7 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
         <div className="relative">
           <button
             onClick={() => { setShowPeriodDrop(!showPeriodDrop); setOpenFilter(null); }}
-            className="flex items-center gap-1.5 bg-card border border-border rounded-md px-3 py-1.5 text-[12px] font-500 text-foreground hover:border-primary/50 transition-colors"
+            className="flex items-center gap-1.5 bg-card border border-border rounded-md px-3 py-1.5 text-[12px] font-medium text-foreground hover:border-primary/50 transition-colors"
           >
             <Icon name="CalendarIcon" size={13} className="text-muted-foreground" />
             {selectedPeriod}
@@ -103,7 +103,7 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
                 <button
                   key={`period-opt-${p}`}
                   onClick={() => { setSelectedPeriod(p); setShowPeriodDrop(false); }}
-                  className={`w-full text-left px-3 py-2 text-[12px] hover:bg-muted transition-colors ${p === selectedPeriod ? 'text-primary font-600' : 'text-foreground'}`}
+                  className={`w-full text-left px-3 py-2 text-[12px] hover:bg-muted transition-colors ${p === selectedPeriod ? 'text-primary font-semibold' : 'text-foreground'}`}
                 >
                   {p}
                 </button>
@@ -116,7 +116,7 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
           <div key={`filter-${f.key}`} className="relative">
             <button
               onClick={() => { setOpenFilter(openFilter === f.key ? null : f.key); setShowPeriodDrop(false); }}
-              className="flex items-center gap-1.5 bg-card border border-border rounded-md px-3 py-1.5 text-[12px] font-500 text-foreground hover:border-primary/50 transition-colors"
+              className="flex items-center gap-1.5 bg-card border border-border rounded-md px-3 py-1.5 text-[12px] font-medium text-foreground hover:border-primary/50 transition-colors"
             >
               {filterValues[f.key]}
               <Icon name="ChevronDownIcon" size={11} className="text-muted-foreground" />
@@ -127,7 +127,7 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
                   <button
                     key={`filter-opt-${f.key}-${opt}`}
                     onClick={() => { setFilterValues(prev => ({ ...prev, [f.key]: opt })); setOpenFilter(null); }}
-                    className={`w-full text-left px-3 py-2 text-[12px] hover:bg-muted transition-colors ${filterValues[f.key] === opt ? 'text-primary font-600' : 'text-foreground'}`}
+                    className={`w-full text-left px-3 py-2 text-[12px] hover:bg-muted transition-colors ${filterValues[f.key] === opt ? 'text-primary font-semibold' : 'text-foreground'}`}
                   >
                     {opt}
                   </button>
@@ -143,7 +143,7 @@ export default function PageHeader({ title, subtitle, period, periodOptions, fil
             <button
               key={`view-${v}`}
               onClick={() => handleViewChange(v)}
-              className={`px-3 py-1 text-[11px] font-500 rounded transition-colors ${v === selectedView ? 'bg-card text-foreground card-shadow' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`px-3 py-1 text-[11px] font-medium rounded transition-colors ${v === selectedView ? 'bg-card text-foreground card-shadow' : 'text-muted-foreground hover:text-foreground'}`}
             >
               {v}
             </button>
