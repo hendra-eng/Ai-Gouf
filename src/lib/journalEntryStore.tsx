@@ -347,6 +347,67 @@ export interface BackendJeDraftLine {
   aktif: boolean;
 }
 
+// ============================================================
+// 2b) Halaman Other -- jurnal source_type="Other" + aksi status massal
+// (backend: GET /drafts-with-lines, POST /drafts/approve|post|reject|reopen|
+// bulk-delete, PUT /drafts/{id}/full)
+// ============================================================
+
+export type BackendJeDraftWithLines = BackendJeDraft & { lines: BackendJeDraftLine[] };
+
+export async function listJeDraftsWithLines(clientId?: string | null, sourceType?: string, status?: string): Promise<BackendJeDraftWithLines[]> {
+  const res = await authenticatedFetch(`${JE_BASE_URL}/drafts-with-lines${qs({ client_id: clientId, source_type: sourceType, status })}`);
+  return baca<BackendJeDraftWithLines[]>(res);
+}
+
+export interface JeStatusActionResult {
+  done: Partial<BackendJeDraft>[];
+  skipped: { id: string; je_number: string | null; reason: string }[];
+}
+
+export type JeStatusAction = 'approve' | 'post' | 'reject' | 'reopen' | 'bulk-delete';
+
+/** Approve / Post / Reject / Reopen / Hapus banyak draft sekaligus. Draft yang tidak memenuhi syarat masuk `skipped` (beserta alasannya). */
+export async function runJeDraftAction(
+  action: JeStatusAction,
+  draftIds: string[],
+  opts: { postingDate?: string; reason?: string } = {},
+): Promise<JeStatusActionResult> {
+  const hasil = await post<JeStatusActionResult>(`${JE_BASE_URL}/drafts/${action}`, {
+    draft_ids: draftIds,
+    posting_date: opts.postingDate || undefined,
+    reason: opts.reason || undefined,
+  });
+  notifyJeChanged();
+  return hasil;
+}
+
+export interface JeDraftFullUpdateInput {
+  je_number?: string;
+  entry_date?: string;
+  posting_date?: string | null;
+  period_label?: string;
+  description?: string;
+  source_reference?: string;
+  notes?: string | null;
+  lines?: JeDraftLineInput[];
+}
+
+/** Edit header + ganti seluruh baris draft yang belum diposting. */
+export async function updateJeDraftFull(id: string, payload: JeDraftFullUpdateInput): Promise<BackendJeDraftWithLines> {
+  const row = await put<BackendJeDraftWithLines>(`${JE_BASE_URL}/drafts/${id}/full`, payload);
+  notifyJeChanged();
+  return row;
+}
+
+/** Dengarkan perubahan data JE (create/edit/approve/post/dst) dari mana pun di aplikasi. */
+export function onJeChanged(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(JE_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(JE_CHANGED_EVENT, handler);
+}
+
+
 export async function listJeDraftLines(draftId?: string | null, clientId?: string | null): Promise<BackendJeDraftLine[]> {
   const res = await authenticatedFetch(`${JE_BASE_URL}/draft-lines${qs({ draft_id: draftId, client_id: clientId })}`);
   return baca<BackendJeDraftLine[]>(res);

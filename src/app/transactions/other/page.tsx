@@ -3,14 +3,15 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';
 import TransactionDrawer from '../components/TransactionDrawer';
-import TransactionsGroupPanel from '../components/TransactionsGroupPanel';
 import { Transaction } from '../components/transactionData';
-import { useTransactions } from '../context/TransactionsContext';
 import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsWhere, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
-import StatusBadge from '@/components/ui/StatusBadge';
 import OtherTabs from './components/OtherTabs';
+import OtherJournalTable from './components/OtherJournalTable';
+import { useOtherWorkspace, OtherActionButtons } from './components/OtherWorkspace';
+import { buildOtherExceptions } from './lib/otherJournals';
+import { Plus, Download, CheckCircle2, Send } from 'lucide-react';
 
 // ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/dst). ──
 const OTHER_AXIS_WIDTH = 65;
@@ -49,16 +50,15 @@ function OtherTrendTooltip({
   );
 }
 
-const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
-};
-
 // [BARU] Kelompok 'other' = sisanya yang tidak masuk 4 kelompok lain
 // (mis. CapEx / aset tetap, atau kategori baru yang belum dipetakan) —
 // lihat CATEGORY_TO_GROUP & classifyByAccountName() di transactionData.ts.
 export default function OtherTransactionsPage() {
-  const { getByGroup } = useTransactions();
-  const otherTx = useMemo(() => getByGroup('other'), [getByGroup]);
+  const ws = useOtherWorkspace();
+  const otherTx = ws.transactions;
+  const exceptionCount = useMemo(() => buildOtherExceptions(ws.journals).length, [ws.journals]);
+  const approvable = useMemo(() => ws.journals.filter((j) => (j.rawStatus === 'draft' || j.rawStatus === 'pending' || j.rawStatus === 'exception') && j.balanced), [ws.journals]);
+  const postable = useMemo(() => ws.journals.filter((j) => j.rawStatus === 'approved'), [ws.journals]);
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
@@ -263,28 +263,18 @@ export default function OtherTransactionsPage() {
     );
   };
 
-  const columns = [
-    { key: 'date', label: 'Tanggal', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'txId', label: 'TX ID', render: (r: Transaction) => <span className="font-mono text-xs text-teal-600">{r.txId}</span> },
-    { key: 'party', label: 'Pihak', render: (r: Transaction) => <span className="font-medium text-xs">{r.party}</span> },
-    { key: 'description', label: 'Deskripsi', render: (r: Transaction) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description}</span> },
-    { key: 'category', label: 'Kategori', render: (r: Transaction) => <span className="badge badge-neutral">{r.category}</span> },
-    { key: 'accountName', label: 'Akun', render: (r: Transaction) => <span className="text-xs text-muted-foreground">{r.accountName}</span> },
-    { key: 'debit', label: 'Debit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{r.debit ? formatIDR(r.debit, true) : '—'}</span> },
-    { key: 'credit', label: 'Kredit', sortable: true, render: (r: Transaction) => <span className="font-mono text-xs">{r.credit ? formatIDR(r.credit, true) : '—'}</span> },
-    { key: 'status', label: 'Status', render: (r: Transaction) => <StatusBadge variant={statusVariant[r.status] || 'neutral'} label={r.status} dot /> },
-  ];
-
   return (
     <div className="space-y-5">
-      <OtherTabs activeTab="overview" />
+      <OtherTabs activeTab="overview" exceptionCount={exceptionCount} />
+      {ws.dialogs}
+      {ws.error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Gagal memuat jurnal Other: {ws.error}</div>}
 
       {missingJeIdCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <span className="font-semibold">Perhatian:</span>
           <span>
             {missingJeIdCount} baris transaksi Other tidak memiliki nomor jurnal (jeId). KPI di bawah tetap dihitung
-            memakai nomor referensi sebagai gantinya, tapi sebaiknya ditinjau di halaman Transaksi utama.
+            memakai nomor referensi sebagai gantinya, tapi sebaiknya diperbaiki lewat tab Exceptions.
           </span>
         </div>
       )}
@@ -295,7 +285,7 @@ export default function OtherTransactionsPage() {
           <span>
             {unbalanced.length} jurnal Other tidak balance (total debit ≠ total kredit) — contoh: {unbalanced[0].jeId}
             {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Other tetap dihitung dari sisi yang lebih
-            besar, tapi sebaiknya jurnal ini diperbaiki di halaman Transaksi utama.
+            besar, tapi sebaiknya jurnal ini diperbaiki lewat tab Exceptions.
           </span>
         </div>
       )}
@@ -438,13 +428,24 @@ export default function OtherTransactionsPage() {
 
       {/* Aksi & Upload Data + Tabel Transaksi Other — digabung jadi 1 kolom,
           aksi & filter di atas tabel. */}
-      <TransactionsGroupPanel
-        group="other"
-        groupLabel="Other"
-        defaultCategory="CapEx"
-        columns={columns}
-        onRowClick={setSelectedTx}
-      />
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-foreground">Daftar Jurnal Other</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={ws.openNew} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90"><Plus size={13} /> Jurnal Baru</button>
+            <button disabled={ws.busy || approvable.length === 0} onClick={() => ws.act('approve', approvable)} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"><CheckCircle2 size={13} /> Approve Draft ({approvable.length})</button>
+            <button disabled={ws.busy || postable.length === 0} onClick={() => ws.act('post', postable)} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"><Send size={13} /> Posting Disetujui ({postable.length})</button>
+            <button onClick={() => ws.exportCsv(ws.journals, 'jurnal-other')} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted"><Download size={13} /> Ekspor CSV</button>
+          </div>
+        </div>
+        <OtherJournalTable
+          journals={ws.journals}
+          onSelect={(j) => setSelectedTx(j.lines[0])}
+          statusOptions={['Draft', 'Unposted', 'Posted', 'Voided']}
+          emptyMessage={ws.loading ? 'Memuat jurnal Other…' : 'Belum ada jurnal Other. Klik "Jurnal Baru" untuk menambah.'}
+          renderActions={(j) => <OtherActionButtons journal={j} ws={ws} compact />}
+        />
+      </div>
 
       {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
     </div>

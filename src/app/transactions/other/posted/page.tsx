@@ -1,25 +1,27 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Download, Plus } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import StatusBadge from '@/components/ui/StatusBadge';
 import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { buildOtherJournals, monthKeyOf, monthLabelOf, OTHER_STATUS_VARIANT, type OtherJournal } from '../lib/otherJournals';
+import { useOtherWorkspace } from '../components/OtherWorkspace';
+import { buildOtherExceptions, monthKeyOf, monthLabelOf, OTHER_STATUS_VARIANT, type OtherJournal } from '../lib/otherJournals';
 
 // POSTED = arsip buku besar. Fokus: ritme posting dari waktu ke waktu (grafik
 // bulanan), tingkat rekonsiliasi, lalu linimasa jurnal dikelompokkan per bulan.
 
 export default function OtherPostedPage() {
-  const { getByGroup } = useTransactions();
+  const ws = useOtherWorkspace();
   const posted = useMemo(
-    () => buildOtherJournals(getByGroup('other')).filter((j) => j.status === 'Posted' || j.status === 'Reconciled'),
-    [getByGroup],
+    () => ws.journals.filter((j) => j.status === 'Posted' || j.status === 'Reconciled'),
+    [ws.journals],
   );
+  const exceptionCount = useMemo(() => buildOtherExceptions(ws.journals).length, [ws.journals]);
+  const waiting = useMemo(() => ws.journals.filter((j) => j.status === 'Unposted').length, [ws.journals]);
   const [query, setQuery] = useState('');
   const [openMonths, setOpenMonths] = useState<Set<string> | null>(null);
   const [selected, setSelected] = useState<Transaction | null>(null);
@@ -47,8 +49,7 @@ export default function OtherPostedPage() {
   }, [posted]);
 
   const total = posted.reduce((s, j) => s + j.amount, 0);
-  const reconciled = posted.filter((j) => j.status === 'Reconciled').length;
-  const reconPct = posted.length ? Math.round((reconciled / posted.length) * 100) : 0;
+  const avg = posted.length ? total / posted.length : 0;
   const latest = posted[0]?.date;
 
   const isOpen = (key: string, idx: number) => (openMonths ? openMonths.has(key) : idx === 0);
@@ -64,7 +65,9 @@ export default function OtherPostedPage() {
 
   return (
     <div className="space-y-5">
-      <OtherTabs activeTab="posted" />
+      <OtherTabs activeTab="posted" exceptionCount={exceptionCount} />
+      {ws.dialogs}
+      {ws.error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Gagal memuat jurnal Other: {ws.error}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 card-elevated-md rounded-xl p-5">
@@ -93,19 +96,22 @@ export default function OtherPostedPage() {
           </div>
           <div className="mt-6">
             <div className="flex items-baseline justify-between">
-              <p className="text-sm font-semibold text-foreground">Tingkat Rekonsiliasi</p>
-              <p className="text-lg font-bold font-mono text-emerald-600">{posted.length ? `${reconPct}%` : '—'}</p>
+              <p className="text-sm font-semibold text-foreground">Rata-rata per Jurnal</p>
+              <p className="text-lg font-bold font-mono text-emerald-600">{posted.length ? formatIDR(avg, true) : '—'}</p>
             </div>
-            <div className="w-full h-2 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${reconPct}%` }} />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1.5">{reconciled} dari {posted.length} jurnal sudah direkonsiliasi</p>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Jurnal terposting otomatis masuk Buku Besar & Financial Statements.
+              {waiting > 0 ? ` ${waiting} jurnal disetujui masih menunggu posting.` : ''}
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-sm font-bold text-foreground">Linimasa Posting</h2>
+        <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={ws.openNew} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90"><Plus size={13} /> Jurnal Baru</button>
+        <button onClick={() => ws.exportCsv(posted, 'jurnal-other-posted')} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted"><Download size={13} /> Ekspor CSV</button>
         <div className="relative w-full max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -114,6 +120,7 @@ export default function OtherPostedPage() {
             placeholder="Cari jurnal terposting..."
             className="w-full pl-8 pr-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
           />
+        </div>
         </div>
       </div>
 

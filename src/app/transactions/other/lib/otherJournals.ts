@@ -19,6 +19,10 @@ export interface OtherJournal {
   sourceLabel: string;
   status: JournalStatus;
   lines: Transaction[];
+  /** id draft di backend (undefined = baris lokal yang belum tersimpan di server) */
+  draftId?: string;
+  /** status workflow asli backend: draft/pending/approved/posted/rejected/exception */
+  rawStatus: string;
   debit: number;
   credit: number;
   /** nilai jurnal = sisi terbesar (sama dengan aturan journalAmount di groupAnalytics) */
@@ -77,6 +81,8 @@ export function buildOtherJournals(transactions: Transaction[]): OtherJournal[] 
       sourceLabel: sourceLabelOf(first),
       status: journalStatus(lines),
       lines,
+      draftId: first.otherDraftId,
+      rawStatus: first.otherStatus || '',
       debit,
       credit,
       amount: Math.max(debit, credit),
@@ -199,4 +205,70 @@ export function monthKeyOf(date: string): string {
 export function monthLabelOf(key: string): string {
   const d = new Date(`${key}-01T00:00:00`);
   return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+}
+
+// ── Aksi workflow (dipakai tombol di semua tab) ─────────────────────────────
+
+export type OtherAction = 'approve' | 'post' | 'reject' | 'reopen' | 'delete' | 'edit';
+
+/** Aksi yang boleh dilakukan pada satu jurnal berdasarkan status workflow-nya. */
+export function allowedActions(j: OtherJournal): OtherAction[] {
+  if (!j.draftId) return [];
+  switch (j.rawStatus) {
+    case 'draft':
+    case 'pending':
+    case 'exception':
+      return ['edit', 'approve', 'reject', 'delete'];
+    case 'approved':
+      return ['post', 'reject'];
+    case 'rejected':
+      return ['reopen', 'edit', 'delete'];
+    default: // posted
+      return [];
+  }
+}
+
+export const ACTION_LABEL: Record<OtherAction, string> = {
+  approve: 'Approve', post: 'Posting', reject: 'Tolak', reopen: 'Buka Kembali', delete: 'Hapus', edit: 'Edit',
+};
+
+/** Status workflow dalam bahasa UI (lebih rinci daripada OtherJournal.status). */
+export function workflowLabel(j: OtherJournal): string {
+  switch (j.rawStatus) {
+    case 'draft': return 'Draft';
+    case 'pending': return 'Menunggu Review';
+    case 'exception': return 'Exception';
+    case 'approved': return 'Disetujui';
+    case 'posted': return 'Diposting';
+    case 'rejected': return 'Ditolak';
+    default: return j.status;
+  }
+}
+
+/** Ekspor daftar jurnal (1 baris per kaki jurnal) ke CSV, aman dibuka di Excel. */
+export function journalsToCsv(journals: OtherJournal[]): string {
+  const esc = (v: unknown) => {
+    const t = String(v ?? '');
+    return /[",\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const header = ['Tanggal', 'No. Jurnal', 'Status', 'Pihak/Referensi', 'Deskripsi', 'Kode Akun', 'Nama Akun', 'Debit', 'Kredit', 'Catatan'];
+  const rows: string[] = [header.join(',')];
+  journals.forEach((j) => {
+    j.lines.forEach((l) => {
+      rows.push([j.date, j.jeId, workflowLabel(j), j.party, l.description, l.accountCode, l.accountName, l.debit, l.credit, j.notes.join(' | ')].map(esc).join(','));
+    });
+  });
+  return '\uFEFF' + rows.join('\r\n');
+}
+
+export function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

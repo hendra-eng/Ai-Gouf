@@ -6,11 +6,13 @@ import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/ui/StatusBadge';
 import JePagination, { JE_PAGE_SIZE } from '../../journal-entry/components/JePagination';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
-import type { OtherJournal, JournalStatus } from '../lib/otherJournals';
+import { workflowLabel, type OtherJournal, type JournalStatus } from '../lib/otherJournals';
 
 export const OTHER_STATUS_VARIANT: Record<JournalStatus, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
   Unposted: 'neutral', Posted: 'info', Draft: 'warning', Reconciled: 'positive', Voided: 'negative',
 };
+
+const STATUS_LABEL: Record<string, string> = { Draft: 'Draft', Unposted: 'Disetujui', Posted: 'Diposting', Reconciled: 'Reconciled', Voided: 'Ditolak' };
 
 // Tabel jurnal Other (1 baris = 1 nomor jurnal) dengan pencarian, filter status
 // opsional, dan pagination yang sama dengan tab Journal Entry.
@@ -19,11 +21,14 @@ export default function OtherJournalTable({
   onSelect,
   statusOptions,
   emptyMessage = 'Belum ada jurnal Other.',
+  renderActions,
 }: {
   journals: OtherJournal[];
   onSelect: (j: OtherJournal) => void;
   statusOptions?: JournalStatus[];
   emptyMessage?: string;
+  /** Sel kolom "Aksi" per jurnal (opsional). */
+  renderActions?: (j: OtherJournal) => React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -50,7 +55,8 @@ export default function OtherJournalTable({
     { key: 'category', label: 'Kategori', render: (r: OtherJournal) => <span className="badge badge-neutral">{r.category}</span> },
     { key: 'lines', label: 'Baris', render: (r: OtherJournal) => <span className="text-xs">{r.lines.length}</span> },
     { key: 'amount', label: 'Nilai', render: (r: OtherJournal) => <span className="font-mono text-xs">{formatIDR(r.amount, true)}</span> },
-    { key: 'status', label: 'Status', render: (r: OtherJournal) => <StatusBadge variant={OTHER_STATUS_VARIANT[r.status]} label={r.status} dot /> },
+    { key: 'status', label: 'Status', render: (r: OtherJournal) => <StatusBadge variant={OTHER_STATUS_VARIANT[r.status]} label={workflowLabel(r)} dot /> },
+    ...(renderActions ? [{ key: 'actions', label: 'Aksi', render: (r: OtherJournal) => <>{renderActions(r)}</> }] : []),
   ];
 
   return (
@@ -72,7 +78,7 @@ export default function OtherJournalTable({
             className="px-3 py-2 text-sm bg-background border border-border rounded-lg"
           >
             <option value="all">Semua status</option>
-            {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            {statusOptions.map((s) => <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>)}
           </select>
         )}
       </div>

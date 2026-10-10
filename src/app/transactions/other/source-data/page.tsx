@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Plus, Download, Pencil } from 'lucide-react';
 import DataTable from '@/components/shared/DataTable';
 import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
 import { formatIDR, formatDate, CHART_COLORS } from '../../lib/groupAnalytics';
 import JePagination, { JE_PAGE_SIZE } from '../../journal-entry/components/JePagination';
 import OtherTabs from '../components/OtherTabs';
-import { sourceLabelOf, lineIssues } from '../lib/otherJournals';
+import { useOtherWorkspace } from '../components/OtherWorkspace';
+import { sourceLabelOf, lineIssues, buildOtherExceptions, allowedActions } from '../lib/otherJournals';
 
 // SOURCE DATA = pintu masuk data. Fokus: dari mana data berasal dan seberapa
 // lengkap/bersih datanya sebelum dijurnal. Atas: kualitas data + komposisi
@@ -34,8 +34,9 @@ function QualityMeter({ label, ok, total, hint }: { label: string; ok: number; t
 }
 
 export default function OtherSourceDataPage() {
-  const { getByGroup } = useTransactions();
-  const rows = useMemo(() => getByGroup('other'), [getByGroup]);
+  const ws = useOtherWorkspace();
+  const rows = ws.transactions;
+  const exceptionCount = useMemo(() => buildOtherExceptions(ws.journals).length, [ws.journals]);
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('all');
@@ -83,6 +84,19 @@ export default function OtherSourceDataPage() {
     { key: 'debit', label: 'Debit', render: (r: Transaction) => <span className="font-mono text-xs">{r.debit ? formatIDR(r.debit, true) : '—'}</span> },
     { key: 'credit', label: 'Kredit', render: (r: Transaction) => <span className="font-mono text-xs">{r.credit ? formatIDR(r.credit, true) : '—'}</span> },
     {
+      key: 'edit', label: 'Aksi',
+      render: (r: Transaction) => {
+        const j = ws.journals.find((x) => x.draftId && x.draftId === r.otherDraftId);
+        if (!j || !allowedActions(j).includes('edit')) return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); ws.act('edit', [j]); }}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border hover:bg-muted text-[11px] font-medium"
+          ><Pencil size={12} /> Edit</button>
+        );
+      },
+    },
+    {
       key: 'issues', label: 'Kondisi',
       render: (r: Transaction) => {
         const issues = lineIssues(r);
@@ -95,7 +109,9 @@ export default function OtherSourceDataPage() {
 
   return (
     <div className="space-y-5">
-      <OtherTabs activeTab="source" />
+      <OtherTabs activeTab="source" exceptionCount={exceptionCount} />
+      {ws.dialogs}
+      {ws.error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Gagal memuat jurnal Other: {ws.error}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 card-elevated-md rounded-xl p-5">
@@ -162,11 +178,18 @@ export default function OtherSourceDataPage() {
               <button key={k} onClick={() => setQuality(k)} className={`px-3 py-2 transition-colors ${quality === k ? 'bg-blue-600 text-white' : 'bg-background text-muted-foreground hover:bg-muted'}`}>{label}</button>
             ))}
           </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={ws.openNew} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90"><Plus size={13} /> Jurnal Baru</button>
+            <button
+              onClick={() => ws.exportCsv(Array.from(new Set(filtered.map((r) => r.otherDraftId))).map((id) => ws.journals.find((j) => j.draftId === id)).filter((j): j is NonNullable<typeof j> => !!j), 'sumber-data-other')}
+              className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted"
+            ><Download size={13} /> Ekspor CSV</button>
+          </div>
           {source !== 'all' && (
             <button onClick={() => setSource('all')} className="text-xs px-2.5 py-1.5 rounded-full bg-blue-50 text-blue-700">Sumber: {source} ✕</button>
           )}
         </div>
-        <DataTable<Transaction> columns={columns} data={pageRows} onRowClick={setSelected} emptyMessage="Tidak ada baris yang cocok." />
+        <DataTable<Transaction> columns={columns} data={pageRows} onRowClick={setSelected} emptyMessage={ws.loading ? 'Memuat data…' : rows.length === 0 ? 'Belum ada data Other. Klik "Jurnal Baru" untuk menambah.' : 'Tidak ada baris yang cocok.'} />
         <JePagination page={page} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setPage} itemLabel="baris" />
       </div>
 

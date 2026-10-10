@@ -1,25 +1,27 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, CheckCircle2, AlertTriangle, XCircle, Eye } from 'lucide-react';
+import { Search, CheckCircle2, AlertTriangle, XCircle, Eye, Plus, Download } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
-import { useTransactions } from '../../context/TransactionsContext';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { buildOtherJournals, journalChecks, OTHER_STATUS_VARIANT, type JournalStatus } from '../lib/otherJournals';
+import { useOtherWorkspace, OtherActionButtons } from '../components/OtherWorkspace';
+import { buildOtherExceptions, journalChecks, workflowLabel, OTHER_STATUS_VARIANT, type JournalStatus } from '../lib/otherJournals';
 
 // OTHER TRANSACTION = ruang kerja jurnal (master-detail). Kiri: daftar jurnal
 // yang bisa dipindai cepat; kanan: isi lengkap jurnal terpilih (baris
 // debit-kredit, keseimbangan, pemeriksaan, catatan).
 
-const FILTERS: ('Semua' | JournalStatus)[] = ['Semua', 'Unposted', 'Draft', 'Posted', 'Reconciled', 'Voided'];
+const FILTERS: ('Semua' | JournalStatus)[] = ['Semua', 'Draft', 'Unposted', 'Posted', 'Voided'];
+const FILTER_LABEL: Record<string, string> = { Semua: 'Semua', Draft: 'Draft', Unposted: 'Disetujui', Posted: 'Diposting', Voided: 'Ditolak' };
 const PAGE = 40;
 
 export default function OtherTransactionTabPage() {
-  const { getByGroup } = useTransactions();
-  const journals = useMemo(() => buildOtherJournals(getByGroup('other')), [getByGroup]);
+  const ws = useOtherWorkspace();
+  const journals = ws.journals;
+  const exceptionCount = useMemo(() => buildOtherExceptions(journals).length, [journals]);
 
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('Semua');
   const [query, setQuery] = useState('');
@@ -50,7 +52,13 @@ export default function OtherTransactionTabPage() {
 
   return (
     <div className="space-y-5">
-      <OtherTabs activeTab="transaction" />
+      <OtherTabs activeTab="transaction" exceptionCount={exceptionCount} />
+      {ws.dialogs}
+      {ws.error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Gagal memuat jurnal Other: {ws.error}</div>}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button onClick={ws.openNew} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90"><Plus size={13} /> Jurnal Baru</button>
+        <button onClick={() => ws.exportCsv(list, 'jurnal-other')} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted"><Download size={13} /> Ekspor CSV ({list.length})</button>
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
         {/* ── Kiri: daftar jurnal ── */}
@@ -72,14 +80,14 @@ export default function OtherTransactionTabPage() {
                   onClick={() => setFilter(f)}
                   className={`px-2.5 py-1 rounded-full text-xs transition-colors ${filter === f ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground'}`}
                 >
-                  {f} <span className="opacity-70">{counts[f] ?? 0}</span>
+                  {FILTER_LABEL[f]} <span className="opacity-70">{counts[f] ?? 0}</span>
                 </button>
               ))}
             </div>
           </div>
 
           <div className="max-h-[620px] overflow-y-auto divide-y divide-border">
-            {list.length === 0 && <p className="text-sm text-muted-foreground py-14 text-center">Tidak ada jurnal yang cocok.</p>}
+            {list.length === 0 && <p className="text-sm text-muted-foreground py-14 text-center">{ws.loading ? 'Memuat jurnal Other…' : journals.length === 0 ? 'Belum ada jurnal Other. Klik "Jurnal Baru" untuk menambah.' : 'Tidak ada jurnal yang cocok.'}</p>}
             {list.slice(0, limit).map((j) => {
               const active = selected?.id === j.id;
               return (
@@ -95,7 +103,7 @@ export default function OtherTransactionTabPage() {
                   <p className="text-xs text-foreground mt-0.5 truncate">{j.party || '—'} · {j.description}</p>
                   <div className="flex items-center justify-between mt-1.5">
                     <span className="text-[11px] text-muted-foreground">{formatDate(j.date)} · {j.lines.length} baris</span>
-                    <StatusBadge variant={OTHER_STATUS_VARIANT[j.status]} label={j.status} dot />
+                    <StatusBadge variant={OTHER_STATUS_VARIANT[j.status]} label={workflowLabel(j)} dot />
                   </div>
                 </button>
               );
@@ -119,8 +127,9 @@ export default function OtherTransactionTabPage() {
                   <p className="font-mono text-lg font-bold text-foreground">{selected.jeId}</p>
                   <p className="text-sm text-muted-foreground mt-0.5">{selected.description}</p>
                 </div>
-                <StatusBadge variant={OTHER_STATUS_VARIANT[selected.status]} label={selected.status} dot />
+                <StatusBadge variant={OTHER_STATUS_VARIANT[selected.status]} label={workflowLabel(selected)} dot />
               </div>
+              <OtherActionButtons journal={selected} ws={ws} />
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                 {[['Tanggal', formatDate(selected.date)], ['Pihak', selected.party || '—'], ['Kategori', selected.category], ['Sumber', selected.sourceLabel]].map(([k, v]) => (

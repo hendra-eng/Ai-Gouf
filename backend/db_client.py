@@ -4484,6 +4484,287 @@ def create_je_draft_with_lines(
 
 
 # ============================================================
+# FITUR TRANSACTIONS > OTHER -- memakai tabel Journal Entry (source_type="Other")
+# ------------------------------------------------------------
+# Jurnal halaman Other disimpan di financial_transaction_journal_entry_drafts
+# (+ _draft_lines) dengan source_type = "Other". Status 'posted' otomatis
+# dibaca Buku Besar / Financial Statements (lihat ambil_baris_jurnal_posted_
+# transaksi, bagian "1) Journal Entry"). Alur status:
+#   draft/pending/exception --approve--> approved --post--> posted
+#   draft/pending/exception/approved --reject--> rejected --reopen--> draft
+# ============================================================
+
+JE_STATUS_BISA_APPROVE = ("draft", "pending", "exception")
+JE_STATUS_BISA_POST = ("approved",)
+JE_STATUS_BISA_REJECT = ("draft", "pending", "exception", "approved")
+JE_STATUS_BISA_REOPEN = ("rejected",)
+JE_STATUS_BISA_EDIT = ("draft", "pending", "exception", "rejected")
+JE_STATUS_BISA_HAPUS = ("draft", "pending", "exception", "rejected")
+_TOLERANSI_BALANCE_JE = Decimal("0.01")
+
+
+def _validasi_posting_je_draft(session, draft: "JournalEntryDraft", lines: List["JournalEntryDraftLine"]) -> List[str]:
+    """Alasan draft JE TIDAK boleh diposting (list kosong = boleh)."""
+    alasan: List[str] = []
+    if len(lines) < 2:
+        return ["Journal needs at least 2 lines."]
+    tanpa_akun = [l.line_no for l in lines if not (l.account_code or "").strip()]
+    if tanpa_akun:
+        alasan.append(f"Line(s) {', '.join(map(str, tanpa_akun))} have no account code.")
+    dua_sisi = [l.line_no for l in lines if Decimal(str(l.debit or 0)) > 0 and Decimal(str(l.credit or 0)) > 0]
+    if dua_sisi:
+        alasan.append(f"Line(s) {', '.join(map(str, dua_sisi))} fill both debit and credit.")
+    kosong = [l.line_no for l in lines if Decimal(str(l.debit or 0)) == 0 and Decimal(str(l.credit or 0)) == 0]
+    if kosong:
+        alasan.append(f"Line(s) {', '.join(map(str, kosong))} have no amount.")
+    debit = sum((Decimal(str(l.debit or 0)) for l in lines), Decimal(0))
+    kredit = sum((Decimal(str(l.credit or 0)) for l in lines), Decimal(0))
+    if abs(debit - kredit) > _TOLERANSI_BALANCE_JE:
+        alasan.append(f"Journal is not balanced (debit {debit:,.2f} vs credit {kredit:,.2f}).")
+    if debit == 0:
+        alasan.append("Journal total is zero.")
+    # Kalau klien punya master COA, semua akun jurnal WAJIB ada di COA-nya.
+    if draft.management_client_id:
+        coa = {
+            r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
+                ManagementClientCoa.client_id == draft.management_client_id,
+                ManagementClientCoa.deleted_at.is_(None),
+            ).all()
+        }
+        if coa:
+            tidak_ada = sorted({l.account_code for l in lines if l.account_code and l.account_code not in coa})
+            if tidak_ada:
+                alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
+    return alasan
+
+
+def _log_je(session, draft: "JournalEntryDraft", event_type: str, deskripsi: str, oleh_nama: Optional[str], oleh_id: Optional[str]) -> None:
+    session.add(JournalEntryActivityLog(
+        client_id=draft.client_id, draft_id=draft.id, je_number=draft.je_number,
+        event_type=event_type, description=deskripsi, status_snapshot=draft.status,
+        performed_by=oleh_nama or "System", created_by=oleh_id,
+    ))
+
+
+def list_je_drafts_with_lines(
+    client_id: Optional[str] = None,
+    source_type: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Daftar draft JE LENGKAP dengan baris debit/kreditnya (1 query untuk
+    semua baris, bukan N+1) -- dipakai 6 tab halaman Other."""
+    session = SessionLocal()
+    try:
+        q = session.query(JournalEntryDraft).filter(JournalEntryDraft.deleted_at.is_(None))
+        if client_id:
+            q = q.filter(JournalEntryDraft.client_id == client_id)
+        if source_type:
+            q = q.filter(JournalEntryDraft.source_type == source_type)
+        if status:
+            q = q.filter(func.lower(JournalEntryDraft.status) == status.lower())
+        drafts = q.order_by(JournalEntryDraft.entry_date.desc(), JournalEntryDraft.je_number.desc()).all()
+        if not drafts:
+            return []
+        lines_per: Dict[str, List[Dict[str, Any]]] = {}
+        for l in session.query(JournalEntryDraftLine).filter(
+            JournalEntryDraftLine.draft_id.in_([d.id for d in drafts]),
+            JournalEntryDraftLine.deleted_at.is_(None),
+        ).order_by(JournalEntryDraftLine.draft_id, JournalEntryDraftLine.line_no).all():
+            lines_per.setdefault(l.draft_id, []).append(_je_row_ke_dict(l, CRUD_FIELDS_JE_DRAFT_LINE))
+        hasil = []
+        for d in drafts:
+            row = _je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT)
+            row["lines"] = lines_per.get(d.id, [])
+            hasil.append(row)
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error list draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def ubah_status_je_drafts(
+    draft_ids: List[str],
+    aksi: str,
+    oleh_nama: Optional[str],
+    oleh_id: Optional[str] = None,
+    posting_date: Optional[date] = None,
+    alasan: Optional[str] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Ubah status banyak draft JE sekaligus (1 transaksi DB). Draft yang tidak
+    memenuhi syarat dilewati (`skipped` + alasan), sisanya tetap diproses.
+
+    approve : draft/pending/exception -> approved
+    post    : approved -> posted (divalidasi: >=2 baris, akun lengkap, tiap baris
+              satu sisi, debit = kredit, akun ada di COA klien); posting_date
+              default = entry_date
+    reject  : draft/pending/exception/approved -> rejected (alasan -> notes)
+    reopen  : rejected -> draft
+    """
+    if aksi not in ("approve", "post", "reject", "reopen"):
+        raise ValueError("aksi harus 'approve', 'post', 'reject' atau 'reopen'.")
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
+    try:
+        drafts = {
+            d.id: d for d in session.query(JournalEntryDraft).filter(
+                JournalEntryDraft.id.in_(draft_ids), JournalEntryDraft.deleted_at.is_(None)
+            ).all()
+        }
+        lines_per: Dict[str, List[JournalEntryDraftLine]] = {}
+        if drafts and aksi == "post":
+            for l in session.query(JournalEntryDraftLine).filter(
+                JournalEntryDraftLine.draft_id.in_(list(drafts)), JournalEntryDraftLine.deleted_at.is_(None)
+            ).order_by(JournalEntryDraftLine.line_no).all():
+                lines_per.setdefault(l.draft_id, []).append(l)
+
+        sekarang = datetime.now()
+        for draft_id in dict.fromkeys(draft_ids):
+            d = drafts.get(draft_id)
+            if d is None:
+                hasil["skipped"].append({"id": draft_id, "je_number": None, "reason": "Journal not found."})
+                continue
+            status_lama = (d.status or "").lower()
+            if aksi == "approve":
+                if status_lama not in JE_STATUS_BISA_APPROVE:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be approved."})
+                    continue
+                d.status = "approved"
+                d.approved_by_name = oleh_nama
+                _log_je(session, d, "Approved", f"Journal {d.je_number} approved.", oleh_nama, oleh_id)
+            elif aksi == "post":
+                if status_lama not in JE_STATUS_BISA_POST:
+                    pesan = "Approve the journal first." if status_lama in JE_STATUS_BISA_APPROVE else f"Status '{d.status}' cannot be posted."
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": pesan})
+                    continue
+                masalah = _validasi_posting_je_draft(session, d, lines_per.get(draft_id, []))
+                if masalah:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": " ".join(masalah)})
+                    continue
+                d.status = "posted"
+                d.posted_at = sekarang
+                d.posted_by = oleh_id
+                d.posting_date = posting_date or d.posting_date or d.entry_date
+                _log_je(session, d, "Posted", f"Journal {d.je_number} posted to the general ledger.", oleh_nama, oleh_id)
+            elif aksi == "reject":
+                if status_lama not in JE_STATUS_BISA_REJECT:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be rejected."})
+                    continue
+                d.status = "rejected"
+                if alasan:
+                    d.notes = alasan
+                _log_je(session, d, "Rejected", f"Journal {d.je_number} rejected." + (f" Reason: {alasan}" if alasan else ""), oleh_nama, oleh_id)
+            else:  # reopen
+                if status_lama not in JE_STATUS_BISA_REOPEN:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be reopened."})
+                    continue
+                d.status = "draft"
+                d.approved_by_name = None
+                _log_je(session, d, "Reopened", f"Journal {d.je_number} reopened as draft.", oleh_nama, oleh_id)
+            d.edited_at = sekarang
+            d.edited_by = oleh_id
+            hasil["done"].append(_je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT))
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error {aksi} journal entry drafts: {e}")
+        raise
+    finally:
+        session.close()
+
+
+def update_je_draft_with_lines(
+    draft_id: str,
+    draft_data: Dict[str, Any],
+    lines_data: Optional[List[Dict[str, Any]]],
+    oleh_nama: Optional[str] = None,
+    updated_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Edit header (+ ganti seluruh baris kalau `lines_data` diisi) draft JE
+    yang belum diposting, atomik. Mengembalikan {"ok": bool, "reason": str|None,
+    "data": dict|None}. Baris lama dihapus permanen lalu diganti baris baru
+    (UniqueConstraint(draft_id, line_no) membuat soft-delete tidak cocok);
+    jejaknya tercatat di activity log."""
+    session = SessionLocal()
+    try:
+        d = session.query(JournalEntryDraft).filter(
+            JournalEntryDraft.id == draft_id, JournalEntryDraft.deleted_at.is_(None)
+        ).first()
+        if d is None:
+            return {"ok": False, "reason": "NOT_FOUND", "data": None}
+        if (d.status or "").lower() not in JE_STATUS_BISA_EDIT:
+            return {"ok": False, "reason": f"Status '{d.status}' cannot be edited.", "data": None}
+
+        bolehkan = {"entry_date", "posting_date", "period_label", "description", "source_reference", "notes", "currency", "je_number"}
+        for k, v in draft_data.items():
+            if k in bolehkan:
+                setattr(d, k, v)
+
+        if lines_data is not None:
+            session.query(JournalEntryDraftLine).filter(JournalEntryDraftLine.draft_id == d.id).delete(synchronize_session=False)
+            session.flush()
+            for idx, line in enumerate(lines_data, start=1):
+                session.add(JournalEntryDraftLine(
+                    **{k: v for k, v in line.items() if k in CRUD_FIELDS_JE_DRAFT_LINE and k not in ("line_no", "draft_id", "client_id")},
+                    draft_id=d.id, client_id=d.client_id, line_no=idx, created_by=updated_by,
+                ))
+            d.total_debit = sum((Decimal(str(l.get("debit") or 0)) for l in lines_data), Decimal(0))
+            d.total_credit = sum((Decimal(str(l.get("credit") or 0)) for l in lines_data), Decimal(0))
+
+        d.edited_at = datetime.now()
+        d.edited_by = updated_by
+        _log_je(session, d, "Edited", f"Journal {d.je_number} edited.", oleh_nama, updated_by)
+        session.commit()
+        session.refresh(d)
+        row = _je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT)
+        row["lines"] = [
+            _je_row_ke_dict(l, CRUD_FIELDS_JE_DRAFT_LINE)
+            for l in session.query(JournalEntryDraftLine).filter(JournalEntryDraftLine.draft_id == d.id)
+            .order_by(JournalEntryDraftLine.line_no).all()
+        ]
+        return {"ok": True, "reason": None, "data": row}
+    except IntegrityError as e:
+        session.rollback()
+        print(f"Error update draft+lines (integrity): {e}")
+        return {"ok": False, "reason": "DUPLICATE_JE_NUMBER", "data": None}
+    except Exception as e:
+        session.rollback()
+        print(f"Error update draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return {"ok": False, "reason": "DB_ERROR", "data": None}
+    finally:
+        session.close()
+
+
+def hapus_je_drafts(draft_ids: List[str], oleh_nama: Optional[str], oleh_id: Optional[str]) -> Dict[str, List[Dict[str, Any]]]:
+    """Soft-delete banyak draft JE -- HANYA yang belum diposting/approved."""
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
+    try:
+        sekarang = datetime.now()
+        for d in session.query(JournalEntryDraft).filter(
+            JournalEntryDraft.id.in_(draft_ids), JournalEntryDraft.deleted_at.is_(None)
+        ).all():
+            if (d.status or "").lower() not in JE_STATUS_BISA_HAPUS:
+                hasil["skipped"].append({"id": d.id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be deleted."})
+                continue
+            d.deleted_at = sekarang
+            d.deleted_by = oleh_id
+            _log_je(session, d, "Deleted", f"Journal {d.je_number} deleted.", oleh_nama, oleh_id)
+            hasil["done"].append({"id": d.id, "je_number": d.je_number})
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error hapus journal entry drafts: {e}")
+        raise
+    finally:
+        session.close()
+
+
+# ============================================================
 # FITUR TRANSACTIONS > PURCHASE -- CRUD 4 tabel
 # financial_transaction_purchase_* (DDL: root/ddl-table). Bentuk kolom
 # audit SAMA persis dengan Sales/Journal Entry (id, created_at/by,
