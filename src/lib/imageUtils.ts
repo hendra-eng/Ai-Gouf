@@ -68,3 +68,33 @@ export async function fileToLogoDataUrl(file: File): Promise<string> {
   }
   return jpeg;
 }
+
+export interface LoadedLogo {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
+/** Muat logo lewat <canvas> -> PNG, supaya format apa pun (termasuk WebP)
+ *  yang tersimpan di backend selalu bisa disisipkan jsPDF. Gagal = null
+ *  (PDF tetap dicetak, tanpa logo). */
+export function loadLogo(dataUrl: string): Promise<LoadedLogo | null> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width === 0 || canvas.height === 0) return resolve(null);
+        ctx.drawImage(img, 0, 0);
+        resolve({ dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height });
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}

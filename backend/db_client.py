@@ -60,6 +60,36 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine)
 
 
+# ------------------------------------------------------------
+# Kunci periode (Year-End Closing). Trigger DB (migrations/33-*.py) menolak
+# perubahan transaksi POSTED di periode yang sudah ditutup dengan pesan
+# berawalan "PERIOD_LOCKED:". Banyak fungsi CRUD di file ini menelan error
+# DB (return None -> endpoint menjawab "not found"), jadi pesannya dicatat di
+# sini & middleware di main.py mengganti respon request itu jadi 409 yang
+# jelas. `WADAH_KUNCI_PERIODE` diisi dict baru per request oleh middleware.
+# ------------------------------------------------------------
+import contextvars
+import re as _re
+from sqlalchemy import event as _sa_event
+
+WADAH_KUNCI_PERIODE: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("wadah_kunci_periode", default=None)
+_POLA_KUNCI_PERIODE = _re.compile(r"PERIOD_LOCKED:\s*([^\n]+)")
+
+
+def pesan_periode_terkunci(err: BaseException) -> Optional[str]:
+    """Pesan ramah dari error trigger kunci periode, None kalau bukan."""
+    m = _POLA_KUNCI_PERIODE.search(str(err))
+    return m.group(1).strip() if m else None
+
+
+@_sa_event.listens_for(engine, "handle_error")
+def _catat_periode_terkunci(ctx):
+    pesan = pesan_periode_terkunci(ctx.original_exception)
+    wadah = WADAH_KUNCI_PERIODE.get()
+    if pesan and wadah is not None:
+        wadah["pesan"] = pesan
+
+
 # ============================================================
 # [FIX -- POINT 4] BULK UPSERT HELPER (dialect-aware)
 # ============================================================
@@ -1190,6 +1220,333 @@ class ManagementClientCoaOpeningBalanceLine(Base):
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# source_type jurnal penutup tahun buku (Year-End Closing). Financial
+# Statements MENGABAIKAN jurnal ini (laba ditahan & laba berjalan tetap
+# dihitung dari akun P&L) -- lihat ambil_baris_jurnal_posted_transaksi.
+SOURCE_TYPE_TUTUP_BUKU = "Year-End Closing"
+
+
+class ManagementClientFiscalClosing(Base):
+    """Year-End Closing: 1 baris per klien + tahun buku. status 'closed' =
+    periode s.d. period_end TERKUNCI (trigger DB menolak posting/ubah/hapus
+    transaksi posted bertanggal <= period_end) & jurnal penutup
+    (journal_entry_id) memindahkan laba tahun itu ke Retained Earnings.
+    'reopened' = kunci dibuka, jurnal penutup sudah dibalik
+    (reversal_journal_id). Lihat modules/management/year_end_closing_v1.py &
+    migrations/33-*.py."""
+    __tablename__ = "management_client_fiscal_closings"
+    __table_args__ = (
+        UniqueConstraint("client_id", "fiscal_year", name="uq_management_client_fiscal_closing_year"),
+        Index("idx_management_client_fiscal_closing_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    fiscal_year = Column(Integer, nullable=False)
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default="closed", server_default=text("'closed'"))  # closed/reopened
+    revision = Column(Integer, nullable=False, default=0, server_default=text("0"))  # naik tiap kali ditutup ulang
+    retained_earnings_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    reversal_journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    net_profit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    snapshot = Column(JSONB, nullable=True)                   # ringkasan angka & checklist saat ditutup
+    notes = Column(Text, nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    closed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    closed_by_name = Column(String(255), nullable=True)
+    reopened_at = Column(DateTime(timezone=True), nullable=True)
+    reopened_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reopened_by_name = Column(String(255), nullable=True)
+    reopen_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ManagementClientFiscalClosingLog(Base):
+    """Audit trail Year-End Closing (append-only): tiap close / reopen."""
+    __tablename__ = "management_client_fiscal_closing_logs"
+    __table_args__ = (
+        Index("idx_management_client_fiscal_closing_log_client", "client_id", "fiscal_year"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    closing_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_fiscal_closings.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    fiscal_year = Column(Integer, nullable=False)
+    action = Column(String(20), nullable=False)               # close/reopen
+    journal_entry_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    net_profit = Column(Numeric(24, 2), nullable=True)
+    reason = Column(Text, nullable=True)
+    snapshot = Column(JSONB, nullable=True)
+    performed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    performed_by_name = Column(String(255), nullable=True)
+    performed_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+# ============================================================
+# CASH & BANK (Transactions > Cash & Bank) -- migrations/34-*.py,
+# router modules/transactions/bank_cash_v1.py
+# ============================================================
+
+SOURCE_TYPE_KAS_BANK = "Cash & Bank"
+
+
+class BankCashImportTemplate(Base):
+    """Pola ekstraksi rekening koran (PDF/Excel/CSV) yang sudah "dipelajari"
+    untuk 1 klien -- versi Cash & Bank dari Sales/Purchase/Journal Entry
+    Import Template (bentuk kolom sama, plus template_name). Dicocokkan lewat
+    column_signature_hash = SHA-256 header tabel mutasi yang dinormalisasi.
+
+    mapping_rules (lihat modules/transactions/bank_statement_extractor.py):
+        columns          [{header, role}] -- role: date/description/debit/credit/
+                         amount/dc_flag/balance/reference/ignore
+        amount_mode      'split' (kolom debit & kredit) / 'single' (1 kolom + penanda)
+        default_direction arah baris 'single' tanpa penanda DB/CR (credit/debit)
+        number_format    'en' (1,234.56) / 'id' (1.234,56)
+        date_order       'dmy' / 'mdy' / 'ymd'
+        method           'grid' / 'words' / 'ocr' / 'table'
+        bank_name        label bank terdeteksi (hanya untuk tampilan)
+
+    detected_by: 'auto' (lolos validasi saldo otomatis) / 'manual' (dikoreksi
+    user di modal review sebelum import)."""
+    __tablename__ = "financial_transaction_bank_cash_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_bank_cash_import_templates_signature"),
+        Index("idx_bank_cash_import_templates_client", "client_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    template_name = Column(String(150), nullable=True)
+    file_type = Column(String(20), nullable=False)               # PDF / Excel / CSV
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="auto")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)         # % baris terverifikasi saat template dibuat
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashBankMapping(Base):
+    """Mapping bank / rekening -> akun kas-bank COA klien (migration 36), supaya file
+    rekening koran yang di-upload ke Bank Feed otomatis masuk ke akun yang benar
+    (mis. SAU: BCA 6281900118 -> 11200001 BANK BCA, Laporan Kas Kasir -> 11100002).
+
+    Urutan pencocokan (modules/transactions/bank_cash_v1.py::_cari_mapping_bank):
+      1. account_number  = nomor rekening di header dokumen (digit saja)
+      2. match_keyword   = teks yang muncul di judul dokumen (mis. 'LAPORAN KAS KASIR')
+      3. template_id     = template ekstraksi yang cocok dengan file
+      4. bank_name       = nama bank terdeteksi, kalau hanya 1 mapping aktif untuk bank itu"""
+    __tablename__ = "financial_transaction_bank_cash_bank_mappings"
+    __table_args__ = (
+        Index("idx_bank_cash_bank_mappings_client", "client_id"),
+        Index("uq_bank_cash_bank_mappings_rekening", "client_id", "account_number",
+              unique=True, postgresql_where=text("deleted_at IS NULL AND account_number IS NOT NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    bank_name = Column(String(100), nullable=False)              # BCA / BRI / Mandiri / Kas Kasir
+    account_number = Column(String(50), nullable=True)           # digit saja
+    match_keyword = Column(String(255), nullable=True)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id", ondelete="SET NULL"), nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    usage_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashStatement(Base):
+    """1 file rekening koran yang di-upload ke Bank Feed untuk 1 akun bank
+    (management_client_coa). Baris mutasinya di BankCashMutation."""
+    __tablename__ = "financial_transaction_bank_cash_statements"
+    __table_args__ = (
+        Index("idx_bank_cash_statement_client_bank", "client_id", "bank_coa_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_hash = Column(String(64), nullable=True)               # sha256 isi file
+    period_start = Column(Date, nullable=True)
+    period_end = Column(Date, nullable=True)
+    opening_balance = Column(Numeric(24, 2), nullable=True)     # saldo awal resmi (footer PDF), kalau terbaca
+    closing_balance = Column(Numeric(24, 2), nullable=True)
+    total_debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))   # uang keluar
+    total_credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))  # uang masuk
+    line_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    duplicate_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    warnings = Column(JSONB, nullable=True)
+    # migration 35: jejak ekstraksi -- format file, jalur (grid/words/ocr/table/legacy),
+    # template yang dipakai/dibuat, ringkasan validasi saldo & total footer.
+    file_type = Column(String(20), nullable=True)
+    extraction_method = Column(String(20), nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id", ondelete="SET NULL"), nullable=True)
+    validation = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashMutation(Base):
+    """1 baris mutasi rekening koran (Bank Feed). debit = uang KELUAR dari
+    rekening, credit = uang MASUK (sudut pandang rekening koran).
+    status: unmatched (belum dicocokkan) / matched (sudah jadi transaksi Cash
+    & Bank, lihat transaction_id) / ignored (sengaja diabaikan, mis. baris
+    saldo). row_hash mencegah baris yang sama tersimpan dua kali saat file
+    yang sama di-upload ulang."""
+    __tablename__ = "financial_transaction_bank_cash_mutations"
+    __table_args__ = (
+        Index("idx_bank_cash_mutation_client_status", "client_id", "status"),
+        Index("idx_bank_cash_mutation_bank_date", "bank_coa_id", "mutation_date"),
+        Index("uq_bank_cash_mutation_hash_aktif", "client_id", "bank_coa_id", "row_hash",
+              unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    statement_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_statements.id", ondelete="CASCADE"), nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    mutation_date = Column(Date, nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    balance_after = Column(Numeric(24, 2), nullable=True)       # saldo di rekening koran (kalau ada)
+    row_hash = Column(String(64), nullable=False)
+    status = Column(String(20), nullable=False, default="unmatched", server_default=text("'unmatched'"))
+    transaction_id = Column(PG_UUID(as_uuid=False), nullable=True)  # FK dipasang migration (tabel transaksi dibuat sesudahnya)
+    ignore_reason = Column(Text, nullable=True)
+    # migration 35: keyakinan hasil ekstraksi per baris -- high (terverifikasi
+    # saldo/total resmi), medium (tidak bisa diverifikasi), low (tidak cocok,
+    # wajib review manual; dilewati auto-match). NULL = baris sebelum fitur ini.
+    confidence = Column(String(10), nullable=True)
+    confidence_notes = Column(JSONB, nullable=True)
+    page_no = Column(Integer, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashTransaction(Base):
+    """Header transaksi Cash & Bank: Cash Receipt (uang masuk ke akun kas/bank)
+    atau Cash Payment (uang keluar). Lahir dari pencocokan mutasi Bank Feed
+    (source 'bank_feed', mutation_id terisi) atau input manual ('manual').
+
+    Alur status: draft -> approved -> posted -> reversed. Jurnalnya TIDAK
+    disalin ke Journal Entry -- GL/FS membaca langsung transaksi posted
+    (db_client.ambil_baris_jurnal_posted_transaksi, sumber "cash_bank"):
+        receipt: Dr akun kas/bank amount ; Cr/Dr baris lawan
+        payment: Cr akun kas/bank amount ; Dr/Cr baris lawan
+    reversed = jurnal asal tetap di tx_date + jurnal pembalik (RV-<tx_number>)
+    di reversal_date. Pelunasan invoice (Sales.paid_amount, Purchase.
+    payment_status) diterapkan saat posted & dikembalikan saat reversed."""
+    __tablename__ = "financial_transaction_bank_cash_transactions"
+    __table_args__ = (
+        UniqueConstraint("client_id", "tx_number", name="uq_bank_cash_transaction_number"),
+        Index("idx_bank_cash_transaction_client_status", "client_id", "status"),
+        Index("idx_bank_cash_transaction_client_date", "client_id", "tx_date"),
+        # 1 mutasi = 1 transaksi aktif; transaksi yang dibalik melepas mutasinya (boleh dicocokkan ulang).
+        Index("uq_bank_cash_transaction_mutation_aktif", "mutation_id",
+              unique=True, postgresql_where=text("deleted_at IS NULL AND mutation_id IS NOT NULL AND status <> 'reversed'")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    tx_number = Column(String(50), nullable=False)               # CR-2610-0001 / CP-2610-0001
+    direction = Column(String(10), nullable=False)               # receipt / payment
+    tx_date = Column(Date, nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    bank_account_code = Column(String(50), nullable=False)       # snapshot akun kas/bank saat dibuat
+    bank_account_name = Column(String(255), nullable=False)
+    amount = Column(Numeric(24, 2), nullable=False)
+    kind = Column(String(20), nullable=False)                    # invoice / non_invoice
+    category = Column(String(100), nullable=True)                # Customer Payment, Vendor Payment, Bank Charges, ...
+    counterparty = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    reference = Column(String(255), nullable=True)
+    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual
+    mutation_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_mutations.id"), nullable=True)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashTransactionLine(Base):
+    """Baris lawan 1 transaksi Cash & Bank (sisi selain akun kas/bank).
+    line_type: sales_invoice (pelunasan piutang -- akun = piutang invoice),
+    purchase (pelunasan hutang -- akun = hutang invoice), account (akun bebas:
+    biaya admin, bunga, transfer antar rekening, setoran modal, ...).
+    debit/credit = sisi jurnal baris ini; total (credit - debit) baris =
+    amount header untuk receipt, (debit - credit) = amount untuk payment."""
+    __tablename__ = "financial_transaction_bank_cash_transaction_lines"
+    __table_args__ = (
+        Index("idx_bank_cash_line_transaction", "transaction_id"),
+        Index("idx_bank_cash_line_sales_invoice", "sales_invoice_id"),
+        Index("idx_bank_cash_line_purchase", "purchase_transaction_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_transactions.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    line_type = Column(String(20), nullable=False)               # sales_invoice / purchase / account
+    sales_invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    purchase_transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
 
 class ManagementSettingPurchase(Base):
@@ -5368,15 +5725,78 @@ def _angka_gl(v: Any) -> float:
     return float(v) if v is not None else 0.0
 
 
+def baris_jurnal_kas_bank(tx: "BankCashTransaction", lines: List["BankCashTransactionLine"]) -> List[Dict[str, Any]]:
+    """Baris jurnal 1 transaksi Cash & Bank: akun kas/bank (receipt = debit,
+    payment = kredit) diikuti baris lawan apa adanya. Dipakai GL/FS & preview."""
+    nominal = _angka_gl(tx.amount)
+    hasil = [{
+        "account_code": tx.bank_account_code, "account_name": tx.bank_account_name,
+        "description": tx.description,
+        "debit": nominal if tx.direction == "receipt" else 0.0,
+        "kredit": nominal if tx.direction == "payment" else 0.0,
+    }]
+    for l in sorted(lines, key=lambda x: x.line_no):
+        hasil.append({
+            "account_code": l.account_code, "account_name": l.account_name,
+            "description": l.description or tx.description,
+            "debit": _angka_gl(l.debit), "kredit": _angka_gl(l.credit),
+        })
+    return hasil
+
+
+def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+    """Transaksi Cash & Bank posted/reversed -> baris GL. Reversed = jurnal
+    asal (tx_date) + jurnal pembalik RV-<no> (reversal_date, sisi dibalik)."""
+    q = session.query(BankCashTransaction).filter(
+        BankCashTransaction.client_id == management_client_id,
+        BankCashTransaction.status.in_(("posted", "reversed")),
+        BankCashTransaction.deleted_at.is_(None),
+    )
+    if sampai_tanggal:
+        q = q.filter(BankCashTransaction.tx_date <= sampai_tanggal)
+    transaksi = q.order_by(BankCashTransaction.tx_date, BankCashTransaction.tx_number).all()
+    if not transaksi:
+        return []
+    baris_per_tx: Dict[str, List[BankCashTransactionLine]] = {}
+    for l in session.query(BankCashTransactionLine).filter(
+        BankCashTransactionLine.transaction_id.in_([t.id for t in transaksi])
+    ).all():
+        baris_per_tx.setdefault(l.transaction_id, []).append(l)
+
+    hasil: List[Dict[str, Any]] = []
+    for tx in transaksi:
+        jurnal = baris_jurnal_kas_bank(tx, baris_per_tx.get(tx.id, []))
+        dasar = {
+            "sumber": "cash_bank", "jurnal_id": f"cash_bank:{tx.id}", "nomor": tx.tx_number,
+            "tanggal": tx.tx_date, "pihak": tx.counterparty, "segmen": {},
+        }
+        for b in jurnal:
+            hasil.append({**dasar, "keterangan": b["description"] or tx.category or tx.tx_number,
+                          "account_code": b["account_code"], "account_name": b["account_name"],
+                          "debit": b["debit"], "kredit": b["kredit"]})
+        if tx.status == "reversed" and tx.reversal_date and (not sampai_tanggal or tx.reversal_date <= sampai_tanggal):
+            dasar_rv = {**dasar, "jurnal_id": f"cash_bank_rv:{tx.id}", "nomor": f"RV-{tx.tx_number}", "tanggal": tx.reversal_date}
+            for b in jurnal:
+                hasil.append({**dasar_rv, "keterangan": f"Reversal {tx.tx_number}: {tx.reversal_reason or ''}".strip(),
+                              "account_code": b["account_code"], "account_name": b["account_name"],
+                              "debit": b["kredit"], "kredit": b["debit"]})
+    return hasil
+
+
 def ambil_baris_jurnal_posted_transaksi(
     client_id: Optional[str] = None,
     sampai_tanggal: Optional[date] = None,
     management_client_id: Optional[str] = None,
+    termasuk_penutup: bool = False,
 ) -> List[Dict[str, Any]]:
     """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
     utama Financial Statements) dan/atau `client_id` (id_user
     management_users, akun yang login). Minimal salah satu WAJIB diisi.
+    Jurnal penutup tahun buku (source_type SOURCE_TYPE_TUTUP_BUKU) hanya ikut
+    kalau `termasuk_penutup=True` (General Ledger) -- Financial Statements
+    menghitung laba ditahan dari akun P&L, jadi jurnal itu tidak dibaca agar
+    laba tidak terhitung dua kali & P&L tahun yang ditutup tidak jadi nol.
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
@@ -5406,9 +5826,11 @@ def ambil_baris_jurnal_posted_transaksi(
         )
         if sampai_tanggal:
             q = q.filter(JournalEntryDraft.entry_date <= sampai_tanggal)
+        if not termasuk_penutup:
+            q = q.filter(JournalEntryDraft.source_type != SOURCE_TYPE_TUTUP_BUKU)
         for draft, line in q.order_by(JournalEntryDraft.entry_date, JournalEntryDraftLine.line_no).all():
             hasil.append({
-                "sumber": "journal_entry",
+                "sumber": "year_end_closing" if draft.source_type == SOURCE_TYPE_TUTUP_BUKU else "journal_entry",
                 "jurnal_id": f"je:{draft.id}",
                 "nomor": draft.je_number,
                 "tanggal": draft.entry_date,
@@ -5501,6 +5923,11 @@ def ambil_baris_jurnal_posted_transaksi(
             if _angka_gl(tx.accounts_payable):
                 kode, nama = akun_posting_purchase(tx)["ap"]
                 hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": 0.0, "kredit": _angka_gl(tx.accounts_payable)})
+
+        # --- 4) Cash & Bank --- client_id tabel ini = management_clients,
+        # jadi hanya ikut kalau difilter per klien (management_client_id).
+        if management_client_id:
+            hasil.extend(_baris_gl_kas_bank(session, management_client_id, sampai_tanggal))
 
         return hasil
     except Exception as e:

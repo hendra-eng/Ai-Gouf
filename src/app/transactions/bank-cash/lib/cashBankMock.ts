@@ -1,7 +1,7 @@
-// Tipe data Cash & Bank (Journal Preview, Posted, Exceptions).
-// File ini dulu berisi data dummy; datanya sekarang dari backend (lib/useBankCashRekon.ts),
-// jadi hanya tipe yang tersisa. `matchStatus`: 'matched' = jurnal dari Reconciliation (invoice atau
-// tanpa invoice; linkedInvoice null untuk yang tanpa invoice).
+// Tipe tampilan tab Posted & Exceptions Cash & Bank. Datanya dari backend
+// (src/lib/bankCashStore.ts, diubah ke bentuk ini di lib/useBankCashRekon.ts).
+// `matchStatus`: 'matched' = transaksi dari mutasi Bank Feed, 'unmatched' = input manual.
+// linkedInvoice null = transaksi tanpa invoice (biaya admin, bunga, transfer, ...).
 
 export type CashBankDirection = 'Cash Receipt' | 'Cash Payment';
 export type CashBankMatchStatus = 'matched' | 'unmatched';

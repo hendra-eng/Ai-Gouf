@@ -10,8 +10,8 @@ import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import { sudahDiterapkan, tahapPembayaran, type PembayaranRekon } from '../lib/useBankCashRekon';
 
 const VARIAN_TAHAP: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Diposting: 'positive',
-  Disetujui: 'info',
+  Posted: 'positive',
+  Approved: 'info',
   Draft: 'warning',
 };
 
@@ -58,8 +58,8 @@ export function JurnalCell({ items }: { items: PembayaranRekon[] }) {
 export function DalamProsesBadge({ nominal }: { nominal: number }) {
   if (nominal <= 0) return null;
   return (
-    <span className="block mt-1" title="Sudah dicocokkan dengan mutasi bank, invoice berubah setelah jurnal diposting">
-      <StatusBadge variant="info" label={`Dalam proses · ${formatIDR(nominal, true)}`} dot />
+    <span className="block mt-1" title="Matched to a bank line; the invoice is updated once the journal is posted">
+      <StatusBadge variant="info" label={`In process · ${formatIDR(nominal, true)}`} dot />
     </span>
   );
 }

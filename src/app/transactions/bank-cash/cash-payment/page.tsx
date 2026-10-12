@@ -48,7 +48,7 @@ function PaymentTrendTooltip({
     <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
       <p className="font-semibold text-slate-800 mb-1">{label}</p>
       <p className="text-rose-600">
-        {entry.name}: {isDragged ? 'Estimasi · ' : ''}
+        {entry.name}: {isDragged ? 'Estimate · ' : ''}
         {formatIDR(value)}
       </p>
     </div>
@@ -58,7 +58,7 @@ function PaymentTrendTooltip({
 const PAGE_SIZE = 8;
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
-  paid: 'Lunas', partially_paid: 'Sebagian', unpaid: 'Belum Dibayar', overdue: 'Jatuh Tempo', on_hold: 'Ditahan',
+  paid: 'Paid', partially_paid: 'Partially Paid', unpaid: 'Unpaid', overdue: 'Overdue', on_hold: 'On Hold',
 };
 const PAYMENT_STATUS_VARIANT: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
   paid: 'positive', partially_paid: 'warning', unpaid: 'neutral', overdue: 'negative', on_hold: 'info',
@@ -270,24 +270,24 @@ export default function CashPaymentPage() {
   };
 
   const columns = [
-    { key: 'date', label: 'Tanggal', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'purchaseId', label: 'No. Purchase', render: (r: CashPaymentRow) => <span className="font-mono text-xs text-teal-600">{r.purchaseId}</span> },
+    { key: 'date', label: 'Date', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
+    { key: 'purchaseId', label: 'Purchase No.', render: (r: CashPaymentRow) => <span className="font-mono text-xs text-teal-600">{r.purchaseId}</span> },
     { key: 'vendor', label: 'Vendor', render: (r: CashPaymentRow) => <span className="font-medium text-xs">{r.vendor}</span> },
-    { key: 'description', label: 'Deskripsi', render: (r: CashPaymentRow) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description || '—'}</span> },
-    { key: 'category', label: 'Kategori', render: (r: CashPaymentRow) => <span className="badge badge-neutral">{r.category}</span> },
-    { key: 'dueDate', label: 'Jatuh Tempo', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.dueDate ? formatDate(r.dueDate) : '—'}</span> },
+    { key: 'description', label: 'Description', render: (r: CashPaymentRow) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description || '—'}</span> },
+    { key: 'category', label: 'Category', render: (r: CashPaymentRow) => <span className="badge badge-neutral">{r.category}</span> },
+    { key: 'dueDate', label: 'Due Date', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.dueDate ? formatDate(r.dueDate) : '—'}</span> },
     { key: 'total', label: 'Total', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{formatIDR(r.total, true)}</span> },
-    { key: 'paid', label: 'Dibayar', render: (r: CashPaymentRow) => <span className="font-mono text-xs font-semibold text-rose-700">{r.paid ? formatIDR(r.paid, true) : '—'}</span> },
-    { key: 'outstanding', label: 'Sisa', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
+    { key: 'paid', label: 'Paid', render: (r: CashPaymentRow) => <span className="font-mono text-xs font-semibold text-rose-700">{r.paid ? formatIDR(r.paid, true) : '—'}</span> },
+    { key: 'outstanding', label: 'Outstanding', render: (r: CashPaymentRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
     { key: 'paymentStatus', label: 'Status', render: (r: CashPaymentRow) => (
       <div>
         <StatusBadge variant={r.isOverdue && r.paymentStatus !== 'overdue' ? 'negative' : (PAYMENT_STATUS_VARIANT[r.paymentStatus] || 'neutral')}
-          label={r.isOverdue && r.paymentStatus !== 'overdue' ? 'Jatuh Tempo' : (PAYMENT_STATUS_LABEL[r.paymentStatus] || r.paymentStatus)} dot />
+          label={r.isOverdue && r.paymentStatus !== 'overdue' ? 'Overdue' : (PAYMENT_STATUS_LABEL[r.paymentStatus] || r.paymentStatus)} dot />
         <DalamProsesBadge nominal={r.dalamProses} />
       </div>
     ) },
-    { key: 'mutasi', label: 'Mutasi Bank', render: (r: CashPaymentRow) => <MutasiBankCell items={r.rekon} /> },
-    { key: 'jurnal', label: 'Jurnal', render: (r: CashPaymentRow) => <JurnalCell items={r.rekon} /> },
+    { key: 'mutasi', label: 'Bank Line', render: (r: CashPaymentRow) => <MutasiBankCell items={r.rekon} /> },
+    { key: 'jurnal', label: 'Journal', render: (r: CashPaymentRow) => <JurnalCell items={r.rekon} /> },
   ];
 
   return (
@@ -296,35 +296,35 @@ export default function CashPaymentPage() {
 
       {error && (
         <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
-          <span className="font-semibold">Gagal memuat data Purchase:</span>
+          <span className="font-semibold">Failed to load Purchase data:</span>
           <span>{error}</span>
-          <button onClick={refresh} className="underline font-medium ml-auto">Coba lagi</button>
+          <button onClick={refresh} className="underline font-medium ml-auto">Retry</button>
         </div>
       )}
 
       {overdueCount > 0 && (
         <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Perhatian:</span>
-          <span>{overdueCount} tagihan vendor sudah lewat jatuh tempo dan belum lunas (total sisa {formatIDR(totalOutstanding, true)} untuk seluruh tagihan yang belum lunas).</span>
+          <span className="font-semibold">Attention:</span>
+          <span>{overdueCount} vendor bills are past due and still unpaid (total outstanding across all unpaid bills: {formatIDR(totalOutstanding, true)}).</span>
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Dibayar" value={totalPaid} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
-        <KpiCard title="Belum Dibayar (Hutang)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} dalam proses (menunggu posting)` : undefined} />
-        <KpiCard title="Jumlah Tagihan" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Rata-rata / Tagihan" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
-        <KpiCard title="Lewat Jatuh Tempo" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
+        <KpiCard title="Total Paid" value={totalPaid} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
+        <KpiCard title="Unpaid (Payables)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} in process (awaiting posting)` : undefined} />
+        <KpiCard title="Number of Bills" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+        <KpiCard title="Average / Bill" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
+        <KpiCard title="Overdue" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4">
-            <h2 className="text-sm font-bold text-foreground">Tren Cash Payment Bulanan</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Nominal dibayar per bulan: tanggal bayar untuk pembayaran rekonsiliasi yang sudah diposting, tanggal pembelian untuk sisanya</p>
+            <h2 className="text-sm font-bold text-foreground">Monthly Cash Payment Trend</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Amount paid per month: posted Cash &amp; Bank transaction date, or the purchase date for settlements recorded outside Cash &amp; Bank</p>
           </div>
           {trend.every(t => t.total === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Cash Payment untuk ditampilkan.</p>
+            <p className="text-xs text-muted-foreground py-10 text-center">No Cash Payment transactions to show yet.</p>
           ) : (
             <div className="relative">
               <ResponsiveContainer width="100%" height={220}>
@@ -365,7 +365,7 @@ export default function CashPaymentPage() {
               <div
                 onMouseDown={handlePaymentAxisMouseDown}
                 onDoubleClick={resetPaymentZoom}
-                title="Tarik untuk zoom skala harga · klik dua kali untuk reset"
+                title="Drag to zoom the value scale · double-click to reset"
                 className="absolute top-0 left-0 h-full cursor-ns-resize"
                 style={{ width: PAYMENT_AXIS_OVERLAY_WIDTH }}
               />
@@ -374,10 +374,10 @@ export default function CashPaymentPage() {
         </div>
 
         <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">Payment per Kategori</h2>
-          <p className="text-xs text-muted-foreground mb-3">Total tagihan per kategori Purchase</p>
+          <h2 className="text-sm font-bold text-foreground mb-1">Payment by Category</h2>
+          <p className="text-xs text-muted-foreground mb-3">Total bills per Purchase category</p>
           {byCategory.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+            <p className="text-xs text-muted-foreground py-6 text-center">No data yet.</p>
           ) : (
             <div className="space-y-2.5">
               {byCategory.map((cat, i) => {
@@ -402,9 +402,9 @@ export default function CashPaymentPage() {
 
       <div className="card-elevated-md rounded-xl p-5 mb-6">
         <h2 className="text-sm font-bold text-foreground mb-1">Top Vendor</h2>
-        <p className="text-xs text-muted-foreground mb-4">Berdasarkan total tagihan</p>
+        <p className="text-xs text-muted-foreground mb-4">By total bill amount</p>
         {topPayees.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+          <p className="text-xs text-muted-foreground py-6 text-center">No data yet.</p>
         ) : (
           <div className="space-y-3">
             {topPayees.map((c, i) => {
@@ -430,13 +430,13 @@ export default function CashPaymentPage() {
 
       <div className="card-elevated-md rounded-xl p-5 mb-6">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-          <h2 className="text-sm font-bold text-foreground">Tagihan Vendor (dari halaman Purchase)</h2>
+          <h2 className="text-sm font-bold text-foreground">Vendor Bills (from Purchase)</h2>
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Cari no. purchase, invoice, vendor..."
+              placeholder="Search purchase no., invoice, vendor..."
               className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground w-64"
             />
             <select
@@ -444,23 +444,23 @@ export default function CashPaymentPage() {
               onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
               className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
             >
-              <option value="all">Semua status</option>
-              <option value="unpaid">Belum Dibayar</option>
-              <option value="partially_paid">Sebagian</option>
-              <option value="overdue">Jatuh Tempo</option>
-              <option value="on_hold">Ditahan</option>
-              <option value="paid">Lunas</option>
+              <option value="all">All statuses</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="partially_paid">Partially Paid</option>
+              <option value="overdue">Overdue</option>
+              <option value="on_hold">On Hold</option>
+              <option value="paid">Paid</option>
             </select>
           </div>
         </div>
         <p className="text-xs text-muted-foreground mb-3">
-          Hanya transaksi Purchase yang sudah diposting. Dibayar dan sisa baru berubah setelah jurnal rekonsiliasinya diposting; sebelum itu invoice ditandai "Dalam proses".
+          Posted Purchase transactions only. Paid and outstanding change once the Cash &amp; Bank transaction is posted; until then the bill is marked &ldquo;In process&rdquo;.
         </p>
         <DataTable
           columns={columns}
           data={paged}
           loading={loading}
-          emptyMessage="Belum ada transaksi Purchase yang sudah diposting."
+          emptyMessage="No posted Purchase transactions yet."
         />
         <Pagination page={pageSafe} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
       </div>

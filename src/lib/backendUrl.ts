@@ -1,7 +1,7 @@
 // [BARU] Satu sumber kebenaran untuk URL backend FastAPI yang dipanggil
 // LANGSUNG dari browser (melewati proxy /api/... di next.config.mjs) --
 // dipakai khusus endpoint upload berat (rekening koran di
-// ImportRekeningKoranModal.tsx, Bank Feed di agent-ai/lib/api.js) yang
+// ImportRekeningKoranModal.tsx) yang
 // butuh waktu proses lama, karena proxy rewrites Next.js punya batas waktu
 // tunggu yang tidak bisa dikonfigurasi lagi di versi Next.js sekarang.
 //

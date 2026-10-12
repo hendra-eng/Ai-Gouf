@@ -267,7 +267,7 @@ def _no_jurnal(ob: Any) -> str:
 
 def _tulis_jurnal(session, ob: Any, *, je_number: str, baris: List[Dict[str, Any]], description: str,
                   user: Dict[str, Any]) -> Any:
-    """Insert 1 jurnal POSTED + barisnya (pola sama dgn bank_reconciliation_v1._tulis_jurnal). TIDAK commit."""
+    """Insert 1 jurnal POSTED + barisnya (pola sama dgn year_end_closing_v1._tulis_jurnal). TIDAK commit."""
     tgl = ob.as_of_date
     nama = user.get("nama") or user.get("username")
     je = dbc.JournalEntryDraft(

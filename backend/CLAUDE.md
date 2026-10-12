@@ -14,7 +14,7 @@ SKILL.md yang bersangkutan:
 | Kalau akan mengedit... | Baca dulu |
 |---|---|
 | `modules/accounting_export.py`, `modules/kertas_kerja.py`, atau menambah sheet Excel baru di modul manapun | `skills/xlsx-export/SKILL.md` |
-| `modules/akuntansi_ai.py` bagian `_baca_pdf_sebagai_lembar`, `muat_workbook`, atau `modules/kertas_kerja.py` bagian `susun_gl_dari_pdf_rekening_koran` | `skills/pdf-reading/SKILL.md` |
+| `modules/akuntansi_ai.py` bagian `_baca_pdf_sebagai_lembar`, `muat_workbook`, `modules/kertas_kerja.py` bagian `susun_gl_dari_pdf_rekening_koran`, atau `modules/transactions/bank_statement_extractor.py` (Bank Feed Cash & Bank) | `skills/pdf-reading/SKILL.md` |
 | Membuat fitur baru generate PDF (mis. memo pajak versi cetak) | `skills/pdf-writing/SKILL.md` |
 | Membuat fitur baru generate Word (mis. memo pajak versi editable) | `skills/docx-writing/SKILL.md` |
 
@@ -189,7 +189,7 @@ SKILL.md yang bersangkutan:
 | Kalau akan mengedit... | Baca dulu |
 |---|---|
 | `modules/accounting_export.py`, `modules/kertas_kerja.py`, atau menambah sheet Excel baru di modul manapun | `skills/xlsx-export/SKILL.md` |
-| `modules/akuntansi_ai.py` bagian `_baca_pdf_sebagai_lembar`, `muat_workbook`, atau `modules/kertas_kerja.py` bagian `susun_gl_dari_pdf_rekening_koran` | `skills/pdf-reading/SKILL.md` |
+| `modules/akuntansi_ai.py` bagian `_baca_pdf_sebagai_lembar`, `muat_workbook`, `modules/kertas_kerja.py` bagian `susun_gl_dari_pdf_rekening_koran`, atau `modules/transactions/bank_statement_extractor.py` (Bank Feed Cash & Bank) | `skills/pdf-reading/SKILL.md` |
 | Membuat fitur baru generate PDF (mis. memo pajak versi cetak) | `skills/pdf-writing/SKILL.md` |
 | Membuat fitur baru generate Word (mis. memo pajak versi editable) | `skills/docx-writing/SKILL.md` |
 

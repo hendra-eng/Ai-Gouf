@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { loadLogo } from '@/lib/imageUtils';
 
 // PDF "Journal Entry" yang dicetak dari modal input (NewJournalEntryModal.tsx).
 // Susunannya SENGAJA mengikuti form input persis -- urutan & label field
@@ -57,36 +58,6 @@ const fmtCell = (v: string) => {
   const n = Number(v) || 0;
   return n > 0 ? fmt(n) : '';
 };
-
-interface LoadedLogo {
-  dataUrl: string;
-  width: number;
-  height: number;
-}
-
-/** Muat logo lewat <canvas> -> PNG, supaya format apa pun (termasuk WebP)
- *  yang tersimpan di backend selalu bisa disisipkan jsPDF. Gagal = null
- *  (PDF tetap dicetak, tanpa logo). */
-function loadLogo(dataUrl: string): Promise<LoadedLogo | null> {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx || canvas.width === 0 || canvas.height === 0) return resolve(null);
-        ctx.drawImage(img, 0, 0);
-        resolve({ dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height });
-      } catch {
-        resolve(null);
-      }
-    };
-    img.onerror = () => resolve(null);
-    img.src = dataUrl;
-  });
-}
 
 function formatTanggalCetak(d: Date): string {
   const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

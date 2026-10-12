@@ -39,3 +39,10 @@ seed_coa_nbm.sql
 seed_fs_mapping_rules.sql
 seed_fs_note_templates.sql
 32-repoint_sales_client_id_fk_to_management_clients.py
+33-create_year_end_closing.py
+34-create_bank_cash_tables.py
+35-create_bank_cash_import_templates.py
+36-create_bank_cash_bank_mappings.py
+seed_template_sau_bank_cash.sql
+seed_template_npi_bank_cash.sql
+seed_template_nbm_bank_cash.sql

@@ -474,6 +474,7 @@ ACCOUNT_MAPPING_GROUPS: List[Tuple[str, str, List[Tuple[str, str]]]] = [
     ]),
     ("others", "Others", [
         ("opening_balance_equity", "Opening Balance Equity"),
+        ("retained_earnings", "Retained Earnings"),
         ("fixed_asset", "Fixed Asset"),
     ]),
 ]
@@ -491,6 +492,7 @@ ACCOUNT_MAPPING_DIPAKAI: Dict[str, str] = {
     "account_payable": "Purchase journal (accounts payable)",
     "purchase_tax_receivable": "Purchase journal (input VAT)",
     "opening_balance_equity": "Opening balance suspense account (default)",
+    "retained_earnings": "Year-end closing journal (profit transferred to retained earnings)",
 }
 
 

@@ -13,12 +13,12 @@ import { formatIDR } from '../../lib/groupAnalytics';
 import type { AkunLawan, BarisLawanInput } from '../lib/useBankReconciliation';
 
 const KATEGORI = [
-  'Biaya admin bank',
-  'Bunga bank',
-  'Pajak bunga bank',
-  'Transfer antar bank',
-  'Setoran modal',
-  'Lainnya',
+  'Bank charges',
+  'Bank interest',
+  'Tax on bank interest',
+  'Inter-bank transfer',
+  'Capital injection',
+  'Other',
 ] as const;
 
 interface Baris {
@@ -75,9 +75,9 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
 
   const kirim = async () => {
     setPesan(null);
-    if (baris.some((b) => !b.coaId)) return setPesan('Pilih akun untuk setiap baris.');
-    if (baris.some((b) => !(Number(b.amount) > 0))) return setPesan('Nominal setiap baris harus lebih dari 0.');
-    if (Math.abs(ringkas.selisih) > 0.005) return setPesan('Jurnal belum seimbang. Lengkapi baris akun lawan sampai selisih 0.');
+    if (baris.some((b) => !b.coaId)) return setPesan('Select an account for every line.');
+    if (baris.some((b) => !(Number(b.amount) > 0))) return setPesan('Every line amount must be greater than 0.');
+    if (Math.abs(ringkas.selisih) > 0.005) return setPesan('The journal is not balanced. Complete the counter-account lines until the difference is 0.');
     try {
       await onSubmit(
         kategori,
@@ -85,7 +85,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
       );
       setBuka(false);
     } catch (e: any) {
-      setPesan(e?.message || 'Gagal mencatat mutasi.');
+      setPesan(e?.message || 'Failed to record the line.');
     }
   };
 
@@ -95,8 +95,8 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
         onClick={() => setBuka(true)}
         className="w-full text-left rounded-lg border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
       >
-        <span className="font-semibold text-foreground">Bukan pelunasan invoice?</span> Catat sebagai biaya admin, bunga,
-        transfer antar bank, dll.
+        <span className="font-semibold text-foreground">Not an invoice settlement?</span> Record it as bank charges, interest,
+        inter-bank transfer, etc.
       </button>
     );
   }
@@ -104,14 +104,14 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-foreground">Jurnal tanpa invoice</p>
+        <p className="text-xs font-bold text-foreground">Journal without invoice</p>
         <button onClick={() => setBuka(false)} className="text-[11px] text-muted-foreground hover:text-foreground">
-          Tutup
+          Close
         </button>
       </div>
 
       <label className="block">
-        <span className="text-[11px] text-muted-foreground">Jenis transaksi</span>
+        <span className="text-[11px] text-muted-foreground">Transaction type</span>
         <select
           value={kategori}
           onChange={(e) => setKategori(e.target.value)}
@@ -124,7 +124,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
       </label>
 
       <div className="rounded-md bg-card border border-border px-2.5 py-2 text-[11px] text-muted-foreground flex justify-between">
-        <span>{masuk ? 'Debit — Bank (uang masuk)' : 'Kredit — Bank (uang keluar)'}</span>
+        <span>{masuk ? 'Debit — Bank (money in)' : 'Credit — Bank (money out)'}</span>
         <span className="font-mono font-semibold text-foreground">{formatIDR(nominal, true)}</span>
       </div>
 
@@ -138,7 +138,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
             <input
               value={b.cari}
               onChange={(e) => ubah(b.key, { cari: e.target.value })}
-              placeholder="Cari akun (no. atau nama)…"
+              placeholder="Search account (no. or name)…"
               className="w-full rounded-md border border-border px-2 py-1 text-xs"
             />
             <select
@@ -146,7 +146,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
               onChange={(e) => ubah(b.key, { coaId: e.target.value })}
               className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs"
             >
-              <option value="">— pilih akun —</option>
+              <option value="">— select account —</option>
               {pilihan.map((a) => (
                 <option key={a.id} value={a.id}>{a.no_akun} · {a.nama_akun}</option>
               ))}
@@ -158,7 +158,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
                 className="rounded-md border border-border bg-card px-2 py-1 text-xs"
               >
                 <option value="debit">Debit</option>
-                <option value="credit">Kredit</option>
+                <option value="credit">Credit</option>
               </select>
               <input
                 type="number"
@@ -172,7 +172,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
                 <button
                   onClick={() => setBaris((prev) => prev.filter((x) => x.key !== b.key))}
                   className="p-1 text-muted-foreground hover:text-rose-600"
-                  title="Hapus baris"
+                  title="Delete line"
                 >
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>
@@ -183,14 +183,14 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
       })}
 
       <button onClick={tambah} className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline">
-        <PlusIcon className="w-3 h-3" /> Tambah baris (mis. pajak)
+        <PlusIcon className="w-3 h-3" /> Add line (e.g. tax)
       </button>
 
       <div className={`flex justify-between rounded-md px-2.5 py-1.5 text-[11px] font-mono ${
         Math.abs(ringkas.selisih) < 0.005 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
       }`}>
-        <span>Debit {formatIDR(ringkas.debit, true)} · Kredit {formatIDR(ringkas.kredit, true)}</span>
-        <span>{Math.abs(ringkas.selisih) < 0.005 ? 'Seimbang' : `Selisih ${formatIDR(ringkas.selisih, true)}`}</span>
+        <span>Debit {formatIDR(ringkas.debit, true)} · Credit {formatIDR(ringkas.kredit, true)}</span>
+        <span>{Math.abs(ringkas.selisih) < 0.005 ? 'Balanced' : `Difference ${formatIDR(ringkas.selisih, true)}`}</span>
       </div>
 
       {pesan && <p className="text-[11px] text-rose-700">{pesan}</p>}
@@ -200,7 +200,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
         disabled={busy}
         className="w-full rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-semibold disabled:opacity-50"
       >
-        {busy ? 'Menyimpan…' : 'Buat jurnal DRAFT'}
+        {busy ? 'Saving…' : 'Create DRAFT journal'}
       </button>
     </div>
   );
