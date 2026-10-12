@@ -120,6 +120,13 @@ def _pasang_constraint(connection, label: str, nama: str, ddl: str) -> bool:
     if ada:
         print(f"⏭️  {label} sudah ada, skip.")
         return True
+    if nama == "fk_bank_cash_statement_template" and any(
+            fk.get("constrained_columns") == ["template_id"] and fk.get("referred_table") == TABEL_TEMPLATE
+            for fk in inspect(connection).get_foreign_keys(TABEL_STATEMENT)):
+        # Database baru: tabel statements dibuat migration 34 dari ORM terkini -> FK-nya
+        # sudah ada (nama bawaan Postgres). Jangan pasang FK kedua.
+        print(f"⏭️  {label} sudah ada (dibuat bersama tabel), skip.")
+        return True
     return _jalankan_sql(connection, label, ddl)
 
 

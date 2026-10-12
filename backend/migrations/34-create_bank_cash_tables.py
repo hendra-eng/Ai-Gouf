@@ -20,6 +20,14 @@ Menambahkan:
       tidak bisa dibuat/diubah/dihapus; pembalikan transaksi lama tetap
       boleh asal tanggal pembaliknya di periode terbuka.
 
+CATATAN URUTAN (database baru, mis. VPS): tabel dibuat dari ORM db_client.py
+versi TERKINI, dan BankCashStatement di sana sudah punya kolom template_id
+(FK -> financial_transaction_bank_cash_import_templates, aslinya dari
+migration 35). Karena itu tabel template ikut dibuat di sini LEBIH DULU --
+tanpa itu CREATE TABLE statements gagal "relation ... import_templates does
+not exist" dan tabel lain berantai gagal. Migration 35 tetap dijalankan
+sesudahnya (skip tabel/kolom yang sudah ada, pasang CHECK constraint-nya).
+
 Tabel financial_transaction_bank_cash_exceptions (tab Exceptions) sudah ada
 dan tetap dipakai apa adanya -- bank_mutation_ref sekarang berisi id mutasi.
 
@@ -51,6 +59,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from _history import catat_history
 from db_client import engine
 
+TABEL_TEMPLATE = "financial_transaction_bank_cash_import_templates"
 TABEL_STATEMENT = "financial_transaction_bank_cash_statements"
 TABEL_MUTASI = "financial_transaction_bank_cash_mutations"
 TABEL_TRANSAKSI = "financial_transaction_bank_cash_transactions"
@@ -246,11 +255,13 @@ def main() -> int:
     print("🔄 MIGRATION: Cash & Bank (Bank Feed + transaksi kas/bank)")
     print("=" * 60)
 
-    from db_client import BankCashMutation, BankCashStatement, BankCashTransaction, BankCashTransactionLine
+    from db_client import (BankCashImportTemplate, BankCashMutation, BankCashStatement, BankCashTransaction,
+                           BankCashTransactionLine)
 
     hasil = {}
     with engine.connect() as connection:
         for nama, orm in (
+            (TABEL_TEMPLATE, BankCashImportTemplate),   # dirujuk FK statements.template_id (lihat docstring)
             (TABEL_STATEMENT, BankCashStatement),
             (TABEL_MUTASI, BankCashMutation),
             (TABEL_TRANSAKSI, BankCashTransaction),
