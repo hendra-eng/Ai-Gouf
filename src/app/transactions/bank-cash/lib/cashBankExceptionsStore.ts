@@ -2,27 +2,23 @@
 
 // Data layer tab Exceptions di Cash & Bank.
 //
-// Pola sesuai rancangan: DETEKSI dihitung ulang di frontend dari Bank Feed +
-// Reconciliation (Bank Feed hanya hidup di sesi browser, jadi backend tidak
-// punya datanya), sedangkan tabel financial_transaction_bank_cash_exceptions
+// DETEKSI dihitung ulang di frontend dari mutasi Bank Feed (database) + invoice
+// outstanding, sedangkan tabel financial_transaction_bank_cash_exceptions
 // (lewat /api/v1/finance/bank-cash/exceptions) hanya menyimpan status
-// PENANGANAN. Keduanya digabung lewat kunci (bank_mutation_ref + exception_type).
+// PENANGANAN. Keduanya digabung lewat kunci (bank_mutation_ref = id mutasi + exception_type).
 //
-// Tahap 1 -- yang dideteksi:
-//   1. Unmatched bank mutation  (mutasi Bank Feed berstatus 'unmatched')
-//   2. Amount mismatch          (mutasi 'matched' tapi nominal != total pembayaran yang tercatat di backend)
-//   3. Duplicate transaction    (mutasi identik muncul lebih dari sekali)
-// Mutasi yang dicatat lewat jalur tanpa invoice tidak punya pembayaran, jadi tidak pernah dianggap mismatch.
-// Belum: Missing counter account & Unbalanced journal (source 'Classification').
+// Yang dideteksi (mutasi berstatus 'ignored' dilewati):
+//   1. Unmatched bank mutation  (mutasi berstatus 'unmatched')
+//   2. Amount mismatch          (mutasi 'matched' tapi nominal != nominal transaksinya)
+//   3. Duplicate transaction    (mutasi identik -- tanggal, rekening, nominal, keterangan -- lebih dari sekali)
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import { useBankFeed, type BankFeedMutation } from '../context/BankFeedContext';
-import { REKON_EVENT } from '@/app/agent-ai/lib/api';
+import { BANK_CASH_EVENT } from '@/lib/bankCashStore';
 import { useCashPaymentsFromPurchase } from './usePurchaseCashPayments';
 import { useCashReceiptsFromSales } from './useSalesCashReceipts';
-import { usePembayaranRekon } from './useBankCashRekon';
 import type { CashBankException } from './cashBankMock';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
@@ -116,35 +112,12 @@ export interface SumberDeteksi {
   invoicePurchase: InvoiceSisa[];
   /** Sales (Posted/Partial) yang masih ada sisa piutang -- pasangan mutasi kredit. */
   invoiceSales: InvoiceSisa[];
-  /** ref mutasi -> total nominal pembayaran aktif yang tercatat di backend untuk mutasi itu. */
-  bayarPerRef: Map<string, number>;
 }
 
-function hash(s: string): string {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
-  return h.toString(36);
-}
-
-/** Referensi STABIL untuk satu mutasi: sama walau rekening koran di-upload ulang
- *  (id mutasi di sesi berubah tiap upload, jadi tidak bisa dipakai sebagai kunci). */
-function refDasar(m: BankFeedMutation): string {
+/** Kunci isi mutasi untuk mendeteksi baris identik. */
+function kunciIsi(m: BankFeedMutation): string {
   const ket = m.description.trim().toLowerCase().replace(/\s+/g, ' ');
-  return `MUT-${m.date.replace(/-/g, '')}-${hash(`${m.bankAccount}|${m.date}|${m.debit}|${m.credit}|${ket}`)}`;
-}
-
-/** Ref STABIL per mutasi (id sesi -> ref), dengan akhiran #n untuk mutasi identik ke-2 dst.
- *  Logikanya SAMA dengan deteksiException(), supaya ref di Reconciliation dan Exceptions selalu cocok. */
-export function refUntukMutasi(mutations: BankFeedMutation[]): Map<string, string> {
-  const hitungan = new Map<string, number>();
-  const hasil = new Map<string, string>();
-  for (const m of mutations) {
-    const dasar = refDasar(m);
-    const occ = hitungan.get(dasar) ?? 0;
-    hitungan.set(dasar, occ + 1);
-    hasil.set(m.id, occ > 0 ? `${dasar}#${occ}` : dasar);
-  }
-  return hasil;
+  return `${m.bankCoaId}|${m.date}|${m.debit}|${m.credit}|${ket}`;
 }
 
 function prioritas(nominal: number): 'High' | 'Medium' | 'Low' {
@@ -158,21 +131,25 @@ export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDe
   const hasil: Deteksi[] = [];
   const hitungan = new Map<string, number>();
 
-  for (const m of mutations) {
-    const dasar = refDasar(m);
-    const occ = hitungan.get(dasar) ?? 0;
-    hitungan.set(dasar, occ + 1);
-    const ref = occ > 0 ? `${dasar}#${occ}` : dasar;
+  // Urut kronologis supaya salinan PERTAMA yang dianggap asli.
+  const urut = [...mutations].sort((a, b) => (a.date + a.id).localeCompare(b.date + b.id));
+  for (const m of urut) {
+    if (m.status === 'ignored') continue;
+    const kunci = kunciIsi(m);
+    const occ = hitungan.get(kunci) ?? 0;
+    hitungan.set(kunci, occ + 1);
+    const ref = m.id;
+    const noRef = `${m.date} · ${m.bankAccount.split(' - ')[0] || 'Bank'}`;
     const nominal = nominalMutasi(m);
     const rekening = m.bankAccount;
 
     // 1) Duplicate: salinan ke-2 dst dari mutasi yang identik
     if (occ > 0) {
       hasil.push({
-        ref, tanggal: m.date, tx_no: ref, counterparty: ringkas(m.description),
+        ref, tanggal: m.date, tx_no: noRef, counterparty: ringkas(m.description),
         exception_type: 'Duplicate transaction', source: 'Reconciliation', priority: 'High',
-        ai_suggestion: 'Ada mutasi identik (tanggal, nominal, rekening, keterangan sama) lebih dari sekali. Cek apakah rekening koran terunggah dua kali atau memang ada dua transaksi.',
-        source_snippet: { tanggal: m.date, nominal, rekening },
+        ai_suggestion: 'An identical bank line (same date, amount, account and description) appears more than once. If these really are two transactions, leave them; if it was misread, ignore one of them in the Bank Feed tab.',
+        source_snippet: { date: m.date, amount: nominal, account: rekening },
       });
     }
 
@@ -181,26 +158,26 @@ export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDe
       // Mutasi kredit (uang masuk) dicari ke invoice Sales, mutasi debet (uang keluar) ke Purchase.
       const kandidat = (m.credit ? sumber.invoiceSales : sumber.invoicePurchase).find((i) => Math.abs(i.sisa - nominal) < 1);
       hasil.push({
-        ref, tanggal: m.date, tx_no: ref, counterparty: ringkas(m.description),
+        ref, tanggal: m.date, tx_no: noRef, counterparty: ringkas(m.description),
         exception_type: 'Unmatched bank mutation', source: 'Reconciliation', priority: prioritas(nominal),
         ai_suggestion: kandidat
-          ? `Kandidat cocok: invoice ${kandidat.no} (${ringkas(kandidat.pihak)}) — sisa tagihan sama dengan nominal mutasi. Cocokkan di tab Reconciliation.`
-          : `Tidak ada invoice ${m.credit ? 'Sales' : 'Purchase'} outstanding dengan nominal yang sama. Cek apakah invoicenya sudah berstatus posted. Kalau bukan pelunasan invoice (biaya bank, bunga, transfer antar bank, setoran modal), catat lewat form "Jurnal tanpa invoice" di tab Reconciliation.`,
-        source_snippet: { tanggal: m.date, [m.credit ? 'kredit' : 'debit']: nominal, rekening },
+          ? `Matching candidate: invoice ${kandidat.no} (${ringkas(kandidat.pihak)}) — its outstanding equals the line amount. Match it in the Reconciliation tab.`
+          : `No outstanding ${m.credit ? 'Sales' : 'Purchase'} invoice with the same amount. Check whether the invoice has been posted. If it is not an invoice settlement (bank charges, interest, inter-bank transfer, capital injection), record it via "Not an invoice settlement?" in the Reconciliation tab, or ignore it in the Bank Feed tab.`,
+        source_snippet: { date: m.date, [m.credit ? 'credit' : 'debit']: nominal, account: rekening },
       });
       continue;
     }
 
-    // 3) Amount mismatch: matched, tapi total pembayaran yang tercatat di backend beda dari nominal mutasi
-    const dibayar = sumber.bayarPerRef.get(ref);
+    // 3) Amount mismatch: matched, tapi nominal transaksinya beda dari nominal mutasi
+    const dibayar = m.transaction?.amount;
     if (dibayar !== undefined) {
       const selisih = nominal - dibayar;
       if (Math.abs(selisih) >= 1) {
         hasil.push({
-          ref, tanggal: m.date, tx_no: ref, counterparty: ringkas(m.description),
+          ref, tanggal: m.date, tx_no: noRef, counterparty: ringkas(m.description),
           exception_type: 'Amount mismatch', source: 'Reconciliation', priority: prioritas(selisih),
-          ai_suggestion: `Nominal mutasi bank berbeda ${Math.abs(selisih).toLocaleString('id-ID')} dari total pembayaran yang tercatat. Cek potongan/biaya bank, pembayaran sebagian, atau pencocokan yang keliru.`,
-          source_snippet: { tanggal: m.date, mutasi_bank: nominal, pembayaran_tercatat: dibayar, selisih },
+          ai_suggestion: `The bank line amount differs by ${Math.abs(selisih).toLocaleString('en-US')} from the recorded payment total. Check for bank deductions/charges, partial payment, or a wrong match.`,
+          source_snippet: { date: m.date, bank_line: nominal, recorded_payment: dibayar, difference: selisih },
         });
       }
     }
@@ -256,19 +233,13 @@ export function useCashBankExceptions() {
   const clientId = activeClientId ? String(activeClientId) : null;
   const userId: string | null = user?.id ? String(user.id) : null;
 
-  // Sumber pembanding: invoice Purchase/Sales yang masih ada sisa + pembayaran hasil pencocokan (backend).
+  // Sumber pembanding: invoice Purchase/Sales yang masih ada sisa (di luar yang sedang diproses).
   const { rows: rowsPurchase } = useCashPaymentsFromPurchase();
   const { rows: rowsSales } = useCashReceiptsFromSales();
-  const { payments } = usePembayaranRekon();
-  const sumber = useMemo<SumberDeteksi>(() => {
-    const bayarPerRef = new Map<string, number>();
-    payments.forEach((p) => bayarPerRef.set(p.bank_mutation_ref, (bayarPerRef.get(p.bank_mutation_ref) || 0) + p.amount));
-    return {
-      invoicePurchase: rowsPurchase.filter((r) => r.outstanding > 0).map((r) => ({ no: r.invoiceNumber, pihak: r.vendor, sisa: r.outstanding })),
-      invoiceSales: rowsSales.filter((r) => r.outstanding > 0).map((r) => ({ no: r.invoiceNo, pihak: r.customer, sisa: r.outstanding })),
-      bayarPerRef,
-    };
-  }, [rowsPurchase, rowsSales, payments]);
+  const sumber = useMemo<SumberDeteksi>(() => ({
+    invoicePurchase: rowsPurchase.filter((r) => r.outstanding - r.dalamProses > 0).map((r) => ({ no: r.invoiceNumber || r.purchaseId, pihak: r.vendor, sisa: r.outstanding - r.dalamProses })),
+    invoiceSales: rowsSales.filter((r) => r.outstanding - r.dalamProses > 0).map((r) => ({ no: r.invoiceNo, pihak: r.customer, sisa: r.outstanding - r.dalamProses })),
+  }), [rowsPurchase, rowsSales]);
 
   const [rows, setRows] = useState<BackendBankCashException[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,11 +256,10 @@ export function useCashBankExceptions() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Match / unmatch / approve / post / reverse (termasuk jalur tanpa invoice) menutup atau membuka
-  // baris exception di backend -> muat ulang status penanganan supaya tab ini tidak basi.
+  // Aksi Cash & Bank di tab lain -> muat ulang status penanganan supaya tab ini tidak basi.
   useEffect(() => {
-    window.addEventListener(REKON_EVENT, refresh);
-    return () => window.removeEventListener(REKON_EVENT, refresh);
+    window.addEventListener(BANK_CASH_EVENT, refresh);
+    return () => window.removeEventListener(BANK_CASH_EVENT, refresh);
   }, [refresh]);
 
   const detected = useMemo(() => deteksiException(mutations, sumber), [mutations, sumber]);
@@ -298,7 +268,7 @@ export function useCashBankExceptions() {
   /** Simpan penanganan (status / assign). Melempar Error kalau gagal -- pemanggil yang menampilkan toast. */
   const simpan = useCallback(
     async (ex: CashBankExceptionView, patch: { status?: 'Open' | 'In Review' | 'Resolved'; assigned_to?: typeof ME | null }) => {
-      if (!clientId) throw new Error('Pilih client terlebih dahulu.');
+      if (!clientId) throw new Error('Select a company first.');
       const payload: UpsertPayload = {
         client_id: clientId,
         bank_mutation_ref: ex.bank_mutation_ref,
@@ -310,7 +280,7 @@ export function useCashBankExceptions() {
       if (!ex.has_row) payload.priority = ex.priority;
       if (patch.status) payload.status = patch.status;
       if ('assigned_to' in patch) {
-        if (patch.assigned_to === ME && !userId) throw new Error('User tidak ditemukan.');
+        if (patch.assigned_to === ME && !userId) throw new Error('User not found.');
         payload.assigned_to = patch.assigned_to === ME ? userId : null;
       }
       await upsertBankCashException(payload);

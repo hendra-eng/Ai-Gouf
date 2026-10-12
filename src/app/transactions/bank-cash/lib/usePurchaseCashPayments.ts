@@ -1,38 +1,18 @@
 'use client';
 
-// ─── SUMBER DATA CASH PAYMENT = HALAMAN PURCHASE ───────────────────────────
-// Tab Cash Payment (Cash & Bank) TIDAK lagi membaca finance_transaction_bank_cash /
-// jurnal_posting. Datanya diambil dari transaksi Purchase (usePurchaseTransactions,
-// pola yang sama dengan halaman Purchase: client_id = id akun yang login).
-//
-// Aturan yang dipakai (ubah di sini kalau berbeda dari maksudmu):
-//   - Hanya transaksi Purchase berstatus 'posted' (hutang sudah tercatat).
-//   - Nominal dibayar / sisa dihitung dari payment_status + accounts_payable:
-//       paid            -> dibayar = total,            sisa = 0
-//       partially_paid  -> sisa = accounts_payable,    dibayar = total - sisa
-//       unpaid/overdue/on_hold -> dibayar = 0,         sisa = total
-//   - Tren bulanan: pembayaran hasil rekonsiliasi yang sudah diposting memakai
-//     tanggal bayar (payment_date); sisa yang tidak berasal dari rekonsiliasi
-//     (input manual di Purchase) memakai tanggal pembelian (purchaseDate).
-//
-// SCOPE CLIENT (disamakan dengan Bank Feed / Reconciliation / Exceptions):
-//   - [FIX] Fetch ke backend memakai client_id = activeClientId (id
-//     management_clients dari "Switch Company"). Di database live, kolom
-//     client_id tabel purchase merujuk management_clients, BUKAN
-//     management_users -- memakai user.id membuat filter tidak pernah cocok
-//     dan tab ini selalu kosong. Baris tetap disaring lagi berdasarkan
-//     management_client_id === activeClientId.
-//   - Transaksi lama yang management_client_id-nya masih NULL tidak akan
-//     tampil sampai di-backfill (lihat catatan migrasi).
+// Tab Cash Payment = tagihan Purchase yang sudah diposting (hutang tercatat)
+// beserta status pembayarannya. Total / dibayar / dalam proses dihitung
+// backend (GET /api/v1/transactions/bank-cash/open-invoices?type=purchase):
+//   paid        = pelunasan dari transaksi Cash & Bank yang sudah POSTED
+//                 (transaksi lama yang ditandai lunas manual dianggap lunas)
+//   in_process  = transaksi Cash & Bank draft/approved (invoice belum berubah)
+// Kolom Mutasi Bank & Jurnal dari baris alokasi transaksi (useBankCashRekon).
 
-import { useEffect, useMemo, useRef } from 'react';
-import { REKON_EVENT } from '@/app/agent-ai/lib/api';
+import { useMemo } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseTransactions, mapTransactionToUi } from '@/lib/purchaseStore';
+import { useBcOpenInvoices } from '@/lib/bankCashStore';
 import type { PaymentStatus } from '@/data/purchaseData';
-import { usePembayaranRekon, kelompokkanPerInvoice, totalDalamProses, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
-
-const STATUS_PURCHASE_DIPAKAI = ['posted'];
+import { usePembayaranRekon, kelompokkanPerInvoice, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
 
 export interface CashPaymentRow {
   id: string;
@@ -45,25 +25,17 @@ export interface CashPaymentRow {
   dueDate: string;
   total: number;
   paid: number;
+  /** Sisa hutang menurut buku (belum termasuk pembayaran yang masih dalam proses). */
   outstanding: number;
   paymentStatus: PaymentStatus;
   isOverdue: boolean;
-  /** Pembayaran hasil rekonsiliasi bank untuk invoice ini (mutasi bank + jurnal). */
+  /** Pembayaran Cash & Bank untuk invoice ini (mutasi bank + transaksi). */
   rekon: PembayaranRekon[];
-  /** Nominal yang sudah dicocokkan tetapi jurnalnya belum diposting (invoice belum berubah). */
+  /** Nominal yang sudah dicocokkan/diinput tetapi transaksinya belum diposting. */
   dalamProses: number;
 }
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-function hitungNominal(total: number, accountsPayable: number, status: PaymentStatus) {
-  if (status === 'paid') return { paid: total, outstanding: 0 };
-  if (status === 'partially_paid') {
-    const sisa = Math.min(Math.max(accountsPayable || 0, 0), total);
-    return { paid: total - sisa, outstanding: sisa };
-  }
-  return { paid: 0, outstanding: total };
-}
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function useCashPaymentsFromPurchase(): {
   rows: CashPaymentRow[];
@@ -72,49 +44,44 @@ export function useCashPaymentsFromPurchase(): {
   refresh: () => void;
 } {
   const { activeClientId } = useActiveClient();
-  const { transactions, loading, error, refresh } = usePurchaseTransactions(activeClientId);
+  const clientId = activeClientId ? String(activeClientId) : null;
+  const { invoices, loading, error, refresh } = useBcOpenInvoices(clientId, 'purchase');
   const { payments, loading: loadingRekon, refresh: refreshRekon } = usePembayaranRekon();
   const perInvoice = useMemo(() => kelompokkanPerInvoice(payments), [payments]);
 
-  // Invoice Purchase baru berubah saat jurnal rekon diposting -> muat ulang saat data rekonsiliasi berubah.
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-  useEffect(() => {
-    const onBerubah = () => refreshRef.current();
-    window.addEventListener(REKON_EVENT, onBerubah);
-    return () => window.removeEventListener(REKON_EVENT, onBerubah);
-  }, []);
-
   const rows = useMemo<CashPaymentRow[]>(() => {
     const today = new Date().toISOString().slice(0, 10);
-    if (!activeClientId) return [];
-    return transactions
-      .filter(t => t.management_client_id === activeClientId)
-      .filter(t => STATUS_PURCHASE_DIPAKAI.includes(t.status))
-      .map(t => {
-        const ui = mapTransactionToUi(t);
-        const { paid, outstanding } = hitungNominal(ui.total, ui.accountsPayable, ui.paymentStatus);
-        const isOverdue = ui.paymentStatus === 'overdue' || (outstanding > 0 && !!ui.dueDate && ui.dueDate < today);
+    return invoices
+      .map(i => {
+        const outstanding = Math.max(i.total - i.paid, 0);
+        const dueDate = i.due_date || '';
+        const isOverdue = outstanding > 0.005 && !!dueDate && dueDate < today;
+        const asal = (i.payment_status || 'unpaid') as PaymentStatus;
+        const paymentStatus: PaymentStatus =
+          outstanding <= 0.005 ? 'paid'
+          : i.paid > 0.005 ? 'partially_paid'
+          : asal === 'on_hold' ? 'on_hold'
+          : isOverdue ? 'overdue' : 'unpaid';
         return {
-          id: ui.id,
-          purchaseId: ui.purchaseId,
-          invoiceNumber: ui.invoiceNumber,
-          vendor: ui.vendor,
-          description: ui.description,
-          category: ui.category,
-          date: ui.purchaseDate,
-          dueDate: ui.dueDate,
-          total: ui.total,
-          paid,
+          id: i.id,
+          purchaseId: i.purchase_no || i.no,
+          invoiceNumber: i.invoice_number || '',
+          vendor: i.party || '',
+          description: i.description || '',
+          category: i.category || 'Other',
+          date: i.purchase_date || i.date,
+          dueDate,
+          total: i.total,
+          paid: i.paid,
           outstanding,
-          paymentStatus: ui.paymentStatus,
+          paymentStatus,
           isOverdue,
-          rekon: perInvoice.get(ui.id) || [],
-          dalamProses: totalDalamProses(perInvoice.get(ui.id)),
+          rekon: perInvoice.get(i.id) || [],
+          dalamProses: i.in_process,
         };
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  }, [transactions, activeClientId, perInvoice]);
+  }, [invoices, perInvoice]);
 
   const refreshSemua = () => {
     refresh();

@@ -104,10 +104,10 @@ from modules.management import documents_v1 as management_documents_v1  # [BARU]
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
 from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
-from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
 from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
+from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] tutup buku tahunan + kunci periode: /api/v1/management/year-end-closing/...
 from modules.management import settings_v1 as management_settings_v1  # [BARU] Management > Settings: /api/v1/management/settings/...
 from modules.management import coa_industry_v1 as management_coa_industry_v1  # [BARU] template COA per industri: /api/v1/management/coa-industries
 from modules.transactions import sales_v1 as transactions_sales_v1  # [BARU] CRUD financial_transaction_sales_*: /api/v1/transactions/sales/...
@@ -115,6 +115,7 @@ from modules.transactions import sales_import_v1 as transactions_sales_import_v1
 from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
 from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
+from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
@@ -292,6 +293,31 @@ async def _enforce_client_data_isolation(request: Request, call_next):
     return await call_next(request)
 
 
+# [BARU] Kunci periode (Year-End Closing): trigger DB menolak perubahan
+# transaksi posted di tahun buku yang sudah ditutup ("PERIOD_LOCKED: ...").
+# Banyak fungsi CRUD db_client menelan error DB lalu endpoint menjawab
+# "not found"/500 -- db_client mencatat pesannya ke wadah per request ini, dan
+# di sini respon request itu diganti jadi 409 dengan pesan yang jelas.
+@app.middleware("http")
+async def _respon_periode_terkunci(request: Request, call_next):
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    wadah: Dict[str, Any] = {}
+    token = dbc.WADAH_KUNCI_PERIODE.set(wadah)
+    try:
+        try:
+            respon = await call_next(request)
+        except Exception:
+            if not wadah.get("pesan"):
+                raise
+            respon = None
+        if wadah.get("pesan") and (respon is None or respon.status_code >= 400):
+            return _gagal_v1(message=wadah["pesan"], errors={"code": "PERIOD_LOCKED"}, status_code=409)
+        return respon
+    finally:
+        dbc.WADAH_KUNCI_PERIODE.reset(token)
+
+
 # [BARU] Normalisasi error ke amplop standar {status,message,data,errors}
 # TAPI HANYA untuk path /api/v1/... (fitur auth baru). Endpoint lama tetap
 # dapat bentuk error bawaan FastAPI seperti sebelumnya (frontend yang sudah
@@ -355,10 +381,10 @@ app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
 app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
 app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
-app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
 app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
+app.include_router(management_year_end_closing_v1.router)  # [BARU] /api/v1/management/year-end-closing/... -- prefix sudah di router-nya sendiri
 app.include_router(management_settings_v1.router)  # [BARU] /api/v1/management/settings/users|accountants|purchase|product|account-mapping
 app.include_router(management_coa_industry_v1.router)  # [BARU] /api/v1/management/coa-industries -- pilihan Industry + template COA
 app.include_router(transactions_sales_v1.router)  # [BARU] /api/v1/transactions/sales/... -- prefix sudah di router-nya sendiri
@@ -366,6 +392,7 @@ app.include_router(transactions_sales_import_v1.router)  # [BARU] /api/v1/transa
 app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
+app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri

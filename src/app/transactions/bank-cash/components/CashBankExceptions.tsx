@@ -172,7 +172,7 @@ export default function CashBankExceptions() {
       toast.success(t(pesanSukses), { description: ex.tx_no });
       return true;
     } catch (err) {
-      toast.error(t('Gagal menyimpan'), { description: err instanceof Error ? err.message : undefined });
+      toast.error(t('Failed to save'), { description: err instanceof Error ? err.message : undefined });
       return false;
     } finally {
       setSaving(false);
@@ -184,7 +184,7 @@ export default function CashBankExceptions() {
     const ok = await simpanPenanganan(
       selected,
       { assigned_to: editAssignToMe ? 'me' : null, status: editStatus },
-      'Perubahan disimpan',
+      'Changes saved',
     );
     if (ok) setIsEditing(false);
   };
@@ -193,20 +193,20 @@ export default function CashBankExceptions() {
     const target = exceptions.find(e => e.id === id);
     if (!target) return;
     setOpenMenuId(null);
-    if (target.status === 'Open') await simpanPenanganan(target, { status: 'In Review' }, 'Saran AI diterapkan');
-    else toast.info(t('Saran AI diterapkan'), { description: target.displayId });
+    if (target.status === 'Open') await simpanPenanganan(target, { status: 'In Review' }, 'AI suggestion applied');
+    else toast.info(t('AI suggestion applied'), { description: target.displayId });
   };
 
   const resolveException = async (id: string) => {
     const target = exceptions.find(e => e.id === id);
     if (!target) return;
     setOpenMenuId(null);
-    await simpanPenanganan(target, { status: 'Resolved' }, 'Exception ditandai selesai');
+    await simpanPenanganan(target, { status: 'Resolved' }, 'Exception marked as resolved');
   };
 
   const viewOriginalFile = () => {
-    toast.info(t('File asli belum tersedia'), {
-      description: t('Exception ini belum tertaut ke mutasi bank/file asli.'),
+    toast.info(t('Original file not available'), {
+      description: t('This exception is not linked to a bank line/original file yet.'),
     });
   };
 
@@ -215,7 +215,7 @@ export default function CashBankExceptions() {
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={refresh} className="underline font-medium">{t('Coba lagi')}</button>
+          <button onClick={refresh} className="underline font-medium">{t('Retry')}</button>
         </div>
       )}
 
@@ -224,8 +224,8 @@ export default function CashBankExceptions() {
         {[
           { label: 'Total Exceptions', value: String(exceptions.length) },
           { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length) },
-          { label: 'Soal Pencocokan', value: String(exceptions.filter(e => e.source === 'Reconciliation').length) },
-          { label: 'Perlu Klasifikasi', value: String(exceptions.filter(e => e.source === 'Classification').length) },
+          { label: 'Matching Issues', value: String(exceptions.filter(e => e.source === 'Reconciliation').length) },
+          { label: 'Needs Classification', value: String(exceptions.filter(e => e.source === 'Classification').length) },
           { label: 'Low Confidence', value: String(exceptions.filter(e => e.ai_confidence != null && e.ai_confidence < 40).length) },
         ].map(k => (
           <div key={k.label} className="card p-4">
@@ -244,7 +244,7 @@ export default function CashBankExceptions() {
               type="text"
               value={search}
               onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-              placeholder={t('Cari ID, counterparty, atau masalah...')}
+              placeholder={t('Search ID, counterparty, or issue...')}
               className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-1.5 bg-card text-foreground"
             />
           </div>
@@ -254,7 +254,7 @@ export default function CashBankExceptions() {
             onChange={ev => { setSeverity(ev.target.value); setCurrentPage(1); }}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
           >
-            <option value="all">{t('Semua (Severity)')}</option>
+            <option value="all">{t('All (Severity)')}</option>
             <option value="High">{t('High')}</option>
             <option value="Medium">{t('Medium')}</option>
             <option value="Low">{t('Low')}</option>
@@ -265,7 +265,7 @@ export default function CashBankExceptions() {
             onChange={ev => { setTypeFilter(ev.target.value); setCurrentPage(1); }}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
           >
-            <option value="all">{t('Semua (Exception Type)')}</option>
+            <option value="all">{t('All (Exception Type)')}</option>
             {EXCEPTION_TYPES.map(type => (
               <option key={type} value={type}>{t(type)}</option>
             ))}
@@ -276,7 +276,7 @@ export default function CashBankExceptions() {
             onChange={ev => { setSourceFilter(ev.target.value); setCurrentPage(1); }}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
           >
-            <option value="all">{t('Semua (Sumber)')}</option>
+            <option value="all">{t('All (Source)')}</option>
             <option value="Reconciliation">{t('Reconciliation')}</option>
             <option value="Classification">{t('Classification')}</option>
           </select>
@@ -286,7 +286,7 @@ export default function CashBankExceptions() {
             onChange={ev => { setCustomerFilter(ev.target.value); setCurrentPage(1); }}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
           >
-            <option value="all">{t('Semua Counterparty')}</option>
+            <option value="all">{t('All Counterparties')}</option>
             {CUSTOMERS.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -299,25 +299,25 @@ export default function CashBankExceptions() {
             >
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-foreground">
-                {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
+                {dateStart ? formatTanggalSingkat(dateStart) : t('All dates')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
               <div className="absolute z-20 top-full mt-1 right-0 card p-3 w-64 space-y-2 shadow-card">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Dari')}</label>
+                  <label className="text-[11px] text-muted-foreground">{t('From')}</label>
                   <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Sampai')}</label>
+                  <label className="text-[11px] text-muted-foreground">{t('To')}</label>
                   <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
                 </div>
                 <button
                   onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
                   className="w-full text-xs py-1.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90"
                 >
-                  {t('Terapkan')}
+                  {t('Apply')}
                 </button>
               </div>
             )}
@@ -328,9 +328,9 @@ export default function CashBankExceptions() {
             onChange={ev => { setAssignedFilter(ev.target.value); setCurrentPage(1); }}
             className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
           >
-            <option value="all">{t('Semua (Assigned To)')}</option>
-            <option value="unassigned">{t('Belum Ditugaskan')}</option>
-            <option value="me">{t('Ditugaskan ke Saya')}</option>
+            <option value="all">{t('All (Assigned To)')}</option>
+            <option value="unassigned">{t('Unassigned')}</option>
+            <option value="me">{t('Assigned to Me')}</option>
           </select>
 
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
@@ -342,7 +342,7 @@ export default function CashBankExceptions() {
         {/* Table */}
         <div className="card overflow-hidden flex-1 min-w-0">
           <div className="p-3 border-b border-border">
-            <h3 className="text-sm font-semibold text-foreground">{t('Daftar Exception')} ({filtered.length})</h3>
+            <h3 className="text-sm font-semibold text-foreground">{t('Exception List')} ({filtered.length})</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
@@ -351,7 +351,7 @@ export default function CashBankExceptions() {
                   <th className="py-2.5 px-3 w-8">
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
-                  {['Priority', 'Sumber', 'Tanggal', 'Transaction/File ID', 'Counterparty', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
+                  {['Priority', 'Source', 'Date', 'Transaction/File ID', 'Counterparty', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
                     <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
                   ))}
                 </tr>
@@ -359,7 +359,7 @@ export default function CashBankExceptions() {
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada exception yang cocok dengan filter.')}</td>
+                    <td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">{t('No exceptions match the filter.')}</td>
                   </tr>
                 )}
                 {paginated.map(e => (
@@ -386,7 +386,7 @@ export default function CashBankExceptions() {
                         {e.ai_confidence == null ? <span className="text-muted-foreground">—</span> : <span className={`font-semibold ${e.ai_confidence < 40 ? 'text-red-600' : e.ai_confidence < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence}%</span>}
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === ME ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === ME ? (user?.nama || user?.username) : t('Another user')) : '—'}</td>
                     <td className="py-2.5 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
                     </td>
@@ -400,13 +400,13 @@ export default function CashBankExceptions() {
                       {openMenuId === e.id && (
                         <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
                           <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
-                            <Eye size={12} /> {t('Lihat Detail')}
+                            <Eye size={12} /> {t('View Detail')}
                           </button>
                           <button onClick={() => { openDetail(e); startEdit(); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
                             <Edit size={12} /> {t('Edit')}
                           </button>
                           <button onClick={() => resolveException(e.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50 rounded-md">
-                            <CheckCircle size={12} /> {t('Tandai Resolved')}
+                            <CheckCircle size={12} /> {t('Mark Resolved')}
                           </button>
                         </div>
                       )}
@@ -419,8 +419,8 @@ export default function CashBankExceptions() {
           <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
             <span>
               {filtered.length === 0
-                ? t('Menampilkan 0 dari 0 exception')
-                : `${t('Menampilkan')} ${(pageSafe - 1) * PAGE_SIZE + 1} - ${Math.min(pageSafe * PAGE_SIZE, filtered.length)} ${t('dari')} ${filtered.length} ${t('exception')}`}
+                ? t('Showing 0 of 0 exceptions')
+                : `${t('Showing')} ${(pageSafe - 1) * PAGE_SIZE + 1} - ${Math.min(pageSafe * PAGE_SIZE, filtered.length)} ${t('of')} ${filtered.length} ${t('exceptions')}`}
             </span>
             <div className="flex items-center gap-1">
               <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed">
@@ -464,7 +464,7 @@ export default function CashBankExceptions() {
             {!isEditing && (
               <div className="space-y-1.5 text-xs">
                 {[
-                  ['Tanggal', selected.date],
+                  ['Date', selected.date],
                   ['Counterparty', selected.customer],
                   ['Transaction ID', selected.displayId],
                   ['AI Confidence', selected.ai_confidence == null ? '—' : <span key="c" className={`font-bold ${selected.ai_confidence < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence}%</span>],
@@ -486,7 +486,7 @@ export default function CashBankExceptions() {
                 </div>
                 <label className="flex items-center gap-2 text-xs text-foreground">
                   <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-border" />
-                  {t('Tugaskan ke saya')}
+                  {t('Assign to me')}
                 </label>
                 <div>
                   <label className="text-[11px] text-muted-foreground">{t('Status')}</label>
@@ -497,8 +497,8 @@ export default function CashBankExceptions() {
                   </select>
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
+                  <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Cancel')}</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Saving...') : t('Save')}</button>
                 </div>
               </div>
             )}
@@ -516,8 +516,8 @@ export default function CashBankExceptions() {
                 {drawerTab === 'source' && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold text-foreground">{t('Cuplikan Data Sumber')}</p>
-                      <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('Lihat File Asli ↗')}</button>
+                      <p className="text-xs font-semibold text-foreground">{t('Source Data Snippet')}</p>
+                      <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('View Original File ↗')}</button>
                     </div>
                     <div className="bg-muted/40 rounded-lg p-3 font-mono text-[11px] text-foreground space-y-0.5">
                       {selected.source_snippet ? (
@@ -525,20 +525,20 @@ export default function CashBankExceptions() {
                           <p key={k}>{k}: {String(v)}</p>
                         ))
                       ) : (
-                        <p className="text-muted-foreground">{t('Belum ada cuplikan data sumber untuk exception ini.')}</p>
+                        <p className="text-muted-foreground">{t('No source data snippet for this exception yet.')}</p>
                       )}
                     </div>
                   </div>
                 )}
                 {drawerTab === 'ai' && (
                   <div className="text-xs text-muted-foreground space-y-2">
-                    <p className="font-semibold text-foreground">{t('Saran AI')}</p>
-                    <p>{selected.ai_suggestion || t('Belum ada saran AI untuk exception ini.')}</p>
+                    <p className="font-semibold text-foreground">{t('AI Suggestion')}</p>
+                    <p>{selected.ai_suggestion || t('No AI suggestion for this exception yet.')}</p>
                   </div>
                 )}
                 {drawerTab === 'history' && (
                   <div className="text-xs text-muted-foreground">
-                    <p>{selected.resolved_at ? `${t('Diselesaikan pada')} ${formatTanggalSingkat(selected.resolved_at)}` : t('Belum ada riwayat perubahan.')}</p>
+                    <p>{selected.resolved_at ? `${t('Resolved on')} ${formatTanggalSingkat(selected.resolved_at)}` : t('No change history yet.')}</p>
                   </div>
                 )}
 

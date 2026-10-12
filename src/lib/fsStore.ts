@@ -264,11 +264,62 @@ const get = <T,>(path: string, params: Record<string, string | number | boolean 
 export const fetchBalanceSheet = (clientId: string, q: { as_of: string; compare: BsCompareMode; compare_as_of?: string; show_zero?: boolean }, signal?: AbortSignal) =>
   get<BalanceSheet>('/balance-sheet', { management_client_id: clientId, ...q }, signal);
 
+export type BsSnapshot = Omit<BalanceSheet, 'warnings' | 'client'>;
+
+export interface BalanceSheetSeries { snapshots: BsSnapshot[]; warnings: FsWarning[]; client: ClientMeta }
+
+/** Neraca di banyak tanggal sekaligus (trend / comparison / dashboard), maks 40 tanggal. */
+export const fetchBalanceSheetSeries = (clientId: string, dates: string[], signal?: AbortSignal) =>
+  get<BalanceSheetSeries>('/balance-sheet/series', { management_client_id: clientId, dates: dates.join(',') }, signal);
+
+export type PlReport = Omit<ProfitLoss, 'warnings' | 'client' | 'period_info' | 'compare_period' | 'months' | 'segment'>;
+
+export interface ProfitLossSeries { reports: PlReport[]; warnings: FsWarning[]; client: ClientMeta; segment: { type: string; value: string } | null }
+
+/** Laba rugi untuk banyak periode sekaligus (default / trend / comparison), maks 40 periode. */
+export const fetchProfitLossSeries = (clientId: string, periods: { start: string; end: string }[], seg?: { type: string; value: string } | null, signal?: AbortSignal) =>
+  get<ProfitLossSeries>('/profit-loss/series', {
+    management_client_id: clientId,
+    periods: periods.map(p => `${p.start}:${p.end}`).join(','),
+    ...(seg?.type && seg.value ? { segment_type: seg.type, segment_value: seg.value } : {}),
+  }, signal);
+
 export const fetchProfitLoss = (clientId: string, q: PeriodQuery & { segment_type?: string; segment_value?: string; breakdown?: 'none' | 'monthly' }, signal?: AbortSignal) =>
   get<ProfitLoss>('/profit-loss', { management_client_id: clientId, ...q }, signal);
 
 export const fetchChangesInEquity = (clientId: string, q: PeriodQuery, signal?: AbortSignal) =>
   get<ChangesInEquity>('/changes-in-equity', { management_client_id: clientId, ...q }, signal);
+
+export interface CfDirectLine { key: string; label: string; amount: number; accounts: { code: string; name: string; coa_id: string | null; amount: number }[] }
+
+export interface CashFlowDirect {
+  period: { start: string; end: string };
+  method: 'direct';
+  operating: { lines: CfDirectLine[]; total: number };
+  investing: { lines: CfDirectLine[]; total: number };
+  financing: { lines: CfDirectLine[]; total: number };
+  net_change: number;
+  opening_cash: number;
+  ending_cash: number;
+  balance_sheet_ending_cash: number;
+  check: { difference: number; reconciled: boolean };
+}
+
+export interface CashFlowSeries {
+  periods: {
+    period: { start: string; end: string };
+    indirect: Omit<CashFlowBody, 'cash_accounts' | 'unmapped_accounts'>;
+    direct: CashFlowDirect;
+    revenue: number;
+  }[];
+  cash_accounts: CashFlowBody['cash_accounts'];
+  unmapped_accounts: CashFlowBody['unmapped_accounts'];
+  client: ClientMeta;
+}
+
+/** Arus kas direct + indirect untuk banyak periode sekaligus, maks 40 periode. */
+export const fetchCashFlowSeries = (clientId: string, periods: { start: string; end: string }[], signal?: AbortSignal) =>
+  get<CashFlowSeries>('/cash-flow/series', { management_client_id: clientId, periods: periods.map(p => `${p.start}:${p.end}`).join(',') }, signal);
 
 export const fetchCashFlow = (clientId: string, q: PeriodQuery, signal?: AbortSignal) =>
   get<CashFlow>('/cash-flow', { management_client_id: clientId, ...q }, signal);

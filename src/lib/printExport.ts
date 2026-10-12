@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+import { loadLogo } from '@/lib/imageUtils';
 
 // Helper "Print" generik untuk daftar transaksi & detail transaksi (Sales,
 // Purchase, Journal Entry). Satu definisi laporan (PrintReport) bisa dicetak
@@ -25,7 +26,20 @@ export interface PrintColumn {
 
 export type PrintCell = string | number | null | undefined;
 export type PrintRow = Record<string, PrintCell>;
-export type PrintRowStyle = 'section' | 'total';
+/**
+ * section = judul grup, total = subtotal tebal. Khusus template 'statement':
+ * group = judul besar (ASSETS / REVENUE), item = baris tanpa indent,
+ * highlight = laba antara (GROSS PROFIT), grand = total utama (latar gelap),
+ * spacer = jarak antar blok.
+ */
+export type PrintRowStyle = 'section' | 'total' | 'group' | 'item' | 'highlight' | 'grand' | 'spacer';
+
+/** Kop laporan: logo + nama klien (kiri), nama + alamat/kontak (kanan). */
+export interface PrintLetterhead {
+  name: string;
+  logo?: string | null;
+  lines?: string[];
+}
 
 export interface PrintReport {
   title: string;
@@ -45,6 +59,13 @@ export interface PrintReport {
   notes?: string;
   orientation?: 'portrait' | 'landscape';
   printedBy?: string;
+  /** 'statement' = format laporan keuangan resmi (kop logo, judul besar, baris teal). */
+  template?: 'statement';
+  letterhead?: PrintLetterhead;
+  /** Info kecil di kanan judul (Report Date / Currency / Period). */
+  meta?: [string, string][];
+  /** Template statement: awalan angka, mis. "Rp ". Negatif selalu dalam kurung. */
+  moneyPrefix?: string;
 }
 
 const fmtMoney = (n: number) => n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -316,6 +337,254 @@ function buildPdf(r: PrintReport): jsPDF {
   return doc;
 }
 
+// ── Template "statement" (Balance Sheet / Profit & Loss) ─────────────
+// Mengikuti dataset/picture/Template UI/{Balance sheet,Profit loss}/*print.jpeg:
+// kop logo + alamat, judul besar, header & subtotal teal muda, total utama
+// teal gelap, angka 1,250,000,000 dengan negatif dalam kurung.
+
+type RGB = [number, number, number];
+const T_DARK: RGB = [11, 94, 92];      // #0B5E5C -- grand total, judul grup
+const T_INK: RGB = [15, 42, 42];       // judul & teks tebal
+const T_TEXT: RGB = [55, 65, 81];      // baris rincian
+const T_MUTED: RGB = [107, 114, 128];
+const T_TINT: RGB = [230, 245, 242];   // header, seksi, subtotal
+const T_TINT_2: RGB = [215, 239, 234]; // highlight (GROSS PROFIT dst.)
+const T_RULE: RGB = [229, 231, 235];
+const argb = (c: RGB) => 'FF' + c.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+
+function fmtStatement(v: PrintCell, prefix = ''): string {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v !== 'number') return String(v);
+  if (Math.abs(v) < 0.005) return '-';
+  const s = prefix + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return v < 0 ? `(${s})` : s;
+}
+
+function longStamp(): string {
+  const d = new Date();
+  return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+/** Kolom angka tunggal ditulis "Amount (IDR)" seperti template. */
+const statementHeader = (cols: PrintColumn[]) => cols.map((c, i) => (i > 0 && c.type === 'money' && cols.length === 2 ? 'Amount (IDR)' : c.header));
+
+async function buildStatementPdf(r: PrintReport): Promise<jsPDF> {
+  const cols = r.table.columns;
+  const nMoney = cols.filter(c => c.type === 'money').length;
+  const orientation = r.orientation ?? (nMoney > 4 ? 'landscape' : 'portrait');
+  const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 14;
+  const lh = r.letterhead ?? { name: r.companyName || '' };
+
+  // Kop kiri: logo + nama perusahaan
+  const LOGO_H = 16, LOGO_W = 30;
+  let x = M;
+  const logo = lh.logo ? await loadLogo(lh.logo) : null;
+  if (logo) {
+    const k = Math.min(LOGO_W / logo.width, LOGO_H / logo.height);
+    doc.addImage(logo.dataUrl, 'PNG', M, 12 + (LOGO_H - logo.height * k) / 2, logo.width * k, logo.height * k);
+    x = M + logo.width * k + 4;
+  }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(...T_DARK);
+  const nameLines = (doc.splitTextToSize(lh.name, W / 2 - x) as string[]).slice(0, 2);
+  doc.text(nameLines, x, 12 + LOGO_H / 2 + 2 - (nameLines.length - 1) * 3);
+
+  // Kop kanan: nama + alamat / kontak
+  let ry = 14;
+  doc.setFontSize(8.5);
+  doc.setTextColor(...T_INK);
+  doc.text(lh.name, W - M, ry, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...T_MUTED);
+  (lh.lines ?? []).forEach(line => {
+    (doc.splitTextToSize(line, 75) as string[]).forEach(l => { ry += 3.8; doc.text(l, W - M, ry, { align: 'right' }); });
+  });
+
+  // Garis kop, judul + subjudul (+ meta di kanan)
+  let y = Math.max(12 + LOGO_H, ry) + 4;
+  doc.setDrawColor(...T_RULE);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  y += 10;
+  const meta = r.meta ?? [];
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(19);
+  doc.setTextColor(...T_INK);
+  const titleLines = doc.splitTextToSize(r.title, meta.length ? W - M * 2 - 80 : W - M * 2) as string[];
+  doc.text(titleLines, M, y);
+  let ty = y + (titleLines.length - 1) * 7.5;
+  if (r.subtitle) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    doc.setTextColor(...T_MUTED);
+    ty += 7;
+    doc.text(r.subtitle, M, ty);
+  }
+  if (meta.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...T_MUTED);
+    const mx = W - M - 74;
+    meta.forEach(([k, v], i) => {
+      const my = y - 5 + i * 4.6;
+      doc.text(k, mx, my);
+      doc.text(`:  ${v}`, mx + 20, my);
+    });
+  }
+  y = Math.max(ty, y - 5 + meta.length * 4.6) + 4;
+  doc.setDrawColor(...T_DARK);
+  doc.setLineWidth(0.35);
+  doc.line(M, y, W - M, y);
+  y += 4;
+
+  // Tabel
+  const styles = r.table.rowStyles ?? [];
+  const fontSize = cols.length > 8 ? 7 : cols.length > 5 ? 8 : 8.5;
+  const pad = (top: number, left = 3) => ({ top, bottom: top, left, right: 3 });
+  autoTable(doc, {
+    startY: y,
+    margin: { left: M, right: M, top: 16, bottom: 17 },
+    head: [statementHeader(cols)],
+    body: r.table.rows.map(row => cols.map(c => (c.type === 'money' ? fmtStatement(row[c.key], r.moneyPrefix) : cellText(row[c.key], c.type)))),
+    theme: 'plain',
+    styles: { fontSize, cellPadding: pad(1), textColor: T_TEXT, overflow: 'linebreak', valign: 'middle' },
+    headStyles: { fillColor: T_TINT, textColor: T_DARK, fontStyle: 'bold', fontSize: fontSize + 1, cellPadding: pad(2.2) },
+    columnStyles: { 0: { cellWidth: cols.length > 3 ? 70 : 'auto' } },
+    didParseCell: hook => {
+      if (cols[hook.column.index]?.type === 'money') hook.cell.styles.halign = 'right';
+      if (hook.section !== 'body') return;
+      const st = styles[hook.row.index];
+      const s = hook.cell.styles;
+      if (st === 'spacer') {
+        s.fontSize = 1; s.minCellHeight = 1.6; s.cellPadding = 0;
+      } else if (st === 'group') {
+        s.fontStyle = 'bold'; s.textColor = T_DARK; s.fontSize = fontSize + 1.5; s.cellPadding = { top: 1.8, bottom: 1, left: 3, right: 3 };
+      } else if (st === 'section') {
+        s.fontStyle = 'bold'; s.textColor = T_DARK; s.fillColor = T_TINT;
+      } else if (st === 'total') {
+        s.fontStyle = 'bold'; s.textColor = T_INK; s.fillColor = T_TINT; s.cellPadding = pad(1.4);
+      } else if (st === 'highlight') {
+        s.fontStyle = 'bold'; s.textColor = T_INK; s.fillColor = T_TINT_2; s.fontSize = fontSize + 1.5; s.cellPadding = pad(1.9);
+      } else if (st === 'grand') {
+        s.fontStyle = 'bold'; s.textColor = 255; s.fillColor = T_DARK; s.fontSize = fontSize + 1.5; s.cellPadding = pad(2.1);
+      } else if (st === 'item') {
+        s.textColor = T_INK; s.fontSize = fontSize + 0.5;
+      } else if (hook.column.index === 0) {
+        s.cellPadding = pad(1, 7);
+      }
+    },
+    didDrawCell: hook => {
+      // Garis tipis di bawah baris rincian (seperti template).
+      if (hook.section !== 'body' || styles[hook.row.index]) return;
+      const c = hook.cell;
+      doc.setDrawColor(...T_RULE);
+      doc.setLineWidth(0.15);
+      doc.line(c.x, c.y + c.height, c.x + c.width, c.y + c.height);
+    },
+  });
+
+  // Footer tiap halaman
+  const stamp = longStamp();
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(...T_RULE);
+    doc.setLineWidth(0.3);
+    doc.line(M - 2, H - 15, W - M + 2, H - 15);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...T_MUTED);
+    doc.text('Generated by Gouf Accounting System', M, H - 10.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${stamp}${r.printedBy ? ` · ${r.printedBy}` : ''}`, M, H - 6.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Page ${p} of ${total}`, W - M, H - 9, { align: 'right' });
+  }
+  return doc;
+}
+
+async function buildStatementExcel(r: PrintReport): Promise<Blob> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(r.title.slice(0, 31).replace(/[\\/?*[\]:]/g, ' '), { views: [{ showGridLines: false }] });
+  const cols = r.table.columns;
+  const last = cols.length;
+  ws.columns = cols.map((c, i) => ({ key: c.key, width: i === 0 ? Math.max(c.width ?? 48, 48) : Math.max(c.width ?? 18, 20) }));
+  const lh = r.letterhead ?? { name: r.companyName || '' };
+  const numFmt = r.moneyPrefix ? `"${r.moneyPrefix}"#,##0;("${r.moneyPrefix}"#,##0);"-"` : '#,##0;(#,##0);"-"';
+  const fill = (c: RGB): ExcelJS.Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: argb(c) } });
+
+  // Kop: logo + nama (kiri), nama + alamat (kanan, kolom terakhir)
+  const right = [lh.name, ...(lh.lines ?? [])];
+  for (let i = 0; i < Math.max(3, right.length); i++) ws.addRow([]);
+  const logo = lh.logo ? await loadLogo(lh.logo) : null;
+  if (logo) {
+    const k = Math.min(110 / logo.width, 54 / logo.height);
+    const id = wb.addImage({ base64: logo.dataUrl, extension: 'png' });
+    ws.addImage(id, { tl: { col: 0.05, row: 0.15 }, ext: { width: logo.width * k, height: logo.height * k } });
+  }
+  const nameCell = ws.getCell(2, 1);
+  nameCell.value = lh.name;
+  nameCell.font = { bold: true, size: 15, color: { argb: argb(T_DARK) } };
+  if (logo) nameCell.alignment = { indent: 12 };
+  if (last > 1) right.forEach((t, i) => {
+    const c = ws.getCell(i + 1, last);
+    c.value = t;
+    c.alignment = { horizontal: 'right' };
+    c.font = i === 0 ? { bold: true, size: 9, color: { argb: argb(T_INK) } } : { size: 8.5, color: { argb: argb(T_MUTED) } };
+  });
+  ws.addRow([]);
+
+  const title = ws.addRow([r.title]);
+  title.font = { bold: true, size: 18, color: { argb: argb(T_INK) } };
+  title.height = 26;
+  if (r.subtitle) ws.addRow([r.subtitle]).font = { size: 12, color: { argb: argb(T_MUTED) } };
+  (r.meta ?? []).forEach(([k, v]) => { ws.addRow([`${k}: ${v}`]).font = { size: 9, color: { argb: argb(T_MUTED) } }; });
+  ws.addRow([]);
+
+  const header = ws.addRow(statementHeader(cols));
+  header.height = 22;
+  header.eachCell((cell, i) => {
+    cell.font = { bold: true, color: { argb: argb(T_DARK) } };
+    cell.fill = fill(T_TINT);
+    cell.alignment = { vertical: 'middle', horizontal: cols[i - 1].type === 'money' ? 'right' : 'left' };
+  });
+
+  const styles = r.table.rowStyles ?? [];
+  r.table.rows.forEach((data, ri) => {
+    const st = styles[ri];
+    if (st === 'spacer') { ws.addRow([]).height = 6; return; }
+    const row = ws.addRow(cols.map(c => { const v = data[c.key]; return v === undefined || v === '' ? null : v; }));
+    for (let i = 1; i <= last; i++) {
+      const cell = row.getCell(i);
+      const money = cols[i - 1].type === 'money';
+      if (money) cell.numFmt = numFmt;
+      const font: Partial<ExcelJS.Font> = { size: 10, color: { argb: argb(T_TEXT) } };
+      if (st === 'group') Object.assign(font, { bold: true, size: 11, color: { argb: argb(T_DARK) } });
+      else if (st === 'section') { Object.assign(font, { bold: true, color: { argb: argb(T_DARK) } }); cell.fill = fill(T_TINT); }
+      else if (st === 'total') { Object.assign(font, { bold: true, color: { argb: argb(T_INK) } }); cell.fill = fill(T_TINT); }
+      else if (st === 'highlight') { Object.assign(font, { bold: true, size: 11, color: { argb: argb(T_INK) } }); cell.fill = fill(T_TINT_2); }
+      else if (st === 'grand') { Object.assign(font, { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }); cell.fill = fill(T_DARK); }
+      else if (st === 'item') font.color = { argb: argb(T_INK) };
+      else cell.border = { bottom: { style: 'thin', color: { argb: argb(T_RULE) } } };
+      cell.font = font;
+      cell.alignment = { vertical: 'middle', horizontal: money ? 'right' : 'left', indent: !st && i === 1 ? 2 : 0 };
+    }
+    if (st === 'grand' || st === 'highlight' || st === 'total') row.height = 19;
+  });
+  ws.views = [{ state: 'frozen', ySplit: header.number, showGridLines: false }];
+
+  ws.addRow([]);
+  ws.addRow([`Generated by Gouf Accounting System · ${longStamp()}${r.printedBy ? ` · ${r.printedBy}` : ''}`]).font = { italic: true, size: 8.5, color: { argb: argb(T_MUTED) } };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
 // ── Entry point ─────────────────────────────────────────────────────
 
 export async function printReport(report: PrintReport, format: PrintFormat): Promise<void> {
@@ -324,8 +593,8 @@ export async function printReport(report: PrintReport, format: PrintFormat): Pro
     const blob = new Blob(['﻿' + buildCsv(report)], { type: 'text/csv;charset=utf-8;' });
     downloadBlob(blob, `${name}.csv`);
   } else if (format === 'excel') {
-    downloadBlob(await buildExcel(report), `${name}.xlsx`);
+    downloadBlob(await (report.template === 'statement' ? buildStatementExcel(report) : buildExcel(report)), `${name}.xlsx`);
   } else {
-    buildPdf(report).save(`${name}.pdf`);
+    (report.template === 'statement' ? await buildStatementPdf(report) : buildPdf(report)).save(`${name}.pdf`);
   }
 }

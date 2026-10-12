@@ -38,7 +38,7 @@ liabilitas/ekuitas/pendapatan positif di kredit.
 from __future__ import annotations
 
 import re
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -363,8 +363,22 @@ class Buku:
         return self.laba(self.awal_pnl(tgl), tgl)
 
     def laba_tahun_lalu(self, tgl: date) -> float:
-        """Laba s.d. akhir tahun sebelum `tgl` yang belum ditutup lewat jurnal."""
+        """Akumulasi laba s.d. akhir tahun sebelum `tgl`. Jurnal penutup
+        (Year-End Closing) tidak dibaca Buku, jadi tahun yang sudah ditutup
+        tetap ikut di sini -- angkanya sama dgn saldo Retained Earnings hasil
+        jurnal penutup."""
         return self.laba_sd(date(tgl.year, 1, 1) - timedelta(days=1))
+
+    def jurnal_dalam(self, dari: date, sampai: date) -> Dict[str, List[Tuple[str, float]]]:
+        """Baris jurnal dalam [dari, sampai] dikelompokkan per jurnal:
+        {jurnal: [(kode akun, debit - kredit), ...]} -- dasar arus kas langsung."""
+        hasil: Dict[str, List[Tuple[str, float]]] = defaultdict(list)
+        for kode, daftar in self.baris.items():
+            tgl = self._tgl[kode]
+            for b in daftar[bisect_left(tgl, dari):bisect_right(tgl, sampai)]:
+                kunci = b.get("jurnal_id") or f"{b.get('nomor')}|{b['tanggal']}"
+                hasil[kunci].append((kode, float(b.get("debit") or 0) - float(b.get("kredit") or 0)))
+        return hasil
 
     def segmen_tersedia(self) -> Dict[str, List[str]]:
         hasil: Dict[str, set] = defaultdict(set)
@@ -447,7 +461,7 @@ def susun_neraca(buku: Buku, per_tanggal: date, pembanding: Optional[date] = Non
     # ditaruh di baris COA yang komponennya sama (kalau ada).
     ekuitas = seksi_lines["equity"]
     for komponen, label_baris, nama, fn in (
-        ("retained_earnings", "Retained Earnings", "Prior years' profit/(loss) not yet closed", buku.laba_tahun_lalu),
+        ("retained_earnings", "Retained Earnings", "Accumulated prior years' profit/(loss)", buku.laba_tahun_lalu),
         ("current_year_earnings", "Current Year Earnings", "Current year profit/(loss)", buku.laba_berjalan),
     ):
         cur = fn(per_tanggal)
@@ -633,7 +647,7 @@ def susun_perubahan_ekuitas(buku: Buku, dari: date, sampai: date) -> Dict[str, A
     laba_lalu_buka, laba_jalan_buka = buku.laba_tahun_lalu(kemarin), buku.laba_berjalan(kemarin)
     buka["retained_earnings"] += laba_lalu_buka
     buka["current_year_earnings"] += laba_jalan_buka
-    for komponen, nilai, nama in (("retained_earnings", laba_lalu_buka, "Prior years' profit/(loss) not yet closed"),
+    for komponen, nilai, nama in (("retained_earnings", laba_lalu_buka, "Accumulated prior years' profit/(loss)"),
                                   ("current_year_earnings", laba_jalan_buka, "Current year profit/(loss)")):
         if abs(nilai) >= 0.005:
             rincian_buka[komponen].append({"code": None, "name": nama, "coa_id": None, "amount": _r(nilai), "computed": True})
@@ -762,6 +776,127 @@ def susun_arus_kas(buku: Buku, dari: date, sampai: date) -> Dict[str, Any]:
         ],
         "unmapped_accounts": akun_tanpa_map,
     }
+
+
+# ============================================================
+# 6b) CASH FLOW (metode langsung)
+# ============================================================
+# Tiap jurnal yang menyentuh akun kas: mutasi kas dibagi ke akun lawannya
+# (efek = kredit - debit akun lawan; di jurnal seimbang totalnya = mutasi kas).
+# Akun lawan menentukan baris arus kas: pendapatan/piutang -> penerimaan dari
+# pelanggan, HPP/persediaan/utang usaha -> pembayaran ke pemasok, dst.
+# Transfer antar akun kas tidak dihitung (mutasi kas bersih nol).
+
+_BARIS_LANGSUNG_OPERASI: List[Tuple[str, str]] = [
+    ("receipts_customers", "Cash Receipts from Customers"),
+    ("other_receipts", "Other Operating Receipts"),
+    ("paid_suppliers", "Cash Paid to Suppliers"),
+    ("paid_operating", "Cash Paid for Operating Expenses"),
+    ("paid_taxes", "Cash Paid for Taxes"),
+    ("paid_interest", "Cash Paid for Interest"),
+    ("other_operating", "Other Operating Cash Flows"),
+]
+_RE_PIUTANG = re.compile(r"receivable|piutang|\bar\b", re.I)
+_RE_PERSEDIAAN = re.compile(r"inventor|persediaan|stock|stok", re.I)
+_RE_UTANG_USAHA = re.compile(r"(account|trade)s? payable|utang usaha|hutang usaha|hutang dagang|utang dagang|\bap\b", re.I)
+_RE_PAJAK = re.compile(r"tax|pajak|ppn|pph|vat|gst", re.I)
+_RE_BUNGA = re.compile(r"interest|bunga", re.I)
+
+
+def _baris_langsung(info: Dict[str, Any]) -> Tuple[str, str]:
+    """(aktivitas, kunci/label baris) arus kas langsung untuk akun lawan."""
+    nama, seksi, kategori = info.get("name") or "", info["section"], info["cash_flow_category"]
+    if info["jenis"] == "PL":
+        if seksi == "revenue":
+            return "operating", "receipts_customers"
+        if seksi == "other_income":
+            return "operating", "other_receipts"
+        if seksi == "cost_of_sales":
+            return "operating", "paid_suppliers"
+        if seksi == "income_tax":
+            return "operating", "paid_taxes"
+        if _RE_BUNGA.search(nama):
+            return "operating", "paid_interest"
+        return "operating", "paid_operating"
+    if kategori in ("INVESTING", "FINANCING"):
+        return kategori.lower(), info["cash_flow_line"] or LABEL_DEFAULT_ARUS_KAS[kategori]
+    if seksi == "equity" and not kategori:
+        return "financing", LABEL_DEFAULT_ARUS_KAS["FINANCING"]
+    if _RE_PAJAK.search(nama):
+        return "operating", "paid_taxes"
+    if _RE_PIUTANG.search(nama):
+        return "operating", "receipts_customers"
+    if _RE_PERSEDIAAN.search(nama) or _RE_UTANG_USAHA.search(nama):
+        return "operating", "paid_suppliers"
+    if _RE_BUNGA.search(nama):
+        return "operating", "paid_interest"
+    if seksi in ("current_assets", "current_liabilities"):
+        return "operating", "paid_operating"
+    return "operating", "other_operating"
+
+
+def susun_arus_kas_langsung(buku: Buku, dari: date, sampai: date) -> Dict[str, Any]:
+    kemarin = dari - timedelta(days=1)
+    kas = {k for k, i in buku.akun("BS") if i["cash_flow_category"] == "CASH"}
+    kas_awal = sum(buku.saldo(k, kemarin) for k in kas)
+    kas_akhir = sum(buku.saldo(k, sampai) for k in kas)
+
+    # aktivitas -> kunci baris -> {kode akun -> efek}
+    efek: Dict[str, Dict[str, Dict[str, float]]] = {"operating": defaultdict(lambda: defaultdict(float)),
+                                                    "investing": defaultdict(lambda: defaultdict(float)),
+                                                    "financing": defaultdict(lambda: defaultdict(float))}
+    for baris in buku.jurnal_dalam(dari, sampai).values():
+        mutasi_kas = sum(v for k, v in baris if k in kas)
+        if abs(mutasi_kas) < 0.005:
+            continue
+        for kode, v in baris:
+            if kode in kas or abs(v) < 0.005:
+                continue
+            akt, kunci = _baris_langsung(buku.peta[kode])
+            efek[akt][kunci][kode] += -v
+
+    label_operasi = dict(_BARIS_LANGSUNG_OPERASI)
+
+    def daftar(akt: str) -> List[Dict[str, Any]]:
+        urut = [k for k, _ in _BARIS_LANGSUNG_OPERASI] if akt == "operating" else sorted(efek[akt])
+        hasil = []
+        for kunci in urut:
+            akun = efek[akt].get(kunci)
+            if not akun:
+                continue
+            rinci = [{"code": k, "name": buku.peta[k]["name"], "coa_id": buku.peta[k]["coa_id"], "amount": _r(v)}
+                     for k, v in sorted(akun.items()) if abs(v) >= 0.005]
+            if not rinci:
+                continue
+            label = label_operasi.get(kunci, kunci)
+            hasil.append({"key": kunci if akt == "operating" else _slug(kunci), "label": label,
+                          "amount": _r(sum(akun.values())), "accounts": rinci})
+        return hasil
+
+    operasi, investasi, pendanaan = daftar("operating"), daftar("investing"), daftar("financing")
+    t_op, t_inv, t_fin = (sum(l["amount"] for l in x) for x in (operasi, investasi, pendanaan))
+    kenaikan = t_op + t_inv + t_fin
+    kenaikan_aktual = kas_akhir - kas_awal
+    return {
+        "period": {"start": dari.isoformat(), "end": sampai.isoformat()},
+        "method": "direct",
+        "operating": {"lines": operasi, "total": _r(t_op)},
+        "investing": {"lines": investasi, "total": _r(t_inv)},
+        "financing": {"lines": pendanaan, "total": _r(t_fin)},
+        "net_change": _r(kenaikan),
+        "opening_cash": _r(kas_awal),
+        "ending_cash": _r(kas_awal + kenaikan),
+        "balance_sheet_ending_cash": _r(kas_akhir),
+        "check": {
+            "difference": _r(kenaikan - kenaikan_aktual),
+            "reconciled": abs(kenaikan - kenaikan_aktual) < 1,
+        },
+    }
+
+
+def pendapatan(buku: Buku, dari: date, sampai: date) -> float:
+    """Total pendapatan (seksi revenue) periode -- dasar tampilan '% of revenue'."""
+    return _r(sum(-buku.mutasi(k, dari, sampai) for k, i in buku.akun("PL") if i["section"] == "revenue"))
 
 
 # ============================================================

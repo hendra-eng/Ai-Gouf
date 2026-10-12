@@ -67,8 +67,8 @@ def _require_level_v1(min_tahap: int):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    f"Fitur ini khusus untuk Tahap {min_tahap} ke atas. "
-                    f"Akun kamu: {auth.role_label(current_user.get('role'))}."
+                    f"This feature requires level {min_tahap} or above. "
+                    f"Your role: {auth.role_label(current_user.get('role'))}."
                 ),
             )
         return current_user
@@ -189,11 +189,11 @@ def upsert_exception(
     _terapkan_aturan_resolved(fields, current_user)
     hasil = dbc.upsert_bank_cash_exception(fields, user_id=current_user.get("id"))
     if hasil is None:
-        return gagal(message="Gagal menyimpan exception (kesalahan database).", status_code=500)
+        return gagal(message="Failed to save the exception (database error).", status_code=500)
     dibuat = bool(hasil.pop("_dibuat", False))
     return sukses(
         data=hasil,
-        message="Exception berhasil dibuat." if dibuat else "Exception berhasil diupdate.",
+        message="Exception created." if dibuat else "Exception updated.",
         status_code=201 if dibuat else 200,
     )
 
@@ -211,8 +211,8 @@ def buat_exception(
     _terapkan_aturan_resolved(fields, current_user)
     dibuat = dbc.create_bank_cash_exception(fields, created_by=current_user.get("id"))
     if dibuat is None:
-        return gagal(message="Gagal membuat exception (kesalahan database).", status_code=500)
-    return sukses(data=dibuat, message="Exception berhasil dibuat.", status_code=201)
+        return gagal(message="Failed to create the exception (database error).", status_code=500)
+    return sukses(data=dibuat, message="Exception created.", status_code=201)
 
 
 @router.get(
@@ -227,7 +227,7 @@ def detail_exception(
 ):
     data = dbc.get_bank_cash_exception_by_id(exception_id, termasuk_nonaktif=termasuk_nonaktif)
     if data is None:
-        return gagal(message="Exception tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+        return gagal(message="Exception not found.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(data=data, message="OK")
 
 
@@ -245,8 +245,8 @@ def update_exception(
     _terapkan_aturan_resolved(fields, current_user)
     diupdate = dbc.update_bank_cash_exception(exception_id, fields, updated_by=current_user.get("id"))
     if diupdate is None:
-        return gagal(message="Exception tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=diupdate, message="Exception berhasil diupdate.")
+        return gagal(message="Exception not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Exception updated.")
 
 
 @router.delete(
@@ -260,5 +260,5 @@ def hapus_exception(
 ):
     berhasil = dbc.soft_delete_bank_cash_exception(exception_id, deleted_by=current_user.get("id"))
     if not berhasil:
-        return gagal(message="Exception tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(message="Exception berhasil dinonaktifkan.")
+        return gagal(message="Exception not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Exception deactivated.")
