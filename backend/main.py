@@ -104,6 +104,8 @@ from modules.management import documents_v1 as management_documents_v1  # [BARU]
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
 from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
+from modules.finance import receivables_payables_v1 as finance_receivables_payables_v1  # [BARU] /api/v1/finance/receivables|payables -- Accounts Receivable & Accounts Payable
+from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [BARU] AR: customers, Create Invoice, Collections + log statement AR/AP
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
 from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
@@ -381,6 +383,11 @@ app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
 app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
 app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
+app.include_router(finance_receivables_payables_v1.router_ar)  # [BARU] /api/v1/finance/receivables -- Accounts Receivable (piutang atas Sales)
+app.include_router(finance_receivables_payables_v1.router_ap)  # [BARU] /api/v1/finance/payables -- Accounts Payable (hutang atas Purchase)
+app.include_router(finance_receivables_ar_v1.router_ar)  # [BARU] /api/v1/finance/receivables/customers|invoice-form|invoice-entries|collections
+app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api/v1/finance/receivables/statements -- riwayat Customer Statement + email
+app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements -- riwayat Vendor Statement + email
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
 app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri

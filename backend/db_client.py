@@ -1463,7 +1463,9 @@ class BankCashMutation(Base):
 class BankCashTransaction(Base):
     """Header transaksi Cash & Bank: Cash Receipt (uang masuk ke akun kas/bank)
     atau Cash Payment (uang keluar). Lahir dari pencocokan mutasi Bank Feed
-    (source 'bank_feed', mutation_id terisi) atau input manual ('manual').
+    (source 'bank_feed', mutation_id terisi), input manual ('manual'), atau
+    Record Receipt / Record Payment di Accounts Receivable / Payable ('ar' /
+    'ap', modules/finance/receivables_payables_v1.py).
 
     Alur status: draft -> approved -> posted -> reversed. Jurnalnya TIDAK
     disalin ke Journal Entry -- GL/FS membaca langsung transaksi posted
@@ -1497,7 +1499,12 @@ class BankCashTransaction(Base):
     counterparty = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     reference = Column(String(255), nullable=True)
-    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual
+    # [migration 37] Diisi form Record Receipt (Accounts Receivable) / Record
+    # Payment (Accounts Payable); transaksi Bank Feed/manual boleh kosong.
+    payment_method = Column(String(30), nullable=True)           # bank_transfer / cash / cheque / giro / ...
+    reference_date = Column(Date, nullable=True)
+    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual / ar / ap
     mutation_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_mutations.id"), nullable=True)
     status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
     approved_at = Column(DateTime(timezone=True), nullable=True)
@@ -1547,6 +1554,176 @@ class BankCashTransactionLine(Base):
     debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
     credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+# ============================================================
+# ACCOUNTS RECEIVABLE -- Create Invoice, Collections, Customer Statements
+# (migrations/38-create_ar_invoice_collection_statement_tables.py,
+# modules/finance/receivables_ar_v1.py). Invoice dari Create Invoice tetap
+# disimpan di financial_transaction_sales_invoices (header + dpp/ppn/gross)
+# supaya alur approve/post Sales, AR, dan GL/FS tetap satu jalur; tabel di
+# bawah hanya menyimpan detail tambahan (item, pajak, alamat tagih).
+# ============================================================
+
+class ArCustomer(Base):
+    """Master customer per klien (kode CUST-###, NPWP, alamat tagih, kontak).
+    Customer AR tetap dikenali dari Sales.customer_name (dinormalisasi
+    huruf besar); master ini melengkapi data kontaknya untuk invoice &
+    statement. Nama unik per klien (case-insensitive, index parsial)."""
+    __tablename__ = "financial_ar_customers"
+    __table_args__ = (
+        Index("idx_ar_customers_client", "client_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    code = Column(String(30), nullable=False)
+    name = Column(String(255), nullable=False)
+    npwp = Column(String(30), nullable=True)
+    billing_address = Column(Text, nullable=True)
+    phone = Column(String(50), nullable=True)
+    email = Column(String(255), nullable=True)
+    contact_person = Column(String(255), nullable=True)
+    payment_terms = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesInvoiceDetail(Base):
+    """Detail 1:1 invoice Sales yang dibuat lewat AR > Create Invoice:
+    customer master, mata uang, alamat tagih, pengaturan pajak, ringkasan
+    subtotal/diskon/pajak. Invoice hasil import Sales tidak punya baris ini."""
+    __tablename__ = "financial_transaction_sales_invoice_details"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False, unique=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    customer_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_ar_customers.id"), nullable=True)
+    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    billing_address = Column(Text, nullable=True)
+    tax_type = Column(String(20), nullable=False, default="ppn_11", server_default=text("'ppn_11'"))   # ppn_11 / ppn_12 / non_ppn
+    tax_inclusive = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    subtotal = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))           # qty x harga, sebelum diskon
+    discount_total = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    tax_total = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    entry_source = Column(String(20), nullable=False, default="ar", server_default=text("'ar'"))
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    submitted_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class SalesInvoiceLine(Base):
+    """Item invoice (produk/jasa). dpp = nilai setelah diskon tanpa pajak,
+    tax_amount = pajak baris, line_total = qty x harga - diskon (kolom
+    Amount di form). Jumlah dpp/tax_amount = Sales.dpp/ppn header."""
+    __tablename__ = "financial_transaction_sales_invoice_lines"
+    __table_args__ = (
+        Index("idx_sales_invoice_lines_invoice", "invoice_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    product_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    quantity = Column(Numeric(18, 4), nullable=False, default=1, server_default=text("1"))
+    unit = Column(String(30), nullable=True)
+    unit_price = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    discount_type = Column(String(10), nullable=False, default="percent", server_default=text("'percent'"))  # percent / amount
+    discount_value = Column(Numeric(24, 4), nullable=False, default=0, server_default=text("0"))
+    discount_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    tax_code = Column(String(20), nullable=False, default="ppn_11", server_default=text("'ppn_11'"))     # ppn_11 / ppn_12 / non_ppn
+    tax_rate = Column(Numeric(6, 3), nullable=False, default=0, server_default=text("0"))
+    dpp = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    line_total = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+class ArCollectionAccount(Base):
+    """Status penagihan 1 customer (tab Collections): status follow-up,
+    prioritas (NULL = otomatis dari umur piutang), collector, janji bayar,
+    jadwal follow-up berikutnya. 1 baris per (klien, customer)."""
+    __tablename__ = "financial_ar_collection_accounts"
+    __table_args__ = (
+        UniqueConstraint("client_id", "party", name="uq_ar_collection_accounts_client_party"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    party = Column(String(255), nullable=False)                                     # customer_name dinormalisasi (UPPER)
+    status = Column(String(20), nullable=False, default="to_contact", server_default=text("'to_contact'"))  # to_contact / promised / escalated / resolved
+    priority = Column(String(10), nullable=True)                                    # high / medium / low; NULL = otomatis
+    collector_name = Column(String(255), nullable=True)
+    next_follow_up_date = Column(Date, nullable=True)
+    last_contact_date = Column(Date, nullable=True)
+    last_contact_method = Column(String(20), nullable=True)
+    promise_amount = Column(Numeric(24, 2), nullable=True)
+    promise_date = Column(Date, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ArCollectionActivity(Base):
+    """Riwayat follow-up penagihan (append-only): kontak, hasil, janji bayar."""
+    __tablename__ = "financial_ar_collection_activities"
+    __table_args__ = (
+        Index("idx_ar_collection_activities_account", "account_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    account_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_ar_collection_accounts.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    activity_date = Column(Date, nullable=False)
+    method = Column(String(20), nullable=False)                                     # call / email / whatsapp / visit / meeting / letter / other
+    status_after = Column(String(20), nullable=False)
+    notes = Column(Text, nullable=True)
+    promise_amount = Column(Numeric(24, 2), nullable=True)
+    promise_date = Column(Date, nullable=True)
+    next_follow_up_date = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+
+
+class ArApStatement(Base):
+    """Log Customer / Vendor Statement yang di-generate (tab Statements):
+    periode, saldo, cara kirim (email / download) dan statusnya."""
+    __tablename__ = "financial_ar_ap_statements"
+    __table_args__ = (
+        Index("idx_ar_ap_statements_client_side", "client_id", "side"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    side = Column(String(5), nullable=False)                                        # ar / ap
+    party = Column(String(255), nullable=False)
+    date_from = Column(Date, nullable=False)
+    date_to = Column(Date, nullable=False)
+    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    open_items_only = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    opening_balance = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    closing_balance = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    delivery_method = Column(String(20), nullable=True)                             # email / download
+    delivery_status = Column(String(20), nullable=False, default="generated", server_default=text("'generated'"))  # generated / sent / downloaded / failed
+    recipient_email = Column(String(255), nullable=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    generated_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    generated_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    generated_by_name = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
 class ManagementSettingPurchase(Base):
@@ -4269,7 +4446,8 @@ def pastikan_mapping_sales(invoice_id: str, dibuat_oleh: Optional[str] = None) -
     if not akun:
         return None
     return create_sales_account_mapping({
-        "client_id": inv.get("client_id"),
+        # FK account_mappings.client_id -> management_clients (migration 32), bukan id user di invoice.client_id.
+        "client_id": inv.get("management_client_id"),
         "invoice_id": invoice_id,
         "piutang_account_code": akun["piutang"][0], "piutang_account_name": akun["piutang"][1],
         "pendapatan_account_code": akun["pendapatan"][0], "pendapatan_account_name": akun["pendapatan"][1],

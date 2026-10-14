@@ -168,7 +168,7 @@ export interface BcTransaction {
   counterparty: string | null;
   description: string | null;
   reference: string | null;
-  source: 'bank_feed' | 'manual';
+  source: 'bank_feed' | 'manual' | 'ar' | 'ap';
   mutation: { id: string; date: string; description: string | null; debit: number; credit: number; statement_id: string } | null;
   status: TxStatus;
   approved_at: string | null;

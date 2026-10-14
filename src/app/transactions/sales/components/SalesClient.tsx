@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CalendarDays, ChevronDown } from 'lucide-react';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
@@ -27,6 +27,12 @@ export default function SalesClient() {
   const { user } = useAuth();
   const { activeClientId } = useActiveClient();
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Deep link ?tab=journal-preview (mis. dari AR > Create Invoice setelah Submit for Approval).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t && TABS.some(x => x.key === t)) setActiveTab(t);
+  }, []);
 
   // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
   // (Open/In Review), dari data asli (financial_transaction_sales_
