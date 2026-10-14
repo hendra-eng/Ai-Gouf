@@ -1,7 +1,7 @@
 """
 modules/transactions/sales_import_v1.py
 ==========================================
-Upload file laporan penjualan (CSV/Excel) + ekstraksi otomatis lewat Sales
+Upload file laporan penjualan (CSV/Excel/PDF) + ekstraksi otomatis lewat Sales
 Import Template -- implementasi backend dari alur yang didokumentasikan di
 root/SALES_IMPORT_TEMPLATES.md. Endpoint tunggal:
 
@@ -29,6 +29,13 @@ TEMPLATES.md):
        dibangun nanti -- lewat modal Mapping Rules) sebelum file jenis ini
        bisa diekstrak otomatis.
 
+PDF (format_type 'grouped_invoice_report_pdf'): alurnya SAMA, hanya cara baca
+dan cara cocokkan signature-nya beda -- PDF tidak punya baris/sel, jadi file
+dibaca sebagai KATA + POSISI (x0, top) dari text layer (pdfplumber), dan
+signature = hash band header tabel yang tercetak di halaman 1. Resepnya
+dibaca dari varian PDF di template 'Multi' (lihat seed_template_sau_multi_
+format_sales.sql). PDF hasil scan (tanpa text layer) tidak didukung.
+
 File TIDAK disimpan ke disk (storage_path tetap NULL) -- diproses di
 memory saja, konsisten dengan komentar yang sudah ada di DDL
 ("storage_path ... NULL kalau storage belum disambungkan"). Menyimpan file
@@ -43,7 +50,7 @@ import io
 import re
 from datetime import date, datetime
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -118,9 +125,93 @@ def _baca_excel_baris(content: bytes, sheet_name: Optional[str]) -> List[List[st
 def _baca_file_jadi_baris(content: bytes, file_type: str, encoding: str, delimiter: str, sheet_name: Optional[str], quoted_fields: bool = False) -> List[List[str]]:
     if file_type == "Excel":
         return _baca_excel_baris(content, sheet_name)
-    # CSV/TXT dianggap delimited text -- PDF ditangani terpisah (tidak
-    # pernah sampai fungsi ini, lihat endpoint di bawah).
+    # CSV/TXT dianggap delimited text -- PDF TIDAK lewat sini (tidak punya
+    # baris/sel); PDF dibaca per kata+posisi lewat _PdfSumber di bawah.
     return _baca_csv_baris(content, encoding, delimiter, quoted_fields)
+
+
+class _PdfSumber:
+    """Pembungkus bytes PDF yang dikembalikan _cocokkan_template() sebagai
+    pengganti "rows" untuk file_type='PDF'. Isi PDF SENGAJA belum dibaca di
+    sini -- laporan penuh bisa ribuan halaman (CRS: 1.813), jadi pencocokan
+    template cukup membaca halaman 1, dan seluruh halaman baru dibaca
+    (halaman demi halaman) oleh _parse_grouped_invoice_report_pdf()."""
+
+    def __init__(self, content: bytes):
+        self.content = content
+
+
+def _iter_kata_halaman_pdf(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    """Hasilkan (nomor_halaman, kata) per halaman, kata = dict pdfplumber
+    (text, x0, top, ...). hanya_halaman=1 -> berhenti setelah halaman 1."""
+    import pdfplumber
+
+    with pdfplumber.open(BytesIO(content)) as pdf:
+        for no, page in enumerate(pdf.pages, start=1):
+            try:
+                kata = page.extract_words()
+            finally:
+                page.flush_cache()  # jaga memori untuk PDF ribuan halaman
+            yield no, kata
+            if hanya_halaman is not None and no >= hanya_halaman:
+                return
+
+
+def _kelompokkan_kata_jadi_baris(kata: List[Dict[str, Any]], toleransi: float = 3.0) -> List[List[Dict[str, Any]]]:
+    """Urutkan kata menurut top, lalu kelompokkan jadi 1 baris bila selisih
+    top terhadap kata pertama baris itu <= toleransi (pt). WAJIB toleransi,
+    bukan pembulatan: kata dalam 1 baris footer bisa berbeda ~1 pt vertikal."""
+    urut = sorted(kata, key=lambda w: (w["top"], w["x0"]))
+    baris: List[List[Dict[str, Any]]] = []
+    acuan: Optional[float] = None
+    sekarang: List[Dict[str, Any]] = []
+    for w in urut:
+        if acuan is None or w["top"] - acuan > toleransi:
+            if sekarang:
+                baris.append(sorted(sekarang, key=lambda x: x["x0"]))
+            sekarang = [w]
+            acuan = w["top"]
+        else:
+            sekarang.append(w)
+    if sekarang:
+        baris.append(sorted(sekarang, key=lambda x: x["x0"]))
+    return baris
+
+
+def _teks_baris(baris: List[Dict[str, Any]]) -> str:
+    return " ".join(w["text"] for w in baris)
+
+
+def _norm_teks(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
+
+
+_RE_CAP_TANGGAL = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+_RE_CAP_JAM = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
+_RE_CAP_HALAMAN = re.compile(r"^\d+/\d+$")
+
+
+def _buang_cap_halaman(baris_halaman: List[List[Dict[str, Any]]]) -> List[List[Dict[str, Any]]]:
+    """Buang HANYA kata cap di dasar halaman ('<dd/mm/yyyy> <hh:mm> REPORT
+    <n>/<N>'): tanggal/jam/REPORT di x0 < 130 dan penghitung halaman di
+    x0 >= 538, pada baris yang memuat kata REPORT. Kata lain di baris yang
+    sama BUKAN cap (lanjutan alamat invoice bisa tercetak di baris itu)."""
+    hasil = []
+    for b in baris_halaman:
+        if any(w["text"].upper() == "REPORT" and w["x0"] < 130 for w in b):
+            b = [
+                w for w in b
+                if not (
+                    w["x0"] < 130 and (
+                        w["text"].upper() in ("REPORT", "AM", "PM")
+                        or _RE_CAP_TANGGAL.match(w["text"]) or _RE_CAP_JAM.match(w["text"])
+                    )
+                )
+                and not (w["x0"] >= 538 and _RE_CAP_HALAMAN.match(w["text"]))
+            ]
+        if b:
+            hasil.append(b)
+    return hasil
 
 
 # ============================================================
@@ -184,6 +275,8 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
     decode) kalau ketemu yang cocok, None kalau tidak ada satu pun yang
     match (file ini polanya belum pernah dipelajari)."""
     kandidat = _kandidat_template(management_client_id, file_type)
+    if file_type == "PDF":
+        return _cocokkan_template_pdf(content, kandidat)
     for template in kandidat:
         mapping_rules = template.get("mapping_rules") or {}
         encoding = mapping_rules.get("encoding", "utf-8")
@@ -198,6 +291,43 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
             continue
         if _hash_baris(rows[idx]) == template["column_signature_hash"]:
             return template, rows
+    return None
+
+
+def _cocokkan_template_pdf(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_PdfSumber"]]:
+    """Cocokkan PDF ke template: band header tabel (mis. 'No Transaksi |
+    Tanggal | Dept. | Kode Pel. | Nama Pelanggan | Alamat') harus tercetak
+    di halaman 1 sebagai 1 baris, dan SHA-256 sel-selnya (algoritma yang sama
+    dengan CSV/Excel: _hash_baris) harus sama dengan column_signature_hash
+    varian. mapping_rules.signature_rule.guard_judul_halaman_1 (kalau ada)
+    = judul yang wajib ada di halaman 1, pengaman tambahan."""
+    if not kandidat:
+        return None
+    try:
+        _, kata = next(_iter_kata_halaman_pdf(content, hanya_halaman=1))
+    except StopIteration:
+        return None  # PDF tanpa halaman
+    except Exception as e:
+        logger.warning(f"Gagal membaca halaman 1 PDF: {e}")
+        return None
+    if not kata:
+        return None  # tidak ada text layer (PDF scan) -- belum didukung
+    teks_baris = [_norm_teks(_teks_baris(b)) for b in _kelompokkan_kata_jadi_baris(kata)]
+
+    for template in kandidat:
+        mapping_rules = template.get("mapping_rules") or {}
+        sig = mapping_rules.get("signature_rule") or {}
+        sel = sig.get("cells") or template.get("header_columns") or []
+        if not sel:
+            continue
+        guard = sig.get("guard_judul_halaman_1")
+        if guard and not any(_norm_teks(guard) in t for t in teks_baris):
+            continue
+        target = " ".join(_norm_teks(c) for c in sel)
+        if not any(t == target or t.startswith(target + " ") for t in teks_baris):
+            continue
+        if _hash_baris(sel) == template["column_signature_hash"]:
+            return template, _PdfSumber(content)
     return None
 
 
@@ -337,6 +467,129 @@ def _parse_grouped_invoice_report(rows: List[List[str]], recipe: Dict[str, Any])
         if i < n and all((c or "").strip() == "" for c in rows[i]):
             i += 1
 
+    return hasil
+
+
+def _parse_grouped_invoice_report_pdf(sumber: "_PdfSumber", recipe: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parser resep format_type='grouped_invoice_report_pdf' -- laporan yang
+    SAMA dengan grouped_invoice_report (1 invoice = 1 blok: header invoice,
+    label item, item, subtotal, footer), tetapi dibaca dari KATA + POSISI
+    di text layer PDF. 1 baris hasil = 1 invoice.
+
+    Mesin status membaca baris demi baris lintas halaman. 1 invoice "terbuka"
+    sejak baris header-nya sampai footer 'Pot. ... Total Akhir' terbaca, sehingga
+    3 kasus pergantian halaman di recipe.page_break_rules tertangani:
+      * footer jatuh di halaman berikutnya -> tetap milik invoice terbuka;
+      * header terbelah -> lanjutan nama/alamat (sebelum label item) digabung
+        ke invoice terbuka;
+      * header dicetak 2x (nomor sama, belum ada footer) -> salinan kedua
+        menimpa nama/alamat, TIDAK membuat baris baru."""
+    number_format = recipe.get("number_format", {})
+    date_format = recipe.get("date_format", "DD/MM/YYYY")
+    hdr = recipe["invoice_header"]
+    kolom = hdr["columns_x0"]
+    pola_no = re.compile(hdr["no_invoice_pattern"])
+    band = _norm_teks(recipe.get("ignore", {}).get("table_header_band", {}).get("value", ""))
+    item_marker = _norm_teks(recipe["item_header_marker"]["value"])
+    pola_footer = re.compile(recipe["block_footer_marker"]["value"], re.IGNORECASE)
+    end_marker = (recipe.get("end_of_data_marker") or {}).get("value")
+
+    def di_rentang(baris: List[Dict[str, Any]], nama_kolom: str) -> str:
+        lo, hi = kolom[nama_kolom]
+        return " ".join(w["text"] for w in baris if lo <= w["x0"] < hi).strip()
+
+    hasil: List[Dict[str, Any]] = []
+    seen_invoice_no = set()
+    terbuka: Optional[Dict[str, Any]] = None  # invoice yang headernya sudah terbaca tapi footernya belum
+
+    def tutup(inv: Dict[str, Any], pajak: float, total_akhir: float, ada_footer: bool) -> None:
+        nama = " ".join(inv["nama"]).strip()
+        tanggal = _parse_tanggal(inv["tanggal_raw"], date_format)
+        no_invoice = inv["no_invoice"]
+        is_duplicate = no_invoice in seen_invoice_no
+        if no_invoice:
+            seen_invoice_no.add(no_invoice)
+        catatan = []
+        if not no_invoice:
+            catatan.append("No. invoice kosong")
+        if tanggal is None:
+            catatan.append("Tanggal tidak terbaca")
+        if not ada_footer:
+            catatan.append("Footer invoice (Total Akhir) tidak ditemukan")
+        hasil.append({
+            "row_no": len(hasil) + 1,
+            "tanggal": tanggal,
+            "no_invoice": no_invoice or None,
+            "nama_customer": nama or None,
+            "cabang": None,  # diisi dari nama file oleh _ekstrak_dengan_template
+            "dpp": round(total_akhir - pajak, 2),
+            "ppn": pajak,
+            "total": total_akhir,
+            "is_valid": not catatan,
+            "validation_notes": "; ".join(catatan) or None,
+            "is_duplicate_candidate": is_duplicate,
+        })
+
+    selesai = False
+    for _no_hal, kata in _iter_kata_halaman_pdf(sumber.content):
+        baris_halaman = _buang_cap_halaman(_kelompokkan_kata_jadi_baris(kata))
+        for baris in baris_halaman:
+            teks = _teks_baris(baris)
+            norm = _norm_teks(teks)
+
+            if end_marker and end_marker.lower() in teks.lower():
+                selesai = True
+                break
+            if band and norm.startswith(band):
+                continue  # band header tabel yang diulang di tiap halaman
+
+            m_footer = pola_footer.search(teks)
+            if m_footer:
+                if terbuka is not None:
+                    pajak = _parse_angka(m_footer.group(2) or "", number_format)
+                    total_akhir = _parse_angka(m_footer.group(4) or "", number_format)
+                    tutup(terbuka, pajak, total_akhir, ada_footer=True)
+                    terbuka = None
+                continue
+
+            if norm.startswith(item_marker):
+                if terbuka is not None:
+                    terbuka["di_item"] = True
+                continue
+
+            pertama = baris[0]
+            if pertama["x0"] < kolom["no_invoice"][1] and pola_no.match(pertama["text"]):
+                no_invoice = pertama["text"]
+                tanggal_raw = di_rentang(baris, "tanggal")
+                nama = di_rentang(baris, "nama_pelanggan")
+                if terbuka is not None and terbuka["no_invoice"] == no_invoice:
+                    # header dicetak 2x: pakai salinan kedua yang lengkap
+                    if tanggal_raw:
+                        terbuka["tanggal_raw"] = tanggal_raw
+                    terbuka["nama"] = [nama] if nama else []
+                    terbuka["di_item"] = False
+                    continue
+                if terbuka is not None:
+                    # invoice sebelumnya tidak pernah punya footer -- catat sbg tidak valid
+                    tutup(terbuka, 0.0, 0.0, ada_footer=False)
+                terbuka = {
+                    "no_invoice": no_invoice,
+                    "tanggal_raw": tanggal_raw,
+                    "nama": [nama] if nama else [],
+                    "di_item": False,
+                }
+                continue
+
+            if terbuka is not None and not terbuka["di_item"]:
+                # lanjutan nama pelanggan yang membungkus / terbelah antar halaman
+                lanjutan = di_rentang(baris, "nama_pelanggan")
+                if lanjutan:
+                    terbuka["nama"].append(lanjutan)
+        if selesai:
+            break
+
+    if terbuka is not None:
+        tutup(terbuka, 0.0, 0.0, ada_footer=False)
     return hasil
 
 
@@ -554,6 +807,8 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
     format_type = mapping_rules.get("format_type")
     if format_type == "grouped_invoice_report":
         hasil = _parse_grouped_invoice_report(rows, mapping_rules)
+    elif format_type == "grouped_invoice_report_pdf":
+        hasil = _parse_grouped_invoice_report_pdf(rows, mapping_rules)  # rows = _PdfSumber
     elif format_type == "flat_grouped_by_key":
         hasil = _parse_flat_grouped_by_key(rows, template)
     elif format_type == "sectioned_by_customer_header":
@@ -575,7 +830,7 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
 
 @router.post(
     "/source-files/upload",
-    summary="Upload file laporan penjualan (CSV/Excel) + ekstraksi otomatis pakai template (khusus Supervisor ke atas)",
+    summary="Upload file laporan penjualan (CSV/Excel/PDF) + ekstraksi otomatis pakai template (khusus Supervisor ke atas)",
     responses={
         201: {"description": "File berhasil diupload (template cocok -> langsung diekstrak, atau ditandai Butuh Review kalau belum ada template yang cocok)."},
         400: {"description": "Tipe file tidak didukung, atau file terlalu besar."},
@@ -600,30 +855,6 @@ async def upload_source_file(
     user_id = current_user.get("id")  # management_users.id -- untuk uploaded_by / created_by
     client_id = management_client_id  # kolom client_id di DB = FK ke management_clients (BUKAN id user)
 
-    if file_type == "PDF":
-        # [CATATAN] PDF belum didukung pembelajaran pola sama sekali --
-        # lihat batasan fase ini di SALES_IMPORT_TEMPLATES.md. Tetap
-        # dicatat sbg source_files supaya jejak upload-nya ada, tapi
-        # langsung Butuh Review tanpa usaha ekstraksi apa pun.
-        source_file = dbc.create_sales_source_file({
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "file_name": file.filename,
-            "file_type": file_type,
-            "rows_detected": 0,
-            "status_ekstraksi": "Butuh Review",
-            "status_mapping": "Butuh Review",
-            "processed_by": current_user.get("nama") or current_user.get("username"),
-            "uploaded_by": user_id,
-        }, created_by=user_id)
-        if source_file is None:
-            return gagal(message="Gagal menyimpan source file (kesalahan database).", status_code=500)
-        return sukses(
-            data={**source_file, "template_matched": False, "rows_extracted": 0},
-            message="File PDF tercatat, tapi ekstraksi pola kolom belum didukung untuk PDF -- perlu ditinjau manual.",
-            status_code=201,
-        )
-
     cocok = None
     try:
         cocok = await run_in_threadpool(_cocokkan_template, content, file_type, management_client_id)
@@ -647,7 +878,8 @@ async def upload_source_file(
         return sukses(
             data={**source_file, "template_matched": False, "rows_extracted": 0},
             message=(
-                "Belum ada template pola kolom yang cocok untuk klien & format file ini -- "
+                "Belum ada template pola kolom yang cocok untuk klien & format file ini "
+                "(untuk PDF: pastikan PDF punya text layer, bukan hasil scan) -- "
                 "file tersimpan sbg 'Butuh Review'. Buat template barunya dulu (lihat "
                 "root/SALES_IMPORT_TEMPLATES.md) sebelum file jenis ini bisa diekstrak otomatis."
             ),
