@@ -141,9 +141,44 @@ class _PdfSumber:
         self.content = content
 
 
-def _iter_kata_halaman_pdf(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
-    """Hasilkan (nomor_halaman, kata) per halaman, kata = dict pdfplumber
-    (text, x0, top, ...). hanya_halaman=1 -> berhenti setelah halaman 1."""
+# True = baca teks PDF pakai pypdfium2 (sekitar 7x lebih cepat dari pdfplumber,
+# penting untuk laporan ribuan halaman). pypdfium2 ikut terpasang bersama
+# pdfplumber. Kalau gagal/tidak ada, otomatis kembali ke pdfplumber. Ubah ke
+# False untuk memaksa pdfplumber (referensi; hasilnya sama untuk PDF contoh).
+PDF_PAKAI_PDFIUM = True
+
+
+def _iter_kata_pdfium(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    """Versi cepat: ambil "rect" teks pdfium (1 rect = 1 sel/segmen teks),
+    lalu pecah per kata. Semua kata dalam 1 rect memakai x0 rect itu (+ selisih
+    kecil supaya urutan terjaga) -- cukup untuk parser, yang hanya butuh
+    kolom (x0) tempat sel dimulai dan urutan baris (top)."""
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(content)
+    try:
+        for idx in range(len(pdf)):
+            page = pdf[idx]
+            try:
+                tinggi = page.get_height()
+                tp = page.get_textpage()
+                kata: List[Dict[str, Any]] = []
+                for k in range(tp.count_rects()):
+                    kiri, bawah, kanan, atas = tp.get_rect(k)
+                    teks = tp.get_text_bounded(kiri, bawah, kanan, atas)
+                    for j, token in enumerate((teks or "").split()):
+                        kata.append({"text": token, "x0": kiri + j * 0.001, "top": tinggi - atas})
+                tp.close()
+            finally:
+                page.close()
+            yield idx + 1, kata
+            if hanya_halaman is not None and idx + 1 >= hanya_halaman:
+                return
+    finally:
+        pdf.close()
+
+
+def _iter_kata_pdfplumber(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
     import pdfplumber
 
     with pdfplumber.open(BytesIO(content)) as pdf:
@@ -155,6 +190,25 @@ def _iter_kata_halaman_pdf(content: bytes, hanya_halaman: Optional[int] = None) 
             yield no, kata
             if hanya_halaman is not None and no >= hanya_halaman:
                 return
+
+
+def _iter_kata_halaman_pdf(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    """Hasilkan (nomor_halaman, kata) per halaman, kata = dict (text, x0, top).
+    hanya_halaman=1 -> berhenti setelah halaman 1. Utamakan pdfium (cepat);
+    kalau gagal SEBELUM ada halaman yang dihasilkan, ulangi pakai pdfplumber."""
+    if PDF_PAKAI_PDFIUM:
+        try:
+            gen = _iter_kata_pdfium(content, hanya_halaman)
+            pertama = next(gen)
+        except StopIteration:
+            return
+        except Exception as e:
+            logger.warning(f"pypdfium2 gagal ({e}); pakai pdfplumber.")
+        else:
+            yield pertama
+            yield from gen
+            return
+    yield from _iter_kata_pdfplumber(content, hanya_halaman)
 
 
 def _kelompokkan_kata_jadi_baris(kata: List[Dict[str, Any]], toleransi: float = 3.0) -> List[List[Dict[str, Any]]]:
