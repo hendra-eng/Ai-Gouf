@@ -14,7 +14,14 @@ Alur (ringkas):
 
     1. Baca file mentah (bytes), tentukan file_type dari ekstensi.
     2. Ambil semua template AKTIF milik (management_client_id, file_type)
-       dari financial_transaction_purchase_import_templates.
+       dari financial_transaction_purchase_import_templates. Baris template
+       ber-file_type 'Multi' (1 setting klien untuk beberapa format file,
+       mis. seed_template_sau_multi_format_purchase.sql) dipecah jadi
+       template virtual per varian di mapping_rules.variants -- varian yang
+       file_type-nya sama dengan file upload ikut jadi kandidat (algoritma
+       SAMA dengan Sales: _kandidat_template di sales_import_v1.py).
+       Saat ini baru varian CSV yang bisa diproses; varian PDF/Excel
+       belum punya parser di Purchase (kandidat PDF diabaikan).
     3. Cocokkan baris header_row_index ke column_signature_hash -- fungsi
        baca file & hash DIPAKAI ULANG dari sales_import_v1 (algoritma sama).
     4. KETEMU template -> ekstrak blok transaksi pakai resep mapping_rules
@@ -67,6 +74,7 @@ from ..api_response import gagal, sukses
 from ..logging_config import get_module_logger
 from .purchase_v1 import _require_level_v1  # dependency level-3 yang sama, hindari duplikasi
 from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, tidak ada alasan duplikasi
+    FILE_TYPE_MULTI,
     MAX_UPLOAD_BYTES,
     _ambil_kolom,
     _baca_file_jadi_baris,
@@ -75,6 +83,7 @@ from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, t
     _hash_baris,
     _parse_angka,
     _parse_tanggal,
+    _template_dari_varian,
 )
 
 logger = get_module_logger("transactions_purchase_import_v1")
@@ -94,10 +103,20 @@ _TOLERANSI_TOTAL = 1.0
 # ============================================================
 
 def _kandidat_template(management_client_id: str, file_type: str) -> List[Dict[str, Any]]:
-    return [
-        t for t in dbc.list_purchase_import_templates(client_id=management_client_id, hanya_aktif=True)
-        if t.get("file_type") == file_type
-    ]
+    """Template AKTIF milik klien yang cocok untuk file_type upload: baris
+    ber-file_type sama apa adanya, ditambah varian ber-file_type sama dari
+    baris 'Multi' (dipecah jadi template virtual lewat _template_dari_varian;
+    id/client_id tetap milik baris aslinya supaya usage_count menunjuk ke 1
+    setting yang sama)."""
+    kandidat: List[Dict[str, Any]] = []
+    for template in dbc.list_purchase_import_templates(client_id=management_client_id, hanya_aktif=True):
+        if template.get("file_type") == file_type:
+            kandidat.append(template)
+        elif template.get("file_type") == FILE_TYPE_MULTI:
+            for varian in (template.get("mapping_rules") or {}).get("variants", []):
+                if varian.get("file_type") == file_type:
+                    kandidat.append(_template_dari_varian(template, varian))
+    return kandidat
 
 
 def _cocokkan_template(content: bytes, file_type: str, management_client_id: str) -> Optional[Tuple[Dict[str, Any], List[List[str]]]]:
@@ -387,7 +406,7 @@ async def upload_purchase_import(
             message=(
                 "No matching column pattern template found for this client & file format -- "
                 "no transaction was created. Create a template first (see "
-                "backend/migrations/seed_template_sau_pembelian_detail_csv.sql as an example)."
+                "backend/migrations/purchase/seed_template_sau_multi_format_purchase.sql as an example)."
             ),
             status_code=201,
         )
