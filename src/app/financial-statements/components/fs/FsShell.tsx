@@ -4,7 +4,9 @@ import React from 'react';
 import Link from 'next/link';
 import TabNav from '@/components/ui/TabNav';
 import { usePathname } from 'next/navigation';
-import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen } from 'lucide-react';
+import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen, Lock } from 'lucide-react';
+import { useActiveClient } from '@/lib/activeClient';
+import { formatDate, useLockStatus } from '@/lib/yearEndClosingStore';
 
 // Kerangka halaman Financial Statements berbasis mapping: judul + navigasi
 // antar laporan + slot aksi (download, dsb).
@@ -29,9 +31,12 @@ export default function FsShell({ title, subtitle, actions, children }: {
     <div className="space-y-5">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
         <div>
-          <Link href="/financial-statements" className="text-sm text-muted-foreground hover:text-blue-700">Financial Statements</Link>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
-          {subtitle && <div className="text-sm text-muted-foreground mt-0.5">{subtitle}</div>}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/financial-statements" className="text-sm text-muted-foreground hover:text-blue-700">Financial Statements</Link>
+            <ClosedBadge />
+          </div>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight mt-1">{title}</h1>
+          {subtitle && <div className="text-sm text-muted-foreground mt-1.5">{subtitle}</div>}
         </div>
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
@@ -46,6 +51,23 @@ export default function FsShell({ title, subtitle, actions, children }: {
 
       {children}
     </div>
+  );
+}
+
+/** Label tahun buku terakhir yang sudah ditutup (Year-End Closing). */
+function ClosedBadge() {
+  const { activeClientId } = useActiveClient();
+  const status = useLockStatus(activeClientId);
+  const last = status?.closed_years[0];
+  if (!last) return null;
+  return (
+    <Link
+      href="/year-end-closing"
+      title={`Transactions up to ${formatDate(last.period_end)} are locked${last.closed_by_name ? ` · closed by ${last.closed_by_name}` : ''}`}
+      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 ring-1 ring-inset ring-blue-600/20 hover:bg-blue-100"
+    >
+      <Lock size={11} /> FY {last.fiscal_year} closed · locked through {formatDate(last.period_end)}
+    </Link>
   );
 }
 

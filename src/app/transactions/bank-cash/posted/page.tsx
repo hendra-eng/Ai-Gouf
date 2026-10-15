@@ -22,24 +22,19 @@ import CashBankTabs from '../components/CashBankTabs';
 import { usePostedJurnalRekon, type CashBankTxReal } from '../lib/useBankCashRekon';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
-import { rekonBalikJurnal } from '@/app/agent-ai/lib/api';
+import { reverseBcTransaction } from '@/lib/bankCashStore';
 
-// Tab Posted (Cash & Bank) = daftar jurnal Kas vs Hutang/Piutang hasil rekonsiliasi yang SUDAH
-// diposting lewat tombol "Post Journal" di tab Journal Preview. Data diambil lewat
-// usePostedJurnalRekon (/api/v1/finance/bank-reconciliation/journal-preview?status=POSTED),
-// jadi begitu jurnal diposting, datanya otomatis muncul di sini.
+// Tab Posted (Cash & Bank) = transaksi kas & bank yang sudah diposting ke buku besar
+// (usePostedJurnalRekon -> GET /api/v1/transactions/bank-cash/transactions?status=posted,reversed).
 //
-// "Diposting Oleh" / "Waktu Posting" dari posted_by / posted_at (dikirim backend di
-// /journal-preview); tampil "—" kalau nilainya kosong.
-//
-// [FASE 2] Balik Jurnal (Manager ke atas): tombol di detail baris memanggil POST /reverse. Backend
-// membuat jurnal pembalik (debit/kredit ditukar, langsung POSTED), membatalkan pembayaran jurnal asal
-// dan memulihkan outstanding invoice. Jurnal asal TIDAK diubah dan tetap berstatus POSTED di backend
-// (buku besar hanya membaca POSTED, jadi nettonya nol); di halaman ini ia ditandai "Dibalik", disembunyikan
-// dari daftar dan angka ringkasan, dan bisa ditampilkan lewat kotak centang di bawah filter.
+// Balik transaksi (Manager ke atas): POST /transactions/{id}/reverse. Jurnal asal tetap di buku
+// besar pada tanggalnya, jurnal pembalik RV-<no> dibuat di tanggal pembalik (sisi debit/kredit
+// ditukar), pelunasan invoice dibatalkan dan mutasi Bank Feed-nya kembali "belum cocok" supaya bisa
+// dicocokkan ulang. Transaksi yang dibalik disembunyikan dari daftar & ringkasan, bisa ditampilkan
+// lewat kotak centang di bawah filter.
 
 const PAGE_SIZE = 10;
-const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 type SortField = 'tx_date' | 'tx_no' | 'counterparty' | 'amount';
 type SortDir = 'asc' | 'desc';
@@ -65,7 +60,7 @@ const formatWaktu = (iso?: string | null) => {
   return `${String(d.getDate()).padStart(2, '0')} ${BULAN[d.getMonth()]} ${d.getFullYear()} ${jam}`;
 };
 
-// Harus sama dengan LEVEL_REVERSAL di backend (bank_reconciliation_v1.py). Backend tetap yang menentukan;
+// Harus sama dengan LEVEL_POST di backend (transactions/bank_cash_v1.py). Backend tetap yang menentukan;
 // ini hanya menyembunyikan tombol dari user yang pasti ditolak (403).
 const LEVEL_BALIK_JURNAL = 4; // Manager (tahap_4) ke atas
 const levelDariRole = (role?: string | null) => {
@@ -85,9 +80,9 @@ const csvCell = (v: unknown) => {
 
 function eksporCsv(rows: CashBankTxReal[]) {
   const header = [
-    'No. Jurnal', 'Tanggal Jurnal', 'Arah', 'Counterparty', 'Invoice Terkait',
-    'Rekening Kas/Bank', 'Akun Lawan', 'Nominal', 'Outstanding Sebelum', 'Outstanding Sesudah',
-    'Diposting Oleh', 'Waktu Posting', 'Ref Mutasi Bank', 'Status', 'Jurnal Pembalik', 'Alasan Pembalikan',
+    'Journal No.', 'Journal Date', 'Direction', 'Counterparty', 'Linked Invoice',
+    'Cash/Bank Account', 'Counter Account', 'Amount',
+    'Posted By', 'Posted At', 'Bank Line Ref', 'Status', 'Reversal Journal', 'Reversal Reason',
   ];
   const lines = rows.map((r) => [
     r.tx_no,
@@ -98,12 +93,10 @@ function eksporCsv(rows: CashBankTxReal[]) {
     r.bank_account,
     r.linkedInvoice?.counterpartyAccount ?? '',
     r.amount,
-    r.linkedInvoice?.outstandingBefore ?? '',
-    r.linkedInvoice?.outstandingAfter ?? '',
     r.postedBy ?? '',
     r.postedAt ?? '',
     r.mutationRef ?? '',
-    r.reversal ? 'Dibalik' : 'Diposting',
+    r.reversal ? 'Reversed' : 'Posted',
     r.reversal?.journalNo ?? '',
     r.reversal?.reason ?? '',
   ]);
@@ -120,15 +113,15 @@ function eksporCsv(rows: CashBankTxReal[]) {
 }
 
 const KOLOM: { label: string; field?: SortField; align?: 'right' }[] = [
-  { label: 'No. Jurnal', field: 'tx_no' },
-  { label: 'Tanggal Jurnal', field: 'tx_date' },
-  { label: 'Arah' },
+  { label: 'Journal No.', field: 'tx_no' },
+  { label: 'Journal Date', field: 'tx_date' },
+  { label: 'Direction' },
   { label: 'Counterparty', field: 'counterparty' },
-  { label: 'Invoice Terkait' },
-  { label: 'Rekening Kas/Bank' },
-  { label: 'Nominal', field: 'amount', align: 'right' },
-  { label: 'Diposting Oleh' },
-  { label: 'Waktu Posting' },
+  { label: 'Linked Invoice' },
+  { label: 'Cash/Bank Account' },
+  { label: 'Amount', field: 'amount', align: 'right' },
+  { label: 'Posted By' },
+  { label: 'Posted At' },
   { label: 'Detail' },
 ];
 
@@ -173,25 +166,25 @@ export default function CashBankPostedPage() {
   const konfirmasiBalik = async () => {
     if (!balikTarget || membalik) return;
     if (!activeClientId) {
-      toast.error('Belum ada client aktif — pilih client dulu di Topbar.');
+      toast.error('No active company — select one in the top bar first.');
       return;
     }
     const alasan = balikAlasan.trim();
     if (alasan.length < 5) {
-      toast.error('Alasan pembalikan wajib diisi (minimal 5 karakter).');
+      toast.error('A reversal reason is required (at least 5 characters).');
       return;
     }
     setMembalik(true);
     try {
-      const hasil = await rekonBalikJurnal(String(activeClientId), balikTarget.id, alasan, balikTanggal || null);
-      toast.success('Jurnal berhasil dibalik', {
-        description: `${balikTarget.tx_no} → ${hasil?.reversal_no ?? 'jurnal pembalik'}`,
+      await reverseBcTransaction(String(activeClientId), balikTarget.id, alasan, balikTanggal || null);
+      toast.success('Journal reversed', {
+        description: `${balikTarget.tx_no} → RV-${balikTarget.tx_no}`,
       });
       setBalikTarget(null);
       setExpandedId(null);
       await refresh();
     } catch (e: any) {
-      toast.error(e?.message || 'Gagal membalik jurnal.');
+      toast.error(e?.message || 'Failed to reverse the journal.');
     } finally {
       setMembalik(false);
     }
@@ -262,26 +255,26 @@ export default function CashBankPostedPage() {
         <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 mb-6">
           <span>{error}</span>
           <button onClick={refresh} className="font-semibold underline hover:no-underline shrink-0">
-            Coba lagi
+            Retry
           </button>
         </div>
       )}
 
       {!activeClientId && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 mb-6">
-          Belum ada client aktif — pilih client dulu lewat Switch Company di Topbar.
+          No active company — select one via Switch Company in the top bar.
         </div>
       )}
 
       {/* Ringkasan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard
-          title="Jurnal Diposting"
+          title="Posted Journals"
           value={String(ringkasan.total)}
           icon="CheckBadgeIcon"
           iconColor="text-emerald-600"
           iconBg="bg-emerald-50"
-          subLabel={`${ringkasan.periode} periode akuntansi`}
+          subLabel={`${ringkasan.periode} accounting periods`}
         />
         <KpiCard title="Total Cash In" value={ringkasan.cashIn} icon="ArrowDownCircleIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
         <KpiCard title="Total Cash Out" value={ringkasan.cashOut} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
@@ -303,7 +296,7 @@ export default function CashBankPostedPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nomor jurnal, counterparty, invoice, atau rekening..."
+              placeholder="Search journal no., counterparty, invoice, or account..."
               className="w-full text-xs border border-border rounded-lg pl-9 pr-3 py-2 bg-card text-foreground"
             />
           </div>
@@ -314,7 +307,7 @@ export default function CashBankPostedPage() {
               onChange={(e) => setArahFilter(e.target.value as typeof arahFilter)}
               className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
             >
-              <option value="all">Semua Arah</option>
+              <option value="all">All Directions</option>
               <option value="Cash Payment">Cash Payment</option>
               <option value="Cash Receipt">Cash Receipt</option>
             </select>
@@ -323,7 +316,7 @@ export default function CashBankPostedPage() {
               onChange={(e) => setPeriodeFilter(e.target.value)}
               className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
             >
-              <option value="all">Semua Periode</option>
+              <option value="all">All Periods</option>
               {periodeList.map((p) => (
                 <option key={p} value={p}>{labelPeriode(p)}</option>
               ))}
@@ -333,7 +326,7 @@ export default function CashBankPostedPage() {
               onChange={(e) => setBankFilter(e.target.value)}
               className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground max-w-[220px]"
             >
-              <option value="all">Semua Rekening</option>
+              <option value="all">All Accounts</option>
               {bankList.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
@@ -350,12 +343,12 @@ export default function CashBankPostedPage() {
         </div>
         <div className="flex items-center justify-between gap-3 flex-wrap mt-2">
           <p className="text-xs text-muted-foreground">
-            {filtered.length} dari {posted.length} jurnal{tampilDibalik ? '' : ' diposting'}
+            {filtered.length} of {posted.length} {tampilDibalik ? 'journals' : 'posted journals'}
           </p>
           {jumlahDibalik > 0 && (
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input type="checkbox" checked={tampilDibalik} onChange={(e) => setTampilDibalik(e.target.checked)} />
-              Tampilkan yang sudah dibalik ({jumlahDibalik})
+              Show reversed ({jumlahDibalik})
             </label>
           )}
         </div>
@@ -388,10 +381,10 @@ export default function CashBankPostedPage() {
                 <tr>
                   <td colSpan={KOLOM.length} className="px-4 py-12 text-center text-xs text-muted-foreground">
                     {loading
-                      ? 'Memuat data...'
+                      ? 'Loading data...'
                       : adaFilter
-                      ? 'Tidak ada jurnal yang cocok dengan filter.'
-                      : 'Belum ada jurnal yang diposting. Jurnal muncul di sini setelah diposting lewat tab Journal Preview.'}
+                      ? 'No journals match the filter.'
+                      : 'No posted journals yet. Journals appear here once posted from the Journal Preview tab.'}
                   </td>
                 </tr>
               ) : (
@@ -409,7 +402,7 @@ export default function CashBankPostedPage() {
                           {row.tx_no}
                           {row.reversal && (
                             <span className="ml-2 align-middle rounded-full bg-amber-100 px-2 py-0.5 font-sans text-[10px] font-bold text-amber-700">
-                              Dibalik
+                              Reversed
                             </span>
                           )}
                         </td>
@@ -431,7 +424,7 @@ export default function CashBankPostedPage() {
                             className="text-xs text-primary hover:underline flex items-center gap-0.5"
                           >
                             {terbuka ? <ChevronUpIcon className="w-3.5 h-3.5" /> : <ChevronDownIcon className="w-3.5 h-3.5" />}
-                            {terbuka ? 'Tutup' : 'Detail'}
+                            {terbuka ? 'Close' : 'Detail'}
                           </button>
                         </td>
                       </tr>
@@ -441,18 +434,11 @@ export default function CashBankPostedPage() {
                           <td colSpan={KOLOM.length} className="px-4 py-0 bg-muted/20">
                             <div className="py-4 space-y-3">
                               {/* Info jurnal & invoice */}
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                 {[
-                                  { label: 'Tipe Invoice', value: row.linkedInvoice?.type ?? '—' },
-                                  { label: 'Akun Lawan', value: row.linkedInvoice?.counterpartyAccount ?? '—' },
-                                  {
-                                    label: 'Outstanding Sebelum',
-                                    value: row.linkedInvoice && !row.reversal ? formatIDR(row.linkedInvoice.outstandingBefore) : '—',
-                                  },
-                                  {
-                                    label: 'Outstanding Sesudah',
-                                    value: row.linkedInvoice && !row.reversal ? formatIDR(row.linkedInvoice.outstandingAfter) : '—',
-                                  },
+                                  { label: 'Type', value: row.transaction_type },
+                                  { label: 'Invoice Type', value: row.linkedInvoice?.type ?? 'No invoice' },
+                                  { label: 'Counter Account', value: row.linkedInvoice?.counterpartyAccount ?? ((row.realLines || []).slice(1).map((l) => `${l.code} - ${l.name}`).join(', ') || '—') },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
                                     <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -464,9 +450,9 @@ export default function CashBankPostedPage() {
                               {/* Info mutasi bank asal */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 {[
-                                  { label: 'Ref Mutasi Bank', value: row.mutationRef || '—', mono: true },
-                                  { label: 'Deskripsi Mutasi', value: row.mutationDescription || '—', mono: false },
-                                  { label: 'File Sumber', value: row.sourceFile || '—', mono: false },
+                                  { label: 'Source', value: row.mutationRef ? 'Bank Feed' : 'Manual entry', mono: false },
+                                  { label: 'Bank Line Description', value: row.mutationDescription || '—', mono: false },
+                                  { label: 'Bank Line Ref', value: row.mutationRef || '—', mono: true },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
                                     <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -478,18 +464,18 @@ export default function CashBankPostedPage() {
                               {/* Baris jurnal */}
                               <div className="bg-card rounded-lg border border-border overflow-hidden">
                                 <div className="px-3 py-2 bg-muted/30 border-b border-border">
-                                  <p className="text-xs font-semibold text-foreground">Baris Jurnal</p>
+                                  <p className="text-xs font-semibold text-foreground">Journal Lines</p>
                                 </div>
                                 {baris.length === 0 ? (
-                                  <p className="px-3 py-4 text-xs text-muted-foreground">Baris jurnal tidak tersedia.</p>
+                                  <p className="px-3 py-4 text-xs text-muted-foreground">Journal lines not available.</p>
                                 ) : (
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="border-b border-border">
                                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground w-10">No</th>
-                                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Akun</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Account</th>
                                         <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Debit</th>
-                                        <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Kredit</th>
+                                        <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Credit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
@@ -507,7 +493,7 @@ export default function CashBankPostedPage() {
                                     <tfoot>
                                       <tr className={`border-t ${seimbang ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
                                         <td colSpan={2} className={`px-3 py-2 text-right font-bold ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
-                                          Total {seimbang ? '· Seimbang' : '· Tidak seimbang'}
+                                          Total {seimbang ? '· Balanced' : '· Not balanced'}
                                         </td>
                                         <td className={`px-3 py-2 text-right font-bold font-mono tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
                                           {formatIDR(totalDebit)}
@@ -527,14 +513,14 @@ export default function CashBankPostedPage() {
                                   <ArrowUturnLeftIcon className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <div className="text-xs text-amber-800 space-y-0.5">
                                     <p className="font-semibold">
-                                      Jurnal ini sudah dibalik oleh <span className="font-mono">{row.reversal.journalNo}</span>
-                                      {row.reversal.date ? ` (tanggal ${formatTanggal(row.reversal.date)})` : ''}.
+                                      This journal was reversed by <span className="font-mono">{row.reversal.journalNo}</span>
+                                      {row.reversal.date ? ` (dated ${formatTanggal(row.reversal.date)})` : ''}.
                                     </p>
-                                    <p>Dibalik oleh {row.reversal.by || '—'} pada {formatWaktu(row.reversal.at)}.</p>
-                                    {row.reversal.reason && <p>Alasan: {row.reversal.reason}</p>}
+                                    <p>Reversed by {row.reversal.by || '—'} on {formatWaktu(row.reversal.at)}.</p>
+                                    {row.reversal.reason && <p>Reason: {row.reversal.reason}</p>}
                                     <p>
-                                      Pembayaran dibatalkan dan outstanding invoice sudah dipulihkan. Mutasi bank ini bisa dicocokkan
-                                      ulang di tab Reconciliation.
+                                      The payment was cancelled and the invoice outstanding has been restored. The bank line can be
+                                      matched again in the Reconciliation tab.
                                     </p>
                                   </div>
                                 </div>
@@ -544,8 +530,8 @@ export default function CashBankPostedPage() {
                                   <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-4 py-2.5">
                                     <CheckBadgeIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                                     <p className="text-xs text-emerald-700 font-medium">
-                                      Jurnal ini sudah diposting ke buku besar
-                                      {row.linkedInvoice ? ` dan outstanding invoice ${row.linkedInvoice.no} sudah diperbarui.` : '.'}
+                                      This journal has been posted to the ledger
+                                      {row.linkedInvoice ? ` and the outstanding of invoice ${row.linkedInvoice.no} has been updated.` : '.'}
                                     </p>
                                   </div>
                                   {bisaBalik ? (
@@ -555,12 +541,12 @@ export default function CashBankPostedPage() {
                                         className="flex items-center gap-1.5 text-xs font-semibold border border-rose-200 text-rose-700 rounded-lg px-3 py-2 bg-card hover:bg-rose-50 transition-colors"
                                       >
                                         <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
-                                        Balik Jurnal
+                                        Reverse Journal
                                       </button>
                                     </div>
                                   ) : (
                                     <p className="text-[11px] text-muted-foreground text-right">
-                                      Membalik jurnal yang sudah diposting hanya bisa dilakukan Manager ke atas.
+                                      Only Manager or above can reverse a posted journal.
                                     </p>
                                   )}
                                 </>
@@ -580,15 +566,15 @@ export default function CashBankPostedPage() {
         {filtered.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border">
             <p className="text-xs text-muted-foreground">
-              Menampilkan <span className="font-medium text-foreground">{dariItem}–{sampaiItem}</span> dari{' '}
-              <span className="font-medium text-foreground">{filtered.length}</span> jurnal
+              Showing <span className="font-medium text-foreground">{dariItem}–{sampaiItem}</span> of{' '}
+              <span className="font-medium text-foreground">{filtered.length}</span> journals
             </p>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage(pageSafe - 1)}
                 disabled={pageSafe <= 1}
                 className="p-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                aria-label="Halaman sebelumnya"
+                aria-label="Previous page"
               >
                 <ChevronLeftIcon className="w-4 h-4" />
               </button>
@@ -599,7 +585,7 @@ export default function CashBankPostedPage() {
                 onClick={() => setPage(pageSafe + 1)}
                 disabled={pageSafe >= totalPages}
                 className="p-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                aria-label="Halaman berikutnya"
+                aria-label="Next page"
               >
                 <ChevronRightIcon className="w-4 h-4" />
               </button>
@@ -620,7 +606,7 @@ export default function CashBankPostedPage() {
           <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
               <div>
-                <h2 id="judul-balik-jurnal" className="text-base font-bold text-foreground">Balik Jurnal</h2>
+                <h2 id="judul-balik-jurnal" className="text-base font-bold text-foreground">Reverse Journal</h2>
                 <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                   {balikTarget.tx_no} · {formatIDR(balikTarget.amount)}
                 </p>
@@ -629,7 +615,7 @@ export default function CashBankPostedPage() {
                 onClick={tutupDialogBalik}
                 disabled={membalik}
                 className="text-muted-foreground hover:text-foreground disabled:opacity-40"
-                aria-label="Tutup"
+                aria-label="Close"
               >
                 <XMarkIcon className="w-5 h-5" />
               </button>
@@ -637,24 +623,24 @@ export default function CashBankPostedPage() {
 
             <div className="px-5 py-4 space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
-                <p className="font-semibold">Yang akan terjadi:</p>
+                <p className="font-semibold">What will happen:</p>
                 <ul className="list-disc pl-4 space-y-0.5">
-                  <li>Dibuat jurnal pembalik (debit dan kredit ditukar) yang langsung diposting. Jurnal asal tidak diubah atau dihapus.</li>
+                  <li>A reversal journal (debit and credit swapped) is created and posted immediately. The original journal is not changed or deleted.</li>
                   {balikTarget.linkedInvoice ? (
                     <li>
-                      Pembayaran ke invoice {balikTarget.linkedInvoice.no} dibatalkan, jadi outstanding invoice kembali seperti
-                      sebelum pembayaran ini.
+                      The payment to invoice {balikTarget.linkedInvoice.no} is cancelled, so the invoice outstanding goes back to
+                      what it was before this payment.
                     </li>
                   ) : (
-                    <li>Jurnal ini tanpa invoice, jadi tidak ada outstanding Purchase/Sales yang berubah.</li>
+                    <li>This journal has no invoice, so no Purchase/Sales outstanding changes.</li>
                   )}
-                  <li>Mutasi bank {balikTarget.mutationRef ?? '—'} bisa dicocokkan ulang di tab Reconciliation.</li>
+                  {balikTarget.mutationRef && <li>Its Bank Feed line returns to Unmatched and can be matched again in the Reconciliation tab.</li>}
                 </ul>
               </div>
 
               <div>
                 <label htmlFor="balik-alasan" className="block text-xs font-semibold text-foreground mb-1">
-                  Alasan pembalikan <span className="text-rose-600">*</span>
+                  Reversal reason <span className="text-rose-600">*</span>
                 </label>
                 <textarea
                   id="balik-alasan"
@@ -663,15 +649,15 @@ export default function CashBankPostedPage() {
                   maxLength={300}
                   rows={3}
                   disabled={membalik}
-                  placeholder="Contoh: salah cocok ke invoice, seharusnya invoice lain"
+                  placeholder="E.g. matched to the wrong invoice, should be another one"
                   className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
                 />
-                <p className="text-[11px] text-muted-foreground mt-0.5">Minimal 5 karakter. Alasan tercatat di jurnal pembalik.</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">At least 5 characters. The reason is stored on the reversal journal.</p>
               </div>
 
               <div>
                 <label htmlFor="balik-tanggal" className="block text-xs font-semibold text-foreground mb-1">
-                  Tanggal jurnal pembalik
+                  Reversal journal date
                 </label>
                 <input
                   id="balik-tanggal"
@@ -683,7 +669,7 @@ export default function CashBankPostedPage() {
                   className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
                 />
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Tidak boleh sebelum tanggal jurnal asal ({formatTanggal(balikTarget.tx_date)}).
+                  Cannot be earlier than the original journal date ({formatTanggal(balikTarget.tx_date)}).
                 </p>
               </div>
             </div>
@@ -694,14 +680,14 @@ export default function CashBankPostedPage() {
                 disabled={membalik}
                 className="text-xs font-semibold border border-border rounded-lg px-4 py-2 bg-card text-foreground hover:bg-muted transition-colors disabled:opacity-40"
               >
-                Batal
+                Cancel
               </button>
               <button
                 onClick={konfirmasiBalik}
                 disabled={membalik || balikAlasan.trim().length < 5}
                 className="text-xs font-semibold rounded-lg px-4 py-2 bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {membalik ? 'Membalik...' : 'Balik Jurnal'}
+                {membalik ? 'Reversing...' : 'Reverse Journal'}
               </button>
             </div>
           </div>

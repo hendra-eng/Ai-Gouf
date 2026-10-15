@@ -1,35 +1,16 @@
 'use client';
 
-// ─── SUMBER DATA CASH RECEIPT = HALAMAN SALES ──────────────────────────────
-// Tab Cash Receipt (Cash & Bank) TIDAK lagi membaca finance_transaction_bank_cash /
-// jurnal_posting. Datanya diambil dari invoice Sales (useSalesInvoices, pola yang
-// sama dengan halaman Sales: client_id = id akun yang login).
-//
-// Aturan yang dipakai (ubah di sini kalau berbeda dari maksudmu):
-//   - Hanya invoice Sales berstatus posting 'Posted' | 'Partial' | 'Paid'
-//     (piutang sudah tercatat di buku besar).
-//   - Nominal diterima / sisa langsung dari paid_amount & outstanding_amount
-//     milik invoice (Sales sudah menyimpannya).
-//   - Tren bulanan: pembayaran hasil rekonsiliasi yang sudah diposting memakai
-//     tanggal bayar (payment_date); sisa yang tidak berasal dari rekonsiliasi
-//     (input manual di Sales) memakai tanggal invoice (invoice_date).
-//
-// SCOPE CLIENT (disamakan dengan Bank Feed / Reconciliation / Exceptions):
-//   - [FIX] Fetch ke backend memakai client_id = activeClientId (management_clients.id;
-//     sebelumnya user.id sehingga tab selalu kosong). Catatan lama: (FK tabel ke
-//     management_users), TAPI baris yang ditampilkan disaring lagi berdasarkan
-//     management_client_id === activeClientId (dropdown "Switch Company"),
-//     supaya tab ini ikut berganti saat company diganti.
-//   - Invoice lama yang management_client_id-nya masih NULL tidak akan tampil
-//     sampai di-backfill (lihat catatan migrasi).
+// Tab Cash Receipt = invoice Sales yang sudah diposting (piutang tercatat)
+// beserta status penerimaannya. Total / diterima / dalam proses dihitung
+// backend (GET /api/v1/transactions/bank-cash/open-invoices?type=sales):
+//   paid        = paid_amount invoice (bertambah saat transaksi Cash & Bank diposting)
+//   in_process  = transaksi Cash & Bank draft/approved (invoice belum berubah)
+// Kolom Mutasi Bank & Jurnal dari baris alokasi transaksi (useBankCashRekon).
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { useSalesInvoices } from '@/lib/salesStore';
-import { REKON_EVENT } from '@/app/agent-ai/lib/api';
-import { usePembayaranRekon, kelompokkanPerInvoice, totalDalamProses, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
-
-const STATUS_SALES_DIPAKAI = ['Posted', 'Partial', 'Paid'];
+import { useBcOpenInvoices } from '@/lib/bankCashStore';
+import { usePembayaranRekon, kelompokkanPerInvoice, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
 
 export type ReceiptStatus = 'paid' | 'partial' | 'unpaid';
 
@@ -43,16 +24,17 @@ export interface CashReceiptRow {
   dueDate: string;
   total: number;
   received: number;
+  /** Sisa piutang menurut buku (belum termasuk penerimaan yang masih dalam proses). */
   outstanding: number;
   receiptStatus: ReceiptStatus;
   isOverdue: boolean;
-  /** Pembayaran hasil rekonsiliasi bank untuk invoice ini (mutasi bank + jurnal). */
+  /** Penerimaan Cash & Bank untuk invoice ini (mutasi bank + transaksi). */
   rekon: PembayaranRekon[];
-  /** Nominal yang sudah dicocokkan tetapi jurnalnya belum diposting (invoice belum berubah). */
+  /** Nominal yang sudah dicocokkan/diinput tetapi transaksinya belum diposting. */
   dalamProses: number;
 }
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function useCashReceiptsFromSales(): {
   rows: CashReceiptRow[];
@@ -60,53 +42,38 @@ export function useCashReceiptsFromSales(): {
   error: string | null;
   refresh: () => void;
 } {
-  // [FIX] client_id = activeClientId (management_clients.id) -- lihat catatan di usePurchaseCashPayments.ts
   const { activeClientId } = useActiveClient();
-  const { invoices, loading, error, refresh } = useSalesInvoices(activeClientId);
+  const clientId = activeClientId ? String(activeClientId) : null;
+  const { invoices, loading, error, refresh } = useBcOpenInvoices(clientId, 'sales');
   const { payments, loading: loadingRekon, refresh: refreshRekon } = usePembayaranRekon();
   const perInvoice = useMemo(() => kelompokkanPerInvoice(payments), [payments]);
 
-  // Invoice Sales baru berubah saat jurnal rekon diposting -> muat ulang saat data rekonsiliasi berubah.
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-  useEffect(() => {
-    const onBerubah = () => refreshRef.current();
-    window.addEventListener(REKON_EVENT, onBerubah);
-    return () => window.removeEventListener(REKON_EVENT, onBerubah);
-  }, []);
-
   const rows = useMemo<CashReceiptRow[]>(() => {
     const today = new Date().toISOString().slice(0, 10);
-    if (!activeClientId) return [];
     return invoices
-      .filter(i => i.management_client_id === activeClientId)
-      .filter(i => STATUS_SALES_DIPAKAI.includes(i.posting_status))
       .map(i => {
-        const total = Number(i.gross_amount) || 0;
-        const received = Math.min(Math.max(Number(i.paid_amount) || 0, 0), total);
-        const outstanding = Math.max(Number(i.outstanding_amount) || 0, 0);
-        const receiptStatus: ReceiptStatus =
-          i.posting_status === 'Paid' || outstanding === 0 ? 'paid' : received > 0 ? 'partial' : 'unpaid';
+        const received = Math.min(Math.max(i.paid, 0), i.total);
+        const outstanding = Math.max(i.total - i.paid, 0);
         const dueDate = i.due_date || '';
         return {
           id: i.id,
-          invoiceNo: i.invoice_no,
-          customer: i.customer_name,
+          invoiceNo: i.no,
+          customer: i.party || '',
           description: i.description || '',
-          category: i.transaction_type || 'Other',
-          date: i.invoice_date,
+          category: i.category || 'Other',
+          date: i.date,
           dueDate,
-          total,
+          total: i.total,
           received,
           outstanding,
-          receiptStatus,
-          isOverdue: outstanding > 0 && !!dueDate && dueDate < today,
+          receiptStatus: (outstanding <= 0.005 ? 'paid' : received > 0.005 ? 'partial' : 'unpaid') as ReceiptStatus,
+          isOverdue: outstanding > 0.005 && !!dueDate && dueDate < today,
           rekon: perInvoice.get(i.id) || [],
-          dalamProses: totalDalamProses(perInvoice.get(i.id)),
+          dalamProses: i.in_process,
         };
       })
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  }, [invoices, activeClientId, perInvoice]);
+  }, [invoices, perInvoice]);
 
   const refreshSemua = () => {
     refresh();
