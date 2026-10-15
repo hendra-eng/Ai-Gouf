@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import CashBankTransactionModal from './CashBankTransactionModal';
+import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Landmark, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 
 interface Tab {
   id: string;

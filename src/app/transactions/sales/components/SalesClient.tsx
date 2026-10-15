@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, ChevronDown } from 'lucide-react';
+import { CalendarDays, ChevronDown, LayoutDashboard, Database, ShoppingCart, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';

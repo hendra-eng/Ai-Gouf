@@ -11,12 +11,6 @@ import { useActiveClient } from '@/lib/activeClient';
 import { useBcTransactions, type BcTransaction } from '@/lib/bankCashStore';
 import type { CashBankTx } from './cashBankMock';
 
-// Data rekonsiliasi berubah (match / unmatch / post / reverse) -> cache lama dibuang,
-// termasuk saat tidak ada halaman yang sedang mendengarkan event ini.
-if (typeof window !== 'undefined') {
-  window.addEventListener(REKON_EVENT, () => swrClear('bankrekon:'));
-}
-
 export interface PembayaranRekon {
   /** id baris transaksi (alokasi). */
   id: string;
