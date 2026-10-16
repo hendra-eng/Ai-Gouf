@@ -147,8 +147,10 @@
 -- jadi akun jurnal tetap aman.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
+-- File ini ada di subfolder sales/, jadi berikan PATH-nya (nama file saja akan
+-- dicari run_seed.py hanya di folder migrations/ dan tidak ketemu):
 --   cd backend
---   venv\Scripts\python migrations\run_seed.py seed_template_sau_multi_format_sales.sql
+--   venv\Scripts\python migrations\run_seed.py migrations\sales\seed_template_sau_multi_format_sales.sql
 -- (jalur psql tetap bisa, tapi tidak tercatat di history-migration.md)
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan (gagal karena

@@ -3856,6 +3856,7 @@ def lengkapi_akun_purchase(transaction: Any, lines: List[Any], akun: Dict[str, O
 #   piutang_account              {account_code, account_name}  Dr Piutang
 #   pendapatan_account           {account_code, account_name}  Cr Pendapatan (default)
 #   pendapatan_account_by_cabang {"CRS": {...}, ...}           Cr Pendapatan per cabang
+#   piutang_account_by_cabang    {"ASF": {...}, ...}           Dr Piutang per cabang (opsional)
 #   ppn_account                  {account_code, account_name}  Cr PPN Keluaran
 # Tiap invoice tetap punya mapping sendiri (financial_transaction_sales_account_mappings)
 # yang dibuat otomatis dari default ini dan bisa diubah user di Journal Preview.
@@ -3864,8 +3865,8 @@ def akun_default_sales(management_client_id: Optional[str], cabang: Optional[str
     """{"piutang": (kode, nama), "pendapatan": (...), "ppn": (...)} untuk 1
     klien, atau None kalau piutang/pendapatan belum bisa ditentukan.
 
-    Prioritas: pendapatan per cabang di template > Settings > Account Mapping
-    (account_receivable / sales_revenue / sales_tax_payable) > akun umum
+    Prioritas: pendapatan / piutang per cabang di template > Settings > Account
+    Mapping (account_receivable / sales_revenue / sales_tax_payable) > akun umum
     template import Sales."""
     if not management_client_id:
         return None
@@ -3881,10 +3882,16 @@ def akun_default_sales(management_client_id: Optional[str], cabang: Optional[str
                 rules = mr
                 break
         setting = akun_mapping_setting(management_client_id, session=session)
-        pendapatan = ((rules.get("pendapatan_account_by_cabang") or {}).get((cabang or "").strip().upper())
+        kunci_cabang = (cabang or "").strip().upper()
+        pendapatan = ((rules.get("pendapatan_account_by_cabang") or {}).get(kunci_cabang)
                       or setting.get("sales_revenue") or rules.get("pendapatan_account"))
+        # Piutang per cabang (opsional, mis. Birawa: "Piutang - <pelanggan>") -- polanya sama dengan
+        # pendapatan per cabang: kalau cabang ada di peta resep, itu yang dipakai; kalau tidak, jatuh ke
+        # Settings > Account Mapping lalu akun piutang umum. Resep tanpa peta ini tidak berubah perilakunya.
+        piutang = ((rules.get("piutang_account_by_cabang") or {}).get(kunci_cabang)
+                   or setting.get("account_receivable") or rules.get("piutang_account"))
         akun = {
-            "piutang": setting.get("account_receivable") or rules.get("piutang_account"),
+            "piutang": piutang,
             "pendapatan": pendapatan,
             "ppn": setting.get("sales_tax_payable") or rules.get("ppn_account"),
         }
