@@ -1608,6 +1608,26 @@ const translations: Dict = {
   'Belum ada aktivitas posting.': { en: 'No posting activity yet.', id: 'Belum ada aktivitas posting.', zh: '暂无过账活动。' },
   'Pilih transaksi': { en: 'Select a transaction', id: 'Pilih transaksi', zh: '选择交易' },
   'Klik \'Lihat\' pada salah satu baris transaksi untuk melihat detail jurnalnya.': { en: 'Click \'View\' on a transaction row to see its journal details.', id: 'Klik \'Lihat\' pada salah satu baris transaksi untuk melihat detail jurnalnya.', zh: '点击某笔交易行的“查看”即可查看其分录详情。' },
+  // ─── Purchase (Transactions > Purchase > Source Data) ───
+  'Daftar File Sumber Pembelian': { en: 'Purchase Source File List', id: 'Daftar File Sumber Pembelian', zh: '采购源文件列表' },
+  'Vendor / Entity': { en: 'Vendor / Entity', id: 'Vendor / Entity', zh: '供应商 / 实体' },
+  'Nama Vendor': { en: 'Vendor Name', id: 'Nama Vendor', zh: '供应商名称' },
+  'Nama vendor valid': { en: 'Valid vendor name', id: 'Nama vendor valid', zh: '供应商名称有效' },
+  'No. PO': { en: 'PO No.', id: 'No. PO', zh: '采购单号' },
+  'No. PO ditemukan': { en: 'PO number found', id: 'No. PO ditemukan', zh: '已找到采购单号' },
+  'No. Invoice Vendor': { en: 'Vendor Invoice No.', id: 'No. Invoice Vendor', zh: '供应商发票号' },
+  'Nama Vendor / Supplier': { en: 'Vendor / Supplier Name', id: 'Nama Vendor / Supplier', zh: '供应商名称' },
+  'Nama Pemasok': { en: 'Supplier Name', id: 'Nama Pemasok', zh: '供应商名称' },
+  'No. PO / Purchase Order': { en: 'PO No. / Purchase Order', id: 'No. PO / Purchase Order', zh: '采购单号 / 采购订单' },
+  'Nomor PO': { en: 'PO Number', id: 'Nomor PO', zh: '采购单号' },
+  'Buat Transaksi': { en: 'Create Transaction', id: 'Buat Transaksi', zh: '创建交易' },
+  'Naikkan baris valid jadi transaksi resmi di tab Purchase Transaction': { en: 'Promote valid rows to official transactions in the Purchase Transaction tab', id: 'Naikkan baris valid jadi transaksi resmi di tab Purchase Transaction', zh: '将有效行提升为采购交易标签页中的正式交易' },
+  'Transaksi pembelian berhasil dibuat': { en: 'Purchase transactions created successfully', id: 'Transaksi pembelian berhasil dibuat', zh: '采购交易创建成功' },
+  'transaksi baru -- cek tab Purchase Transaction.': { en: 'new transaction(s) -- check the Purchase Transaction tab.', id: 'transaksi baru -- cek tab Purchase Transaction.', zh: '笔新交易 -- 请查看采购交易标签页。' },
+  'transaksi pembelian dibuat sebagai draft.': { en: 'purchase transaction(s) created as draft.', id: 'transaksi pembelian dibuat sebagai draft.', zh: '笔采购交易已创建为草稿。' },
+  'dilewati.': { en: 'skipped.', id: 'dilewati.', zh: '已跳过。' },
+  'ditandai "Butuh Review" -- perlu template baru untuk company/format ini.': { en: 'marked "Needs Review" -- a new template is needed for this company/format.', id: 'ditandai "Butuh Review" -- perlu template baru untuk company/format ini.', zh: '已标记为“需要审查” -- 此公司/格式需要新模板。' },
+  'Transaksi pembelian yang sudah dibuat dari file ini tidak ikut terhapus.': { en: 'Purchase transactions already created from this file will not be deleted.', id: 'Transaksi pembelian yang sudah dibuat dari file ini tidak ikut terhapus.', zh: '已从此文件创建的采购交易不会被删除。' },
 };
 
 export function translate(text: string, lang: LanguageCode): string {

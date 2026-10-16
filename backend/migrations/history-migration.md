@@ -39,3 +39,4 @@ seed_coa_nbm.sql
 seed_fs_mapping_rules.sql
 seed_fs_note_templates.sql
 32-repoint_sales_client_id_fk_to_management_clients.py
+33-create_purchase_source_files_rows.py

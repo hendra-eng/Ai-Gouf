@@ -339,31 +339,107 @@ export async function createPurchaseTransactionWithLines(
   return row;
 }
 
-export interface PurchaseImportTransactionResult {
-  purchase_no: string;
-  ok: boolean;
-  message: string;
+// ============================================================
+// 1b) Source Files & Source Rows (tab Source Data -- versi Purchase dari
+// salesStore.tsx). Upload TIDAK langsung membuat Purchase Transaction:
+// file dicatat dulu sebagai source file + baris staging (File Preview),
+// lalu tombol "Buat Transaksi" (promote) menaikkan baris valid jadi
+// Purchase Transaction draft -- baru dari titik itu data muncul di tab
+// Purchase Transaction / Preview / Posted / Exceptions / Overview.
+// ============================================================
+
+export interface BackendPurchaseSourceFile {
+  id: string;
+  client_id: string | null;
+  management_client_id: string;
+  template_id: string | null;
+  file_name: string;
+  file_type: string | null;
+  period_label: string | null;
+  vendor_hint: string | null;
+  rows_detected: number;
+  rows_valid: number;
+  rows_invalid: number;
+  duplicate_count: number;
+  status_ekstraksi: string;
+  status_mapping: string;
+  confidence_score: number | null;
+  dpp_total: number;
+  ppn_total: number;
+  grand_total: number;
+  extraction_duration_ms: number | null;
+  ai_model_version: string | null;
+  // Resep template (format_type 'grouped_purchase_report', dst) ATAU mapping flat
+  // {field: nama_kolom} hasil modal Mapping Rules -- komponen mengecek bentuknya.
+  mapping_rules: Record<string, any> | null;
+  processed_by: string | null;
+  uploaded_at: string;
+  uploaded_by: string | null;
+  created_at: string;
+  created_by: string | null;
+  edited_at: string | null;
+  edited_by: string | null;
+  aktif: boolean;
 }
 
-/** Ringkasan hasil POST /import/upload -- lihat backend/modules/
- *  transactions/purchase_import_v1.py::upload_purchase_import. */
-export interface UploadPurchaseSourceFileResult {
+export interface BackendPurchaseSourceRow {
+  id: string;
+  source_file_id: string;
+  client_id: string | null;
+  row_no: number;
+  tanggal: string | null;
+  no_invoice: string | null; // nomor transaksi pembelian (purchase_no)
+  nama_vendor: string | null;
+  vendor_code: string | null;
+  no_po: string | null;
+  cabang: string | null;
+  dpp: number;
+  ppn: number;
+  total: number;
+  is_valid: boolean;
+  validation_notes: string | null;
+  is_duplicate_candidate: boolean;
+  transaction_id: string | null; // terisi setelah dipromosikan jadi Purchase Transaction
+  aktif: boolean;
+}
+
+export async function listPurchaseSourceFiles(companyId?: string | null): Promise<BackendPurchaseSourceFile[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/source-files${qs({ management_client_id: companyId })}`);
+  return baca<BackendPurchaseSourceFile[]>(res);
+}
+
+export async function updatePurchaseSourceFile(id: string, payload: Partial<BackendPurchaseSourceFile>): Promise<BackendPurchaseSourceFile> {
+  const row = await put<BackendPurchaseSourceFile>(`${PURCHASE_BASE_URL}/source-files/${id}`, payload);
+  notifyPurchaseChanged();
+  return row;
+}
+
+export async function deletePurchaseSourceFile(id: string): Promise<void> {
+  await del(`${PURCHASE_BASE_URL}/source-files/${id}`);
+  notifyPurchaseChanged();
+}
+
+export async function listPurchaseSourceRows(sourceFileId?: string | null): Promise<BackendPurchaseSourceRow[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/source-rows${qs({ source_file_id: sourceFileId })}`);
+  return baca<BackendPurchaseSourceRow[]>(res);
+}
+
+/** Hasil POST /import/upload -- BackendPurchaseSourceFile + info pencocokan template.
+ *  `created` selalu 0 (upload hanya staging); `transactions_detected` = jumlah baris staging. */
+export interface UploadPurchaseSourceFileResult extends BackendPurchaseSourceFile {
   template_matched: boolean;
+  rows_extracted: number;
   transactions_detected: number;
   created: number;
-  skipped_invalid?: number;
-  skipped_duplicate?: number;
-  transactions: PurchaseImportTransactionResult[];
 }
 
 /**
  * Upload file laporan pembelian MENTAH (CSV/Excel) -- backend mencocokkan
- * pola kolomnya ke Purchase Import Template milik klien aktif (mis.
- * "Data Pembelian Detail" SAU), lalu langsung membuat Purchase Transaction
- * draft + baris itemnya. Pola sama dengan uploadJeSourceFile() di
- * journalEntryStore.tsx.
+ * pola kolomnya ke Purchase Import Template milik company aktif, lalu
+ * mengekstrak blok transaksinya ke source file + source rows (staging).
+ * Pola sama dengan uploadSalesSourceFile() di salesStore.tsx.
  *
- * managementClientId WAJIB -- ID management_clients (klien aktif di
+ * managementClientId WAJIB -- ID management_clients (company aktif di
  * dropdown "Switch Company"), BUKAN client_id akun yang login.
  */
 export async function uploadPurchaseSourceFile(file: File, managementClientId: string): Promise<UploadPurchaseSourceFileResult> {
@@ -375,8 +451,82 @@ export async function uploadPurchaseSourceFile(file: File, managementClientId: s
     body: form, // JANGAN set Content-Type manual -- browser yang mengisi boundary multipart-nya
   });
   const row = await baca<UploadPurchaseSourceFileResult>(res);
-  if (row.created > 0) notifyPurchaseChanged();
+  notifyPurchaseChanged(); // daftar file berubah walau belum ada transaksi
   return row;
+}
+
+/** Ringkasan POST /source-files/{id}/promote-to-transactions. */
+export interface PromoteToTransactionsResult {
+  total_baris: number;
+  transaksi_dibuat: number;
+  dilewati_tidak_valid: number;
+  dilewati_sudah_pernah_dipromosikan: number;
+  dilewati_nomor_bentrok: number;
+}
+
+/**
+ * Naikkan baris VALID 1 source file jadi Purchase Transaction (status draft)
+ * + baris itemnya. Idempoten -- baris yang sudah dipromosikan atau nomornya
+ * bentrok otomatis dilewati (lihat ringkasan hasilnya).
+ */
+export async function promoteSourceFileToTransactions(sourceFileId: string): Promise<PromoteToTransactionsResult> {
+  const result = await post<PromoteToTransactionsResult>(`${PURCHASE_BASE_URL}/source-files/${sourceFileId}/promote-to-transactions`, {});
+  notifyPurchaseChanged();
+  return result;
+}
+
+export function usePurchaseSourceFiles(companyId: string | null | undefined): {
+  files: BackendPurchaseSourceFile[]; loading: boolean; error: string | null; refresh: () => void;
+} {
+  const cacheKey = `purchase:usePurchaseSourceFiles:${companyId ?? ''}`;
+  const [files, setFiles] = useState<BackendPurchaseSourceFile[]>(() => swrGet<BackendPurchaseSourceFile[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  const muatUlang = useCallback(() => {
+    if (!companyId) { setFiles([]); setLoading(false); return; }
+    const hit = swrGet<typeof files>(cacheKey);
+    if (hit !== undefined) { setFiles(hit); setLoading(false); } else { setLoading(true); }
+    listPurchaseSourceFiles(companyId)
+      .then(data => { const value = data; swrSet(cacheKey, value); setFiles(value); setError(null); })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source files'))
+      .finally(() => setLoading(false));
+  }, [companyId, cacheKey]);
+
+  useEffect(() => {
+    muatUlang();
+    window.addEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+    return () => window.removeEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+  }, [muatUlang]);
+
+  return { files, loading, error, refresh: muatUlang };
+}
+
+export function usePurchaseSourceRows(sourceFileId: string | null | undefined): {
+  rows: BackendPurchaseSourceRow[]; loading: boolean; error: string | null; refresh: () => void;
+} {
+  const cacheKey = `purchase:usePurchaseSourceRows:${sourceFileId ?? ''}`;
+  const [rows, setRows] = useState<BackendPurchaseSourceRow[]>(() => swrGet<BackendPurchaseSourceRow[]>(cacheKey) ?? []);
+  const [loading, setLoading] = useState(() => swrGet(cacheKey) === undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  const muatUlang = useCallback(() => {
+    if (!sourceFileId) { setRows([]); setLoading(false); return; }
+    const hit = swrGet<typeof rows>(cacheKey);
+    if (hit !== undefined) { setRows(hit); setLoading(false); } else { setLoading(true); }
+    listPurchaseSourceRows(sourceFileId)
+      .then(data => { const value = data; swrSet(cacheKey, value); setRows(value); setError(null); })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load source data rows'))
+      .finally(() => setLoading(false));
+  }, [sourceFileId, cacheKey]);
+
+  useEffect(() => {
+    muatUlang();
+    window.addEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+    return () => window.removeEventListener(PURCHASE_CHANGED_EVENT, muatUlang);
+  }, [muatUlang]);
+
+  return { rows, loading, error, refresh: muatUlang };
 }
 
 export function usePurchaseTransactions(companyId: string | null | undefined, status?: string): {
@@ -668,4 +818,118 @@ export function mapExceptionToUi(e: BackendPurchaseException): PurchaseException
     resolutionDate: e.resolved_at ? e.resolved_at.slice(0, 10) : undefined,
     period: e.period_label,
   };
+}
+
+// ============================================================
+// 5) Create Bill (input manual) -- backend/modules/transactions/purchase_bill_v1.py
+//    /api/v1/transactions/purchase/bills/...
+//    Bill disimpan sebagai Purchase Transaction 'draft' (Save Draft) atau 'pending_review'
+//    (Submit for Approval), lalu mengikuti alur yang sama dgn hasil import:
+//    Purchase Preview (Approve -> Post) -> Posted -> Accounts Payable.
+//    Angka (DPP, PPN, total, AP) dihitung ulang di server -- angka di form hanya tampilan.
+// ============================================================
+
+const BILLS_BASE_URL = `${PURCHASE_BASE_URL}/bills`;
+
+export type BillTaxCode = 'ppn_11' | 'ppn_12' | 'non_ppn';
+
+export interface BillLineInput {
+  item_code?: string | null;
+  description: string;
+  account_code: string;
+  quantity: number;
+  unit?: string | null;
+  unit_price: number;
+  discount_type: 'percent' | 'amount';
+  discount_value: number;
+  tax_code: BillTaxCode;
+}
+
+export interface BillInput {
+  management_client_id: string;
+  purchase_no: string;
+  purchase_date: string;
+  invoice_date?: string | null;
+  invoice_number?: string | null;
+  po_number?: string | null;
+  vendor_name: string;
+  vendor_code?: string | null;
+  source_doc_type: string;
+  source_ref?: string | null;
+  category?: string | null;
+  description?: string | null;
+  currency: string;
+  payment_terms?: string | null;
+  due_date?: string | null;
+  tax_inclusive: boolean;
+  ap_account_code?: string | null;
+  tax_account_code?: string | null;
+  notes?: string | null;
+  submit: boolean;
+  lines: BillLineInput[];
+}
+
+export interface BillFormOptions {
+  next_number: string;
+  vendors: { name: string; code: string | null; payment_terms: string | null; category: string | null }[];
+  accounts: { acc_no: string; account_name: string; account_classification: string | null }[];
+  defaults: Record<'ap' | 'tax' | 'line' | 'biaya', { account_code: string; account_name: string } | null>;
+}
+
+export type BillDetail = BackendPurchaseTransaction & { lines: BackendPurchaseTransactionLine[] };
+
+/** Error validasi dari server (HTTP 422) -- `details` berisi daftar pesan per field. */
+export class BillValidationError extends Error {
+  details: { field: string; message: string }[];
+  constructor(message: string, details: { field: string; message: string }[]) {
+    super(message);
+    this.details = details;
+  }
+}
+
+async function bacaBill<T>(res: Response): Promise<T> {
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
+  if (!res.ok || !json || json.status !== 'success') {
+    const details = (json?.errors as { details?: { field: string; message: string }[] } | null)?.details;
+    if (details?.length) throw new BillValidationError(json?.message || 'Validation failed', details);
+    throw new Error(json?.message || `Request failed (${res.status})`);
+  }
+  return json.data as T;
+}
+
+export async function fetchBillFormOptions(companyId: string, purchaseDate: string, signal?: AbortSignal): Promise<BillFormOptions> {
+  const res = await authenticatedFetch(`${BILLS_BASE_URL}/form-options${qs({ management_client_id: companyId, purchase_date: purchaseDate })}`, { signal });
+  return bacaBill<BillFormOptions>(res);
+}
+
+export async function checkBillInvoiceDuplicate(
+  companyId: string, vendorName: string, invoiceNumber: string, excludeId?: string | null, signal?: AbortSignal,
+): Promise<{ duplicate: boolean; purchase_no: string | null }> {
+  const res = await authenticatedFetch(
+    `${BILLS_BASE_URL}/check-invoice${qs({ management_client_id: companyId, vendor_name: vendorName, invoice_number: invoiceNumber, exclude_id: excludeId })}`,
+    { signal },
+  );
+  return bacaBill(res);
+}
+
+export async function fetchBill(id: string): Promise<BillDetail> {
+  return bacaBill<BillDetail>(await authenticatedFetch(`${BILLS_BASE_URL}/${id}`));
+}
+
+export async function createBill(payload: BillInput): Promise<BillDetail> {
+  const res = await authenticatedFetch(BILLS_BASE_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  const row = await bacaBill<BillDetail>(res);
+  notifyPurchaseChanged();
+  return row;
+}
+
+export async function updateBill(id: string, payload: BillInput): Promise<BillDetail> {
+  const res = await authenticatedFetch(`${BILLS_BASE_URL}/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  const row = await bacaBill<BillDetail>(res);
+  notifyPurchaseChanged();
+  return row;
 }

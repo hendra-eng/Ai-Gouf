@@ -722,7 +722,7 @@ export const SIDE_CONFIG: Record<ArApSide, SideConfig> = {
     settlementsTab: 'Payments',
     settleNumberHint: 'PAY/YYYY/####',
     createDocLabel: 'Create Bill',
-    createDocHref: '/transactions/purchase',
+    createDocHref: '/transactions/purchase/bills/new',
     sourceModule: 'Purchase',
     kpi: {
       total: 'Total Payables', overdue: 'Overdue Bills', month: 'Paid This Month',

@@ -888,6 +888,90 @@ class PurchaseSourceRecord(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+class PurchaseSourceFile(Base):
+    """File laporan pembelian yang diupload di tab "Source Data" Purchase +
+    hasil ekstraksi/pencocokan template -- versi Purchase dari
+    SalesSourceFile (bentuk kolom & alurnya sengaja SAMA). Beda dengan
+    PurchaseSourceRecord (registri dokumen PO/Invoice/GR)."""
+    __tablename__ = "financial_transaction_purchase_source_files"
+    __table_args__ = (
+        Index("idx_purchase_source_files_client", "client_id"),
+        Index("idx_purchase_source_files_management_client", "management_client_id"),
+        Index("idx_purchase_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    # Company (management_clients) yang laporannya diupload -- dari dropdown
+    # "Switch Company" di header; key pencocokan Purchase Import Template.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    period_label = Column(String(50), nullable=True)
+    vendor_hint = Column(String(255), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Diproses")
+    status_mapping = Column(String(20), nullable=False, default="Diproses")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    dpp_total = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn_total = Column(Numeric(24, 2), nullable=False, default=0)
+    grand_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseSourceRow(Base):
+    """1 baris = 1 transaksi pembelian (1 blok di laporan) hasil parsing
+    1 file -- staging SEBELUM jadi Purchase Transaction resmi (tombol
+    "Buat Transaksi" = promote). `payload` menyimpan header+baris item
+    lengkap supaya promote tidak perlu membaca ulang file."""
+    __tablename__ = "financial_transaction_purchase_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_purchase_source_rows_file_row"),
+        Index("idx_purchase_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    no_invoice = Column(String(100), nullable=True)   # nomor transaksi pembelian (purchase_no)
+    nama_vendor = Column(String(255), nullable=True)
+    vendor_code = Column(String(50), nullable=True)
+    no_po = Column(String(100), nullable=True)
+    cabang = Column(String(100), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    payload = Column(JSONB, nullable=True)
+    # Terisi saat baris dipromosikan jadi Purchase Transaction (penanda "sudah pernah dipromosikan").
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
 class PurchaseTransaction(Base):
     """Entitas inti: header Purchase Transaction. Dipakai bersama oleh tab
     Purchase Transaction, Purchase Preview, dan Posted."""
@@ -5098,17 +5182,6 @@ _AKUN_DEFAULT_PURCHASE = {
 }
 
 
-def akun_posting_purchase(tx: Any) -> Dict[str, tuple]:
-    """Akun Cr Hutang Usaha & Dr PPN Masukan 1 Purchase Transaction (ORM
-    object atau dict) -- kolom per transaksi (ap_account_* / tax_account_*),
-    fallback ke _AKUN_DEFAULT_PURCHASE kalau kosong."""
-    ambil = (lambda k: tx.get(k)) if isinstance(tx, dict) else (lambda k: getattr(tx, k, None))
-    return {
-        "ap": (ambil("ap_account_code"), ambil("ap_account_name") or "") if ambil("ap_account_code") else _AKUN_DEFAULT_PURCHASE["hutang"],
-        "tax": (ambil("tax_account_code"), ambil("tax_account_name") or "") if ambil("tax_account_code") else _AKUN_DEFAULT_PURCHASE["ppn_masukan"],
-    }
-
-
 # Status yang boleh di-approve / di-post (alur Approve -> Post, lihat
 # modules/transactions/purchase_v1.py POST /transactions/approve & /post).
 PURCHASE_STATUS_BISA_APPROVE = ("draft", "pending_review", "exception")
@@ -5116,113 +5189,80 @@ PURCHASE_STATUS_BISA_POST = ("approved", "pending_posting")
 _TOLERANSI_BALANCE_PURCHASE = Decimal("1")
 
 
-def _validasi_posting_purchase(session, tx: "PurchaseTransaction", lines: List["PurchaseTransactionLine"]) -> List[str]:
-    """Alasan transaksi TIDAK boleh diposting (list kosong = boleh)."""
-    alasan: List[str] = []
-    if not lines:
-        return ["Transaction has no item lines."]
-    tanpa_akun = [l.line_no for l in lines if not (l.account_code or "").strip()]
-    if tanpa_akun:
-        alasan.append(f"Line(s) {', '.join(map(str, tanpa_akun))} have no account code.")
+# --- 4b) financial_transaction_purchase_source_files / _source_rows ---
+# Versi Purchase dari CRUD sales_source_files/_rows (tab Source Data).
 
-    debit = sum((Decimal(str(l.subtotal or 0)) - Decimal(str(l.discount or 0))) for l in lines) + Decimal(str(tx.tax_amount or 0))
-    kredit = Decimal(str(tx.accounts_payable or 0))
-    if abs(debit - kredit) > _TOLERANSI_BALANCE_PURCHASE:
-        alasan.append(f"Journal is not balanced (debit {debit:,.2f} vs accounts payable {kredit:,.2f}).")
+CRUD_FIELDS_PURCHASE_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "period_label", "vendor_hint",
+    "rows_detected", "rows_valid", "rows_invalid", "duplicate_count", "status_ekstraksi",
+    "status_mapping", "confidence_score", "dpp_total", "ppn_total", "grand_total",
+    "extraction_duration_ms", "ai_model_version", "mapping_rules", "template_id",
+    "processed_by", "uploaded_at", "uploaded_by",
+]
 
-    # Kalau klien punya master COA, semua akun jurnal WAJIB ada di COA-nya.
-    if tx.management_client_id:
-        coa = {
-            r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
-                ManagementClientCoa.client_id == tx.management_client_id,
-                ManagementClientCoa.deleted_at.is_(None),
-            ).all()
-        }
-        if coa:
-            akun = akun_posting_purchase(tx)
-            dipakai = {l.account_code for l in lines if l.account_code} | {akun["ap"][0]}
-            if Decimal(str(tx.tax_amount or 0)) > 0:
-                dipakai.add(akun["tax"][0])
-            tidak_ada = sorted(k for k in dipakai if k not in coa)
-            if tidak_ada:
-                alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
-    return alasan
+def create_purchase_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, data, created_by)
+
+def get_purchase_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_purchase_source_files(management_client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, {"management_client_id": management_client_id}, termasuk_nonaktif)
+
+def update_purchase_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_purchase_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseSourceFile, source_file_id, deleted_by)
 
 
-def ubah_status_purchase_transactions(
-    transaction_ids: List[str],
-    aksi: str,
-    oleh_nama: Optional[str],
-    oleh_id: Optional[str] = None,
-    posting_date: Optional[date] = None,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Approve (`aksi`='approve') atau Post (`aksi`='post') banyak Purchase
-    Transaction sekaligus, 1 transaksi DB. Transaksi yang tidak memenuhi
-    syarat dilewati (`skipped` + alasan), sisanya tetap diproses.
+CRUD_FIELDS_PURCHASE_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "no_invoice", "nama_vendor", "vendor_code",
+    "no_po", "cabang", "dpp", "ppn", "total", "is_valid", "validation_notes",
+    "is_duplicate_candidate", "payload", "transaction_id",
+]
 
-    approve: status draft/pending_review/exception -> approved (approved_by_name, approved_at)
-    post   : status approved/pending_posting -> posted (posted_by_name, posted_at,
-             posting_date default = purchase_date) -- divalidasi dulu lewat
-             _validasi_posting_purchase (baris & akun lengkap, balance, akun ada di COA klien).
-    """
-    if aksi not in ("approve", "post"):
-        raise ValueError("aksi harus 'approve' atau 'post'.")
+def create_purchase_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: str, client_id: Optional[str], created_by: Optional[str] = None, chunk_size: int = 500) -> int:
+    """Insert massal baris source_rows dalam SATU transaksi (semua-atau-tidak-sama-sekali:
+    gagal di tengah = rollback, return 0) -- pola sama dengan create_sales_source_rows_bulk."""
+    if not rows:
+        return 0
     session = SessionLocal()
-    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
     try:
-        txs = {
-            t.id: t for t in session.query(PurchaseTransaction).filter(
-                PurchaseTransaction.id.in_(transaction_ids), PurchaseTransaction.deleted_at.is_(None)
-            ).all()
-        }
-        lines_per_tx: Dict[str, List[PurchaseTransactionLine]] = {}
-        if txs:
-            for l in session.query(PurchaseTransactionLine).filter(
-                PurchaseTransactionLine.transaction_id.in_(list(txs)), PurchaseTransactionLine.deleted_at.is_(None)
-            ).order_by(PurchaseTransactionLine.line_no).all():
-                lines_per_tx.setdefault(l.transaction_id, []).append(l)
-
-        sekarang = datetime.now()
-        for tx_id in dict.fromkeys(transaction_ids):
-            tx = txs.get(tx_id)
-            if tx is None:
-                hasil["skipped"].append({"id": tx_id, "purchase_no": None, "reason": "Transaction not found."})
-                continue
-            status_lama = (tx.status or "").lower()
-            if aksi == "approve":
-                if status_lama not in PURCHASE_STATUS_BISA_APPROVE:
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": f"Status '{tx.status}' cannot be approved."})
-                    continue
-                if not lines_per_tx.get(tx_id):
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": "Transaction has no item lines."})
-                    continue
-                tx.status = "approved"
-                tx.approved_by_name = oleh_nama
-                tx.approved_at = sekarang
-            else:
-                if status_lama not in PURCHASE_STATUS_BISA_POST:
-                    alasan = "Approve the transaction first." if status_lama in PURCHASE_STATUS_BISA_APPROVE else f"Status '{tx.status}' cannot be posted."
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
-                    continue
-                alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
-                if alasan:
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": " ".join(alasan)})
-                    continue
-                tx.status = "posted"
-                tx.posted_by_name = oleh_nama
-                tx.posted_at = sekarang
-                tx.posting_date = posting_date or tx.purchase_date
-            tx.edited_at = sekarang
-            tx.edited_by = oleh_id
-            hasil["done"].append(_purchase_row_ke_dict(tx, CRUD_FIELDS_PURCHASE_TRANSACTION))
+        payload = []
+        for r in rows:
+            item = {k: v for k, v in r.items() if k in CRUD_FIELDS_PURCHASE_SOURCE_ROW}
+            item["source_file_id"] = source_file_id
+            item["client_id"] = client_id
+            item["created_by"] = created_by
+            payload.append(item)
+        for i in range(0, len(payload), chunk_size):
+            session.bulk_insert_mappings(PurchaseSourceRow, payload[i:i + chunk_size])
         session.commit()
-        return hasil
+        return len(payload)
     except Exception as e:
         session.rollback()
-        print(f"Error {aksi} purchase transactions: {e}")
-        raise
+        print(f"Error bulk create {PurchaseSourceRow.__tablename__}: {e}")
+        return 0
     finally:
         session.close()
+
+def get_purchase_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, termasuk_nonaktif)
+
+def list_purchase_source_rows(source_file_id: Optional[str] = None, termasuk_nonaktif: bool = False, dengan_payload: bool = True) -> List[Dict[str, Any]]:
+    """Urut row_no naik (bukan created_at desc seperti list lain) supaya File Preview
+    menampilkan baris sesuai urutan di file. dengan_payload=False membuang JSON
+    item-item (berat) -- dipakai panel preview yang hanya butuh kolom ringkas."""
+    hasil = _purchase_crud_list(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, {"source_file_id": source_file_id}, termasuk_nonaktif)
+    hasil.sort(key=lambda r: r.get("row_no") or 0)
+    if not dengan_payload:
+        for r in hasil:
+            r.pop("payload", None)
+    return hasil
+
+def update_purchase_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, data, updated_by)
 
 
 # --- 5) financial_transaction_purchase_import_templates ---

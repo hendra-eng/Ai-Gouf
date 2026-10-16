@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { vendors } from '@/data/purchaseData';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
@@ -24,40 +23,39 @@ const fmtFull = (n: number) =>
 const fmtAxis = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
-// ── Data historis untuk Purchase Volume Trend (multi-periode + pan/scroll
-// ala TradingView). Dibuat deterministik (bukan random murni) dari fungsi
-// hash sederhana, supaya angkanya konsisten setiap render tapi tetap
-// terlihat "natural" (ada tren naik & variasi musiman). Ini data contoh —
-// kalau sudah tersambung ke backend, tinggal ganti fungsi build-nya. ──
+// ── Seri data untuk Purchase Volume Trend (multi-periode + pan/scroll ala
+// TradingView). DIHITUNG dari transaksi pembelian asli (total per hari / per
+// bulan berdasarkan tanggal pembelian), bukan data contoh. Titik tanpa
+// transaksi bernilai 0. Jangkar seri = tanggal pembelian terbaru, supaya
+// bar terakhir selalu berisi data walau laporan terakhir diupload belakangan. ──
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function seededRandom(seed: number) {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
 
 type TrendPoint = { month: string; amount: number };
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const dayKey = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const monthKey = (year: number, monthIdx: number) => `${year}-${pad2(monthIdx + 1)}`;
+
+/** 'YYYY-MM-DD' -> Date lokal (hindari geser zona waktu akibat new Date('YYYY-MM-DD') = UTC). */
+function parseTanggalLokal(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
 const DAILY_COUNT = 730; // ~2 tahun ke belakang, cukup untuk pan jauh di tampilan 1W/1M
-function buildDailyTrend(anchor: Date): TrendPoint[] {
+function buildDailyTrend(anchor: Date, perHari: Map<string, number>): TrendPoint[] {
   const points: TrendPoint[] = [];
   for (let i = 0; i < DAILY_COUNT; i++) {
     const daysAgo = DAILY_COUNT - 1 - i;
     const d = new Date(anchor);
     d.setDate(d.getDate() - daysAgo);
-    const dayOfWeek = d.getDay();
-    const weekendFactor = dayOfWeek === 0 || dayOfWeek === 6 ? 0.35 : 1;
-    const trend = i * 15;
-    const seasonal = 4000 * Math.sin((i / 365) * Math.PI * 2);
-    const noise = (seededRandom(i * 7.13) - 0.5) * 6000;
-    const amount = Math.max(500, Math.round((9000 + trend + seasonal + noise) * weekendFactor));
-    points.push({ month: `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`, amount });
+    points.push({ month: `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`, amount: perHari.get(dayKey(d)) ?? 0 });
   }
   return points;
 }
 
 const MONTHLY_COUNT = 180; // 15 tahun ke belakang — cukup panjang untuk di-bucket jadi 6-bulanan/tahunan dan tetap bisa di-pan jauh
-function buildMonthlyTrendSeries(anchor: Date): TrendPoint[] {
+function buildMonthlyTrendSeries(anchor: Date, perBulan: Map<string, number>): TrendPoint[] {
   const points: TrendPoint[] = [];
   const anchorAbs = anchor.getFullYear() * 12 + anchor.getMonth();
   for (let i = 0; i < MONTHLY_COUNT; i++) {
@@ -65,12 +63,11 @@ function buildMonthlyTrendSeries(anchor: Date): TrendPoint[] {
     const abs = anchorAbs - monthsAgo;
     const year = Math.floor(abs / 12);
     const mIdx = ((abs % 12) + 12) % 12;
-    const trend = i * 1270;
-    const seasonal = 60000 * Math.sin((i / 12) * Math.PI * 2);
-    const noise = (seededRandom(i * 3.71) - 0.5) * 70000;
-    const amount = Math.max(50000, Math.round(300000 + trend + seasonal + noise));
     const spansMultipleYears = year !== anchor.getFullYear();
-    points.push({ month: spansMultipleYears ? `${MONTH_ABBR[mIdx]} '${String(year).slice(-2)}` : MONTH_ABBR[mIdx], amount });
+    points.push({
+      month: spansMultipleYears ? `${MONTH_ABBR[mIdx]} '${String(year).slice(-2)}` : MONTH_ABBR[mIdx],
+      amount: perBulan.get(monthKey(year, mIdx)) ?? 0,
+    });
   }
   return points;
 }
@@ -96,33 +93,21 @@ function bucketTrendPoints(points: TrendPoint[], bucketSize: number): TrendPoint
   return buckets;
 }
 
-const categoryData = [
-  { name: 'IT Equipment', value: 241840 },
-  { name: 'Raw Materials', value: 158962 },
-  { name: 'Professional Services', value: 71120 },
-  { name: 'Logistics', value: 31976 },
-  { name: 'Marketing', value: 39200 },
-  { name: 'Office Supplies', value: 55549 },
-  { name: 'Maintenance', value: 13888 },
-];
-
 const COLORS = ['#1E40AF', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
 
-const statusDist = [
-  { name: 'Posted', value: 6, color: '#15803D' },
-  { name: 'Approved', value: 2, color: '#0369A1' },
-  { name: 'Pending Review', value: 2, color: '#D97706' },
-  { name: 'Exception', value: 1, color: '#C2410C' },
-  { name: 'Cancelled', value: 1, color: '#64748B' },
-];
-
-const paymentStatusDist = [
-  { name: 'Unpaid', value: 4, color: '#DC2626' },
-  { name: 'Paid', value: 5, color: '#15803D' },
-  { name: 'Partially Paid', value: 1, color: '#D97706' },
-  { name: 'Overdue', value: 1, color: '#C2410C' },
-  { name: 'On Hold', value: 1, color: '#64748B' },
-];
+// Warna & urutan tampil untuk distribusi status / pembayaran (nilainya dihitung dari transaksi asli di komponen).
+const STATUS_DIST_ORDER = ['posted', 'approved', 'pending_posting', 'pending_review', 'draft', 'exception', 'rejected', 'cancelled'];
+const STATUS_DIST_COLORS: Record<string, string> = {
+  posted: '#15803D', approved: '#0369A1', pending_posting: '#0891B2', pending_review: '#D97706',
+  draft: '#94A3B8', exception: '#C2410C', rejected: '#DC2626', cancelled: '#64748B',
+};
+const PAYMENT_DIST_ORDER = ['unpaid', 'partially_paid', 'paid', 'overdue', 'on_hold'];
+const PAYMENT_DIST_COLORS: Record<string, string> = {
+  unpaid: '#DC2626', partially_paid: '#D97706', paid: '#15803D', overdue: '#C2410C', on_hold: '#64748B',
+};
+const PAYMENT_DIST_LABELS: Record<string, string> = {
+  unpaid: 'Unpaid', partially_paid: 'Partially Paid', paid: 'Paid', overdue: 'Overdue', on_hold: 'On Hold',
+};
 
 const statusColors: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-700',
@@ -169,15 +154,57 @@ export default function PurchaseOverviewPage() {
     overdueAmount: purchaseTransactions.filter(p => p.paymentStatus === 'overdue').reduce((s, p) => s + p.total, 0),
   }), [purchaseTransactions]);
 
-  const topVendors = useMemo(() => vendors
-    .map(v => ({
-      ...v,
-      totalSpend: purchaseTransactions.filter(p => p.vendorId === v.id).reduce((s, p) => s + p.total, 0),
-      txCount: purchaseTransactions.filter(p => p.vendorId === v.id).length,
-    }))
-    .filter(v => v.totalSpend > 0)
-    .sort((a, b) => b.totalSpend - a.totalSpend)
-    .slice(0, 6), [purchaseTransactions]);
+  // Top Vendors: dikelompokkan per NAMA vendor dari transaksi asli (kode supplier hasil impor
+  // tidak ada di daftar vendor statis, jadi pencocokan lewat vendorId tidak bisa dipakai).
+  const topVendors = useMemo(() => {
+    const per = new Map<string, { id: string; name: string; totalSpend: number; txCount: number }>();
+    purchaseTransactions.forEach(p => {
+      const nama = (p.vendor || '').trim() || '-';
+      const cur = per.get(nama) ?? { id: nama, name: nama, totalSpend: 0, txCount: 0 };
+      cur.totalSpend += p.total;
+      cur.txCount += 1;
+      per.set(nama, cur);
+    });
+    return [...per.values()].filter(v => v.totalSpend > 0).sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 6);
+  }, [purchaseTransactions]);
+
+  // Purchase by Category: total per kategori transaksi (maks. 7 teratas).
+  const categoryData = useMemo(() => {
+    const per = new Map<string, number>();
+    purchaseTransactions.forEach(p => per.set(p.category || 'Other', (per.get(p.category || 'Other') ?? 0) + p.total));
+    return [...per.entries()].map(([name, value]) => ({ name, value })).filter(d => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 7);
+  }, [purchaseTransactions]);
+
+  // Distribusi status & pembayaran: jumlah transaksi per status (hanya status yang ada isinya).
+  const statusDist = useMemo(() => STATUS_DIST_ORDER
+    .map(k => ({ name: statusLabels[k] ?? k, value: purchaseTransactions.filter(p => p.status === k).length, color: STATUS_DIST_COLORS[k] }))
+    .filter(d => d.value > 0), [purchaseTransactions]);
+  const paymentStatusDist = useMemo(() => PAYMENT_DIST_ORDER
+    .map(k => ({ name: PAYMENT_DIST_LABELS[k], value: purchaseTransactions.filter(p => p.paymentStatus === k).length, color: PAYMENT_DIST_COLORS[k] }))
+    .filter(d => d.value > 0), [purchaseTransactions]);
+  const paymentTotal = useMemo(() => paymentStatusDist.reduce((sum, d) => sum + d.value, 0), [paymentStatusDist]);
+
+  // Jangkar seri tren = tanggal pembelian terbaru (fallback: hari ini kalau belum ada transaksi).
+  const trendAnchor = useMemo(() => {
+    let terbaru: Date | null = null;
+    purchaseTransactions.forEach(p => {
+      const d = parseTanggalLokal(p.purchaseDate);
+      if (d && (!terbaru || d > terbaru)) terbaru = d;
+    });
+    return terbaru ?? new Date();
+  }, [purchaseTransactions]);
+  const { perHari, perBulan } = useMemo(() => {
+    const h = new Map<string, number>();
+    const b = new Map<string, number>();
+    purchaseTransactions.forEach(p => {
+      const d = parseTanggalLokal(p.purchaseDate);
+      if (!d) return;
+      h.set(dayKey(d), (h.get(dayKey(d)) ?? 0) + p.total);
+      const kb = monthKey(d.getFullYear(), d.getMonth());
+      b.set(kb, (b.get(kb) ?? 0) + p.total);
+    });
+    return { perHari: h, perBulan: b };
+  }, [purchaseTransactions]);
 
   const recentActivity = useMemo(() => [...purchaseTransactions]
     .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))
@@ -191,7 +218,7 @@ export default function PurchaseOverviewPage() {
   // custom di bawah, bukan format mata uang bawaan komponen. ──
   const [activeStatus, setActiveStatus] = useState<number | null>(null);
   const [statusLivePreview, setStatusLivePreview] = useState<DonutLivePreview[] | null>(null);
-  const statusTotal = useMemo(() => statusDist.reduce((s, d) => s + d.value, 0), []);
+  const statusTotal = useMemo(() => statusDist.reduce((s, d) => s + d.value, 0), [statusDist]);
 
   // ── Purchase Volume Trend: filter periode menentukan UKURAN 1 BAR (bukan
   // total rentang yang tampil) — 1W = 1 bar per minggu, 1M = 1 bar per
@@ -208,8 +235,8 @@ export default function PurchaseOverviewPage() {
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>('6M');
   const [trendWindowOffset, setTrendWindowOffset] = useState(0); // 0 = data terbaru; makin besar = makin ke masa lalu
 
-  const dailyTrendMaster = useMemo(() => buildDailyTrend(new Date()), []);
-  const monthlyTrendMaster = useMemo(() => buildMonthlyTrendSeries(new Date()), []);
+  const dailyTrendMaster = useMemo(() => buildDailyTrend(trendAnchor, perHari), [trendAnchor, perHari]);
+  const monthlyTrendMaster = useMemo(() => buildMonthlyTrendSeries(trendAnchor, perBulan), [trendAnchor, perBulan]);
 
   const trendPeriodCfg = TREND_PERIOD_CONFIG[trendPeriod];
   const trendVisibleCount = trendPeriodCfg.visibleCount;
@@ -638,6 +665,9 @@ export default function PurchaseOverviewPage() {
                 <p className="text-xs text-muted-foreground mt-0.5">Current distribution</p>
               </div>
             </div>
+            {statusDist.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-10">No data yet. Upload a purchase report in Source Data and create transactions.</p>
+            ) : (<>
             <InteractiveDonutChart
               data={statusDist}
               height={200}
@@ -650,7 +680,7 @@ export default function PurchaseOverviewPage() {
               {statusDist.map((item, index) => {
                 const preview = statusLivePreview?.[index];
                 const displayValue = preview ? Math.round(preview.value) : item.value;
-                const displayPct = preview ? preview.pct : (item.value / statusTotal) * 100;
+                const displayPct = preview ? preview.pct : (statusTotal > 0 ? (item.value / statusTotal) * 100 : 0);
                 return (
                   <div
                     key={item.name}
@@ -671,6 +701,7 @@ export default function PurchaseOverviewPage() {
                 );
               })}
             </div>
+            </>)}
           </div>
         </div>
 
@@ -684,6 +715,9 @@ export default function PurchaseOverviewPage() {
                 <p className="text-xs text-muted-foreground mt-0.5">Spend distribution by category</p>
               </div>
             </div>
+            {categoryData.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-10">No data yet. Upload a purchase report in Source Data and create transactions.</p>
+            ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
@@ -693,6 +727,7 @@ export default function PurchaseOverviewPage() {
                 <Bar dataKey="value" fill="#0EA5E9" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            )}
           </div>
 
           {/* Payment Status */}
@@ -704,8 +739,9 @@ export default function PurchaseOverviewPage() {
               </div>
             </div>
             <div className="space-y-3 mt-2">
+              {paymentStatusDist.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">No data yet. Upload a purchase report in Source Data and create transactions.</p>}
               {paymentStatusDist.map((item) => {
-                const pct = Math.round((item.value / 12) * 100);
+                const pct = paymentTotal > 0 ? Math.round((item.value / paymentTotal) * 100) : 0;
                 return (
                   <div key={item.name}>
                     <div className="flex items-center justify-between text-xs mb-1">
@@ -744,6 +780,7 @@ export default function PurchaseOverviewPage() {
               <h3 className="text-sm font-semibold text-foreground">Top Vendors by Spend</h3>
             </div>
             <div className="space-y-3">
+              {topVendors.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">No data yet. Upload a purchase report in Source Data and create transactions.</p>}
               {topVendors.map((vendor, idx) => {
                 const maxSpend = topVendors[0].totalSpend;
                 const pct = Math.round((vendor.totalSpend / maxSpend) * 100);

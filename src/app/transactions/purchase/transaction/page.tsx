@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
 import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
@@ -17,7 +18,7 @@ import {
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
-  ArrowUpTrayIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 
 const fmt = (n: number) =>
@@ -77,7 +78,6 @@ export default function PurchaseTransactionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showImport, setShowImport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
 
   // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
@@ -169,7 +169,6 @@ export default function PurchaseTransactionPage() {
   return (
       <div className="space-y-6">
         <PurchaseTabs />
-        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -218,10 +217,10 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
-              <button className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => setShowImport(true)}>
-                <ArrowUpTrayIcon className="w-3.5 h-3.5" />Upload Data
-              </button>
               <PrintMenu onPrint={printList} label="Print All" disabled={filtered.length === 0} />
+              <Link href="/transactions/purchase/bills/new" className="je-btn-primary text-sm px-3 py-1.5 inline-flex items-center gap-1.5">
+                <PlusIcon className="w-4 h-4" /> Create Bill
+              </Link>
             </div>
           </div>
           <div className="flex items-center justify-between mt-2">
@@ -330,6 +329,11 @@ export default function PurchaseTransactionPage() {
                       <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
                         <EyeIcon className="w-3.5 h-3.5" /> View
                       </button>
+                      {['draft', 'pending_review', 'rejected', 'exception'].includes(row.status) && (
+                        <Link href={`/transactions/purchase/bills/new?id=${row.id}`} onClick={e => e.stopPropagation()} className="text-xs text-primary hover:underline flex items-center gap-0.5 mt-1">
+                          <PencilSquareIcon className="w-3.5 h-3.5" /> Edit
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -354,6 +358,11 @@ export default function PurchaseTransactionPage() {
               </div>
               <div className="flex items-center gap-2">
                 <PrintMenu onPrint={printDetail} />
+                {['draft', 'pending_review', 'rejected', 'exception'].includes(selectedRowWithLines.status) && (
+                  <Link href={`/transactions/purchase/bills/new?id=${selectedRowWithLines.id}`} className="text-xs px-2 py-1 border border-border rounded text-primary hover:bg-muted inline-flex items-center gap-1">
+                    <PencilSquareIcon className="w-3.5 h-3.5" /> Edit Bill
+                  </Link>
+                )}
                 <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
               </div>
             </div>
