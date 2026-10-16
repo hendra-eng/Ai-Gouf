@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import GeneralLedgerClient from './components/GeneralLedgerClient';
 
 export const metadata = {
-  title: 'General Ledger — Reports — FinovaAI',
+  title: 'General Ledger — Reports — zafeb',
   description: 'Account-level postings with opening, running, and closing balances.',
 };
 

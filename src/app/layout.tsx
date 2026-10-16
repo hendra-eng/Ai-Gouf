@@ -26,10 +26,14 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Gouf Consulting — Enterprise Financial Intelligence Platform',
+  title: 'zafeb — Enterprise Financial Intelligence Platform',
   description: 'AI-powered accounting and financial management platform for Indonesian accounting firms and corporate clients. Monitor P&L, cash flow, AR/AP, and compliance.',
   icons: {
-    icon: [{ url: '/favicon.ico', type: 'image/x-icon' }],
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png', sizes: '192x192' },
+    ],
+    apple: [{ url: '/apple-icon.png', sizes: '180x180' }],
   },
 };
 

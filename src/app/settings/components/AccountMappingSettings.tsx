@@ -12,10 +12,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { AlertTriangle, Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, Loader2, RotateCcw, Save, Search, Waypoints, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, Loader2, Lock, LockOpen, RotateCcw, Save, Search, Waypoints, X } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { fetchClientCoa, type CoaAccount } from '@/lib/coaStore';
-import { fetchAccountMapping, saveAccountMapping, useLoader, type AccountMapping, type MappedCoa } from '@/lib/settingsStore';
+import { fetchAccountMapping, lockAccountMapping, saveAccountMapping, useLoader, type AccountMapping, type MappedCoa } from '@/lib/settingsStore';
 
 type Form = Record<string, string | null>;
 
@@ -37,6 +37,7 @@ export default function AccountMappingSettings() {
   const [form, setForm] = useState<Form>({});
   const [tutup, setTutup] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [locking, setLocking] = useState<string | null>(null);
 
   useEffect(() => { setForm(mapping ? keForm(mapping) : {}); }, [mapping]);
 
@@ -74,6 +75,23 @@ export default function AccountMappingSettings() {
     }
   }
 
+  // Kunci / buka kunci 1 mapping atau semua mapping yang sudah terisi.
+  async function kunci(keys: string[], locked: boolean, tanda: string) {
+    if (!activeClientId || !keys.length || locking) return;
+    if (jumlahBerubah) { toast.error('Save or reset your unsaved changes first.'); return; }
+    setLocking(tanda);
+    try {
+      setData(await lockAccountMapping(activeClientId, keys, locked));
+      toast.success(locked ? 'Account mapping locked' : 'Account mapping unlocked', {
+        description: locked ? 'Locked accounts cannot be changed from any menu until unlocked.' : undefined,
+      });
+    } catch (e) {
+      toast.error(locked ? 'Failed to lock' : 'Failed to unlock', { description: e instanceof Error ? e.message : undefined });
+    } finally {
+      setLocking(null);
+    }
+  }
+
   if (!activeClientId) {
     return <div className="rounded-2xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">Select a company to configure account mapping.</div>;
   }
@@ -87,6 +105,9 @@ export default function AccountMappingSettings() {
 
   const terisi = Object.values(form).filter(Boolean).length;
   const semuaTutup = mapping.groups.every(g => tutup[g.key]);
+  const semuaItem = mapping.groups.flatMap(g => g.items);
+  const bisaKunci = semuaItem.filter(it => it.coa_id && !it.is_locked).map(it => it.key);
+  const terkunci = semuaItem.filter(it => it.is_locked).map(it => it.key);
 
   return (
     <div className="space-y-5 pb-20">
@@ -97,16 +118,34 @@ export default function AccountMappingSettings() {
             <h2 className="text-base font-bold text-foreground">Account mapping</h2>
             <p className="text-xs text-muted-foreground">
               Default accounts used when posting transactions · <span className="font-medium text-foreground">{terisi}/{mapping.total}</span> mapped
+              {' '}· <span className="font-medium text-foreground">{mapping.locked}</span> locked
             </p>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+        <button type="button" onClick={() => kunci(bisaKunci, true, 'all')} disabled={!bisaKunci.length || !!locking}
+          className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 disabled:opacity-50">
+          {locking === 'all' ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />} Lock all mapped
+        </button>
+        <button type="button" onClick={() => kunci(terkunci, false, 'none')} disabled={!terkunci.length || !!locking}
+          className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 disabled:opacity-50">
+          {locking === 'none' ? <Loader2 size={14} className="animate-spin" /> : <LockOpen size={14} />} Unlock all
+        </button>
         <button
           onClick={() => setTutup(Object.fromEntries(mapping.groups.map(g => [g.key, !semuaTutup])))}
           className="flex h-9 items-center gap-1.5 self-start rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-slate-50 sm:self-auto"
         >
           {semuaTutup ? <><ChevronsUpDown size={14} /> Expand all</> : <><ChevronsDownUp size={14} /> Collapse all</>}
         </button>
+        </div>
       </div>
+
+      {mapping.locked > 0 && (
+        <div className="flex items-start gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          <Lock size={16} className="mt-0.5 shrink-0" />
+          <span>Locked mappings cannot be changed from any menu — including deleting, deactivating, renaming or renumbering their accounts in the Chart of Accounts — until they are unlocked here.</span>
+        </div>
+      )}
 
       {!coaLoading && coa.length === 0 && (
         <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -141,11 +180,25 @@ export default function AccountMappingSettings() {
                   const pilih = nilai ? opsiById.get(nilai) : undefined;
                   return (
                     <div key={it.key}>
-                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                        {it.label}
-                        {nilai !== (awal[it.key] ?? null) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Unsaved" />}
-                      </label>
-                      <CoaSelect value={nilai} opsi={opsi} loading={coaLoading} onChange={v => setForm(f => ({ ...f, [it.key]: v }))} />
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                          {it.label}
+                          {it.is_locked && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700"><Lock size={10} /> Locked</span>}
+                          {nilai !== (awal[it.key] ?? null) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Unsaved" />}
+                        </label>
+                        {(it.coa_id || it.is_locked) && (
+                          <button type="button" onClick={() => kunci([it.key], !it.is_locked, it.key)} disabled={!!locking || (!it.is_locked && nilai !== (awal[it.key] ?? null))}
+                            title={it.is_locked ? 'Unlock this mapping' : 'Lock this mapping'}
+                            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold disabled:opacity-40 ${it.is_locked ? 'text-sky-700 hover:bg-sky-50' : 'text-slate-500 hover:bg-slate-100'}`}>
+                            {locking === it.key ? <Loader2 size={12} className="animate-spin" /> : it.is_locked ? <LockOpen size={12} /> : <Lock size={12} />}
+                            {it.is_locked ? 'Unlock' : 'Lock'}
+                          </button>
+                        )}
+                      </div>
+                      <CoaSelect value={nilai} opsi={opsi} loading={coaLoading} disabled={it.is_locked} onChange={v => setForm(f => ({ ...f, [it.key]: v }))} />
+                      {it.is_locked && (
+                        <p className="mt-1 text-[11px] text-sky-700">Locked{it.locked_by_name ? ` by ${it.locked_by_name}` : ''}{it.locked_at ? ` · ${fmtTanggal.format(new Date(it.locked_at))}` : ''}</p>
+                      )}
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         {it.used_in ? <>Used in: {it.used_in}</> : <span className="text-slate-400">Saved for upcoming features.</span>}
                       </p>
@@ -187,8 +240,8 @@ export default function AccountMappingSettings() {
 
 const MAKS_TAMPIL = 100;
 
-function CoaSelect({ value, opsi, loading, onChange }: {
-  value: string | null; opsi: Opsi[]; loading: boolean; onChange: (v: string | null) => void;
+function CoaSelect({ value, opsi, loading, onChange, disabled }: {
+  value: string | null; opsi: Opsi[]; loading: boolean; onChange: (v: string | null) => void; disabled?: boolean;
 }) {
   const [buka, setBuka] = useState(false);
   const [q, setQ] = useState('');
@@ -214,8 +267,9 @@ function CoaSelect({ value, opsi, loading, onChange }: {
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => { setBuka(b => !b); setQ(''); }}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2.5 text-left text-sm transition-shadow focus:outline-none focus:ring-4 focus:ring-blue-100 ${buka ? 'border-blue-400 ring-4 ring-blue-100' : 'border-border'}`}
+        onClick={() => { if (disabled) return; setBuka(b => !b); setQ(''); }}
+        disabled={disabled}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-4 focus:ring-blue-100 ${buka ? 'border-blue-400 ring-4 ring-blue-100' : 'border-border'}`}
       >
         {pilih ? (
           <span className="min-w-0 truncate text-foreground">
@@ -227,7 +281,7 @@ function CoaSelect({ value, opsi, loading, onChange }: {
           <span className="text-slate-400">Select account</span>
         )}
         <span className="flex shrink-0 items-center gap-1">
-          {value && (
+          {value && !disabled && (
             <span
               role="button"
               tabIndex={-1}

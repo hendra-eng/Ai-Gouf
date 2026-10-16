@@ -56,7 +56,7 @@ KOLOM = [
 CONSTRAINT_JENIS = f"""
 ALTER TABLE {TABEL} DROP CONSTRAINT IF EXISTS ck_bank_cash_transaction_kind;
 ALTER TABLE {TABEL} ADD CONSTRAINT ck_bank_cash_transaction_kind
-  CHECK (kind IN ('invoice', 'non_invoice') AND source IN ('bank_feed', 'manual', 'ar', 'ap') AND amount > 0);
+  CHECK (kind IN ('invoice', 'non_invoice') AND source IN ('bank_feed', 'manual', 'ar', 'ap', 'tax') AND amount > 0);  -- 'tax': migration 41
 """
 
 INDEX_SUMBER = f"CREATE INDEX IF NOT EXISTS idx_bank_cash_transaction_client_source ON {TABEL} (client_id, source);"

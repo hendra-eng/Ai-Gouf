@@ -1363,7 +1363,7 @@ const translations: Dict = {
   'Nilai Transaksi (DPP)': { en: 'Transaction Value (Tax Base)', id: 'Nilai Transaksi (DPP)', zh: '交易金额（计税基础）' },
   'Nilai PPN': { en: 'VAT Value', id: 'Nilai PPN', zh: '增值税金额' },
   'Nilai Total': { en: 'Total Value', id: 'Nilai Total', zh: '总金额' },
-  'Ekstraksi selesai dalam 12 detik · Menggunakan model Gouf AI v2.1': { en: 'Extraction completed in 12 seconds · Using Gouf AI model v2.1', id: 'Ekstraksi selesai dalam 12 detik · Menggunakan model Gouf AI v2.1', zh: '提取在12秒内完成 · 使用Gouf AI模型v2.1' },
+  'Ekstraksi selesai dalam 12 detik · Menggunakan model zafeb AI v2.1': { en: 'Extraction completed in 12 seconds · Using zafeb AI model v2.1', id: 'Ekstraksi selesai dalam 12 detik · Menggunakan model zafeb AI v2.1', zh: '提取在12秒内完成 · 使用zafeb AI模型v2.1' },
   'Data Quality Check': { en: 'Data Quality Check', id: 'Pemeriksaan Kualitas Data', zh: '数据质量检查' },
   'Lihat Detail': { en: 'View Detail', id: 'Lihat Detail', zh: '查看详情' },
   'Format tanggal valid': { en: 'Valid date format', id: 'Format tanggal valid', zh: '有效日期格式' },

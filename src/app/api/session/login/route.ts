@@ -20,14 +20,14 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ status: 'error', message: 'Payload tidak valid.' }, { status: 400 });
+    return NextResponse.json({ status: 'error', message: 'Invalid payload.' }, { status: 400 });
   }
 
   const username = typeof body?.username === 'string' ? body.username.trim() : '';
   const password = typeof body?.password === 'string' ? body.password : '';
   if (!username || !password) {
     return NextResponse.json(
-      { status: 'error', message: 'Username dan password wajib diisi.' },
+      { status: 'error', message: 'Username and password are required.' },
       { status: 400 },
     );
   }
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     });
   } catch {
     return NextResponse.json(
-      { status: 'error', message: 'Tidak bisa menghubungi server backend.' },
+      { status: 'error', message: 'Unable to reach the backend server.' },
       { status: 502 },
     );
   }
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const accessToken = payload?.data?.access_token;
   if (!backendRes.ok || typeof accessToken !== 'string') {
     return NextResponse.json(
-      { status: 'error', message: payload?.message || 'Username atau password salah.' },
+      { status: 'error', message: payload?.message || 'Incorrect username or password.' },
       { status: backendRes.status >= 400 ? backendRes.status : 401 },
     );
   }
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   const expiresInHours = Number(payload?.data?.expires_in_hours) || 12;
   const response = NextResponse.json({
     status: 'success',
-    message: payload?.message || 'Login berhasil.',
+    message: payload?.message || 'Login successful.',
     data: { user: payload.data.user },
   });
   response.cookies.set(SESSION_COOKIE_NAME, accessToken, {

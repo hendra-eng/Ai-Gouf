@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import Link from 'next/link';
 import {
   PieChart, BarChart3, ShoppingCart, Package, Building2, CreditCard, FileText, Settings,
@@ -290,7 +291,7 @@ export default function ReportsCatalog() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1">
+      <nav className={tabNavCls}>
         {TABS.map(tab => {
           const Icon = tab.icon;
           const active = !showFavorites && tab.id === activeTab;
@@ -298,16 +299,14 @@ export default function ReportsCatalog() {
             <button
               key={tab.id}
               onClick={() => { setActiveTab(tab.id); setShowFavorites(false); }}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg text-sm whitespace-nowrap transition-colors ${
-                active ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-foreground/80 hover:bg-white hover:text-foreground font-medium'
-              }`}
+              className={tabCls(active)}
             >
-              <Icon size={18} className={active ? 'text-blue-600' : 'text-muted-foreground'} />
+              <Icon size={16} />
               {tab.label}
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {/* Filter bar */}
       <div className="bg-card border border-border rounded-xl shadow-sm p-5 flex flex-col lg:flex-row lg:items-end gap-4">

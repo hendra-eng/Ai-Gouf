@@ -2,7 +2,7 @@ import React from 'react';
 import OpeningBalanceListClient from './components/OpeningBalanceListClient';
 
 export const metadata = {
-  title: 'Opening Balances — Chart of Accounts — FinovaAI',
+  title: 'Opening Balances — Chart of Accounts — zafeb',
   description: 'Starting balances per fiscal year and branch, posted as an opening journal.',
 };
 

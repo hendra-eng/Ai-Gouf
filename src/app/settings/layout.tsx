@@ -2,7 +2,7 @@ import React from 'react';
 import SettingsShell from './components/SettingsShell';
 
 export const metadata = {
-  title: 'Settings — FinovaAI',
+  title: 'Settings — zafeb',
   description: 'Company profile, users, and configuration for the selected company.',
 };
 

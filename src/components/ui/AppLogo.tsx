@@ -13,7 +13,7 @@ interface AppLogoProps {
 }
 
 const AppLogo = memo(function AppLogo({
-  src = '/assets/images/app_logo.png',
+  src = '/icon.png', // logo zafeb (simbol di tile putih)
   iconName = 'SparklesIcon',
   size = 64,
   className = '',

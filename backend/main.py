@@ -102,7 +102,9 @@ from modules import tax_scheduler
 from modules.auth import v1 as auth_v1  # [BARU] Fitur Auth REST API standar: /api/v1/auth/...
 from modules.management import documents_v1 as management_documents_v1  # [BARU] /api/v1/management/documents/...
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
-from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # [DIPINDAH] /api/v1/asset/... (halaman Assets) -- pindahan apa adanya dari main.py
+from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # /api/v1/asset/fixed-assets/... (halaman Fixed Assets, migration 39)
+from modules.assets_and_equity import inventory_v1 as asset_inventory_v1  # /api/v1/asset/inventory/... (halaman Inventory, migration 40)
+from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # /api/v1/planning/tax/... (halaman Tax Compliance, migration 41)
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
 from modules.finance import receivables_payables_v1 as finance_receivables_payables_v1  # [BARU] /api/v1/finance/receivables|payables -- Accounts Receivable & Accounts Payable
 from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [BARU] AR: customers, Create Invoice, Collections + log statement AR/AP
@@ -118,6 +120,7 @@ from modules.transactions import journal_entry_v1 as transactions_journal_entry_
 from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
 from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
+from modules.transactions import other_v1 as transactions_other_v1  # Transactions > Other: /api/v1/transactions/other/... (jurnal lain-lain, migration 42)
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
@@ -203,8 +206,8 @@ app = FastAPI(
             "description": "Halaman Financial Statements: Anggaran P&L, insight AI, dan proyeksi cash flow (3 tabel \"financial statement\" schema 3_Financial).",
         },
         {
-            "name": "assets",
-            "description": "Halaman Assets: register aset tetap & penyusutan (asset_fixed_assets, schema 4_Assets_Equity).",
+            "name": "fixed-assets",
+            "description": "Halaman Fixed Assets: register, penyusutan, disposal, jurnal FA & laporan (asset_fixed_asset_*, migration 39).",
         },
         {
             "name": "documents",
@@ -381,7 +384,9 @@ app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-ke
 app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
-app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
+app.include_router(asset_fixed_assets_v1.router)  # /api/v1/asset/fixed-assets/... register, penyusutan, disposal, jurnal FA, laporan
+app.include_router(asset_inventory_v1.router)  # /api/v1/asset/inventory/... item, gudang, dokumen stok, kartu stok, jurnal INV, laporan
+app.include_router(planning_tax_compliance_v1.router)  # /api/v1/planning/tax/... ledger pajak, PPh, PPN, setoran, SPT, rekonsiliasi, temuan
 app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
 app.include_router(finance_receivables_payables_v1.router_ar)  # [BARU] /api/v1/finance/receivables -- Accounts Receivable (piutang atas Sales)
 app.include_router(finance_receivables_payables_v1.router_ap)  # [BARU] /api/v1/finance/payables -- Accounts Payable (hutang atas Purchase)
@@ -400,6 +405,7 @@ app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/trans
 app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
+app.include_router(transactions_other_v1.router)  # /api/v1/transactions/other/... -- jurnal Other (draft, approve, post, reverse)
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
@@ -799,10 +805,9 @@ def api_data_report_schedule(client_id: str, user: dict = Depends(auth.get_curre
 
 
 # ============================================================
-# [DIPINDAH] MODUL TAX & COMPLIANCE -- kini di
-# modules/planning/tax_compliance_v1.py (lihat modules/planning/__init__.py).
-# Router didaftarkan lewat app.include_router(planning_tax_compliance_v1.router)
-# di bawah -- path, auth, & response TIDAK berubah.
+# MODUL TAX COMPLIANCE -- modules/planning/tax_compliance_v1.py
+# (/api/v1/planning/tax/..., migration 41). Router didaftarkan lewat
+# app.include_router(planning_tax_compliance_v1.router) di atas.
 # ============================================================
 
 
@@ -911,10 +916,9 @@ def api_deteksi_kesalahan_pembelian(
 
 
 # ============================================================
-# [DIPINDAH] MODUL ASSETS -- Fixed Asset Register & Depreciation, kini
-# di modules/asset/fixed_assets_v1.py (lihat modules/asset/__init__.py).
-# Router didaftarkan lewat app.include_router(asset_fixed_assets_v1.router)
-# di bawah -- path, auth, & response TIDAK berubah.
+# MODUL FIXED ASSETS -- modules/assets_and_equity/fixed_assets_v1.py
+# (/api/v1/asset/fixed-assets/...). Router didaftarkan lewat
+# app.include_router(asset_fixed_assets_v1.router) di atas.
 # ============================================================
 
 

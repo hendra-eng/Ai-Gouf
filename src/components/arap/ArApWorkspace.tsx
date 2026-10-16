@@ -22,6 +22,7 @@ import {
 } from '@/lib/receivablesPayablesStore';
 import { downloadAgingXlsx, downloadDocsCsv, downloadDocsXlsx } from './arapExport';
 import { btnOutline, btnPrimary, Menu, MenuItem } from './arapUi';
+import { tabBadgeCls, tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
 import OverviewTab from './OverviewTab';
 import InvoicesTab from './InvoicesTab';
 import AgingTab from './AgingTab';
@@ -129,16 +130,16 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
           ? <CollectionKpiRow ov={overview.data} col={collections.data} loading={collections.loading && !collections.data} />
           : <KpiRow side={side} ov={overview.data} loading={overview.loading && !overview.data} variant={tab === 'invoices' ? 'invoices' : 'default'} />}
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card px-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <nav className="-mb-px flex gap-1 overflow-x-auto">
+        <div className={tabBarCls}>
+          <nav className={tabListCls}>
             {tabs.map(t => {
               const aktif = tab === t.id;
               const Ikon = t.icon;
               return (
                 <button key={t.id} type="button" onClick={() => setTab(t.id)}
-                  className={`flex shrink-0 items-center gap-2 border-b-2 px-3 py-3.5 text-sm transition-colors ${aktif ? 'border-[#0F7D4E] font-semibold text-[#0F7D4E]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+                  className={tabCls(aktif)}>
                   <Ikon size={16} /> {t.label}
-                  {t.badge ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{t.badge}</span> : null}
+                  {t.badge ? <span className={tabBadgeCls}>{t.badge}</span> : null}
                 </button>
               );
             })}

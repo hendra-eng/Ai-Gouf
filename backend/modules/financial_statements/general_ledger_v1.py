@@ -57,7 +57,8 @@ MODE_INCLUDE = ("with_activity", "non_zero", "all", "selected")
 # Klasifikasi COA yang termasuk Laba Rugi (saldo awal direset tiap awal tahun).
 _KLASIFIKASI_LABA_RUGI = {"REVENUE", "COST OF SALES", "EXPENSE", "OTHER INCOME", "OTHER EXPENSE", "INCOME TAX"}
 
-_LABEL_SUMBER = {"journal_entry": "Journal Entry", "year_end_closing": "Year-End Closing", "sales": "Sales", "purchase": "Purchase", "cash_bank": "Cash & Bank"}
+_LABEL_SUMBER = {"journal_entry": "Journal Entry", "year_end_closing": "Year-End Closing", "sales": "Sales", "purchase": "Purchase", "cash_bank": "Cash & Bank",
+                "fixed_asset": "Fixed Assets", "inventory": "Inventory", "other": "Other"}
 
 
 def _r(v: float) -> float:

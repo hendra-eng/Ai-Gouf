@@ -222,7 +222,26 @@ def _dokumen_belum_posted(session, client_id: str, dari: date, sampai: date) -> 
          where client_id = cast(:c as uuid) and deleted_at is null
            and tx_date between :a and :b and status in ('draft', 'approved')
     """), p).scalar() or 0
-    return {"journal_entry": int(je), "sales": int(sales), "purchase": int(purchase), "cash_bank": int(kas_bank)}
+    aset_tetap = session.execute(text("""
+        select (select count(*) from asset_fixed_asset_depreciation_runs
+                 where client_id = cast(:c as uuid) and deleted_at is null
+                   and posting_date between :a and :b and status in ('draft', 'approved'))
+             + (select count(*) from asset_fixed_asset_disposals
+                 where client_id = cast(:c as uuid) and deleted_at is null
+                   and disposal_date between :a and :b and status in ('draft', 'pending', 'approved'))
+    """), p).scalar() or 0
+    persediaan = session.execute(text("""
+        select count(*) from asset_inventory_documents
+         where client_id = cast(:c as uuid) and deleted_at is null
+           and doc_date between :a and :b and status = 'draft'
+    """), p).scalar() or 0
+    lain = session.execute(text("""
+        select count(*) from financial_transaction_other_journals
+         where client_id = cast(:c as uuid) and deleted_at is null
+           and journal_date between :a and :b and status in ('draft', 'approved')
+    """), p).scalar() or 0
+    return {"journal_entry": int(je), "sales": int(sales), "purchase": int(purchase), "cash_bank": int(kas_bank),
+            "fixed_asset": int(aset_tetap), "inventory": int(persediaan), "other": int(lain)}
 
 
 def _cek(id_: str, label: str, status: str, detail: str, **lain) -> Dict[str, Any]:
@@ -276,7 +295,9 @@ def _susun_preview(session, buku: mapped.Buku, client_id: str, fy: int, akun_ld:
     cek.append(_cek(
         "pending_documents", "No unposted documents in the year", "warn" if total_belum else "pass",
         (f"{belum['journal_entry']} journal entr{'y' if belum['journal_entry'] == 1 else 'ies'}, {belum['sales']} sales invoice(s), "
-         f"{belum['purchase']} purchase(s) and {belum['cash_bank']} cash & bank transaction(s) dated in FY {fy} are not posted. "
+         f"{belum['purchase']} purchase(s), {belum['cash_bank']} cash & bank transaction(s) and "
+         f"{belum['fixed_asset']} fixed asset depreciation batch(es)/disposal(s) and "
+         f"{belum['inventory']} inventory document(s) and {belum['other']} other journal(s) dated in FY {fy} are not posted. "
          "After closing they can no longer be posted "
          "into this year.") if total_belum else "Everything dated in the year is posted.",
         counts=belum,

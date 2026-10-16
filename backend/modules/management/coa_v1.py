@@ -294,6 +294,19 @@ def buat_coa(
     return sukses(data=dibuat, message="Akun COA berhasil ditambahkan.", status_code=201)
 
 
+def _mapping_terkunci(coa_id: str) -> str:
+    """Label mapping terkunci (Settings > Account Mapping) yang memakai akun ini, '' kalau tidak ada."""
+    session = dbc.SessionLocal()
+    try:
+        keys = [k for (k,) in session.query(dbc.ManagementSettingAccountMapping.mapping_key).filter(
+            dbc.ManagementSettingAccountMapping.coa_id == coa_id, dbc.ManagementSettingAccountMapping.is_locked.is_(True)).all()]
+    finally:
+        session.close()
+    from .settings_v1 import ACCOUNT_MAPPING_GROUPS
+    label = {k: l for _, _, items in ACCOUNT_MAPPING_GROUPS for k, l in items}
+    return ", ".join(label.get(k, k) for k in sorted(keys))
+
+
 @router.put("/{coa_id}", summary="Ubah akun COA (minimal Supervisor)")
 def ubah_coa(
     coa_id: str,
@@ -316,6 +329,11 @@ def ubah_coa(
                 errors={"code": "DUPLICATE_ACC_NO"},
                 status_code=409,
             )
+    kunci = _mapping_terkunci(coa_id)
+    if kunci and ((data.get("acc_no") and data["acc_no"] != lama["acc_no"]) or data.get("is_active") is False
+                  or (data.get("account_name") and data["account_name"] != lama["account_name"])):
+        return gagal(message=f"This account is used by locked account mapping ({kunci}). Unlock it in Settings > Account Mapping first.",
+                     errors={"code": "MAPPING_LOCKED"}, status_code=409)
     diupdate = dbc.update_management_client_coa(coa_id, data, updated_by=current_user.get("id"))
     if diupdate is None:
         return gagal(message="Gagal mengubah akun COA (kesalahan database).", status_code=500)
@@ -327,6 +345,10 @@ def hapus_coa(
     coa_id: str,
     current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_UBAH_COA)),
 ):
+    kunci = _mapping_terkunci(coa_id)
+    if kunci:
+        return gagal(message=f"This account is used by locked account mapping ({kunci}). Unlock it in Settings > Account Mapping first.",
+                     errors={"code": "MAPPING_LOCKED"}, status_code=409)
     if not dbc.soft_delete_management_client_coa(coa_id, deleted_by=current_user.get("id")):
         return gagal(message="Akun COA tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
     return sukses(message="Akun COA berhasil dihapus.")

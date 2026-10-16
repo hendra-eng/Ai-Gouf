@@ -2,7 +2,7 @@ import React from 'react';
 import FsHubClient from './components/fs/FsHubClient';
 
 export const metadata = {
-  title: 'Financial Statements — FinovaAI',
+  title: 'Financial Statements — zafeb',
   description: 'Balance sheet, profit and loss, changes in equity, cash flow and notes built from the posted General Ledger.',
 };
 
