@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { BookOpen, Landmark, Layers, List, ShoppingCart, TrendingUp } from 'lucide-react';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 
 // [BARU] Tab bar utama di halaman /transactions (di atas tabel "Transaksi").
 // Ini SET TAB TERPISAH dari sub-halaman /transactions/sales, /transactions/purchase,
@@ -20,15 +22,16 @@ export type TransactionsMainTabId =
 interface MainTab {
   id: TransactionsMainTabId;
   label: string;
+  icon: React.ElementType;
 }
 
 const MAIN_TABS: MainTab[] = [
-  { id: 'transaksi', label: 'Transaksi' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'purchase', label: 'Purchase' },
-  { id: 'journal-entry', label: 'Journal Entry' },
-  { id: 'cash-bank', label: 'Cash & Bank' },
-  { id: 'other', label: 'Other' },
+  { id: 'transaksi', label: 'Transaksi', icon: List },
+  { id: 'sales', label: 'Sales', icon: TrendingUp },
+  { id: 'purchase', label: 'Purchase', icon: ShoppingCart },
+  { id: 'journal-entry', label: 'Journal Entry', icon: BookOpen },
+  { id: 'cash-bank', label: 'Cash & Bank', icon: Landmark },
+  { id: 'other', label: 'Other', icon: Layers },
 ];
 
 interface TransactionsMainTabsProps {
@@ -38,7 +41,7 @@ interface TransactionsMainTabsProps {
 
 export default function TransactionsMainTabs({ activeTab, onTabChange }: TransactionsMainTabsProps) {
   return (
-    <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin">
+    <nav className={tabNavCls}>
       {MAIN_TABS.map((tab) => {
         const active = tab.id === activeTab;
         return (
@@ -46,14 +49,12 @@ export default function TransactionsMainTabs({ activeTab, onTabChange }: Transac
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-              active ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={tabCls(active)}
           >
-            {tab.label}
+            <tab.icon size={16} /> {tab.label}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

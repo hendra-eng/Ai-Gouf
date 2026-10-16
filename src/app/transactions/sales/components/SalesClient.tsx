@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, ChevronDown } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid } from 'lucide-react';
+import { tabBadgeCls, tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';
@@ -13,13 +14,13 @@ import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useSalesExceptions } from '@/lib/salesStore';
 
-const TABS: { key: string; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'source-data', label: 'Source Data' },
-  { key: 'sales-transaction', label: 'Sales Transaction' },
-  { key: 'journal-preview', label: 'Journal Preview' },
-  { key: 'exceptions', label: 'Exceptions' },
-  { key: 'posted', label: 'Posted' },
+const TABS: { key: string; label: string; icon: React.ElementType }[] = [
+  { key: 'overview', label: 'Overview', icon: LayoutGrid },
+  { key: 'source-data', label: 'Source Data', icon: Database },
+  { key: 'sales-transaction', label: 'Sales Transaction', icon: FileText },
+  { key: 'journal-preview', label: 'Journal Preview', icon: Eye },
+  { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+  { key: 'posted', label: 'Posted', icon: CircleCheck },
 ];
 
 export default function SalesClient() {
@@ -62,27 +63,21 @@ export default function SalesClient() {
         </button>
       </div>
 
-      {/* Tabs — desain pill/segmented, disamakan dengan Financial Statements
-          (FinancialStatementsContent.tsx): kontainer bg-muted rounded-xl,
-          tab aktif dapat bg-card + shadow-card, tanpa garis bawah. */}
-      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin mb-0">
+      {/* Tabs — gaya underline bersama (tabCls, acuan Transactions > Other). */}
+      <nav className={tabNavCls}>
         {TABS?.map(tab => (
           <button
             key={tab?.key}
             onClick={() => setActiveTab(tab?.key)}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-              activeTab === tab?.key
-                ? 'bg-card text-foreground shadow-card'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={tabCls(activeTab === tab?.key)}
           >
-            {t(tab?.label)}
+            <tab.icon size={16} /> {t(tab?.label)}
             {tab?.key === 'exceptions' && openExceptionCount > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-red-100 text-red-600 rounded-full">{openExceptionCount}</span>
+              <span className={tabBadgeCls}>{openExceptionCount}</span>
             )}
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* Tab Content */}
       <div className="pt-5">

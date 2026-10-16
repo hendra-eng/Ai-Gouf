@@ -48,3 +48,8 @@ seed_template_npi_bank_cash.sql
 seed_template_nbm_bank_cash.sql
 37-add_ar_ap_settlement_columns.py
 38-create_ar_invoice_collection_statement_tables.py
+39-create_fixed_asset_tables.py
+40-create_inventory_tables.py
+41-create_tax_compliance_tables.py
+42-create_other_journal_tables.py
+43-add_lock_to_account_mappings.py

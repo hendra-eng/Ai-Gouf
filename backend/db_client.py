@@ -76,6 +76,15 @@ WADAH_KUNCI_PERIODE: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contex
 _POLA_KUNCI_PERIODE = _re.compile(r"PERIOD_LOCKED:\s*([^\n]+)")
 
 
+_POLA_MAPPING_TERKUNCI = _re.compile(r"MAPPING_LOCKED:\s*([^\n]+)")
+
+
+def pesan_mapping_terkunci(err: BaseException) -> Optional[str]:
+    """Pesan ramah dari trigger kunci Account Mapping (migration 43), None kalau bukan."""
+    m = _POLA_MAPPING_TERKUNCI.search(str(err))
+    return m.group(1).strip() if m else None
+
+
 def pesan_periode_terkunci(err: BaseException) -> Optional[str]:
     """Pesan ramah dari error trigger kunci periode, None kalau bukan."""
     m = _POLA_KUNCI_PERIODE.search(str(err))
@@ -1838,6 +1847,13 @@ class ManagementSettingAccountMapping(Base):
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    # [migration 43] Mapping terkunci tidak bisa diubah/dihapus dari menu mana pun
+    # (dijaga trigger DB, termasuk akun COA-nya: hapus, nonaktif, ganti kode/klien)
+    # sampai dibuka lagi di Settings > Account Mapping.
+    is_locked = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    locked_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    locked_by_name = Column(String(255), nullable=True)
 
 
 # ============================================================
@@ -2593,32 +2609,73 @@ _DEFAULT_FORECAST_ASSUMPTION = {
 
 
 # ============================================================
-# MODUL ASSETS (BARU) -- tabel "asset_fixed_assets" dibuat
-# manual oleh user lewat Supabase, schema "4_Assets_Equity". Ini
-# menggantikan sumber lama Fixed Asset Register/Depreciation di halaman
-# Assets (dulu dari hasil upload file "Aset Tetap" di public.hasil --
-# lihat assetRegisterBridge.ts di frontend). Akumulasi penyusutan, nilai
-# buku, dan status "fully-depreciated" SENGAJA tidak disimpan sebagai
-# kolom -- dihitung di sini dari cost, residual_value, useful_life_years,
-# purchase_date, depreciation_method, sesuai komentar tabelnya di Supabase.
-# Tabel ini TIDAK dipakai untuk KPI/grafik total Assets di
-# useAssetsData.ts (itu tetap dari saldo neraca/COA) -- hanya untuk
-# register per-unit (Fixed Asset Register & Depreciation).
+# FIXED ASSETS (grup Assets & Equity, migrations/39-*.py) -- modul
+# modules/assets_and_equity/fixed_assets_v1.py, UI dataset/picture/Template
+# UI/Fix Assets/1-6.jpeg (tab Overview, Asset Register, Depreciation,
+# Disposal, Reports, Posted).
+#
+#   asset_fixed_asset_categories         kategori + metode/umur default + akun COA
+#   asset_fixed_assets                   register per unit (tabel lama, kolom ditambah)
+#   asset_fixed_asset_depreciation_runs  batch penyusutan bulanan DEP-YYYY-MM
+#   asset_fixed_asset_depreciation_lines penyusutan per aset dalam 1 batch
+#   asset_fixed_asset_disposals          pelepasan aset DSP-YYYY-###
+#   asset_fixed_asset_journals (+_lines) jurnal posted FA-YYYY-#### (acquisition,
+#                                        depreciation, disposal, adjustment)
+#   asset_fixed_asset_report_logs        riwayat laporan yang di-generate
+#
+# Jurnal TIDAK disalin ke Journal Entry -- GL/FS membaca langsung
+# asset_fixed_asset_journals berstatus posted/reversed (sumber "fixed_asset"
+# di ambil_baris_jurnal_posted_transaksi). Reversed = jurnal asal + jurnal
+# pembalik RV-<no> di reversal_date. Nilai buku aset dihitung dari:
+#   biaya       = cost + sum(cost_change jurnal adjustment)
+#   akumulasi   = opening_accumulated_depreciation + sum(accum_change jurnal)
+# (jurnal yang sudah dibalik tidak dihitung sejak reversal_date).
 # ============================================================
 
+class FixedAssetCategory(Base):
+    __tablename__ = "asset_fixed_asset_categories"
+    __table_args__ = (
+        Index("idx_fixed_asset_categories_client", "client_id"),
+        Index("uq_fixed_asset_categories_name", "client_id", text("upper(name)"),
+              unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    is_depreciable = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    depreciation_method = Column(String(30), nullable=False, default="straight_line", server_default=text("'straight_line'"))
+    useful_life_months = Column(Integer, nullable=True)
+    residual_rate = Column(Numeric(7, 4), nullable=False, default=0, server_default=text("0"))   # % dari biaya
+    asset_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    accum_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    expense_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
 class FixedAsset(Base):
+    """Register aset tetap per unit. Tabel lama (dibuat manual di Supabase);
+    migration 39 menambah kolom kategori, cabang, custodian, akun COA,
+    akumulasi awal, dan soft delete. `coa_id` = akun aset (biaya perolehan).
+    status: active / under_construction / inactive / disposed."""
     __tablename__ = "asset_fixed_assets"
 
-    id = Column(PG_UUID(as_uuid=False), primary_key=True)
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     asset_code = Column(String, nullable=True)
     name = Column(String, nullable=False)
-    category = Column(String, nullable=True)
-    purchase_date = Column(Date, nullable=True)
+    category = Column(String, nullable=True)                     # snapshot nama kategori
+    purchase_date = Column(Date, nullable=True)                  # tanggal perolehan
     cost = Column(Numeric, nullable=True)
     residual_value = Column(Numeric, nullable=True)
-    useful_life_years = Column(Integer, nullable=True)
-    depreciation_method = Column(String, nullable=True)
+    useful_life_years = Column(Integer, nullable=True)           # legacy; sumber utama useful_life_months
+    depreciation_method = Column(String, nullable=True)          # straight_line / declining_balance / none
     location = Column(String, nullable=True)
     department = Column(String, nullable=True)
     status = Column(String, nullable=True)
@@ -2626,269 +2683,693 @@ class FixedAsset(Base):
     disposal_value = Column(Numeric, nullable=True)
     coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
     needs_review = Column(Boolean, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True, server_default=text("now()"))
     updated_at = Column("edited_at", DateTime(timezone=True), nullable=True)
+    # [migration 39]
+    category_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_asset_categories.id"), nullable=True)
+    branch = Column(String(100), nullable=True)
+    custodian = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    serial_number = Column(String(100), nullable=True)
+    supplier = Column(String(255), nullable=True)
+    reference = Column(String(100), nullable=True)               # no. PO / invoice perolehan
+    useful_life_months = Column(Integer, nullable=True)
+    depreciation_start_date = Column(Date, nullable=True)
+    opening_accumulated_depreciation = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    accum_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    expense_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    acquisition_journal_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
-def ambil_fixed_assets(client_id: str) -> Dict[str, Any]:
-    """
-    [BARU] Register aset tetap PER-UNIT client, dipetakan ke bentuk yang
-    dipakai assetRegisterBridge.ts (Fixed Asset Register & Depreciation di
-    halaman Assets). Akumulasi penyusutan/nilai buku/penyusutan bulanan
-    DIHITUNG di sini (bukan kolom tersimpan):
-      - Straight-line : (cost - residual_value) / (useful_life_years*12),
-        dikali jumlah bulan sejak purchase_date (dibatasi umur ekonomis).
-      - Declining-balance : saldo menurun ganda disederhanakan per bulan
-        (rate = 2 / (useful_life_years*12) dari nilai buku berjalan),
-        tidak pernah turun di bawah residual_value.
-    `status` fisik dari kolom (active/maintenance/inactive/disposed) tetap
-    dihormati untuk 'maintenance'/'disposed'; selain itu diturunkan jadi
-    'fully-depreciated' kalau nilai buku sudah habis, atau 'active'.
-    Dipakai GET /api/client/{client_id}/assets.
-    """
-    session = SessionLocal()
-    try:
-        rows = session.query(FixedAsset).filter(
-            FixedAsset.client_id == client_id
-        ).order_by(FixedAsset.purchase_date).all()
+class FixedAssetDepreciationRun(Base):
+    """Batch penyusutan 1 bulan. draft -> approved -> posted -> reversed.
+    Saat posted, tiap baris jadi 1 jurnal FA (Dr beban penyusutan / Cr akumulasi)."""
+    __tablename__ = "asset_fixed_asset_depreciation_runs"
+    __table_args__ = (
+        Index("idx_fixed_asset_dep_runs_client", "client_id", "period"),
+        Index("uq_fixed_asset_dep_runs_period", "client_id", "period",
+              unique=True, postgresql_where=text("deleted_at IS NULL AND status <> 'reversed'")),
+    )
 
-        today = date.today()
-        assets: List[Dict[str, Any]] = []
-
-        for r in rows:
-            cost = float(r.cost or 0)
-            residual = float(r.residual_value or 0)
-            life_years = r.useful_life_years
-            depreciable = max(cost - residual, 0.0)
-
-            months_elapsed = 0
-            if r.purchase_date:
-                months_elapsed = (today.year - r.purchase_date.year) * 12 + (today.month - r.purchase_date.month)
-                if today.day < r.purchase_date.day:
-                    months_elapsed -= 1
-                months_elapsed = max(0, months_elapsed)
-
-            monthly_dep = 0.0
-            accumulated = 0.0
-            if life_years and life_years > 0 and depreciable > 0:
-                total_months = life_years * 12
-                capped_months = min(months_elapsed, total_months)
-                if (r.depreciation_method or "Straight-line") == "Declining-balance":
-                    monthly_rate = min(1.0, 2.0 / total_months)
-                    book_value = cost
-                    for _ in range(capped_months):
-                        if book_value <= residual:
-                            break
-                        dep_this_month = book_value * monthly_rate
-                        if book_value - dep_this_month < residual:
-                            dep_this_month = book_value - residual
-                        book_value -= dep_this_month
-                    accumulated = cost - book_value
-                    monthly_dep = book_value * monthly_rate if book_value > residual else 0.0
-                else:
-                    monthly_dep = depreciable / total_months
-                    accumulated = min(monthly_dep * capped_months, depreciable)
-
-            nbv = round(cost - accumulated, 2)
-            is_fully_depreciated = bool(life_years) and depreciable > 0 and accumulated >= depreciable - 1
-
-            if r.status == "disposed":
-                status_out = "disposed"
-            elif r.status == "maintenance":
-                status_out = "maintenance"
-            elif is_fully_depreciated:
-                status_out = "fully-depreciated"
-            else:
-                status_out = "active"
-
-            assets.append({
-                "id": r.asset_code or str(r.id),
-                "dbId": str(r.id),
-                "name": r.name,
-                "category": r.category or "Lainnya",
-                "purchaseDate": r.purchase_date.isoformat() if r.purchase_date else None,
-                "cost": cost,
-                "residualValue": residual,
-                "usefulLifeYears": life_years,
-                "method": r.depreciation_method or "Straight-line",
-                "accumulatedDepreciation": round(accumulated, 2),
-                "netBookValue": nbv,
-                "monthlyDepreciation": round(monthly_dep, 2),
-                "status": status_out,
-                "physicalStatus": r.status,
-                "location": r.location,
-                "department": r.department,
-                "needsReview": bool(r.needs_review),
-            })
-
-        return {"assets": assets, "ada_data": len(assets) > 0}
-    finally:
-        session.close()
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    run_no = Column(String(30), nullable=False)                  # DEP-2024-12
+    period = Column(Date, nullable=False)                        # tanggal 1 bulan penyusutan
+    posting_date = Column(Date, nullable=False)                  # akhir bulan
+    asset_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    total_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    notes = Column(Text, nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
-ASSET_STATUS_VALID = {"active", "maintenance", "inactive", "disposed"}
-ASSET_DEPRECIATION_METHOD_VALID = {"Straight-line", "Declining-balance"}
+class FixedAssetDepreciationLine(Base):
+    __tablename__ = "asset_fixed_asset_depreciation_lines"
+    __table_args__ = (
+        UniqueConstraint("run_id", "asset_id", name="uq_fixed_asset_dep_line_asset"),
+        Index("idx_fixed_asset_dep_lines_asset", "asset_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_asset_depreciation_runs.id", ondelete="CASCADE"), nullable=False)
+    asset_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_assets.id"), nullable=False)
+    method = Column(String(30), nullable=False)
+    cost = Column(Numeric(24, 2), nullable=False)
+    accumulated_before = Column(Numeric(24, 2), nullable=False)
+    amount = Column(Numeric(24, 2), nullable=False)
+    expense_account_code = Column(String(50), nullable=False)
+    expense_account_name = Column(String(255), nullable=False)
+    accum_account_code = Column(String(50), nullable=False)
+    accum_account_name = Column(String(255), nullable=False)
+    journal_id = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
-def tambah_fixed_asset(
-    client_id: str, name: str, category: Optional[str] = None, purchase_date: Any = None,
-    cost: Any = 0, residual_value: Any = 0, useful_life_years: Optional[int] = None,
-    depreciation_method: Optional[str] = None, location: Optional[str] = None,
-    department: Optional[str] = None,
-) -> Dict[str, Any]:
-    """[BARU] Tambah aset tetap baru (tombol "Add Asset" di Fixed Asset
-    Register). asset_code dibuat otomatis (urutan berjalan per client)."""
-    from decimal import Decimal, InvalidOperation
+class FixedAssetDisposal(Base):
+    """Pelepasan aset: draft -> pending (diajukan) -> approved -> posted -> reversed
+    (atau rejected). Posted membuat jurnal FA disposal:
+        Dr akumulasi penyusutan, Dr akun hasil (proceeds), Dr rugi / Cr laba, Cr akun aset."""
+    __tablename__ = "asset_fixed_asset_disposals"
+    __table_args__ = (
+        UniqueConstraint("client_id", "disposal_no", name="uq_fixed_asset_disposal_no"),
+        Index("idx_fixed_asset_disposals_client", "client_id", "status"),
+        Index("uq_fixed_asset_disposal_aktif", "asset_id",
+              unique=True, postgresql_where=text("deleted_at IS NULL AND status NOT IN ('reversed', 'rejected')")),
+    )
 
-    _ar_uuid(client_id, "Client")
-    nama = (name or "").strip()
-    if not nama:
-        raise ValueError("Nama aset tidak boleh kosong.")
-    metode = (depreciation_method or "Straight-line").strip()
-    if metode not in ASSET_DEPRECIATION_METHOD_VALID:
-        raise ValueError(f"Metode penyusutan tidak dikenal. Nilai sah: {sorted(ASSET_DEPRECIATION_METHOD_VALID)}.")
-    try:
-        cost_dec = Decimal(str(cost)).quantize(Decimal("0.01"))
-        residual_dec = Decimal(str(residual_value or 0)).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError, TypeError):
-        raise ValueError("Cost / residual value tidak valid.")
-    if cost_dec < 0 or residual_dec < 0:
-        raise ValueError("Cost / residual value tidak boleh negatif.")
-    if residual_dec > cost_dec:
-        raise ValueError("Residual value tidak boleh melebihi cost.")
-    tgl_beli = _ar_tanggal(purchase_date, "Tanggal pembelian") if purchase_date else None
-
-    session = SessionLocal()
-    try:
-        jumlah = session.query(func.count(FixedAsset.id)).filter(FixedAsset.client_id == client_id).scalar() or 0
-        kode = f"FA-{str(client_id)[:4].upper()}-{jumlah + 1:03d}"
-        row = FixedAsset(
-            id=str(uuid.uuid4()), client_id=client_id, asset_code=kode, name=nama,
-            category=(category or "").strip()[:100] or None, purchase_date=tgl_beli,
-            cost=cost_dec, residual_value=residual_dec, useful_life_years=useful_life_years,
-            depreciation_method=metode, location=(location or "").strip()[:100] or None,
-            department=(department or "").strip()[:100] or None, status="active",
-            needs_review=False,
-        )
-        session.add(row)
-        session.commit()
-        return {"id": str(row.id), "asset_code": row.asset_code, "name": row.name}
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-
-def ubah_fixed_asset(client_id: str, asset_id: str, **fields: Any) -> Dict[str, Any]:
-    """[BARU] Ubah field aset tetap yang ada (tombol "Edit" di Fixed Asset
-    Register). `fields` hanya berisi kolom yang benar-benar dikirim
-    frontend (partial update) -- lihat api_ubah_fixed_asset() di main.py
-    untuk daftar field yang diizinkan."""
-    from decimal import Decimal, InvalidOperation
-
-    _ar_uuid(client_id, "Client")
-    asset_uuid = _ar_uuid(asset_id, "Asset")
-
-    session = SessionLocal()
-    try:
-        row = session.query(FixedAsset).filter(
-            FixedAsset.id == str(asset_uuid), FixedAsset.client_id == client_id
-        ).with_for_update().first()
-        if row is None:
-            raise ValueError("Aset tidak ditemukan untuk client ini.")
-
-        if "name" in fields:
-            nama = (fields["name"] or "").strip()
-            if not nama:
-                raise ValueError("Nama aset tidak boleh kosong.")
-            row.name = nama
-        if "category" in fields:
-            row.category = (fields["category"] or "").strip()[:100] or None
-        if "location" in fields:
-            row.location = (fields["location"] or "").strip()[:100] or None
-        if "department" in fields:
-            row.department = (fields["department"] or "").strip()[:100] or None
-        if "purchase_date" in fields:
-            row.purchase_date = _ar_tanggal(fields["purchase_date"], "Tanggal pembelian") if fields["purchase_date"] else None
-        if "cost" in fields:
-            try:
-                row.cost = Decimal(str(fields["cost"])).quantize(Decimal("0.01"))
-            except (InvalidOperation, ValueError, TypeError):
-                raise ValueError("Cost tidak valid.")
-        if "residual_value" in fields:
-            try:
-                row.residual_value = Decimal(str(fields["residual_value"])).quantize(Decimal("0.01"))
-            except (InvalidOperation, ValueError, TypeError):
-                raise ValueError("Residual value tidak valid.")
-        if row.residual_value is not None and row.cost is not None and row.residual_value > row.cost:
-            raise ValueError("Residual value tidak boleh melebihi cost.")
-        if "useful_life_years" in fields:
-            row.useful_life_years = fields["useful_life_years"]
-        if "depreciation_method" in fields:
-            metode = (fields["depreciation_method"] or "Straight-line").strip()
-            if metode not in ASSET_DEPRECIATION_METHOD_VALID:
-                raise ValueError(f"Metode penyusutan tidak dikenal. Nilai sah: {sorted(ASSET_DEPRECIATION_METHOD_VALID)}.")
-            row.depreciation_method = metode
-        if "needs_review" in fields:
-            row.needs_review = bool(fields["needs_review"])
-        if "status" in fields:
-            status_baru = (fields["status"] or "active").strip()
-            if status_baru not in ASSET_STATUS_VALID:
-                raise ValueError(f"Status tidak dikenal. Nilai sah: {sorted(ASSET_STATUS_VALID)}.")
-            if status_baru == "disposed":
-                raise ValueError("Gunakan endpoint dispose khusus untuk menandai aset sebagai disposed.")
-            row.status = status_baru
-        row.updated_at = datetime.now()
-        session.commit()
-        return {"id": str(row.id), "asset_code": row.asset_code, "name": row.name}
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    disposal_no = Column(String(30), nullable=False)
+    asset_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_assets.id"), nullable=False)
+    disposal_date = Column(Date, nullable=False)                 # rencana (pending) / tanggal pelepasan
+    method = Column(String(20), nullable=False)                  # sold / scrapped / lost / transferred / donated
+    reason = Column(Text, nullable=True)
+    counterparty = Column(String(255), nullable=True)            # pembeli / penerima
+    proceeds = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    proceeds_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    gain_loss_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    cost_at_disposal = Column(Numeric(24, 2), nullable=True)     # diisi saat posted
+    accumulated_at_disposal = Column(Numeric(24, 2), nullable=True)
+    nbv_at_disposal = Column(Numeric(24, 2), nullable=True)
+    gain_loss = Column(Numeric(24, 2), nullable=True)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    journal_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
-def disposisi_fixed_asset(
-    client_id: str, asset_id: str, disposal_date: Any, disposal_value: Any = 0,
-) -> Dict[str, Any]:
-    """[BARU] Tandai aset sebagai disposed (dijual/dibuang), dgn tanggal &
-    nilai disposal. Tidak bisa dibatalkan lewat endpoint biasa (perubahan
-    permanen, sesuai sifat disposal aset tetap)."""
-    from decimal import Decimal, InvalidOperation
+class FixedAssetJournal(Base):
+    """Jurnal posted modul Fixed Assets (sumber GL "fixed_asset").
+    journal_type: acquisition / depreciation / disposal / adjustment.
+    cost_change & accum_change = efek jurnal ke biaya & akumulasi aset."""
+    __tablename__ = "asset_fixed_asset_journals"
+    __table_args__ = (
+        UniqueConstraint("client_id", "journal_no", name="uq_fixed_asset_journal_no"),
+        Index("idx_fixed_asset_journals_client_date", "client_id", "journal_date"),
+        Index("idx_fixed_asset_journals_asset", "asset_id"),
+    )
 
-    _ar_uuid(client_id, "Client")
-    asset_uuid = _ar_uuid(asset_id, "Asset")
-    tgl = _ar_tanggal(disposal_date, "Tanggal disposal")
-    try:
-        nilai = Decimal(str(disposal_value or 0)).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError, TypeError):
-        raise ValueError("Nilai disposal tidak valid.")
-    if nilai < 0:
-        raise ValueError("Nilai disposal tidak boleh negatif.")
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    journal_no = Column(String(30), nullable=False)              # FA-2024-0001
+    journal_type = Column(String(20), nullable=False)
+    journal_date = Column(Date, nullable=False)
+    asset_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_assets.id"), nullable=True)
+    depreciation_run_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_asset_depreciation_runs.id"), nullable=True)
+    disposal_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_asset_disposals.id"), nullable=True)
+    reference = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False)
+    cost_change = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    accum_change = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    status = Column(String(20), nullable=False, default="posted", server_default=text("'posted'"))
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
 
-    session = SessionLocal()
-    try:
-        row = session.query(FixedAsset).filter(
-            FixedAsset.id == str(asset_uuid), FixedAsset.client_id == client_id
-        ).with_for_update().first()
-        if row is None:
-            raise ValueError("Aset tidak ditemukan untuk client ini.")
-        if row.status == "disposed":
-            raise ValueError("Aset ini sudah berstatus disposed.")
-        if row.purchase_date and tgl < row.purchase_date:
-            raise ValueError("Tanggal disposal tidak boleh sebelum tanggal pembelian.")
-        row.status = "disposed"
-        row.disposal_date = tgl
-        row.disposal_value = nilai
-        row.updated_at = datetime.now()
-        session.commit()
-        return {"id": str(row.id), "asset_code": row.asset_code, "status": row.status}
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+
+class FixedAssetJournalLine(Base):
+    __tablename__ = "asset_fixed_asset_journal_lines"
+    __table_args__ = (Index("idx_fixed_asset_journal_lines_journal", "journal_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_fixed_asset_journals.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+
+
+class FixedAssetReportLog(Base):
+    """Riwayat laporan Fixed Assets yang di-generate (kartu "Recent Generated Reports")."""
+    __tablename__ = "asset_fixed_asset_report_logs"
+    __table_args__ = (Index("idx_fixed_asset_report_logs_client", "client_id", "created_at"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    report_type = Column(String(40), nullable=False)
+    period_from = Column(Date, nullable=True)
+    period_to = Column(Date, nullable=True)
+    file_format = Column(String(10), nullable=False)             # pdf / xlsx / csv
+    filters = Column(JSONB, nullable=True)
+    row_count = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+
+
+# ============================================================
+# INVENTORY (grup Assets & Equity, migrations/40-*.py) -- modul
+# modules/assets_and_equity/inventory_v1.py, UI dataset/picture/Template
+# UI/Inventory/1-8.jpeg (Overview, Item List, Stock Movement, Adjustments,
+# Transfer, Reports).
+#
+#   asset_inventory_warehouses       gudang / lokasi stok
+#   asset_inventory_categories       kategori item + akun COA (persediaan, HPP, selisih)
+#   asset_inventory_items            master item (kode, satuan, stok minimum)
+#   asset_inventory_documents(+lines) dokumen stok: opening / receipt / issue /
+#                                    adjustment / transfer (draft -> posted -> void)
+#   asset_inventory_movements        kartu stok (1 baris per item per gudang per
+#                                    dokumen posted) -- sumber saldo & nilai
+#   asset_inventory_journals(+lines) jurnal INV-YYYY-#### (sumber GL "inventory")
+#
+# Metode biaya: rata-rata bergerak per item (semua gudang). Barang keluar
+# dinilai rata-rata per tanggal dokumen saat diposting; nilai tersimpan di
+# movement sehingga laporan historis tidak berubah.
+# ============================================================
+
+class InventoryWarehouse(Base):
+    __tablename__ = "asset_inventory_warehouses"
+    __table_args__ = (
+        Index("uq_inventory_warehouses_code", "client_id", "code", unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    code = Column(String(30), nullable=False)
+    name = Column(String(150), nullable=False)
+    address = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class InventoryCategory(Base):
+    __tablename__ = "asset_inventory_categories"
+    __table_args__ = (
+        Index("uq_inventory_categories_name", "client_id", text("upper(name)"), unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    inventory_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    cogs_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    adjustment_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class InventoryItem(Base):
+    __tablename__ = "asset_inventory_items"
+    __table_args__ = (
+        Index("uq_inventory_items_code", "client_id", "code", unique=True, postgresql_where=text("deleted_at IS NULL")),
+        Index("idx_inventory_items_category", "category_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    code = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=False)
+    barcode = Column(String(100), nullable=True)
+    category_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_categories.id"), nullable=True)
+    unit = Column(String(30), nullable=False, default="Pcs", server_default=text("'Pcs'"))
+    min_stock = Column(Numeric(18, 4), nullable=False, default=0, server_default=text("0"))
+    reorder_qty = Column(Numeric(18, 4), nullable=True)
+    default_warehouse_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_warehouses.id"), nullable=True)
+    purchase_price = Column(Numeric(24, 2), nullable=True)       # informatif (harga beli terakhir/standar)
+    sale_price = Column(Numeric(24, 2), nullable=True)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="active", server_default=text("'active'"))   # active / inactive
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class InventoryDocument(Base):
+    """Dokumen stok. doc_type:
+        opening     saldo awal (tanpa jurnal; nilai GL dari Opening Balance)
+        receipt     barang masuk (dari Purchase posted atau manual; jurnal opsional Dr persediaan / Cr lawan)
+        issue       barang keluar (untuk Sales atau pemakaian; jurnal HPP opsional Dr HPP|lawan / Cr persediaan)
+        adjustment  koreksi stok (qty +/-; jurnal Dr/Cr persediaan vs akun selisih)
+        transfer    pindah gudang (tanpa jurnal)
+    status: draft -> posted -> void (void = movement pembalik + jurnal dibalik di void_date)."""
+    __tablename__ = "asset_inventory_documents"
+    __table_args__ = (
+        UniqueConstraint("client_id", "doc_no", name="uq_inventory_document_no"),
+        Index("idx_inventory_documents_client", "client_id", "doc_type", "doc_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    doc_no = Column(String(30), nullable=False)
+    doc_type = Column(String(20), nullable=False)
+    doc_date = Column(Date, nullable=False)
+    warehouse_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_warehouses.id"), nullable=False)
+    to_warehouse_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_warehouses.id"), nullable=True)
+    reason = Column(String(40), nullable=True)                   # adjustment: stock_count / damaged / ...
+    source_type = Column(String(20), nullable=True)              # purchase / sales
+    source_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    source_ref = Column(String(100), nullable=True)              # nomor PO / invoice
+    notes = Column(Text, nullable=True)
+    post_journal = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    offset_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    total_qty = Column(Numeric(18, 4), nullable=False, default=0, server_default=text("0"))
+    total_value = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    journal_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    void_date = Column(Date, nullable=True)
+    void_reason = Column(Text, nullable=True)
+    voided_at = Column(DateTime(timezone=True), nullable=True)
+    voided_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    voided_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class InventoryDocumentLine(Base):
+    __tablename__ = "asset_inventory_document_lines"
+    __table_args__ = (Index("idx_inventory_document_lines_doc", "document_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    document_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_documents.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    item_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_items.id"), nullable=False)
+    quantity = Column(Numeric(18, 4), nullable=False)            # adjustment: +/-; lainnya > 0
+    system_qty = Column(Numeric(18, 4), nullable=True)           # adjustment stock count: qty buku saat dihitung
+    counted_qty = Column(Numeric(18, 4), nullable=True)
+    unit_cost = Column(Numeric(24, 4), nullable=True)            # masuk: diisi user; keluar: rata-rata saat posting
+    amount = Column(Numeric(24, 2), nullable=True)
+    source_line_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    notes = Column(Text, nullable=True)
+
+
+class InventoryMovement(Base):
+    """Kartu stok. qty_in/qty_out & value_in/value_out >= 0; is_reversal = pembalik dari void."""
+    __tablename__ = "asset_inventory_movements"
+    __table_args__ = (
+        Index("idx_inventory_movements_item", "client_id", "item_id", "movement_date"),
+        Index("idx_inventory_movements_document", "document_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    item_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_items.id"), nullable=False)
+    warehouse_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_warehouses.id"), nullable=False)
+    movement_date = Column(Date, nullable=False)
+    movement_type = Column(String(20), nullable=False)           # opening / purchase / receipt / sales / issue / adjustment / transfer
+    document_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_documents.id"), nullable=False)
+    document_line_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    reference_no = Column(String(30), nullable=False)
+    source_ref = Column(String(100), nullable=True)
+    qty_in = Column(Numeric(18, 4), nullable=False, default=0, server_default=text("0"))
+    qty_out = Column(Numeric(18, 4), nullable=False, default=0, server_default=text("0"))
+    unit_cost = Column(Numeric(24, 4), nullable=False, default=0, server_default=text("0"))
+    value_in = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    value_out = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    is_reversal = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    created_at = Column(DateTime(timezone=True), server_default=text("clock_timestamp()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class InventoryJournal(Base):
+    """Jurnal posted modul Inventory (sumber GL "inventory"): adjustment, receipt, issue (HPP)."""
+    __tablename__ = "asset_inventory_journals"
+    __table_args__ = (
+        UniqueConstraint("client_id", "journal_no", name="uq_inventory_journal_no"),
+        Index("idx_inventory_journals_client_date", "client_id", "journal_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    journal_no = Column(String(30), nullable=False)
+    journal_type = Column(String(20), nullable=False)            # receipt / issue / adjustment
+    journal_date = Column(Date, nullable=False)
+    document_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_documents.id"), nullable=True)
+    reference = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False)
+    status = Column(String(20), nullable=False, default="posted", server_default=text("'posted'"))
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+class InventoryJournalLine(Base):
+    __tablename__ = "asset_inventory_journal_lines"
+    __table_args__ = (Index("idx_inventory_journal_lines_journal", "journal_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_inventory_journals.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+
+
+# ============================================================
+# TAX COMPLIANCE (grup Planning, migrations/41-*.py) -- modul
+# modules/planning/tax_compliance_v1.py, UI dataset/picture/Template
+# UI/Tax Compliance/1-8.jpeg (Overview, Tax Ledger, PPh, VAT, Payments,
+# Reconciliation, Exceptions, Reports).
+#
+#   planning_tax_account_mappings  akun COA per jenis pajak (rekonsiliasi GL)
+#   planning_tax_ledger            buku pajak: hasil sinkron transaksi posted
+#                                  (Sales, Purchase, Journal Entry, Cash & Bank)
+#                                  + adjustment manual
+#   planning_tax_payments          setoran pajak (kode billing, NTPN); opsional
+#                                  dibuat sebagai transaksi Cash & Bank source 'tax'
+#   planning_tax_filings           SPT Masa / Tahunan per periode
+#   planning_tax_exceptions        temuan (otomatis dari aturan / manual)
+#   planning_tax_reconciliations   snapshot rekonsiliasi Tax Ledger vs GL
+# Status bayar & lapor per baris ledger DIHITUNG (tidak disimpan) dari
+# payments & filings, supaya selalu konsisten.
+# ============================================================
+
+class TaxAccountMapping(Base):
+    __tablename__ = "planning_tax_account_mappings"
+    __table_args__ = (UniqueConstraint("client_id", "tax_type", "coa_id", name="uq_tax_account_mapping"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    tax_type = Column(String(20), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class TaxLedgerEntry(Base):
+    __tablename__ = "planning_tax_ledger"
+    __table_args__ = (
+        Index("idx_tax_ledger_client_period", "client_id", "tax_period", "tax_type"),
+        Index("uq_tax_ledger_source_key", "client_id", "source_key", unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    entry_date = Column(Date, nullable=False)
+    tax_period = Column(Date, nullable=False)                    # tanggal 1 masa pajak
+    tax_type = Column(String(20), nullable=False)                # vat_output / vat_input / pph21 / pph23 / ...
+    tax_code = Column(String(30), nullable=True)                 # kode objek pajak, mis. 24-104-01
+    tax_object = Column(String(255), nullable=True)              # uraian objek, mis. Jasa Konsultansi
+    source_module = Column(String(20), nullable=False)           # sales / purchase / journal_entry / cash_bank / manual
+    source_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    source_key = Column(String(120), nullable=False)             # kunci sinkron unik per baris sumber
+    source_document = Column(String(100), nullable=True)
+    journal_no = Column(String(60), nullable=True)
+    party_name = Column(String(255), nullable=True)
+    party_type = Column(String(20), nullable=True)               # customer / vendor / employee / other
+    party_npwp = Column(String(30), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=True)
+    dpp_estimated = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    rate = Column(Numeric(7, 4), nullable=True)                  # persen
+    tax_amount = Column(Numeric(24, 2), nullable=False)
+    gl_account_code = Column(String(50), nullable=True)
+    gl_account_name = Column(String(255), nullable=True)
+    tax_document_no = Column(String(60), nullable=True)          # nomor e-Faktur / e-Bupot
+    tax_document_date = Column(Date, nullable=True)
+    is_manual = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    notes = Column(Text, nullable=True)
+    synced_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class TaxPayment(Base):
+    __tablename__ = "planning_tax_payments"
+    __table_args__ = (
+        UniqueConstraint("client_id", "payment_no", name="uq_tax_payment_no"),
+        Index("idx_tax_payments_client_period", "client_id", "tax_period", "tax_type"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    payment_no = Column(String(30), nullable=False)              # TXP-2026-0001
+    payment_date = Column(Date, nullable=False)
+    tax_type = Column(String(20), nullable=False)                # vat / pph21 / pph23 / ...
+    tax_period = Column(Date, nullable=False)
+    related_liability = Column(String(255), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=True)
+    amount = Column(Numeric(24, 2), nullable=False)
+    billing_code = Column(String(30), nullable=True)
+    ntpn = Column(String(30), nullable=True)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    bank_account_code = Column(String(50), nullable=True)
+    bank_account_name = Column(String(255), nullable=True)
+    payable_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    bank_cash_transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_transactions.id"), nullable=True)
+    status = Column(String(20), nullable=False, default="paid", server_default=text("'paid'"))   # pending / paid / cancelled
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class TaxFiling(Base):
+    __tablename__ = "planning_tax_filings"
+    __table_args__ = (
+        Index("uq_tax_filing_period", "client_id", "return_type", "tax_period", unique=True, postgresql_where=text("deleted_at IS NULL")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    return_type = Column(String(30), nullable=False)             # ppn / pph21 / unifikasi / annual_corporate / other
+    tax_period = Column(Date, nullable=False)                    # tanggal 1 masa (tahunan: 1 Jan)
+    due_date = Column(Date, nullable=True)
+    filed_date = Column(Date, nullable=True)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))   # draft / filed / not_required
+    receipt_no = Column(String(60), nullable=True)               # BPE / NTTE
+    amount = Column(Numeric(24, 2), nullable=True)
+    is_amendment = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class TaxException(Base):
+    __tablename__ = "planning_tax_exceptions"
+    __table_args__ = (
+        Index("uq_tax_exception_fingerprint", "client_id", "fingerprint", unique=True, postgresql_where=text("deleted_at IS NULL")),
+        Index("idx_tax_exceptions_client_status", "client_id", "status"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    exception_no = Column(String(30), nullable=False)            # EXC-2026-001
+    rule_code = Column(String(40), nullable=False)               # vat_output_no_efaktur / manual / ...
+    fingerprint = Column(String(160), nullable=False)
+    ledger_id = Column(PG_UUID(as_uuid=False), ForeignKey("planning_tax_ledger.id"), nullable=True)
+    tax_type = Column(String(20), nullable=True)
+    tax_period = Column(Date, nullable=True)
+    source_document = Column(String(100), nullable=True)
+    party_name = Column(String(255), nullable=True)
+    reason = Column(Text, nullable=False)
+    dpp = Column(Numeric(24, 2), nullable=True)
+    potential_tax = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    severity = Column(String(10), nullable=False, default="medium", server_default=text("'medium'"))   # high / medium / low
+    assigned_to = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False, default="open", server_default=text("'open'"))   # open / in_review / on_hold / resolved / dismissed
+    is_auto = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    detected_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_name = Column(String(255), nullable=True)
+    resolution_note = Column(Text, nullable=True)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class TaxReconciliation(Base):
+    __tablename__ = "planning_tax_reconciliations"
+    __table_args__ = (Index("idx_tax_reconciliations_client", "client_id", "run_at"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    period_from = Column(Date, nullable=False)
+    period_to = Column(Date, nullable=False)
+    total_ledger = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    total_gl = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    difference_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    rows = Column(JSONB, nullable=True)
+    notes = Column(Text, nullable=True)
+    run_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    run_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    run_by_name = Column(String(255), nullable=True)
+
+
+# ============================================================
+# TRANSACTIONS > OTHER (migrations/42-*.py) -- modul
+# modules/transactions/other_v1.py, UI dataset/picture/Template UI/other/1-7.png
+# (Overview, Source Data, Other Transaction, Journal Preview, Exceptions, Posted).
+# Jurnal lain-lain di luar Sales, Purchase, dan Cash & Bank (CapEx, akrual,
+# reklasifikasi, transaksi belum terkategori).
+#
+#   financial_transaction_other_journals       header OTH-YYYY-MM-####
+#                                              draft -> approved -> posted -> reversed (atau rejected)
+#   financial_transaction_other_journal_lines  baris akun (debit / kredit)
+#
+# GL/FS membaca jurnal posted/reversed langsung (sumber "other" di
+# db_client.ambil_baris_jurnal_posted_transaksi); tidak disalin ke Journal Entry.
+# ============================================================
+
+class OtherJournal(Base):
+    __tablename__ = "financial_transaction_other_journals"
+    __table_args__ = (
+        UniqueConstraint("client_id", "journal_no", name="uq_other_journal_no"),
+        Index("idx_other_journals_client_status", "client_id", "status"),
+        Index("idx_other_journals_client_date", "client_id", "journal_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    journal_no = Column(String(40), nullable=False)
+    journal_date = Column(Date, nullable=False)
+    category = Column(String(40), nullable=False, default="general", server_default=text("'general'"))
+    reference = Column(String(255), nullable=True)               # pihak / referensi, mis. PT Sumber Makmur / INV-1847
+    description = Column(Text, nullable=True)
+    review_note = Column(Text, nullable=True)
+    total_debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    total_credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))   # manual / import
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class OtherJournalLine(Base):
+    __tablename__ = "financial_transaction_other_journal_lines"
+    __table_args__ = (Index("idx_other_journal_lines_journal", "journal_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_other_journals.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
 
 
 # ============================================================
@@ -5961,6 +6442,47 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
     return hasil
 
 
+def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
+                           sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+    """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
+    -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
+    q = session.query(model).filter(model.client_id == management_client_id, model.status.in_(("posted", "reversed")))
+    if sampai_tanggal:
+        q = q.filter(model.journal_date <= sampai_tanggal)
+    jurnal = q.order_by(model.journal_date, model.journal_no).all()
+    if not jurnal:
+        return []
+    baris_per_j: Dict[str, List[Any]] = {}
+    for l in session.query(model_baris).filter(model_baris.journal_id.in_([j.id for j in jurnal])).order_by(model_baris.line_no).all():
+        baris_per_j.setdefault(l.journal_id, []).append(l)
+    hasil: List[Dict[str, Any]] = []
+    for j in jurnal:
+        dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
+                 "tanggal": j.journal_date, "pihak": j.reference, "segmen": {}}
+        for l in baris_per_j.get(j.id, []):
+            hasil.append({**dasar, "keterangan": l.description or j.description or j.journal_no,
+                          "account_code": l.account_code, "account_name": l.account_name,
+                          "debit": _angka_gl(l.debit), "kredit": _angka_gl(l.credit)})
+        if j.status == "reversed" and j.reversal_date and (not sampai_tanggal or j.reversal_date <= sampai_tanggal):
+            dasar_rv = {**dasar, "jurnal_id": f"{sumber}_rv:{j.id}", "nomor": f"RV-{j.journal_no}", "tanggal": j.reversal_date}
+            for l in baris_per_j.get(j.id, []):
+                hasil.append({**dasar_rv, "keterangan": f"Reversal {j.journal_no}: {j.reversal_reason or ''}".strip(),
+                              "account_code": l.account_code, "account_name": l.account_name,
+                              "debit": _angka_gl(l.credit), "kredit": _angka_gl(l.debit)})
+    return hasil
+
+
+def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+    """Jurnal Inventory posted/reversed -> baris GL (sumber "inventory")."""
+    return _baris_gl_jurnal_modul(session, InventoryJournal, InventoryJournalLine, "inventory", management_client_id, sampai_tanggal)
+
+
+
+def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+    """Jurnal Fixed Assets posted/reversed -> baris GL (sumber "fixed_asset")."""
+    return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal)
+
+
 def ambil_baris_jurnal_posted_transaksi(
     client_id: Optional[str] = None,
     sampai_tanggal: Optional[date] = None,
@@ -6106,6 +6628,12 @@ def ambil_baris_jurnal_posted_transaksi(
         # jadi hanya ikut kalau difilter per klien (management_client_id).
         if management_client_id:
             hasil.extend(_baris_gl_kas_bank(session, management_client_id, sampai_tanggal))
+            # --- 5) Fixed Assets (jurnal FA-..., sama: client_id = management_clients) ---
+            hasil.extend(_baris_gl_aset_tetap(session, management_client_id, sampai_tanggal))
+            # --- 6) Inventory (jurnal INV-... penyesuaian / HPP / penerimaan) ---
+            hasil.extend(_baris_gl_persediaan(session, management_client_id, sampai_tanggal))
+            # --- 7) Transactions > Other (jurnal OTH-...) ---
+            hasil.extend(_baris_gl_jurnal_modul(session, OtherJournal, OtherJournalLine, "other", management_client_id, sampai_tanggal))
 
         return hasil
     except Exception as e:

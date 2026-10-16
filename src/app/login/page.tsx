@@ -11,7 +11,7 @@ import LoginForm from './LoginForm';
 function LoginFallback() {
   return (
     <main className="min-h-screen bg-background flex items-center justify-center px-4">
-      <div className="text-sm text-muted-foreground">Memuat...</div>
+      <div className="text-sm text-muted-foreground">Loading...</div>
     </main>
   );
 }

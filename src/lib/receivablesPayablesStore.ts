@@ -168,7 +168,7 @@ export interface Settlement {
   reference_date: string | null;
   payment_method: PaymentMethod | null;
   currency: string;
-  source: 'bank_feed' | 'manual' | 'ar' | 'ap';
+  source: 'bank_feed' | 'manual' | 'ar' | 'ap' | 'tax';
   status: SettlementStatus;
   approved_at: string | null;
   approved_by_name: string | null;
@@ -791,7 +791,7 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
 };
 
 export const SOURCE_LABEL: Record<Settlement['source'], string> = {
-  ar: 'Accounts Receivable', ap: 'Accounts Payable', bank_feed: 'Cash & Bank · Bank Feed', manual: 'Cash & Bank · Manual',
+  ar: 'Accounts Receivable', ap: 'Accounts Payable', bank_feed: 'Cash & Bank · Bank Feed', manual: 'Cash & Bank · Manual', tax: 'Tax Compliance · Tax Payment',
 };
 
 /** Level role (tahap_N -> N); harus sama dengan backend. Backend tetap penentu akhirnya. */

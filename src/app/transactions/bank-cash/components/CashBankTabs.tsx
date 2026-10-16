@@ -4,12 +4,15 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CircleCheck, Eye, GitCompareArrows, Landmark, LayoutGrid } from 'lucide-react';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import CashBankTransactionModal from './CashBankTransactionModal';
 
 interface Tab {
   id: string;
   label: string;
   href: string;
+  icon: React.ElementType;
   description: string;
 }
 
@@ -20,48 +23,56 @@ const tabs: Tab[] = [
     id: 'tab-overview',
     label: 'Overview',
     href: '/transactions/bank-cash/overview',
+    icon: LayoutGrid,
     description: 'Cash flow summary, balance per account & reconciliation status',
   },
   {
     id: 'tab-cash-payment',
     label: 'Cash Payment',
     href: '/transactions/bank-cash/cash-payment',
+    icon: ArrowUpRight,
     description: 'Posted Purchase bills & their payment status',
   },
   {
     id: 'tab-cash-receipt',
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
+    icon: ArrowDownLeft,
     description: 'Posted Sales invoices & their receipt status',
   },
   {
     id: 'tab-bank-feed',
     label: 'Bank Feed',
     href: '/transactions/bank-cash/bank-feed',
+    icon: Landmark,
     description: 'Import bank statements (saved permanently) to match against the books',
   },
   {
     id: 'tab-reconciliation',
     label: 'Reconciliation',
     href: '/transactions/bank-cash/reconciliation',
+    icon: GitCompareArrows,
     description: 'Match Bank Feed lines to Sales/Purchase invoices or other accounts — including matched history',
   },
   {
     id: 'tab-journal-preview',
     label: 'Journal Preview',
     href: '/transactions/bank-cash/journal-preview',
+    icon: Eye,
     description: 'Review cash & bank journals, then Approve and Post them to the ledger',
   },
   {
     id: 'tab-exceptions',
     label: 'Exceptions',
     href: '/transactions/bank-cash/exceptions',
+    icon: AlertTriangle,
     description: 'Manage and follow up cash & bank items that need review',
   },
   {
     id: 'tab-posted',
     label: 'Posted',
     href: '/transactions/bank-cash/posted',
+    icon: CircleCheck,
     description: 'Cash & bank transactions posted to the ledger (and their reversals)',
   },
 ];
@@ -90,22 +101,20 @@ export default function CashBankTabs() {
       </div>
       <CashBankTransactionModal open={formBaru} onClose={() => setFormBaru(false)} />
 
-      <div className="flex items-center gap-1 bg-muted rounded-xl p-1 border border-border w-fit max-w-full overflow-x-auto scrollbar-thin mt-4">
+      <nav className={`${tabNavCls} mt-4`}>
         {tabs.map((tab) => {
           const active = isActive(tab.href);
           return (
             <Link
               key={tab.id}
               href={tab.href}
-              className={`px-5 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-150 ${
-                active ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={tabCls(active)}
             >
-              {tab.label}
+              <tab.icon size={16} /> {tab.label}
             </Link>
           );
         })}
-      </div>
+      </nav>
     </div>
   );
 }

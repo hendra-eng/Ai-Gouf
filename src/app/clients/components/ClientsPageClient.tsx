@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Users, Plus, Upload, Download, Search, LayoutGrid, List, ChevronRight, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, X, Building2, ArrowUpRight, ArrowDownRight, Activity, FileText, Receipt, Star, AlertCircle, Eye, ChevronDown, MoreVertical, Pencil, Trash2,  } from 'lucide-react';
+import { tabCls } from '@/components/shared/moduleUi';
 import {
   type Client,
   type ClientStatus,
@@ -295,15 +296,12 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-border px-6 overflow-x-auto">
+        <div className="-mb-px flex gap-1 overflow-x-auto border-b border-border px-6">
           {tabs.map(t => (
             <button
               key={`dt-${t.id}`}
               onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === t.id
-                  ? 'border-primary text-primary' :'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
+              className={tabCls(activeTab === t.id)}
             >
               {t.label}
             </button>

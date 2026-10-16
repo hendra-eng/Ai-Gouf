@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen, Lock } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { formatDate, useLockStatus } from '@/lib/yearEndClosingStore';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 
 // Kerangka halaman Financial Statements berbasis mapping: judul + navigasi
 // antar laporan + slot aksi (download, dsb).
@@ -40,7 +41,7 @@ export default function FsShell({ title, subtitle, actions, children }: {
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
 
-      <nav className="flex items-center gap-1 overflow-x-auto scrollbar-thin pb-1 -mx-1 px-1 border-b border-border">
+      <nav className={tabNavCls}>
         {FS_TABS.map(t => {
           const active = pathname === t.href;
           const Icon = t.icon;
@@ -48,9 +49,7 @@ export default function FsShell({ title, subtitle, actions, children }: {
             <Link
               key={t.href}
               href={t.href}
-              className={`flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors ${
-                active ? 'border-blue-600 text-blue-800 font-semibold' : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
+              className={tabCls(active)}
             >
               <Icon size={16} /> {t.label}
             </Link>
@@ -58,7 +57,7 @@ export default function FsShell({ title, subtitle, actions, children }: {
         })}
         <Link
           href="/reports/general-ledger"
-          className="ml-auto flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground"
+          className={`ml-auto ${tabCls(false)}`}
         >
           <BookOpen size={16} /> General Ledger
         </Link>

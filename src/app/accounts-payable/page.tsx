@@ -1,7 +1,7 @@
 import { ArApWorkspacePage } from '@/components/arap/ArApWorkspace';
 
 export const metadata = {
-  title: 'Accounts Payable — FinovaAI',
+  title: 'Accounts Payable — zafeb',
   description: 'Vendor payables from posted Purchase bills: aging, payments, statements and payment vouchers.',
 };
 

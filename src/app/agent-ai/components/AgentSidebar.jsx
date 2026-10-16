@@ -5,7 +5,7 @@ import "./AgentSidebar.css";
 
 // [MIGRASI Next.js] Lihat catatan sama di ../AgentAIChat.jsx -- asset
 // dipindah ke /public/agent-ai/, dipakai sebagai string URL langsung.
-const logoIcon = "/agent-ai-migration/images/logo-gouf-icon-cyan.png";
+const logoIcon = "/assets/images/zafeb-mark.png";
 
 /**
  * Sidebar -- port of the `with st.sidebar:` block in app.py
@@ -109,8 +109,8 @@ export default function AgentSidebar({
 
       <div className="sidebar-content" ref={scrollRef}>
         <h3>
-          <Image src={logoIcon} alt="Gouf Consulting" className="sidebar-logo" width={459} height={543} />
-          Gouf Consulting
+          <Image src={logoIcon} alt="zafeb" className="sidebar-logo" width={256} height={256} />
+          zafeb
         </h3>
         <p className="sidebar-caption">Penyedia Jasa Accounting Terbaik</p>
 

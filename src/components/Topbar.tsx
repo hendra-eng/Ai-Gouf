@@ -78,7 +78,7 @@ export default function Topbar({ onMobileMenuToggle, company, period }: TopbarPr
       {/* Mobile logo */}
       <div className="lg:hidden flex items-center gap-2">
         <AppLogo size={28} />
-        <span className="font-bold text-sm text-white">Gouf Consulting</span>
+        <span className="font-bold text-sm text-white">zafeb</span>
       </div>
 
       {/* Company selector */}

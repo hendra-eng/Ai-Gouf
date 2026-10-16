@@ -13,7 +13,7 @@ import {
 //   - Open Invoice / Bill List
 //   - Customer / Vendor Statement
 //   - Bukti Receipt / Payment (tombol "Print Receipt" di form Record Receipt)
-// Kop: merek Gouf Consulting di kiri, klien aktif (logo, nama, alamat) di kanan.
+// Kop: merek zafeb di kiri, klien aktif (logo, nama, alamat) di kanan.
 
 export type PaperSize = 'a4' | 'letter' | 'legal';
 export type Orientation = 'portrait' | 'landscape';
@@ -69,7 +69,7 @@ async function letterhead(doc: jsPDF, h: ReportHeader): Promise<number> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(...HIJAU_TUA);
-  doc.text('Gouf Consulting', M + 14, 17);
+  doc.text('zafeb', M + 14, 17);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(...TEAL);

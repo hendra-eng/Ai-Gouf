@@ -239,7 +239,7 @@ export default function CashBankJournalPreview() {
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${STATUS_BADGE[selected.status]}`}>{TX_STATUS_LABEL[selected.status]}</span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {receipt ? 'Cash Receipt' : 'Cash Payment'} · {selected.category || '—'} · {{ bank_feed: 'from Bank Feed', manual: 'manual entry', ar: 'from Accounts Receivable', ap: 'from Accounts Payable' }[selected.source]}
+              {receipt ? 'Cash Receipt' : 'Cash Payment'} · {selected.category || '—'} · {{ bank_feed: 'from Bank Feed', manual: 'manual entry', ar: 'from Accounts Receivable', ap: 'from Accounts Payable', tax: 'from Tax Compliance' }[selected.source]}
             </p>
           </div>
           <p className={`text-xl font-bold font-mono ${receipt ? 'text-emerald-700' : 'text-rose-700'}`}>{formatIDR(selected.amount)}</p>

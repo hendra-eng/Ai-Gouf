@@ -242,6 +242,10 @@ export interface AccountMappingItem {
   used_in: string | null;
   coa_id: string | null;
   coa: MappedCoa | null;
+  /** Terkunci: tidak bisa diubah dari menu mana pun sampai dibuka lagi. */
+  is_locked: boolean;
+  locked_at: string | null;
+  locked_by_name: string | null;
 }
 
 export interface AccountMappingGroup {
@@ -255,6 +259,7 @@ export interface AccountMapping {
   groups: AccountMappingGroup[];
   mapped: number;
   total: number;
+  locked: number;
   edited_at: string | null;
 }
 
@@ -268,6 +273,16 @@ export async function saveAccountMapping(clientId: string, mappings: Record<stri
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mappings }),
+  });
+  return baca<AccountMapping>(res);
+}
+
+/** Kunci / buka kunci mapping (hanya mapping yang sudah terisi). */
+export async function lockAccountMapping(clientId: string, keys: string[], locked: boolean): Promise<AccountMapping> {
+  const res = await fetch(`${SETTINGS_URL}/account-mapping/lock?client_id=${encodeURIComponent(clientId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keys, locked }),
   });
   return baca<AccountMapping>(res);
 }

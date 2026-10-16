@@ -1,7 +1,7 @@
 import { ArApWorkspacePage } from '@/components/arap/ArApWorkspace';
 
 export const metadata = {
-  title: 'Accounts Receivable — FinovaAI',
+  title: 'Accounts Receivable — zafeb',
   description: 'Customer receivables from posted Sales invoices: aging, collections, statements and receipts.',
 };
 

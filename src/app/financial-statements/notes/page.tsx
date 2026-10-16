@@ -2,7 +2,7 @@ import React from 'react';
 import NotesClient from '../components/fs/NotesClient';
 
 export const metadata = {
-  title: 'Notes to Financial Statements — FinovaAI',
+  title: 'Notes to Financial Statements — zafeb',
   description: 'CALK framework with GL-linked tables, overrides and audit trail.',
 };
 

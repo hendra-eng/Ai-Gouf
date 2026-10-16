@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck } from 'lucide-react';
+import { Boxes, LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
 import { useAuth, userInitials } from '@/lib/auth';
@@ -66,7 +66,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: 'Assets & Equity',
     items: [
-      { id: 'nav-assets', label: 'Assets', icon: Package, href: '/assets' },
+      { id: 'nav-assets', label: 'Fixed Assets', icon: Package, href: '/assets' },
+      { id: 'nav-inventory', label: 'Inventory', icon: Boxes, href: '/inventory' },
       { id: 'nav-liabilities', label: 'Liabilities', icon: Wallet, href: '/liabilities' },
       { id: 'nav-equity', label: 'Equity', icon: Scale, href: '/equity' },
     ],
@@ -75,7 +76,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: 'Planning',
     items: [
       { id: 'nav-budget', label: 'Budget & Forecast', icon: Calculator, href: '/budget-forecast' },
-      { id: 'nav-tax', label: 'Tax & Compliance', icon: ShieldCheck, href: '/tax-compliance', badge: '2', badgeVariant: 'negative' },
+      { id: 'nav-tax', label: 'Tax Compliance', icon: ShieldCheck, href: '/tax-compliance' },
       { id: 'nav-analytics', label: 'Financial Analytics', icon: BarChart3, href: '/financial-analytics' },
     ],
   },
@@ -257,7 +258,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
           <div className="flex items-center gap-2.5">
             <AppLogo size={32} />
             <div>
-              <span className="font-bold text-sm text-white tracking-tight">Gouf Consulting</span>
+              <span className="font-bold text-sm text-white tracking-tight">zafeb</span>
               <p className="text-[10px] text-white/60 leading-none mt-0.5">{t('Accounting')}</p>
             </div>
           </div>
@@ -366,7 +367,7 @@ export default function Sidebar({ collapsed, onToggle, currentPath = '', mobileO
         <div className="flex items-center justify-between h-16 px-4 border-b border-white/10">
           <div className="flex items-center gap-2.5">
             <AppLogo size={32} />
-            <span className="font-bold text-sm text-white">Gouf Consulting</span>
+            <span className="font-bold text-sm text-white">zafeb</span>
           </div>
           <button onClick={onMobileClose} className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white">
             <X size={16} />
