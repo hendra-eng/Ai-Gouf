@@ -1,85 +1,54 @@
--- seed_template_sau_bank_cash.sql
+-- seed_template_sau_multi_format_bank_cash.sql
 -- =============================================================
--- Template ekstraksi rekening koran (financial_transaction_bank_cash_import_templates)
--- + mapping bank -> akun COA (financial_transaction_bank_cash_bank_mappings,
--- migration 36) untuk klien SAU, hasil analisis file contoh:
---   dataset/Bank Cash/SAU/SAU_BCA.pdf
---   dataset/Bank Cash/SAU/SAU_BRI.pdf
---   dataset/Bank Cash/SAU/SAU_MANDIRI.pdf
---   dataset/Bank Cash/SAU/Laporan Data Kas Kasir Finance Juni 2026.xlsx
+-- Template ekstraksi rekening koran / kas (financial_transaction_bank_cash_import_templates)
+-- + mapping bank -> akun COA (financial_transaction_bank_cash_bank_mappings) untuk
+-- klien SAU (CV Sumber Alodie Utama), format MULTI seperti seed Sales:
+-- SATU baris template file_type 'Multi' yang membawa array "variants".
 --
--- Hasil ekstraksi (modules/transactions/bank_statement_extractor.py) atas
--- keempat file contoh periode Juni 2026 -- SEMUA "verified" 100%: saldo
--- berjalan per baris cocok + total resmi di dokumen cocok:
+-- VARIAN (urutan = urutan hash di bawah):
+--   1. BCA     - Rekening Giro (PDF)          rek. 6281900118
+--   2. BRI     - Britama Bisnis (PDF)         rek. 140301000103562
+--   3. Mandiri - Kopra Account Statement (PDF) rek. 1290011863475
+--   4. Kas Kasir - Laporan Kas Kasir Finance (Excel, sheet "Data")
 --
---   | File            | Jalur | Baris | Saldo awal       | Saldo akhir      | Cek resmi                                   |
---   |-----------------|-------|-------|------------------|------------------|---------------------------------------------|
---   | BCA (giro)      | words | 1.422 | 1.754.636.519,17 | 1.253.226.731,28 | total DB/CR + jumlah baris DB 362 / CR 1060 |
---   | BRI (Britama)   | words |   288 |   358.569.812,67 |   384.245.578,67 | total debet/kredit (blok kolom di footer)   |
---   | Mandiri (Kopra) | words |   302 |   959.450.372,76 | 1.215.267.719,01 | total + No. of Debit 15 / Credit 287        |
---   | Kas Kasir Excel | table | 1.286 | 1.274.590.096    |   985.362.866    | Total Uang Masuk/Keluar (panel samping)     |
+-- SUMBER ISI: resep tiap varian berasal dari seed_template_sau_bank_cash.sql lalu
+-- DIUJI ULANG terhadap 4 file contoh periode AGUSTUS 2026 (semua cocok 100% dengan
+-- total resmi di dokumen, saldo berjalan 0 selisih):
+--   SAU_BCA_06281900118_202608.pdf            135 hal, 1.364 baris (CR 1.043 / DB 321)
+--   SAU_BRI_1751950554900542085_202608.pdf     12 hal,   325 baris
+--   SAU_MANDIRI_1290011863475_202608.pdf       27 hal,   309 baris (DB 20 / CR 289)
+--   Laporan_Data_Kas_Kasir_Finance_Agustus_2026.xlsx  1.194 baris
+-- Angka validasi per varian ada di mapping_rules.validation_expected.
 --
--- BENTUK FILE per template:
---   BCA     -- PDF tanpa garis tabel, 1 kolom MUTASI + penanda "DB" (tanpa
---              penanda = kredit), tanggal "dd/mm" (tahun dari "PERIODE : JUNI 2026"),
---              saldo hanya tercetak di baris terakhir per hari (divalidasi per segmen).
---   BRI     -- PDF, kolom Debet & Kredit terpisah, tanggal "dd/mm/yy hh:mm:ss",
---              header 2 baris (Indonesia + Inggris), ringkasan di halaman terakhir
---              berbentuk BLOK KOLOM (label di 1 baris, angka di baris bawahnya).
---   Mandiri -- PDF Kopra, sel rata-tengah VERTIKAL: tanggal, keterangan & nominal
---              1 transaksi tercetak di baris visual berbeda -> digabung per blok
---              (celah vertikal lebar = transaksi baru). Ringkasan di halaman 1
---              (Opening Balance / No. of Debit / Total Amount Debited, ...).
---   Kas Kasir -- Excel sheet "Data", judul di baris 1-3, baris 4 total (tanpa
---              label), HEADER di baris 5, data mulai baris 6. KAS MASUK = uang
---              masuk (credit), KAS KELUAR = uang keluar (debit), SALDO UANG FISIK
---              = saldo berjalan. Baris pertama "Modal Awal Bulan" = saldo pindahan
---              bulan lalu (nominal = saldo), BUKAN mutasi -> jadi saldo awal.
---              Kolom ACCOUNT (Revenue-Customer, Cost, Prive, ...) & NO. JURNAL
---              ikut ke keterangan mutasi. Panel ringkasan di kolom J-K (Saldo
---              Awal / Saldo Akhir / Total Uang Masuk / Total Uang Keluar) dipakai
---              untuk validasi. Dokumen ini tidak punya nama bank -> label "Kas
---              Kasir" diambil dari template.
+-- CATATAN PENTING: (1) nomor rekening di NAMA FILE BRI (1751950554900542085) beda dengan
+-- nomor di dalam dokumen (140301000103562) -> mapping memakai nomor di dokumen.
+-- (2) Kas Kasir: baris "Modal Awal Bulan" adalah saldo awal, bukan mutasi.
+-- (3) column_signature_hash varian DISALIN dari seed lama, belum dihitung ulang oleh
+-- extractor (belum ada) -> verifikasi saat parser dibuat.
 --
--- MAPPING BANK (akun COA SAU, lihat seed_coa_sau.sql):
---   BCA     rek. 6281900118      -> 11200001 BANK BCA
---   Mandiri rek. 1290011863475   -> 11200002 BANK MANDIRI
---   BRI     rek. 140301000103562 -> 11200003 BANK BRI
---   Kas Kasir (judul "LAPORAN KAS KASIR" / template Kas Kasir) -> 11100002 KAS KASIR
--- Upload di Bank Feed dengan pilihan akun "Auto-detect" memakai mapping ini
--- (urutan cocok: nomor rekening > kata kunci judul > template > nama bank).
+-- PERINGATAN: backend untuk membaca baris Multi di tabel bank_cash BELUM ada
+-- (bank_cash_import_v1 / bank_statement_extractor / migration tabel template &
+-- bank_mappings belum dibuat). Seed ini baru bisa dijalankan setelah tabelnya ada.
 --
--- column_signature_hash = SHA-256 dari header tabel yang dinormalisasi
--- (bank_statement_extractor.signature_header: _norm per kolom, digabung "|",
--- kolom kosong di ujung kanan dibuang). mapping_rules = format
--- Aturan.ke_dict (columns/role, amount_mode, default_direction,
--- number_format, date_order, method, bank_name).
+-- column_signature_hash level baris = SHA-256("<hash_bca>:<hash_bri>:<hash_mandiri>:<hash_kas>")
+-- = 1ccab5d2b21eedeaa47308c93e2d16be2b171f7487a3deac53666cbf662a62b6
 --
--- KLIEN: dicari lewat nama_client ('SAU' / 'CV SUMBER ALODIE UTAMA'), GAGAL
--- dengan pesan jelas kalau belum ada. Akun COA dicari lewat acc_no di
--- management_client_coa klien itu (GAGAL kalau COA SAU belum di-seed).
--- client_id / client_code / coa id TIDAK di-hardcode.
+-- AKUN COA (seed_coa_sau.sql): BCA 11200001, Mandiri 11200002, BRI 11200003, Kas Kasir 11100002.
+-- Klien dicari lewat nama_client ('SAU' / 'CV SUMBER ALODIE UTAMA'); GAGAL jelas
+-- kalau klien atau akun COA belum ada. client_id / coa id TIDAK di-hardcode.
 --
--- is_active & usage_count DISEBUTKAN EKSPLISIT (default di ORM sisi Python,
--- bukan DEFAULT kolom untuk tabel template).
---
--- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
+-- Cara pakai:
 --   cd backend
---   venv\Scripts\python migrations\36-create_bank_cash_bank_mappings.py   (sekali, kalau belum)
---   venv\Scripts\python migrations\run_seed.py seed_template_sau_bank_cash.sql
+--   venv\Scripts\python migrations\run_seed.py migrations\bank_cash\seed_template_sau_multi_format_bank_cash.sql
 --
--- Idempotensi: TIDAK pakai ON CONFLICT DO NOTHING supaya run-2x gagal jelas
--- (UNIQUE uq_bank_cash_import_templates_signature), bukan diam-diam ke-skip.
--- Untuk menjalankan ulang (mis. setelah mapping_rules direvisi), hapus dulu:
+-- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan. Untuk menjalankan ulang:
 --   DELETE FROM financial_transaction_bank_cash_bank_mappings m USING management_clients c
 --    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA');
 --   DELETE FROM financial_transaction_bank_cash_import_templates t USING management_clients c
 --    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA')
---      AND t.column_signature_hash IN (
---        '6a65c7106a217a494632febf3b4f082cb15a8570ec54ace3a2299c34087b21f0',
---        'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457',
---        'ac5ac68033fef29681dc99e1491a97bc2bbe4b66760868de85aea7c4efff1f31',
---        '8dba4029b3cd2f33bd6e029efe6421766c2fd5baf786df2e55abad25390f4331');
+--      AND t.file_type = 'Multi' AND t.column_signature_hash = '1ccab5d2b21eedeaa47308c93e2d16be2b171f7487a3deac53666cbf662a62b6';
+-- Kalau seed lama (seed_template_sau_bank_cash.sql, 4 baris terpisah) sudah pernah
+-- dijalankan, hapus dulu baris & mapping-nya -- jangan jalankan keduanya.
 
 DO $do$
 DECLARE
@@ -89,10 +58,7 @@ DECLARE
     v_coa_mandiri UUID;
     v_coa_bri     UUID;
     v_coa_kas     UUID;
-    v_tpl_bca     UUID;
-    v_tpl_bri     UUID;
-    v_tpl_mandiri UUID;
-    v_tpl_kas     UUID;
+    v_tpl_multi   UUID;
 BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
@@ -114,74 +80,310 @@ BEGIN
         RAISE EXCEPTION 'Akun COA SAU 11200001 (BANK BCA) / 11200002 (BANK MANDIRI) / 11200003 (BANK BRI) / 11100002 (KAS KASIR) belum lengkap -- jalankan dulu seed_coa_sau.sql.';
     END IF;
 
-    -- ---------------------------------------------------------
-    -- Template ekstraksi
-    -- ---------------------------------------------------------
     INSERT INTO financial_transaction_bank_cash_import_templates (
         client_id, client_code, template_name, file_type, sheet_name, header_row_index, data_start_row_index,
         column_signature_hash, header_columns, mapping_rules, detected_by, ai_confidence, is_active, usage_count
     ) VALUES (
-        v_client_id, v_client_code, 'BCA - Rekening Giro (PDF)', 'PDF', NULL, 1, 2,
-        '6a65c7106a217a494632febf3b4f082cb15a8570ec54ace3a2299c34087b21f0',
-        '["TANGGAL", "KETERANGAN", "CBG", "MUTASI", "SALDO"]'::jsonb,
-        '{"columns": [{"header": "TANGGAL", "role": "date"}, {"header": "KETERANGAN", "role": "description"}, {"header": "CBG", "role": "reference"}, {"header": "MUTASI", "role": "amount"}, {"header": "SALDO", "role": "balance"}], "amount_mode": "single", "default_direction": "credit", "number_format": "en", "date_order": "dmy", "method": "words", "bank_name": "BCA"}'::jsonb,
+        v_client_id, v_client_code, 'SAU - Multi Format (BCA, BRI, Mandiri, Kas Kasir)', 'Multi', NULL, 1, 2,
+        '1ccab5d2b21eedeaa47308c93e2d16be2b171f7487a3deac53666cbf662a62b6',
+        '[]'::jsonb,
+        $json${
+  "format_type": "multi_format",
+  "description": "1 setting klien SAU untuk import rekening koran / kas Cash & Bank > Source Data. 4 varian: BCA giro (PDF), BRI Britama Bisnis (PDF), Mandiri Kopra (PDF), Kas Kasir Finance (Excel). Backend memilih varian yang file_type dan signature header-nya cocok. Akun COA ditentukan lewat financial_transaction_bank_cash_bank_mappings (nomor rekening > kata kunci > template > nama bank).",
+  "variants": [
+    {
+      "variant_name": "BCA - Rekening Giro (PDF)",
+      "file_type": "PDF",
+      "sheet_name": null,
+      "header_row_index": 1,
+      "data_start_row_index": 2,
+      "column_signature_hash": "6a65c7106a217a494632febf3b4f082cb15a8570ec54ace3a2299c34087b21f0",
+      "header_columns": [
+        "TANGGAL",
+        "KETERANGAN",
+        "CBG",
+        "MUTASI",
+        "SALDO"
+      ],
+      "mapping_rules": {
+        "columns": [
+          {
+            "header": "TANGGAL",
+            "role": "date"
+          },
+          {
+            "header": "KETERANGAN",
+            "role": "description"
+          },
+          {
+            "header": "CBG",
+            "role": "reference"
+          },
+          {
+            "header": "MUTASI",
+            "role": "amount"
+          },
+          {
+            "header": "SALDO",
+            "role": "balance"
+          }
+        ],
+        "amount_mode": "single",
+        "default_direction": "credit",
+        "number_format": "en",
+        "date_order": "dmy",
+        "method": "words",
+        "bank_name": "BCA",
+        "date_format": "DD/MM (tahun dari baris 'PERIODE : <BULAN> <TAHUN>' di header halaman)",
+        "detect": {
+          "account_number_regex": "NO\\.?\\s*RE\\s*KE\\s*NING\\s*:\\s*(\\d+)",
+          "filename_regex": "^SAU_BCA_0*(\\d+)_(\\d{6})",
+          "catatan": "Teks header PDF BCA tercetak dengan huruf terpisah spasi (\"T ANG G A L\", \"S U M B ER A L O DIE\") -> normalisasi buang semua spasi sebelum mencocokkan header/nomor rekening."
+        },
+        "validation_expected": {
+          "opening_balance": "1726047117.43",
+          "closing_balance": "1274223419.56",
+          "total_credit": "13148496472.18",
+          "count_credit": 1043,
+          "total_debit": "13600320170.05",
+          "count_debit": 321,
+          "balance_checkpoints": 292,
+          "source": "ringkasan di halaman terakhir (SALDO AWAL / MUTASI CR / MUTASI DB / SALDO AKHIR)"
+        },
+        "catatan_analisis": "Contoh: SAU_BCA_06281900118_202608.pdf (Agustus 2026, 135 halaman, 1.364 baris). Hasil uji prototipe: jumlah & total CR/DB sama persis dengan ringkasan resmi, 292 checkpoint saldo (saldo hanya tercetak di baris terakhir tiap hari) 0 selisih, saldo akhir cocok. Nominal ada di baris pertama transaksi; sufiks 'DB' = debit, tanpa sufiks = kredit. Baris keterangan lanjutan (nama pengirim, TGH/QR/DDR) menempel ke transaksi di atasnya. Baris 'SALDO AWAL' bukan mutasi."
+      }
+    },
+    {
+      "variant_name": "BRI - Britama Bisnis (PDF)",
+      "file_type": "PDF",
+      "sheet_name": null,
+      "header_row_index": 1,
+      "data_start_row_index": 2,
+      "column_signature_hash": "a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457",
+      "header_columns": [
+        "Tanggal Transaksi",
+        "Uraian Transaksi",
+        "Teller",
+        "Debet",
+        "Kredit",
+        "Saldo"
+      ],
+      "mapping_rules": {
+        "columns": [
+          {
+            "header": "Tanggal Transaksi",
+            "role": "date"
+          },
+          {
+            "header": "Uraian Transaksi",
+            "role": "description"
+          },
+          {
+            "header": "Teller",
+            "role": "reference"
+          },
+          {
+            "header": "Debet",
+            "role": "debit"
+          },
+          {
+            "header": "Kredit",
+            "role": "credit"
+          },
+          {
+            "header": "Saldo",
+            "role": "balance"
+          }
+        ],
+        "amount_mode": "split",
+        "default_direction": null,
+        "number_format": "en",
+        "date_order": "dmy",
+        "method": "words",
+        "bank_name": "BRI",
+        "date_format": "DD/MM/YY HH:mm:ss",
+        "detect": {
+          "account_number_regex": "No\\.\\s*Rekening\\s*:\\s*(\\d+)",
+          "filename_regex": "^SAU_BRI_(\\d+)_(\\d{6})",
+          "catatan": "Nomor rekening di NAMA FILE contoh (1751950554900542085) BERBEDA dengan nomor di dalam dokumen (140301000103562); mapping memakai nomor di dokumen, jangan nama file."
+        },
+        "validation_expected": {
+          "opening_balance": "322212643.67",
+          "closing_balance": "812209205.67",
+          "total_debit": "912673668.00",
+          "total_credit": "1402670230.00",
+          "source": "tabel ringkasan di halaman terakhir (Saldo Awal / Total Transaksi Debet / Total Transaksi Kredit / Saldo Akhir)"
+        },
+        "catatan_analisis": "Contoh: SAU_BRI_1751950554900542085_202608.pdf (Agustus 2026, 12 halaman, 325 baris). Hasil uji: total debet & kredit sama persis dengan ringkasan resmi, saldo berjalan tiap baris 0 selisih, saldo akhir cocok. Uraian bisa 2 baris (BRIVA, BI-Fast) -> gabung ke baris tanggalnya. Transfer BI-Fast/biaya muncul sebagai 2 baris terpisah (nominal + biaya Rp2.500/3.000) dengan jam sama -> tetap 2 mutasi."
+      }
+    },
+    {
+      "variant_name": "Mandiri - Kopra Account Statement (PDF)",
+      "file_type": "PDF",
+      "sheet_name": null,
+      "header_row_index": 1,
+      "data_start_row_index": 2,
+      "column_signature_hash": "ac5ac68033fef29681dc99e1491a97bc2bbe4b66760868de85aea7c4efff1f31",
+      "header_columns": [
+        "Posting Date",
+        "Remark",
+        "Reference No.",
+        "Debit",
+        "Credit",
+        "Balance"
+      ],
+      "mapping_rules": {
+        "columns": [
+          {
+            "header": "Posting Date",
+            "role": "date"
+          },
+          {
+            "header": "Remark",
+            "role": "description"
+          },
+          {
+            "header": "Reference No.",
+            "role": "reference"
+          },
+          {
+            "header": "Debit",
+            "role": "debit"
+          },
+          {
+            "header": "Credit",
+            "role": "credit"
+          },
+          {
+            "header": "Balance",
+            "role": "balance"
+          }
+        ],
+        "amount_mode": "split",
+        "default_direction": null,
+        "number_format": "en",
+        "date_order": "dmy",
+        "method": "words",
+        "bank_name": "Mandiri",
+        "date_format": "DD MMM YYYY, HH:mm:ss (bulan Inggris: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec)",
+        "detect": {
+          "account_number_regex": "Account No\\.\\s*(\\d+)",
+          "filename_regex": "^SAU_MANDIRI_(\\d+)_(\\d{6})",
+          "catatan": "Nomor rekening ada di dokumen ('Account No.') dan nama file; sama."
+        },
+        "validation_expected": {
+          "opening_balance": "1102947795.47",
+          "closing_balance": "826664279.31",
+          "total_debit": "1186794228.96",
+          "count_debit": 20,
+          "total_credit": "910510712.80",
+          "count_credit": 289,
+          "source": "Account Statement Summary di halaman 1"
+        },
+        "catatan_analisis": "Contoh: SAU_MANDIRI_1290011863475_202608.pdf (Agustus 2026, 27 halaman, 309 baris = 20 debit + 289 kredit). Hasil uji: jumlah baris & total debit/kredit sama persis dengan Summary, saldo berjalan 0 selisih, saldo akhir cocok. Sel rata-tengah vertikal: tanggal, remark & nominal satu transaksi tercetak di baris visual berbeda -> gabung per blok. Kolom Reference No. bernilai '-' = kosong. Potongan remark bisa tumpah ke ATAS header tabel di halaman berikutnya (contoh hal. 3, 8, 16, 19, 20, 25) -> milik transaksi terakhir halaman sebelumnya. Baris 31/08 23:59:00 (Biaya Adm, Bunga, Pajak) adalah mutasi biasa."
+      }
+    },
+    {
+      "variant_name": "Kas Kasir - Laporan Kas Kasir Finance (Excel)",
+      "file_type": "Excel",
+      "sheet_name": "Data",
+      "header_row_index": 5,
+      "data_start_row_index": 6,
+      "column_signature_hash": "8dba4029b3cd2f33bd6e029efe6421766c2fd5baf786df2e55abad25390f4331",
+      "header_columns": [
+        "Tanggal",
+        "NO. JURNAL",
+        "KETERANGAN",
+        "ACCOUNT",
+        "KAS MASUK",
+        "KAS KELUAR",
+        "SALDO UANG FISIK",
+        "Keterangan"
+      ],
+      "mapping_rules": {
+        "columns": [
+          {
+            "header": "Tanggal",
+            "role": "date"
+          },
+          {
+            "header": "NO. JURNAL",
+            "role": "reference"
+          },
+          {
+            "header": "KETERANGAN",
+            "role": "description"
+          },
+          {
+            "header": "ACCOUNT",
+            "role": "reference"
+          },
+          {
+            "header": "KAS MASUK",
+            "role": "credit"
+          },
+          {
+            "header": "KAS KELUAR",
+            "role": "debit"
+          },
+          {
+            "header": "SALDO UANG FISIK",
+            "role": "balance"
+          },
+          {
+            "header": "Keterangan",
+            "role": "reference"
+          }
+        ],
+        "amount_mode": "split",
+        "default_direction": null,
+        "number_format": "en",
+        "date_order": "dmy",
+        "method": "table",
+        "bank_name": "Kas Kasir",
+        "date_format": "sel tanggal Excel (datetime)",
+        "detect": {
+          "title_keyword": "LAPORAN KAS KASIR",
+          "filename_regex": "^Laporan_Data_Kas_Kasir_Finance_(\\w+)_(\\d{4})",
+          "catatan": "Tidak punya nomor rekening/nama bank; dicocokkan lewat judul sel A2 'LAPORAN KAS KASIR FINANCE' dan sheet 'Data'."
+        },
+        "read_columns": "A:H saja (kolom J:M berisi panel ringkasan samping + tabel ringkasan per account, JANGAN dibaca sebagai mutasi)",
+        "skip_rows": "baris tanpa Tanggal (baris penutup 'Saldo Akhir Kas Kasir Finance <bulan>' di kolom H) tidak dihitung",
+        "opening_balance_row": {
+          "match": "KETERANGAN = 'Modal Awal Bulan'",
+          "catatan": "Baris pertama data (Modal Awal Bulan 445.641.438 di kolom KAS MASUK) = SALDO AWAL, BUKAN mutasi: jangan diimpor sebagai kas masuk."
+        },
+        "validation_expected": {
+          "opening_balance": "445641438",
+          "closing_balance": "512216528",
+          "total_credit": "6496399337",
+          "total_debit": "6429824247",
+          "source": "panel samping (Saldo Awal / Saldo Akhir / Total Uang Masuk / Total Uang Keluar) + E4/F4"
+        },
+        "catatan_analisis": "Contoh: Laporan_Data_Kas_Kasir_Finance_Agustus_2026.xlsx (sheet 'Data', header baris 5, data mulai baris 6, 1.194 baris termasuk Modal Awal Bulan). Hasil uji: total KAS MASUK TANPA baris Modal Awal Bulan = 6.496.399.337 dan total KAS KELUAR = 6.429.824.247, sama persis dengan panel; saldo berjalan kolom SALDO UANG FISIK 0 selisih; saldo akhir 512.216.528. 'Modal Awal Kasir' (2.400.000) adalah kas keluar biasa. NO. JURNAL terisi hanya sebagian baris (698 dari 1.194)."
+      }
+    }
+  ]
+}$json$::jsonb,
         'manual', 100.00, true, 0
-    ) RETURNING id INTO v_tpl_bca;
+    ) RETURNING id INTO v_tpl_multi;
 
-    INSERT INTO financial_transaction_bank_cash_import_templates (
-        client_id, client_code, template_name, file_type, sheet_name, header_row_index, data_start_row_index,
-        column_signature_hash, header_columns, mapping_rules, detected_by, ai_confidence, is_active, usage_count
-    ) VALUES (
-        v_client_id, v_client_code, 'BRI - Britama Bisnis (PDF)', 'PDF', NULL, 1, 2,
-        'a4fb6183c395e851688fdf816e45630e7fa62b10075bc4287efed290f4aff457',
-        '["Tanggal Transaksi", "Uraian Transaksi", "Teller", "Debet", "Kredit", "Saldo"]'::jsonb,
-        '{"columns": [{"header": "Tanggal Transaksi", "role": "date"}, {"header": "Uraian Transaksi", "role": "description"}, {"header": "Teller", "role": "reference"}, {"header": "Debet", "role": "debit"}, {"header": "Kredit", "role": "credit"}, {"header": "Saldo", "role": "balance"}], "amount_mode": "split", "default_direction": null, "number_format": "en", "date_order": "dmy", "method": "words", "bank_name": "BRI"}'::jsonb,
-        'manual', 100.00, true, 0
-    ) RETURNING id INTO v_tpl_bri;
-
-    INSERT INTO financial_transaction_bank_cash_import_templates (
-        client_id, client_code, template_name, file_type, sheet_name, header_row_index, data_start_row_index,
-        column_signature_hash, header_columns, mapping_rules, detected_by, ai_confidence, is_active, usage_count
-    ) VALUES (
-        v_client_id, v_client_code, 'Mandiri - Kopra Account Statement (PDF)', 'PDF', NULL, 1, 2,
-        'ac5ac68033fef29681dc99e1491a97bc2bbe4b66760868de85aea7c4efff1f31',
-        '["Posting Date", "Remark", "Reference No.", "Debit", "Credit", "Balance"]'::jsonb,
-        '{"columns": [{"header": "Posting Date", "role": "date"}, {"header": "Remark", "role": "description"}, {"header": "Reference No.", "role": "reference"}, {"header": "Debit", "role": "debit"}, {"header": "Credit", "role": "credit"}, {"header": "Balance", "role": "balance"}], "amount_mode": "split", "default_direction": null, "number_format": "en", "date_order": "dmy", "method": "words", "bank_name": "Mandiri"}'::jsonb,
-        'manual', 100.00, true, 0
-    ) RETURNING id INTO v_tpl_mandiri;
-
-    INSERT INTO financial_transaction_bank_cash_import_templates (
-        client_id, client_code, template_name, file_type, sheet_name, header_row_index, data_start_row_index,
-        column_signature_hash, header_columns, mapping_rules, detected_by, ai_confidence, is_active, usage_count
-    ) VALUES (
-        v_client_id, v_client_code, 'Kas Kasir - Laporan Kas Kasir Finance (Excel)', 'Excel', 'Data', 5, 6,
-        '8dba4029b3cd2f33bd6e029efe6421766c2fd5baf786df2e55abad25390f4331',
-        '["Tanggal", "NO. JURNAL", "KETERANGAN", "ACCOUNT", "KAS MASUK", "KAS KELUAR", "SALDO UANG FISIK", "Keterangan"]'::jsonb,
-        '{"columns": [{"header": "Tanggal", "role": "date"}, {"header": "NO. JURNAL", "role": "reference"}, {"header": "KETERANGAN", "role": "description"}, {"header": "ACCOUNT", "role": "reference"}, {"header": "KAS MASUK", "role": "credit"}, {"header": "KAS KELUAR", "role": "debit"}, {"header": "SALDO UANG FISIK", "role": "balance"}, {"header": "Keterangan", "role": "reference"}], "amount_mode": "split", "default_direction": null, "number_format": "en", "date_order": "dmy", "method": "table", "bank_name": "Kas Kasir"}'::jsonb,
-        'manual', 100.00, true, 0
-    ) RETURNING id INTO v_tpl_kas;
-
-    -- ---------------------------------------------------------
-    -- Mapping bank -> akun COA
-    -- ---------------------------------------------------------
     INSERT INTO financial_transaction_bank_cash_bank_mappings (
         client_id, client_code, bank_name, account_number, match_keyword, bank_coa_id, template_id, notes, is_active, usage_count
     ) VALUES
-        (v_client_id, v_client_code, 'BCA', '6281900118', NULL, v_coa_bca, v_tpl_bca,
+        (v_client_id, v_client_code, 'BCA', '6281900118', NULL, v_coa_bca, v_tpl_multi,
          'Rekening giro BCA KCP Arundina Cibubur a.n. SUMBER ALODIE UTAMA CV.', true, 0),
-        (v_client_id, v_client_code, 'Mandiri', '1290011863475', NULL, v_coa_mandiri, v_tpl_mandiri,
+        (v_client_id, v_client_code, 'Mandiri', '1290011863475', NULL, v_coa_mandiri, v_tpl_multi,
          'Rekening Mandiri KCP Jkt Cimanggis (Kopra) a.n. SUMBER ALODIE UTAMA.', true, 0),
-        (v_client_id, v_client_code, 'BRI', '140301000103562', NULL, v_coa_bri, v_tpl_bri,
+        (v_client_id, v_client_code, 'BRI', '140301000103562', NULL, v_coa_bri, v_tpl_multi,
          'Britama Bisnis SME BRI KK Condet a.n. SUMBER ALODIE UTAMA.', true, 0),
-        (v_client_id, v_client_code, 'Kas Kasir', NULL, 'LAPORAN KAS KASIR', v_coa_kas, v_tpl_kas,
+        (v_client_id, v_client_code, 'Kas Kasir', NULL, 'LAPORAN KAS KASIR', v_coa_kas, v_tpl_multi,
          'Laporan Kas Kasir Finance bulanan (Excel) -- kas fisik kasir finance.', true, 0);
 END
 $do$;
 
 -- Verifikasi setelah dijalankan:
--- SELECT m.bank_name, m.account_number, m.match_keyword, a.acc_no, a.account_name, t.template_name
--- FROM financial_transaction_bank_cash_bank_mappings m
--- JOIN management_client_coa a ON a.id = m.bank_coa_id
--- LEFT JOIN financial_transaction_bank_cash_import_templates t ON t.id = m.template_id
--- JOIN management_clients c ON c.id = m.client_id
--- WHERE c.nama_client = 'SAU' AND m.deleted_at IS NULL;
+-- SELECT t.template_name, t.file_type, jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian
+-- FROM financial_transaction_bank_cash_import_templates t
+-- JOIN management_clients c ON c.id = t.client_id
+-- WHERE c.nama_client = 'SAU' AND t.deleted_at IS NULL;

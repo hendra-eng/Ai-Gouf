@@ -888,6 +888,87 @@ class PurchaseSourceRecord(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+class JournalEntrySourceFile(Base):
+    """File laporan jurnal (CSV/Excel) yang diupload di tab "Source Data"
+    Journal Entry + hasil ekstraksi/pencocokan template -- versi Journal Entry
+    dari PurchaseSourceFile (bentuk kolom & alurnya sengaja SAMA). Beda dengan
+    JournalEntrySourceRecord (registri transaksi modul lain). Status memakai
+    label Inggris langsung (Completed / Processing / Needs Review / Failed)
+    karena UI tab Journal Entry hardcode Inggris."""
+    __tablename__ = "financial_transaction_journal_entry_source_files"
+    __table_args__ = (
+        Index("idx_je_source_files_client", "client_id"),
+        Index("idx_je_source_files_management_client", "management_client_id"),
+        Index("idx_je_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    # Sama seperti Purchase: client_id = company (management_clients) -- BUKAN id user.
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    period_label = Column(String(50), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)   # jumlah journal entry (voucher) terdeteksi
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Processing")
+    status_mapping = Column(String(20), nullable=False, default="Processing")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    debit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    credit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntrySourceRow(Base):
+    """1 baris = 1 journal entry (1 VOUCHER, multi-baris debit/kredit) hasil
+    parsing 1 file -- staging SEBELUM jadi draft JE resmi (tombol "Create
+    Journal" = promote). `payload` menyimpan header + semua baris debit/kredit
+    supaya promote tidak perlu membaca ulang file."""
+    __tablename__ = "financial_transaction_journal_entry_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_je_source_rows_file_row"),
+        Index("idx_je_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    je_number = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    source_type = Column(String(20), nullable=True)
+    line_count = Column(Integer, nullable=False, default=0)
+    debit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    credit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    payload = Column(JSONB, nullable=True)
+    # Terisi saat baris dipromosikan jadi draft JE (penanda "sudah pernah dipromosikan").
+    draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
 class PurchaseSourceFile(Base):
     """File laporan pembelian yang diupload di tab "Source Data" Purchase +
     hasil ekstraksi/pencocokan template -- versi Purchase dari
@@ -990,7 +1071,9 @@ class PurchaseTransaction(Base):
     # (management_users, akun yang login). Lihat migrations/14-*.py.
     management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True, index=True)
     purchase_no = Column(String(100), nullable=False)
-    purchase_date = Column(Date, nullable=False)
+    # Boleh NULL: import Excel tanpa tanggal (migrations/purchase/34-allow_null_purchase_date.py).
+    # Posting WAJIB punya tanggal (posting_date atau purchase_date).
+    purchase_date = Column(Date, nullable=True)
     invoice_date = Column(Date, nullable=True)
     invoice_number = Column(String(100), nullable=True)
     po_number = Column(String(100), nullable=True)
@@ -2473,6 +2556,86 @@ JENIS_DOKUMEN_BANK_CASH_VALID = {"cash_payment", "cash_receipt"}
 # ============================================================
 
 STATUS_BANK_FEED_VALID = {"unmatched", "matched"}
+
+
+# ============================================================
+# [BARU] BANK & CASH > SOURCE DATA: TEMPLATE EKSTRAKSI + MAPPING BANK
+# (migrations/36-create_bank_cash_import_templates_and_bank_mappings.py).
+# Pola sama dengan SalesImportTemplate / JournalEntryImportTemplate:
+# client_id reference ke management_clients, audit columns lengkap.
+# Seed: migrations/bank_cash/seed_template_<kode>_multi_format_bank_cash.sql.
+# ============================================================
+
+class BankCashImportTemplate(Base):
+    """Pola ekstraksi rekening koran / laporan kas (PDF/Excel/CSV) milik 1
+    klien. file_type 'Multi' = SATU baris yang membawa array
+    mapping_rules->'variants' (1 varian per bank/format), dipilih backend
+    berdasarkan tipe file + signature/deteksi nomor rekening."""
+    __tablename__ = "financial_transaction_bank_cash_import_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_bank_cash_import_templates_signature"),
+        Index("idx_bank_cash_import_templates_client", "client_id"),
+        Index("idx_bank_cash_import_templates_client_code", "client_code"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    template_name = Column(String(255), nullable=True)
+    file_type = Column(String(20), nullable=False)
+    sheet_name = Column(String(255), nullable=True)
+    header_row_index = Column(Integer, nullable=False, default=1)
+    data_start_row_index = Column(Integer, nullable=False, default=2)
+    column_signature_hash = Column(String(64), nullable=False)
+    header_columns = Column(JSONB, nullable=False)
+    mapping_rules = Column(JSONB, nullable=False)
+    detected_by = Column(String(20), nullable=False, default="ai")
+    ai_model_version = Column(String(50), nullable=True)
+    ai_confidence = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashBankMapping(Base):
+    """Mapping bank / rekening -> akun kas-bank COA klien. File dicocokkan
+    lewat account_number, lalu match_keyword (judul dokumen), lalu
+    template_id, lalu bank_name (hanya kalau cuma 1 mapping untuk bank itu)."""
+    __tablename__ = "financial_transaction_bank_cash_bank_mappings"
+    __table_args__ = (
+        Index("idx_bank_cash_bank_mappings_client", "client_id"),
+        Index("idx_bank_cash_bank_mappings_coa", "bank_coa_id"),
+        Index("idx_bank_cash_bank_mappings_template", "template_id"),
+        Index(
+            "uq_bank_cash_bank_mappings_account_aktif", "client_id", "account_number", unique=True,
+            postgresql_where=text("account_number IS NOT NULL AND deleted_at IS NULL"),
+        ),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    client_code = Column(String(50), nullable=False)
+    bank_name = Column(String(100), nullable=False)
+    account_number = Column(String(50), nullable=True)
+    match_keyword = Column(String(255), nullable=True)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    usage_count = Column(Integer, nullable=False, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
 # ============================================================
@@ -4504,6 +4667,78 @@ def touch_je_import_template_usage(template_id: str) -> bool:
         session.close()
 
 
+# --- 4b) financial_transaction_journal_entry_source_files / _source_rows ---
+# Versi Journal Entry dari CRUD purchase_source_files/_rows (tab Source Data).
+
+CRUD_FIELDS_JE_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "period_label",
+    "rows_detected", "rows_valid", "rows_invalid", "duplicate_count", "status_ekstraksi",
+    "status_mapping", "confidence_score", "debit_total", "credit_total",
+    "extraction_duration_ms", "ai_model_version", "mapping_rules", "template_id",
+    "processed_by", "uploaded_at", "uploaded_by",
+]
+
+def create_je_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, data, created_by)
+
+def get_je_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_je_source_files(management_client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _je_crud_list(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, {"management_client_id": management_client_id}, termasuk_nonaktif)
+
+def update_je_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_je_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _je_crud_soft_delete(JournalEntrySourceFile, source_file_id, deleted_by)
+
+
+CRUD_FIELDS_JE_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "je_number", "description", "source_type",
+    "line_count", "debit_total", "credit_total", "is_valid", "validation_notes",
+    "is_duplicate_candidate", "payload", "draft_id",
+]
+
+def create_je_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: str, client_id: Optional[str], created_by: Optional[str] = None, chunk_size: int = 500) -> int:
+    """Insert massal baris source_rows dalam SATU transaksi (semua-atau-tidak-sama-sekali:
+    gagal di tengah = rollback, return 0) -- pola sama dengan create_purchase_source_rows_bulk."""
+    if not rows:
+        return 0
+    session = SessionLocal()
+    try:
+        payload = []
+        for r in rows:
+            item = {k: v for k, v in r.items() if k in CRUD_FIELDS_JE_SOURCE_ROW}
+            item["source_file_id"] = source_file_id
+            item["client_id"] = client_id
+            item["created_by"] = created_by
+            payload.append(item)
+        for i in range(0, len(payload), chunk_size):
+            session.bulk_insert_mappings(JournalEntrySourceRow, payload[i:i + chunk_size])
+        session.commit()
+        return len(payload)
+    except Exception as e:
+        session.rollback()
+        print(f"Error bulk create {JournalEntrySourceRow.__tablename__}: {e}")
+        return 0
+    finally:
+        session.close()
+
+def list_je_source_rows(source_file_id: Optional[str] = None, termasuk_nonaktif: bool = False, dengan_payload: bool = True) -> List[Dict[str, Any]]:
+    """Urut row_no naik supaya File Preview menampilkan baris sesuai urutan di file.
+    dengan_payload=False membuang JSON baris debit/kredit (berat) -- dipakai panel preview."""
+    hasil = _je_crud_list(JournalEntrySourceRow, CRUD_FIELDS_JE_SOURCE_ROW, {"source_file_id": source_file_id}, termasuk_nonaktif)
+    hasil.sort(key=lambda r: r.get("row_no") or 0)
+    if not dengan_payload:
+        for r in hasil:
+            r.pop("payload", None)
+    return hasil
+
+def update_je_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntrySourceRow, CRUD_FIELDS_JE_SOURCE_ROW, source_row_id, data, updated_by)
+
+
 def create_je_draft_with_lines(
     draft_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
@@ -4549,7 +4784,11 @@ def create_je_draft_with_lines(
             draft_id=draft.id,
             je_number=draft.je_number,
             event_type="Created",
-            description=f"Journal entry {draft.je_number} dibuat manual.",
+            description=(
+                f"Journal entry {draft.je_number} dibuat dari file import ({draft.source_reference})."
+                if draft.source_type == "Import" and draft.source_reference
+                else f"Journal entry {draft.je_number} dibuat manual."
+            ),
             status_snapshot=draft.status,
             performed_by=draft_data.get("created_by_name") or "System",
             created_by=created_by,
@@ -5497,6 +5736,9 @@ def ubah_status_purchase_transactions(
                 if status_lama not in PURCHASE_STATUS_BISA_POST:
                     alasan = "Approve the transaction first." if status_lama in PURCHASE_STATUS_BISA_APPROVE else f"Status '{tx.status}' cannot be posted."
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
+                    continue
+                if not (posting_date or tx.purchase_date):
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": "Posting date is required: this transaction has no purchase date. Fill in the purchase date or pass posting_date."})
                     continue
                 alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
                 if alasan:

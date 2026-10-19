@@ -296,7 +296,7 @@ export default function StatementReviewModal({ file, bankCoaId, bankLabel, initi
               <p className="text-xs font-semibold text-foreground">Extracted lines ({preview.row_count})</p>
               <span className="text-[11px] text-muted-foreground">
                 {preview.importable} to import
-                {preview.already_in_feed ? ` · ${preview.already_in_feed} already in the Bank Feed (skipped)` : ''}
+                {preview.already_in_feed ? ` · ${preview.already_in_feed} already in the Source Data (skipped)` : ''}
                 {preview.without_date ? ` · ${preview.without_date} without a date (skipped)` : ''}
               </span>
               <div className="ml-auto flex items-center gap-1 bg-muted rounded-lg p-0.5 border border-border">

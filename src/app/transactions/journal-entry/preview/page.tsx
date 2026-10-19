@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiStatus } from '@/lib/journalEntryStore';
 import { PreviewSection, FieldList, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
 import { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import JeWorkflowActions from '@/app/transactions/journal-entry/components/JeWorkflowActions';
 
 type JEStatus = JeUiStatus;
 
@@ -56,6 +57,22 @@ export default function JournalPreviewPage() {
   const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+  const readiness = useMemo(() => {
+    const emptyAccount = lines.filter(l => !l.accountCode.trim()).length;
+    const bothSides = lines.filter(l => l.debit > 0 && l.credit > 0).length;
+    const noAmount = lines.filter(l => l.debit === 0 && l.credit === 0).length;
+    return [
+      { label: 'At least 2 journal lines', ok: lines.length >= 2 },
+      { label: 'Every line has an account code', ok: lines.length > 0 && emptyAccount === 0 },
+      { label: 'Each line is either debit or credit, with an amount', ok: lines.length > 0 && bothSides === 0 && noAmount === 0 },
+      { label: 'Debit equals credit', ok: lines.length > 0 && isBalanced && totalDebit > 0 },
+    ];
+  }, [lines, isBalanced, totalDebit]);
+  const readyToPost = readiness.every(r => r.ok);
+
+  // Tahap workflow: Draft -> Approved -> Posted (rejected/exception ditampilkan sebagai badge di header).
+  const stageIndex = je ? ({ draft: 0, pending: 0, exception: 0, rejected: 0, approved: 1, posted: 2 } as Record<JEStatus, number>)[je.status] : 0;
 
   if (loading) {
     return (
@@ -126,6 +143,7 @@ export default function JournalPreviewPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2 flex-shrink-0">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[je.status]}`}>{statusLabels[je.status]}</span>
+                  <JeWorkflowActions entries={[je]} className="justify-end" />
                   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${isBalanced ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                     {isBalanced ? <CheckCircleIcon className="w-3.5 h-3.5" /> : <ExclamationTriangleIcon className="w-3.5 h-3.5" />}
                     {isBalanced ? 'Balanced' : 'Unbalanced'}
@@ -174,6 +192,39 @@ export default function JournalPreviewPage() {
                 showDescription
                 showCostCenter
               />
+            </PreviewSection>
+
+            {/* 5. Posting readiness */}
+            <PreviewSection
+              step={5}
+              stepColor="emerald"
+              title="Approval & Posting"
+              aside={je.status === 'posted'
+                ? <span className="text-xs font-medium text-green-700">Posted{je.postedAt ? ` on ${je.postedAt}` : ''}</span>
+                : <span className={`text-xs font-medium ${readyToPost ? 'text-green-700' : 'text-amber-700'}`}>{readyToPost ? 'Ready to post' : 'Not ready to post'}</span>}
+            >
+              <ol className="flex items-center gap-2 mb-4 text-xs">
+                {['Draft', 'Approved', 'Posted'].map((label, i) => (
+                  <React.Fragment key={label}>
+                    <li className={`px-3 py-1 rounded-full font-medium ${i < stageIndex ? 'bg-green-100 text-green-700' : i === stageIndex ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{label}</li>
+                    {i < 2 && <span className="h-px w-6 bg-border" />}
+                  </React.Fragment>
+                ))}
+              </ol>
+              {je.status === 'rejected' && <p className="text-xs text-red-700 mb-3">This entry was rejected. Reopen it to send it back to draft.</p>}
+              {je.status === 'exception' && <p className="text-xs text-orange-700 mb-3">This entry is flagged as an exception. Approve it once the issue is resolved, or reject it.</p>}
+              <ul className="space-y-1.5">
+                {readiness.map(r => (
+                  <li key={r.label} className="flex items-center gap-2 text-xs">
+                    {r.ok ? <CheckCircleIcon className="w-4 h-4 text-green-600" /> : <ExclamationTriangleIcon className="w-4 h-4 text-amber-600" />}
+                    <span className={r.ok ? 'text-foreground' : 'text-amber-700'}>{r.label}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground mt-3">
+                Accounts must also exist in the client&apos;s chart of accounts. The system checks this again when you post.
+                Approve needs Supervisor level; Post needs Manager level.
+              </p>
             </PreviewSection>
 
             {je.notes && (

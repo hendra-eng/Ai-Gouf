@@ -3,8 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
-import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
 import { buildJeListReport, buildJeDetailReport, type JePrintRow } from '@/app/transactions/journal-entry/components/jePrintReports';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintFormat } from '@/lib/printExport';
@@ -13,13 +11,12 @@ import {
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
-  PlusIcon,
-  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useJeDrafts, useJeDraftLines, listJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry, type JeUiStatus } from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import JeWorkflowActions from '@/app/transactions/journal-entry/components/JeWorkflowActions';
 
 type JEStatus = JeUiStatus;
 
@@ -56,12 +53,17 @@ export default function JournalEntryTransactionPage() {
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedRow, setSelectedRow] = useState<JeUiEntry | null>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  // Diturunkan dari data terbaru, bukan salinan -- supaya status di panel detail ikut berubah setelah Approve/Post/dll.
+  const selectedRow: JeUiEntry | null = useMemo(
+    () => journalEntries.find(j => j.id === selectedRowId) ?? null,
+    [journalEntries, selectedRowId],
+  );
+  const setSelectedRow = (row: JeUiEntry | null) => setSelectedRowId(row?.id ?? null);
+  // Pilihan baris untuk aksi massal (Approve/Reject/Delete banyak jurnal sekaligus).
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const { lines: selectedLines } = useJeDraftLines(selectedRow?.id);
   const mappedLines = useMemo(() => selectedLines.map(mapJeDraftLineToUi), [selectedLines]);
-
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
 
   const { clients, activeClientId, activeClientName } = useActiveClient();
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
@@ -90,9 +92,24 @@ export default function JournalEntryTransactionPage() {
     return data;
   }, [journalEntries, search, statusFilter, sourceFilter, periodFilter, sortField, sortDir]);
 
+  const checkedEntries = useMemo(() => journalEntries.filter(j => checkedIds.has(j.id)), [journalEntries, checkedIds]);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
   const pageSafe = Math.min(currentPage, totalPages);
   const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+
+  const allPageChecked = paginated.length > 0 && paginated.every(r => checkedIds.has(r.id));
+  const togglePage = () => setCheckedIds(prev => {
+    const next = new Set(prev);
+    if (allPageChecked) paginated.forEach(r => next.delete(r.id));
+    else paginated.forEach(r => next.add(r.id));
+    return next;
+  });
+  const toggleOne = (id: string) => setCheckedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -121,6 +138,7 @@ export default function JournalEntryTransactionPage() {
 
   const summary = useMemo(() => ({
     total: journalEntries.length,
+    draft: journalEntries.filter(t => t.status === 'draft').length,
     pending: journalEntries.filter(t => t.status === 'pending').length,
     approved: journalEntries.filter(t => t.status === 'approved').length,
     posted: journalEntries.filter(t => t.status === 'posted').length,
@@ -135,24 +153,24 @@ export default function JournalEntryTransactionPage() {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-end gap-2">
           <PrintMenu onPrint={printList} label="Print All" disabled={loading || filtered.length === 0} />
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
-          >
-            <ArrowUpTrayIcon className="w-4 h-4" /> Import
-          </button>
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-3 py-2 hover:opacity-90 transition-colors"
-          >
-            <PlusIcon className="w-4 h-4" /> New Journal Entry
-          </button>
         </div>
 
+        {/* Bulk actions -- muncul kalau ada baris yang dicentang */}
+        {checkedEntries.length > 0 && (
+          <div className="je-card p-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-foreground"><b>{checkedEntries.length}</b> journal {checkedEntries.length === 1 ? 'entry' : 'entries'} selected</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <JeWorkflowActions entries={checkedEntries} onDone={() => setCheckedIds(new Set())} />
+              <button className="text-xs px-3 py-1.5 border border-border rounded-lg text-muted-foreground hover:text-foreground" onClick={() => setCheckedIds(new Set())}>Clear selection</button>
+            </div>
+          </div>
+        )}
+
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {[
             { label: 'Total', value: summary.total, color: 'text-slate-700' },
+            { label: 'Draft', value: summary.draft, color: 'text-slate-600' },
             { label: 'Pending', value: summary.pending, color: 'text-amber-700' },
             { label: 'Approved', value: summary.approved, color: 'text-blue-700' },
             { label: 'Posted', value: summary.posted, color: 'text-green-700' },
@@ -204,6 +222,9 @@ export default function JournalEntryTransactionPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
+                  <th className="px-4 py-3 w-8">
+                    <input type="checkbox" aria-label="Select all on this page" checked={allPageChecked} onChange={togglePage} disabled={paginated.length === 0} />
+                  </th>
                   {[
                     { label: 'JE Number', field: 'jeNumber' },
                     { label: 'Date', field: 'date' },
@@ -224,15 +245,18 @@ export default function JournalEntryTransactionPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading journal entries…</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading journal entries…</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No journal entries match your filters.</td></tr>
+                  <tr><td colSpan={11} className="px-4 py-12 text-center text-muted-foreground text-sm">No journal entries match your filters.</td></tr>
                 ) : paginated.map(row => (
                   <tr
                     key={row.id}
                     className="table-row-hover cursor-pointer"
                     onClick={() => setSelectedRow(selectedRow?.id === row.id ? null : row)}
                   >
+                    <td className="px-4 py-3 w-8" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" aria-label={`Select ${row.jeNumber}`} checked={checkedIds.has(row.id)} onChange={() => toggleOne(row.id)} />
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.jeNumber}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.date}</td>
                     <td className="px-4 py-3 text-xs max-w-xs truncate" title={row.description}>{row.description}</td>
@@ -271,7 +295,8 @@ export default function JournalEntryTransactionPage() {
                 <p className="text-sm text-foreground font-medium">{selectedRow.description}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{selectedRow.sourceType} · {selectedRow.sourceReference}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <JeWorkflowActions entries={[selectedRow]} />
                 <PrintMenu onPrint={printDetail} />
                 <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
               </div>
@@ -284,6 +309,7 @@ export default function JournalEntryTransactionPage() {
                 { label: 'Created By', value: selectedRow.createdBy },
                 { label: 'Reviewed By', value: selectedRow.reviewedBy || '—' },
                 { label: 'Approved By', value: selectedRow.approvedBy || '—' },
+                { label: 'Posted At', value: selectedRow.postedAt || '—' },
                 { label: 'Created Date', value: selectedRow.createdDate },
                 { label: 'Last Updated', value: selectedRow.lastUpdated },
               ].map(item => (
@@ -331,20 +357,6 @@ export default function JournalEntryTransactionPage() {
           </div>
         )}
 
-        {showNewModal && clientId && (
-          <NewJournalEntryModal
-            clientId={clientId}
-            createdByName={user?.nama || user?.username || 'System'}
-            onClose={() => setShowNewModal(false)}
-          />
-        )}
-        {showImportModal && clientId && (
-          <ImportJournalModal
-            clientId={clientId}
-            createdByName={user?.nama || user?.username || 'System'}
-            onClose={() => setShowImportModal(false)}
-          />
-        )}
       </div>
   );
 }

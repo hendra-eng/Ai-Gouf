@@ -166,7 +166,11 @@ export default function JournalEntryPostedPage() {
                 {loading ? (
                   <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading posted journal entries…</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No posted journal entries match your filters.</td></tr>
+                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                    {postedEntries.length === 0
+                      ? 'No journal entries have been posted yet. Approve and post entries from Journal Preview.'
+                      : 'No posted journal entries match your filters.'}
+                  </td></tr>
                 ) : paginated.map(row => (
                   <React.Fragment key={row.id}>
                     <tr className="table-row-hover">
@@ -200,6 +204,7 @@ export default function JournalEntryPostedPage() {
                                 { label: 'Source Reference', value: row.sourceReference },
                                 { label: 'Created By', value: row.createdBy },
                                 { label: 'Reviewed By', value: row.reviewedBy || '—' },
+                                { label: 'Posted At', value: row.postedAt || '—' },
                                 { label: 'Last Updated', value: row.lastUpdated },
                               ].map(item => (
                                 <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">

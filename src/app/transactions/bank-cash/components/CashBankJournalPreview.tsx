@@ -112,7 +112,7 @@ export default function CashBankJournalPreview() {
   });
 
   const hapus = (t: BcTransaction) => {
-    const ket = t.mutation ? ' Its Bank Feed line will return to Unmatched.' : '';
+    const ket = t.mutation ? ' Its Source Data line will return to Unmatched.' : '';
     if (!window.confirm(`Delete ${t.tx_number}?${ket}`)) return;
     jalankan(async () => {
       await deleteBcTransaction(clientId!, t.id);
@@ -239,7 +239,7 @@ export default function CashBankJournalPreview() {
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${STATUS_BADGE[selected.status]}`}>{TX_STATUS_LABEL[selected.status]}</span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {receipt ? 'Cash Receipt' : 'Cash Payment'} · {selected.category || '—'} · {{ bank_feed: 'from Bank Feed', manual: 'manual entry', ar: 'from Accounts Receivable', ap: 'from Accounts Payable' }[selected.source]}
+              {receipt ? 'Cash Receipt' : 'Cash Payment'} · {selected.category || '—'} · {{ bank_feed: 'from Source Data', manual: 'manual entry', ar: 'from Accounts Receivable', ap: 'from Accounts Payable' }[selected.source]}
             </p>
           </div>
           <p className={`text-xl font-bold font-mono ${receipt ? 'text-emerald-700' : 'text-rose-700'}`}>{formatIDR(selected.amount)}</p>
@@ -253,7 +253,7 @@ export default function CashBankJournalPreview() {
             { label: 'Description', value: selected.description || '—' },
             !!selected.reference && { label: 'Reference', value: selected.reference },
             !!selected.mutation && {
-              label: 'Bank Feed line',
+              label: 'Source Data line',
               value: `${formatTanggal(selected.mutation.date)} · ${selected.mutation.description || '—'} · ${formatIDR(selected.mutation.credit || selected.mutation.debit)}`,
             },
             { label: 'Created', value: `${selected.created_by_name || '—'} · ${formatTanggal(selected.created_at)}` },

@@ -6,7 +6,7 @@ import PurchaseSourceData from '@/app/transactions/purchase/components/PurchaseS
 
 // Tampilan disamakan dengan Sales > Source Data (lihat PurchaseSourceData.tsx).
 // Versi lama halaman ini (tabel source record + filter + detail panel) sudah
-// diganti. Data masih dummy; backend disambungkan belakangan.
+// diganti. Data berasal dari backend (file yang diupload lewat tab ini).
 export default function PurchaseSourceDataPage() {
   return (
     <div className="space-y-0">

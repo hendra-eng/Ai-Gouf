@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import {
   MagnifyingGlassIcon,
@@ -10,8 +11,13 @@ import {
   CheckCircleIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
-import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry } from '@/lib/journalEntryStore';
+import { useActiveClient } from '@/lib/activeClient';
+import {
+  useJeDrafts, useJeDraftLines, useJeSourceFiles, listJeSourceRows, mapJeDraftToUi, mapJeDraftLineToUi, jeFlagReasons,
+  type JeUiEntry, type BackendJeSourceFile, type BackendJeSourceRow,
+} from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import JeWorkflowActions from '@/app/transactions/journal-entry/components/JeWorkflowActions';
 
 const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -20,19 +26,14 @@ interface FlaggedEntry {
   reasons: string[];
 }
 
-// Real, derivable exception detection — no fabricated severity/assignee fields.
+// Aturan "bermasalah" dipakai bersama dengan badge tab (jeFlagReasons di journalEntryStore).
 function detectExceptions(journalEntries: JeUiEntry[]): FlaggedEntry[] {
-  const flagged: FlaggedEntry[] = [];
-  journalEntries.forEach(je => {
-    const reasons: string[] = [];
-    if (je.status === 'exception') reasons.push('Flagged as exception');
-    if (je.status === 'rejected') reasons.push('Rejected');
-    const imbalance = Math.abs(je.totalDebit - je.totalCredit);
-    if (imbalance > 0.01) reasons.push(`Debit/credit imbalance of ${fmt(imbalance)}`);
-    if (reasons.length > 0) flagged.push({ entry: je, reasons });
-  });
-  return flagged;
+  return journalEntries
+    .map(entry => ({ entry, reasons: jeFlagReasons(entry) }))
+    .filter(f => f.reasons.length > 0);
 }
+
+interface SourceIssue { file: BackendJeSourceFile; row: BackendJeSourceRow }
 
 export default function JournalEntryExceptionsPage() {
   const { user } = useAuth();
@@ -48,6 +49,27 @@ export default function JournalEntryExceptionsPage() {
   const expandedLines = useMemo(() => expandedBackendLines.map(mapJeDraftLineToUi), [expandedBackendLines]);
 
   const flaggedEntries = useMemo(() => detectExceptions(journalEntries), [journalEntries]);
+
+  // Baris hasil upload yang gagal validasi (tidak pernah jadi draft, jadi tidak muncul di daftar di atas).
+  const router = useRouter();
+  const { activeClientId } = useActiveClient();
+  const { files } = useJeSourceFiles(activeClientId);
+  const issueKey = files.filter(f => f.rows_invalid > 0).map(f => `${f.id}:${f.rows_invalid}`).join(',');
+  const [sourceIssues, setSourceIssues] = useState<SourceIssue[]>([]);
+  const [issuePage, setIssuePage] = useState(1);
+  useEffect(() => {
+    let batal = false;
+    const bermasalah = files.filter(f => f.rows_invalid > 0);
+    if (bermasalah.length === 0) { setSourceIssues([]); return; }
+    Promise.all(bermasalah.map(async file => (await listJeSourceRows(file.id)).filter(r => !r.is_valid).map(row => ({ file, row }))))
+      .then(hasil => { if (!batal) setSourceIssues(hasil.flat()); })
+      .catch(() => { if (!batal) setSourceIssues([]); });
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueKey]);
+  const issuePages = Math.max(1, Math.ceil(sourceIssues.length / JE_PAGE_SIZE));
+  const issuePageSafe = Math.min(issuePage, issuePages);
+  const pagedIssues = sourceIssues.slice((issuePageSafe - 1) * JE_PAGE_SIZE, issuePageSafe * JE_PAGE_SIZE);
   const sourceTypes = ['All', ...Array.from(new Set(flaggedEntries.map(f => f.entry.sourceType)))];
 
   const filtered = useMemo(() => {
@@ -75,7 +97,7 @@ export default function JournalEntryExceptionsPage() {
         <JournalEntryTabs activeTab="exceptions" />
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="je-card p-4">
             <p className="number-display text-xl font-bold text-slate-700 leading-none">{summary.total}</p>
             <p className="text-xs font-medium text-foreground mt-1">Total Flagged Entries</p>
@@ -87,6 +109,10 @@ export default function JournalEntryExceptionsPage() {
           <div className="je-card p-4">
             <p className="number-display text-xl font-bold text-red-700 leading-none">{summary.imbalanced}</p>
             <p className="text-xs font-medium text-foreground mt-1">Debit/Credit Imbalance</p>
+          </div>
+          <div className="je-card p-4">
+            <p className="number-display text-xl font-bold text-red-700 leading-none">{sourceIssues.length}</p>
+            <p className="text-xs font-medium text-foreground mt-1">Failed Source Rows</p>
           </div>
         </div>
 
@@ -153,6 +179,7 @@ export default function JournalEntryExceptionsPage() {
                     <span>Created by: <span className="text-foreground font-medium">{entry.createdBy}</span></span>
                   </div>
                 </div>
+                <JeWorkflowActions entries={[entry]} only={['approve', 'reopen', 'reject', 'bulk-delete']} className="sm:justify-end flex-shrink-0" />
               </div>
 
               {/* Expanded Detail */}
@@ -194,6 +221,45 @@ export default function JournalEntryExceptionsPage() {
         {!loading && filtered.length > 0 && (
           <div className="je-card overflow-hidden">
             <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="flagged entries" />
+          </div>
+        )}
+
+        {/* Failed source rows */}
+        {sourceIssues.length > 0 && (
+          <div className="je-card overflow-hidden">
+            <div className="px-5 py-3 border-b border-border">
+              <h3 className="text-sm font-semibold text-foreground">Failed source rows</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">These journal entries from uploaded files failed validation, so no draft was created. Fix the file and upload it again.</p>
+            </div>
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/40 border-b border-border">
+                    <th className="px-4 py-2 text-left font-semibold text-muted-foreground">File</th>
+                    <th className="px-4 py-2 text-left font-semibold text-muted-foreground">JE Number</th>
+                    <th className="px-4 py-2 text-left font-semibold text-muted-foreground">Description</th>
+                    <th className="px-4 py-2 text-right font-semibold text-muted-foreground">Debit</th>
+                    <th className="px-4 py-2 text-right font-semibold text-muted-foreground">Credit</th>
+                    <th className="px-4 py-2 text-left font-semibold text-muted-foreground">Problem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {pagedIssues.map(({ file, row }) => (
+                    <tr key={row.id} className="table-row-hover">
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <button className="text-primary hover:underline" onClick={() => router.push('/transactions/journal-entry/source-data')}>{file.file_name}</button>
+                      </td>
+                      <td className="px-4 py-2 font-mono whitespace-nowrap">{row.je_number || '—'}</td>
+                      <td className="px-4 py-2 max-w-xs truncate" title={row.description || ''}>{row.description || '—'}</td>
+                      <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{fmt(row.debit_total)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">{fmt(row.credit_total)}</td>
+                      <td className="px-4 py-2 text-red-700">{row.validation_notes || 'Validation failed'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <JePagination page={issuePageSafe} pageSize={JE_PAGE_SIZE} total={sourceIssues.length} onPageChange={setIssuePage} itemLabel="failed rows" />
           </div>
         )}
       </div>

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import CashBankTransactionModal from './CashBankTransactionModal';
-import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Landmark, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Database, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import TabNav from '@/components/ui/TabNav';
 
 interface Tab {
@@ -42,9 +42,9 @@ const tabs: Tab[] = [
   },
   {
     id: 'tab-bank-feed',
-    icon: Landmark,
-    label: 'Bank Feed',
-    href: '/transactions/bank-cash/bank-feed',
+    icon: Database,
+    label: 'Source Data',
+    href: '/transactions/bank-cash/source-data',
     description: 'Import bank statements (saved permanently) to match against the books',
   },
   {
@@ -52,7 +52,7 @@ const tabs: Tab[] = [
     icon: Scale,
     label: 'Reconciliation',
     href: '/transactions/bank-cash/reconciliation',
-    description: 'Match Bank Feed lines to Sales/Purchase invoices or other accounts — including matched history',
+    description: 'Match Source Data lines to Sales/Purchase invoices or other accounts — including matched history',
   },
   {
     id: 'tab-journal-preview',

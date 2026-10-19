@@ -1,16 +1,19 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { LayoutDashboard, Database, FileText, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import TabNav, { type TabNavItem } from '@/components/ui/TabNav';
+import { useAuth } from '@/lib/auth';
+import { useActiveClient } from '@/lib/activeClient';
+import { useJeDrafts, useJeSourceFiles, mapJeDraftToUi, jeFlagReasons } from '@/lib/journalEntryStore';
 
 // Key tab = nilai prop `activeTab` yang dikirim tiap halaman.
-const tabs: TabNavItem[] = [
+const buildTabs = (badges: { transaction?: number; exceptions?: number }): TabNavItem[] => [
   { key: 'overview', label: 'Overview', href: '/transactions/journal-entry', icon: LayoutDashboard },
   { key: 'source', label: 'Source Data', href: '/transactions/journal-entry/source-data', icon: Database },
-  { key: 'transaction', label: 'JE Transaction', href: '/transactions/journal-entry/transactions', icon: FileText, badge: 14 },
+  { key: 'transaction', label: 'JE Transaction', href: '/transactions/journal-entry/transactions', icon: FileText, badge: badges.transaction },
   { key: 'preview', label: 'Journal Preview', href: '/transactions/journal-entry/preview', icon: Eye },
-  { key: 'exceptions', label: 'Exceptions', href: '/transactions/journal-entry/exceptions', icon: AlertTriangle, badge: 7 },
+  { key: 'exceptions', label: 'Exceptions', href: '/transactions/journal-entry/exceptions', icon: AlertTriangle, badge: badges.exceptions },
   { key: 'posted', label: 'Posted', href: '/transactions/journal-entry/posted', icon: CheckCircle2 },
 ];
 
@@ -28,6 +31,23 @@ interface JournalEntryTabsProps {
 }
 
 export default function JournalEntryTabs({ activeTab }: JournalEntryTabsProps) {
+  const { user } = useAuth();
+  const { activeClientId } = useActiveClient();
+  const { drafts } = useJeDrafts(user?.id ?? null);
+  const { files } = useJeSourceFiles(activeClientId);
+
+  // Badge = jumlah yang butuh tindakan (disembunyikan kalau 0):
+  //  - JE Transaction : jurnal yang belum final (draft / pending / approved / exception)
+  //  - Exceptions     : jurnal bermasalah + baris source yang gagal validasi
+  const tabs = useMemo(() => {
+    const entries = drafts.map(mapJeDraftToUi);
+    const open = entries.filter(e => ['draft', 'pending', 'approved', 'exception'].includes(e.status)).length;
+    const flagged = entries.filter(e => jeFlagReasons(e).length > 0).length;
+    const invalidRows = files.reduce((sum, f) => sum + (f.rows_invalid || 0), 0);
+    const exceptions = flagged + invalidRows;
+    return buildTabs({ transaction: open || undefined, exceptions: exceptions || undefined });
+  }, [drafts, files]);
+
   return (
     <div className="mb-4">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">Journal Entry</h1>

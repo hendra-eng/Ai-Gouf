@@ -371,7 +371,7 @@ export default function BankFeedPage() {
 
       <div className="card-elevated-md rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex flex-wrap items-center gap-3">
-          <h2 className="text-sm font-bold text-foreground">Bank Feed Lines</h2>
+          <h2 className="text-sm font-bold text-foreground">Source Data Lines</h2>
           <span className="text-xs text-muted-foreground">{unmatchedCount} of {mutations.length} unmatched</span>
           <select
             value={akunFilter}
@@ -399,7 +399,7 @@ export default function BankFeedPage() {
         </div>
 
         {loading && mutations.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-12 text-center">Loading Bank Feed lines...</p>
+          <p className="text-xs text-muted-foreground py-12 text-center">Loading Source Data lines...</p>
         ) : filtered.length === 0 ? (
           <p className="text-xs text-muted-foreground py-12 text-center">
             {mutations.length === 0 ? 'No lines yet. Import a bank statement above to get started.' : 'No lines match this filter.'}

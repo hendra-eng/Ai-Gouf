@@ -2,55 +2,55 @@
 modules/transactions/journal_entry_import_v1.py
 ==================================================
 Upload file laporan jurnal (CSV/Excel) + ekstraksi otomatis lewat Journal
-Entry Import Template -- versi Journal Entry dari
-modules/transactions/sales_import_v1.py (bentuk & alur SENGAJA dibuat
-separarel mungkin dengan modul itu, lihat root/SALES_IMPORT_TEMPLATES.md
-untuk konsep templatenya secara umum). Endpoint tunggal:
+Entry Import Template + daftar file/baris untuk tab "Source Data" Journal Entry
+-- versi Journal Entry dari modules/transactions/purchase_import_v1.py (bentuk &
+alur SENGAJA dibuat separarel mungkin; lihat root/SALES_IMPORT_TEMPLATES.md
+untuk konsep templatenya secara umum). Endpoint:
 
-    POST /api/v1/transactions/journal-entries/import/upload
-    (multipart/form-data: file, management_client_id)
+    POST   /api/v1/transactions/journal-entries/import/upload
+    GET    /api/v1/transactions/journal-entries/source-files
+    GET    /api/v1/transactions/journal-entries/source-files/{id}
+    PUT    /api/v1/transactions/journal-entries/source-files/{id}
+    DELETE /api/v1/transactions/journal-entries/source-files/{id}
+    GET    /api/v1/transactions/journal-entries/source-rows?source_file_id=
+    POST   /api/v1/transactions/journal-entries/source-files/{id}/promote-to-journals
 
 Alur (ringkas):
 
-    1. Baca file mentah (bytes), tentukan file_type dari ekstensi.
-    2. Ambil semua template AKTIF milik (management_client_id, file_type)
-       dari financial_transaction_journal_entry_import_templates.
-    3. Untuk tiap kandidat template: decode file pakai
-       encoding+delimiter/sheet_name template itu, ambil baris di posisi
-       header_row_index-nya, hash (SHA-256, dinormalisasi) -- kalau SAMA
-       dengan column_signature_hash template, itu templatenya. Fungsi baca
-       file & hash-nya DIPAKAI ULANG dari sales_import_v1 (algoritma sama
-       persis, tidak ada alasan duplikasi).
-    4. KETEMU template -> ekstrak baris pakai resep mapping_rules
-       (format_type 'flat_grouped_by_voucher': baris-baris dengan nilai
-       kolom kunci -- biasanya VOUCHER -- yang sama digabung jadi 1
-       journal entry multi-baris), lalu buat draft + lines LANGSUNG lewat
-       dbc.create_je_draft_with_lines (fungsi atomik yang sama dipakai
-       endpoint POST /drafts/full & ImportJournalModal.tsx sisi frontend)
-       -- BEDA dari Sales yang punya tahap staging (source_rows) sebelum
-       "dipromosikan" ke invoices, karena data jurnal di sini SUDAH
-       berbentuk pasangan debit/kredit yang siap jadi journal entry, tidak
-       perlu tahap mapping akun terpisah.
-    5. TIDAK ketemu template -> BELUM ada inferensi AI terpasang (sama
-       seperti Sales di fase ini) -- endpoint mengembalikan
-       template_matched=false TANPA membuat draft apa pun, supaya
-       frontend bisa fallback ke jalur lain (mis. parsing alias kolom
-       generik yang sudah ada di ImportJournalModal.tsx) atau memberi
-       tahu user untuk membuat template baru dulu.
+    1. Upload: baca file mentah, tentukan file_type, cocokkan ke template AKTIF
+       milik (management_client_id, file_type) lewat hash baris header (fungsi
+       baca file & hash DIPAKAI ULANG dari sales_import_v1).
+    2. KETEMU template -> ekstrak baris pakai resep mapping_rules (format_type
+       'flat_grouped_by_voucher': baris-baris dengan VOUCHER yang sama digabung
+       jadi 1 journal entry multi-baris). Hasilnya dicatat di
+       financial_transaction_journal_entry_source_files (daftar file) + 1 baris
+       staging per journal entry di ..._source_rows (File Preview). BELUM ada
+       draft JE di tahap ini.
+    3. TIDAK ketemu template -> file tetap dicatat sebagai 'Needs Review' tanpa
+       baris (template_matched=false) supaya frontend bisa fallback ke parsing
+       lokal di ImportJournalModal.tsx atau memberi tahu user membuat template.
+    4. "Create Journal" (promote-to-journals): baris VALID & belum pernah
+       dipromosikan naik jadi draft JE lewat dbc.create_je_draft_with_lines
+       (fungsi atomik yang sama dipakai New Journal Entry) -> muncul di tab
+       JE Transaction -> Journal Preview -> Exceptions / Posted. Idempoten.
 
 File TIDAK disimpan ke disk -- diproses di memory saja, konsisten dengan
-sales_import_v1.py.
+sales_import_v1.py & purchase_import_v1.py.
 """
 
 from __future__ import annotations
 
+import time
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 import db_client as dbc
 from ..api_response import gagal, sukses
+from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from .journal_entry_v1 import _require_level_v1  # dependency level-3 yang sama, hindari duplikasi
 from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, tidak ada alasan duplikasi
@@ -221,14 +221,84 @@ def _period_label(d: date) -> str:
 
 
 # ============================================================
-# ENDPOINT
+# STAGING -- 1 journal entry (voucher) -> 1 baris source_rows
+# ============================================================
+
+def _susun_baris_staging(
+    groups: List[Dict[str, Any]],
+    template: Dict[str, Any],
+    management_client_id: str,
+    file_name: Optional[str],
+    user_id: Optional[str],
+    created_by_name: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Ubah group hasil ekstraksi jadi baris financial_transaction_journal_entry_source_rows.
+
+    is_valid = group lolos semua validasi (tanggal terbaca, minimal N baris, akun terisi,
+    debit = kredit). is_duplicate_candidate = je_number sudah dipakai draft milik user ini
+    (draft JE unik per (client_id=user, je_number)) -- baris tetap tampil, tapi promote akan
+    melewatinya sebagai 'number conflict'."""
+    currency = (template.get("mapping_rules") or {}).get("currency_default", "IDR")
+    hasil: List[Dict[str, Any]] = []
+    for no, g in enumerate(groups, start=1):
+        valid = bool(g["balanced"])
+        duplikat = bool(g["je_number"]) and dbc.get_je_draft_by_client_and_number(user_id, g["je_number"]) is not None
+
+        payload: Optional[Dict[str, Any]] = None
+        if valid:
+            payload = {
+                # Isi ini dipakai apa adanya saat promote (entry_date disimpan ISO string;
+                # client_id diisi id user yang menekan Create Journal).
+                "draft": {
+                    "management_client_id": management_client_id,
+                    "je_number": g["je_number"][:100],
+                    "entry_date": g["entry_date"].isoformat(),
+                    "period_label": _period_label(g["entry_date"]),
+                    "description": g["description"],
+                    "source_type": (g["source_type"] or "Import")[:20],
+                    "source_reference": (file_name or "")[:100] or None,
+                    "currency": currency,
+                    "status": "draft",
+                    "created_by_name": created_by_name,
+                },
+                "lines": g["lines"],
+            }
+
+        hasil.append({
+            "row_no": no,
+            "tanggal": g["entry_date"],
+            "je_number": (g["je_number"] or None) and g["je_number"][:100],
+            "description": g["description"],
+            "source_type": (g["source_type"] or None) and g["source_type"][:20],
+            "line_count": len(g["lines"]),
+            "debit_total": g["total_debit"],
+            "credit_total": g["total_credit"],
+            "is_valid": valid,
+            "validation_notes": "; ".join(g["errors"]) or None,
+            "is_duplicate_candidate": duplikat,
+            "payload": payload,
+        })
+    return hasil
+
+
+def _label_periode(tanggal: List[date]) -> Optional[str]:
+    if not tanggal:
+        return None
+    awal, akhir = min(tanggal), max(tanggal)
+    if (awal.year, awal.month) == (akhir.year, akhir.month):
+        return _period_label(awal)
+    return f"{_period_label(awal)} - {_period_label(akhir)}"
+
+
+# ============================================================
+# ENDPOINT -- Upload
 # ============================================================
 
 @router.post(
     "/import/upload",
-    summary="Upload file laporan jurnal (CSV/Excel) + buat draft otomatis pakai template (khusus Supervisor ke atas)",
+    summary="Upload file laporan jurnal (CSV/Excel) + ekstraksi otomatis pakai template ke staging Source Data (khusus Supervisor ke atas)",
     responses={
-        201: {"description": "File diproses -- lihat ringkasan created/skipped di response. template_matched=false berarti belum ada template yang cocok, TIDAK ada draft yang dibuat."},
+        201: {"description": "File dicatat di daftar Source Data -- template cocok -> journal entry diekstrak ke source rows (BELUM jadi draft JE); tidak cocok -> ditandai 'Needs Review'."},
         400: {"description": "Tipe file tidak didukung, atau file terlalu besar."},
         401: {"description": "Unauthorized."},
         403: {"description": "Forbidden."},
@@ -239,6 +309,7 @@ async def upload_journal_entry_import(
     management_client_id: str = Form(..., description="ID management_clients -- klien yang laporannya sedang diupload, WAJIB."),
     current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
 ):
+    mulai = time.perf_counter()
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         return gagal(
@@ -248,22 +319,36 @@ async def upload_journal_entry_import(
         )
 
     file_type = _detect_file_type(file.filename or "file")
-    client_id = current_user.get("id")  # management_users.id -- pemilik draft yang dibuat (akun yang login)
-    created_by_name = current_user.get("nama") or current_user.get("username")
+    user_id = current_user.get("id")  # management_users.id -- akun yang login (pemilik draft saat promote)
+    diproses_oleh = current_user.get("nama") or current_user.get("username")
+
+    dasar_file = {
+        "client_id": management_client_id,  # kolom client_id di tabel source = company (sama seperti Purchase)
+        "management_client_id": management_client_id,
+        "file_name": file.filename,
+        "file_type": file_type,
+        "processed_by": diproses_oleh,
+        "uploaded_by": user_id,
+    }
 
     cocok = None
     try:
-        cocok = _cocokkan_template(content, file_type, management_client_id)
+        cocok = await run_in_threadpool(_cocokkan_template, content, file_type, management_client_id)
     except Exception as e:
         logger.warning(f"Gagal mencocokkan template Journal Entry Import untuk file {file.filename}: {e}")
 
     if cocok is None:
+        source_file = dbc.create_je_source_file({
+            **dasar_file, "rows_detected": 0, "status_ekstraksi": "Needs Review", "status_mapping": "Needs Review",
+        }, created_by=user_id)
+        if source_file is None:
+            return gagal(message="Failed to save source file (database error).", status_code=500)
         return sukses(
-            data={"template_matched": False, "groups_detected": 0, "created": 0, "drafts": []},
+            data={**source_file, "template_matched": False, "rows_extracted": 0, "groups_detected": 0, "created": 0, "drafts": []},
             message=(
                 "No matching column pattern template found for this client & file format -- "
-                "no draft was created. Create a new template first (see "
-                "backend/migrations/seed_template_sau_jurnal_kas_kasir_excel.sql as an example) "
+                "the file was saved as 'Needs Review' and no entries were extracted. Create a new template first (see "
+                "backend/migrations/journal_entry/seed_template_sau_jurnal_kas_kasir_excel.sql as an example) "
                 "before this file type can be extracted automatically."
             ),
             status_code=201,
@@ -271,65 +356,259 @@ async def upload_journal_entry_import(
 
     template, rows = cocok
     try:
-        ekstrak = _ekstrak_dengan_template(rows, template)
+        ekstrak = await run_in_threadpool(_ekstrak_dengan_template, rows, template)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
+        source_file = dbc.create_je_source_file({
+            **dasar_file, "rows_detected": 0, "status_ekstraksi": "Failed", "status_mapping": "Failed", "template_id": template["id"],
+        }, created_by=user_id)
         return sukses(
-            data={"template_matched": True, "groups_detected": 0, "created": 0, "drafts": []},
+            data={**(source_file or {}), "template_matched": True, "rows_extracted": 0, "groups_detected": 0, "created": 0, "drafts": [], "note": f"Template found but extraction failed: {e}"},
             message=f"Template found but extraction failed: {e}",
             status_code=201,
         )
 
-    groups = ekstrak["groups"]
-    currency = (template.get("mapping_rules") or {}).get("currency_default", "IDR")
+    baris = await run_in_threadpool(
+        _susun_baris_staging, ekstrak["groups"], template, management_client_id, file.filename, user_id, diproses_oleh,
+    )
 
-    drafts_result: List[Dict[str, Any]] = []
-    created = 0
-    skipped_unbalanced = 0
-    skipped_duplicate = 0
+    rows_valid = sum(1 for r in baris if r["is_valid"])
+    rows_invalid = len(baris) - rows_valid
 
-    for g in groups:
-        if not g["balanced"]:
-            skipped_unbalanced += 1
-            drafts_result.append({"je_number": g["je_number"], "ok": False, "message": "; ".join(g["errors"])})
-            continue
-        if dbc.get_je_draft_by_client_and_number(client_id, g["je_number"]):
-            skipped_duplicate += 1
-            drafts_result.append({"je_number": g["je_number"], "ok": False, "message": "This je_number has already been imported previously for this client."})
-            continue
+    source_file = dbc.create_je_source_file({
+        **dasar_file,
+        "period_label": _label_periode([r["tanggal"] for r in baris if r["tanggal"]]),
+        "rows_detected": len(baris),
+        "rows_valid": rows_valid,
+        "rows_invalid": rows_invalid,
+        "duplicate_count": sum(1 for r in baris if r["is_duplicate_candidate"]),
+        "status_ekstraksi": "Completed" if baris and rows_invalid == 0 else "Needs Review",
+        "status_mapping": "Completed" if baris else "Needs Review",
+        "confidence_score": template.get("ai_confidence"),
+        "debit_total": round(sum(r["debit_total"] for r in baris), 2),
+        "credit_total": round(sum(r["credit_total"] for r in baris), 2),
+        "extraction_duration_ms": int((time.perf_counter() - mulai) * 1000),
+        "ai_model_version": template.get("ai_model_version"),
+        "mapping_rules": template.get("mapping_rules"),
+        "template_id": template["id"],
+    }, created_by=user_id)
+    if source_file is None:
+        return gagal(message="Failed to save source file (database error).", status_code=500)
 
-        draft_data = {
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "je_number": g["je_number"],
-            "entry_date": g["entry_date"],
-            "period_label": _period_label(g["entry_date"]),
-            "description": g["description"],
-            "source_type": g["source_type"],
-            "source_reference": file.filename,
-            "currency": currency,
-            "status": "draft",
-            "created_by_name": created_by_name,
+    if baris:
+        n_tersimpan = await run_in_threadpool(dbc.create_je_source_rows_bulk, baris, source_file["id"], management_client_id, user_id)
+        if n_tersimpan != len(baris):
+            await run_in_threadpool(
+                dbc.update_je_source_file, source_file["id"],
+                {"status_ekstraksi": "Failed", "status_mapping": "Failed", "rows_detected": 0}, user_id,
+            )
+            return gagal(
+                message="Extraction succeeded but saving the rows to the database failed (database error).",
+                errors={"code": "BULK_INSERT_FAILED"}, status_code=500,
+            )
+
+    await run_in_threadpool(dbc.touch_je_import_template_usage, template["id"])
+
+    # Ringkasan per journal entry -- dipakai langkah "result" di ImportJournalModal.
+    ringkasan = [
+        {
+            "je_number": r["je_number"] or "-",
+            "ok": r["is_valid"],
+            "message": (
+                f"Staged ({r['line_count']} lines) -- ready for Create Journal."
+                if r["is_valid"] and not r["is_duplicate_candidate"]
+                else (f"Staged, but this je_number already exists for your account." if r["is_valid"] else (r["validation_notes"] or "Invalid."))
+            ),
         }
-        dibuat = dbc.create_je_draft_with_lines(draft_data, g["lines"], created_by=client_id)
-        if dibuat is None:
-            drafts_result.append({"je_number": g["je_number"], "ok": False, "message": "Failed to save draft (database error)."})
-            continue
-        created += 1
-        drafts_result.append({"je_number": g["je_number"], "ok": True, "message": f"Successfully imported ({len(g['lines'])} lines)."})
-
-    dbc.touch_je_import_template_usage(template["id"])
+        for r in baris
+    ]
 
     return sukses(
         data={
+            **source_file,
             "template_matched": True,
-            "groups_detected": len(groups),
+            "rows_extracted": len(baris),
+            "groups_detected": len(baris),
             "skipped_no_key_rows": ekstrak["skipped_no_key"],
-            "created": created,
-            "skipped_unbalanced": skipped_unbalanced,
-            "skipped_duplicate": skipped_duplicate,
-            "drafts": drafts_result,
+            "created": 0,
+            "drafts": ringkasan,
         },
-        message=f"{created} of {len(groups)} journal entries imported successfully using a previously learned template.",
+        message=f"File extracted using a previously learned template ({len(baris)} journal entries staged -- use 'Create Journal' to create them).",
         status_code=201,
+    )
+
+
+# ============================================================
+# ENDPOINT -- Daftar file & baris (tab Source Data)
+# ============================================================
+
+class JeSourceFileUpdateRequest(BaseModel):
+    mapping_rules: Optional[Dict[str, Any]] = None
+    status_mapping: Optional[str] = None
+    status_ekstraksi: Optional[str] = None
+    period_label: Optional[str] = None
+
+
+@router.get(
+    "/source-files",
+    summary="Daftar file sumber Journal Entry (tab Source Data), difilter per company aktif",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_source_file(
+    management_client_id: Optional[str] = Query(None, description="Filter company (management_clients.id) dari dropdown Switch Company."),
+    client_id: Optional[str] = Query(None, description="Alias management_client_id (kompatibel dengan salesStore/purchaseStore)."),
+    termasuk_nonaktif: bool = Query(False),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = dbc.list_je_source_files(management_client_id=management_client_id or client_id, termasuk_nonaktif=termasuk_nonaktif)
+    return sukses(data=data, message="OK")
+
+
+@router.get(
+    "/source-files/{source_file_id}",
+    summary="Detail 1 file sumber Journal Entry",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 404: {"description": "Tidak ditemukan."}},
+)
+def detail_source_file(
+    source_file_id: str,
+    termasuk_nonaktif: bool = Query(False),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = dbc.get_je_source_file_by_id(source_file_id, termasuk_nonaktif=termasuk_nonaktif)
+    if data is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=data, message="OK")
+
+
+@router.put(
+    "/source-files/{source_file_id}",
+    summary="Update file sumber Journal Entry (khusus Supervisor ke atas)",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."}},
+)
+def update_source_file(
+    source_file_id: str,
+    payload: JeSourceFileUpdateRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    diupdate = dbc.update_je_source_file(source_file_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
+    if diupdate is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Source file updated.")
+
+
+@router.delete(
+    "/source-files/{source_file_id}",
+    summary="Nonaktifkan (soft-delete) file sumber Journal Entry -- journal entry yang sudah dibuat dari file ini TIDAK ikut terhapus",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."}},
+)
+def hapus_source_file(
+    source_file_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    berhasil = dbc.soft_delete_je_source_file(source_file_id, deleted_by=current_user.get("id"))
+    if not berhasil:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Source file deactivated.")
+
+
+@router.get(
+    "/source-rows",
+    summary="Daftar baris preview hasil ekstraksi (filter per source_file) -- untuk panel File Preview & Data Quality Check",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_source_row(
+    source_file_id: Optional[str] = Query(None),
+    termasuk_nonaktif: bool = Query(False),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    # payload (header + baris debit/kredit lengkap) tidak dikirim -- berat & tidak dipakai panel preview.
+    data = dbc.list_je_source_rows(source_file_id=source_file_id, termasuk_nonaktif=termasuk_nonaktif, dengan_payload=False)
+    return sukses(data=data, message="OK")
+
+
+# ============================================================
+# PROMOTE -- naikkan source_rows valid jadi draft Journal Entry
+# ============================================================
+# SENGAJA endpoint TERPISAH (bukan otomatis saat upload), sama seperti
+# promote-to-transactions di Purchase: baris tidak valid / je_number-nya
+# bentrok dengan draft yang sudah ada TIDAK ikut naik, supaya data akuntansi
+# tidak tercemar data yang belum ditinjau. Idempoten -- baris yang sudah
+# punya draft_id dilewati. Draft dimiliki user yang menekan tombol (client_id
+# = id user, sama seperti draft dari New Journal Entry) supaya muncul di tab
+# JE Transaction milik user itu.
+
+@router.post(
+    "/source-files/{source_file_id}/promote-to-journals",
+    summary="Naikkan baris valid hasil ekstraksi jadi draft Journal Entry (khusus Supervisor ke atas)",
+    responses={
+        200: {"description": "Selesai diproses -- lihat ringkasan created/skipped di response."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden."},
+        404: {"description": "Source file tidak ditemukan."},
+    },
+)
+def promote_source_file_to_journals(
+    source_file_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    source_file = dbc.get_je_source_file_by_id(source_file_id, termasuk_nonaktif=False)
+    if source_file is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+
+    user_id = current_user.get("id")
+    nama_user = current_user.get("nama") or current_user.get("username")
+    rows = dbc.list_je_source_rows(source_file_id=source_file_id, termasuk_nonaktif=False, dengan_payload=True)
+
+    dibuat = 0
+    dilewati_tidak_valid = 0
+    dilewati_sudah_pernah = 0
+    dilewati_nomor_bentrok = 0
+
+    for row in rows:
+        if not row.get("is_valid"):
+            dilewati_tidak_valid += 1
+            continue
+        if row.get("draft_id"):
+            dilewati_sudah_pernah += 1
+            continue
+        payload = row.get("payload") or {}
+        draft = dict(payload.get("draft") or {})
+        baris_jurnal = payload.get("lines") or []
+        je_number = row.get("je_number")
+        if not draft or not baris_jurnal or not je_number:
+            dilewati_tidak_valid += 1
+            continue
+        if dbc.get_je_draft_by_client_and_number(user_id, je_number):
+            dilewati_nomor_bentrok += 1
+            continue
+
+        try:
+            draft["entry_date"] = date.fromisoformat(str(draft.get("entry_date"))[:10])
+        except ValueError:
+            dilewati_tidak_valid += 1
+            continue
+        draft["client_id"] = user_id
+        draft["created_by_name"] = nama_user or draft.get("created_by_name")
+
+        draft_baru = dbc.create_je_draft_with_lines(draft, baris_jurnal, created_by=user_id)
+        if draft_baru is None:
+            dilewati_nomor_bentrok += 1  # gagal simpan (mis. race condition nomor ganda) -- dihitung dilewati, bukan error keras
+            continue
+        dbc.update_je_source_row(row["id"], {"draft_id": draft_baru["id"]}, updated_by=user_id)
+        dibuat += 1
+
+    ringkasan = {
+        "total_rows": len(rows),
+        "journals_created": dibuat,
+        "skipped_invalid": dilewati_tidak_valid,
+        "skipped_already_promoted": dilewati_sudah_pernah,
+        "skipped_number_conflict": dilewati_nomor_bentrok,
+    }
+    return sukses(
+        data=ringkasan,
+        message=(
+            f"{dibuat} journal entries created from {len(rows)} rows "
+            f"({dilewati_tidak_valid} invalid, {dilewati_sudah_pernah} already promoted, "
+            f"{dilewati_nomor_bentrok} number conflicts)."
+        ),
     )

@@ -29,7 +29,7 @@ function ReconciliationSummary({ accounts }: { accounts: BcOverviewAccount[] }) 
         <div className="card-elevated-md rounded-xl p-5">
           <p className="text-xs text-muted-foreground mb-1">Balance per Bank</p>
           <p className="text-xl font-bold text-foreground font-mono">{formatIDR(totalBank)}</p>
-          <p className="text-[11px] text-muted-foreground mt-1">Latest bank statement balance in Bank Feed</p>
+          <p className="text-[11px] text-muted-foreground mt-1">Latest bank statement balance in Source Data</p>
         </div>
         <div className="card-elevated-md rounded-xl p-5">
           <p className="text-xs text-muted-foreground mb-1">Balance per Books</p>
@@ -186,7 +186,7 @@ export default function ReconciliationPage() {
     if (alasan === null) return;
     try {
       await ignoreMutation(mutationId, alasan);
-      toast.success('Line ignored. You can restore it from the Bank Feed tab.');
+      toast.success('Line ignored. You can restore it from the Source Data tab.');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to ignore the line.');
     }
@@ -248,11 +248,11 @@ export default function ReconciliationPage() {
           {/* Kolom kiri — mutasi Bank Feed belum cocok */}
           <div className="card-elevated-md rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-border">
-              <h2 className="text-sm font-bold text-foreground">Bank Feed — Unmatched</h2>
+              <h2 className="text-sm font-bold text-foreground">Source Data — Unmatched</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Use Match / Auto-match, or click a line to match it to an invoice or record it without one</p>
             </div>
             {unmatchedMutations.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-10 text-center">No Bank Feed lines waiting.</p>
+              <p className="text-xs text-muted-foreground py-10 text-center">No Source Data lines waiting.</p>
             ) : (
               <div className="divide-y divide-border/50 max-h-[520px] overflow-y-auto">
                 {unmatchedMutations.map((m) => {
@@ -278,7 +278,7 @@ export default function ReconciliationPage() {
                           </p>
                           {m.confidence === 'low' && (
                             <p className="text-[11px] text-rose-700" title={m.confidenceNotes.join('\n')}>
-                              Needs review — the amount may be misread. Check it in the Bank Feed tab (skipped by auto-match).
+                              Needs review — the amount may be misread. Check it in the Source Data tab (skipped by auto-match).
                             </p>
                           )}
                         </div>
@@ -427,7 +427,7 @@ export default function ReconciliationPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/20">
-                    {['Date', 'Bank Feed Line', 'Matched With', 'Amount', 'Journal', 'Status', ''].map((h) => (
+                    {['Date', 'Source Data Line', 'Matched With', 'Amount', 'Journal', 'Status', ''].map((h) => (
                       <th key={h} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
                     ))}
                   </tr>

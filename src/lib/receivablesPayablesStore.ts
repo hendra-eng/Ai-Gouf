@@ -791,7 +791,7 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
 };
 
 export const SOURCE_LABEL: Record<Settlement['source'], string> = {
-  ar: 'Accounts Receivable', ap: 'Accounts Payable', bank_feed: 'Cash & Bank · Bank Feed', manual: 'Cash & Bank · Manual',
+  ar: 'Accounts Receivable', ap: 'Accounts Payable', bank_feed: 'Cash & Bank · Source Data', manual: 'Cash & Bank · Manual',
 };
 
 /** Level role (tahap_N -> N); harus sama dengan backend. Backend tetap penentu akhirnya. */

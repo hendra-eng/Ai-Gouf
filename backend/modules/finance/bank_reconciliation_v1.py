@@ -497,7 +497,7 @@ def _resolve_bank(session, client_id: str, explicit_id: Optional[str], bank_hint
     if len(banks) == 1:
         return banks[0]
     raise _Gagal(
-        "Akun Bank mutasi ini tidak bisa ditentukan. Hapus data Bank Feed, lalu upload ulang rekening koran dan pilih akun bank di dropdown upload.",
+        "Akun Bank mutasi ini tidak bisa ditentukan. Hapus data Source Data, lalu upload ulang rekening koran dan pilih akun bank di dropdown upload.",
         kode="NEED_ACCOUNT", detail={"field": "bank_coa_id", "options": banks},
     )
 

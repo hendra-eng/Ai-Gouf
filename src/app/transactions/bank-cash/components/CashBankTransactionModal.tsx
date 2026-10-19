@@ -189,7 +189,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               {dariBankFeed
-                ? 'From a Bank Feed line — direction, date & bank account follow the line.'
+                ? 'From a Source Data line — direction, date & bank account follow the line.'
                 : 'Saved as DRAFT, then Approve → Post in the Journal Preview tab.'}
             </p>
           </div>

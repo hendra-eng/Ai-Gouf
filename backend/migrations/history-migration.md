@@ -40,3 +40,9 @@ seed_fs_mapping_rules.sql
 seed_fs_note_templates.sql
 32-repoint_sales_client_id_fk_to_management_clients.py
 33-create_purchase_source_files_rows.py
+34-allow_null_purchase_date.py
+seed_template_nbm_multi_format_purchase.sql
+seed_template_sau_multi_format_purchase.sql
+35-create_journal_entry_source_files_rows.py
+36-create_bank_cash_import_templates_and_bank_mappings.py
+37-create_bank_cash_statements_and_mutations.py

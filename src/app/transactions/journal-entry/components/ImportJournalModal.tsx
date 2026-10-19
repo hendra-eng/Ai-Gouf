@@ -17,10 +17,11 @@ import { useActiveClient } from '@/lib/activeClient';
 //      file MENTAH dikirim ke backend, dicocokkan ke pola kolom yang sudah
 //      "dipelajari" untuk klien aktif (dropdown Switch Company) + format
 //      file ini (lihat root/SALES_IMPORT_TEMPLATES.md -- versi Journal
-//      Entry-nya). Kalau cocok, backend LANGSUNG membuat draft + baris
-//      debit/kreditnya (tidak ada tahap preview manual di sini -- pola
-//      kolom sudah dikenal & tervalidasi sebelumnya). Cocok untuk laporan
-//      klien yang formatnya baku/berulang (mis. Jurnal Kas Kasir SAU).
+//      Entry-nya). Kalau cocok, backend mencatat file ke daftar Source Data
+//      + 1 baris staging per journal entry (File Preview). Draft JE BARU
+//      dibuat lewat tombol "Create Journal" di tab Source Data (promote).
+//      Cocok untuk laporan klien yang formatnya baku/berulang (mis. Jurnal
+//      Kas Kasir SAU).
 //   2. Fallback: kalau backend bilang belum ada template yang cocok
 //      (template_matched=false) -- parse di browser (SheetJS), kelompokkan
 //      baris per JE Number lewat pencocokan nama header yang fleksibel
@@ -208,8 +209,10 @@ export default function ImportJournalModal({
         const hasil = await uploadJeSourceFile(file, activeClientId);
         if (hasil.template_matched) {
           setResults(hasil.drafts);
+          const staged = hasil.drafts.filter(d => d.ok).length;
           setResultMessage(
-            `This file's column pattern is already recognized (template) -- ${hasil.created} of ${hasil.groups_detected} journal entries imported directly.`,
+            hasil.note
+              ?? `This file's column pattern is already recognized (template) -- ${staged} of ${hasil.groups_detected} journal entries were extracted to Source Data. Select the file there and click "Create Journal" to create them.`,
           );
           setStep('result');
           return;
