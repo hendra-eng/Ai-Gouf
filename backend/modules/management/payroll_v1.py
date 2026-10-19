@@ -258,6 +258,10 @@ def simpan_settings(
             row = dbc.ManagementPayrollSetting(client_id=cid, created_by=current_user.get("id"), settings=payload.settings)
             session.add(row)
         else:
+            # Gembok: kalau pengaturan sedang terkunci, hanya permintaan pembuka gembok (locked=false) yang boleh.
+            lama = row.settings or {}
+            if lama.get("locked") is True and payload.settings.get("locked") is not False and payload.settings != lama:
+                return gagal(message="Pengaturan payroll sedang dikunci. Buka gembok terlebih dahulu.", errors={"code": "LOCKED"}, status_code=423)
             row.settings = payload.settings
             row.edited_at, row.edited_by = datetime.now(), current_user.get("id")
         session.commit()

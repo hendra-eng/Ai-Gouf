@@ -54,6 +54,8 @@ export interface PayrollSettings {
   // Informasi perusahaan untuk slip gaji
   companyName: string;
   payDay: number; // tanggal gajian
+  // Gembok: bila true, pengaturan tidak bisa diubah sampai gembok dibuka
+  locked: boolean;
 }
 
 export interface LineInput {
@@ -161,6 +163,7 @@ export const DEFAULT_SETTINGS: PayrollSettings = {
   accEmployeeReceivable: '1-1400 Piutang Karyawan',
   companyName: '',
   payDay: 25,
+  locked: false,
 };
 
 export const EMPTY_INPUT: LineInput = { overtime: 0, bonus: 0, absenceDeduction: 0, otherDeduction: 0 };

@@ -1,10 +1,17 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Info } from 'lucide-react';
+import { Info, Lock, Unlock } from 'lucide-react';
 import { Field, MoneyInput, SectionCard } from './payrollUi';
 import type { PayrollStore } from '../lib/payrollStore';
 import { DEFAULT_SETTINGS, type PayrollSettings } from '../lib/payrollTypes';
+
+// Membuat kotak isian lebih jelas: garis tepi lebih tegas, sedikit bayangan, dan sorotan hijau saat diklik.
+const INPUT_VISIBLE =
+  '[&_input:not([type=checkbox])]:!border-slate-400/80 [&_input:not([type=checkbox])]:shadow-sm ' +
+  '[&_input:not([type=checkbox])]:hover:!border-slate-500 ' +
+  '[&_input:not([type=checkbox])]:focus:!border-emerald-600 [&_input:not([type=checkbox])]:focus:!ring-2 [&_input:not([type=checkbox])]:focus:!ring-emerald-500/25 ' +
+  '[&_input[type=checkbox]]:!border-slate-400';
 
 const Pct = ({ label, k, s, set, hint }: { label: string; k: keyof PayrollSettings; s: PayrollSettings; set: (k: keyof PayrollSettings, v: number) => void; hint?: string }) => (
   <Field label={`${label} (%)`} hint={hint}>
@@ -48,8 +55,23 @@ export default function PayrollSettingsTab({ store }: { store: PayrollStore }) {
   const setNum = (k: keyof PayrollSettings, v: number) => setS(p => ({ ...p, [k]: v }));
   const setStr = (k: keyof PayrollSettings, v: string) => setS(p => ({ ...p, [k]: v }));
 
+  // Status gembok diambil dari data yang sudah tersimpan (bukan dari form yang belum disimpan).
+  const locked = !!store.settings.locked;
+
   const save = async () => {
-    if (await store.saveSettings(s)) toast.success('Pengaturan payroll disimpan — run draft dihitung ulang');
+    if (locked) return;
+    if (await store.saveSettings({ ...s, locked: false })) toast.success('Pengaturan payroll disimpan — run draft dihitung ulang');
+  };
+
+  const toggleLock = async () => {
+    if (!locked) {
+      if (!window.confirm('Kunci pengaturan payroll? Semua data di halaman ini tidak bisa diubah sampai gembok dibuka kembali.')) return;
+      // Mengunci = menyimpan isi form saat ini lalu mengaktifkan gembok
+      if (await store.saveSettings({ ...s, locked: true })) toast.success('Pengaturan dikunci');
+    } else {
+      // Membuka = hanya mencabut gembok, isi pengaturan tetap seperti yang tersimpan
+      if (await store.saveSettings({ ...store.settings, locked: false })) toast.success('Gembok dibuka — pengaturan bisa diubah');
+    }
   };
 
   return (
@@ -59,6 +81,18 @@ export default function PayrollSettingsTab({ store }: { store: PayrollStore }) {
         <span>Tarif BPJS, batas upah JP/Kesehatan, dan kelas risiko JKK berubah berkala dan bisa berbeda per perusahaan. Pastikan angka di bawah sesuai ketentuan terbaru sebelum memproses payroll sungguhan.</span>
       </div>
 
+      <div className={`flex items-center justify-between gap-3 flex-wrap rounded-lg border px-3 py-2 mb-5 text-xs ${locked ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-muted/40 border-border text-muted-foreground'}`}>
+        <span className="flex items-center gap-2">
+          {locked ? <Lock size={15} /> : <Unlock size={15} />}
+          {locked ? 'Pengaturan terkunci — data tidak bisa diubah. Buka gembok untuk mengedit.' : 'Pengaturan belum dikunci. Setelah selesai mengatur, kunci agar tidak berubah tanpa sengaja.'}
+        </span>
+        <button type="button" onClick={toggleLock} className={`${locked ? 'fin-btn-secondary' : 'fin-btn-primary'} inline-flex items-center gap-1.5 !rounded-full px-4`}>
+          {locked ? <Unlock size={14} /> : <Lock size={14} />}
+          {locked ? 'Buka Gembok' : 'Kunci Pengaturan'}
+        </button>
+      </div>
+
+      <fieldset disabled={locked} className={`border-0 p-0 m-0 min-w-0 ${INPUT_VISIBLE} ${locked ? 'opacity-70' : ''}`}>
       <SectionCard title="BPJS Ketenagakerjaan" subtitle="Persentase dari upah (gaji pokok + tunjangan tetap)">
         <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Pct label="JHT karyawan" k="jhtEmployee" s={s} set={setNum} />
@@ -80,10 +114,10 @@ export default function PayrollSettingsTab({ store }: { store: PayrollStore }) {
       </SectionCard>
 
       <SectionCard title="PPh Pasal 21">
-        <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+        <div className="p-5 grid grid-cols-2 lg:grid-cols-4 gap-4 items-start">
           <Pct label="Biaya jabatan" k="biayaJabatanRate" s={s} set={setNum} hint="Dipakai pada perhitungan tahunan (Desember)" />
           <Field label="Maks biaya jabatan / bulan (Rp)"><MoneyInput value={s.biayaJabatanMonthlyCap} onCommit={n => setNum('biayaJabatanMonthlyCap', n)} /></Field>
-          <label className="flex items-center gap-2 text-sm cursor-pointer col-span-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer col-span-2 mt-5 h-9">
             <input type="checkbox" checked={s.nonNpwpSurcharge} onChange={e => setS(p => ({ ...p, nonNpwpSurcharge: e.target.checked }))} className="rounded border-border" />
             Tarif +20% untuk karyawan tanpa NPWP
           </label>
@@ -117,6 +151,7 @@ export default function PayrollSettingsTab({ store }: { store: PayrollStore }) {
           <button onClick={save} className="fin-btn-primary">Simpan Pengaturan</button>
         </div>
       </div>
+      </fieldset>
     </>
   );
 }
