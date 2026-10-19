@@ -46,3 +46,4 @@ seed_template_sau_multi_format_purchase.sql
 35-create_journal_entry_source_files_rows.py
 36-create_bank_cash_import_templates_and_bank_mappings.py
 37-create_bank_cash_statements_and_mutations.py
+seed_template_birawa_multi_format_bank_cash.sql

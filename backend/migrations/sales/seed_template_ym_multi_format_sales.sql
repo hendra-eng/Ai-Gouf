@@ -133,9 +133,8 @@
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
 -- kolom NOT NULL untuk template Multi; pencocokan memakai label kolom di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client ('YM', 'PT YONISO MANASIKARA' atau 'PT. YONISO MANASIKARA',
--- tidak peka huruf besar/kecil) dan GAGAL dengan pesan jelas kalau belum ada di
--- management_clients. client_id & client_code diambil otomatis.
+-- KLIEN: dicari lewat client_code = 'YM' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
 -- File ini ada di subfolder sales/, jadi berikan PATH-nya:
@@ -328,12 +327,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('YM', 'PT YONISO MANASIKARA', 'PT. YONISO MANASIKARA')
+      AND upper(trim(client_code)) = 'YM'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = YM / PT Yoniso Manasikara). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari client_code = ''YM''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
@@ -415,4 +414,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('YM', 'PT YONISO MANASIKARA', 'PT. YONISO MANASIKARA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'YM';

@@ -109,10 +109,8 @@
 --   "Butuh Review". Migration purchase/34-allow_null_purchase_date.py tidak wajib untuk file ini
 --   (semua baris valid punya tanggal).
 --
--- KLIEN: dicari lewat nama_client ('EVITA', 'EBA', 'PT EVITA BERKAT ABADI', 'EVITA BERKAT ABADI',
---   'PT EVITA BERKATA BADI', 'EVITA BERKATA BADI', atau nama yang memuat kata EVITA). GANTI daftar
---   nama di blok DO kalau nama klien di halaman Clients berbeda. Seed GAGAL dengan pesan jelas
---   kalau klien belum ada. client_id & client_code diambil otomatis.
+-- KLIEN: dicari lewat client_code = 'EVITA' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
 --   cd backend
@@ -228,16 +226,12 @@ BEGIN
     SELECT id, client_code, nama_client INTO v_client_id, v_client_code, v_nama
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND (
-            upper(trim(nama_client)) IN ('EVITA', 'EBA', 'PT EVITA BERKAT ABADI', 'EVITA BERKAT ABADI', 'PT EVITA BERKATA BADI', 'EVITA BERKATA BADI')
-         OR upper(nama_client) LIKE '%EVITA%'
-      )
-    ORDER BY (upper(trim(nama_client)) IN ('EVITA', 'EBA', 'PT EVITA BERKAT ABADI', 'EVITA BERKAT ABADI', 'PT EVITA BERKATA BADI', 'EVITA BERKATA BADI')) DESC,
-             created_at
+      AND upper(trim(client_code)) = 'EVITA'
+    ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien Evita belum ada di management_clients (dicari nama_client = EVITA / EBA / PT Evita Berkat Abadi, atau yang memuat kata EVITA). Buat dulu lewat halaman Clients atau sesuaikan daftar nama di seed ini, lalu jalankan ulang.';
+        RAISE EXCEPTION 'Klien Evita belum ada di management_clients (dicari client_code = ''EVITA''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
     END IF;
     RAISE NOTICE 'Klien terpilih: % (client_code %)', v_nama, v_client_code;
 
@@ -318,4 +312,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_purchase_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(m.nama_client) LIKE '%EVITA%';
+-- WHERE t.file_type = 'Multi' AND upper(m.client_code) = 'EVITA';

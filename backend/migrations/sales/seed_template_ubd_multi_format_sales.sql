@@ -120,10 +120,8 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client = 'UBD' (tidak peka huruf besar/kecil); kalau tidak
--- ada, nama_client yang MEMUAT kata UBD. GAGAL dengan pesan jelas kalau belum ada di
--- management_clients (nama lengkap PT-nya belum diketahui dari file; tambahkan ke
--- daftar IN kalau perlu). client_id & client_code diambil otomatis.
+-- KLIEN: dicari lewat client_code = 'UBD' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
 -- File ini ada di subfolder sales/, jadi berikan PATH-nya:
@@ -277,16 +275,12 @@ BEGIN
     SELECT id, client_code, nama_client INTO v_client_id, v_client_code, v_nama
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND (
-            upper(trim(nama_client)) IN ('UBD')
-         OR upper(nama_client) LIKE '%UBD%'
-      )
-    ORDER BY (upper(trim(nama_client)) IN ('UBD')) DESC,
-             created_at
+      AND upper(trim(client_code)) = 'UBD'
+    ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien UBD belum ada di management_clients (dicari nama_client = UBD, atau yang memuat kata UBD). Buat dulu lewat halaman Clients atau sesuaikan daftar nama di seed ini, lalu jalankan ulang.';
+        RAISE EXCEPTION 'Klien UBD belum ada di management_clients (dicari client_code = ''UBD''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
     END IF;
     RAISE NOTICE 'Klien terpilih: % (client_code %)', v_nama, v_client_code;
 
@@ -367,4 +361,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(m.nama_client) LIKE '%UBD%';
+-- WHERE t.file_type = 'Multi' AND upper(m.client_code) = 'UBD';

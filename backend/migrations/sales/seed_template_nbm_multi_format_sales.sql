@@ -172,9 +172,8 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client ('NBM' atau 'PT NAWASANGA BERTATAP MUKA',
--- tidak peka huruf besar/kecil) dan GAGAL dengan pesan jelas kalau belum ada
--- di management_clients. client_id & client_code diambil otomatis.
+-- KLIEN: dicari lewat client_code = 'NBM' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- SEED LAMA -- seed_template_nbm_multi_format.sql (baris 'Multi' CSV+Excel,
 -- hash baris 5cf5abf76b2309c94a3127c2e8456eb3504425bc66b6da889716596966cb41db) sudah tercatat di history-migration.md. Hash baris itu
@@ -378,12 +377,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('NBM', 'PT NAWASANGA BERTATAP MUKA')
+      AND upper(trim(client_code)) = 'NBM'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari nama_client = NBM / PT Nawasanga Bertatap Muka). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari client_code = ''NBM''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
@@ -465,4 +464,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('NBM', 'PT NAWASANGA BERTATAP MUKA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'NBM';

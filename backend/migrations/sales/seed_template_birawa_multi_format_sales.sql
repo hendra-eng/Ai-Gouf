@@ -127,10 +127,8 @@
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
 -- kolom NOT NULL untuk template Multi; yang dipakai pencocokan adalah nilai di dalam varian.
 --
--- KLIEN: dicari lewat nama_client ('BIRAWA' atau 'PT BIRAWA', tidak peka huruf besar/kecil)
--- dan GAGAL dengan pesan jelas kalau belum ada di management_clients. client_id &
--- client_code diambil otomatis. Kalau nama lengkap klien di database berbeda, tambahkan
--- ke daftar IN (...) di blok DO.
+-- KLIEN: dicari lewat client_code = 'BIRAWA' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- SEED LAMA: tidak ada (seed Birawa pertama; file ini sebelumnya kosong).
 --
@@ -375,12 +373,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('BIRAWA', 'PT BIRAWA')
+      AND upper(trim(client_code)) = 'BIRAWA'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien BIRAWA belum ada di management_clients (dicari nama_client = BIRAWA / PT Birawa). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien BIRAWA belum ada di management_clients (dicari client_code = ''BIRAWA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
@@ -461,4 +459,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('BIRAWA', 'PT BIRAWA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'BIRAWA';

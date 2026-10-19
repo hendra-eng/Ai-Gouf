@@ -104,9 +104,8 @@
 -- level varian hanya pengisi kolom NOT NULL; yang dipakai pencocokan adalah
 -- signature per sheet di dalam mapping_rules.sheets.
 --
--- KLIEN: dicari lewat nama_client = 'ABE' (tidak peka huruf besar/kecil) dan GAGAL
--- dengan pesan jelas kalau belum ada di management_clients. Kalau nama klien
--- lengkapnya berbeda, tambahkan ke daftar IN (...) di bawah.
+-- KLIEN: dicari lewat client_code = 'ABE' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
 --   cd backend
@@ -365,12 +364,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('ABE')
+      AND upper(trim(client_code)) = 'ABE'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien ABE belum ada di management_clients (dicari nama_client = ABE). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien ABE belum ada di management_clients (dicari client_code = ''ABE''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     SELECT t.id INTO v_id
@@ -430,4 +429,4 @@ $do$;
 --        jsonb_array_length(t.mapping_rules->'variants'->0->'mapping_rules'->'sheets') AS jumlah_sheet
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'ABE';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'ABE';

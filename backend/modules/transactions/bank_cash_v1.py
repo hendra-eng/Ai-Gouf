@@ -260,9 +260,15 @@ def _kandidat_template(s, cid: str, tipe: str) -> List[Dict[str, Any]]:
         if (r["file_type"] or "").lower() == "multi":
             for v in mr.get("variants") or []:
                 if (v.get("file_type") or "").lower() == tipe.lower():
+                    rules = dict(v.get("mapping_rules") or {})
+                    # seed menaruh header_row_index / sheet_name di TINGKAT VARIAN (bukan di mapping_rules); teruskan
+                    # ke rules supaya resep Excel & hasil preview memakai baris header / sheet yang benar.
+                    for kunci in ("header_row_index", "sheet_name"):
+                        if rules.get(kunci) is None and v.get(kunci) is not None:
+                            rules[kunci] = v[kunci]
                     out.append({
                         "id": r["id"], "name": v.get("variant_name") or r["template_name"],
-                        "header_columns": v.get("header_columns") or [], "rules": v.get("mapping_rules") or {},
+                        "header_columns": v.get("header_columns") or [], "rules": rules,
                     })
         elif (r["file_type"] or "").lower() == tipe.lower():
             out.append({"id": r["id"], "name": r["template_name"], "header_columns": r["header_columns"] or [], "rules": mr})
@@ -300,12 +306,28 @@ def _daftar_mapping(s, cid: str, hanya_id: Optional[str] = None) -> List[Dict[st
 def _cari_mapping(mappings: List[Dict[str, Any]], ex: Dict[str, Any], template_id: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Urutan prioritas sama dengan docstring BankCashBankMapping: no. rekening -> keyword -> template -> nama bank."""
     aktif = [m for m in mappings if m["is_active"]]
+
+    def _nomor(v: Any) -> str:  # hanya angka, nol di depan dibuang (CSV BRI: NOREK 59001... vs PDF 059001...)
+        return re.sub(r"\D", "", str(v or "")).lstrip("0")
+
+    # 0) nomor rekening milik DOKUMEN itu sendiri (header PDF / nama file) -- didahulukan, karena keterangan transaksi
+    #    sering memuat nomor rekening LAIN milik klien (mis. BRI "ATMSTRPRM ... 1350838208" = rekening BCA-nya).
+    dok = _nomor(ex.get("account_number"))
+    if dok:
+        for m in aktif:
+            if _nomor(m["account_number"]) == dok:
+                return m, "account_number"
     teks = (ex["blob"] + "\n" + ex["filename"])
     runs = {re.sub(r"\D", "", x) for x in re.findall(r"\d[\d .\-]{5,28}\d", teks)} | set(re.findall(r"\d{6,}", teks))
+    # cadangan: nomor mapping yang tercetak di teks; kalau lebih dari satu cocok, yang PALING SERING muncul menang
+    # (bukan sekadar urutan bank_name/account_number).
+    kena = []
     for m in aktif:
-        nomor = re.sub(r"\D", "", m["account_number"] or "")
+        nomor = _nomor(m["account_number"])
         if nomor and any(nomor in run for run in runs):
-            return m, "account_number"
+            kena.append((teks.count(nomor), m))
+    if kena:
+        return max(kena, key=lambda x: x[0])[1], "account_number"
     low = teks.lower()
     for m in aktif:
         if m["match_keyword"] and m["match_keyword"].lower() in low:

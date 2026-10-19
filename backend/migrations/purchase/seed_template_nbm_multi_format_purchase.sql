@@ -130,8 +130,8 @@
 --     perjalanan dinas, akomodasi        -> 6-60204 | seragam -> 6-60007 | bensin, patrol -> 6-60202
 --     perawatan, material                -> 6-60203 | vegetables -> 1-10200
 --
--- KLIEN: dicari lewat nama_client ('NBM', 'PT NAWASANGA BERTATAP MUKA' atau 'NAWASANGA BERTATAP MUKA', tidak peka huruf
--- besar/kecil); GAGAL dengan pesan jelas kalau belum ada di management_clients.
+-- KLIEN: dicari lewat client_code = 'NBM' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- PRASYARAT: migration 15-create_purchase_import_templates.py dan coa/seed_coa_nbm.sql.
 --
@@ -143,7 +143,7 @@
 -- Kalau resep direvisi:
 --   DELETE FROM financial_transaction_purchase_import_templates t
 --    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) IN ('NBM', 'PT NAWASANGA BERTATAP MUKA', 'NAWASANGA BERTATAP MUKA')
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'NBM'
 --      AND t.file_type = 'Multi'
 --      AND t.column_signature_hash = 'c589f6f8cd9fcd1173c95919a642ddc3715f46fb8cbc04cfdf8db2f9d0ff370e';
 --
@@ -158,12 +158,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('NBM', 'PT NAWASANGA BERTATAP MUKA', 'NAWASANGA BERTATAP MUKA')
+      AND upper(trim(client_code)) = 'NBM'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari nama_client = NBM / PT Nawasanga Bertatap Muka / Nawasanga Bertatap Muka). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien NBM belum ada di management_clients (dicari client_code = ''NBM''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     INSERT INTO financial_transaction_purchase_import_templates (
@@ -398,4 +398,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_purchase_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('NBM', 'PT NAWASANGA BERTATAP MUKA', 'NAWASANGA BERTATAP MUKA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'NBM';

@@ -28,6 +28,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -71,15 +72,16 @@ def _kompak(s: str) -> str:
 
 _ROLE_RULES: List[Tuple[str, str, bool]] = [
     # (peran, regex pada teks kompak, exact?)
-    ("balance_before", r"^(saldoawal|saldosebelum\w*|balancebefore|openingbalance)$", True),
+    # 'saldoawalmutasi' (CSV core banking BRI) = saldo SEBELUM transaksi, bukan saldo berjalan
+    ("balance_before", r"^(saldoawal\w*|saldosebelum\w*|balancebefore|openingbalance|beginningbalance)$", True),
     ("dc_flag", r"^(d/?k|db/?cr|cr/?db|dc|d/?c|k/?d|dr/?cr|cr/?dr|jenis\w*|tipe\w*|type|dk)$", True),
     ("balance", r"^(saldo\w*|balance\w*|runningbalance)$", True),
     ("debit", r"(debet|debit|keluar|withdraw|pengeluaran|^db$|^dr$)", False),
     ("credit", r"(kredit|credit|masuk|deposit|penerimaan|^cr$)", False),
     ("amount", r"^(jumlah|jml|amount|nominal|mutasi|nilai)$", True),
     ("date", r"(tanggal|^tgl|date|^tanggaltransaksi)", False),
-    ("description", r"(keterangan|^ket$|uraian|deskripsi|description|remark|berita|narasi|particular|detail|transaksi|catatan)", False),
-    ("reference", r"^(no|noref\w*|ref\w*|nobukti|nodok\w*|cbg|cabang|teller|voucher\w*)$", True),
+    ("description", r"(keterangan|^ket$|uraian|deskripsi|^desk\w*|description|remark|berita|narasi|particular|detail|transaksi|catatan)", False),
+    ("reference", r"^(no|noref\w*|ref\w*|nobukti|nodok\w*|cbg|cabang|teller|voucher\w*|seq|nojurnal|nojournal|journal\w*|jurnal\w*)$", True),
 ]
 
 
@@ -90,6 +92,13 @@ def deteksi_peran(header: str) -> Optional[str]:
     for peran, pola, exact in _ROLE_RULES:
         if (re.match if exact else re.search)(pola, k):
             return peran
+    # header dwibahasa 'SALDO / BALANCE': utuhnya tidak cocok pola exact -> coba tiap bagian
+    bagian = [b for b in re.split(r"/", header or "") if _kompak(b)]
+    if len(bagian) > 1:
+        for b in bagian:
+            peran = deteksi_peran(b)
+            if peran:
+                return peran
     return None
 
 
@@ -394,7 +403,10 @@ def _cari_header(rows: List[List[Any]], maks: int = 80, kandidat: Optional[List[
             if i + 1 < len(rows):  # baris di bawahnya berisi sub-header Debit/Kredit (tanpa tanggal)? -> header 2 baris
                 nxt = [_teks(c) for c in rows[i + 1]]
                 sub = [deteksi_peran(c) for c in nxt if c]
-                if nxt and ("debit" in sub or "credit" in sub) and not any(parse_tanggal(c) for c in nxt if c):
+                # baris data pertama ber-tanggal "dd/mm" (tanpa tahun) tidak boleh dikira sub-header, walau
+                # keterangannya memuat kata "KREDIT"/"DEBIT" (mis. "KARTU KREDIT MID:...", CSV KlikBCA Agustus).
+                if nxt and ("debit" in sub or "credit" in sub) and not any(parse_tanggal(c) for c in nxt if c) \
+                        and not re.match(r"^\s*\d{1,2}[/.\-]\d{1,2}([/.\-]\d{2,4})?\s*$", nxt[0] or ""):
                     n = max(len(cells), len(nxt))
                     gabung = [((cells[j] if j < len(cells) else "") + " " + (nxt[j] if j < len(nxt) else "")).strip() for j in range(n)]
                     r2 = nilai(gabung)
@@ -510,7 +522,11 @@ def _ekstrak_sheet(
                 saldo_awal = prev_bal = a
             continue
         if tgl is None:
-            if desc and d is None and k is None and a is None and records and not re.match(r"(?i)^\s*(total|jumlah|saldo akhir|ending|grand|halaman|page)", desc):
+            # Baris lanjutan keterangan hanya sah bila sel tanggal (& penanda D/K) KOSONG. Sel tanggal berisi teks
+            # non-tanggal = header yang diulang tiap halaman PDF ('URAIAN / DESCRIPTION') atau tabel non-mutasi di
+            # halaman akhir (kurs, saldo min-max, tunggakan) -- jangan ditempel ke keterangan transaksi di atasnya.
+            tanggal_kosong = not _teks(sel(row, "date")) and not _teks(sel(row, "dc_flag"))
+            if desc and tanggal_kosong and d is None and k is None and a is None and records and not re.match(r"(?i)^\s*(total|jumlah|saldo akhir|ending|grand|halaman|page)", desc):
                 records[-1]["description"] = (records[-1]["description"] + " " + desc).strip()  # baris lanjutan
             continue
 
@@ -636,11 +652,29 @@ def deteksi_nomor_rekening(blob: str, filename: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def nomor_dari_aturan(rules: Optional[Dict[str, Any]], blob: str) -> Optional[str]:
+    """Nomor rekening memakai regex milik template (mapping_rules.detect.account_number_regex), lebih presisi daripada
+    tebakan generik. Semua grup tangkapan digabung & diambil angkanya (Permata: (\\d{4})-(\\d{4})-(\\d{4}) -> 12 digit)."""
+    rx = ((rules or {}).get("detect") or {}).get("account_number_regex")
+    if not rx or not blob:
+        return None
+    try:
+        m = re.search(rx, blob, re.I)
+    except re.error:
+        return None
+    if not m:
+        return None
+    angka = re.sub(r"\D", "", "".join(g for g in (m.groups() or (m.group(0),)) if g))
+    return angka if len(angka) >= 6 else None
+
+
 def deteksi_nama_bank(blob: str, filename: str) -> Optional[str]:
-    atas = (filename + " " + blob[:1500]).upper()
-    for b in BANK_DIKENAL:
-        if re.search(rf"(?<![A-Z]){re.escape(b)}(?![A-Z])", atas):
-            return b.title() if b not in ("BCA", "BRI", "BNI", "BTN", "OCBC", "BSI", "UOB", "HSBC", "BTPN", "CIMB") else b
+    # Nama FILE didahulukan: isi dokumen sering menyebut bank lain di keterangan transaksi (CSV BRI core banking tanpa
+    # kop memuat 'BCA' di keterangan), sedangkan nama file diberi pemilik data (mis. NBM_BRI_..._202606.csv).
+    for sumber in ((filename or "").upper(), ((filename or "") + " " + (blob or "")[:1500]).upper()):
+        for b in BANK_DIKENAL:
+            if re.search(rf"(?<![A-Z]){re.escape(b)}(?![A-Z])", sumber):
+                return b.title() if b not in ("BCA", "BRI", "BNI", "BTN", "OCBC", "BSI", "UOB", "HSBC", "BTPN", "CIMB") else b
     return None
 
 
@@ -648,10 +682,25 @@ def ekstrak_rekening_koran(
     content: bytes, filename: str, rules_user: Optional[Dict[str, Any]] = None,
     kandidat_template: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    kandidat_template = kandidat_template or []
+
+    # RESEP khusus bank (bank_statement_recipes.py): dicoba DULU, sebelum file dibaca generik, supaya PDF besar
+    # tidak dibaca dua kali. Hanya jalan kalau ada template kandidat ber-"recipe" yang header-nya cocok dengan
+    # file ini; user memilih peran kolom manual (rules_user) -> hormati pilihan user, resep dilewati.
+    if not rules_user:
+        try:
+            from . import bank_statement_recipes as resep
+
+            hasil_resep = resep.coba(content, filename, kandidat_template)
+        except Exception as e:  # noqa: BLE001 -- resep gagal apa pun alasannya -> parser generik tetap jalan
+            logging.getLogger(__name__).warning("Resep bank gagal (%s); pakai parser generik.", e)
+            hasil_resep = None
+        if hasil_resep is not None:
+            return hasil_resep
+
     tipe, sheets = baca_sheets(content, filename)
     blob = _blob(sheets)
     year = _year_hint(blob, filename)
-    kandidat_template = kandidat_template or []
 
     def proses(grup: List[Dict[str, Any]], metode: str) -> Optional[Dict[str, Any]]:
         sh0 = h0 = None
@@ -743,6 +792,7 @@ def ekstrak_rekening_koran(
             for j, c in enumerate(header_cells) if c]
     ada_d = any(c["role"] == "debit" for c in cols)
     ada_k = any(c["role"] == "credit" for c in cols)
+    tpl_rules = (hasil["template"] or {}).get("rules") or {}
     return {
         "recognized": True, "file_type": tipe, "method": hasil["metode"], "blob": blob, "filename": filename,
         "warnings": warnings, "records": semua, "columns": cols, "header_cells": header_cells,
@@ -750,7 +800,10 @@ def ekstrak_rekening_koran(
         "number_format": hasil["fmt"], "date_order": hasil["order"], "default_direction": hasil["default_dir"],
         "amount_mode": "split" if (ada_d and ada_k) else "single",
         "template": hasil["template"], "validation": validasi,
-        "account_number": deteksi_nomor_rekening(blob, filename), "bank_name": deteksi_nama_bank(blob, filename),
+        "account_number": nomor_dari_aturan(tpl_rules, blob) or deteksi_nomor_rekening(blob, filename),
+        # nama bank dari template didahulukan: logo-only (OCBC) / tidak tercetak (KlikBCA CSV) tidak terdeteksi dari teks,
+        # dan keterangan transaksi sering menyebut bank LAIN (mis. CSV BRI memuat 'BCA').
+        "bank_name": tpl_rules.get("bank_name") or deteksi_nama_bank(blob, filename),
         "period_start": min(tgls) if tgls else None, "period_end": max(tgls) if tgls else None,
     }
 

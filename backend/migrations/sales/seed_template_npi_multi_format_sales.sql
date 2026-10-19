@@ -107,9 +107,8 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client ('NPI' atau 'PT NUSA PENIDA INVESTMENTS', tidak
--- peka huruf besar/kecil) dan GAGAL dengan pesan jelas kalau belum ada di
--- management_clients. client_id & client_code diambil otomatis.
+-- KLIEN: dicari lewat client_code = 'NPI' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- SEED LAMA -- seed_template_npi_sales_recapitulation_excel.sql (1 format Excel,
 -- file_type 'Excel', BUKAN Multi) tercatat di history-migration.md. Kalau barisnya
@@ -298,12 +297,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('NPI', 'PT NUSA PENIDA INVESTMENTS')
+      AND upper(trim(client_code)) = 'NPI'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien NPI belum ada di management_clients (dicari nama_client = NPI / PT Nusa Penida Investments). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien NPI belum ada di management_clients (dicari client_code = ''NPI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
@@ -397,4 +396,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('NPI', 'PT NUSA PENIDA INVESTMENTS');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'NPI';

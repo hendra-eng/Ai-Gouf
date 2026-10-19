@@ -261,9 +261,8 @@
 -- dalam tiap varian. Setiap varian ditambah/dihapus, hitung ulang hash level baris dari
 -- gabungan hash varian (urutan = urutan array "variants").
 --
--- KLIEN: dicari lewat nama_client ('SAU' atau 'CV SUMBER ALODIE UTAMA', tidak peka
--- huruf besar/kecil) dan GAGAL dengan pesan jelas kalau belum ada di
--- management_clients. client_id & client_code diambil otomatis, tidak di-hardcode.
+-- KLIEN: dicari lewat client_code = 'SAU' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- PRASYARAT: migration 15-create_purchase_import_templates.py (tabel sudah ada) dan
 -- seed_coa_sau.sql (akun di atas).
@@ -277,7 +276,7 @@
 -- ulang, hapus dulu:
 --   DELETE FROM financial_transaction_purchase_import_templates t
 --    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA')
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
 --      AND t.file_type = 'Multi'
 --      AND t.column_signature_hash = '83b3ce13b0ecce8cf1bc7581b5c39d8834608f3db04191d2d24b99ec823d9765';
 -- Kalau yang ada di database masih baris Multi versi CSV-saja (hash lama), hapus yang itu
@@ -285,7 +284,7 @@
 -- menolak karena hash level barisnya beda):
 --   DELETE FROM financial_transaction_purchase_import_templates t
 --    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA')
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
 --      AND t.file_type = 'Multi'
 --      AND t.column_signature_hash = '38ba284a93b8d55b8c00257d05a4c00c6d7b9ad3585984d07198c97ce56d1e2f';
 --
@@ -293,7 +292,7 @@
 --   UPDATE financial_transaction_purchase_import_templates t
 --      SET is_active = false, edited_at = now()
 --     FROM management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA')
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
 --      AND t.file_type = 'CSV' AND t.column_signature_hash = 'f5b9fc4d1e289233f6f2d71a9c1f07c16b88db8f4ee99f53ca70bba71f89ef64';
 --
 -- Menambah varian Excel nanti: tambahkan 1 objek lagi di array "variants" (file_type,
@@ -317,12 +316,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA')
+      AND upper(trim(client_code)) = 'SAU'
     ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari nama_client = SAU / CV Sumber Alodie Utama). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari client_code = ''SAU''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     INSERT INTO financial_transaction_purchase_import_templates (
@@ -841,4 +840,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_purchase_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('SAU', 'CV SUMBER ALODIE UTAMA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'SAU';
