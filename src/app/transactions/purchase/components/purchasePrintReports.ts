@@ -1,5 +1,5 @@
 import type { PrintReport } from '@/lib/printExport';
-import type { PurchaseTransaction, PurchaseLine } from '@/data/purchaseData';
+import type { PurchaseTransaction, PurchaseLine } from '@/lib/data/purchaseData';
 
 // Susunan laporan Print (CSV / Excel / PDF) untuk fitur Purchase.
 // Daftar = 1 baris per transaksi pembelian (sesuai kolom tabel);

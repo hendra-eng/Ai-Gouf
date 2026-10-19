@@ -6,7 +6,7 @@ import { PlusIcon } from '@heroicons/react/24/outline';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
-import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
+import type { PurchaseStatus, PaymentStatus } from '@/lib/data/purchaseData';
 import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintFormat } from '@/lib/printExport';

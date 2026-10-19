@@ -29,6 +29,8 @@ export const searchIndex: SearchIndexItem[] = [
   { label: 'Chart of Accounts', href: '/coa', group: 'Management' },
   { label: 'Year-End Closing', href: '/year-end-closing', group: 'Management' },
   { label: 'Documents', href: '/documents', group: 'Management' },
+  { label: 'Settings', href: '/settings', group: 'Management' },
+  { label: 'Payroll', href: '/payroll', group: 'Management' },
 ];
 
 export function searchPages(query: string, limit = 6): SearchIndexItem[] {

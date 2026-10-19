@@ -30,7 +30,7 @@ import type {
   ExceptionType,
   ExceptionSeverity,
   ExceptionStatus,
-} from '@/data/purchaseData';
+} from '@/lib/data/purchaseData';
 
 // ─── Bentuk mentah dari backend (lihat db_client.py::ambil_data_purchase) ──
 interface RawVendor { id: string; name: string }

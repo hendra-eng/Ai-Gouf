@@ -6750,3 +6750,88 @@ def _audit_iso_date(d):
 
 def _audit_iso_dt(dt):
     return dt.isoformat() if dt else None
+
+
+class ManagementPayrollSetting(Base):
+    """Payroll > Settings: tarif BPJS, batas upah, biaya jabatan, nama akun
+    jurnal, dst. -- 1 baris per klien, isi fleksibel di kolom JSONB `settings`
+    (kunci mengikuti PayrollSettings di src/app/payroll/lib/payrollTypes.ts).
+    Lihat modules/management/payroll_v1.py & migrations/38-*.py."""
+    __tablename__ = "management_payroll_settings"
+    __table_args__ = (
+        UniqueConstraint("client_id", name="uq_management_payroll_settings_client"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    settings = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementPayrollEmployee(Base):
+    """Payroll > Employees: master karyawan per klien (soft delete lewat
+    deleted_at). NIP unik per klien (di antara yang belum dihapus)."""
+    __tablename__ = "management_payroll_employees"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False, index=True)
+    nip = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=False)
+    position = Column(String(255), nullable=True)
+    department = Column(String(255), nullable=True)
+    branch = Column(String(255), nullable=True)
+    employment_type = Column(String(10), nullable=False, default="PKWTT", server_default=text("'PKWTT'"))
+    join_date = Column(Date, nullable=True)
+    npwp = Column(String(50), nullable=True)
+    ptkp = Column(String(10), nullable=False, default="TK/0", server_default=text("'TK/0'"))
+    base_salary = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    fixed_allowance = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    variable_allowance = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    bank_name = Column(String(100), nullable=True)
+    bank_account = Column(String(100), nullable=True)
+    bpjs_tk = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    bpjs_kes = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementPayrollRun(Base):
+    """Payroll > Payroll Run: 1 baris per klien per periode (YYYY-MM).
+    `lines` (JSONB) = snapshot per karyawan (data master + input + hasil
+    hitung) supaya payroll yang sudah disetujui tidak berubah walau master
+    karyawan diedit. Kolom total_* dihitung server dari `lines`.
+    Status: draft -> approved -> paid (lihat payroll_v1.py)."""
+    __tablename__ = "management_payroll_runs"
+    __table_args__ = (
+        UniqueConstraint("client_id", "period", name="uq_management_payroll_runs_client_period"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False, index=True)
+    period = Column(String(7), nullable=False)
+    pay_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    lines = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    headcount = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    total_gross = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_pph21 = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_bpjs = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_net = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    # Riwayat perubahan status [{at, by, from, to, reason}] -- termasuk buka kembali (migration 39).
+    status_history = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    paid_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)

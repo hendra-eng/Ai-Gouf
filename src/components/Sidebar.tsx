@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck } from 'lucide-react';
+import { LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck, Banknote } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
 import { useAuth, userInitials } from '@/lib/auth';
@@ -95,6 +95,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-year-end-closing', label: 'Year-End Closing', icon: CalendarCheck, href: '/year-end-closing' },
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
       { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
+      { id: 'nav-payroll', label: 'Payroll', icon: Banknote, href: '/payroll' },
     ],
   },
 ];

@@ -3,7 +3,7 @@
 // BOM UTF-8 supaya Excel baca karakter khusus dengan benar, sel yang diawali
 // = + - @ diberi tanda kutip di depan supaya tidak dieksekusi sebagai rumus
 // (CSV/formula injection).
-import type { PurchaseTransaction } from '@/data/purchaseData';
+import type { PurchaseTransaction } from '@/lib/data/purchaseData';
 
 function csvCell(v: string | number): string {
   if (typeof v === 'number') return String(v);
