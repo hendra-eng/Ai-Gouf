@@ -2,6 +2,8 @@
 
 // Daftar opening balance (saldo awal) klien aktif per tahun buku & cabang.
 // Buat baru -> /coa/opening-balances/new; buka 1 set -> /coa/opening-balances/[id].
+// Aturan bisnis: 1 klien hanya boleh punya 1 opening balance -> tombol New
+// dimatikan begitu klien sudah punya (backend juga menolak, kode ALREADY_EXISTS).
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -14,6 +16,7 @@ export default function OpeningBalanceListClient() {
   const { clients, activeClientId, setActiveClient } = useActiveClient();
   const { items, loading, error, refresh } = useOpeningBalances(activeClientId);
   const [tahun, setTahun] = useState<number | 'all'>('all');
+  const bisaBuat = !!activeClientId && !loading && items.length === 0;
 
   const daftarTahun = useMemo(() => [...new Set(items.map(i => i.fiscal_year))].sort((a, b) => b - a), [items]);
   const tampil = tahun === 'all' ? items : items.filter(i => i.fiscal_year === tahun);
@@ -68,13 +71,19 @@ export default function OpeningBalanceListClient() {
               </button>
               <Link
                 href="/coa/opening-balances/new"
-                aria-disabled={!activeClientId}
-                className={`flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800 ${activeClientId ? '' : 'pointer-events-none opacity-40'}`}
+                aria-disabled={!bisaBuat}
+                className={`flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800 ${bisaBuat ? '' : 'pointer-events-none opacity-40'}`}
               >
                 <Plus size={15} /> New opening balance
               </Link>
             </div>
           </div>
+
+          {activeClientId && items.length > 0 && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              This client already has its opening balance. Only one is allowed per client — use Revise on it to make corrections.
+            </p>
+          )}
 
           {daftarTahun.length > 1 && (
             <div className="mt-6 inline-flex rounded-xl bg-slate-100 p-1">
@@ -105,7 +114,7 @@ export default function OpeningBalanceListClient() {
           <Kosong
             icon={Scale}
             title="No opening balances yet"
-            hint="Create one per fiscal year (and per branch if needed). Unbalanced amounts are parked in a suspense account for you to resolve."
+            hint="Each client has one opening balance — create it once, then correct it with Revise. Unbalanced amounts are parked in a suspense account for you to resolve."
             action={<Link href="/coa/opening-balances/new" className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-800"><Plus size={15} /> New opening balance</Link>}
           />
         ) : perTahun.map(([fy, sets]) => (

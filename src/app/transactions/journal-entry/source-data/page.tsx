@@ -1,11 +1,28 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import ExcelJS from 'exceljs';
+import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
-import { useJeSourceRecords, useJeDrafts, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
+import { useActiveClient } from '@/lib/activeClient';
+import { useJeSourceRecords, useJeDrafts, listJeImportTemplates, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import ImportJournalModal, { HEADER_ALIASES, JE_REQUIRED_COLUMNS } from '@/app/transactions/journal-entry/components/ImportJournalModal';
+import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
+import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+// Label field sistem untuk bagian "Generic Column Mapping" di modal Mapping Rules.
+const JE_FIELD_LABELS: Record<string, string> = {
+  je_number: 'JE Number', entry_date: 'Date', description: 'Description', source_type: 'Source Type',
+  account_code: 'Account Code', account_name: 'Account Name', debit: 'Debit', credit: 'Credit', cost_center: 'Cost Center',
+};
+const JE_MAPPING_COLUMNS = Object.entries(HEADER_ALIASES).map(([key, accepted]) => ({
+  field: JE_FIELD_LABELS[key] || key, accepted, required: JE_REQUIRED_COLUMNS.includes(key),
+}));
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type SyncStatus = 'Synced' | 'Pending Sync' | 'Sync Failed' | 'Manual';
@@ -158,9 +175,100 @@ export default function SourceDataPage() {
 
   const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
+  // ── Action bar (pola sama dengan tab Source Data Sales) ──
+  // Upload File = ImportJournalModal yang sama dengan tab Transactions
+  // (template backend dulu, fallback parsing kolom generik di browser).
+  const { activeClientId } = useActiveClient();
+  const [showImport, setShowImport] = useState(false);
+  const [showMapping, setShowMapping] = useState(false);
+  const loadTemplates = useCallback(() => listJeImportTemplates(activeClientId ?? ''), [activeClientId]);
+
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Journal Entry Template');
+    sheet.columns = [
+      { header: 'JE Number', key: 'je', width: 18 },
+      { header: 'Date', key: 'date', width: 12 },
+      { header: 'Description', key: 'description', width: 30 },
+      { header: 'Source Type', key: 'type', width: 14 },
+      { header: 'Account Code', key: 'code', width: 14 },
+      { header: 'Account Name', key: 'name', width: 24 },
+      { header: 'Debit', key: 'debit', width: 14 },
+      { header: 'Credit', key: 'credit', width: 14 },
+      { header: 'Cost Center', key: 'cc', width: 14 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.addRow({ je: 'JE-2026-09-0100', date: '2026-09-18', description: 'Capital injection', type: 'Manual', code: '1100', name: 'Cash', debit: 1000000, credit: 0, cc: '' });
+    sheet.addRow({ je: 'JE-2026-09-0100', date: '2026-09-18', description: 'Capital injection', type: 'Manual', code: '3100', name: 'Owner Equity', debit: 0, credit: 1000000, cc: '' });
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(new Blob([buffer], { type: XLSX_MIME }), 'Journal_Entry_Template.xlsx');
+    toast.success('Excel template downloaded');
+  };
+
+  // Export = semua baris hasil filter/sort saat ini, bukan cuma 1 halaman.
+  const handleExport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Source Data');
+    sheet.columns = [
+      { header: 'Source ID', key: 'sourceId', width: 18 },
+      { header: 'Type', key: 'type', width: 14 },
+      { header: 'Date', key: 'date', width: 12 },
+      { header: 'Description', key: 'description', width: 34 },
+      { header: 'Vendor / Party', key: 'vendor', width: 22 },
+      { header: 'Amount', key: 'amount', width: 16 },
+      { header: 'Currency', key: 'currency', width: 10 },
+      { header: 'Account Code', key: 'code', width: 14 },
+      { header: 'Account Name', key: 'account', width: 24 },
+      { header: 'JE Reference', key: 'je', width: 18 },
+      { header: 'Sync', key: 'sync', width: 14 },
+      { header: 'Status', key: 'status', width: 16 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    filtered.forEach(r => sheet.addRow({
+      sourceId: r.sourceId, type: r.sourceType, date: r.sourceDate, description: r.description, vendor: r.vendor || '-',
+      amount: r.amount, currency: r.currency, code: r.accountCode, account: r.relatedAccount,
+      je: r.jeReference || '-', sync: r.syncStatus, status: r.sourceStatus,
+    }));
+    sheet.getColumn('amount').numFmt = '#,##0';
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(new Blob([buffer], { type: XLSX_MIME }), `Journal_Entry_Source_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success('Export successful', { description: `${filtered.length} rows downloaded as Excel.` });
+  };
+
   return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="source" />
+        {showImport && clientId && (
+          <ImportJournalModal
+            clientId={clientId}
+            createdByName={user?.nama || user?.username || 'System'}
+            onClose={() => setShowImport(false)}
+          />
+        )}
+        {showMapping && (
+          <MappingRulesModal
+            onClose={() => setShowMapping(false)}
+            loadTemplates={activeClientId ? loadTemplates : undefined}
+            columns={JE_MAPPING_COLUMNS}
+            columnsNote="Used when no import template matches the uploaded file: rows are grouped per JE Number into balanced draft journals."
+          />
+        )}
+
+        {/* Action Bar */}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <button onClick={() => setShowImport(true)} disabled={!clientId} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
+            <ArrowUpTrayIcon className="w-3.5 h-3.5" /> Upload File
+          </button>
+          <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5">
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Excel Template
+          </button>
+          <button onClick={handleExport} disabled={filtered.length === 0} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Export
+          </button>
+          <button onClick={() => setShowMapping(true)} className="btn-primary text-xs py-1.5 gap-1.5">
+            <Cog6ToothIcon className="w-3.5 h-3.5" /> Mapping Rules
+          </button>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -139,6 +139,30 @@ def _hash_baris(row: List[str]) -> str:
     return hashlib.sha256(_normalisasi_baris(row).encode("utf-8")).hexdigest()
 
 
+def ringkas_import_template(t: Dict[str, Any]) -> Dict[str, Any]:
+    """Ringkasan read-only 1 import template (Purchase/Journal Entry) untuk
+    modal Mapping Rules tab Source Data -- resep mapping_rules lengkap
+    (posisi kolom per jenis baris blok) TIDAK dikirim utuh."""
+    rules = t.get("mapping_rules") or {}
+    return {
+        "id": t["id"],
+        "client_code": t.get("client_code"),
+        "file_type": t.get("file_type"),
+        "sheet_name": t.get("sheet_name"),
+        "header_row_index": t.get("header_row_index"),
+        "data_start_row_index": t.get("data_start_row_index"),
+        "header_columns": t.get("header_columns") or [],
+        "format_type": rules.get("format_type"),
+        "description": rules.get("description"),
+        "delimiter": rules.get("delimiter"),
+        "encoding": rules.get("encoding"),
+        "date_format": rules.get("date_format"),
+        "field_mapping": rules.get("field_mapping") or {},
+        "detected_by": t.get("detected_by"),
+        "created_at": t.get("created_at"),
+    }
+
+
 # ============================================================
 # 3) Cocokkan file ke template yang sudah ada
 # ============================================================

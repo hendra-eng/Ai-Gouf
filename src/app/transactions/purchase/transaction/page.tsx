@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
 import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
@@ -17,8 +17,12 @@ import {
   FunnelIcon,
   ArrowsUpDownIcon,
   EyeIcon,
-  ArrowUpTrayIcon,
+  PencilSquareIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
+
+// Status yang masih bisa diubah lewat form Create Bill (sama dengan purchase_bill_v1.STATUS_BISA_DIUBAH).
+const BILL_EDITABLE: PurchaseStatus[] = ['draft', 'pending_review', 'rejected', 'exception'];
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -77,7 +81,6 @@ export default function PurchaseTransactionPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showImport, setShowImport] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<'approve' | 'post' | null>(null);
 
   // Baris item/jasa dimuat lazy, cuma untuk transaksi yang sedang dibuka
@@ -169,7 +172,6 @@ export default function PurchaseTransactionPage() {
   return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
-        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -218,9 +220,9 @@ export default function PurchaseTransactionPage() {
               <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
                 {uniqueVendors.map(v => <option key={v}>{v}</option>)}
               </select>
-              <button className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5" onClick={() => setShowImport(true)}>
-                <ArrowUpTrayIcon className="w-3.5 h-3.5" />Upload Data
-              </button>
+              <Link href="/transactions/purchase/bill/new" className="je-btn-primary text-xs px-3 py-2 flex items-center gap-1.5">
+                <PlusIcon className="w-3.5 h-3.5" />Create Bill
+              </Link>
               <PrintMenu onPrint={printList} label="Print All" disabled={filtered.length === 0} />
             </div>
           </div>
@@ -327,9 +329,17 @@ export default function PurchaseTransactionPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.period}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
-                        <EyeIcon className="w-3.5 h-3.5" /> View
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
+                          <EyeIcon className="w-3.5 h-3.5" /> View
+                        </button>
+                        {BILL_EDITABLE.includes(row.status) && (
+                          <Link href={`/transactions/purchase/bill/new?id=${row.id}`} onClick={e => e.stopPropagation()}
+                            className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                            <PencilSquareIcon className="w-3.5 h-3.5" /> Edit
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -560,6 +560,10 @@ class SalesInvoice(Base):
     paid_amount = Column(Numeric(24, 2), nullable=False, default=0)
     outstanding_amount = Column(Numeric(24, 2), Computed("gross_amount - paid_amount", persisted=True))
     tax_invoice_status = Column(String(30), nullable=False, default="Belum Terbit Faktur")
+    # [BARU] Dokumen saldo awal dari import Opening AR/AP (migration 46): ikut di
+    # AR/AP & pelunasan Cash & Bank, tapi TIDAK dibaca GL & tidak tampil di daftar modul.
+    is_opening_balance = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    opening_import_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa_opening_balance_imports.id"), nullable=True)
     posting_status = Column(String(20), nullable=False, default="Draft")
     reconcile_status = Column(String(20), nullable=False, default="Unreconciled")
     journal_sync_status = Column(String(20), nullable=False, default="Pending")
@@ -982,6 +986,12 @@ class PurchaseTransaction(Base):
     tax_account_code = Column(String(50), nullable=True)
     tax_account_name = Column(String(255), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
+    tax_type = Column(String(20), nullable=True)  # [BARU] Create Bill: ppn_11/ppn_12/non_ppn (migration 44)
+    tax_inclusive = Column(Boolean, nullable=False, default=False)
+    # [BARU] Dokumen saldo awal dari import Opening AR/AP (migration 46): ikut di
+    # AR/AP & pelunasan Cash & Bank, tapi TIDAK dibaca GL & tidak tampil di daftar modul.
+    is_opening_balance = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    opening_import_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa_opening_balance_imports.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
@@ -1018,6 +1028,8 @@ class PurchaseTransactionLine(Base):
     total = Column(Numeric(24, 2), nullable=False, default=0)
     account_code = Column(String(50), nullable=False)
     account_name = Column(String(200), nullable=True)
+    discount_type = Column(String(10), nullable=True)  # [BARU] Create Bill: percent/amount (migration 44)
+    discount_value = Column(Numeric(24, 4), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
@@ -1229,6 +1241,63 @@ class ManagementClientCoaOpeningBalanceLine(Base):
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementClientCoaOpeningBalanceImport(Base):
+    """Batch import data saldo awal (tab Import Data di editor opening balance).
+    1 upload file = 1 batch untuk 1 modul: coa (COA legacy + saldo
+    non-subledger), ar, ap, inventory, asset. Alur status:
+    validated -> submitted -> approved / rejected; cancelled = dibatalkan
+    pengunggah. Lihat modules/management/opening_balance_import_v1.py &
+    migrations/45-*.py."""
+    __tablename__ = "management_client_coa_opening_balance_imports"
+    __table_args__ = (
+        Index("idx_management_client_coa_ob_import_ob_module", "opening_balance_id", "module"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    opening_balance_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa_opening_balances.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    module = Column(String(20), nullable=False)               # coa / ar / ap / inventory / asset
+    file_name = Column(String(255), nullable=False)
+    status = Column(String(20), nullable=False, default="validated", server_default=text("'validated'"))
+    total_rows = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    valid_rows = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    warning_rows = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    error_rows = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    total_debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    total_credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(200), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    submitted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    submitted_by_name = Column(String(200), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)   # approve / reject
+    reviewed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reviewed_by_name = Column(String(200), nullable=True)
+    review_note = Column(Text, nullable=True)                       # wajib saat reject
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementClientCoaOpeningBalanceImportRow(Base):
+    """Baris hasil baca file 1 batch import (sudah dinormalisasi + hasil validasi)."""
+    __tablename__ = "management_client_coa_opening_balance_import_rows"
+    __table_args__ = (
+        Index("idx_management_client_coa_ob_import_row_import", "import_id", "row_no"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    import_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa_opening_balance_imports.id", ondelete="CASCADE"), nullable=False)
+    row_no = Column(Integer, nullable=False)                  # nomor baris di file Excel
+    data = Column(JSONB, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)  # akun ZAFEB hasil mapping (modul coa)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    status = Column(String(10), nullable=False, default="valid", server_default=text("'valid'"))  # valid / warning / error
+    messages = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
 
 
 # source_type jurnal penutup tahun buku (Year-End Closing). Financial
@@ -4062,6 +4131,46 @@ def _client_attr(kolom: str) -> str:
     return _CLIENT_FIELD_ALIAS.get(kolom, kolom)
 
 
+# Kata bentuk badan usaha yang TIDAK ikut disingkat ("PT Sumber Alodie Utama" -> SAU).
+_KATA_BADAN_USAHA = {
+    "PT", "CV", "TBK", "UD", "PD", "FA", "FIRMA", "PERSERO", "PERUM", "KOPERASI", "KOP", "YAYASAN",
+    "LTD", "LIMITED", "INC", "CORP", "CO", "LLC", "PTE",
+}
+
+
+def singkatan_nama_klien(nama: Optional[str]) -> str:
+    """Singkatan nama klien untuk client_code: huruf pertama tiap kata, tanpa
+    bentuk badan usaha; kata berupa angka ikut utuh. Contoh: "CV SUMBER ALODIE
+    UTAMA" -> SAU, "PT Well Star Indonesia" -> WSI, "Client 2" -> C2.
+    Nama 1 kata -> 3 huruf pertama ("MALAMADRE" -> MAL). Fallback "CLIENT"."""
+    kata = [k for k in _re.split(r"[^A-Z0-9]+", (nama or "").upper()) if k]
+    inti = [k for k in kata if k not in _KATA_BADAN_USAHA] or kata
+    if not inti:
+        return "CLIENT"
+    if len(inti) == 1:
+        return inti[0][:3]
+    return "".join(k if k.isdigit() else k[0] for k in inti)[:20]
+
+
+def buat_kode_klien(session, nama: Optional[str], kecuali_id: Optional[str] = None) -> str:
+    """client_code unik (case-insensitive, termasuk klien yang sudah dihapus
+    supaya kode lama tidak dipakai ulang): singkatan nama, kalau sudah dipakai
+    ditambah angka urut -> SAU, SAU2, SAU3, ... Pemanggil wajib di dalam
+    transaksi; advisory lock mencegah 2 klien baru mendapat kode yang sama."""
+    session.execute(text("select pg_advisory_xact_lock(hashtext('management_clients:client_code'))"))
+    dasar = singkatan_nama_klien(nama)
+    q = session.query(func.upper(Client.client_code)).filter(Client.client_code.isnot(None))
+    if kecuali_id:
+        q = q.filter(Client.id != kecuali_id)
+    dipakai = {k for (k,) in q.all() if k}
+    if dasar not in dipakai:
+        return dasar
+    n = 2
+    while f"{dasar}{n}" in dipakai:
+        n += 1
+    return f"{dasar}{n}"
+
+
 def _management_client_ke_dict(mc: "Client") -> Dict[str, Any]:
     data = {kolom: getattr(mc, _client_attr(kolom)) for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT}
     data.update({
@@ -4121,6 +4230,9 @@ def create_management_client(data: Dict[str, Any], created_by: Optional[str] = N
     session = SessionLocal()
     try:
         kwargs = {_client_attr(k): v for k, v in data.items() if k in CRUD_FIELDS_MANAGEMENT_CLIENT}
+        # client_code SELALU otomatis dari singkatan nama (input manual diabaikan).
+        kwargs["client_code"] = buat_kode_klien(session, data.get("nama_client"))
+        data = {**data, "client_code": kwargs["client_code"]}
         mc = Client(**kwargs, dibuat_oleh=created_by)
         session.add(mc)
         session.flush()  # kirim INSERT & isi id/created_at (server_default) ke objek TANPA expire attribute lain (beda dari commit)
@@ -4155,14 +4267,29 @@ def get_management_client_by_id(client_id: str, termasuk_nonaktif: bool = False)
         session.close()
 
 
-def list_management_clients(termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
-    """Daftar semua management_client. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True."""
+def list_management_clients(
+    termasuk_nonaktif: bool = False,
+    q: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Daftar management_client. Soft-deleted disembunyikan kecuali termasuk_nonaktif=True.
+
+    `q` mencari (case-insensitive) di nama_client / client_code, `limit`
+    membatasi jumlah baris -- dipakai autocomplete Switch Company di header.
+    """
     session = SessionLocal()
     try:
         query = session.query(Client)
         if not termasuk_nonaktif:
             query = query.filter(Client.deleted_at.is_(None))
-        return [_management_client_ke_dict(mc) for mc in query.order_by(Client.dibuat_at.desc()).all()]
+        kata = (q or "").strip()
+        if kata:
+            pola = f"%{kata}%"
+            query = query.filter(or_(Client.nama.ilike(pola), Client.client_code.ilike(pola)))
+        query = query.order_by(Client.dibuat_at.desc())
+        if limit:
+            query = query.limit(limit)
+        return [_management_client_ke_dict(mc) for mc in query.all()]
     except Exception:
         session.rollback()
         return []
@@ -4180,7 +4307,8 @@ def update_management_client(client_id: str, data: Dict[str, Any], updated_by: O
         if not mc:
             return None
         for kolom, nilai in data.items():
-            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT:
+            # client_code otomatis & tetap (disalin ke tabel lain) -> tidak bisa diubah lewat update.
+            if kolom in CRUD_FIELDS_MANAGEMENT_CLIENT and kolom != "client_code":
                 setattr(mc, _client_attr(kolom), nilai)
         mc.diperbarui_at = datetime.now()
         mc.diperbarui_oleh = updated_by
@@ -4703,6 +4831,8 @@ def list_sales_invoices(client_id: Optional[str] = None, posting_status: Optiona
             query = query.filter(SalesInvoice.posting_status == posting_status)
         if not termasuk_nonaktif:
             query = query.filter(SalesInvoice.deleted_at.is_(None))
+        # Invoice saldo awal (import Opening AR) hanya tampil di AR, bukan di menu Sales.
+        query = query.filter(SalesInvoice.is_opening_balance.is_(False))
         return [_sales_invoice_ke_dict(obj) for obj in query.order_by(SalesInvoice.created_at.desc()).all()]
     except Exception:
         session.rollback()
@@ -5709,6 +5839,7 @@ CRUD_FIELDS_PURCHASE_TRANSACTION = [
     "approved_by_name", "posted_by_name", "notes", "journal_entry_id",
     "posting_date", "posted_at",
     "ap_account_code", "ap_account_name", "tax_account_code", "tax_account_name", "approved_at",
+    "tax_type", "tax_inclusive",
 ]
 
 def create_purchase_transaction(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -5746,6 +5877,8 @@ def list_purchase_transactions(client_id: Optional[str] = None, status: Optional
         PurchaseTransaction, CRUD_FIELDS_PURCHASE_TRANSACTION,
         {"client_id": client_id, "status": status, "management_client_id": management_client_id},
         termasuk_nonaktif,
+        # Bill saldo awal (import Opening AP) hanya tampil di AP, bukan di menu Purchase.
+        kondisi_tambahan=[PurchaseTransaction.is_opening_balance.is_(False)],
     )
 
 def update_purchase_transaction(transaction_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -5761,6 +5894,7 @@ CRUD_FIELDS_PURCHASE_TRANSACTION_LINE = [
     "transaction_id", "client_id", "line_no", "item_code", "description",
     "quantity", "unit", "unit_price", "discount", "tax_rate", "tax_amount",
     "subtotal", "total", "account_code", "account_name",
+    "discount_type", "discount_value",
 ]
 
 def create_purchase_transaction_line(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -6552,6 +6686,8 @@ def ambil_baris_jurnal_posted_transaksi(
             *_filter_pemilik(SalesInvoice),
             func.lower(SalesInvoice.posting_status) == "posted",
             SalesInvoice.deleted_at.is_(None),
+            # Invoice saldo awal (import Opening AR) sudah diwakili jurnal opening balance.
+            SalesInvoice.is_opening_balance.is_(False),
         )
         if sampai_tanggal:
             q = q.filter(SalesInvoice.invoice_date <= sampai_tanggal)
@@ -6589,6 +6725,8 @@ def ambil_baris_jurnal_posted_transaksi(
             *_filter_pemilik(PurchaseTransaction),
             func.lower(PurchaseTransaction.status) == "posted",
             PurchaseTransaction.deleted_at.is_(None),
+            # Bill saldo awal (import Opening AP) sudah diwakili jurnal opening balance.
+            PurchaseTransaction.is_opening_balance.is_(False),
         )
         if sampai_tanggal:
             q = q.filter(PurchaseTransaction.purchase_date <= sampai_tanggal)

@@ -8,8 +8,12 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  AlertTriangle, CheckCircle2, ChevronRight, CircleCheck, Clock, Database, Download, Eye, FileText, Inbox, LayoutGrid, Plus, Receipt, Send,
+  AlertTriangle, CheckCircle2, ChevronRight, CircleCheck, Clock, Database, Download, Eye, FileText, Inbox, LayoutGrid, Plus, Receipt, Send, Settings, Upload,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
+import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+import OtherImportModal, { OTHER_FIELD_LABELS, OTHER_HEADER_ALIASES, OTHER_REQUIRED_COLUMNS } from './OtherImportModal';
 import { useActiveClient } from '@/lib/activeClient';
 import { fmtDate, fmtMonth, rupiah, rupiahShort } from '@/lib/receivablesPayablesStore';
 import {
@@ -208,6 +212,8 @@ function SourceTab({ clientId, onNew }: TabProps) {
   const [cari, setCari] = useState('');
   const [mode, setMode] = useState<'all' | 'problem' | 'clean'>('all');
   const [kat, setKat] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [showMapping, setShowMapping] = useState(false);
   const d = sd.data;
   const q = d?.quality;
   const rows = useMemo(() => (d?.rows ?? []).filter(r => (mode === 'all' || (mode === 'problem' ? r.problems.length > 0 : !r.problems.length)) && (!kat || r.category === kat)
@@ -223,6 +229,14 @@ function SourceTab({ clientId, onNew }: TabProps) {
 
   return (
     <div className="space-y-5">
+      {showImport && <OtherImportModal clientId={clientId} onClose={() => setShowImport(false)} />}
+      {showMapping && (
+        <MappingRulesModal
+          onClose={() => setShowMapping(false)}
+          columns={OTHER_MAPPING_COLUMNS}
+          columnsNote="Other journals have no company-specific import template yet -- uploaded files are read with these generic columns. Category accepts the key or label (e.g. capex / CapEx); empty = General Journal. Account Code must exist in the company COA."
+        />
+      )}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card className="xl:col-span-2" title="Source Data Quality" subtitle="How ready these lines are to be journalized"
           action={<div className="text-right"><p className="text-xl font-bold">{q?.total ?? 0}</p><p className="text-xs text-muted-foreground">lines · {q?.clean ?? 0} clean</p></div>}>
@@ -251,9 +265,12 @@ function SourceTab({ clientId, onNew }: TabProps) {
               <button key={k} type="button" onClick={() => setMode(k)} className={`px-4 py-2 ${mode === k ? 'bg-[#0F7D4E] font-semibold text-white' : 'text-muted-foreground hover:bg-slate-50'}`}>{l}</button>
             ))}
           </div>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap gap-2">
             <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-            <button type="button" onClick={() => exportLinesCsv(rows)} className={btnOutline}><Download size={15} /> Export CSV</button>
+            <button type="button" onClick={() => setShowImport(true)} className={btnOutline}><Upload size={15} /> Upload File</button>
+            <button type="button" onClick={downloadOtherTemplate} className={btnOutline}><Download size={15} /> Excel Template</button>
+            <button type="button" onClick={() => exportLines(rows)} disabled={!rows.length} className={btnOutline}><Download size={15} /> Export</button>
+            <button type="button" onClick={() => setShowMapping(true)} className={btnOutline}><Settings size={15} /> Mapping Rules</button>
           </div>
         </div>
         {(sd.loading && !d) || !rows.length ? (
@@ -281,9 +298,30 @@ function SourceTab({ clientId, onNew }: TabProps) {
   );
 }
 
-async function exportLinesCsv(rows: SourceData['rows']) {
+const OTHER_MAPPING_COLUMNS = Object.entries(OTHER_HEADER_ALIASES).map(([key, accepted]) => ({
+  field: OTHER_FIELD_LABELS[key] || key, accepted, required: OTHER_REQUIRED_COLUMNS.includes(key),
+}));
+
+async function downloadOtherTemplate() {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet('Other Journal Template');
+  sheet.columns = [
+    { header: 'Journal No.', key: 'no', width: 18 }, { header: 'Date', key: 'date', width: 12 }, { header: 'Category', key: 'cat', width: 16 },
+    { header: 'Party / Reference', key: 'ref', width: 22 }, { header: 'Description', key: 'desc', width: 30 }, { header: 'Account Code', key: 'code', width: 14 },
+    { header: 'Line Description', key: 'line', width: 26 }, { header: 'Debit', key: 'debit', width: 14 }, { header: 'Credit', key: 'credit', width: 14 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.addRow({ no: 'OTH-2026-10-0001', date: '2026-10-01', cat: 'Accrual', ref: 'PT Example', desc: 'Accrued electricity expense', code: '6100', line: 'Electricity Oct', debit: 1500000, credit: 0 });
+  sheet.addRow({ no: 'OTH-2026-10-0001', date: '2026-10-01', cat: 'Accrual', ref: 'PT Example', desc: 'Accrued electricity expense', code: '2150', line: 'Accrued expense', debit: 0, credit: 1500000 });
+  const buffer = await wb.xlsx.writeBuffer();
+  downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Other_Journal_Template.xlsx');
+  toast.success('Excel template downloaded');
+}
+
+async function exportLines(rows: SourceData['rows']) {
   const { downloadTable } = await import('@/lib/tableExport');
-  await downloadTable('csv', { title: 'Other Source Data', clientName: '', rows, fileName: 'Other-Source-Data', columns: [
+  await downloadTable('xlsx', { title: 'Other Source Data', clientName: '', rows, fileName: 'Other-Source-Data', columns: [
     { header: 'Journal No.', value: r => r.journal_no }, { header: 'Date', value: r => r.date }, { header: 'Category', value: r => r.category },
     { header: 'Party', value: r => r.reference }, { header: 'Account Code', value: r => r.account_code }, { header: 'Account Name', value: r => r.account_name },
     { header: 'Description', value: r => r.description }, { header: 'Debit', value: r => r.debit, type: 'money' }, { header: 'Credit', value: r => r.credit, type: 'money' },

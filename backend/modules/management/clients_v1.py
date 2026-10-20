@@ -106,7 +106,8 @@ def _validasi_logo(nilai: Optional[str]) -> Optional[str]:
     return nilai
 
 class ManagementClientCreateRequest(BaseModel):
-    client_code: Optional[str] = Field(None, max_length=50)
+    # client_code TIDAK diterima: dibuat otomatis dari singkatan nama klien
+    # (db_client.buat_kode_klien), unik, dan tetap walau nama diganti.
     nama_client: str = Field(..., min_length=1, max_length=255)
     tipe_badan_usaha: Optional[str] = Field(None, max_length=255)
     npwp: Optional[str] = Field(None, max_length=20)
@@ -135,8 +136,7 @@ class ManagementClientCreateRequest(BaseModel):
 
 class ManagementClientUpdateRequest(BaseModel):
     """Semua field opsional -- update bersifat partial (kolom yang tidak
-    dikirim tidak diubah)."""
-    client_code: Optional[str] = Field(None, max_length=50)
+    dikirim tidak diubah). client_code tidak bisa diubah (otomatis)."""
     nama_client: Optional[str] = Field(None, min_length=1, max_length=255)
     tipe_badan_usaha: Optional[str] = Field(None, max_length=255)
     npwp: Optional[str] = Field(None, max_length=20)
@@ -214,10 +214,17 @@ def buat_client(
 )
 def daftar_client(
     termasuk_nonaktif: bool = Query(False, description="Sertakan client yang sudah di-soft-delete."),
+    q: Optional[str] = Query(None, max_length=100, description="Cari di nama client / client code."),
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Batasi jumlah baris (autocomplete)."),
     _current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
-    """Daftar semua data klien di `management_clients` (any authenticated user, cukup token valid)."""
-    data = dbc.list_management_clients(termasuk_nonaktif=termasuk_nonaktif)
+    """Daftar data klien di `management_clients` (any authenticated user, cukup token valid).
+
+    Tanpa `q`/`limit` tetap mengembalikan SEMUA client (dipakai halaman /clients
+    & context client aktif). Autocomplete Switch Company di header memakai
+    `q` + `limit=10`.
+    """
+    data = dbc.list_management_clients(termasuk_nonaktif=termasuk_nonaktif, q=q, limit=limit)
     return sukses(data=data, message="OK")
 
 

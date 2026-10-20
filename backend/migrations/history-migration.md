@@ -53,3 +53,6 @@ seed_template_nbm_bank_cash.sql
 41-create_tax_compliance_tables.py
 42-create_other_journal_tables.py
 43-add_lock_to_account_mappings.py
+44-add_bill_fields_to_purchase.py
+45-create_opening_balance_imports.py
+46-add_opening_balance_flag_to_sales_purchase.py

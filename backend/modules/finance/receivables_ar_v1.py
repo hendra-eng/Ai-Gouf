@@ -278,6 +278,9 @@ def _ambil_invoice(session, kid: str, invoice_id: Any) -> Any:
     inv = session.query(SI).filter(SI.id == str(invoice_id), SI.management_client_id == kid, SI.deleted_at.is_(None)).first()
     if inv is None:
         raise _Gagal("Invoice not found.", kode="NOT_FOUND", status_code=404)
+    if inv.is_opening_balance:
+        raise _Gagal("This is an opening balance invoice (imported in COA > Opening Balance) and cannot be edited here.",
+                     kode="OPENING_BALANCE_DOCUMENT", status_code=409)
     return inv
 
 

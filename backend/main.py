@@ -111,6 +111,7 @@ from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [B
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
 from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
+from modules.management import opening_balance_import_v1 as management_opening_balance_import_v1  # [BARU] tab Import Data opening balance (template, upload, approval): /api/v1/management/opening-balances/.../imports
 from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] tutup buku tahunan + kunci periode: /api/v1/management/year-end-closing/...
 from modules.management import settings_v1 as management_settings_v1  # [BARU] Management > Settings: /api/v1/management/settings/...
 from modules.management import coa_industry_v1 as management_coa_industry_v1  # [BARU] template COA per industri: /api/v1/management/coa-industries
@@ -122,6 +123,7 @@ from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BAR
 from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
 from modules.transactions import other_v1 as transactions_other_v1  # Transactions > Other: /api/v1/transactions/other/... (jurnal lain-lain, migration 42)
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
+from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
 from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
@@ -396,6 +398,7 @@ app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
 app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
+app.include_router(management_opening_balance_import_v1.router)  # [BARU] /api/v1/management/opening-balances/{ob_id}/imports/... & /imports/{batch_id}/...
 app.include_router(management_year_end_closing_v1.router)  # [BARU] /api/v1/management/year-end-closing/... -- prefix sudah di router-nya sendiri
 app.include_router(management_settings_v1.router)  # [BARU] /api/v1/management/settings/users|accountants|purchase|product|account-mapping
 app.include_router(management_coa_industry_v1.router)  # [BARU] /api/v1/management/coa-industries -- pilihan Industry + template COA
@@ -407,6 +410,7 @@ app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactio
 app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_other_v1.router)  # /api/v1/transactions/other/... -- jurnal Other (draft, approve, post, reverse)
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
+app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
 app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes

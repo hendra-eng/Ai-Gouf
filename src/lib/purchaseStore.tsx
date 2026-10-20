@@ -40,6 +40,7 @@ import type {
   PurchaseSourceRecord,
   PurchaseException,
 } from '@/data/purchaseData';
+import type { ImportTemplateSummary } from '@/lib/importTemplates';
 
 const PURCHASE_CHANGED_EVENT = 'gouf-purchase-changed';
 
@@ -375,6 +376,13 @@ export async function uploadPurchaseSourceFile(file: File, managementClientId: s
   return row;
 }
 
+/** Purchase Import Template aktif milik company -- GET /import/templates
+ *  (read-only, dipakai modal Mapping Rules tab Source Data). */
+export async function listPurchaseImportTemplates(managementClientId: string): Promise<ImportTemplateSummary[]> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/import/templates${qs({ management_client_id: managementClientId })}`);
+  return baca<ImportTemplateSummary[]>(res);
+}
+
 export function usePurchaseTransactions(companyId: string | null | undefined, status?: string): {
   transactions: BackendPurchaseTransaction[]; loading: boolean; error: string | null; refresh: () => void;
 } {
@@ -658,4 +666,66 @@ export function mapExceptionToUi(e: BackendPurchaseException): PurchaseException
     resolutionDate: e.resolved_at ? e.resolved_at.slice(0, 10) : undefined,
     period: e.period_label,
   };
+}
+
+// ============================================================
+// 5) Create Bill (form manual) -- backend modules/transactions/purchase_bill_v1.py
+// ============================================================
+
+export type BillTaxType = 'ppn_11' | 'ppn_12' | 'non_ppn';
+export type BillDiscountType = 'percent' | 'amount';
+
+export interface BillVendorOption { name: string; code: string | null; payment_terms: string | null; bills: number; last_date: string | null }
+export interface BillAccountOption { code: string; name: string; classification: string | null }
+export interface BillFormOptions {
+  next_number: string;
+  vendors: BillVendorOption[];
+  accounts: BillAccountOption[];
+  /** Akun default dari Settings > Account Mapping (null = belum diatur). */
+  defaults: { ap: string | null; tax: string | null; line: string | null; biaya: string | null };
+  payment_terms: string[];
+  categories: string[];
+  source_types: string[];
+  tax_types: { key: BillTaxType; label: string; rate: number }[];
+}
+
+export interface BillLineInput {
+  item_code: string | null; description: string; account_code: string; quantity: number; unit: string | null;
+  unit_price: number; discount_type: BillDiscountType; discount_value: number; tax_type: BillTaxType;
+}
+export interface BillInput {
+  management_client_id: string; purchase_no: string | null; vendor_name: string; vendor_code: string | null;
+  invoice_number: string; po_number: string | null; invoice_date: string; purchase_date: string; due_date: string;
+  payment_terms: string; currency: string; source_doc_type: string; source_ref: string | null; category: string;
+  description: string | null; tax_type: BillTaxType; tax_inclusive: boolean; ap_account_code: string;
+  tax_account_code: string | null; notes: string | null; submit: boolean; lines: BillLineInput[];
+}
+export interface BillEntry extends BackendPurchaseTransaction {
+  tax_type: BillTaxType | null;
+  tax_inclusive: boolean;
+  editable: boolean;
+  lines: (BackendPurchaseTransactionLine & { discount_type: BillDiscountType | null; discount_value: number | null })[];
+}
+
+export async function fetchBillFormOptions(managementClientId: string, purchaseDate: string, signal?: AbortSignal): Promise<BillFormOptions> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/bills/form-options${qs({ management_client_id: managementClientId, purchase_date: purchaseDate })}`, { signal });
+  return baca<BillFormOptions>(res);
+}
+
+export async function checkBillDuplicate(managementClientId: string, vendorName: string, invoiceNumber: string, excludeId?: string | null, signal?: AbortSignal) {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/bills/check-duplicate${qs({
+    management_client_id: managementClientId, vendor_name: vendorName, invoice_number: invoiceNumber, exclude_id: excludeId,
+  })}`, { signal });
+  return baca<{ duplicate: boolean; purchase_no: string | null }>(res);
+}
+
+export async function fetchBill(managementClientId: string, id: string): Promise<BillEntry> {
+  const res = await authenticatedFetch(`${PURCHASE_BASE_URL}/bills/${id}${qs({ management_client_id: managementClientId })}`);
+  return baca<BillEntry>(res);
+}
+
+export async function saveBill(input: BillInput, id?: string | null): Promise<BillEntry> {
+  const row = id ? await put<BillEntry>(`${PURCHASE_BASE_URL}/bills/${id}`, input) : await post<BillEntry>(`${PURCHASE_BASE_URL}/bills`, input);
+  notifyPurchaseChanged();
+  return row;
 }

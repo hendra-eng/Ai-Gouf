@@ -43,6 +43,8 @@ type Field = {
   span?: 2 | 3;
   mono?: boolean;
   required?: boolean;
+  /** Ditampilkan saja (tidak bisa diedit), mis. client code yang dibuat otomatis. */
+  readOnly?: string;
 };
 
 const SECTIONS: { title: string; subtitle: string; icon: React.ElementType; fields: Field[] }[] = [
@@ -50,7 +52,7 @@ const SECTIONS: { title: string; subtitle: string; icon: React.ElementType; fiel
     title: 'Company profile', subtitle: 'How this company is identified across the app.', icon: Building2,
     fields: [
       { key: 'nama_client', label: 'Company name', required: true, span: 2, placeholder: 'PT Contoh Sejahtera' },
-      { key: 'client_code', label: 'Client code', mono: true, placeholder: 'CLT-0001' },
+      { key: 'client_code', label: 'Client code', mono: true, readOnly: 'Generated automatically from the company name.' },
       { key: 'tipe_badan_usaha', label: 'Legal entity type', type: 'select', options: ENTITY_TYPES },
       { key: 'industry', label: 'Industry', type: 'industry' },
       { key: 'klasifikasi_lapangan_usaha', label: 'Business classification (KLU)', placeholder: '56101 — Restoran' },
@@ -294,7 +296,15 @@ export default function CompanySettings() {
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 px-6 py-5 sm:grid-cols-3">
               {sec.fields.map(fld => (
                 <div key={fld.key} className={fld.span === 3 ? 'sm:col-span-3' : fld.span === 2 ? 'sm:col-span-2' : ''}>
-                  {edit ? (
+                  {edit && fld.readOnly ? (
+                    <>
+                      <label className={labelCls}>{fld.label}</label>
+                      <div className={`flex h-[38px] items-center rounded-lg border border-border bg-slate-50 px-3 text-sm text-slate-600 ${fld.mono ? 'font-mono' : ''}`}>
+                        {tampil(fld, company, akuntan) ?? '—'}
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{fld.readOnly}</p>
+                    </>
+                  ) : edit ? (
                     <>
                       <label className={labelCls}>{fld.label}{fld.required && <span className="text-red-500"> *</span>}</label>
                       <Input fld={fld} value={form[fld.key] ?? ''} onChange={v => setForm(f => ({ ...f, [fld.key]: v }))} akuntan={akuntan} industries={industries} />
