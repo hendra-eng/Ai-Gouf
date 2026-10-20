@@ -476,6 +476,8 @@ ACCOUNT_MAPPING_GROUPS: List[Tuple[str, str, List[Tuple[str, str]]]] = [
         ("opening_balance_equity", "Opening Balance Equity"),
         ("retained_earnings", "Retained Earnings"),
         ("fixed_asset", "Fixed Asset"),
+        ("accumulated_depreciation", "Accumulated Depreciation"),
+        ("depreciation_expense", "Depreciation Expense"),
     ]),
 ]
 ACCOUNT_MAPPING_KEYS = {k for _, _, items in ACCOUNT_MAPPING_GROUPS for k, _ in items}
@@ -493,6 +495,9 @@ ACCOUNT_MAPPING_DIPAKAI: Dict[str, str] = {
     "purchase_tax_receivable": "Purchase journal (input VAT)",
     "opening_balance_equity": "Opening balance suspense account (default)",
     "retained_earnings": "Year-end closing journal (profit transferred to retained earnings)",
+    "fixed_asset": "Opening balance import (default asset account for asset categories without one)",
+    "accumulated_depreciation": "Opening balance import (default accumulated depreciation account)",
+    "depreciation_expense": "Opening balance import (default depreciation expense account)",
 }
 
 

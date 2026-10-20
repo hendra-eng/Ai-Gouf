@@ -1,11 +1,18 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import ExcelJS from 'exceljs';
+import { toast } from 'sonner';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
+import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
+import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { useActiveClient } from '@/lib/activeClient';
-import { usePurchaseSourceRecords, mapSourceRecordToUi } from '@/lib/purchaseStore';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon,  } from '@heroicons/react/24/outline';
+import { usePurchaseSourceRecords, mapSourceRecordToUi, listPurchaseImportTemplates } from '@/lib/purchaseStore';
+import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
@@ -96,6 +103,90 @@ export default function PurchaseSourceDataPage() {
   const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
 
 
+  // ── Action bar (pola sama dengan tab Source Data Sales) ──
+  // Upload File = ImportPurchaseModal yang sama dengan tab Transaction (file
+  // dicocokkan ke Purchase Import Template company aktif di backend).
+  const [showImport, setShowImport] = useState(false);
+  const handleUploadClick = () => {
+    if (!activeClientId) {
+      toast.error('Select a company in the header before uploading a file.');
+      return;
+    }
+    setShowImport(true);
+  };
+
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Purchase Template');
+    sheet.columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Source Type', key: 'type', width: 18 },
+      { header: 'Vendor Code', key: 'vendorCode', width: 14 },
+      { header: 'Vendor Name', key: 'vendor', width: 26 },
+      { header: 'Invoice No.', key: 'invoice', width: 18 },
+      { header: 'PO Number', key: 'po', width: 18 },
+      { header: 'Description', key: 'description', width: 30 },
+      { header: 'Amount (IDR)', key: 'amount', width: 16 },
+      { header: 'Tax (IDR)', key: 'tax', width: 16 },
+      { header: 'Total (IDR)', key: 'total', width: 16 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.addRow({
+      date: '01/12/2024', type: 'Vendor Invoice', vendorCode: 'SUP-001', vendor: 'PT Example Supplier',
+      invoice: 'INV-SUP-001', po: 'PO-2024-001', description: 'Inventory purchase', amount: 10000000, tax: 1100000, total: 11100000,
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(new Blob([buffer], { type: XLSX_MIME }), 'Purchase_Data_Template.xlsx');
+    toast.success('Excel template downloaded');
+  };
+
+  // Export = semua baris hasil filter/sort saat ini, bukan cuma 1 halaman.
+  const handleExport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Source Data');
+    sheet.columns = [
+      { header: 'Source ID', key: 'sourceId', width: 18 },
+      { header: 'Type', key: 'type', width: 16 },
+      { header: 'Vendor', key: 'vendor', width: 26 },
+      { header: 'Vendor ID', key: 'vendorId', width: 14 },
+      { header: 'Date', key: 'date', width: 12 },
+      { header: 'Period', key: 'period', width: 12 },
+      { header: 'Invoice No.', key: 'invoice', width: 18 },
+      { header: 'PO Number', key: 'po', width: 18 },
+      { header: 'Description', key: 'description', width: 30 },
+      { header: 'Amount', key: 'amount', width: 16 },
+      { header: 'Tax', key: 'tax', width: 14 },
+      { header: 'Total', key: 'total', width: 16 },
+      { header: 'Purchase Ref', key: 'ref', width: 18 },
+      { header: 'Validation', key: 'validation', width: 16 },
+      { header: 'Status', key: 'status', width: 16 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    filtered.forEach(r => sheet.addRow({
+      sourceId: r.sourceId, type: r.sourceType, vendor: r.vendor, vendorId: r.vendorId || '-',
+      date: r.sourceDate, period: r.period, invoice: r.invoiceNumber || '-', po: r.poNumber || '-',
+      description: r.description, amount: r.amount, tax: r.taxAmount, total: r.totalAmount,
+      ref: r.relatedPurchaseId || '-', validation: r.validationStatus, status: r.status,
+    }));
+    ['amount', 'tax', 'total'].forEach(k => { sheet.getColumn(k).numFmt = '#,##0'; });
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(new Blob([buffer], { type: XLSX_MIME }), `Purchase_Source_Data_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success('Export successful', { description: `${filtered.length} rows downloaded as Excel.` });
+  };
+
+  // Mapping Rules: import Purchase SELALU lewat template berformat kompleks
+  // (blok laporan cetak, bukan {field: nama_kolom} flat) -- modal menampilkan
+  // template aktif company + field mapping-nya (read-only).
+  const [showMapping, setShowMapping] = useState(false);
+  const loadTemplates = useCallback(() => listPurchaseImportTemplates(activeClientId ?? ''), [activeClientId]);
+  const openMappingModal = () => {
+    if (!activeClientId) {
+      toast.error('Select a company in the header first.');
+      return;
+    }
+    setShowMapping(true);
+  };
+
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
@@ -112,6 +203,23 @@ export default function PurchaseSourceDataPage() {
   return (
       <div className="space-y-6 fade-in">
         <PurchaseTabs />
+        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
+
+        {/* Action Bar */}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <button onClick={handleUploadClick} disabled={!activeClientId} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
+            <ArrowUpTrayIcon className="w-3.5 h-3.5" /> Upload File
+          </button>
+          <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5">
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Excel Template
+          </button>
+          <button onClick={handleExport} disabled={filtered.length === 0} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
+            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Export
+          </button>
+          <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
+            <Cog6ToothIcon className="w-3.5 h-3.5" /> Mapping Rules
+          </button>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -288,6 +396,8 @@ export default function PurchaseSourceDataPage() {
             )}
           </div>
         )}
+
+        {showMapping && <MappingRulesModal onClose={() => setShowMapping(false)} loadTemplates={loadTemplates} />}
       </div>
   );
 }

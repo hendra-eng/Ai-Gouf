@@ -18,6 +18,11 @@ tidak ada salinan ke Journal Entry):
                  Dr akumulasi, Dr akun hasil (proceeds), Dr rugi | Cr laba, Cr akun aset
     Adjustment   (Manager+) koreksi biaya atau akumulasi dengan akun lawan
 
+Periode penyusutan harus SETELAH bulan cut-off opening balance klien
+(_bulan_pertama_susut): akumulasi s.d. cut-off sudah ada di
+opening_accumulated_depreciation (mis. aset hasil import Asset Register di
+Opening Balance), jadi bulan sebelumnya tidak boleh disusutkan lagi.
+
 Nilai per tanggal (as_of) dihitung, tidak disimpan:
     biaya     = cost + sum(cost_change jurnal efektif)
     akumulasi = opening_accumulated_depreciation + sum(accum_change jurnal efektif)
@@ -1059,13 +1064,23 @@ def _run_dict(run: Any, baris: Optional[List[Any]] = None, aset: Optional[Dict[s
     return d
 
 
+def _bulan_pertama_susut(session, kid: str) -> Optional[date]:
+    """Bulan pertama yang boleh disusutkan = bulan setelah cut-off opening balance
+    klien (None kalau klien belum punya opening balance)."""
+    OB = dbc.ManagementClientCoaOpeningBalance
+    cut_off = session.query(OB.as_of_date).filter(OB.client_id == kid, OB.deleted_at.is_(None)).order_by(OB.as_of_date).first()
+    return _tambah_bulan(_awal_bulan(cut_off[0]), 1) if cut_off else None
+
+
 def _periode_berikut(session, kid: str, b: Buku) -> date:
     terakhir = session.query(RUN.period).filter(RUN.client_id == kid, RUN.deleted_at.is_(None), RUN.status != "reversed"
                                                 ).order_by(RUN.period.desc()).first()
     if terakhir:
         return _tambah_bulan(terakhir[0], 1)
     mulai = [a.mulai for a in b.aset if a.mulai and a.row.status == "active"]
-    return _awal_bulan(min(mulai)) if mulai else _awal_bulan(date.today())
+    berikut = _awal_bulan(min(mulai)) if mulai else _awal_bulan(date.today())
+    pertama = _bulan_pertama_susut(session, kid)
+    return max(berikut, pertama) if pertama else berikut
 
 
 @router.get("/depreciation", summary="Tab Depreciation: KPI, tren bulanan, run berikutnya, daftar batch, aset perlu review")
@@ -1220,6 +1235,11 @@ def buat_run(payload: BuatRunRequest, current_user: Dict[str, Any] = Depends(_re
         if lebih_baru is not None:
             raise _Gagal(f"A later batch ({lebih_baru.run_no}) already exists. Depreciation must be run in period order.",
                          kode="CONFLICT", status_code=409)
+        pertama = _bulan_pertama_susut(session, kid)
+        if pertama and periode < pertama:
+            raise _Gagal(f"Depreciation up to the opening balance cut-off is already included in the opening accumulated "
+                         f"depreciation. The first period you can run is {pertama.strftime('%B %Y')}.",
+                         kode="BEFORE_OPENING_BALANCE", status_code=422)
         b = _muat(session, kid)
         baris, isu = _hitung_batch(session, b, periode)
         if not baris:

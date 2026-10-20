@@ -186,7 +186,7 @@ function bukanPlaceholder(v: string | undefined | null): string | undefined {
 /** Payload yang diterima backend (ManagementClientCreateRequest/UpdateRequest). */
 function keBackendPayload(c: ClientFormInput): Record<string, unknown> {
   return {
-    client_code: bukanPlaceholder(c.clientCode),
+    // client_code tidak dikirim: dibuat otomatis oleh backend dari singkatan nama klien.
     nama_client: c.companyName,
     industry: c.industry || undefined,
     status: STATUS_TO_CODE[c.status] || 'stable',
@@ -204,6 +204,17 @@ function keBackendPayload(c: ClientFormInput): Record<string, unknown> {
 /** Ambil semua client dari backend (yang aktif/belum di-soft-delete saja). */
 export async function getAllClients(): Promise<Client[]> {
   const res = await authenticatedFetch(MANAGEMENT_CLIENTS_URL);
+  const rows = await baca<BackendManagementClient[]>(res);
+  return rows.map(petakanDariBackend);
+}
+
+/** Cari client (autocomplete Switch Company di header). `q` kosong = `limit`
+ *  client teratas. `signal` dipakai untuk membatalkan request yang sudah basi. */
+export async function searchClients(q: string, limit = 10, signal?: AbortSignal): Promise<Client[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const kata = q.trim();
+  if (kata) params.set('q', kata);
+  const res = await authenticatedFetch(`${MANAGEMENT_CLIENTS_URL}?${params.toString()}`, { signal });
   const rows = await baca<BackendManagementClient[]>(res);
   return rows.map(petakanDariBackend);
 }

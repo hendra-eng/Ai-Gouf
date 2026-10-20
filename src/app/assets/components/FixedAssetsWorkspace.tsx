@@ -62,7 +62,8 @@ function FixedAssetsWorkspace() {
 
   const [assetForm, setAssetForm] = useState<{ asset: FixedAsset | null } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  // ?categories=1 (mis. dari dialog setup Opening Balance > Import Asset Register) -> langsung buka drawer kategori.
+  const [categoriesOpen, setCategoriesOpen] = useState(params.get('categories') === '1');
   const [runOpen, setRunOpen] = useState(false);
   const [disposalForm, setDisposalForm] = useState<{ disposal: Disposal | null; assetId?: string } | null>(null);
   const [reportExport, setReportExport] = useState<{ format: ExportFormat; n: number } | null>(null);

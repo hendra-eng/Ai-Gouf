@@ -14,6 +14,7 @@
 // adalah id_user milik akun yang SEDANG LOGIN (`useAuth().user.id`).
 
 import { useEffect, useState, useCallback } from 'react';
+import type { ImportTemplateSummary } from '@/lib/importTemplates';
 
 const JE_CHANGED_EVENT = 'gouf-journal-entry-changed';
 
@@ -296,6 +297,13 @@ export async function uploadJeSourceFile(file: File, managementClientId: string)
   const row = await baca<UploadJeSourceFileResult>(res);
   if (row.created > 0) notifyJeChanged();
   return row;
+}
+
+/** Journal Entry Import Template aktif milik company -- GET /import/templates
+ *  (read-only, dipakai modal Mapping Rules tab Source Data). */
+export async function listJeImportTemplates(managementClientId: string): Promise<ImportTemplateSummary[]> {
+  const res = await authenticatedFetch(`${JE_BASE_URL}/import/templates${qs({ management_client_id: managementClientId })}`);
+  return baca<ImportTemplateSummary[]>(res);
 }
 
 export function useJeDrafts(clientId: string | null | undefined, status?: string): {

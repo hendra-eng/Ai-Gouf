@@ -47,10 +47,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 import db_client as dbc
 from ..api_response import gagal, sukses
+from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from .journal_entry_v1 import _require_level_v1  # dependency level-3 yang sama, hindari duplikasi
 from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, tidak ada alasan duplikasi
@@ -61,6 +62,7 @@ from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, t
     _hash_baris,
     _parse_angka,
     _parse_tanggal,
+    ringkas_import_template,
 )
 
 logger = get_module_logger("transactions_journal_entry_import_v1")
@@ -333,3 +335,16 @@ async def upload_journal_entry_import(
         message=f"{created} of {len(groups)} journal entries imported successfully using a previously learned template.",
         status_code=201,
     )
+
+
+@router.get(
+    "/import/templates",
+    summary="Daftar Journal Entry Import Template aktif milik company (dipakai modal Mapping Rules tab Source Data)",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_je_import_template(
+    management_client_id: str = Query(..., description="ID management_clients -- company aktif (Switch Company)."),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = [ringkas_import_template(t) for t in dbc.list_je_import_templates(client_id=management_client_id, hanya_aktif=True)]
+    return sukses(data=data, message="OK")

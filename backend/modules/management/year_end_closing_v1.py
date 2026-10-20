@@ -655,10 +655,10 @@ _SQL_AWAL_PEMBUKUAN = text("""
          group by 1
         union all
         select management_client_id, min(invoice_date) from financial_transaction_sales_invoices
-         where deleted_at is null and lower(posting_status) = 'posted' group by 1
+         where deleted_at is null and lower(posting_status) = 'posted' and not is_opening_balance group by 1
         union all
         select management_client_id, min(purchase_date) from financial_transaction_purchase_transactions
-         where deleted_at is null and lower(status) = 'posted' group by 1
+         where deleted_at is null and lower(status) = 'posted' and not is_opening_balance group by 1
     ) x where k is not null group by k
 """)
 

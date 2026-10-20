@@ -58,7 +58,8 @@ function InventoryWorkspace() {
   const [asOf, setAsOf] = useState(params.get('as_of') || todayIso());
   const [itemForm, setItemForm] = useState<{ item: Item | null } | null>(null);
   const [itemId, setItemId] = useState<string | null>(null);
-  const [setupOpen, setSetupOpen] = useState(false);
+  // ?setup=1 (mis. dari dialog setup Opening Balance > Import Opening Stock) -> langsung buka drawer setup.
+  const [setupOpen, setSetupOpen] = useState(params.get('setup') === '1');
   const [docForm, setDocForm] = useState<{ type: DocType; doc: StockDoc | null; itemId?: string } | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
 
