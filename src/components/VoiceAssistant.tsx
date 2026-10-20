@@ -32,6 +32,13 @@ const POLA_STOP = /\b(?:berhenti|stop|diam|cukup|sudah)\b/;
 // ucapan penutup -> keluar dari mode ngobrol (balik ke menunggu "halo ai")
 const POLA_SELESAI = /\b(?:terima kasih|makasih|sudah cukup|udah cukup|selesai|sampai jumpa|dadah)\b/;
 
+// [BARU] HP/tablet: Chrome Android hanya mengizinkan SATU pemakai mikrofon/audio-focus. Stream mic
+// yang dibuka terus (getUserMedia) + audio sunyi yang diputar loop membuat SpeechRecognition
+// tidak menerima suara sama sekali (status tetap "Ucapkan halo ai" tapi tidak ada yang terdengar).
+// Di perangkat mobile kedua trik "anti-dibekukan" itu dimatikan; wake lock layar tetap dipakai.
+const ADALAH_MOBILE =
+  typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
 type Status = 'tidak-didukung' | 'mati' | 'mendengar' | 'menunggu' | 'berpikir' | 'bicara' | 'izin-ditolak';
 
 const normalisasi = (t: string) =>
@@ -442,7 +449,7 @@ export default function VoiceAssistant() {
 
     const rec = new SR();
     rec.lang = 'id-ID';
-    rec.continuous = true;
+    rec.continuous = !ADALAH_MOBILE; // Chrome Android: mode continuous sering diam/dobel; onend sudah menyalakan ulang otomatis
     rec.interimResults = true; // perlu untuk menyela cepat & komit dini
     rec.maxAlternatives = 3;
 
@@ -568,16 +575,16 @@ export default function VoiceAssistant() {
 
     const nyalakan = async () => {
       if (batal) return;
-      // 1. audio sunyi + Media Session
+      // 1. audio sunyi + Media Session (dilewati di mobile: rebutan audio-focus dengan SpeechRecognition)
       try {
-        if (!audio) {
+        if (!ADALAH_MOBILE && !audio) {
           audio = new Audio(buatWavSunyi());
           audio.loop = true;
           audio.volume = 0.01;
         }
-        await audio.play();
+        if (audio) await audio.play();
         const ms: any = (navigator as any).mediaSession;
-        if (ms) {
+        if (ms && audio) {
           ms.metadata = new (window as any).MediaMetadata({ title: 'Asisten suara AI aktif', artist: 'Gouf' });
           ms.playbackState = 'playing';
           ['pause', 'stop'].forEach((a) => { try { ms.setActionHandler(a, () => audio?.play()); } catch { /* abaikan */ } });
@@ -585,7 +592,7 @@ export default function VoiceAssistant() {
       } catch { /* autoplay diblokir sampai ada klik pertama: dicoba lagi di bawah */ }
       // 2. mikrofon tetap terbuka (sekalian echo-cancellation bawaan browser)
       try {
-        if (!stream && navigator.mediaDevices?.getUserMedia) {
+        if (!ADALAH_MOBILE && !stream && navigator.mediaDevices?.getUserMedia) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
         }
       } catch { /* izin mic ditolak: SpeechRecognition akan menampilkan pesannya sendiri */ }
