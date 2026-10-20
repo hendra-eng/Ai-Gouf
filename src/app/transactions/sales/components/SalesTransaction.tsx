@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport } from '@/lib/printExport';
@@ -13,7 +14,7 @@ import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import KpiCard from '@/components/shared/KpiCard';
 import {
-  useSalesInvoices, createSalesInvoice, updateSalesInvoice, deleteSalesInvoice,
+  useSalesInvoices, updateSalesInvoice, deleteSalesInvoice,
   createSalesActivityLog, formatTanggalSingkat, type BackendSalesInvoice,
 } from '@/lib/salesStore';
 
@@ -167,19 +168,7 @@ function buildSalesDetailReport(r: TrxItem, companyName?: string, printedBy?: st
   };
 }
 
-const TRANSACTION_TYPES = ['Penjualan Barang', 'Penjualan Jasa'];
 const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 'Partial', 'Paid'];
-
-const emptyForm = {
-  date: new Date().toISOString().slice(0, 10),
-  customer: '',
-  cabang: '',
-  desc: '',
-  dpp: '',
-  type: TRANSACTION_TYPES[0],
-  project: '',
-  dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
-};
 
 export default function SalesTransaction() {
   const { t } = useLanguage();
@@ -218,10 +207,6 @@ export default function SalesTransaction() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ customer: '', cabang: '', desc: '', dpp: 0, project: '', dueDate: '' });
   const [saving, setSaving] = useState(false);
-
-  // Add transaction modal
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState(emptyForm);
 
   // Column visibility
   const [showSettings, setShowSettings] = useState(false);
@@ -374,47 +359,6 @@ export default function SalesTransaction() {
     await printReport(buildSalesDetailReport({ ...selectedTrx, type: t(selectedTrx.type), taxStatus: t(selectedTrx.taxStatus) }, companyName, printedBy), format);
   };
 
-  const submitAddTransaction = async () => {
-    if (!addForm.customer.trim() || !addForm.desc.trim() || !addForm.dpp) {
-      toast.error(t('Lengkapi Customer, Deskripsi, dan DPP terlebih dahulu.'));
-      return;
-    }
-    if (!clientId) {
-      toast.error(t('Sesi login tidak ditemukan, silakan login ulang.'));
-      return;
-    }
-    const dpp = Number(addForm.dpp) || 0;
-    const ppn = Math.round(dpp * 0.11);
-    const pph = Math.round(dpp * 0.01);
-    const gross = dpp + ppn - pph;
-    const invoiceNo = `INV-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-    try {
-      await createSalesInvoice({
-        client_id: clientId,
-        management_client_id: activeClientId,
-        invoice_no: invoiceNo,
-        invoice_date: addForm.date,
-        due_date: addForm.dueDate,
-        customer_name: addForm.customer.trim(),
-        cabang: addForm.cabang.trim() || undefined,
-        description: addForm.desc.trim(),
-        transaction_type: addForm.type,
-        project_name: addForm.project || undefined,
-        dpp, ppn, pph,
-        gross_amount: gross,
-        paid_amount: 0,
-        tax_invoice_status: 'Belum Terbit Faktur',
-        posting_status: 'Draft',
-      });
-      setShowAddModal(false);
-      setAddForm(emptyForm);
-      setCurrentPage(1);
-      toast.success(t('Transaksi ditambahkan'), { description: invoiceNo });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('Gagal menambah transaksi'));
-    }
-  };
-
   return (
     <div className="space-y-4">
       {error && (
@@ -424,7 +368,7 @@ export default function SalesTransaction() {
         </div>
       )}
 
-      {/* Saran nama cabang (dari cabang yang sudah ada) untuk input Cabang di form Tambah/Edit */}
+      {/* Saran nama cabang (dari cabang yang sudah ada) untuk input Cabang di form Edit */}
       <datalist id="sales-branch-options">
         {BRANCHES.map(b => <option key={b} value={b} />)}
       </datalist>
@@ -514,9 +458,9 @@ export default function SalesTransaction() {
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
 
           <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} className="ml-auto" />
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
+          <Link href="/transactions/sales/invoice/new" className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
             <Plus size={12} /> {t('Tambah Transaksi')}
-          </button>
+          </Link>
           <div className="relative">
             <button onClick={() => setShowSettings(v => !v)} className="p-1.5 border border-border rounded-lg hover:bg-muted transition-colors">
               <Settings size={14} className="text-muted-foreground" />
@@ -782,60 +726,6 @@ export default function SalesTransaction() {
           </div>
         )}
       </div>
-
-      {/* Add Transaction Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="card w-full max-w-md p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">{t('Tambah Transaksi')}</h3>
-              <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
-            </div>
-            <div className="space-y-2 text-xs">
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('Tanggal')}</label>
-                <input type="date" value={addForm.date} onChange={ev => setAddForm(f => ({ ...f, date: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('Customer')}</label>
-                <input value={addForm.customer} onChange={ev => setAddForm(f => ({ ...f, customer: ev.target.value }))} placeholder={t('Nama customer')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('Cabang')}</label>
-                <input value={addForm.cabang} list="sales-branch-options" onChange={ev => setAddForm(f => ({ ...f, cabang: ev.target.value }))} placeholder={t('Nama cabang (opsional)')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('Deskripsi')}</label>
-                <input value={addForm.desc} onChange={ev => setAddForm(f => ({ ...f, desc: ev.target.value }))} placeholder={t('Deskripsi transaksi')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('DPP')}</label>
-                <input type="number" value={addForm.dpp} onChange={ev => setAddForm(f => ({ ...f, dpp: ev.target.value }))} placeholder="0" className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Tipe Transaksi')}</label>
-                  <select value={addForm.type} onChange={ev => setAddForm(f => ({ ...f, type: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
-                    {TRANSACTION_TYPES.map(ty => <option key={ty} value={ty}>{t(ty)}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Due Date')}</label>
-                  <input type="date" value={addForm.dueDate} onChange={ev => setAddForm(f => ({ ...f, dueDate: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] text-muted-foreground">{t('Project')}</label>
-                <input value={addForm.project} onChange={ev => setAddForm(f => ({ ...f, project: ev.target.value }))} placeholder={t('Nama project (opsional)')} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2 border-t border-border">
-              <button onClick={() => setShowAddModal(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-              <button onClick={submitAddTransaction} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors">{t('Simpan')}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

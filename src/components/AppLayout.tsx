@@ -7,6 +7,7 @@ import Topbar from './Topbar';
 import { CurrencyProvider } from '@/lib/currency';
 import { LanguageProvider } from '@/lib/language';
 import { ActiveClientProvider } from '@/lib/activeClient';
+import { ActivePeriodProvider } from '@/lib/activePeriod';
 // [BARU] Provider transaksi dinaikkan ke sini (dari sebelumnya hanya di
 // src/app/transactions/layout.tsx) supaya halaman DI LUAR /transactions —
 // terutama Account Payable — bisa ikut baca data transaksi yang sama lewat
@@ -19,10 +20,9 @@ import { AuthProvider } from '@/lib/auth';
 interface AppLayoutProps {
   children: React.ReactNode;
   company?: string;
-  period?: string;
 }
 
-export default function AppLayout({ children, company, period }: AppLayoutProps) {
+export default function AppLayout({ children, company }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const currentPath = usePathname();
@@ -60,6 +60,7 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
       children
     ) : (
       <ActiveClientProvider>
+      <ActivePeriodProvider>
       <TransactionsProvider>
         <div className="flex h-screen bg-background overflow-hidden">
           {/* Mobile overlay */}
@@ -84,7 +85,6 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
             <Topbar
               onMobileMenuToggle={() => setMobileSidebarOpen(true)}
               company={company}
-              period={period}
             />
             <main className="flex-1 overflow-y-auto scrollbar-thin">
               <div className="max-w-screen-2xl mx-auto px-4 lg:px-6 xl:px-8 2xl:px-10 py-6">
@@ -94,6 +94,7 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
           </div>
         </div>
       </TransactionsProvider>
+      </ActivePeriodProvider>
       </ActiveClientProvider>
     )}
     </AuthProvider>
