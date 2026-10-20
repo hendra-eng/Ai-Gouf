@@ -931,6 +931,171 @@ class PurchaseSourceRecord(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+class JournalEntrySourceFile(Base):
+    """File laporan jurnal (CSV/Excel) yang diupload di tab "Source Data"
+    Journal Entry + hasil ekstraksi/pencocokan template -- versi Journal Entry
+    dari PurchaseSourceFile (bentuk kolom & alurnya sengaja SAMA). Beda dengan
+    JournalEntrySourceRecord (registri transaksi modul lain). Status memakai
+    label Inggris langsung (Completed / Processing / Needs Review / Failed)
+    karena UI tab Journal Entry hardcode Inggris."""
+    __tablename__ = "financial_transaction_journal_entry_source_files"
+    __table_args__ = (
+        Index("idx_je_source_files_client", "client_id"),
+        Index("idx_je_source_files_management_client", "management_client_id"),
+        Index("idx_je_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    # Sama seperti Purchase: client_id = company (management_clients) -- BUKAN id user.
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    period_label = Column(String(50), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)   # jumlah journal entry (voucher) terdeteksi
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Processing")
+    status_mapping = Column(String(20), nullable=False, default="Processing")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    debit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    credit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class JournalEntrySourceRow(Base):
+    """1 baris = 1 journal entry (1 VOUCHER, multi-baris debit/kredit) hasil
+    parsing 1 file -- staging SEBELUM jadi draft JE resmi (tombol "Create
+    Journal" = promote). `payload` menyimpan header + semua baris debit/kredit
+    supaya promote tidak perlu membaca ulang file."""
+    __tablename__ = "financial_transaction_journal_entry_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_je_source_rows_file_row"),
+        Index("idx_je_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    je_number = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    source_type = Column(String(20), nullable=True)
+    line_count = Column(Integer, nullable=False, default=0)
+    debit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    credit_total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    payload = Column(JSONB, nullable=True)
+    # Terisi saat baris dipromosikan jadi draft JE (penanda "sudah pernah dipromosikan").
+    draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseSourceFile(Base):
+    """File laporan pembelian yang diupload di tab "Source Data" Purchase +
+    hasil ekstraksi/pencocokan template -- versi Purchase dari
+    SalesSourceFile (bentuk kolom & alurnya sengaja SAMA). Beda dengan
+    PurchaseSourceRecord (registri dokumen PO/Invoice/GR)."""
+    __tablename__ = "financial_transaction_purchase_source_files"
+    __table_args__ = (
+        Index("idx_purchase_source_files_client", "client_id"),
+        Index("idx_purchase_source_files_management_client", "management_client_id"),
+        Index("idx_purchase_source_files_template", "template_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    # Company (management_clients) yang laporannya diupload -- dari dropdown
+    # "Switch Company" di header; key pencocokan Purchase Import Template.
+    management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    period_label = Column(String(50), nullable=True)
+    vendor_hint = Column(String(255), nullable=True)
+    rows_detected = Column(Integer, nullable=False, default=0)
+    rows_valid = Column(Integer, nullable=False, default=0)
+    rows_invalid = Column(Integer, nullable=False, default=0)
+    duplicate_count = Column(Integer, nullable=False, default=0)
+    status_ekstraksi = Column(String(20), nullable=False, default="Diproses")
+    status_mapping = Column(String(20), nullable=False, default="Diproses")
+    confidence_score = Column(Numeric(5, 2), nullable=True)
+    dpp_total = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn_total = Column(Numeric(24, 2), nullable=False, default=0)
+    grand_total = Column(Numeric(24, 2), nullable=False, default=0)
+    extraction_duration_ms = Column(Integer, nullable=True)
+    ai_model_version = Column(String(50), nullable=True)
+    mapping_rules = Column(JSONB, nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_import_templates.id"), nullable=True)
+    processed_by = Column(String(255), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class PurchaseSourceRow(Base):
+    """1 baris = 1 transaksi pembelian (1 blok di laporan) hasil parsing
+    1 file -- staging SEBELUM jadi Purchase Transaction resmi (tombol
+    "Buat Transaksi" = promote). `payload` menyimpan header+baris item
+    lengkap supaya promote tidak perlu membaca ulang file."""
+    __tablename__ = "financial_transaction_purchase_source_rows"
+    __table_args__ = (
+        UniqueConstraint("source_file_id", "row_no", name="uq_purchase_source_rows_file_row"),
+        Index("idx_purchase_source_rows_file", "source_file_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    source_file_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_source_files.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
+    row_no = Column(Integer, nullable=False)
+    tanggal = Column(Date, nullable=True)
+    no_invoice = Column(String(100), nullable=True)   # nomor transaksi pembelian (purchase_no)
+    nama_vendor = Column(String(255), nullable=True)
+    vendor_code = Column(String(50), nullable=True)
+    no_po = Column(String(100), nullable=True)
+    cabang = Column(String(100), nullable=True)
+    dpp = Column(Numeric(24, 2), nullable=False, default=0)
+    ppn = Column(Numeric(24, 2), nullable=False, default=0)
+    total = Column(Numeric(24, 2), nullable=False, default=0)
+    is_valid = Column(Boolean, nullable=False, default=True)
+    validation_notes = Column(Text, nullable=True)
+    is_duplicate_candidate = Column(Boolean, nullable=False, default=False)
+    payload = Column(JSONB, nullable=True)
+    # Terisi saat baris dipromosikan jadi Purchase Transaction (penanda "sudah pernah dipromosikan").
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
 class PurchaseTransaction(Base):
     """Entitas inti: header Purchase Transaction. Dipakai bersama oleh tab
     Purchase Transaction, Purchase Preview, dan Posted."""

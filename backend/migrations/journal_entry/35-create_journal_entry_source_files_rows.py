@@ -1,8 +1,8 @@
 """
-migrations/35-create_journal_entry_source_files_rows.py
-=======================================================
+migrations/journal_entry/35-create_journal_entry_source_files_rows.py
+=====================================================================
 Menambahkan 2 tabel BARU untuk tab "Source Data" Journal Entry -- versi
-Journal Entry dari financial_transaction_journal_entry_source_files / _source_rows:
+Journal Entry dari financial_transaction_sales_source_files / _source_rows:
 
   - financial_transaction_journal_entry_source_files : 1 baris = 1 file yang
     diupload (status ekstraksi/mapping, jumlah journal entry, total debit/kredit,
@@ -15,25 +15,25 @@ Journal Entry dari financial_transaction_journal_entry_source_files / _source_ro
 Tabel lama financial_transaction_journal_entry_source_records (registri
 transaksi modul lain) TIDAK disentuh.
 
-WAJIB dijalankan SEBELUM backend yang baru dipakai (upload Journal Entry sekarang
-menulis ke 2 tabel ini). Urutan: 10 (tabel JE) -> 11 (template) -> seed template -> 35 (ini).
+Tabel dibuat dari ORM db_client.py (JournalEntrySourceFile / JournalEntrySourceRow, disalin dari branch hendra).
 
 AMAN DIPANGGIL BERKALI-KALI (idempoten) -- tabel yang sudah ada di-skip.
 
 Cara pakai:
     cd backend
-    venv\\Scripts\\python migrations\\35-create_journal_entry_source_files_rows.py
+    venv\\Scripts\\python migrations\\journal_entry\\35-create_journal_entry_source_files_rows.py
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# File ini ada di migrations/journal_entry/ -> _history ada di migrations/, db_client & .env di backend/.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / ".env")
 except ImportError:
     pass
 
@@ -44,27 +44,22 @@ from _history import catat_history
 from db_client import engine
 
 
-def _tabel_ada(connection, table: str) -> bool:
-    return table in inspect(connection).get_table_names()
-
-
-def _buat_tabel_jika_belum_ada(connection, table_name: str, orm_class) -> bool:
-    if _tabel_ada(connection, table_name):
-        print(f"⏭️  Tabel '{table_name}' sudah ada, skip.")
+def _buat_tabel(connection, nama: str, orm_class) -> bool:
+    if nama in inspect(connection).get_table_names():
+        print(f"⏭️  Tabel '{nama}' sudah ada, skip.")
         return True
     try:
         from db_client import Base
         Base.metadata.create_all(bind=connection.engine, tables=[orm_class.__table__])
         connection.commit()
-        print(f"✅ Tabel '{table_name}' berhasil dibuat.")
+        print(f"✅ Tabel '{nama}' berhasil dibuat.")
         return True
     except (OperationalError, ProgrammingError) as e:
-        msg = str(e).lower()
-        if "already exists" in msg:
-            print(f"⏭️  Tabel '{table_name}' sudah ada (terdeteksi via error), skip.")
-            return True
-        print(f"❌ Gagal buat tabel '{table_name}': {e}")
         connection.rollback()
+        if "already exists" in str(e).lower():
+            print(f"⏭️  Tabel '{nama}' sudah ada (terdeteksi via error), skip.")
+            return True
+        print(f"❌ Gagal buat tabel '{nama}': {e}")
         return False
 
 
@@ -78,10 +73,10 @@ def main() -> int:
     hasil = {}
     with engine.connect() as connection:
         # Urutan penting: source_rows punya FK ke source_files.
-        hasil["buat tabel financial_transaction_journal_entry_source_files"] = _buat_tabel_jika_belum_ada(
+        hasil["tabel financial_transaction_journal_entry_source_files"] = _buat_tabel(
             connection, "financial_transaction_journal_entry_source_files", JournalEntrySourceFile
         )
-        hasil["buat tabel financial_transaction_journal_entry_source_rows"] = _buat_tabel_jika_belum_ada(
+        hasil["tabel financial_transaction_journal_entry_source_rows"] = _buat_tabel(
             connection, "financial_transaction_journal_entry_source_rows", JournalEntrySourceRow
         )
 
@@ -90,7 +85,7 @@ def main() -> int:
     print("📋 RINGKASAN MIGRATION")
     print("=" * 60)
     for k, v in hasil.items():
-        print(f"{k:<70}: {'✅' if v else '❌'}")
+        print(f"{k:<60}: {'✅' if v else '❌'}")
     print("=" * 60)
 
     if all(hasil.values()):
