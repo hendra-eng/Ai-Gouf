@@ -4,6 +4,14 @@ import { imageHosts } from './image-hosts.config.mjs';
 const nextConfig = {
   productionBrowserSourceMaps: true,
   distDir: process.env.DIST_DIR || '.next',
+  // [BARU] Matikan kompresi gzip bawaan Next.js. Kompresi ini membuffer
+  // respons streaming (SSE /api/chat/stream) yang lewat proxy rewrites(),
+  // sehingga token AI baru muncul setelah jawaban selesai (atau tidak sama
+  // sekali lewat tunnel). Kalau nanti deploy di belakang Nginx/Cloudflare
+  // berbayar, kompresi tetap ditangani di layer itu.
+  compress: false,
+  // [BARU] Izinkan akses dev server lewat tunnel Cloudflare.
+  allowedDevOrigins: ['*.trycloudflare.com'],
   // [BARU] Proxy semua /api/* dari Next.js ke backend FastAPI (jalan di
   // localhost:8000). Dengan ini browser cuma pernah memanggil domain
   // dashboard kamu sendiri (mis. yourapp.com/api/...) -- backend Python

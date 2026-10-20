@@ -255,6 +255,14 @@ export async function* prosesFileStream(file, jenisDokumen /* optional */, clien
     throw new Error(detail.detail || `Request gagal (${res.status})`);
   }
 
+  // [BARU] Respons non-streaming: satu JSON { jawaban } (atau { error }).
+  if (tanpaStream) {
+    const hasil = await res.json().catch(() => ({}));
+    if (hasil.error) throw new Error(hasil.error);
+    if (hasil.jawaban) yield { type: "delta", text: hasil.jawaban };
+    return;
+  }
+
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -520,11 +528,23 @@ export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clien
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  // [BARU] Mode NON-STREAMING untuk tunnel yang tidak mendukung SSE
+  // (Cloudflare Quick Tunnel / *.trycloudflare.com). Di mode ini backend
+  // mengirim jawaban utuh sebagai satu JSON, bukan stream token. Aktif otomatis
+  // kalau halaman dibuka lewat trycloudflare.com, atau paksa dengan
+  // NEXT_PUBLIC_CHAT_TANPA_STREAM=1 (atau opsi { tanpaStream: true }).
+  const tanpaStream =
+    !!(opsi && opsi.tanpaStream) ||
+    process.env.NEXT_PUBLIC_CHAT_TANPA_STREAM === "1" ||
+    (typeof window !== "undefined" &&
+      /\.trycloudflare\.com$/i.test(window.location.hostname));
+
   const res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
     method: "POST",
     headers,
     signal,
     body: JSON.stringify({
+      tanpa_stream: tanpaStream,
       pesan,
       riwayat,
       ringkasan_data: ringkasanData,

@@ -19,7 +19,7 @@ import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import akuntansi_ai as ak
@@ -42,6 +42,9 @@ class ChatStreamRequest(BaseModel):
     # [BARU -- MEMORI AI] ucapan pengguna apa adanya (tanpa instruksi tambahan) + id sesi suara
     pesan_asli: Optional[str] = None
     sesi_id: Optional[str] = None
+    # [BARU] True = balas SATU JSON {"jawaban": ...} tanpa SSE. Dipakai frontend
+    # saat diakses lewat tunnel yang tidak mendukung SSE (Cloudflare Quick Tunnel).
+    tanpa_stream: bool = False
 
 
 def _sse(obj) -> str:
@@ -72,6 +75,35 @@ def buat_router_chat(auth) -> APIRouter:
             system_dasar = ak.buat_system_prompt_akuntansi()
             if body.ringkasan_data:
                 system_dasar += ak.buat_ringkasan_konteks_data(body.ringkasan_data, 0, 0)
+
+        # [BARU] Mode non-streaming: kumpulkan semua token di thread, balas satu JSON.
+        if body.tanpa_stream:
+            def kerja_sekali():
+                konteks = mem.siapkan_konteks(pemilik, ucapan)
+                kwargs = {"system_prompt": system_dasar + konteks["tambahan_prompt"], "riwayat": riwayat}
+                if suara:
+                    kwargs["provider_utama"] = "Groq"
+                    kwargs["max_tokens"] = 700
+                potongan = []
+                gen = ak.tanya_ai_stream(body.pesan, **kwargs)
+                try:
+                    for delta in gen:
+                        potongan.append(delta)
+                finally:
+                    try:
+                        gen.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                teks = "".join(potongan)
+                if teks and ucapan:
+                    mem.setelah_jawaban(pemilik, sumber, kunci, ucapan, teks, konteks["fakta_ids"])
+                return teks
+
+            try:
+                teks = await asyncio.to_thread(kerja_sekali)
+                return JSONResponse({"jawaban": teks})
+            except Exception as e:  # noqa: BLE001
+                return JSONResponse({"error": str(e)})
 
         loop = asyncio.get_running_loop()
         q: "asyncio.Queue" = asyncio.Queue()
