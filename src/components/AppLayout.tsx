@@ -15,6 +15,7 @@ import { ActiveClientProvider } from '@/lib/activeClient';
 // state yang sama, bukan dua context terpisah.
 import { TransactionsProvider } from '@/app/transactions/context/TransactionsContext';
 import { AuthProvider } from '@/lib/auth';
+import VoiceAssistant from './VoiceAssistant';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -93,6 +94,7 @@ export default function AppLayout({ children, company, period }: AppLayoutProps)
             </main>
           </div>
         </div>
+        <VoiceAssistant />
       </TransactionsProvider>
       </ActiveClientProvider>
     )}

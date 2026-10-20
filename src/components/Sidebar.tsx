@@ -33,6 +33,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { id: 'nav-overview', label: 'Overview', icon: LayoutDashboard, href: '/' },
       { id: 'nav-agent-ai', label: 'Agent AI', icon: Bot, href: '/agent-ai', badge: 'AI', badgeVariant: 'ai' },
+      { id: 'nav-memori-ai', label: 'Memori AI', icon: Brain, href: '/memori-ai' },
     ],
   },
   {

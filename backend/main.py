@@ -85,6 +85,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import akuntansi_ai as ak
+from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/stream (dipakai Agent AI + VoiceAssistant)
+from memori_ai import buat_router_memori  # [BARU] memori jangka panjang AI + API halaman Memori AI (/api/ai-memory/...)
 import db_client as dbc
 from modules import (
     accounting_export, accounting_core, ai_analysis, auth,
@@ -355,6 +357,8 @@ app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
 app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
+app.include_router(buat_router_chat(auth))  # [BARU] /api/chat/stream (SSE chat AI)
+app.include_router(buat_router_memori(auth))  # [BARU] /api/ai-memory/facts|conversations (kelola ingatan AI)
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
 app.include_router(asset_fixed_assets_v1.router)  # [DIPINDAH] /api/v1/asset/getFixedAssets|addFixedAsset|updateFixedAsset|disposeFixedAsset
@@ -393,6 +397,12 @@ def _startup_buat_tabel_db():
         accounting_core.ensure_seed_data()
     except Exception as e:  # noqa: BLE001
         print(f"[PERINGATAN] Gagal inisialisasi tabel database saat startup: {e}")
+    # [BARU] tabel memori AI (ai_memory_*) -- dibuat terpisah supaya kegagalannya tidak mengganggu yang lain
+    try:
+        from memori_ai import ensure_tabel as _ensure_tabel_memori_ai
+        _ensure_tabel_memori_ai()
+    except Exception as e:  # noqa: BLE001
+        print(f"[PERINGATAN] Gagal menyiapkan tabel memori AI saat startup: {e}")
 
 
 # Scheduler latar belakang: pembersihan cache ekstraksi PDF & Office

@@ -2966,6 +2966,9 @@ def _konfigurasi_provider_chat():
             # chat.completions.create() oleh tanya_ai()/tanya_ai_stream().
             "extra_params": {"reasoning_effort": "low"},
         })
+    # [BARU] CHAT_PROVIDER_UTAMA=groq di .env -> Groq dicoba PERTAMA (DeepSeek jadi cadangan).
+    if os.environ.get("CHAT_PROVIDER_UTAMA", "").strip().lower() == "groq":
+        daftar.sort(key=lambda k: 0 if k["nama"] == "Groq" else 1)
     return daftar
 
 
@@ -12685,8 +12688,45 @@ def tanya_ai(pesan: str, system_prompt: str = None, riwayat: list = None,
     raise error_terakhir
 
 
+# [BARU -- PERCEPAT JAWABAN] Klien OpenAI dipakai ulang (koneksi HTTPS keep-alive)
+# supaya tiap pertanyaan TIDAK perlu handshake TLS baru (hemat ~100-300 ms).
+_KLIEN_CHAT_CACHE: dict = {}
+
+
+def _ambil_klien_chat(konfig: dict):
+    import openai
+    kunci = (konfig["base_url"], konfig["api_key"])
+    klien = _KLIEN_CHAT_CACHE.get(kunci)
+    if klien is None:
+        klien = openai.OpenAI(api_key=konfig["api_key"], base_url=konfig["base_url"])
+        _KLIEN_CHAT_CACHE[kunci] = klien
+    return klien
+
+
+def buat_system_prompt_suara() -> str:
+    """Prompt RINGKAS khusus asisten suara. Prompt lengkap (~20 KB) memperlambat
+    token pertama; untuk tanya-jawab lisan yang singkat prompt ini sudah cukup.
+    Set VOICE_PROMPT_LENGKAP=1 di .env kalau mau memakai prompt lengkap lagi."""
+    return (
+        "Kamu adalah AI Gouf Consulting, asisten suara di dashboard akuntansi "
+        "\"Gouf Consulting Accounting\" (Next.js + FastAPI) yang dipakai konsultan/tim finance "
+        "untuk mengelola pembukuan banyak client. Pengguna berbicara lewat mikrofon dan jawabanmu "
+        "dibacakan keras-keras.\n"
+        "ATURAN JAWABAN SUARA:\n"
+        "- Bahasa Indonesia santai dan ramah, langsung ke inti, maksimal 3 kalimat pendek.\n"
+        "- Jangan pakai markdown, tabel, daftar, simbol, atau emoji.\n"
+        "- Tulis angka dan mata uang agar enak diucapkan (mis. 'lima belas juta rupiah').\n"
+        "- Kamu tidak melihat data client secara langsung di mode suara; kalau pertanyaan butuh data "
+        "spesifik, jawab konsepnya lalu sarankan membuka halaman terkait di dashboard atau bertanya "
+        "lewat halaman Agent AI. Jangan mengarang angka.\n"
+        "- Kalau ada perintah seperti 'buka halaman X', jawab singkat bahwa kamu mengarahkannya dan "
+        "sebut nama menu yang dimaksud."
+    )
+
+
 def tanya_ai_stream(pesan: str, system_prompt: str = None, riwayat: list = None,
-                     temperature: float = 0.6, max_tokens: int = 2048):
+                     temperature: float = 0.6, max_tokens: int = 2048,
+                     provider_utama: str = None):
     """Versi streaming dari tanya_ai(), dengan retry otomatis di percobaan
     KONEKSI awal (sebelum token pertama keluar) -- setelah stream mulai
     jalan, retry di tengah jalan tidak dilakukan karena sebagian jawaban
@@ -12706,12 +12746,14 @@ def tanya_ai_stream(pesan: str, system_prompt: str = None, riwayat: list = None,
     if not daftar_provider:
         raise Exception("Tidak ada API key chat aktif (DEEPSEEK_API_KEY / GROQ_API_KEY)")
 
+    if provider_utama:  # [BARU] mis. "Groq" -> dicoba pertama, sisanya jadi cadangan
+        daftar_provider = sorted(daftar_provider, key=lambda k: 0 if k["nama"] == provider_utama else 1)
     messages = _susun_messages(pesan, system_prompt, riwayat)
     error_terakhir = None
     for konfig in daftar_provider:
         sudah_ada_token = False
         try:
-            client = openai.OpenAI(api_key=konfig["api_key"], base_url=konfig["base_url"])
+            client = _ambil_klien_chat(konfig)  # [BARU] klien dipakai ulang
             stream = _panggil_deepseek_dengan_retry(
                 client.chat.completions.create,
                 model=konfig["model"],

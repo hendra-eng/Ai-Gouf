@@ -513,7 +513,7 @@ export function urlUnduhHasil(namaFile) {
  *   reject dengan DOMException bernama "AbortError" -- pemanggil (ChatPage)
  *   yang menangkap & menampilkannya secara khusus, bukan sebagai error biasa.
  */
-export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined) {
+export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined, opsi = {}) {
   const headers = { "Content-Type": "application/json" };
   const token = tokenTersimpan();
   if (token) {
@@ -530,6 +530,9 @@ export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clien
       ringkasan_data: ringkasanData,
       client_id: clientId || null,
       percakapan_id: percakapanId || null,
+      mode_suara: !!(opsi && opsi.modeSuara), // true = jalur cepat khusus asisten suara
+      pesan_asli: (opsi && opsi.pesanAsli) || null, // ucapan user apa adanya -> dipakai memori AI
+      sesi_id: (opsi && opsi.sesiId) || null, // id sesi suara -> mengelompokkan percakapan di memori AI
     }),
   });
 
@@ -2401,4 +2404,40 @@ export async function* aiBacaFileStream(file, pertanyaan) {
 /** Posting satu jurnal umum (DRAFT -> POSTED). Endpoint lama. */
 export function postJurnalEntry(clientId, journalEntryId) {
   return request(`/api/client/${clientId}/journal-entries/${journalEntryId}/post`, { method: "POST" });
+}
+
+// ------------------------------------------------------------
+// Memori AI (ingatan jangka panjang) -- backend/memori_ai.py
+// ------------------------------------------------------------
+export async function daftarFaktaMemori({ q = "", status = "aktif" } = {}) {
+  const p = new URLSearchParams({ q, status });
+  return request(`/api/ai-memory/facts?${p.toString()}`);
+}
+
+export async function tambahFaktaMemori(data) {
+  return request("/api/ai-memory/facts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function ubahFaktaMemori(id, data) {
+  return request(`/api/ai-memory/facts/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function hapusFaktaMemori(id) {
+  return request(`/api/ai-memory/facts/${id}`, { method: "DELETE" });
+}
+
+export async function daftarPercakapanMemori(limit = 30) {
+  return request(`/api/ai-memory/conversations?limit=${limit}`);
+}
+
+export async function pesanPercakapanMemori(id) {
+  return request(`/api/ai-memory/conversations/${id}/messages`);
 }

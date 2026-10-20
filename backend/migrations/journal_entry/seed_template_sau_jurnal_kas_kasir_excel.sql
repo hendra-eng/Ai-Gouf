@@ -1,4 +1,13 @@
--- seed_template_sau_jurnal_kas_kasir_excel.sql
+-- seed_template_sau_multi_format_journal_entry.sql
+-- (isi sama dengan seed_template_sau_jurnal_kas_kasir_excel.sql, hanya dipindah ke nama file standar
+-- *_multi_format_journal_entry.sql. JANGAN jalankan keduanya: hash header sama -> bentrok UNIQUE
+-- uq_je_import_templates_signature. Setelah file ini dipakai, hapus file lama.)
+-- DIVERIFIKASI ULANG terhadap dataset/Jurnal Entry/SAU/Jurnal Kas Kasir.xlsx: hash header cocok,
+-- 1.193 voucher x 2 baris, seluruhnya balance, total debit = total kredit = 12.926.223.584
+-- (sama dengan baris kontrol di file).
+-- CATATAN: journal_entry_import_v1.py saat ini mencocokkan 1 template per hash header (belum ada
+-- varian "Multi" seperti Sales), jadi file ini = 1 baris template; format lain milik SAU
+-- ditambah sebagai INSERT baru setelah ada file contohnya.
 -- =============================================================
 -- Template pola kolom (financial_transaction_journal_entry_import_templates)
 -- hasil pembelajaran MANUAL dari file contoh:
@@ -54,7 +63,7 @@
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
 --   cd backend
---   venv\Scripts\python migrations\run_seed.py seed_template_sau_jurnal_kas_kasir_excel.sql
+--   venv\Scripts\python migrations\run_seed.py seed_template_sau_multi_format_journal_entry.sql
 -- (jalur psql tetap bisa, tapi tidak tercatat di history-migration.md)
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT DO NOTHING supaya kesalahan run-2x
