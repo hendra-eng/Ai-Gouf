@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import { toast } from 'sonner';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import type { ExceptionSeverity, ExceptionStatus } from '@/lib/data/purchaseData';
+import type { ExceptionSeverity, ExceptionStatus } from '@/data/purchaseData';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseExceptions, updatePurchaseException, mapExceptionToUi } from '@/lib/purchaseStore';
 import {

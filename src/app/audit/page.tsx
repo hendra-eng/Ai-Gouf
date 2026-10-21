@@ -1,5 +1,6 @@
 'use client';
 
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
@@ -356,6 +357,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 export default function AuditPage() {
   const { fx } = useCurrency();
   const [activeTab, setActiveTab] = useState<'all' | 'open' | 'high-risk' | 'resolved'>('all');
+  useTabSuara(['all', 'open', 'high-risk', 'resolved'], (k) => setActiveTab(k as 'all' | 'open' | 'high-risk' | 'resolved')); // perintah suara Neo
   const [selectedFinding, setSelectedFinding] = useState<AuditFinding | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStage, setActiveStage] = useState<string | null>(null);

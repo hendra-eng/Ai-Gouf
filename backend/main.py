@@ -86,6 +86,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import akuntansi_ai as ak
 from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/stream (dipakai Agent AI + VoiceAssistant)
+from tts_route import buat_router_tts  # [BARU] route POST /api/tts (suara neural Gemini TTS -> Edge TTS untuk VoiceAssistant)
+from client_intent_route import buat_router_client_intent  # [BARU] route POST /api/voice/client-intent (fallback LLM ganti client lewat suara)
 from memori_ai import buat_router_memori  # [BARU] memori jangka panjang AI + API halaman Memori AI (/api/ai-memory/...)
 import db_client as dbc
 from modules import (
@@ -358,6 +360,8 @@ app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
 app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
 app.include_router(buat_router_chat(auth))  # [BARU] /api/chat/stream (SSE chat AI)
+app.include_router(buat_router_tts(auth))  # [BARU] /api/tts (Gemini TTS -> Edge TTS)
+app.include_router(buat_router_client_intent(auth))  # [BARU] /api/voice/client-intent (fallback LLM ganti client)
 app.include_router(buat_router_memori(auth))  # [BARU] /api/ai-memory/facts|conversations (kelola ingatan AI)
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri

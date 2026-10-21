@@ -44,6 +44,16 @@ export default function SalesClient() {
     if (t && TABS.some(x => x.key === t)) setActiveTab(t);
   }, []);
 
+  // Perintah suara Neo ("buka tab posted di halaman sales"): bila sudah di halaman ini, pindah tab lewat event (tanpa remount).
+  useEffect(() => {
+    const h = (e: Event) => {
+      const t = (e as CustomEvent).detail?.tab;
+      if (t && TABS.some(x => x.key === t)) setActiveTab(t);
+    };
+    window.addEventListener('neo-tab', h);
+    return () => window.removeEventListener('neo-tab', h);
+  }, []);
+
   // Badge di tab "Exceptions" -- jumlah exception yang BELUM selesai
   // (Open/In Review), dari data asli (financial_transaction_sales_
   // exceptions), bukan lagi angka statis "24".

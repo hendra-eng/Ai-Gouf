@@ -33,7 +33,7 @@ import {
   BillValidationError, checkBillInvoiceDuplicate, createBill, fetchBill, fetchBillFormOptions, updateBill,
   type BillFormOptions, type BillDetail, type BillInput, type BillTaxCode,
 } from '@/lib/purchaseStore';
-import type { PurchaseCategory, SourceDocType } from '@/lib/data/purchaseData';
+import type { PurchaseCategory, SourceDocType } from '@/data/purchaseData';
 
 type TaxCode = BillTaxCode;
 type DiscountType = 'percent' | 'amount';

@@ -1,4 +1,5 @@
 'use client';
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 
@@ -15,6 +16,7 @@ type TabType = 'solvency' | 'efficiency';
 export default function SolvencyEfficiencyAnalytics() {
   const { fx } = useCurrency();
   const [tab, setTab] = useState<TabType>('solvency');
+  useTabSuara(['solvency', 'efficiency'], (k) => setTab(k as TabType)); // perintah suara Neo
   const { solvency, efficiency, monthlyTrend, isSampleData } = useAnalyticsData();
 
   const SOLVENCY = [

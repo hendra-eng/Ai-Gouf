@@ -1,5 +1,6 @@
 'use client';
 
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -201,6 +202,7 @@ function ClientDetailDrawer({ client, onClose }: { client: Client; onClose: () =
   const { fx } = useCurrency();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('overview');
+  useTabSuara(['overview', 'financial', 'health', 'activity', 'ai'], setActiveTab); // perintah suara Neo (tab klien yang sedang dibuka)
 
   function handleFullAIAnalysis() {
     toast.info('Membuka analisis AI lengkap', { description: `Menganalisis data keuangan ${client.companyName}…` });

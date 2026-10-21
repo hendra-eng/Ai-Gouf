@@ -3,6 +3,7 @@
 // Tab "Ingatan": fakta yang dipelajari AI dari percakapan (bisa diedit/dihapus/dinonaktifkan).
 // Tab "Percakapan": riwayat percakapan suara & Agent AI yang tercatat.
 
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 // @ts-ignore — api.js adalah file JS
@@ -36,6 +37,7 @@ const tombolCls =
 
 export default function MemoriAIView() {
   const [tab, setTab] = useState<'ingatan' | 'percakapan'>('ingatan');
+  useTabSuara(['ingatan', 'percakapan'], (k) => setTab(k as 'ingatan' | 'percakapan')); // perintah suara Neo
 
   // ---- ingatan ----
   const [fakta, setFakta] = useState<Fakta[]>([]);
@@ -84,6 +86,18 @@ export default function MemoriAIView() {
       setTerbuka(id);
     } catch (e: any) {
       toast.error(e?.message || 'Gagal memuat pesan');
+    }
+  };
+
+  const hapusPercakapan = async (p: Percakapan) => {
+    if (!window.confirm(`Hapus permanen percakapan ini?\n\n"${p.cuplikan || '(kosong)'}"\n\nAI tidak akan mengingatnya lagi.`)) return;
+    try {
+      await api.hapusPercakapanMemori(p.id);
+      toast.success('Percakapan dihapus');
+      setPercakapan((daftar) => daftar.filter((x) => x.id !== p.id));
+      if (terbuka === p.id) setTerbuka(null);
+    } catch (e: any) {
+      toast.error(e?.message || 'Gagal menghapus percakapan');
     }
   };
 
@@ -254,11 +268,14 @@ export default function MemoriAIView() {
           )}
           {percakapan.map((p) => (
             <li key={p.id} className="rounded-xl border border-border bg-card">
-              <button type="button" onClick={() => bukaPercakapan(p.id)} className="flex w-full items-start gap-3 p-4 text-left">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{p.sumber === 'suara' ? 'Suara' : 'Agent AI'}</span>
-                <span className="flex-1 truncate text-sm text-foreground">{p.cuplikan || '(kosong)'}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{waktu(p.updated_at)}</span>
-              </button>
+              <div className="flex items-start">
+                <button type="button" onClick={() => bukaPercakapan(p.id)} className="flex min-w-0 flex-1 items-start gap-3 p-4 text-left">
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{p.sumber === 'suara' ? 'Suara' : 'Agent AI'}</span>
+                  <span className="flex-1 truncate text-sm text-foreground">{p.cuplikan || '(kosong)'}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{waktu(p.updated_at)}</span>
+                </button>
+                <button type="button" className={`${tombolCls} m-3 shrink-0 text-red-500`} onClick={() => hapusPercakapan(p)}>Hapus</button>
+              </div>
               {terbuka === p.id && (
                 <div className="space-y-2 border-t border-border p-4">
                   {pesan.map((m, i) => (

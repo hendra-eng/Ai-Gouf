@@ -255,14 +255,6 @@ export async function* prosesFileStream(file, jenisDokumen /* optional */, clien
     throw new Error(detail.detail || `Request gagal (${res.status})`);
   }
 
-  // [BARU] Respons non-streaming: satu JSON { jawaban } (atau { error }).
-  if (tanpaStream) {
-    const hasil = await res.json().catch(() => ({}));
-    if (hasil.error) throw new Error(hasil.error);
-    if (hasil.jawaban) yield { type: "delta", text: hasil.jawaban };
-    return;
-  }
-
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -521,6 +513,110 @@ export function urlUnduhHasil(namaFile) {
  *   reject dengan DOMException bernama "AbortError" -- pemanggil (ChatPage)
  *   yang menangkap & menampilkannya secara khusus, bukan sebagai error biasa.
  */
+/**
+ * ttsAudio -- minta audio MP3 (Azure neural TTS) dari backend. Return Blob.
+ * Lempar Error dengan properti .status (503 = Azure belum dikonfigurasi).
+ */
+/**
+ * @param {string} teks
+ * @param {AbortSignal} [signal]
+ * @param {string} [bahasa] "id" (default) atau "en" -- bahasa suara
+ */
+export async function ttsAudio(teks, signal = undefined, bahasa = "id") {
+  const headers = { "Content-Type": "application/json" };
+  const token = tokenTersimpan();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE_URL}/api/tts`, {
+    method: "POST",
+    headers,
+    signal,
+    body: JSON.stringify({ teks, bahasa }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    const err = new Error(detail.detail || `TTS gagal (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return await res.blob();
+}
+
+/**
+ * ttsStream -- [BARU] audio Gemini STREAMING dari backend (POST /api/tts/stream).
+ * Isi respons = PCM mentah 16-bit little-endian, 24 kHz, mono, dikirim bertahap. Backend baru mengirim header
+ * setelah audio pertama siap, jadi kalau fungsi ini mengembalikan hasil, audio sudah mulai datang.
+ * Return ReadableStreamDefaultReader<Uint8Array>. Gagal -> Error dengan properti .status (404/405 = backend belum punya endpoint ini).
+ * @param {string} teks
+ * @param {AbortSignal} [signal]
+ * @param {string} [bahasa] "id" (default) atau "en"
+ */
+export async function ttsStream(teks, signal = undefined, bahasa = "id") {
+  const headers = { "Content-Type": "application/json" };
+  const token = tokenTersimpan();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE_URL}/api/tts/stream`, {
+    method: "POST",
+    headers,
+    signal,
+    body: JSON.stringify({ teks, bahasa }),
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.json().catch(() => ({}));
+    const err = new Error(detail.detail || `TTS stream gagal (${res.status})`);
+    err.status = res.status || 502;
+    throw err;
+  }
+  return res.body.getReader();
+}
+
+/**
+ * tentukanClientSuara -- CADANGAN LLM untuk perintah suara "ganti client" yang tidak tertangkap parser lokal
+ * (lihat src/lib/gantiClientSuara.ts). Backend hanya boleh memilih satu kode dari `daftar`.
+ * Gagal / timeout / bukan perintah ganti client -> mengembalikan { intent: "bukan", kode: null } (TIDAK melempar),
+ * supaya VoiceAssistant tinggal lanjut menjawab seperti biasa.
+ * @param {string} ucapan
+ * @param {{kode: string, nama: string}[]} daftar
+ * @param {string|null} aktif -- kode client yang sedang aktif
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{intent: "ganti_client"|"bukan", kode: string|null}>}
+ */
+export async function tentukanClientSuara(ucapan, daftar, aktif = null, signal = undefined) {
+  const bukan = { intent: "bukan", kode: null };
+  const ctrl = new AbortController();
+  const batas = setTimeout(() => ctrl.abort(), 6000); // jangan bikin Neo diam terlalu lama
+  const teruskan = () => ctrl.abort();
+  if (signal) { if (signal.aborted) ctrl.abort(); else signal.addEventListener("abort", teruskan, { once: true }); }
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/api/voice/client-intent`, {
+      method: "POST",
+      headers,
+      signal: ctrl.signal,
+      body: JSON.stringify({ ucapan, daftar, aktif }),
+    });
+    if (!res.ok) return bukan;
+    const data = await res.json().catch(() => null);
+    if (data && data.intent === "ganti_client" && typeof data.kode === "string") return { intent: "ganti_client", kode: data.kode };
+    return bukan;
+  } catch {
+    return bukan;
+  } finally {
+    clearTimeout(batas);
+    if (signal) signal.removeEventListener("abort", teruskan);
+  }
+}
+
+/**
+ * @param {string} pesan
+ * @param {{role: string, content: string}[]} [riwayat]
+ * @param {string[]} [ringkasanData]
+ * @param {number|string|null} [clientId]
+ * @param {number|string|null} [percakapanId]
+ * @param {AbortSignal} [signal]
+ * @param {{modeSuara?: boolean, pesanAsli?: string, sesiId?: string, konteksLayar?: string}} [opsi]
+ */
 export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined, opsi = {}) {
   const headers = { "Content-Type": "application/json" };
   const token = tokenTersimpan();
@@ -553,12 +649,21 @@ export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clien
       mode_suara: !!(opsi && opsi.modeSuara), // true = jalur cepat khusus asisten suara
       pesan_asli: (opsi && opsi.pesanAsli) || null, // ucapan user apa adanya -> dipakai memori AI
       sesi_id: (opsi && opsi.sesiId) || null, // id sesi suara -> mengelompokkan percakapan di memori AI
+      konteks_layar: (opsi && opsi.konteksLayar) || null, // [BARU] snapshot teks layar (berbagi layar versi teks)
     }),
   });
 
   if (!res.ok || !res.body) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `Request gagal (${res.status})`);
+  }
+
+  // [BARU] Respons non-streaming: satu JSON { jawaban } (atau { error }).
+  if (tanpaStream) {
+    const hasil = await res.json().catch(() => ({}));
+    if (hasil.error) throw new Error(hasil.error);
+    if (hasil.jawaban) yield { type: "delta", text: hasil.jawaban };
+    return;
   }
 
   const reader = res.body.getReader();
@@ -2460,4 +2565,8 @@ export async function daftarPercakapanMemori(limit = 30) {
 
 export async function pesanPercakapanMemori(id) {
   return request(`/api/ai-memory/conversations/${id}/messages`);
+}
+
+export async function hapusPercakapanMemori(id) {
+  return request(`/api/ai-memory/conversations/${id}`, { method: "DELETE" });
 }

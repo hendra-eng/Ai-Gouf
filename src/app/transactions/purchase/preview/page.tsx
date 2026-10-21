@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/lib/data/purchaseData';
+import type { PurchaseStatus, PaymentStatus, PurchaseTransaction } from '@/data/purchaseData';
 import { useActiveClient } from '@/lib/activeClient';
 import { toast } from 'sonner';
 import { usePurchaseTransactions, usePurchaseTransactionLines, mapTransactionToUi, mapTransactionLineToUi, updatePurchaseTransaction } from '@/lib/purchaseStore';

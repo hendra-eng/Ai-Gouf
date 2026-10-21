@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Building2, Calculator, LayoutDashboard, Receipt, Settings2, Users, Wallet } from 'lucide-react';
 import TabNav, { type TabNavItem } from '@/components/ui/TabNav';
 import { useActiveClient } from '@/lib/activeClient';
@@ -22,6 +22,21 @@ export default function PayrollContent() {
   const { activeClientId, activeClientName } = useActiveClient();
   const store = usePayrollStore(activeClientId);
   const [tab, setTab] = useState('overview');
+
+  // Deep link ?tab=employees + perintah suara Neo.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t && TABS.some(x => x.key === t)) setTab(t);
+  }, []);
+  // Perintah suara Neo ("buka tab karyawan di halaman payroll"): bila sudah di halaman ini, pindah tab lewat event (tanpa remount).
+  useEffect(() => {
+    const h = (e: Event) => {
+      const t = (e as CustomEvent).detail?.tab;
+      if (t && TABS.some(x => x.key === t)) setTab(t);
+    };
+    window.addEventListener('neo-tab', h);
+    return () => window.removeEventListener('neo-tab', h);
+  }, []);
 
   return (
     <div className="pb-16">

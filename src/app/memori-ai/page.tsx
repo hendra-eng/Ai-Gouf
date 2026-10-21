@@ -1,5 +1,5 @@
 import React from 'react';
-import MemoriAIView from './MemoriAIView.tsx';
+import MemoriAIView from './MemoriAIView';
 
 export const metadata = { title: 'Memori AI — Gouf Consulting' };
 

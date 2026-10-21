@@ -11,7 +11,7 @@
 import { useMemo } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useBcOpenInvoices } from '@/lib/bankCashStore';
-import type { PaymentStatus } from '@/lib/data/purchaseData';
+import type { PaymentStatus } from '@/data/purchaseData';
 import { usePembayaranRekon, kelompokkanPerInvoice, sudahDiterapkan, type PembayaranRekon } from './useBankCashRekon';
 
 export interface CashPaymentRow {

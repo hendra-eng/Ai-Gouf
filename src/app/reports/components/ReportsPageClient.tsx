@@ -749,6 +749,19 @@ export default function ReportsPageClient() {
   const [searchQuery, setSearchQuery] = useState('');
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
   const [activeTab, setActiveTab] = useState<ReportsTabKey>('business-overview');
+
+  // Deep link ?tab=sales + perintah suara Neo ("buka tab sales di halaman reports").
+  useEffect(() => {
+    const valid = (k: string | null | undefined): k is ReportsTabKey => !!k && REPORT_TABS.some(x => x.key === k);
+    const dariUrl = new URLSearchParams(window.location.search).get('tab');
+    if (valid(dariUrl)) setActiveTab(dariUrl);
+    const h = (e: Event) => {
+      const k = (e as CustomEvent).detail?.tab;
+      if (valid(k)) setActiveTab(k);
+    };
+    window.addEventListener('neo-tab', h);
+    return () => window.removeEventListener('neo-tab', h);
+  }, []);
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'category'>('date');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);

@@ -1,4 +1,5 @@
 'use client';
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -25,6 +26,7 @@ export default function RevenueDrivers() {
   const router = useRouter();
   const { fx } = useCurrency();
   const [view, setView] = useState<ViewType>('category');
+  useTabSuara(['customer', 'product', 'category'], (k) => setView(k as ViewType)); // perintah suara Neo
   const { revenueByCategory, isSampleData } = useAnalyticsData();
 
   const items: { id: string; name: string; revenue: number; growth: number; contribution: number; previous: number }[] =

@@ -40,7 +40,7 @@ import type {
   PurchaseTransaction,
   PurchaseSourceRecord,
   PurchaseException,
-} from '@/lib/data/purchaseData';
+} from '@/data/purchaseData';
 
 const PURCHASE_CHANGED_EVENT = 'gouf-purchase-changed';
 

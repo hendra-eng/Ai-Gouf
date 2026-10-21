@@ -185,15 +185,30 @@ export function TransactionsProvider({ children }: { children: React.ReactNode }
     // finance_transaction_bank_cash (Cash Payment/Cash Receipt -- lihat
     // bankCashBridge.ts), DAN finance_transaction_other (Other -- lihat
     // otherBridge.ts). '' -> semua status di ketiga endpoint.
-    Promise.all([
+    // [FIX 404] Backend sudah dirombak ke /api/v1/transactions/... sehingga
+    // endpoint lama (jurnal-posting, getBankCash, getFinanceOther) bisa 404.
+    // Pakai allSettled: satu sumber gagal/404 TIDAK lagi menggagalkan semua
+    // sumber -- sumber yang gagal dianggap kosong. Error baru ditampilkan
+    // kalau ketiganya gagal DAN bukan sekadar 404 (endpoint belum ada).
+    Promise.allSettled([
       daftarJurnalPosting(activeClientId, ''),
       daftarBankCash(activeClientId, ''),
       daftarFinanceOther(activeClientId, ''),
     ])
+      .then((settled) => {
+        const gagal = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        gagal.forEach((r) => console.warn('Sumber transaksi gagal dimuat (dianggap kosong):', r.reason));
+        if (gagal.length === settled.length) {
+          const nyata = gagal.find((r) => !/not found|404/i.test(String(r.reason?.message ?? r.reason)));
+          if (nyata) throw nyata.reason;
+        }
+        const nilai = (i: number) => (settled[i].status === 'fulfilled' ? (settled[i] as PromiseFulfilledResult<any>).value : null);
+        return [nilai(0), nilai(1), nilai(2)] as [any, any, any];
+      })
       .then(([jurnalRes, bankCashRes, financeOtherRes]: [
-        { jurnal: BackendJurnalRow[] },
-        { bank_cash: BackendBankCashRow[] },
-        { finance_other: BackendFinanceOtherRow[] },
+        { jurnal: BackendJurnalRow[] } | null,
+        { bank_cash: BackendBankCashRow[] } | null,
+        { finance_other: BackendFinanceOtherRow[] } | null,
       ]) => {
         if (requestIdRef.current !== requestId) return; // sudah usang, ada request client lain setelah ini
         const jurnalRows = jurnalRes?.jurnal || [];
