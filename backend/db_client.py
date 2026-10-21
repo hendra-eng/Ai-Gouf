@@ -1,4 +1,4 @@
-# db_client.py - Kode database client yang benar
+﻿# db_client.py - Kode database client yang benar
 """
 db_client.py
 ============
@@ -7388,3 +7388,132 @@ class ManagementPayrollRun(Base):
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+# --- Ditambahkan dari playground-willi (model Cash & Bank transaksi) ---
+
+class BankCashTransaction(Base):
+    """Header transaksi Cash & Bank: Cash Receipt (uang masuk ke akun kas/bank)
+    atau Cash Payment (uang keluar). Lahir dari pencocokan mutasi Bank Feed
+    (source 'bank_feed', mutation_id terisi), input manual ('manual'), atau
+    Record Receipt / Record Payment di Accounts Receivable / Payable ('ar' /
+    'ap', modules/finance/receivables_payables_v1.py).
+
+    Alur status: draft -> approved -> posted -> reversed. Jurnalnya TIDAK
+    disalin ke Journal Entry -- GL/FS membaca langsung transaksi posted
+    (db_client.ambil_baris_jurnal_posted_transaksi, sumber "cash_bank"):
+        receipt: Dr akun kas/bank amount ; Cr/Dr baris lawan
+        payment: Cr akun kas/bank amount ; Dr/Cr baris lawan
+    reversed = jurnal asal tetap di tx_date + jurnal pembalik (RV-<tx_number>)
+    di reversal_date. Pelunasan invoice (Sales.paid_amount, Purchase.
+    payment_status) diterapkan saat posted & dikembalikan saat reversed."""
+    __tablename__ = "financial_transaction_bank_cash_transactions"
+    __table_args__ = (
+        UniqueConstraint("client_id", "tx_number", name="uq_bank_cash_transaction_number"),
+        Index("idx_bank_cash_transaction_client_status", "client_id", "status"),
+        Index("idx_bank_cash_transaction_client_date", "client_id", "tx_date"),
+        # 1 mutasi = 1 transaksi aktif; transaksi yang dibalik melepas mutasinya (boleh dicocokkan ulang).
+        Index("uq_bank_cash_transaction_mutation_aktif", "mutation_id",
+              unique=True, postgresql_where=text("deleted_at IS NULL AND mutation_id IS NOT NULL AND status <> 'reversed'")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    tx_number = Column(String(50), nullable=False)               # CR-2610-0001 / CP-2610-0001
+    direction = Column(String(10), nullable=False)               # receipt / payment
+    tx_date = Column(Date, nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    bank_account_code = Column(String(50), nullable=False)       # snapshot akun kas/bank saat dibuat
+    bank_account_name = Column(String(255), nullable=False)
+    amount = Column(Numeric(24, 2), nullable=False)
+    kind = Column(String(20), nullable=False)                    # invoice / non_invoice
+    category = Column(String(100), nullable=True)                # Customer Payment, Vendor Payment, Bank Charges, ...
+    counterparty = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    reference = Column(String(255), nullable=True)
+    # [migration 37] Diisi form Record Receipt (Accounts Receivable) / Record
+    # Payment (Accounts Payable); transaksi Bank Feed/manual boleh kosong.
+    payment_method = Column(String(30), nullable=True)           # bank_transfer / cash / cheque / giro / ...
+    reference_date = Column(Date, nullable=True)
+    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual / ar / ap
+    mutation_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashTransactionLine(Base):
+    """Baris lawan 1 transaksi Cash & Bank (sisi selain akun kas/bank).
+    line_type: sales_invoice (pelunasan piutang -- akun = piutang invoice),
+    purchase (pelunasan hutang -- akun = hutang invoice), account (akun bebas:
+    biaya admin, bunga, transfer antar rekening, setoran modal, ...).
+    debit/credit = sisi jurnal baris ini; total (credit - debit) baris =
+    amount header untuk receipt, (debit - credit) = amount untuk payment."""
+    __tablename__ = "financial_transaction_bank_cash_transaction_lines"
+    __table_args__ = (
+        Index("idx_bank_cash_line_transaction", "transaction_id"),
+        Index("idx_bank_cash_line_sales_invoice", "sales_invoice_id"),
+        Index("idx_bank_cash_line_purchase", "purchase_transaction_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_transactions.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    line_type = Column(String(20), nullable=False)               # sales_invoice / purchase / account
+    sales_invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
+    purchase_transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+# --- Ditambahkan dari playground-willi (model Cash & Bank transaksi) ---
+
+class SalesInvoiceLine(Base):
+    """Item invoice (produk/jasa). dpp = nilai setelah diskon tanpa pajak,
+    tax_amount = pajak baris, line_total = qty x harga - diskon (kolom
+    Amount di form). Jumlah dpp/tax_amount = Sales.dpp/ppn header."""
+    __tablename__ = "financial_transaction_sales_invoice_lines"
+    __table_args__ = (
+        Index("idx_sales_invoice_lines_invoice", "invoice_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    product_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    quantity = Column(Numeric(18, 4), nullable=False, default=1, server_default=text("1"))
+    unit = Column(String(30), nullable=True)
+    unit_price = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    discount_type = Column(String(10), nullable=False, default="percent", server_default=text("'percent'"))  # percent / amount
+    discount_value = Column(Numeric(24, 4), nullable=False, default=0, server_default=text("0"))
+    discount_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    tax_code = Column(String(20), nullable=False, default="ppn_11", server_default=text("'ppn_11'"))     # ppn_11 / ppn_12 / non_ppn
+    tax_rate = Column(Numeric(6, 3), nullable=False, default=0, server_default=text("0"))
+    dpp = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    tax_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    line_total = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
