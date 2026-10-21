@@ -370,6 +370,13 @@ export default function OpeningBalanceEditorClient() {
         </div>
       </div>
 
+      {tab === 'import' && (
+        <div className="mx-auto max-w-screen-2xl pt-4 pb-6">
+          <OpeningBalanceImportTab ob={ob} clientName={clients.find(c => c.id === ob.client_id)?.companyName ?? ''} />
+        </div>
+      )}
+
+      {tab === 'detail' && <>
       <div className="mx-auto max-w-screen-2xl space-y-5 pt-4 pb-6">
         {/* Banner status */}
         {!draft && Math.abs(ob.difference) > 0.004 && ob.suspense_account && (
