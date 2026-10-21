@@ -47,3 +47,5 @@ seed_template_sau_multi_format_purchase.sql
 36-create_bank_cash_import_templates_and_bank_mappings.py
 37-create_bank_cash_statements_and_mutations.py
 seed_template_birawa_multi_format_bank_cash.sql
+44-add_bill_fields_to_purchase.py
+43-add_lock_to_account_mappings.py
