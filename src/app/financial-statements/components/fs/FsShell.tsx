@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen, Lock } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { formatDate, useLockStatus } from '@/lib/yearEndClosingStore';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 
 // Kerangka halaman Financial Statements berbasis mapping: judul + navigasi
 // antar laporan + slot aksi (download, dsb).

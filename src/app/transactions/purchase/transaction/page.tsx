@@ -21,6 +21,9 @@ import {
   PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 
+// Status yang masih bisa diubah lewat form Create Bill (sama dengan purchase_bill_v1.STATUS_BISA_DIUBAH).
+const BILL_EDITABLE: PurchaseStatus[] = ['draft', 'pending_review', 'rejected', 'exception'];
+
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 

@@ -14,13 +14,13 @@ import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useSalesExceptions } from '@/lib/salesStore';
 
-const TABS: { key: string; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'source-data', label: 'Source Data' },
-  { key: 'sales-transaction', label: 'Sales Transaction' },
-  { key: 'journal-preview', label: 'Journal Preview' },
-  { key: 'exceptions', label: 'Exceptions' },
-  { key: 'posted', label: 'Posted' },
+const TABS: { key: string; label: string; icon: React.ElementType }[] = [
+  { key: 'overview', label: 'Overview', icon: LayoutGrid },
+  { key: 'source-data', label: 'Source Data', icon: Database },
+  { key: 'sales-transaction', label: 'Sales Transaction', icon: FileText },
+  { key: 'journal-preview', label: 'Journal Preview', icon: Eye },
+  { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+  { key: 'posted', label: 'Posted', icon: CircleCheck },
 ];
 
 const TAB_ICONS: Record<string, React.ComponentType<{ size?: number | string; className?: string }>> = {

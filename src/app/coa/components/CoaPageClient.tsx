@@ -59,7 +59,7 @@ export default function CoaPageClient() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { clients, activeClientId, activeClientName, setActiveClient } = useActiveClient();
+  const { activeClientId, activeClientName } = useActiveClient();
   const clientCoa = useClientCoa(activeClientId);
   const saldoCoa = useCoaBalances(activeClientId);
   const unassignedCoa = useUnassignedCoa();
@@ -199,20 +199,6 @@ export default function CoaPageClient() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 rounded-xl border border-border bg-card py-1.5 pl-3 pr-1.5 shadow-sm">
-                <Building2 size={14} className="text-muted-foreground" />
-                <select
-                  value={activeClientId ?? ''}
-                  onChange={e => {
-                    const c = clients.find(x => x.id === e.target.value);
-                    setActiveClient(c?.id ?? null, c?.companyName ?? null);
-                  }}
-                  className="min-w-[200px] bg-transparent py-0.5 text-sm font-medium text-foreground focus:outline-none"
-                >
-                  <option value="" disabled>Select client</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}{c.clientCode ? ` (${c.clientCode})` : ''}</option>)}
-                </select>
-              </label>
               <button
                 onClick={() => { refresh(); if (!isUnassignedView) saldoCoa.refresh(); }}
                 disabled={loading || (!isUnassignedView && !activeClientId)}
@@ -282,7 +268,7 @@ export default function CoaPageClient() {
             <Inbox size={16} className="mt-0.5 shrink-0 text-violet-600" />
             <p className="text-xs leading-relaxed text-violet-900">
               Accounts not linked to any client yet. Tick the ones you need and add them to{' '}
-              <span className="font-semibold">{activeClientName ?? 'the active client (select one above)'}</span>.
+              <span className="font-semibold">{activeClientName ?? 'the active client (select one in the header)'}</span>.
             </p>
           </div>
         )}
@@ -372,7 +358,7 @@ export default function CoaPageClient() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!isUnassignedView && !activeClientId ? (
-                  <EmptyRow colSpan={kolom} icon={Building2} title="No client selected" hint="Pick a client above to see its chart of accounts." />
+                  <EmptyRow colSpan={kolom} icon={Building2} title="No client selected" hint="Pick a client in the header (Switch Company) to see its chart of accounts." />
                 ) : loading && accounts.length === 0 ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i}>

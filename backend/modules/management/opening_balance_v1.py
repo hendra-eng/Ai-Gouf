@@ -4,6 +4,9 @@ modules/management/opening_balance_v1.py
 Fitur Management > COA > Opening Balances (saldo awal per tahun buku &
 cabang): /api/v1/management/opening-balances/...
 
+Aturan bisnis: 1 klien hanya boleh punya 1 opening balance (yang belum
+dihapus) -- koreksi berikutnya lewat Revise, bukan membuat set baru.
+
 Data di tabel `management_client_coa_opening_balances` (header) &
 `management_client_coa_opening_balance_lines` (baris) -- migration 25.
 Prefix SENGAJA bukan /api/v1/management/coa/... supaya tidak bentrok dengan
@@ -372,15 +375,15 @@ def buat_opening_balance(
         as_of = payload.as_of_date or _awal_tahun_buku(payload.fiscal_year)
         _validasi_tanggal(payload.fiscal_year, as_of)
         branch = _rapikan(payload.branch)
-        bentrok = session.query(OB).filter(
-            OB.client_id == client_id, OB.fiscal_year == payload.fiscal_year, OB.deleted_at.is_(None),
-            func.coalesce(OB.branch, "") == (branch or ""),
-        ).first()
+        # Aturan bisnis: 1 klien hanya boleh punya 1 opening balance (apa pun
+        # tahun buku/cabangnya). Koreksi lewat Revise, bukan set baru.
+        bentrok = session.query(OB).filter(OB.client_id == client_id, OB.deleted_at.is_(None)).first()
         if bentrok:
             raise _Gagal(
-                f"Opening balance tahun buku {payload.fiscal_year} untuk "
-                f"{'cabang ' + branch if branch else 'tanpa cabang'} sudah ada.",
-                kode="DUPLICATE", status_code=409,
+                f"This client already has an opening balance (FY {bentrok.fiscal_year}"
+                f"{' · ' + bentrok.branch if bentrok.branch else ''}). An opening balance can only be created once "
+                "per client — use Revise on the existing one to make corrections.",
+                kode="ALREADY_EXISTS", status_code=409,
             )
         suspense_id = str(payload.suspense_coa_id) if payload.suspense_coa_id else None
         if suspense_id:

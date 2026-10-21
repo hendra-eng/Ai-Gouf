@@ -1,4 +1,4 @@
-'use client';
+import OtherPage from './components/OtherWorkspace';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import KpiCard from '@/components/shared/KpiCard';

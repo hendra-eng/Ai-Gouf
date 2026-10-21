@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CircleCheck, Eye, GitCompareArrows, Landmark, LayoutGrid } from 'lucide-react';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import CashBankTransactionModal from './CashBankTransactionModal';
 import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Database, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import TabNav from '@/components/ui/TabNav';
@@ -12,6 +14,7 @@ interface Tab {
   id: string;
   label: string;
   href: string;
+  icon: React.ElementType;
   description: string;
   icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
@@ -24,6 +27,7 @@ const tabs: Tab[] = [
     icon: LayoutDashboard,
     label: 'Overview',
     href: '/transactions/bank-cash/overview',
+    icon: LayoutGrid,
     description: 'Cash flow summary, balance per account & reconciliation status',
   },
   {
@@ -31,6 +35,7 @@ const tabs: Tab[] = [
     icon: ArrowUpRight,
     label: 'Cash Payment',
     href: '/transactions/bank-cash/cash-payment',
+    icon: ArrowUpRight,
     description: 'Posted Purchase bills & their payment status',
   },
   {
@@ -38,6 +43,7 @@ const tabs: Tab[] = [
     icon: ArrowDownLeft,
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
+    icon: ArrowDownLeft,
     description: 'Posted Sales invoices & their receipt status',
   },
   {
@@ -59,6 +65,7 @@ const tabs: Tab[] = [
     icon: Eye,
     label: 'Journal Preview',
     href: '/transactions/bank-cash/journal-preview',
+    icon: Eye,
     description: 'Review cash & bank journals, then Approve and Post them to the ledger',
   },
   {
@@ -66,6 +73,7 @@ const tabs: Tab[] = [
     icon: AlertTriangle,
     label: 'Exceptions',
     href: '/transactions/bank-cash/exceptions',
+    icon: AlertTriangle,
     description: 'Manage and follow up cash & bank items that need review',
   },
   {
@@ -73,6 +81,7 @@ const tabs: Tab[] = [
     icon: CheckCircle2,
     label: 'Posted',
     href: '/transactions/bank-cash/posted',
+    icon: CircleCheck,
     description: 'Cash & bank transactions posted to the ledger (and their reversals)',
   },
 ];

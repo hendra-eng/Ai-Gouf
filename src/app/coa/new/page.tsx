@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import CoaFormPage from '../components/CoaFormPage';
 
 export const metadata = {
-  title: 'New Account — Chart of Accounts — FinovaAI',
+  title: 'New Account — Chart of Accounts — zafeb',
 };
 
 export default function CoaNewPage() {

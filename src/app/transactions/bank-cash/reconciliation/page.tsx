@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { LinkIcon, XMarkIcon, BoltIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import CashBankTabs from '../components/CashBankTabs';
+import { tabBarCls, tabListCls, tabCls } from '@/components/shared/moduleUi';
 import NonInvoiceForm from '../components/NonInvoiceForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatIDR } from '../../lib/groupAnalytics';
@@ -214,25 +215,23 @@ export default function ReconciliationPage() {
 
       <ReconciliationSummary accounts={overview?.accounts ?? []} />
 
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-1 border border-border w-fit">
+      <div className={`${tabBarCls} mb-4`}>
+        <nav className={tabListCls}>
           {(['unreconciled', 'reconciled'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                tab === t ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={tabCls(tab === t)}
             >
               {t === 'unreconciled' ? `Unreconciled (${unmatchedMutations.length})` : `Reconciled (${matchedMutations.length})`}
             </button>
           ))}
-        </div>
+        </nav>
         {tab === 'unreconciled' && (
           <button
             onClick={handleAuto}
             disabled={autoRunning || loading || unmatchedMutations.length === 0}
-            className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mb-2 flex w-fit items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed lg:mb-0"
             title="Automatically match certain lines (exact amount + invoice number/party name, no competing candidate). The rest is logged in Exceptions."
           >
             <BoltIcon className="w-3.5 h-3.5" />

@@ -682,7 +682,8 @@ function AddClientModal({
   initialClient?: Client;
 }) {
   const isEditMode = !!initialClient;
-  const [clientCode, setClientCode] = useState(initialClient?.clientCode ?? '');
+  // Client code dibuat otomatis oleh backend (singkatan nama, dibuat unik) -- di form hanya ditampilkan.
+  const clientCode = initialClient?.clientCode ?? '';
   const [companyName, setCompanyName] = useState(initialClient?.companyName ?? '');
   const [industry, setIndustry] = useState(initialClient?.industry && initialClient.industry !== '-' ? initialClient.industry : '');
   // Pilihan industri = INDUSTRY (ENGLISH) dari COA_Industry.xlsx; client baru
@@ -787,12 +788,12 @@ function AddClientModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Client Code</label>
-              <input
-                value={clientCode}
-                onChange={e => setClientCode(e.target.value)}
-                placeholder="CLT-0001"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-card focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
+              <div className="w-full text-sm font-mono border border-border rounded-lg px-3 py-2 bg-slate-50 text-slate-600 truncate">
+                {isEditMode ? (clientCode && clientCode !== '-' ? clientCode : '—') : (singkatanNama(companyName) || 'Auto')}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {isEditMode ? 'Generated automatically; cannot be changed.' : 'Generated from the company name (made unique on save).'}
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-foreground mb-1">Company Name *</label>
@@ -906,6 +907,21 @@ function AddClientModal({
 }
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
+
+
+// Pratinjau client code = cermin db_client.singkatan_nama_klien (backend yang menentukan
+// kode final & menambah angka kalau sudah dipakai, mis. SAU2).
+const KATA_BADAN_USAHA = new Set(['PT', 'CV', 'TBK', 'UD', 'PD', 'FA', 'FIRMA', 'PERSERO', 'PERUM', 'KOPERASI', 'KOP', 'YAYASAN',
+  'LTD', 'LIMITED', 'INC', 'CORP', 'CO', 'LLC', 'PTE']);
+
+function singkatanNama(nama: string): string {
+  const kata = nama.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  if (!kata.length) return '';
+  const inti = kata.filter(k => !KATA_BADAN_USAHA.has(k));
+  const pakai = inti.length ? inti : kata;
+  if (pakai.length === 1) return pakai[0].slice(0, 3);
+  return pakai.map(k => (/^\d+$/.test(k) ? k : k[0])).join('').slice(0, 20);
+}
 
 export default function ClientsPageClient() {
   const { fx } = useCurrency();

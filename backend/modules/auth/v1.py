@@ -323,7 +323,7 @@ def login(payload: LoginRequest):
     user = auth.authenticate(payload.username, payload.password)
     if not user:
         return gagal(
-            message="Username atau password salah.",
+            message="Incorrect username or password.",
             errors={"code": "INVALID_CREDENTIALS"},
             status_code=401,
         )
@@ -341,7 +341,7 @@ def login(payload: LoginRequest):
                 "nama": user.get("nama"),
             },
         },
-        message="Login berhasil.",
+        message="Login successful.",
     )
 
 

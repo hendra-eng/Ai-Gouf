@@ -1,5 +1,5 @@
 "use client";
-// [MIGRASI] Diporting dari project React+Vite "AI Gouf Consulting" (ChatPage.jsx)
+// [MIGRASI] Diporting dari project React+Vite "AI zafeb" (ChatPage.jsx)
 // ke dalam Next.js App Router sebagai halaman "Agent AI" di dashboard Finova AI.
 // Path import di bawah ini disesuaikan (semua jadi relatif ke folder
 // src/app/agent-ai/ ini sendiri, bukan lagi ../lib atau ../components dari
@@ -28,7 +28,7 @@ import "./theme.css";
 // string URL langsung, jadi tidak bisa dipakai langsung di <img src=.../>
 // biasa seperti di project Vite aslinya. Path public/ selalu berupa
 // string URL, jadi lebih aman dipakai persis seperti sebelumnya.
-const logoIcon = "/agent-ai-migration/images/logo-gouf-icon-cyan.png";
+const logoIcon = "/assets/images/zafeb-mark.png";
 
 // [BARU] Decode base64 hasil laporan_14_sheet (lihat main.py::
 // _auto_generate_laporan_14_sheet) jadi file Excel & langsung trigger
@@ -1087,8 +1087,8 @@ function AgentAIChatInner() {
         {isLanding && (
           <>
             <h1 className="landing-title">
-              <Image src={logoIcon} alt="Gouf Consulting" className="landing-logo" width={459} height={543} />
-              AI Gouf Consulting
+              <Image src={logoIcon} alt="zafeb" className="landing-logo" width={256} height={256} />
+              AI zafeb
             </h1>
             <p className="landing-subtitle">Upload satu file Excel — dan aku akan menyelesaikan semua masalahmu!</p>
           </>

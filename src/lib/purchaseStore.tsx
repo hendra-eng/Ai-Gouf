@@ -41,6 +41,7 @@ import type {
   PurchaseSourceRecord,
   PurchaseException,
 } from '@/data/purchaseData';
+import type { ImportTemplateSummary } from '@/lib/importTemplates';
 
 const PURCHASE_CHANGED_EVENT = 'gouf-purchase-changed';
 

@@ -168,7 +168,7 @@ export interface Settlement {
   reference_date: string | null;
   payment_method: PaymentMethod | null;
   currency: string;
-  source: 'bank_feed' | 'manual' | 'ar' | 'ap';
+  source: 'bank_feed' | 'manual' | 'ar' | 'ap' | 'tax';
   status: SettlementStatus;
   approved_at: string | null;
   approved_by_name: string | null;

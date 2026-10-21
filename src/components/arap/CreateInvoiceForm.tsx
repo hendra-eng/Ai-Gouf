@@ -8,6 +8,8 @@
 // item & detail pajak (modules/finance/receivables_ar_v1.py). Submit for
 // Approval -> disetujui & diposting di Sales > Journal Preview, baru masuk AR.
 // Mode edit: ?id=<invoice>. Prefill customer: ?customer=<nama>.
+// Dipakai juga dari Sales > Sales Transaction (context="sales"): form sama,
+// cuma breadcrumb & halaman tujuan setelah simpan/cancel yang beda.
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -76,6 +78,24 @@ function SectionTitle({ icon: Ikon, title, subtitle, tone = 'bg-sky-50 text-sky-
     </div>
   );
 }
+
+export type InvoiceFormContext = 'ar' | 'sales';
+
+// Breadcrumb + halaman asal per pemanggil form.
+const KONTEKS: Record<InvoiceFormContext, { crumbs: { label: string; href: string }[]; list: string; self: string; subtitle: string }> = {
+  ar: {
+    crumbs: [{ label: 'Accounts Receivable', href: '/accounts-receivable' }, { label: 'Invoices', href: '/accounts-receivable?tab=invoices' }],
+    list: '/accounts-receivable?tab=invoices',
+    self: '/accounts-receivable/invoices/new',
+    subtitle: 'Create a customer invoice to record a trade receivable.',
+  },
+  sales: {
+    crumbs: [{ label: 'Sales', href: '/transactions/sales' }, { label: 'Sales Transaction', href: '/transactions/sales?tab=sales-transaction' }],
+    list: '/transactions/sales?tab=sales-transaction',
+    self: '/transactions/sales/invoice/new',
+    subtitle: 'Create a sales transaction (customer invoice). After approval and posting it is recorded as a trade receivable.',
+  },
+};
 
 /** Pilih customer dari master / invoice, atau ketik nama baru. */
 function CustomerPicker({ customers, value, onPick, onClear, disabled }: {
@@ -311,7 +331,8 @@ function PreviewModal({ data, ring, clientName, onClose }: {
   );
 }
 
-function CreateInvoiceInner() {
+function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
+  const ktx = KONTEKS[context];
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get('id');
@@ -453,13 +474,13 @@ function CreateInvoiceInner() {
       const r = asal ? await updateInvoiceEntry(asal.id, input) : await createInvoiceEntry(input);
       toast.success(r.message);
       if (submit) {
-        router.push('/accounts-receivable?tab=invoices');
+        router.push(ktx.list);
       } else {
         setAsal(r.data);
         setNomor(r.data.invoice_no); setNomorManual(true);
         setCustomerId(r.data.customer_id);
         customers.refresh();
-        if (!editId) router.replace(`/accounts-receivable/invoices/new?id=${r.data.id}`, { scroll: false });
+        if (!editId) router.replace(`${ktx.self}?id=${r.data.id}`, { scroll: false });
       }
     } catch (err) {
       toast.error((err as Error).message);
@@ -474,7 +495,7 @@ function CreateInvoiceInner() {
     try {
       const r = await deleteInvoiceEntry(kid, asal.id);
       toast.success(r.message);
-      router.push('/accounts-receivable?tab=invoices');
+      router.push(ktx.list);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -495,10 +516,12 @@ function CreateInvoiceInner() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <nav className="mb-1 flex flex-wrap items-center gap-2 text-sm">
-              <Link href="/accounts-receivable" className="text-muted-foreground hover:text-foreground hover:underline">Accounts Receivable</Link>
-              <ChevronRight size={14} className="text-muted-foreground" />
-              <Link href="/accounts-receivable?tab=invoices" className="text-muted-foreground hover:text-foreground hover:underline">Invoices</Link>
-              <ChevronRight size={14} className="text-muted-foreground" />
+              {ktx.crumbs.map(c => (
+                <React.Fragment key={c.href}>
+                  <Link href={c.href} className="text-muted-foreground hover:text-foreground hover:underline">{c.label}</Link>
+                  <ChevronRight size={14} className="text-muted-foreground" />
+                </React.Fragment>
+              ))}
               <span className="font-semibold text-foreground">{asal ? asal.invoice_no : 'Create Invoice'}</span>
             </nav>
             <h1 className="flex flex-wrap items-center gap-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -509,11 +532,11 @@ function CreateInvoiceInner() {
                 </span>
               )}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">Create a customer invoice to record a trade receivable.</p>
+            <p className="mt-1 text-sm text-muted-foreground">{ktx.subtitle}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => setPreview(true)} className={btnOutline}><Eye size={16} /> Preview</button>
-            <Link href="/accounts-receivable?tab=invoices" className={btnOutline}>Cancel</Link>
+            <Link href={ktx.list} className={btnOutline}>Cancel</Link>
             {asal?.editable && (
               <button type="button" onClick={hapus} disabled={!!busy || !bolehInput} className={`${btnOutline} text-rose-600`}>
                 {busy === 'delete' ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Delete
@@ -807,10 +830,10 @@ function CreateInvoiceInner() {
   );
 }
 
-export default function CreateInvoiceForm() {
+export default function CreateInvoiceForm({ context = 'ar' }: { context?: InvoiceFormContext }) {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
-      <CreateInvoiceInner />
+      <CreateInvoiceInner context={context} />
     </Suspense>
   );
 }

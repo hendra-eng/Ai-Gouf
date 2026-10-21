@@ -2,6 +2,7 @@
 import TabNav from '@/components/ui/TabNav';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import Link from 'next/link';
 import {
   PieChart, BarChart3, ShoppingCart, Package, Building2, CreditCard, FileText, Settings,

@@ -3,6 +3,7 @@
 // Editor saldo awal 1 set (/coa/opening-balances/[id]): tabel seluruh akun COA
 // klien (dikelompokkan per klasifikasi) dengan input debit/kredit, footer
 // sticky berisi total & selisih, serta aksi Save / Post / Revise / Lock.
+// Dua tab: "Import Data" (OpeningBalanceImportTab, default) dan "Detail" (editor ini).
 //
 // Status draft = bisa diedit. Posted/locked = read-only (Revise membalik
 // jurnal lama & mengembalikan ke draft). Selisih debit-kredit TIDAK diblok:
@@ -14,7 +15,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, FileText, GitBranch, Inbox, ListTree, Loader2,
-  Lock, LockOpen, RotateCcw, Save, Search, Send, Trash2, X,
+  Lock, LockOpen, RotateCcw, Save, Search, Send, Table2, Trash2, Upload, X,
 } from 'lucide-react';
 import { ACCOUNT_CLASSIFICATIONS, useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import {
@@ -31,7 +32,9 @@ import {
   updateOpeningBalance,
   type OpeningBalanceDetail,
 } from '@/lib/openingBalanceStore';
+import { useClientsList } from '@/lib/clientsStore';
 import { labelClassification, themeOf } from '../../components/coaTheme';
+import OpeningBalanceImportTab from './OpeningBalanceImportTab';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
 
 const NERACA = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
@@ -48,6 +51,7 @@ const inputCls =
   'transition-shadow focus:outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500';
 
 type Nilai = { debit: string; credit: string };
+type Tab = 'import' | 'detail';
 type Aksi = 'save' | 'post' | 'revise' | 'lock' | 'unlock' | 'delete' | null;
 
 function nilaiDariDetail(ob: OpeningBalanceDetail): Record<string, Nilai> {
@@ -84,6 +88,8 @@ export default function OpeningBalanceEditorClient() {
   const [tertutup, setTertutup] = useState<Set<string>>(new Set());
   const [sorotPenampung, setSorotPenampung] = useState(false);
   const penampungRef = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<Tab>('import');
+  const { clients } = useClientsList();
 
   const { accounts, loading: loadingCoa } = useClientCoa(ob?.client_id ?? null);
 
@@ -296,7 +302,7 @@ export default function OpeningBalanceEditorClient() {
   const tombolSekunder = 'flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50';
 
   return (
-    <div className="min-h-screen bg-background pb-32">
+    <div className={`min-h-screen bg-background ${tab === 'detail' ? 'pb-32' : 'pb-10'}`}>
       {/* Header */}
       <div className="pb-2">
         <div className="mx-auto max-w-screen-2xl">
@@ -349,6 +355,18 @@ export default function OpeningBalanceEditorClient() {
               )}
             </div>
           </div>
+        </div>
+        {/* Tab: Import Data | Detail */}
+        <div className="mx-auto flex max-w-screen-2xl gap-1 px-6">
+          {([['import', 'Import Data', Upload], ['detail', 'Detail', Table2]] as const).map(([k, label, Icon]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${tab === k ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -586,6 +604,7 @@ export default function OpeningBalanceEditorClient() {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 }

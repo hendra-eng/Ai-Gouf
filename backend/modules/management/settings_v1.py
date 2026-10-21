@@ -475,6 +475,8 @@ ACCOUNT_MAPPING_GROUPS: List[Tuple[str, str, List[Tuple[str, str]]]] = [
     ("others", "Others", [
         ("opening_balance_equity", "Opening Balance Equity"),
         ("fixed_asset", "Fixed Asset"),
+        ("accumulated_depreciation", "Accumulated Depreciation"),
+        ("depreciation_expense", "Depreciation Expense"),
     ]),
 ]
 ACCOUNT_MAPPING_KEYS = {k for _, _, items in ACCOUNT_MAPPING_GROUPS for k, _ in items}
@@ -530,12 +532,16 @@ def _account_mapping_data(session: Any, client_id: str) -> Dict[str, Any]:
                 "used_in": ACCOUNT_MAPPING_DIPAKAI.get(k),
                 "coa_id": m_coa[1].id if m_coa else None,
                 "coa": _coa_ringkas(m_coa[1]) if m_coa else None,
+                "is_locked": bool(m_coa and m_coa[0].is_locked),
+                "locked_at": m_coa[0].locked_at if m_coa else None,
+                "locked_by_name": m_coa[0].locked_by_name if m_coa else None,
             })
         groups.append({"key": g_key, "label": g_label, "items": isi})
     return {
         "client_id": client_id,
         "groups": groups,
         "mapped": len(per_key.keys() & ACCOUNT_MAPPING_KEYS),
+        "locked": sum(1 for m, _ in rows if m.is_locked),
         "total": len(ACCOUNT_MAPPING_KEYS),
         "edited_at": terakhir,
     }
@@ -597,6 +603,15 @@ def simpan_account_mapping(
                 dbc.ManagementSettingAccountMapping.mapping_key.in_(list(payload.mappings)),
             )
         }
+        terkunci = sorted(k for k, v in payload.mappings.items()
+                          if ada.get(k) is not None and ada[k].is_locked and (v is None or str(v) != ada[k].coa_id))
+        if terkunci:
+            label = {k: l for _, _, items in ACCOUNT_MAPPING_GROUPS for k, l in items}
+            return gagal(
+                message="Locked mapping cannot be changed: " + ", ".join(label.get(k, k) for k in terkunci) + ". Unlock it first.",
+                errors={"code": "MAPPING_LOCKED", "fields": terkunci},
+                status_code=409,
+            )
         sekarang, uid = datetime.now(), current_user.get("id")
         for key, coa_id in payload.mappings.items():
             row = ada.get(key)
@@ -608,7 +623,53 @@ def simpan_account_mapping(
             elif row.coa_id != str(coa_id):
                 row.coa_id, row.edited_at, row.edited_by = str(coa_id), sekarang, uid
         session.commit()
-        return sukses(data=_account_mapping_data(session, cid), message="Account mapping disimpan.")
+        return sukses(data=_account_mapping_data(session, cid), message="Account mapping saved.")
+    except Exception as e:
+        session.rollback()
+        pesan = dbc.pesan_mapping_terkunci(e)
+        if pesan:
+            return gagal(message=pesan, errors={"code": "MAPPING_LOCKED"}, status_code=409)
+        raise
+    finally:
+        session.close()
+
+
+class AccountMappingLockInput(BaseModel):
+    keys: List[str] = Field(..., min_length=1)
+    locked: bool
+
+
+@router.put("/account-mapping/lock", summary="Kunci / buka kunci mapping (hanya mapping yang sudah terisi)")
+def kunci_account_mapping(
+    payload: AccountMappingLockInput,
+    client_id: UUID = Query(..., description="management_clients.id (company terpilih)."),
+    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_UBAH_SETTING)),
+):
+    """Mapping terkunci tidak bisa diubah/dihapus dari menu mana pun (trigger DB
+    migration 43), termasuk akun COA-nya, sampai dibuka lagi di sini."""
+    cid = str(client_id)
+    tak_dikenal = sorted(set(payload.keys) - ACCOUNT_MAPPING_KEYS)
+    if tak_dikenal:
+        return gagal(message=f"Unknown mapping: {', '.join(tak_dikenal)}.", errors={"code": "VALIDATION_ERROR"}, status_code=422)
+    session = dbc.SessionLocal()
+    try:
+        rows = session.query(dbc.ManagementSettingAccountMapping).filter(
+            dbc.ManagementSettingAccountMapping.client_id == cid,
+            dbc.ManagementSettingAccountMapping.mapping_key.in_(payload.keys),
+        ).all()
+        kosong = sorted(set(payload.keys) - {r.mapping_key for r in rows})
+        if payload.locked and kosong:
+            return gagal(message="Only mapped accounts can be locked. Empty: " + ", ".join(kosong) + ".",
+                         errors={"code": "NOT_MAPPED", "fields": kosong}, status_code=422)
+        for r in rows:
+            if payload.locked and not r.is_locked:
+                r.is_locked, r.locked_at, r.locked_by = True, datetime.now(), current_user.get("id")
+                r.locked_by_name = current_user.get("nama") or current_user.get("username")
+            elif not payload.locked and r.is_locked:
+                r.is_locked, r.locked_at, r.locked_by, r.locked_by_name = False, None, None, None
+        session.commit()
+        return sukses(data=_account_mapping_data(session, cid),
+                      message=f"{len(rows)} mapping(s) {'locked' if payload.locked else 'unlocked'}.")
     except Exception:
         session.rollback()
         raise

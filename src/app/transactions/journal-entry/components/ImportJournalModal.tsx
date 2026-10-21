@@ -55,7 +55,9 @@ interface ParsedGroup {
 
 type ImportResult = { je_number: string; ok: boolean; message: string };
 
-const HEADER_ALIASES: Record<string, string[]> = {
+// Diekspor juga untuk modal Mapping Rules tab Source Data (bagian kolom generik).
+export const JE_REQUIRED_COLUMNS = ['je_number', 'entry_date', 'account_code'];
+export const HEADER_ALIASES: Record<string, string[]> = {
   je_number: ['jenumber', 'je number', 'journal entry number', 'journalno', 'nojurnal', 'nomorjurnal'],
   entry_date: ['date', 'entrydate', 'entry date', 'tanggal'],
   description: ['description', 'deskripsi', 'desc', 'keterangan'],
@@ -85,8 +87,7 @@ function petakanHeader(headers: string[]): Record<string, string> {
 function parseFileToGroups(rows: Record<string, unknown>[]): { groups: ParsedGroup[]; missingColumns: string[] } {
   if (rows.length === 0) return { groups: [], missingColumns: [] };
   const headerMap = petakanHeader(Object.keys(rows[0]));
-  const wajib = ['je_number', 'entry_date', 'account_code'];
-  const missingColumns = wajib.filter(f => !headerMap[f]);
+  const missingColumns = JE_REQUIRED_COLUMNS.filter(f => !headerMap[f]);
   if (missingColumns.length > 0) return { groups: [], missingColumns };
 
   const groupsByJe = new Map<string, ParsedGroup>();

@@ -61,6 +61,7 @@ from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, t
     _hash_baris,
     _parse_angka,
     _parse_tanggal,
+    ringkas_import_template,
 )
 
 logger = get_module_logger("transactions_journal_entry_import_v1")
