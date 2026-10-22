@@ -7,7 +7,7 @@ import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { useOtherWorkspace, OtherActionButtons } from '../components/OtherWorkspace';
+import { useOtherWorkspace, OtherActionButtons } from '../components/OtherJournalWorkspace';
 import { buildOtherExceptions, journalChecks, workflowLabel, OTHER_STATUS_VARIANT, type JournalStatus } from '../lib/otherJournals';
 
 // OTHER TRANSACTION = ruang kerja jurnal (master-detail). Kiri: daftar jurnal

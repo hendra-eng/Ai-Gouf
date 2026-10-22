@@ -5,7 +5,7 @@ import { Search, CheckCircle2, AlertTriangle, XCircle, ChevronRight, Plus, Downl
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { useOtherWorkspace, OtherActionButtons, type OtherWorkspace } from '../components/OtherWorkspace';
+import { useOtherWorkspace, OtherActionButtons, type OtherWorkspace } from '../components/OtherJournalWorkspace';
 import { buildOtherExceptions, journalChecks, readinessOf, workflowLabel, OTHER_STATUS_VARIANT, type Readiness, type OtherJournal } from '../lib/otherJournals';
 
 // JOURNAL PREVIEW = antrian posting. Setiap jurnal belum-posting tampil seperti

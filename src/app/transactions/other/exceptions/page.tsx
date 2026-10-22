@@ -6,7 +6,7 @@ import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { useOtherWorkspace, OtherActionButtons, type OtherWorkspace } from '../components/OtherWorkspace';
+import { useOtherWorkspace, OtherActionButtons, type OtherWorkspace } from '../components/OtherJournalWorkspace';
 import {
   buildOtherExceptions, allowedActions, EXCEPTION_TYPES, REMEDIATION,
   type OtherException, type ExceptionSeverity, type ExceptionType,

@@ -8,7 +8,7 @@ import type { Transaction } from '../../components/transactionData';
 import { formatIDR, formatDate, CHART_COLORS } from '../../lib/groupAnalytics';
 import JePagination, { JE_PAGE_SIZE } from '../../journal-entry/components/JePagination';
 import OtherTabs from '../components/OtherTabs';
-import { useOtherWorkspace } from '../components/OtherWorkspace';
+import { useOtherWorkspace } from '../components/OtherJournalWorkspace';
 import { sourceLabelOf, lineIssues, buildOtherExceptions, allowedActions } from '../lib/otherJournals';
 
 // SOURCE DATA = pintu masuk data. Fokus: dari mana data berasal dan seberapa

@@ -8,7 +8,7 @@ import TransactionDrawer from '../../components/TransactionDrawer';
 import type { Transaction } from '../../components/transactionData';
 import { formatIDR, formatDate } from '../../lib/groupAnalytics';
 import OtherTabs from '../components/OtherTabs';
-import { useOtherWorkspace } from '../components/OtherWorkspace';
+import { useOtherWorkspace } from '../components/OtherJournalWorkspace';
 import { buildOtherExceptions, monthKeyOf, monthLabelOf, OTHER_STATUS_VARIANT, type OtherJournal } from '../lib/otherJournals';
 
 // POSTED = arsip buku besar. Fokus: ritme posting dari waktu ke waktu (grafik

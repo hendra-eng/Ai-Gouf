@@ -108,6 +108,7 @@ from modules.management import documents_v1 as management_documents_v1  # [BARU]
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
 from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # /api/v1/asset/fixed-assets/... (halaman Fixed Assets, migration 39)
 from modules.assets_and_equity import inventory_v1 as asset_inventory_v1  # /api/v1/asset/inventory/... (halaman Inventory, migration 40)
+from modules.assets_and_equity import other_transactions_v1 as asset_other_transactions_v1  # /api/v1/asset/other-transactions/... (Transactions > Other, migration 48)
 from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # /api/v1/planning/tax/... (halaman Tax Compliance, migration 41)
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
 from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview
@@ -369,6 +370,7 @@ app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
 app.include_router(asset_fixed_assets_v1.router)  # /api/v1/asset/fixed-assets/... register, penyusutan, disposal, jurnal FA, laporan
 app.include_router(asset_inventory_v1.router)  # /api/v1/asset/inventory/... item, gudang, dokumen stok, kartu stok, jurnal INV, laporan
+app.include_router(asset_other_transactions_v1.router)  # /api/v1/asset/other-transactions/... template, review, post, reverse, lampiran, import
 app.include_router(planning_tax_compliance_v1.router)  # /api/v1/planning/tax/... ledger pajak, PPh, PPN, setoran, SPT, rekonsiliasi, temuan
 app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
 app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri
