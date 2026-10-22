@@ -104,6 +104,7 @@ from modules.management import documents_v1 as management_documents_v1  # [BARU]
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
 from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # /api/v1/asset/fixed-assets/... (halaman Fixed Assets, migration 39)
 from modules.assets_and_equity import inventory_v1 as asset_inventory_v1  # /api/v1/asset/inventory/... (halaman Inventory, migration 40)
+from modules.assets_and_equity import other_transactions_v1 as asset_other_transactions_v1  # /api/v1/asset/other-transactions/... (Transactions > Other, migration 48)
 from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # /api/v1/planning/tax/... (halaman Tax Compliance, migration 41)
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
 from modules.finance import receivables_payables_v1 as finance_receivables_payables_v1  # [BARU] /api/v1/finance/receivables|payables -- Accounts Receivable & Accounts Payable
@@ -121,7 +122,6 @@ from modules.transactions import journal_entry_v1 as transactions_journal_entry_
 from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
 from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
-from modules.transactions import other_v1 as transactions_other_v1  # Transactions > Other: /api/v1/transactions/other/... (jurnal lain-lain, migration 42)
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
 from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
@@ -388,6 +388,7 @@ app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
 app.include_router(asset_fixed_assets_v1.router)  # /api/v1/asset/fixed-assets/... register, penyusutan, disposal, jurnal FA, laporan
 app.include_router(asset_inventory_v1.router)  # /api/v1/asset/inventory/... item, gudang, dokumen stok, kartu stok, jurnal INV, laporan
+app.include_router(asset_other_transactions_v1.router)  # /api/v1/asset/other-transactions/... template, review, post, reverse, lampiran, import
 app.include_router(planning_tax_compliance_v1.router)  # /api/v1/planning/tax/... ledger pajak, PPh, PPN, setoran, SPT, rekonsiliasi, temuan
 app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
 app.include_router(finance_receivables_payables_v1.router_ar)  # [BARU] /api/v1/finance/receivables -- Accounts Receivable (piutang atas Sales)
@@ -408,7 +409,6 @@ app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/trans
 app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
-app.include_router(transactions_other_v1.router)  # /api/v1/transactions/other/... -- jurnal Other (draft, approve, post, reverse)
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
 app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri

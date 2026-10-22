@@ -236,9 +236,9 @@ def _dokumen_belum_posted(session, client_id: str, dari: date, sampai: date) -> 
            and doc_date between :a and :b and status = 'draft'
     """), p).scalar() or 0
     lain = session.execute(text("""
-        select count(*) from financial_transaction_other_journals
+        select count(*) from asset_other_transactions
          where client_id = cast(:c as uuid) and deleted_at is null
-           and journal_date between :a and :b and status in ('draft', 'approved')
+           and journal_date between :a and :b and status in ('draft', 'pending_review', 'approved')
     """), p).scalar() or 0
     return {"journal_entry": int(je), "sales": int(sales), "purchase": int(purchase), "cash_bank": int(kas_bank),
             "fixed_asset": int(aset_tetap), "inventory": int(persediaan), "other": int(lain)}
@@ -297,7 +297,7 @@ def _susun_preview(session, buku: mapped.Buku, client_id: str, fy: int, akun_ld:
         (f"{belum['journal_entry']} journal entr{'y' if belum['journal_entry'] == 1 else 'ies'}, {belum['sales']} sales invoice(s), "
          f"{belum['purchase']} purchase(s), {belum['cash_bank']} cash & bank transaction(s) and "
          f"{belum['fixed_asset']} fixed asset depreciation batch(es)/disposal(s) and "
-         f"{belum['inventory']} inventory document(s) and {belum['other']} other journal(s) dated in FY {fy} are not posted. "
+         f"{belum['inventory']} inventory document(s) and {belum['other']} other transaction(s) dated in FY {fy} are not posted. "
          "After closing they can no longer be posted "
          "into this year.") if total_belum else "Everything dated in the year is posted.",
         counts=belum,

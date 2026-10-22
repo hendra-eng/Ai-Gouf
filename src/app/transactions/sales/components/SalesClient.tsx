@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus } from 'lucide-react';
 import { tabBadgeCls, tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
@@ -56,11 +57,18 @@ export default function SalesClient() {
             {activeTab === 'posted' && t('Daftar transaksi penjualan yang telah diposting ke dalam sistem akuntansi.')}
           </p>
         </div>
-        <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
-          <CalendarDays size={14} className="text-muted-foreground" />
-          <span className="text-foreground font-medium">01 Jan 2024 – 31 Dec 2024</span>
-          <ChevronDown size={14} className="text-muted-foreground" />
-        </button>
+        <div className="flex items-center gap-2">
+          {activeTab === 'sales-transaction' && (
+            <Link href="/transactions/sales/invoice/new" className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+              <Plus size={14} /> {t('Tambah Transaksi')}
+            </Link>
+          )}
+          <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
+            <CalendarDays size={14} className="text-muted-foreground" />
+            <span className="text-foreground font-medium">01 Jan 2024 – 31 Dec 2024</span>
+            <ChevronDown size={14} className="text-muted-foreground" />
+          </button>
+        </div>
       </div>
 
       {/* Tabs — gaya underline bersama (tabCls, acuan Transactions > Other). */}

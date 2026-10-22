@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text, Boolean, ForeignKey, text, UniqueConstraint, Index,
     Numeric, Date, func, JSON, or_, select,
     Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
+    LargeBinary,  # isi lampiran asset_other_transaction_attachments
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.exc import IntegrityError  # [BARU] dipakai upsert_bank_cash_exception (tabrakan unique index)
@@ -3607,6 +3608,183 @@ class OtherJournalLine(Base):
 
 
 # ============================================================
+# OTHER TRANSACTIONS (grup Assets & Equity, awalan asset_) --
+# modules/assets_and_equity/other_transactions_v1.py, UI
+# dataset/picture/Template UI/other/1-8.jpeg, migrations/48-*.py.
+# Menggantikan financial_transaction_other_journals (migration 42; tabel lama
+# tidak dihapus, isinya disalin migration 48).
+#
+#   asset_other_transaction_templates    template per jenis peristiwa bisnis
+#                                        (employee advance, security deposit, ...)
+#   asset_other_transaction_rules        aturan jurnal per template + sub jenis:
+#                                        akun default per peran (main/bank/offset/extra)
+#   asset_other_transactions             header OT-YYYY-#### draft -> pending_review
+#                                        -> approved -> posted -> reversed (atau rejected)
+#   asset_other_transaction_lines        jurnal hasil aturan (debit / kredit)
+#   asset_other_transaction_attachments  dokumen pendukung (disimpan di DB, maks 10 MB)
+#   asset_other_transaction_events       jejak aktivitas (submit, approve, post, ...)
+#
+# GL/FS membaca transaksi posted/reversed langsung (sumber "other").
+# ============================================================
+
+class OtherTransactionTemplate(Base):
+    __tablename__ = "asset_other_transaction_templates"
+    __table_args__ = (
+        UniqueConstraint("client_id", "code", name="uq_other_tx_template_code"),
+        Index("idx_other_tx_templates_client", "client_id", "type_key"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    type_key = Column(String(40), nullable=False)               # employee_advance / security_deposit / ...
+    code = Column(String(40), nullable=False)
+    name = Column(String(150), nullable=False)
+    description = Column(Text, nullable=True)
+    requires_approval = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    auto_post = Column(Boolean, nullable=False, default=False, server_default=text("false"))   # langsung post saat disetujui
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_system = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    sort_order = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class OtherTransactionRule(Base):
+    __tablename__ = "asset_other_transaction_rules"
+    __table_args__ = (
+        UniqueConstraint("template_id", "subtype", name="uq_other_tx_rule_subtype"),
+        Index("idx_other_tx_rules_client", "client_id"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_other_transaction_templates.id", ondelete="CASCADE"), nullable=False)
+    subtype = Column(String(40), nullable=False)                # loan_received / loan_repayment / ...
+    main_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    offset_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    extra_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class OtherTransaction(Base):
+    __tablename__ = "asset_other_transactions"
+    __table_args__ = (
+        UniqueConstraint("client_id", "journal_no", name="uq_other_tx_no"),
+        Index("idx_other_tx_client_status", "client_id", "status"),
+        Index("idx_other_tx_client_date", "client_id", "journal_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_other_transaction_templates.id"), nullable=True)
+    type_key = Column(String(40), nullable=False)
+    subtype = Column(String(40), nullable=False)
+    journal_no = Column(String(40), nullable=False)             # OT-YYYY-####
+    journal_date = Column(Date, nullable=False)
+    counterparty = Column(String(255), nullable=True)           # karyawan / vendor / lender / investor / entitas
+    counterparty_code = Column(String(100), nullable=True)      # mis. EMP-0012
+    reference_no = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    currency = Column(String(3), nullable=False, default="IDR", server_default=text("'IDR'"))
+    exchange_rate = Column(Numeric(18, 6), nullable=False, default=1, server_default=text("1"))
+    amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))        # total, mata uang transaksi
+    extra_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))  # porsi akun extra (bunga / tambahan modal disetor)
+    main_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    offset_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    extra_coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    branch = Column(String(150), nullable=True)
+    department = Column(String(150), nullable=True)
+    project = Column(String(150), nullable=True)
+    cost_center = Column(String(150), nullable=True)
+    due_date = Column(Date, nullable=True)                      # settlement due / review / maturity / due date
+    period_start = Column(Date, nullable=True)                  # claim period (reimbursement)
+    period_end = Column(Date, nullable=True)
+    details = Column(JSONB, nullable=True)                      # isian khusus jenis (interest rate, loan term, ...)
+    notes = Column(Text, nullable=True)
+    requires_approval = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    total_debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    total_credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))   # manual / import / legacy
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    submitted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    submitted_by_name = Column(String(255), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    approved_by_name = Column(String(255), nullable=True)
+    rejected_at = Column(DateTime(timezone=True), nullable=True)
+    rejected_by_name = Column(String(255), nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    posted_at = Column(DateTime(timezone=True), nullable=True)
+    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    posted_by_name = Column(String(255), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class OtherTransactionLine(Base):
+    __tablename__ = "asset_other_transaction_lines"
+    __table_args__ = (Index("idx_other_tx_lines_journal", "journal_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_other_transactions.id", ondelete="CASCADE"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    role = Column(String(20), nullable=True)                    # main / bank / offset / extra
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+
+
+class OtherTransactionAttachment(Base):
+    __tablename__ = "asset_other_transaction_attachments"
+    __table_args__ = (Index("idx_other_tx_attachments_tx", "transaction_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_other_transactions.id", ondelete="CASCADE"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=True)
+    size_bytes = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    content = Column(LargeBinary, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    uploaded_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    uploaded_by_name = Column(String(255), nullable=True)
+
+
+class OtherTransactionEvent(Base):
+    __tablename__ = "asset_other_transaction_events"
+    __table_args__ = (Index("idx_other_tx_events_tx", "transaction_id"),)
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("asset_other_transactions.id", ondelete="CASCADE"), nullable=False)
+    action = Column(String(30), nullable=False)                 # created / edited / submitted / approved / rejected / posted / reversed / ...
+    note = Column(Text, nullable=True)
+    actor_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    actor_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+
+# ============================================================
 # MODUL BANK & CASH (BARU) -- tabel "finance_transaction_bank_cash" dibuat
 # manual oleh user lewat Supabase SQL Editor (bukan lewat init_db()/
 # create_all()), skemanya SENGAJA dibuat identik dengan JurnalPosting di
@@ -6742,7 +6920,7 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
 
 
 def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
-                           sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+                           sampai_tanggal: Optional[date], kolom_pihak: str = "reference") -> List[Dict[str, Any]]:
     """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
     -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
     q = session.query(model).filter(model.client_id == management_client_id, model.status.in_(("posted", "reversed")))
@@ -6757,7 +6935,7 @@ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_
     hasil: List[Dict[str, Any]] = []
     for j in jurnal:
         dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
-                 "tanggal": j.journal_date, "pihak": j.reference, "segmen": {}}
+                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None), "segmen": {}}
         for l in baris_per_j.get(j.id, []):
             hasil.append({**dasar, "keterangan": l.description or j.description or j.journal_no,
                           "account_code": l.account_code, "account_name": l.account_name,
@@ -6935,8 +7113,10 @@ def ambil_baris_jurnal_posted_transaksi(
             hasil.extend(_baris_gl_aset_tetap(session, management_client_id, sampai_tanggal))
             # --- 6) Inventory (jurnal INV-... penyesuaian / HPP / penerimaan) ---
             hasil.extend(_baris_gl_persediaan(session, management_client_id, sampai_tanggal))
-            # --- 7) Transactions > Other (jurnal OTH-...) ---
-            hasil.extend(_baris_gl_jurnal_modul(session, OtherJournal, OtherJournalLine, "other", management_client_id, sampai_tanggal))
+            # --- 7) Other Transactions (OT-..., asset_other_transactions; jurnal OTH- lama
+            #        sudah disalin ke tabel ini oleh migration 48) ---
+            hasil.extend(_baris_gl_jurnal_modul(session, OtherTransaction, OtherTransactionLine, "other", management_client_id,
+                                                sampai_tanggal, kolom_pihak="counterparty"))
 
         return hasil
     except Exception as e:
