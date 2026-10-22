@@ -25,9 +25,9 @@ export type HasilGantiClient =
 
 // ---------- kata-kata ----------
 // kata kerja "kuat": cukup jelas berarti ganti client, walau kata "client" tidak disebut ("ganti ke sau")
-const KERJA_KUAT = ['ganti', 'gantikan', 'ganti ke', 'tukar', 'beralih', 'berpindah', 'ubah', 'switch', 'change', 'pilih', 'gunakan', 'pakai'];
+const KERJA_KUAT = ['ganti', 'gantiin', 'gantikan', 'ganti ke', 'tukar', 'beralih', 'berpindah', 'ubah', 'switch', 'change', 'pilih', 'gunakan', 'pakai'];
 // kata kerja "lemah": ambigu dengan navigasi halaman, jadi HANYA dianggap ganti-client bila ada kata "client"
-const KERJA_LEMAH = ['pindah', 'pindahkan', 'buka', 'bukakan', 'masuk', 'menuju', 'go', 'open', 'aktifkan'];
+const KERJA_LEMAH = ['pindah', 'pindahin', 'pindahkan', 'buka', 'bukakan', 'masuk', 'menuju', 'go', 'open', 'aktifkan'];
 
 const POLA_KERJA_KUAT = new RegExp(`\\b(?:${KERJA_KUAT.join('|')})\\b`);
 const POLA_KERJA_LEMAH = new RegExp(`\\b(?:${KERJA_LEMAH.join('|')})\\b`);
@@ -41,7 +41,19 @@ const KATA_BUANG = new Set([
   'tolong', 'dong', 'deh', 'ya', 'yah', 'aja', 'saja', 'donk', 'lah', 'sekarang', 'langsung', 'sini', 'neo',
   'ke', 'kepada', 'jadi', 'menjadi', 'yang', 'itu', 'ini', 'nya', 'dengan', 'untuk', 'to', 'the', 'please', 'into', 'on',
   'halaman', 'page', 'menu', 'tab', 'daftar', 'list', 'semua', 'data', 'kode', 'code', 'nama', 'bernama', 'berkode', 'berkod', 'bernomor', 'nomor', 'dari', 'aktif', 'active', 'halo', 'hai', 'oke', 'ok', 'saya', 'aku', 'mau', 'ingin', 'pengen', 'minta',
+  // [BARU] bahasa santai / kalimat panjang: "coba deh kamu pindah client jadi client sau"
+  'kamu', 'kau', 'kalian', 'anda', 'lu', 'lo', 'coba', 'cobain', 'sih', 'nih', 'tuh', 'kok', 'kan', 'yuk', 'yok', 'ayo', 'mari', 'gih', 'gitu', 'gini',
+  'bisa', 'bisakah', 'bisa-bisa', 'mohon', 'silakan', 'silahkan', 'harap', 'bantu', 'bantuin', 'bantuan', 'kita', 'kami', 'pengin', 'pingin', 'butuh', 'perlu', 'harus',
+  'lagi', 'dulu', 'bentar', 'sebentar', 'nanti', 'udah', 'sudah', 'biar', 'supaya', 'agar', 'terus', 'lalu', 'habis', 'abis', 'soalnya', 'karena', 'pas', 'kalau', 'kalo', 'jika',
+  'di', 'pada', 'buat', 'bagi', 'punya', 'milik', 'si', 'pak', 'bu', 'bapak', 'ibu', 'kak', 'bang', 'mas', 'mbak', 'sama', 'dan', 'atau', 'banget', 'bener', 'benar', 'langsung',
+  'jadinya', 'jadi-in', 'jadiin', 'kerjain', 'kerjakan', 'lihat', 'liat', 'tampilkan', 'tampilin', 'sebagai', 'adalah', 'ya', 'yaa', 'deh', 'dong', 'donk', 'aja', 'saja',
 ]);
+
+// [BARU] kata yang berarti BUKAN perintah (negasi) atau pertanyaan di tengah kalimat panjang
+const POLA_NEGASI = /\b(?:jangan|tidak|nggak|gak|enggak|ga|bukan|batal|batalkan|tanpa|tak)\b/;
+const POLA_TANYA_TENGAH = /\b(?:berapa|kenapa|mengapa|kapan|siapa|apakah|jelaskan|hitung|hitungkan|bagaimana|gimana)\b/;
+// kata penunjuk tujuan: "ke sau", "jadi sau", "menjadi sau"
+const KATA_TUJUAN = new Set(['ke', 'jadi', 'menjadi', 'to', 'into', 'kepada']);
 
 // nama huruf (cara orang mengeja) -> huruf. Dipakai bila STT menulis "en be em" untuk NBM.
 const NAMA_HURUF: Record<string, string> = {
@@ -109,6 +121,34 @@ function buatKandidat(token: string[]): string[] {
 const hurufSaja = (s: string) => s.replace(/[^a-z]/g, '');
 
 /**
+ * [BARU] Cari client yang KODE-nya disebut PERSIS di mana pun dalam kalimat (kalimat santai/panjang boleh).
+ * Mengembalikan posisi token awal tiap kode yang ditemukan. Hanya cocok persis dengan kode di daftar,
+ * baik satu token ("sau") maupun ejaan beruntun ("es a u", "en be em", "a nol satu").
+ */
+function cariKodeDisebut(token: string[], berkode: KlienSuara[]): { client: KlienSuara; posisi: number }[] {
+  const hasil = new Map<string, { client: KlienSuara; posisi: number }>();
+  const cocokkan = (bentuk: string, posisi: number) => {
+    const r = rapatkan(bentuk);
+    if (!r) return;
+    for (const c of berkode) {
+      if (rapatkan(c.clientCode) === r && !hasil.has(c.id)) hasil.set(c.id, { client: c, posisi });
+    }
+  };
+  for (let i = 0; i < token.length; i++) {
+    cocokkan(token[i], i);
+    // ejaan beruntun 2-6 token (huruf / nama huruf / angka)
+    let gabung = '';
+    for (let j = i; j < Math.min(token.length, i + 6); j++) {
+      const d = NAMA_HURUF[token[j]] ?? ANGKA[token[j]] ?? (token[j].length === 1 || /^\d+$/.test(token[j]) ? token[j] : null);
+      if (d === null) break;
+      gabung += d;
+      if (j > i) cocokkan(gabung, i);
+    }
+  }
+  return [...hasil.values()];
+}
+
+/**
  * Baca ucapan (boleh mentah) dan kembalikan hasil ganti-client, atau null bila ucapan ini BUKAN perintah
  * ganti client (diserahkan ke navigasi / AI seperti biasa).
  */
@@ -120,7 +160,13 @@ export function bacaGantiClient(
   const teks = normal(ucapan);
   if (!teks) return null;
   const token = teks.split(' ');
-  if (token.length > 12) return null; // perintah itu pendek; kalimat panjang = pertanyaan untuk AI
+  // [DIUBAH] Dulu > 12 kata langsung ditolak, sehingga kalimat santai seperti "coba deh kamu pindah client jadi client sau"
+  // tidak terbaca. Sekarang kalimat panjang boleh, asal tidak negasi ("jangan ganti client") dan tidak ada kata tanya.
+  if (token.length > 30) return null;
+  // "bisa nggak kamu pindahin..." / "mau gak ganti ke..." = permintaan sopan, BUKAN negasi
+  const tanpaBasaBasi = teks.replace(/\b(?:bisa|bisakah|mau|boleh|bisa-bisa)\s+(?:nggak|gak|enggak|ga|tidak)\b/g, ' ');
+  if (POLA_NEGASI.test(tanpaBasaBasi)) return null;
+  if (token.length > 12 && POLA_TANYA_TENGAH.test(teks)) return null;
 
   const adaKataClient = POLA_KATA_CLIENT.test(teks);
   const kuat = POLA_KERJA_KUAT.test(teks);
@@ -128,6 +174,23 @@ export function bacaGantiClient(
 
   // Pemicu: kata kerja kuat, ATAU kata kerja lemah + kata "client".
   if (!(kuat || (lemah && adaKataClient))) return null;
+
+  // [BARU] Kalimat santai/panjang: cukup temukan KODE client yang disebut persis di mana pun dalam kalimat.
+  // Syarat: ada kata "client" (bebas panjang) ATAU kalimat pendek (<= 12 kata) dengan kata kerja kuat.
+  if (adaKataClient || token.length <= 12) {
+    const disebut = cariKodeDisebut(token, daftar.filter((c) => rapatkan(c.clientCode).length > 0));
+    const aktifkanLangsung = (c: KlienSuara): HasilGantiClient => ({ jenis: 'ganti', client: c, sudahAktif: c.id === activeClientId });
+    if (disebut.length === 1) return aktifkanLangsung(disebut[0].client);
+    if (disebut.length > 1) {
+      // "pindah dari sau ke nbm": ambil yang didahului kata tujuan (ke/jadi/menjadi); kalau tetap tidak jelas -> serahkan ke LLM
+      const tujuan = disebut.filter((d) => {
+        for (let k = Math.max(0, d.posisi - 3); k < d.posisi; k++) if (KATA_TUJUAN.has(token[k])) return true;
+        return false;
+      });
+      if (tujuan.length === 1) return aktifkanLangsung(tujuan[0].client);
+      return null;
+    }
+  }
 
   // Sisa kata (selain kata kerja / pengisi / kata "client") = kode atau nama yang dimaksud.
   const sisa = token.filter((t) => !KATA_BUANG.has(t) && !POLA_KATA_CLIENT.test(t));
@@ -181,7 +244,7 @@ export function perluTanyaLLM(ucapan: string, daftar: KlienSuara[]): boolean {
   const teks = normal(ucapan);
   if (!teks) return false;
   const token = teks.split(' ');
-  if (token.length > 20 || POLA_TANYA.test(teks)) return false;
+  if (token.length > 40 || POLA_TANYA.test(teks) || POLA_NEGASI.test(teks)) return false;
   const kode = new Set(daftar.map((c) => rapatkan(c.clientCode)).filter(Boolean));
   const kandidat = new Set([...token.map(rapatkan), ...buatKandidat(token.filter((t) => !KATA_BUANG.has(t)))]);
   for (const k of kandidat) {

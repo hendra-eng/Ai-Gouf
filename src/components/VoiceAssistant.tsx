@@ -657,6 +657,17 @@ export default function VoiceAssistant() {
                 console.warn('[VoiceAssistant] Suara server ditolak, kalimat dilewati:', e?.status || '', e?.message || e);
                 return null;
               }
+              // [BARU] Gemini habis / tidak tersedia (502/503/504 dari /api/tts/stream): LANGSUNG minta /api/tts biasa, tanpa menunggu retry.
+              // Di sana backend memakai Edge TTS kalau semua kunci Gemini masih istirahat, atau Gemini kalau sudah ada kunci yang pulih.
+              // Kalimat berikutnya tetap mencoba Gemini (streaming) dulu, jadi begitu kunci pulih suara otomatis kembali ke Gemini.
+              if (e?.status === 502 || e?.status === 503 || e?.status === 504) {
+                try {
+                  return { blob: (await (api as any).ttsAudio(bersih, ctrl.signal, bahasaTts)) as Blob };
+                } catch (e2: any) {
+                  if (ctrl.signal.aborted || e2?.name === 'AbortError') return null;
+                  // Edge juga gagal -> lanjut ke coba-ulang biasa di bawah
+                }
+              }
               if (percobaan === JEDA_ULANG_MS.length) {
                 console.warn('[VoiceAssistant] Suara server (/api/tts) gagal, kalimat dilewati:', e?.status || '', e?.message || e);
                 return null;

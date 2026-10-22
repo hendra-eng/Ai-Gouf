@@ -48,7 +48,7 @@ MAKS_PANJANG_FAKTA = 500
 TTL_CACHE_DETIK = 60
 PEMILIK_GLOBAL = "__global__"   # pemilik khusus: pengetahuan aplikasi untuk semua pengguna
 MAKS_GLOBAL_SELALU = 6          # fakta global penting=3 yang selalu ikut
-MAKS_GLOBAL_RELEVAN = 4         # fakta global tambahan hasil pencocokan kata kunci
+MAKS_GLOBAL_RELEVAN = int(os.environ.get("AI_GLOBAL_RELEVAN", "8") or 8)
 
 
 def aktif() -> bool:

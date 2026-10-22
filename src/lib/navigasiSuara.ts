@@ -227,7 +227,22 @@ export const HALAMAN: Halaman[] = [
 // [DIUBAH] ditambah ganti / geser / lompat (dan padanannya): "ganti ke tab source data di sales" = pindah, BUKAN minta penjelasan.
 // (mis. "jelaskan apa itu laba rugi" tidak boleh langsung membuka halaman)
 const POLA_BUKA =
-  /\b(?:buka|bukakan|bukain|membuka|pergi|pindah|pindahkan|menuju|masuk|ke halaman|ke tab|ke menu|arahkan ke|bawa saya ke|bawa aku ke|navigasi ke|ganti|gantikan|geser|menggeser|lompat|melompat|loncat|beralih|berpindah|alihkan|go to|open|switch|change to|move to|jump to|shift to|navigate to|take me to)\b/;
+  /\b(?:buka|bukakan|bukain|membuka|pergi|pindah|pindahkan|menuju|masuk|ke halaman|ke tab|ke menu|arahkan ke|bawa saya ke|bawa aku ke|navigasi ke|ganti|gantikan|geser|menggeser|lompat|melompat|loncat|beralih|berpindah|alihkan|go to|open|switch|change to|move to|jump to|shift to|navigate to|take me to|pindahin|pindahkan aku ke|bawa ke|bawain|bawakan|anter|anterin|antar|tampilin|tampilkan|tunjukin|tunjukkan|munculin|munculkan|mau ke|pengen ke|pengin ke|ingin ke|yuk ke|ayo ke|langsung ke|kita ke|cabut ke|gantiin|kasih lihat|kasih liat)\b/;
+// [BARU] kata kerja santai yang ambigu ("lihat/cek") -> hanya dianggap perintah buka bila kalimatnya pendek
+const POLA_BUKA_LEMAH = /\b(?:lihat|liat|cek|cekin|periksa)\b/;
+const POLA_NEGASI_NAV = /\b(?:jangan|tidak|nggak|gak|enggak|ga|bukan|batal|batalkan|tanpa|tak)\b/;
+const POLA_TANYA_TENGAH_NAV = /\b(?:berapa|kenapa|mengapa|kapan|siapa|apakah|jelaskan|hitung|hitungkan|bagaimana|gimana)\b/;
+// "bisa nggak kamu buka..." = permintaan sopan, bukan negasi
+const hapusBasaBasi = (t: string) => t.replace(/\b(?:bisa|bisakah|mau|boleh)\s+(?:nggak|gak|enggak|ga|tidak)\b/g, ' ');
+// [BARU] ucapan santai boleh lebih panjang; tapi kalimat panjang yang bernada tanya/negasi tetap diserahkan ke AI
+const MAKS_KATA_SANTAI = 30;
+function layakSebagaiPerintah(teks: string): boolean {
+  const n = teks.split(' ').length;
+  if (n > MAKS_KATA_SANTAI) return false;
+  if (POLA_NEGASI_NAV.test(hapusBasaBasi(teks))) return false;
+  if (n > MAKS_KATA && POLA_TANYA_TENGAH_NAV.test(teks)) return false;
+  return true;
+}
 // kata pemicu khusus halaman form baru / export (hanya berlaku untuk halaman bertanda aksi, supaya
 // "buatkan ringkasan laba rugi" tetap dijawab AI dan tidak membuka halaman)
 const POLA_AKSI = /\b(?:buat|buatkan|bikin|bikinkan|tambah|tambahkan|create|add|new|export|ekspor)\b/;
@@ -300,10 +315,10 @@ export function bacaNavigasi(teksNormal: string, pathSaatIni?: string): HasilNav
   const teks = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
   if (!teks) return null;
   const jumlahKata = teks.split(' ').length;
-  if (jumlahKata > MAKS_KATA) return null;
+  if (!layakSebagaiPerintah(teks)) return null; // [DIUBAH] dulu: > 14 kata langsung ditolak
   if (POLA_ABAIKAN.test(teks)) return null;
 
-  const pemicuBuka = POLA_BUKA.test(teks);
+  const pemicuBuka = POLA_BUKA.test(teks) || (jumlahKata <= 8 && POLA_BUKA_LEMAH.test(teks) && !POLA_TANYA_TENGAH_NAV.test(teks));
   if (pemicuBuka || POLA_AKSI.test(teks)) {
     const padded = ` ${teks} `;
 
@@ -350,7 +365,7 @@ export type KandidatTab = { path: string; nama: string; tabQuery?: string; halam
 
 export function bacaKlarifikasiTab(teksNormal: string): { nama: string; kandidat: KandidatTab[] } | null {
   const teks = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
-  if (!teks || teks.split(' ').length > MAKS_KATA || POLA_ABAIKAN.test(teks) || !POLA_BUKA.test(teks)) return null;
+  if (!teks || !layakSebagaiPerintah(teks) || POLA_ABAIKAN.test(teks) || !(POLA_BUKA.test(teks) || (teks.split(' ').length <= 8 && POLA_BUKA_LEMAH.test(teks) && !POLA_TANYA_TENGAH_NAV.test(teks)))) return null;
   const padded = ` ${teks} `;
   for (const h of HALAMAN) if (cariAlias(padded, h.alias)) return null; // halaman sudah disebut -> bukan kasus ambigu
   const ketemu: { k: KandidatTab; len: number; nama: string }[] = [];

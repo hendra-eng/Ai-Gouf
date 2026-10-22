@@ -132,17 +132,33 @@ def _stream_claude(
         kw: Dict[str, Any] = dict(
             model=MODEL_SUARA,
             max_tokens=max_tokens,
-            temperature=0.4,
+            # [DIUBAH] `temperature=0.4` dihapus: di instalasi ini SDK menolaknya ("Messages.stream() got an unexpected
+            # keyword argument 'temperature'"), sehingga SETIAP permintaan gagal di Claude lalu jatuh ke Groq (lambat).
             system=system_prompt,
             messages=messages,
         )
         if alat and putaran < maks_putaran:
             kw["tools"] = alat
+        t_putaran = time.perf_counter()
+        t_pertama = None
         with klien.messages.stream(**kw) as stream:
             for teks in stream.text_stream:
                 if teks:
+                    if t_pertama is None:
+                        t_pertama = time.perf_counter() - t_putaran
                     yield teks
             akhir = stream.get_final_message()
+        # [BARU] catatan waktu per putaran Claude (tampil di terminal backend)
+        if os.environ.get("VOICE_TIMING", "1").strip().lower() not in ("0", "false", "off", "no"):
+            nama_alat = [b.name for b in akhir.content if getattr(b, "type", None) == "tool_use"]
+            print(
+                f"[WAKTU-SUARA] claude putaran={putaran + 1} model={MODEL_SUARA} "
+                f"token-pertama={'-' if t_pertama is None else f'{t_pertama:.2f}s'} "
+                f"selesai={time.perf_counter() - t_putaran:.2f}s alat={nama_alat or '-'} "
+                f"token-masuk={getattr(getattr(akhir, 'usage', None), 'input_tokens', '-')} "
+                f"token-keluar={getattr(getattr(akhir, 'usage', None), 'output_tokens', '-')}",
+                flush=True,
+            )
         if akhir.stop_reason != "tool_use":
             return
         # Claude minta data -> jalankan alat, kirim hasilnya, putar lagi
@@ -151,9 +167,11 @@ def _stream_claude(
         for b in akhir.content:
             if getattr(b, "type", None) == "tool_use":
                 args = b.input if isinstance(b.input, dict) else {}
-                hasil_alat.append(
-                    {"type": "tool_result", "tool_use_id": b.id, "content": neo.jalankan_alat(b.name, args, ctx)}
-                )
+                t_alat = time.perf_counter()
+                isi_hasil = neo.jalankan_alat(b.name, args, ctx)
+                if os.environ.get("VOICE_TIMING", "1").strip().lower() not in ("0", "false", "off", "no"):
+                    print(f"[WAKTU-SUARA] alat {b.name} selesai={time.perf_counter() - t_alat:.2f}s", flush=True)
+                hasil_alat.append({"type": "tool_result", "tool_use_id": b.id, "content": isi_hasil})
         messages.append({"role": "user", "content": hasil_alat})
 
 
