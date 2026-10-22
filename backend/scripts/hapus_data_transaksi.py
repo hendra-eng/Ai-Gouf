@@ -49,9 +49,9 @@ Cara pakai (dari folder backend):
 
 import argparse
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 FOLDER_BACKEND = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(FOLDER_BACKEND))
@@ -83,10 +83,20 @@ class Opsi:
     klien: Optional[List[str]]     # None = semua klien
     simpan_ob: bool                # True = saldo awal dipertahankan
     simpan_cl: bool                # True = tutup buku dipertahankan
+    # skema DB yang terhubung: tabel -> kolom (DB lain, mis. VPS, bisa belum menjalankan semua migration)
+    kolom: Dict[str, Set[str]] = field(default_factory=dict)
 
     def k(self, kolom: str) -> str:
         """Filter klien untuk kolom `kolom` (SQL)."""
         return "true" if self.klien is None else f"{kolom} = ANY(%(klien)s::uuid[])"
+
+    def ada(self, tabel: str, kolom: Optional[str] = None) -> bool:
+        return tabel in self.kolom and (kolom is None or kolom in self.kolom[tabel])
+
+    def kk(self, tabel: str) -> str:
+        """Filter klien tabel yang bisa punya management_client_id dan/atau client_id."""
+        c = [k for k in ("management_client_id", "client_id") if self.ada(tabel, k)]
+        return self.k(c[0] if len(c) == 1 else f"coalesce({', '.join(c)})")
 
 
 @dataclass
@@ -97,38 +107,42 @@ class Langkah:
 
 
 def _anak(kolom: str, induk: str, where_induk: Callable[[Opsi], str]) -> Callable[[Opsi], str]:
-    return lambda o: f"{kolom} IN (SELECT id FROM {induk} WHERE {where_induk(o)})"
+    return lambda o: f"{kolom} IN (SELECT id FROM {induk} WHERE {where_induk(o)})" if o.ada(induk) else "false"
 
 
 def _atau_tanpa_induk(kolom: str, induk: str, where_induk: Callable[[Opsi], str], kolom_klien: str = "client_id"):
     """Baris log/exception: milik induk yang dihapus, atau tanpa induk tapi milik klien."""
-    return lambda o: (f"({kolom} IN (SELECT id FROM {induk} WHERE {where_induk(o)}) "
-                      f"OR ({kolom} IS NULL AND {o.k(kolom_klien)}))")
+    return lambda o: (f"({_anak(kolom, induk, where_induk)(o)} OR ({kolom} IS NULL AND {o.k(kolom_klien)}))")
+
+
+def _kk(tabel: str) -> Callable[[Opsi], str]:
+    return lambda o: o.kk(tabel)
 
 
 # ---- scope induk ----
-def _w_sales(o: Opsi) -> str:
-    return o.k("coalesce(management_client_id, client_id)") + (" AND opening_import_id IS NULL" if o.simpan_ob else "")
+def _tanpa_opening(tabel: str) -> Callable[[Opsi], str]:
+    # Kolom opening_import_id (migration 46) belum ada = belum ada invoice/bill saldo awal.
+    return lambda o: o.kk(tabel) + (" AND opening_import_id IS NULL" if o.simpan_ob and o.ada(tabel, "opening_import_id") else "")
 
 
-def _w_purchase(o: Opsi) -> str:
-    return o.k("coalesce(management_client_id, client_id)") + (" AND opening_import_id IS NULL" if o.simpan_ob else "")
+_w_sales = _tanpa_opening("financial_transaction_sales_invoices")
+_w_purchase = _tanpa_opening("financial_transaction_purchase_transactions")
 
 
 def _w_je(o: Opsi) -> str:
     kecuali = [t for t, simpan in ((JE_OB, o.simpan_ob), (JE_CL, o.simpan_cl)) if simpan]
-    w = o.k("coalesce(management_client_id, client_id)")
+    w = o.kk("financial_transaction_journal_entry_drafts")
     if kecuali:
         w += " AND coalesce(source_type, '') NOT IN (" + ", ".join(f"'{t}'" for t in kecuali) + ")"
     return w
 
 
 def _w_je_tipe(tipe: str) -> Callable[[Opsi], str]:
-    return lambda o: f"{o.k('coalesce(management_client_id, client_id)')} AND source_type = '{tipe}'"
+    return lambda o: f"{o.kk('financial_transaction_journal_entry_drafts')} AND source_type = '{tipe}'"
 
 
 def _w_inv_doc(o: Opsi) -> str:
-    return o.k("client_id") + (" AND doc_type <> 'opening'" if o.simpan_ob else "")
+    return o.k("client_id") + (" AND doc_type <> 'opening'" if o.simpan_ob and o.ada("asset_inventory_documents", "doc_type") else "")
 
 
 def _w_inv_ikut_doc(o: Opsi) -> str:
@@ -140,7 +154,8 @@ def _w_inv_ikut_doc(o: Opsi) -> str:
 
 def _w_aset(o: Opsi) -> str:
     # Aset tanpa jurnal perolehan = aset saldo awal (Import Data) -> dipertahankan.
-    return o.k("client_id") + (" AND acquisition_journal_id IS NOT NULL" if o.simpan_ob else "")
+    return o.k("client_id") + (" AND acquisition_journal_id IS NOT NULL"
+                               if o.simpan_ob and o.ada("asset_fixed_assets", "acquisition_journal_id") else "")
 
 
 def _k(kolom: str = "client_id") -> Callable[[Opsi], str]:
@@ -187,22 +202,22 @@ LANGKAH: List[Langkah] = [
     Langkah("sales", S + "invoice_lines", _anak("invoice_id", S + "invoices", _w_sales)),
     Langkah("sales", S + "invoice_details", _anak("invoice_id", S + "invoices", _w_sales)),
     Langkah("sales", S + "invoices", _w_sales),
-    Langkah("sales", S + "source_rows", _anak("source_file_id", S + "source_files", _k("management_client_id"))),
-    Langkah("sales", S + "source_files", _k("management_client_id")),
+    Langkah("sales", S + "source_rows", _anak("source_file_id", S + "source_files", _kk(S + "source_files"))),
+    Langkah("sales", S + "source_files", _kk(S + "source_files")),
 
     Langkah("purchase", P + "exceptions", _atau_tanpa_induk("transaction_id", P + "transactions", _w_purchase)),
     Langkah("purchase", P + "transaction_lines", _anak("transaction_id", P + "transactions", _w_purchase)),
-    Langkah("purchase", P + "source_rows", _anak("source_file_id", P + "source_files", _k("management_client_id"))),
+    Langkah("purchase", P + "source_rows", _anak("source_file_id", P + "source_files", _kk(P + "source_files"))),
     Langkah("purchase", P + "transactions", _w_purchase),
     Langkah("purchase", P + "source_records", _k()),
-    Langkah("purchase", P + "source_files", _k("management_client_id")),
+    Langkah("purchase", P + "source_files", _kk(P + "source_files")),
 
     Langkah("journal", J + "activity_log", _atau_tanpa_induk("draft_id", J + "drafts", _w_je)),
     Langkah("journal", J + "draft_lines", _anak("draft_id", J + "drafts", _w_je)),
-    Langkah("journal", J + "source_rows", _anak("source_file_id", J + "source_files", _k("management_client_id"))),
+    Langkah("journal", J + "source_rows", _anak("source_file_id", J + "source_files", _kk(J + "source_files"))),
     Langkah("journal", J + "drafts", _w_je),
     Langkah("journal", J + "source_records", _k()),
-    Langkah("journal", J + "source_files", _k("management_client_id")),
+    Langkah("journal", J + "source_files", _kk(J + "source_files")),
 
     Langkah("inventory", "asset_inventory_journal_lines", _anak("journal_id", "asset_inventory_journals", _w_inv_ikut_doc)),
     Langkah("inventory", "asset_inventory_journals", _w_inv_ikut_doc),
@@ -297,11 +312,15 @@ def main() -> int:
             print(f"👥 Klien: {'; '.join(peta.values())}")
         else:
             print("👥 Klien: SEMUA")
-        o = Opsi(klien=klien, simpan_ob=not args.with_opening_balance, simpan_cl=not args.with_closing)
+        cur.execute("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'")
+        kolom: Dict[str, Set[str]] = {}
+        for tabel, k in cur.fetchall():
+            kolom.setdefault(tabel, set()).add(k)
+        o = Opsi(klien=klien, simpan_ob=not args.with_opening_balance, simpan_cl=not args.with_closing, kolom=kolom)
         param = {"klien": klien}
         print(f"📦 Modul: {', '.join(g for g in (*MODUL, 'opening', 'closing') if g in grup)}")
 
-        if o.simpan_cl:
+        if o.simpan_cl and o.ada("management_client_fiscal_closings"):
             cur.execute(f"SELECT count(*) FROM management_client_fiscal_closings WHERE status = 'closed' AND {o.k('client_id')}", param)
             if cur.fetchone()[0]:
                 print("\n⛔ Ada periode yang sudah di-close (Year-End Closing). Transaksi posted di periode itu dikunci")
@@ -311,6 +330,10 @@ def main() -> int:
         # Jurnal OB-/CL- sudah ikut langkah modul journal kalau modul itu dipilih.
         langkah = [l for l in LANGKAH if l.grup in grup
                    and not (l.grup in ("opening", "closing") and l.tabel.startswith(J) and "journal" in grup)]
+        tidak_ada = sorted({l.tabel for l in langkah if not o.ada(l.tabel)})
+        langkah = [l for l in langkah if o.ada(l.tabel)]
+        if tidak_ada:
+            print(f"\n⏭️  Tabel belum ada di DB ini (migration-nya belum dijalankan), dilewati: {', '.join(tidak_ada)}")
         print("\n📋 Rencana:")
         total = 0
         for l in langkah:
@@ -319,8 +342,8 @@ def main() -> int:
             total += n
             if n:
                 print(f"   🗑️  {l.grup:<11} {l.tabel:<58} {n:>8} baris")
-        if "sales" in grup:
-            cur.execute(f"SELECT count(*) FROM {S}source_files WHERE storage_path IS NOT NULL AND {o.k('management_client_id')}", param)
+        if "sales" in grup and o.ada(S + "source_files", "storage_path"):
+            cur.execute(f"SELECT count(*) FROM {S}source_files WHERE storage_path IS NOT NULL AND {o.kk(S + 'source_files')}", param)
             n_file = cur.fetchone()[0]
             if n_file:
                 print(f"   📁 {n_file} file upload Sales di disk (storage_path) TIDAK dihapus dari disk.")
