@@ -14,6 +14,12 @@ Liabilities, Equity). Tabel grup ini memakai awalan `asset_`.
                           stok rata-rata bergerak, jurnal INV (sumber GL
                           "inventory"), laporan. /api/v1/asset/inventory/...
                           Tabel asset_inventory_* (migrations/40-*.py).
+    other_transactions_v1.py -- Other Transactions (menu Transactions > Other):
+                          template peristiwa bisnis (employee advance, security
+                          deposit, loan, capital injection, intercompany, refund,
+                          other event) + aturan jurnal, review/approval, post
+                          (sumber GL "other"). /api/v1/asset/other-transactions/...
+                          Tabel asset_other_transaction_* (migrations/48-*.py).
 
 Semua endpoint memakai get_current_user_v1 / _require_level_v1 dan amplop
 {status, message, data, errors} (modules/api_response.py), sama dengan

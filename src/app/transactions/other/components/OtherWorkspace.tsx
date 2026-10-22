@@ -1,41 +1,44 @@
 'use client';
 
-// Halaman Transactions > Other (layout dataset/picture/Template UI/other/1-7.png):
-// tab Overview, Source Data, Other Transaction, Journal Preview, Exceptions, Posted.
-// Backend: modules/transactions/other_v1.py.
+// Halaman Other Transactions (layout dataset/picture/Template UI/other/1.jpeg):
+// tab Overview, Categories, Review Queue, Journal Preview, Exceptions, Posted +
+// tombol Create Transaction, Transaction Templates, Import, Export.
+// Backend: modules/assets_and_equity/other_transactions_v1.py.
 
 import React, { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  AlertTriangle, CheckCircle2, ChevronRight, CircleCheck, Clock, Database, Download, Eye, FileText, Inbox, LayoutGrid, Plus, Receipt, Send, Settings, Upload,
+  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, CircleCheck, Clock, Download, Eye, FileText, LayoutGrid, Loader2, Plus, Tag, Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
-import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
-import OtherImportModal, { OTHER_FIELD_LABELS, OTHER_HEADER_ALIASES, OTHER_REQUIRED_COLUMNS } from './OtherImportModal';
 import { useActiveClient } from '@/lib/activeClient';
-import { fmtDate, fmtMonth, rupiah, rupiahShort } from '@/lib/receivablesPayablesStore';
+import { fmtDate, fmtMonth, rupiah, rupiahShort, todayIso } from '@/lib/receivablesPayablesStore';
+import { downloadTable, type ExportFormat } from '@/lib/tableExport';
 import {
-  fetchOtherJournals, fetchOtherOverview, fetchOtherPosted, fetchOtherSource, OTHER_STATUS, useOtherData,
-  type OtherJournal, type OtherOverview, type OtherStatus, type PostedData, type SourceData,
-} from '@/lib/otherJournalStore';
-import { btnOutline, btnPrimary, Card, EmptyRow, inputCls } from '@/components/arap/arapUi';
-import { KpiGrid, Pill, tabCls, tabNavCls, tdCls } from '@/components/shared/moduleUi';
-import { cocok, exportJournalsCsv, JournalDetail, JournalFormModal, runAction, SearchBox, StatusPill } from './otherUi';
+  fetchCategories, fetchMeta, fetchOverview, fetchTransactions, useOtherTxData,
+  type CategoryStat, type Meta, type OtherTx, type Overview, type TxStatus, type TypeKey,
+} from '@/lib/otherTransactionStore';
+import { btnOutline, btnPrimary, btnSmall, Card, EmptyRow, inputCls, Menu, MenuItem } from '@/components/arap/arapUi';
+import { JournalLines, KpiGrid, tabCls, tabNavCls, tdCls } from '@/components/shared/moduleUi';
+import {
+  cocok, createHref, editHref, EDITABLE, runBulk, SearchBox, StatusPill, TransactionDrawer, TYPE_ORDER, TYPE_UI, TypeIcon,
+} from './otherUi';
+import TemplatesModal from './TemplatesModal';
+import OtherImportModal from './OtherImportModal';
 
-type Tab = 'overview' | 'source' | 'transactions' | 'preview' | 'exceptions' | 'posted';
-const TABS: { id: Tab; label: string; icon: React.ElementType; subtitle: string }[] = [
-  { id: 'overview', label: 'Overview', icon: LayoutGrid, subtitle: 'Summary of other journals (outside Sales, Purchase and Cash & Bank) — add journals, approve, then post to the General Ledger.' },
-  { id: 'source', label: 'Source Data', icon: Database, subtitle: 'Source lines of Other transactions (general journal, CapEx and uncategorized items) before they are posted.' },
-  { id: 'transactions', label: 'Other Transaction', icon: FileText, subtitle: 'Other journals by journal number, integrated with the accounting journal.' },
-  { id: 'preview', label: 'Journal Preview', icon: Eye, subtitle: 'Preview Other journals that are not posted yet — check that debit and credit balance.' },
-  { id: 'exceptions', label: 'Exceptions', icon: AlertTriangle, subtitle: 'Other journals that need review: unbalanced, still in draft, closed period, or accounts not mapped.' },
-  { id: 'posted', label: 'Posted', icon: CircleCheck, subtitle: 'Other journals that have been posted to the accounting system.' },
+type Tab = 'overview' | 'categories' | 'review' | 'preview' | 'exceptions' | 'posted';
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid },
+  { id: 'categories', label: 'Categories', icon: Tag },
+  { id: 'review', label: 'Review Queue', icon: Clock },
+  { id: 'preview', label: 'Journal Preview', icon: FileText },
+  { id: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+  { id: 'posted', label: 'Posted', icon: CircleCheck },
 ];
-const WARNA = ['#0B5E5C', '#0F7D4E', '#22C55E', '#86EFAC', '#BFDBFE', '#CBD5E1'];
 
-interface TabProps { clientId: string; onNew: () => void; onEdit: (j: OtherJournal) => void }
+interface Ctx { clientId: string; meta: Meta | null; txs: OtherTx[]; loading: boolean; error: string | null; open: (id: string) => void }
 
 function OtherWorkspace() {
   const router = useRouter();
@@ -44,37 +47,98 @@ function OtherWorkspace() {
   const { activeClientId } = useActiveClient();
   const kid = activeClientId ? String(activeClientId) : null;
   const tab = (params.get('tab') as Tab) || 'overview';
-  const [form, setForm] = useState<{ j: OtherJournal | null } | null>(null);
   const goTab = useCallback((t: Tab) => router.replace(t === 'overview' ? pathname : `${pathname}?tab=${t}`, { scroll: false }), [pathname, router]);
-  const meta = TABS.find(t => t.id === tab) ?? TABS[0];
-  const props: TabProps | null = kid ? { clientId: kid, onNew: () => setForm({ j: null }), onEdit: j => setForm({ j }) } : null;
+  const meta = useOtherTxData<Meta | null>(kid ? `otmeta:${kid}` : null, s => fetchMeta(kid as string, s), null);
+  const txs = useOtherTxData<OtherTx[]>(kid ? `otx:${kid}` : null, s => fetchTransactions(kid as string, s), []);
+  const [buka, setBuka] = useState<string | null>(null);
+  const [modal, setModal] = useState<null | 'templates' | 'import'>(null);
+  const [exporting, setExporting] = useState(false);
+  const review = txs.data.filter(t => t.status === 'pending_review').length;
+  const exceptions = txs.data.filter(t => !['posted', 'reversed'].includes(t.status) && t.issues.length).length;
+
+  const ekspor = async (format: ExportFormat) => {
+    if (!txs.data.length) { toast.info('There are no transactions to export.'); return; }
+    setExporting(true);
+    try {
+      await downloadTable(format, {
+        title: 'Other Transactions', clientName: meta.data?.client_name || '', fileName: `other-transactions-${todayIso()}`, orientation: 'landscape',
+        rows: txs.data,
+        columns: [
+          { header: 'Transaction ID', value: t => t.journal_no }, { header: 'Date', value: t => fmtDate(t.journal_date) },
+          { header: 'Type', value: t => t.type_name }, { header: 'Subtype', value: t => t.subtype_label },
+          { header: 'Counterparty', value: t => t.counterparty }, { header: 'Reference', value: t => t.reference_no },
+          { header: 'Description', value: t => t.description }, { header: 'Amount (IDR)', value: t => t.amount_idr, type: 'money' },
+          { header: 'Status', value: t => t.status_label },
+          { header: 'Journal', value: t => t.lines.map(l => `${l.debit ? 'Dr' : 'Cr'} ${l.account_code} ${(l.debit || l.credit).toLocaleString('id-ID')}`).join('; ') },
+        ],
+      });
+    } catch (e) {
+      toast.error((e as Error).message || 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const ctx: Ctx | null = kid ? { clientId: kid, meta: meta.data, txs: txs.data, loading: txs.loading && !txs.data.length, error: txs.error || meta.error, open: setBuka } : null;
+  const templates = (meta.data?.templates ?? []).filter(t => t.is_active);
 
   return (
     <div className="min-h-screen bg-background pb-16">
       <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#0B5E5C] sm:text-3xl">Other</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{meta.subtitle}</p>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-[#0B5E5C] sm:text-3xl">Other Transactions</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Special business events outside Sales, Purchase, and Cash &amp; Bank.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Menu width="w-72" button={() => (
+              <button type="button" disabled={!kid} className={`${btnPrimary} bg-[#0E2F26] hover:bg-[#0B5E5C]`}><Plus size={16} /> Create Transaction <ChevronDown size={14} /></button>
+            )}>
+              {close => <>
+                {(templates.length ? templates : []).map(t => (
+                  <MenuItem key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
+                    <TypeIcon type={t.type_key} /> <span className="flex-1">{t.name}</span>{!t.is_system && <span className="text-[10px] text-muted-foreground">Custom</span>}
+                  </MenuItem>
+                ))}
+                {!templates.length && <p className="px-3 py-2 text-xs text-muted-foreground">Loading templates...</p>}
+              </>}
+            </Menu>
+            <button type="button" disabled={!kid} onClick={() => setModal('templates')} className={btnOutline}><FileText size={16} /> Transaction Templates</button>
+            <button type="button" disabled={!kid} onClick={() => setModal('import')} className={btnOutline}><Upload size={16} /> Import</button>
+            <Menu width="w-44" button={() => (
+              <button type="button" disabled={!kid || exporting} className={btnOutline}>{exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export</button>
+            )}>
+              {close => <>
+                <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
+                <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
+                <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
+              </>}
+            </Menu>
+          </div>
         </div>
         <nav className={tabNavCls}>
           {TABS.map(t => {
-            const aktif = t.id === tab;
+            const n = t.id === 'review' ? review : t.id === 'exceptions' ? exceptions : 0;
             return (
-              <button key={t.id} type="button" onClick={() => goTab(t.id)} className={tabCls(aktif)}>
+              <button key={t.id} type="button" onClick={() => goTab(t.id)} className={tabCls(t.id === tab)}>
                 <t.icon size={16} /> {t.label}
+                {n > 0 && <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{n}</span>}
               </button>
             );
           })}
         </nav>
         {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
-        {props && tab === 'overview' && <OverviewTab {...props} />}
-        {props && tab === 'source' && <SourceTab {...props} />}
-        {props && tab === 'transactions' && <TransactionsTab {...props} />}
-        {props && tab === 'preview' && <PreviewTab {...props} />}
-        {props && tab === 'exceptions' && <ExceptionsTab {...props} />}
-        {props && tab === 'posted' && <PostedTab {...props} />}
+        {ctx?.error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{ctx.error}</div>}
+        {ctx && tab === 'overview' && <OverviewTab {...ctx} onTemplates={() => setModal('templates')} />}
+        {ctx && tab === 'categories' && <CategoriesTab {...ctx} />}
+        {ctx && tab === 'review' && <ReviewTab {...ctx} />}
+        {ctx && tab === 'preview' && <PreviewTab {...ctx} />}
+        {ctx && tab === 'exceptions' && <ExceptionsTab {...ctx} />}
+        {ctx && tab === 'posted' && <PostedTab {...ctx} />}
       </div>
-      {kid && form && <JournalFormModal clientId={kid} journal={form.j} onClose={() => setForm(null)} />}
+      {kid && <TransactionDrawer clientId={kid} txId={buka} canPost={!!meta.data?.can_post} onClose={() => setBuka(null)} />}
+      {kid && modal === 'templates' && meta.data && <TemplatesModal clientId={kid} meta={meta.data} onClose={() => setModal(null)} />}
+      {kid && modal === 'import' && meta.data && <OtherImportModal clientId={kid} meta={meta.data} onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -84,117 +148,47 @@ export default function OtherPage() {
 }
 
 // ============================================================
-// OVERVIEW
+// TABEL TRANSAKSI (dipakai beberapa tab)
 // ============================================================
 
-function OverviewTab({ clientId, onNew, onEdit }: TabProps) {
-  const ov = useOtherData<OtherOverview | null>(`oov:${clientId}`, s => fetchOtherOverview(clientId, s), null);
-  const [cari, setCari] = useState('');
-  const [status, setStatus] = useState<'' | OtherStatus>('');
-  const [buka, setBuka] = useState<string | null>(null);
-  const d = ov.data;
-  const k = d?.kpi;
-  const js = (d?.journals ?? []).filter(j => cocok(j, cari) && (!status || j.status === status));
-  const draft = (d?.journals ?? []).filter(j => j.status === 'draft').map(j => j.id);
-  const approved = (d?.journals ?? []).filter(j => j.status === 'approved').map(j => j.id);
-  const dipilih = d?.journals.find(j => j.id === buka) ?? null;
-
+function TxTable({ rows, loading, open, empty, select, extra }: {
+  rows: OtherTx[]; loading?: boolean; open: (id: string) => void; empty: string;
+  select?: { ids: Set<string>; toggle: (id: string) => void; all: () => void };
+  extra?: (t: OtherTx) => React.ReactNode;
+}) {
+  const cols = 8 + (select ? 1 : 0) + (extra ? 1 : 0);
   return (
-    <div className="space-y-5">
-      {ov.error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{ov.error}</div>}
-      <KpiGrid cols={5} loading={ov.loading && !d} cards={[
-        { label: 'Total Other', value: rupiah(k?.total), icon: LayoutGrid, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">Approved and posted journals</span> },
-        { label: 'Transactions', value: String(k?.count ?? 0), icon: FileText, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">Journals</span> },
-        { label: 'Average / Transaction', value: rupiah(k?.average), icon: Receipt, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">Per journal</span> },
-        { label: 'Not Posted Yet', value: String(k?.unposted ?? 0), icon: Clock, tone: 'amber',
-          delta: <span className="text-[11px] text-muted-foreground">{k?.draft_count ?? 0} draft · {rupiah(k?.draft_total)}</span> },
-        { label: 'Needs Review', value: String(k?.needs_review ?? 0), icon: AlertTriangle, tone: 'red', delta: <span className="text-[11px] text-muted-foreground">Journals with findings</span> },
-      ]} />
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Monthly Other Trend" subtitle="Approved and posted Other journals">
-          <div className="h-60 px-3 pb-4">
-            {!d?.trend.some(t => t.total) ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No Other transactions to show yet.</p> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={d.trend} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
-                  <defs><linearGradient id="othTrend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0F7D4E" stopOpacity={0.25} /><stop offset="100%" stopColor="#0F7D4E" stopOpacity={0.02} /></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                  <XAxis dataKey="month" tickFormatter={m => fmtMonth(m).slice(0, 3)} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={v => rupiahShort(v).replace('Rp ', '')} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip formatter={(v: number) => rupiah(v)} labelFormatter={m => fmtMonth(String(m))} />
-                  <Area type="monotone" dataKey="total" name="Other" stroke="#0F7D4E" strokeWidth={2} fill="url(#othTrend)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </Card>
-        <Card title="Other by Category" subtitle="Breakdown of other transactions">
-          <div className="flex flex-col items-center gap-3 px-5 pb-5">
-            {!d?.by_category.length ? <p className="py-10 text-sm text-muted-foreground">No data yet.</p> : <>
-              <div className="h-36 w-36"><ResponsiveContainer width="100%" height="100%"><PieChart>
-                <Pie data={d.by_category} dataKey="amount" nameKey="category" innerRadius={42} outerRadius={66} stroke="none">{d.by_category.map((_, i) => <Cell key={i} fill={WARNA[i % WARNA.length]} />)}</Pie>
-                <Tooltip formatter={(v: number) => rupiah(v)} /></PieChart></ResponsiveContainer></div>
-              <ul className="w-full space-y-1.5 text-xs">{d.by_category.map((c, i) => (
-                <li key={c.category} className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ background: WARNA[i % WARNA.length] }} /><span className="flex-1">{c.category}</span><b>{rupiah(c.amount)}</b></li>
-              ))}</ul>
-            </>}
-          </div>
-        </Card>
-      </div>
-      <Card title="Top Related Parties" subtitle="By amount">
-        <div className="px-5 pb-5">
-          {!d?.top_parties.length ? <p className="py-8 text-center text-sm text-muted-foreground">No data yet.</p> : (
-            <div className="space-y-2">{d.top_parties.map(p => {
-              const max = d.top_parties[0].amount || 1;
-              return (
-                <div key={p.party} className="flex items-center gap-3 text-sm">
-                  <span className="w-56 truncate">{p.party}</span>
-                  <div className="h-2 flex-1 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-[#0F7D4E]" style={{ width: `${(p.amount / max) * 100}%` }} /></div>
-                  <span className="w-40 text-right font-medium">{rupiah(p.amount)}</span><span className="w-16 text-right text-xs text-muted-foreground">{p.count} jrn</span>
-                </div>
-              );
-            })}</div>
-          )}
-        </div>
-      </Card>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold text-[#0B5E5C]">Other Journals</h2>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-          <button type="button" disabled={!draft.length} onClick={() => runAction(clientId, 'approve', draft)} className={btnOutline}><CheckCircle2 size={15} /> Approve Drafts ({draft.length})</button>
-          <button type="button" disabled={!approved.length} onClick={() => runAction(clientId, 'post', approved)} className={btnOutline}><Send size={15} /> Post Approved ({approved.length})</button>
-          <button type="button" onClick={() => exportJournalsCsv(js, 'Other-Journals')} className={btnOutline}><Download size={15} /> Export CSV</button>
-        </div>
-      </div>
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex flex-wrap gap-3 border-b border-border p-4">
-          <SearchBox value={cari} onChange={setCari} placeholder="Search journal no., party, description..." className="w-full max-w-sm" />
-          <select value={status} onChange={e => setStatus(e.target.value as OtherStatus | '')} className={`${inputCls} w-44`}>
-            <option value="">All statuses</option>{(Object.keys(OTHER_STATUS) as OtherStatus[]).map(s => <option key={s} value={s}>{OTHER_STATUS[s].label}</option>)}
-          </select>
-        </div>
-        <JournalTable rows={js} loading={ov.loading && !d} onOpen={j => setBuka(j.id === buka ? null : j.id)} openId={buka} />
-        {dipilih && <div className="border-t border-border p-5"><JournalDetail clientId={clientId} j={dipilih} onEdit={onEdit} onDone={() => setBuka(null)} /></div>}
-      </section>
-    </div>
-  );
-}
-
-function JournalTable({ rows, loading, onOpen, openId }: { rows: OtherJournal[]; loading: boolean; onOpen: (j: OtherJournal) => void; openId?: string | null }) {
-  return (
-    <div className="overflow-x-auto px-2">
-      <table className="w-full min-w-[860px] text-sm">
-        <thead><tr className="text-xs text-muted-foreground">{['Journal No.', 'Date', 'Category', 'Party / Reference', 'Description'].map(h => <th key={h} className="px-3 py-2.5 text-left font-medium">{h}</th>)}
-          <th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 text-left font-medium">Status</th><th className="px-3 py-2.5 text-left font-medium">Checks</th></tr></thead>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-sm">
+        <thead><tr className="bg-slate-50 text-left text-xs text-muted-foreground">
+          {select && <th className="w-8 px-3 py-2.5"><input type="checkbox" checked={!!rows.length && rows.every(r => select.ids.has(r.id))} onChange={select.all} /></th>}
+          <th className="px-3 py-2.5 font-medium">Transaction ID</th><th className="px-3 py-2.5 font-medium">Date</th>
+          <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Counterparty</th>
+          <th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 font-medium">Status</th>
+          <th className="px-3 py-2.5 font-medium">Journal Result</th>
+          {extra && <th className="px-3 py-2.5 font-medium">Notes</th>}
+          <th className="px-3 py-2.5" />
+        </tr></thead>
         <tbody className="divide-y divide-border">
-          {(loading || !rows.length) && <EmptyRow cols={8} loading={loading} text='No Other journals yet. Click "New Journal" to add one.' />}
-          {!loading && rows.map(j => (
-            <tr key={j.id} onClick={() => onOpen(j)} className={`cursor-pointer hover:bg-slate-50/60 ${openId === j.id ? 'bg-emerald-50/40' : ''}`}>
-              <td className={`${tdCls} font-mono text-xs font-semibold`}>{j.journal_no}</td><td className={tdCls}>{fmtDate(j.journal_date)}</td><td className={tdCls}>{j.category_label}</td>
-              <td className={tdCls}>{j.reference ?? '—'}</td><td className={`${tdCls} max-w-[260px] truncate`}>{j.description ?? '—'}</td>
-              <td className={`${tdCls} text-right font-medium`}>{rupiah(j.amount)}</td><td className={tdCls}><StatusPill s={j.status} /></td>
-              <td className={tdCls}>{j.status === 'posted' || j.status === 'reversed' ? '—' : j.has_error ? <Pill label="Needs fix" style="bg-rose-50 text-rose-700" />
-                : j.issues.length ? <Pill label="Warning" style="bg-amber-50 text-amber-700" /> : <Pill label="OK" style="bg-emerald-50 text-emerald-700" />}</td>
+          {!rows.length ? <EmptyRow cols={cols} text={empty} loading={loading} /> : rows.map(t => (
+            <tr key={t.id} className="hover:bg-slate-50/60">
+              {select && <td className="px-3 py-2.5"><input type="checkbox" checked={select.ids.has(t.id)} onChange={() => select.toggle(t.id)} /></td>}
+              <td className={`${tdCls} font-mono text-xs`}><button type="button" onClick={() => open(t.id)} className="hover:text-[#0F7D4E] hover:underline">{t.journal_no}</button></td>
+              <td className={`${tdCls} whitespace-nowrap text-xs`}>{fmtDate(t.journal_date)}</td>
+              <td className={tdCls}><span className="flex items-center gap-2"><TypeIcon type={t.type_key} /><span className="text-xs"><b className="font-medium">{t.type_name}</b><span className="block text-muted-foreground">{t.subtype_label}</span></span></span></td>
+              <td className={`${tdCls} text-xs`}>{t.counterparty || '—'}</td>
+              <td className={`${tdCls} whitespace-nowrap text-right text-xs font-medium`}>{rupiah(t.amount_idr)}</td>
+              <td className={tdCls}><StatusPill s={t.status} /></td>
+              <td className={`${tdCls} text-xs`}>{['posted', 'reversed'].includes(t.status)
+                ? <span className="inline-flex items-center gap-1 font-mono"><FileText size={13} className="text-muted-foreground" />{t.journal_no}</span>
+                : <span className="text-muted-foreground">—</span>}</td>
+              {extra && <td className={`${tdCls} text-xs`}>{extra(t)}</td>}
+              <td className={`${tdCls} text-right`}>
+                <span className="inline-flex gap-1">
+                  {EDITABLE.includes(t.status) && t.source !== 'legacy' && <Link href={editHref(t.id)} className={btnSmall}>Edit</Link>}
+                  <button type="button" onClick={() => open(t.id)} className={btnSmall}><Eye size={13} /></button>
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -203,175 +197,286 @@ function JournalTable({ rows, loading, onOpen, openId }: { rows: OtherJournal[];
   );
 }
 
-// ============================================================
-// SOURCE DATA
-// ============================================================
+function useSelect(rows: OtherTx[]) {
+  const [ids, setIds] = useState<Set<string>>(new Set());
+  const aktif = new Set([...ids].filter(i => rows.some(r => r.id === i)));
+  return {
+    ids: aktif,
+    toggle: (id: string) => setIds(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
+    all: () => setIds(aktif.size === rows.length ? new Set() : new Set(rows.map(r => r.id))),
+    clear: () => setIds(new Set()),
+  };
+}
 
-function SourceTab({ clientId, onNew }: TabProps) {
-  const sd = useOtherData<SourceData | null>(`osd:${clientId}`, s => fetchOtherSource(clientId, s), null);
-  const [cari, setCari] = useState('');
-  const [mode, setMode] = useState<'all' | 'problem' | 'clean'>('all');
-  const [kat, setKat] = useState('');
-  const [showImport, setShowImport] = useState(false);
-  const [showMapping, setShowMapping] = useState(false);
-  const d = sd.data;
-  const q = d?.quality;
-  const rows = useMemo(() => (d?.rows ?? []).filter(r => (mode === 'all' || (mode === 'problem' ? r.problems.length > 0 : !r.problems.length)) && (!kat || r.category === kat)
-    && (!cari || [r.journal_no, r.account_code, r.account_name, r.reference, r.description].some(x => (x || '').toLowerCase().includes(cari.toLowerCase())))), [d, mode, kat, cari]);
-  const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
-  const Bar_ = ({ label, a, b, hint }: { label: string; a: number; b: number; hint: string }) => (
-    <div>
-      <div className="flex justify-between text-sm font-medium"><span>{label}</span><span className={b && a === b ? 'text-emerald-600' : 'text-rose-600'}>{b ? `${pct(a, b)}%` : '—'}</span></div>
-      <div className="mt-2 h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${a === b ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${pct(a, b)}%` }} /></div>
-      <p className="mt-2 text-xs text-muted-foreground">{a} of {b} lines · {hint}</p>
+function Filters({ q, setQ, type, setType, status, setStatus, statuses }: {
+  q: string; setQ: (v: string) => void; type: '' | TypeKey; setType: (v: '' | TypeKey) => void;
+  status?: '' | TxStatus; setStatus?: (v: '' | TxStatus) => void; statuses?: TxStatus[];
+}) {
+  return (
+    <div className="flex flex-col gap-2 px-5 pb-3 sm:flex-row">
+      <SearchBox value={q} onChange={setQ} placeholder="Search transactions, counterparty, or reference..." className="flex-1" />
+      <select value={type} onChange={e => setType(e.target.value as '' | TypeKey)} className={`${inputCls} sm:w-56`}>
+        <option value="">All types</option>
+        {TYPE_ORDER.map(k => <option key={k} value={k}>{TYPE_UI[k].title}</option>)}
+      </select>
+      {setStatus && statuses && (
+        <select value={status} onChange={e => setStatus(e.target.value as '' | TxStatus)} className={`${inputCls} sm:w-44`}>
+          <option value="">All statuses</option>
+          {statuses.map(s => <option key={s} value={s}>{s === 'pending_review' ? 'Under Review' : s[0].toUpperCase() + s.slice(1)}</option>)}
+        </select>
+      )}
     </div>
   );
+}
 
+// ============================================================
+// OVERVIEW
+// ============================================================
+
+const PIPELINE = [
+  ['Select Type', 'Choose transaction template'], ['Enter Details', 'Fill in transaction information'],
+  ['Review Rules', 'System applies accounting rules'], ['Approval', 'Send for approval (if required)'], ['Post to GL', 'Generate and post journal entry'],
+];
+
+function OverviewTab({ clientId, meta, open, onTemplates }: Ctx & { onTemplates: () => void }) {
+  const [months, setMonths] = useState(6);
+  const ov = useOtherTxData<Overview | null>(`otov:${clientId}:${months}`, s => fetchOverview(clientId, months, s), null);
+  const d = ov.data;
+  const templates = (d?.templates ?? meta?.templates ?? []).filter(t => t.is_active);
   return (
     <div className="space-y-5">
-      {showImport && <OtherImportModal clientId={clientId} onClose={() => setShowImport(false)} />}
-      {showMapping && (
-        <MappingRulesModal
-          onClose={() => setShowMapping(false)}
-          columns={OTHER_MAPPING_COLUMNS}
-          columnsNote="Other journals have no company-specific import template yet -- uploaded files are read with these generic columns. Category accepts the key or label (e.g. capex / CapEx); empty = General Journal. Account Code must exist in the company COA."
-        />
-      )}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Source Data Quality" subtitle="How ready these lines are to be journalized"
-          action={<div className="text-right"><p className="text-xl font-bold">{q?.total ?? 0}</p><p className="text-xs text-muted-foreground">lines · {q?.clean ?? 0} clean</p></div>}>
-          <div className="grid grid-cols-1 gap-6 px-5 pb-5 md:grid-cols-2">
-            <Bar_ label="Journal No. Completeness" a={q?.with_number ?? 0} b={q?.total ?? 0} hint="lines with a journal number" />
-            <Bar_ label="Standard Account Mapping" a={q?.mapped ?? 0} b={q?.total ?? 0} hint="lines mapped to a standard COA account" />
-          </div>
-        </Card>
-        <Card title="Source Composition" subtitle="Click to filter the table">
-          <div className="space-y-1.5 px-5 pb-5">
-            {!d?.composition.length && <p className="py-6 text-center text-sm text-muted-foreground">No source data yet.</p>}
-            {d?.composition.map(c => (
-              <button key={c.category} type="button" onClick={() => setKat(kat === c.category ? '' : c.category)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-sm ${kat === c.category ? 'bg-emerald-50 font-semibold text-[#0F7D4E]' : 'hover:bg-slate-50'}`}>
-                <span>{c.category}</span><span>{c.count}</span>
-              </button>
-            ))}
-          </div>
-        </Card>
-      </div>
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 border-b border-border p-4">
-          <SearchBox value={cari} onChange={setCari} placeholder="Search journal no., account, party..." className="w-full max-w-sm" />
-          <div className="flex overflow-hidden rounded-xl border border-border text-sm">
-            {([['all', 'All'], ['problem', 'With Issues'], ['clean', 'Clean']] as const).map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setMode(k)} className={`px-4 py-2 ${mode === k ? 'bg-[#0F7D4E] font-semibold text-white' : 'text-muted-foreground hover:bg-slate-50'}`}>{l}</button>
-            ))}
-          </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-            <button type="button" onClick={() => setShowImport(true)} className={btnOutline}><Upload size={15} /> Upload File</button>
-            <button type="button" onClick={downloadOtherTemplate} className={btnOutline}><Download size={15} /> Excel Template</button>
-            <button type="button" onClick={() => exportLines(rows)} disabled={!rows.length} className={btnOutline}><Download size={15} /> Export</button>
-            <button type="button" onClick={() => setShowMapping(true)} className={btnOutline}><Settings size={15} /> Mapping Rules</button>
-          </div>
+      <Card title="Quick Create by Transaction Type" subtitle="Choose a business event template to get started. Each template comes with predefined rules and account mappings."
+        action={<button type="button" onClick={onTemplates} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F7D4E]">View all templates <ArrowRight size={13} /></button>}>
+        <div className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          {(templates.length ? templates.filter(t => t.is_system) : []).map(t => {
+            const u = TYPE_UI[t.type_key];
+            return (
+              <Link key={t.id} href={createHref(t.type_key, t.id)} className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${u.card}`}>
+                <TypeIcon type={t.type_key} size="md" />
+                <p className="mt-3 text-sm font-semibold text-foreground">{t.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t.description}</p>
+              </Link>
+            );
+          })}
+          {!templates.length && [0, 1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-32 animate-pulse rounded-2xl bg-slate-100" />)}
         </div>
-        {(sd.loading && !d) || !rows.length ? (
-          <div className="flex flex-col items-center gap-2 py-14 text-sm text-muted-foreground"><Inbox size={22} />
-            {sd.loading && !d ? 'Loading...' : d?.rows.length ? 'No lines match the filter.' : 'No Other data yet. Click "New Journal" to add one.'}</div>
-        ) : (
-          <div className="overflow-x-auto px-2">
-            <table className="w-full min-w-[1000px] text-sm">
-              <thead><tr className="text-xs text-muted-foreground">{['Journal No.', 'Date', 'Category', 'Party', 'Account', 'Description'].map(h => <th key={h} className="px-3 py-2.5 text-left font-medium">{h}</th>)}
-                <th className="px-3 py-2.5 text-right font-medium">Debit</th><th className="px-3 py-2.5 text-right font-medium">Credit</th><th className="px-3 py-2.5 text-left font-medium">Status</th><th className="px-3 py-2.5 text-left font-medium">Quality</th></tr></thead>
-              <tbody className="divide-y divide-border">{rows.map((r, i) => (
-                <tr key={`${r.journal_id}-${i}`}>
-                  <td className={`${tdCls} font-mono text-xs`}>{r.journal_no}</td><td className={tdCls}>{fmtDate(r.date)}</td><td className={tdCls}>{r.category}</td><td className={tdCls}>{r.reference ?? '—'}</td>
-                  <td className={tdCls}><b>{r.account_code}</b> · {r.account_name}</td><td className={`${tdCls} max-w-[220px] truncate`}>{r.description ?? '—'}</td>
-                  <td className={`${tdCls} text-right`}>{r.debit ? rupiah(r.debit) : ''}</td><td className={`${tdCls} text-right`}>{r.credit ? rupiah(r.credit) : ''}</td>
-                  <td className={tdCls}><StatusPill s={r.status} /></td>
-                  <td className={tdCls}>{r.problems.length ? <span className="text-xs text-rose-600" title={r.problems.join(', ')}>{r.problems[0]}</span> : <span className="text-xs text-emerald-700">Clean</span>}</td>
-                </tr>
-              ))}</tbody>
-            </table>
+      </Card>
+
+      <Card title="Transaction Pipeline" subtitle="From business event to automated journal entry.">
+        <div className="flex flex-col gap-3 px-5 pb-5 lg:flex-row lg:items-center">
+          {PIPELINE.map(([t, s], i) => (
+            <React.Fragment key={t}>
+              <div className="flex flex-1 items-start gap-3">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${i === 0 ? 'bg-[#0F7D4E] text-white' : 'bg-slate-100 text-foreground'}`}>{i + 1}</span>
+                <div><p className="text-sm font-semibold">{t}</p><p className="text-xs text-muted-foreground">{s}</p></div>
+              </div>
+              {i < PIPELINE.length - 1 && <ArrowRight size={18} className="hidden shrink-0 text-muted-foreground lg:block" />}
+            </React.Fragment>
+          ))}
+        </div>
+      </Card>
+
+      <KpiGrid cols={5} loading={ov.loading && !d} cards={[
+        { label: 'Total Transactions', value: String(d?.kpi.total ?? 0), icon: LayoutGrid, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">{d?.kpi.draft ?? 0} draft</span> },
+        { label: 'Under Review', value: String(d?.kpi.pending_review ?? 0), icon: Clock, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">Waiting for approval</span> },
+        { label: 'Ready to Post', value: String(d?.kpi.approved ?? 0), icon: CheckCircle2, tone: 'amber', delta: <span className="text-[11px] text-muted-foreground">Approved, not posted yet</span> },
+        { label: 'Posted', value: String(d?.kpi.posted ?? 0), icon: CircleCheck, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">{rupiah(d?.kpi.posted_amount)}</span> },
+        { label: 'Exceptions', value: String(d?.kpi.exceptions ?? 0), icon: AlertTriangle, tone: 'red', delta: <span className="text-[11px] text-muted-foreground">Need attention before posting</span> },
+      ]} />
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+        <Card className="xl:col-span-3" title="Recent Other Transactions"
+          action={<Link href="/transactions/other?tab=posted" className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F7D4E]">View all <ArrowRight size={13} /></Link>}>
+          <TxTable rows={d?.recent ?? []} loading={ov.loading && !d} open={open} empty="No other transactions yet. Pick a template above to create one." />
+        </Card>
+        <div className="space-y-5 xl:col-span-2">
+          <Card title="Other Transactions by Month" action={
+            <select value={months} onChange={e => setMonths(Number(e.target.value))} className="rounded-lg border border-border bg-card px-2 py-1 text-xs">
+              <option value={6}>Last 6 months</option><option value={12}>Last 12 months</option>
+            </select>
+          }>
+            <div className="h-60 px-3 pb-4">
+              {!d?.trend.some(t => t.count) ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No transactions in this period.</p> : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={d.trend} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="month" tickFormatter={m => fmtMonth(String(m))} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} />
+                    <YAxis yAxisId="n" allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={28} />
+                    <YAxis yAxisId="rp" orientation="right" tickFormatter={v => rupiahShort(Number(v))} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={64} />
+                    <Tooltip formatter={(v: number, n: string) => (n === 'Total Amount (Rp)' ? rupiah(v) : v)} labelFormatter={m => fmtMonth(String(m))} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar yAxisId="n" dataKey="count" name="Number of Transactions" fill="#BBF7D0" radius={[4, 4, 0, 0]} />
+                    <Line yAxisId="rp" type="monotone" dataKey="amount" name="Total Amount (Rp)" stroke="#0F7D4E" strokeWidth={2} dot={{ r: 3 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <Card title="Rule Mapping Summary" action={<button type="button" onClick={onTemplates} className="text-muted-foreground"><ChevronRight size={16} /></button>}>
+              <dl className="space-y-2 px-5 pb-5 text-xs">
+                {[['Active Rules', d?.rules.active_rules], ['Transaction Templates', d?.rules.templates], ['Auto-Post Enabled', d?.rules.auto_post],
+                  ['Requires Approval', d?.rules.requires_approval]].map(([l, v]) => (
+                  <div key={String(l)} className="flex justify-between"><dt className="text-muted-foreground">{l}</dt><dd className="font-semibold">{v ?? 0}</dd></div>
+                ))}
+                {!!d?.rules.incomplete && <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">{d.rules.incomplete} rule(s) have no default account yet.</p>}
+              </dl>
+            </Card>
+            <Card title="Top Categories" action={<Link href="/transactions/other?tab=categories" className="text-muted-foreground"><ChevronRight size={16} /></Link>}>
+              <ul className="space-y-2 px-5 pb-5 text-xs">
+                {!d?.top_categories.length && <li className="text-muted-foreground">No data yet.</li>}
+                {d?.top_categories.map(c => (
+                  <li key={c.type_key} className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: TYPE_UI[c.type_key].dot }} />
+                    <span className="flex-1 truncate">{c.type_name}</span><b>{c.count}</b><span className="w-10 text-right text-muted-foreground">{c.share}%</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
           </div>
-        )}
-      </section>
+          <Card title="Pending Review" action={<Link href="/transactions/other?tab=review" className="text-muted-foreground"><ChevronRight size={16} /></Link>}>
+            <ul className="divide-y divide-border px-5 pb-4 text-xs">
+              {!d?.pending.length && <li className="py-2 text-muted-foreground">Nothing is waiting for review.</li>}
+              {d?.pending.map(t => (
+                <li key={t.id} className="flex items-center gap-2 py-2">
+                  <TypeIcon type={t.type_key} />
+                  <button type="button" onClick={() => open(t.id)} className="flex-1 truncate text-left"><b className="font-mono font-medium">{t.journal_no}</b> · {t.counterparty || t.type_name}</button>
+                  <span className="font-medium">{rupiah(t.amount_idr)}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
 
-const OTHER_MAPPING_COLUMNS = Object.entries(OTHER_HEADER_ALIASES).map(([key, accepted]) => ({
-  field: OTHER_FIELD_LABELS[key] || key, accepted, required: OTHER_REQUIRED_COLUMNS.includes(key),
-}));
-
-async function downloadOtherTemplate() {
-  const ExcelJS = (await import('exceljs')).default;
-  const wb = new ExcelJS.Workbook();
-  const sheet = wb.addWorksheet('Other Journal Template');
-  sheet.columns = [
-    { header: 'Journal No.', key: 'no', width: 18 }, { header: 'Date', key: 'date', width: 12 }, { header: 'Category', key: 'cat', width: 16 },
-    { header: 'Party / Reference', key: 'ref', width: 22 }, { header: 'Description', key: 'desc', width: 30 }, { header: 'Account Code', key: 'code', width: 14 },
-    { header: 'Line Description', key: 'line', width: 26 }, { header: 'Debit', key: 'debit', width: 14 }, { header: 'Credit', key: 'credit', width: 14 },
-  ];
-  sheet.getRow(1).font = { bold: true };
-  sheet.addRow({ no: 'OTH-2026-10-0001', date: '2026-10-01', cat: 'Accrual', ref: 'PT Example', desc: 'Accrued electricity expense', code: '6100', line: 'Electricity Oct', debit: 1500000, credit: 0 });
-  sheet.addRow({ no: 'OTH-2026-10-0001', date: '2026-10-01', cat: 'Accrual', ref: 'PT Example', desc: 'Accrued electricity expense', code: '2150', line: 'Accrued expense', debit: 0, credit: 1500000 });
-  const buffer = await wb.xlsx.writeBuffer();
-  downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Other_Journal_Template.xlsx');
-  toast.success('Excel template downloaded');
-}
-
-async function exportLines(rows: SourceData['rows']) {
-  const { downloadTable } = await import('@/lib/tableExport');
-  await downloadTable('xlsx', { title: 'Other Source Data', clientName: '', rows, fileName: 'Other-Source-Data', columns: [
-    { header: 'Journal No.', value: r => r.journal_no }, { header: 'Date', value: r => r.date }, { header: 'Category', value: r => r.category },
-    { header: 'Party', value: r => r.reference }, { header: 'Account Code', value: r => r.account_code }, { header: 'Account Name', value: r => r.account_name },
-    { header: 'Description', value: r => r.description }, { header: 'Debit', value: r => r.debit, type: 'money' }, { header: 'Credit', value: r => r.credit, type: 'money' },
-    { header: 'Status', value: r => OTHER_STATUS[r.status].label }, { header: 'Issues', value: r => r.problems.join('; ') },
-  ] });
-}
-
 // ============================================================
-// OTHER TRANSACTION (daftar + detail)
+// CATEGORIES
 // ============================================================
 
-function TransactionsTab({ clientId, onNew, onEdit }: TabProps) {
-  const data = useOtherData(`ojr:${clientId}`, s => fetchOtherJournals(clientId, s), null as Awaited<ReturnType<typeof fetchOtherJournals>> | null);
-  const [cari, setCari] = useState('');
-  const [status, setStatus] = useState<'' | OtherStatus>('');
-  const [pilih, setPilih] = useState<string | null>(null);
-  const semua = data.data?.journals ?? [];
-  const js = semua.filter(j => cocok(j, cari) && (!status || j.status === status));
-  const sel = semua.find(j => j.id === pilih) ?? null;
-  const chips: { k: '' | OtherStatus; l: string }[] = [{ k: '', l: 'All' }, { k: 'draft', l: 'Draft' }, { k: 'approved', l: 'Approved' }, { k: 'posted', l: 'Posted' }, { k: 'rejected', l: 'Rejected' }];
+function CategoriesTab({ clientId, txs, loading, open }: Ctx) {
+  const cat = useOtherTxData<CategoryStat[]>(`otcat:${clientId}`, s => fetchCategories(clientId, s), []);
+  const [type, setType] = useState<'' | TypeKey>('');
+  const [q, setQ] = useState('');
+  const [status, setStatus] = useState<'' | TxStatus>('');
+  const rows = txs.filter(t => (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-        <button type="button" onClick={() => exportJournalsCsv(js, 'Other-Journals')} className={btnOutline}><Download size={15} /> Export CSV ({js.length})</button>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {(cat.data.length ? cat.data : []).map(c => {
+          const u = TYPE_UI[c.type_key];
+          const aktif = type === c.type_key;
+          return (
+            <div key={c.type_key} className={`rounded-2xl border p-4 shadow-sm ${aktif ? 'border-[#0F7D4E] ring-2 ring-[#22C55E]/20' : 'border-border'} bg-card`}>
+              <div className="flex items-start gap-3">
+                <TypeIcon type={c.type_key} size="md" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{c.name}</p>
+                  <p className="text-xs text-muted-foreground">{c.description}</p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-lg bg-slate-50 py-1.5"><p className="font-bold">{c.count}</p><p className="text-[10px] text-muted-foreground">Total</p></div>
+                <div className="rounded-lg bg-emerald-50 py-1.5"><p className="font-bold text-emerald-700">{c.posted}</p><p className="text-[10px] text-muted-foreground">Posted</p></div>
+                <div className="rounded-lg bg-amber-50 py-1.5"><p className="font-bold text-amber-700">{c.in_progress}</p><p className="text-[10px] text-muted-foreground">In Progress</p></div>
+              </div>
+              <ul className="mt-3 space-y-1 text-[11px]">
+                {c.subtypes.map(s => (
+                  <li key={s.subtype} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{s.label}</span><span>{s.count} · {rupiahShort(s.amount)}</span></li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-muted-foreground">Posted value <b className="text-foreground">{rupiah(c.posted_amount)}</b>{c.last_date ? ` · last ${fmtDate(c.last_date)}` : ''}</p>
+              <div className="mt-3 flex gap-2">
+                <Link href={createHref(c.type_key, c.templates.find(t => t.is_system)?.id)} className={`${btnSmall} border-transparent ${u.iconBg}`}><Plus size={12} /> Create</Link>
+                <button type="button" onClick={() => setType(aktif ? '' : c.type_key)} className={btnSmall}>{aktif ? 'Show all' : 'View transactions'}</button>
+              </div>
+            </div>
+          );
+        })}
+        {!cat.data.length && [0, 1, 2, 3].map(i => <div key={i} className="h-64 animate-pulse rounded-2xl bg-slate-100" />)}
       </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
-        <section className="rounded-2xl border border-border bg-card shadow-sm xl:col-span-2">
-          <div className="space-y-3 border-b border-border p-4">
-            <SearchBox value={cari} onChange={setCari} placeholder="Search journal no., party, description..." />
-            <div className="flex flex-wrap gap-1.5">{chips.map(c => (
-              <button key={c.l} type="button" onClick={() => setStatus(c.k)} className={`rounded-full px-3 py-1 text-xs ${status === c.k ? 'bg-[#0F7D4E] font-semibold text-white' : 'bg-slate-100 text-muted-foreground'}`}>
-                {c.l} {c.k ? semua.filter(j => j.status === c.k).length : semua.length}</button>
-            ))}</div>
-          </div>
-          <div className="max-h-[640px] divide-y divide-border overflow-y-auto">
-            {!js.length && <p className="px-4 py-12 text-center text-sm text-muted-foreground">{data.loading ? 'Loading...' : 'No Other journals yet. Click "New Journal" to add one.'}</p>}
-            {js.map(j => (
-              <button key={j.id} type="button" onClick={() => setPilih(j.id)} className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 ${pilih === j.id ? 'bg-emerald-50/50' : ''}`}>
-                <span className="min-w-0 flex-1"><span className="block font-mono text-xs font-semibold">{j.journal_no}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{fmtDate(j.journal_date)} · {j.reference ?? j.description ?? j.category_label}</span></span>
-                <span className="text-right"><span className="block text-sm font-medium">{rupiah(j.amount)}</span><StatusPill s={j.status} /></span>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-sm xl:col-span-3">
-          {sel ? <JournalDetail clientId={clientId} j={sel} onEdit={onEdit} onDone={() => setPilih(null)} />
-            : <p className="py-24 text-center text-sm text-muted-foreground">Select a journal on the left to see its details.</p>}
-        </section>
+      <Card title={type ? `${TYPE_UI[type].title} Transactions` : 'All Other Transactions'} subtitle={`${rows.length} transaction(s)`}>
+        <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus}
+          statuses={['draft', 'pending_review', 'approved', 'rejected', 'posted', 'reversed']} />
+        <TxTable rows={rows} loading={loading} open={open} empty="No transactions match the filter." />
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// REVIEW QUEUE
+// ============================================================
+
+function ReviewTab({ clientId, meta, txs, loading, open }: Ctx) {
+  const [q, setQ] = useState('');
+  const [type, setType] = useState<'' | TypeKey>('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [alasan, setAlasan] = useState<string | null>(null);
+  const filt = (t: OtherTx) => (!type || t.type_key === type) && cocok(t, q);
+  const antre = txs.filter(t => t.status === 'pending_review' && filt(t));
+  const siap = txs.filter(t => t.status === 'approved' && filt(t));
+  const sel = useSelect(antre);
+  const selPost = useSelect(siap);
+  const jalan = async (label: string, fn: () => Promise<boolean>, clear: () => void) => {
+    setBusy(label);
+    if (await fn()) clear();
+    setBusy(null);
+  };
+  const hari = (iso: string | null) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null);
+  return (
+    <div className="space-y-5">
+      <Card title="Waiting for Review" subtitle="Transactions submitted for approval. Approve to make them ready for posting, or reject with a reason."
+        action={<>
+          <button type="button" disabled={!sel.ids.size || !!busy} onClick={() => setAlasan('')} className={`${btnOutline} text-rose-600`}>Reject</button>
+          <button type="button" disabled={!sel.ids.size || !!busy} onClick={() => jalan('approve', () => runBulk(clientId, 'approve', [...sel.ids]), sel.clear)} className={btnPrimary}>
+            {busy === 'approve' && <Loader2 size={14} className="animate-spin" />} Approve {sel.ids.size ? `(${sel.ids.size})` : ''}
+          </button>
+        </>}>
+        <Filters q={q} setQ={setQ} type={type} setType={setType} />
+        <TxTable rows={antre} loading={loading} open={open} empty="Nothing is waiting for review." select={sel}
+          extra={t => {
+            const n = hari(t.submitted_at);
+            return <span className={t.has_error ? 'text-rose-600' : 'text-muted-foreground'}>
+              {t.has_error ? t.issues.find(i => i.level === 'error')?.message : `By ${t.submitted_by_name ?? '—'}${n !== null ? ` · ${n} day(s) ago` : ''}`}
+            </span>;
+          }} />
+      </Card>
+      <Card title="Approved — Ready to Post" subtitle={meta?.can_post ? 'Post approved transactions to the General Ledger.' : 'Posting requires Manager level or above.'}
+        action={meta?.can_post && (
+          <button type="button" disabled={!selPost.ids.size || !!busy} onClick={() => jalan('post', () => runBulk(clientId, 'post', [...selPost.ids]), selPost.clear)} className={btnPrimary}>
+            {busy === 'post' && <Loader2 size={14} className="animate-spin" />} Post to GL {selPost.ids.size ? `(${selPost.ids.size})` : ''}
+          </button>
+        )}>
+        <TxTable rows={siap} loading={loading} open={open} empty="No approved transactions waiting to be posted." select={meta?.can_post ? selPost : undefined}
+          extra={t => <span className="text-muted-foreground">Approved by {t.approved_by_name ?? '—'}</span>} />
+      </Card>
+      {alasan !== null && (
+        <RejectModal count={sel.ids.size} onClose={() => setAlasan(null)}
+          onConfirm={async r => { await jalan('reject', () => runBulk(clientId, 'reject', [...sel.ids], r), sel.clear); setAlasan(null); }} />
+      )}
+    </div>
+  );
+}
+
+function RejectModal({ count, onClose, onConfirm }: { count: number; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
+  const [r, setR] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold">Reject {count} transaction(s)</h3>
+        <p className="mt-1 text-xs text-muted-foreground">The submitter can edit and resubmit after rejection.</p>
+        <textarea value={r} onChange={e => setR(e.target.value)} rows={3} maxLength={2000} placeholder="Reason" className={`${inputCls} mt-4`} />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className={btnOutline}>Cancel</button>
+          <button type="button" disabled={busy || r.trim().length < 3} onClick={async () => { setBusy(true); await onConfirm(r.trim()); setBusy(false); }}
+            className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            {busy && <Loader2 size={14} className="animate-spin" />} Reject
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -381,49 +486,39 @@ function TransactionsTab({ clientId, onNew, onEdit }: TabProps) {
 // JOURNAL PREVIEW
 // ============================================================
 
-function PreviewTab({ clientId, onNew, onEdit }: TabProps) {
-  const data = useOtherData(`ojr:${clientId}`, s => fetchOtherJournals(clientId, s), null as Awaited<ReturnType<typeof fetchOtherJournals>> | null);
-  const [cari, setCari] = useState('');
-  const [tahap, setTahap] = useState<'' | 'draft' | 'fix' | 'ready'>('');
-  const belum = (data.data?.journals ?? []).filter(j => ['draft', 'approved'].includes(j.status));
-  const draft = belum.filter(j => j.status === 'draft' && !j.has_error);
-  const perbaiki = belum.filter(j => j.has_error);
-  const siap = belum.filter(j => j.status === 'approved' && !j.has_error);
-  const tampil = belum.filter(j => cocok(j, cari) && (!tahap || (tahap === 'draft' ? draft.includes(j) : tahap === 'fix' ? perbaiki.includes(j) : siap.includes(j))));
-  const kartu = [
-    { k: 'draft' as const, cap: 'Waiting for approval', judul: 'Draft', n: draft.length, total: draft.reduce((a, j) => a + j.amount, 0), warna: 'text-violet-600' },
-    { k: 'fix' as const, cap: 'Failed checks', judul: 'Needs Fix', n: perbaiki.length, total: perbaiki.reduce((a, j) => a + j.amount, 0), warna: 'text-rose-600' },
-    { k: 'ready' as const, cap: 'Passed all checks', judul: 'Ready to Post', n: siap.length, total: siap.reduce((a, j) => a + j.amount, 0), warna: 'text-emerald-600' },
-  ];
+function PreviewTab({ txs, loading, open }: Ctx) {
+  const [q, setQ] = useState('');
+  const [type, setType] = useState<'' | TypeKey>('');
+  const [status, setStatus] = useState<'' | TxStatus>('');
+  const rows = txs.filter(t => !['posted', 'reversed'].includes(t.status) && (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
+  const seimbang = rows.filter(t => t.lines.length && t.total_debit === t.total_credit).length;
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 items-center gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
-        {kartu.map((c, i) => (
-          <React.Fragment key={c.k}>
-            <button type="button" onClick={() => setTahap(tahap === c.k ? '' : c.k)} className={`rounded-2xl border bg-card p-5 text-left shadow-sm ${tahap === c.k ? 'border-[#22C55E] ring-2 ring-[#22C55E]/20' : 'border-border'}`}>
-              <p className="text-xs text-muted-foreground">{c.cap}</p><p className="font-semibold">{c.judul}</p>
-              <div className="mt-2 flex items-end justify-between"><span className={`text-2xl font-bold ${c.warna}`}>{c.n}</span><span className="font-mono text-xs text-muted-foreground">{rupiah(c.total)}</span></div>
-            </button>
-            {i < 2 && <ChevronRight className="hidden text-muted-foreground md:block" size={18} />}
-          </React.Fragment>
-        ))}
+    <Card title="Journal Preview" subtitle={`Journals generated from the template rules for transactions not posted yet — ${seimbang} of ${rows.length} balanced.`}>
+      <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus} statuses={['draft', 'pending_review', 'approved', 'rejected']} />
+      <div className="grid grid-cols-1 gap-4 px-5 pb-5 lg:grid-cols-2">
+        {loading && [0, 1].map(i => <div key={i} className="h-48 animate-pulse rounded-2xl bg-slate-100" />)}
+        {!loading && !rows.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No unposted transactions.</p>}
+        {rows.map(t => {
+          const ok = t.lines.length > 0 && t.total_debit === t.total_credit;
+          return (
+            <div key={t.id} className="rounded-2xl border border-border p-4">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <button type="button" onClick={() => open(t.id)} className="flex items-center gap-2 text-left">
+                  <TypeIcon type={t.type_key} />
+                  <span className="text-xs"><b className="font-mono text-sm">{t.journal_no}</b><span className="block text-muted-foreground">{t.subtype_label} · {fmtDate(t.journal_date)} · {t.counterparty || '—'}</span></span>
+                </button>
+                <span className="flex items-center gap-1.5">
+                  <StatusPill s={t.status} />
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>{ok ? 'Balanced' : 'Not balanced'}</span>
+                </span>
+              </div>
+              {t.lines.length ? <JournalLines lines={t.lines} /> : <p className="py-3 text-xs text-muted-foreground">No journal lines yet — complete the accounts.</p>}
+              {t.issues.some(i => i.level === 'error') && <p className="mt-2 text-[11px] text-rose-600">{t.issues.find(i => i.level === 'error')?.message}</p>}
+            </div>
+          );
+        })}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchBox value={cari} onChange={setCari} placeholder="Search journal no., party, description..." className="w-full max-w-sm" />
-        <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-        <button type="button" disabled={!draft.length} onClick={() => runAction(clientId, 'approve', draft.map(j => j.id))} className={btnOutline}><CheckCircle2 size={15} /> Approve All Drafts ({draft.length})</button>
-        <button type="button" disabled={!siap.length} onClick={() => runAction(clientId, 'post', siap.map(j => j.id))} className={btnOutline}><Send size={15} /> Post All Ready ({siap.length})</button>
-        <button type="button" onClick={() => exportJournalsCsv(tampil, 'Other-Journal-Preview')} className={btnOutline}><Download size={15} /> CSV</button>
-        <span className="ml-auto text-xs text-muted-foreground">{tampil.length} voucher(s)</span>
-      </div>
-      {!tampil.length ? (
-        <div className="rounded-2xl border border-border bg-card py-14 text-center text-sm text-muted-foreground shadow-sm">{data.loading ? 'Loading...' : 'No Other journals waiting to be posted.'}</div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {tampil.map(j => <section key={j.id} className="rounded-2xl border border-border bg-card p-5 shadow-sm"><JournalDetail clientId={clientId} j={j} onEdit={onEdit} /></section>)}
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }
 
@@ -431,48 +526,36 @@ function PreviewTab({ clientId, onNew, onEdit }: TabProps) {
 // EXCEPTIONS
 // ============================================================
 
-function ExceptionsTab({ clientId, onNew, onEdit }: TabProps) {
-  const data = useOtherData(`ojr:${clientId}`, s => fetchOtherJournals(clientId, s), null as Awaited<ReturnType<typeof fetchOtherJournals>> | null);
-  const [buka, setBuka] = useState<string | null>(null);
-  const belum = (data.data?.journals ?? []).filter(j => !['posted', 'reversed'].includes(j.status));
-  const temuan = belum.flatMap(j => [
-    ...j.issues.map(i => ({ j, level: i.level, message: i.message })),
-    ...(j.status === 'draft' ? [{ j, level: 'info' as const, message: 'Draft waiting for approval.' }] : []),
-    ...(j.status === 'rejected' ? [{ j, level: 'warning' as const, message: `Rejected: ${j.rejected_reason ?? ''}` }] : []),
-  ]);
-  const draft = belum.filter(j => j.status === 'draft').map(j => j.id);
-  const sel = belum.find(j => j.id === buka) ?? null;
-  const gaya = { error: 'bg-rose-50 text-rose-700', warning: 'bg-amber-50 text-amber-700', info: 'bg-sky-50 text-sky-700' };
+function ExceptionsTab({ txs, loading, open }: Ctx) {
+  const [q, setQ] = useState('');
+  const [type, setType] = useState<'' | TypeKey>('');
+  const [level, setLevel] = useState<'' | 'error' | 'warning'>('');
+  const rows = useMemo(() => txs.filter(t => !['posted', 'reversed'].includes(t.status) && t.issues.length
+    && (!level || t.issues.some(i => i.level === level)) && (!type || t.type_key === type) && cocok(t, q)), [txs, level, type, q]);
+  const nErr = txs.filter(t => !['posted', 'reversed'].includes(t.status) && t.has_error).length;
+  const nWarn = txs.filter(t => !['posted', 'reversed'].includes(t.status) && !t.has_error && t.issues.length).length;
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-        <button type="button" disabled={!draft.length} onClick={() => runAction(clientId, 'approve', draft)} className={btnOutline}><CheckCircle2 size={15} /> Approve All Drafts ({draft.length})</button>
-        <button type="button" onClick={() => exportJournalsCsv(Array.from(new Set(temuan.map(t => t.j))), 'Other-Exceptions')} className={btnOutline}><Download size={15} /> CSV</button>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <button type="button" onClick={() => setLevel(level === 'error' ? '' : 'error')} className={`rounded-2xl border p-4 text-left ${level === 'error' ? 'border-rose-300 bg-rose-50' : 'border-rose-100 bg-rose-50/40'}`}>
+          <p className="text-xs text-muted-foreground">Blocking errors</p><p className="text-2xl font-bold text-rose-600">{nErr}</p>
+          <p className="text-[11px] text-muted-foreground">Cannot be submitted, approved or posted until fixed</p>
+        </button>
+        <button type="button" onClick={() => setLevel(level === 'warning' ? '' : 'warning')} className={`rounded-2xl border p-4 text-left ${level === 'warning' ? 'border-amber-300 bg-amber-50' : 'border-amber-100 bg-amber-50/40'}`}>
+          <p className="text-xs text-muted-foreground">Warnings only</p><p className="text-2xl font-bold text-amber-600">{nWarn}</p>
+          <p className="text-[11px] text-muted-foreground">Can be posted, but should be reviewed</p>
+        </button>
       </div>
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        {!temuan.length ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <CheckCircle2 size={36} className="text-emerald-500" /><p className="font-semibold">{data.loading ? 'Loading...' : 'All Other journals are in good shape'}</p>
-            <p className="text-xs text-muted-foreground">No findings that need follow-up.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto px-2">
-            <table className="w-full min-w-[820px] text-sm">
-              <thead><tr className="text-xs text-muted-foreground">{['Journal No.', 'Date', 'Party / Reference', 'Finding', 'Severity'].map(h => <th key={h} className="px-3 py-2.5 text-left font-medium">{h}</th>)}
-                <th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 text-left font-medium">Status</th></tr></thead>
-              <tbody className="divide-y divide-border">{temuan.map((t, i) => (
-                <tr key={i} onClick={() => setBuka(t.j.id === buka ? null : t.j.id)} className="cursor-pointer hover:bg-slate-50/60">
-                  <td className={`${tdCls} font-mono text-xs font-semibold`}>{t.j.journal_no}</td><td className={tdCls}>{fmtDate(t.j.journal_date)}</td><td className={tdCls}>{t.j.reference ?? '—'}</td>
-                  <td className={tdCls}>{t.message}</td><td className={tdCls}><Pill label={t.level === 'error' ? 'Error' : t.level === 'warning' ? 'Warning' : 'Info'} style={gaya[t.level]} /></td>
-                  <td className={`${tdCls} text-right`}>{rupiah(t.j.amount)}</td><td className={tdCls}><StatusPill s={t.j.status} /></td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-        {sel && <div className="border-t border-border p-5"><JournalDetail clientId={clientId} j={sel} onEdit={onEdit} onDone={() => setBuka(null)} /></div>}
-      </section>
+      <Card title="Exceptions" subtitle="Unposted transactions with findings: missing accounts, closed periods, inactive or unmapped accounts, overdue reviews.">
+        <Filters q={q} setQ={setQ} type={type} setType={setType} />
+        <TxTable rows={rows} loading={loading} open={open} empty="No exceptions. All unposted transactions passed the checks."
+          extra={t => (
+            <ul className="space-y-0.5">
+              {t.issues.slice(0, 3).map(i => <li key={i.message} className={i.level === 'error' ? 'text-rose-600' : 'text-amber-700'}>{i.message}</li>)}
+              {t.issues.length > 3 && <li className="text-muted-foreground">+{t.issues.length - 3} more</li>}
+            </ul>
+          )} />
+      </Card>
     </div>
   );
 }
@@ -481,53 +564,28 @@ function ExceptionsTab({ clientId, onNew, onEdit }: TabProps) {
 // POSTED
 // ============================================================
 
-function PostedTab({ clientId, onNew, onEdit }: TabProps) {
-  const pd = useOtherData<PostedData | null>(`opd:${clientId}`, s => fetchOtherPosted(clientId, s), null);
-  const [cari, setCari] = useState('');
-  const [buka, setBuka] = useState<string | null>(null);
-  const d = pd.data;
-  const js = (d?.journals ?? []).filter(j => cocok(j, cari));
-  const sel = d?.journals.find(j => j.id === buka) ?? null;
+function PostedTab({ txs, loading, open }: Ctx) {
+  const [q, setQ] = useState('');
+  const [type, setType] = useState<'' | TypeKey>('');
+  const [status, setStatus] = useState<'' | TxStatus>('');
+  const semua = txs.filter(t => ['posted', 'reversed'].includes(t.status));
+  const rows = semua.filter(t => (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
+  const posted = semua.filter(t => t.status === 'posted');
+  const total = posted.reduce((n, t) => n + t.amount_idr, 0);
+  const bulanIni = todayIso().slice(0, 7);
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Posted Value per Month" subtitle="Last 12 months with data">
-          <div className="h-56 px-3 pb-4">
-            {!d?.monthly.length ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No posted Other journals yet.</p> : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={d.monthly} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                  <XAxis dataKey="month" tickFormatter={m => fmtMonth(m)} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={v => rupiahShort(v).replace('Rp ', '')} tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip formatter={(v: number) => rupiah(v)} labelFormatter={m => fmtMonth(String(m))} />
-                  <Bar dataKey="total" name="Posted" fill="#0F7D4E" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </Card>
-        <Card>
-          <div className="space-y-6 p-5">
-            <div><p className="text-xs text-muted-foreground">Total Posted</p><p className="font-mono text-2xl font-bold text-[#0F7D4E]">{rupiah(d?.total)}</p>
-              <p className="text-xs text-muted-foreground">{d?.count ?? 0} journal(s){d?.reversed_count ? ` · ${d.reversed_count} reversed` : ''}</p></div>
-            <div className="flex items-center justify-between"><p className="font-semibold">Average per Journal</p><p className="font-semibold text-[#0F7D4E]">{d?.average != null ? rupiah(d.average) : '—'}</p></div>
-            <p className="text-xs text-muted-foreground">Posted journals automatically flow into the General Ledger &amp; Financial Statements.</p>
-          </div>
-        </Card>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold text-[#0B5E5C]">Posting Timeline</h2>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={onNew} className={btnPrimary}><Plus size={15} /> New Journal</button>
-          <button type="button" onClick={() => exportJournalsCsv(js, 'Other-Posted-Journals')} className={btnOutline}><Download size={15} /> Export CSV</button>
-          <SearchBox value={cari} onChange={setCari} placeholder="Search posted journals..." className="w-72" />
-        </div>
-      </div>
-      <section className="rounded-2xl border border-border bg-card shadow-sm">
-        <JournalTable rows={js} loading={pd.loading && !d} onOpen={j => setBuka(j.id === buka ? null : j.id)} openId={buka} />
-        {sel && <div className="border-t border-border p-5"><JournalDetail clientId={clientId} j={sel} onEdit={onEdit} /></div>}
-      </section>
+      <KpiGrid cols={4} cards={[
+        { label: 'Posted Transactions', value: String(posted.length), icon: CircleCheck, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">In the General Ledger</span> },
+        { label: 'Posted Value', value: rupiah(total), icon: FileText, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">All posted transactions</span> },
+        { label: 'Posted This Month', value: String(posted.filter(t => t.journal_date.startsWith(bulanIni)).length), icon: Clock, tone: 'amber', delta: <span className="text-[11px] text-muted-foreground">{fmtMonth(bulanIni)}</span> },
+        { label: 'Reversed', value: String(semua.length - posted.length), icon: AlertTriangle, tone: 'red', delta: <span className="text-[11px] text-muted-foreground">Reversing journal RV- posted</span> },
+      ]} />
+      <Card title="Posted Transactions" subtitle="Other transactions posted to the General Ledger (source: Other).">
+        <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus} statuses={['posted', 'reversed']} />
+        <TxTable rows={rows} loading={loading} open={open} empty="No posted transactions yet."
+          extra={t => <span className="text-muted-foreground">{t.status === 'reversed' ? `Reversed ${fmtDate(t.reversal_date)}` : `By ${t.posted_by_name ?? '—'}`}</span>} />
+      </Card>
     </div>
   );
 }
-

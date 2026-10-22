@@ -1,232 +1,198 @@
 'use client';
 
-// Upload file jurnal Other (CSV/Excel) -- diparse di browser (SheetJS),
-// baris dikelompokkan per Journal No., kode akun dicocokkan ke COA company
-// (GET /accounts), lalu tiap jurnal valid disimpan sebagai DRAFT lewat
-// saveOtherJournal (POST /journals). Belum ada template backend untuk Other,
-// jadi kolomnya generik (lihat OTHER_HEADER_ALIASES -- juga ditampilkan di
-// modal Mapping Rules tab Source Data).
+// Import Other Transactions dari CSV/Excel -- diparse di browser (SheetJS),
+// 1 baris = 1 transaksi, lalu dikirim ke POST /import (backend membuat DRAFT;
+// kode akun kosong = akun default aturan template). Jenis/sub jenis boleh diisi
+// key (loan_financing / loan_repayment) atau label (Loan & Financing / Loan Repayment).
 
 import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
-import { CheckCircle2, Upload, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, Upload, XCircle } from 'lucide-react';
 import { rupiah } from '@/lib/receivablesPayablesStore';
-import {
-  fetchOtherAccounts, OTHER_CATEGORY, saveOtherJournal, useOtherData, type OtherAccount, type OtherCategory,
-} from '@/lib/otherJournalStore';
+import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+import { importRows, type ImportRow, type Meta } from '@/lib/otherTransactionStore';
 import { btnOutline, btnPrimary } from '@/components/arap/arapUi';
 import { Modal, tdCls } from '@/components/shared/moduleUi';
 
-export const OTHER_REQUIRED_COLUMNS = ['journal_no', 'journal_date', 'account_code'];
-export const OTHER_HEADER_ALIASES: Record<string, string[]> = {
-  journal_no: ['journal no', 'journal no.', 'journal number', 'je number', 'no jurnal', 'nomor jurnal'],
-  journal_date: ['date', 'journal date', 'tanggal'],
-  category: ['category', 'kategori'],
-  reference: ['party', 'reference', 'party / reference', 'referensi'],
-  description: ['description', 'deskripsi', 'keterangan'],
-  account_code: ['account code', 'kode akun'],
-  line_description: ['line description', 'line memo', 'memo'],
-  debit: ['debit', 'dr'],
-  credit: ['credit', 'kredit', 'cr'],
-};
-export const OTHER_FIELD_LABELS: Record<string, string> = {
-  journal_no: 'Journal No.', journal_date: 'Date', category: 'Category', reference: 'Party / Reference', description: 'Description',
-  account_code: 'Account Code', line_description: 'Line Description', debit: 'Debit', credit: 'Credit',
-};
+const KOLOM: { field: keyof ImportRow; label: string; aliases: string[]; required?: boolean }[] = [
+  { field: 'type_key', label: 'Type', aliases: ['type', 'transaction type', 'jenis'], required: true },
+  { field: 'subtype', label: 'Subtype', aliases: ['subtype', 'sub type', 'transaction subtype'] },
+  { field: 'journal_date', label: 'Date', aliases: ['date', 'transaction date', 'tanggal'], required: true },
+  { field: 'reference_no', label: 'Reference No.', aliases: ['reference', 'reference no', 'ref'] },
+  { field: 'counterparty', label: 'Counterparty', aliases: ['counterparty', 'party', 'employee', 'vendor', 'lender', 'investor'] },
+  { field: 'description', label: 'Description', aliases: ['description', 'purpose', 'keterangan'] },
+  { field: 'amount', label: 'Amount', aliases: ['amount', 'nominal', 'total'], required: true },
+  { field: 'extra_amount', label: 'Extra Amount', aliases: ['extra amount', 'interest portion', 'apic portion', 'interest'] },
+  { field: 'main_account', label: 'Main Account', aliases: ['main account', 'account', 'debit account'] },
+  { field: 'bank_account', label: 'Bank Account', aliases: ['bank account', 'bank', 'cash account'] },
+  { field: 'offset_account', label: 'Offset Account', aliases: ['offset account', 'credit account', 'expense account'] },
+  { field: 'extra_account', label: 'Extra Account', aliases: ['extra account', 'interest account', 'apic account'] },
+  { field: 'branch', label: 'Branch', aliases: ['branch', 'cabang'] },
+  { field: 'department', label: 'Department', aliases: ['department', 'departemen'] },
+  { field: 'project', label: 'Project', aliases: ['project', 'proyek'] },
+  { field: 'cost_center', label: 'Cost Center', aliases: ['cost center', 'cost centre'] },
+  { field: 'due_date', label: 'Due Date', aliases: ['due date', 'maturity date', 'settlement due date'] },
+  { field: 'notes', label: 'Notes', aliases: ['notes', 'catatan'] },
+];
 
-const norm = (h: string) => h.trim().toLowerCase().replace(/[_\s.]+/g, '');
+const norm = (h: string) => h.trim().toLowerCase().replace(/[_\s./]+/g, '');
 
-function petakanHeader(headers: string[]): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const [field, aliases] of Object.entries(OTHER_HEADER_ALIASES)) {
-    const a = aliases.map(norm);
-    const found = headers.find(h => a.includes(norm(h)));
-    if (found) map[field] = found;
-  }
-  return map;
-}
-
-function tanggalIso(raw: unknown): string {
+function tanggalIso(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === '') return null;
   if (typeof raw === 'number') {
     const p = XLSX.SSF.parse_date_code(raw);
-    return p ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : '';
+    return p ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : null;
   }
-  const s = String(raw ?? '').trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/); // DD/MM/YYYY
-  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
 }
 
-/** Kategori boleh diisi key (capex) atau label (CapEx) -- kosong = General Journal. */
-function kategori(raw: string): OtherCategory | null {
-  const s = raw.trim().toLowerCase();
-  if (!s) return 'general';
-  const hit = (Object.entries(OTHER_CATEGORY) as [OtherCategory, string][]).find(([k, l]) => k === s || l.toLowerCase() === s);
-  return hit ? hit[0] : null;
+function angka(raw: unknown): number {
+  if (typeof raw === 'number') return raw;
+  const s = String(raw ?? '').trim().replace(/[^\d,.-]/g, '');
+  if (!s) return 0;
+  // 1.234.567,89 (format Indonesia) atau 1,234,567.89
+  const n = /,\d{1,2}$/.test(s) ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  return Number(n) || 0;
 }
 
-interface Grup {
-  journal_no: string; journal_date: string; category: OtherCategory; reference: string; description: string;
-  lines: { account_code: string; coa_id: string | null; description: string; debit: number; credit: number }[];
-  debit: number; credit: number; errors: string[];
-}
+interface Baris { data: ImportRow; errors: string[] }
 
-function parse(rows: Record<string, unknown>[], akun: Map<string, OtherAccount>): { groups: Grup[]; missing: string[] } {
-  if (!rows.length) return { groups: [], missing: [] };
-  const hm = petakanHeader(Object.keys(rows[0]));
-  const missing = OTHER_REQUIRED_COLUMNS.filter(f => !hm[f]);
-  if (missing.length) return { groups: [], missing: missing.map(f => OTHER_FIELD_LABELS[f]) };
-  const ambil = (row: Record<string, unknown>, f: string) => (hm[f] ? String(row[hm[f]] ?? '').trim() : '');
-
-  const peta = new Map<string, Grup & { kategoriMentah: string }>();
-  rows.forEach(row => {
-    const no = ambil(row, 'journal_no').toUpperCase();
-    if (!no) return;
-    let g = peta.get(no);
-    if (!g) {
-      const kat = ambil(row, 'category');
-      g = {
-        journal_no: no, journal_date: tanggalIso(row[hm.journal_date]), category: kategori(kat) ?? 'general', kategoriMentah: kat,
-        reference: ambil(row, 'reference'), description: ambil(row, 'description'), lines: [], debit: 0, credit: 0, errors: [],
-      };
-      peta.set(no, g);
-    }
-    const kode = ambil(row, 'account_code');
-    g.lines.push({
-      account_code: kode, coa_id: akun.get(kode)?.id ?? null, description: ambil(row, 'line_description'),
-      debit: Number(row[hm.debit] ?? 0) || 0, credit: hm.credit ? Number(row[hm.credit] ?? 0) || 0 : 0,
-    });
-  });
-
-  const groups = Array.from(peta.values()).map(({ kategoriMentah, ...g }) => {
-    const debit = g.lines.reduce((s, l) => s + l.debit, 0);
-    const credit = g.lines.reduce((s, l) => s + l.credit, 0);
-    const errors: string[] = [];
-    if (!g.journal_date) errors.push('Date is empty/invalid (use YYYY-MM-DD or DD/MM/YYYY).');
-    if (kategori(kategoriMentah) === null) errors.push(`Unknown category "${kategoriMentah}".`);
-    if (g.lines.length < 2) errors.push('Minimum 2 lines per journal.');
-    const tanpaAkun = g.lines.filter(l => !l.coa_id).map(l => l.account_code || '(empty)');
-    if (tanpaAkun.length) errors.push(`Account not found in COA: ${Array.from(new Set(tanpaAkun)).join(', ')}.`);
-    if (g.lines.some(l => l.debit > 0 && l.credit > 0)) errors.push('A line has both Debit and Credit.');
-    if (!(debit > 0 && Math.abs(debit - credit) < 0.01)) errors.push(`Not balanced (Debit ${rupiah(debit)} ≠ Credit ${rupiah(credit)}).`);
-    return { ...g, debit, credit, errors };
-  });
-  return { groups, missing: [] };
-}
-
-export default function OtherImportModal({ clientId, onClose }: { clientId: string; onClose: () => void }) {
-  const akun = useOtherData<OtherAccount[]>(`oacc:${clientId}`, s => fetchOtherAccounts(clientId, s), []);
-  const kodeAkun = useMemo(() => new Map(akun.data.map(a => [a.code, a])), [akun.data]);
-  const [fileName, setFileName] = useState('');
-  const [groups, setGroups] = useState<Grup[]>([]);
-  const [results, setResults] = useState<{ journal_no: string; ok: boolean; message: string }[] | null>(null);
+export default function OtherImportModal({ clientId, meta, onClose }: { clientId: string; meta: Meta; onClose: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<string | null>(null);
+  const [rows, setRows] = useState<Baris[]>([]);
+  const [missing, setMissing] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const valid = groups.filter(g => !g.errors.length);
+  const [hasil, setHasil] = useState<{ created: string[]; failed: { row: number; reason: string }[] } | null>(null);
 
-  const baca = async (file: File) => {
-    if (akun.loading) { toast.error('Chart of accounts is still loading, try again in a moment.'); return; }
+  const jenis = useMemo(() => {
+    const m = new Map<string, { key: string; subs: Map<string, string> }>();
+    meta.types.forEach(t => {
+      const subs = new Map<string, string>();
+      t.subtypes.forEach(s => { subs.set(norm(s.key), s.key); subs.set(norm(s.label), s.key); });
+      const v = { key: t.key, subs };
+      m.set(norm(t.key), v); m.set(norm(t.name), v); m.set(norm(t.code), v);
+    });
+    return m;
+  }, [meta.types]);
+
+  const baca = async (f: File) => {
+    setHasil(null);
+    setFile(f.name);
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false });
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    if (!json.length) { setRows([]); setMissing([]); toast.error('The file has no rows.'); return; }
+    const headers = Object.keys(json[0]);
+    const peta: Partial<Record<keyof ImportRow, string>> = {};
+    KOLOM.forEach(k => {
+      const a = [k.label, ...k.aliases].map(norm);
+      const h = headers.find(x => a.includes(norm(x)));
+      if (h) peta[k.field] = h;
+    });
+    const kurang = KOLOM.filter(k => k.required && !peta[k.field]).map(k => k.label);
+    setMissing(kurang);
+    if (kurang.length) { setRows([]); return; }
+    const ambil = (r: Record<string, unknown>, f: keyof ImportRow) => (peta[f] ? r[peta[f] as string] : '');
+    const teks = (r: Record<string, unknown>, f: keyof ImportRow) => String(ambil(r, f) ?? '').trim() || null;
+    setRows(json.map((r, i) => {
+      const errors: string[] = [];
+      const j = jenis.get(norm(String(ambil(r, 'type_key') ?? '')));
+      if (!j) errors.push('Unknown type');
+      const subRaw = teks(r, 'subtype');
+      const sub = subRaw ? j?.subs.get(norm(subRaw)) : undefined;
+      if (subRaw && j && !sub) errors.push('Unknown subtype');
+      const tgl = tanggalIso(ambil(r, 'journal_date'));
+      if (!tgl) errors.push('Invalid date');
+      const amount = angka(ambil(r, 'amount'));
+      if (amount <= 0) errors.push('Amount must be > 0');
+      return {
+        errors,
+        data: {
+          row: i + 2, type_key: j?.key ?? String(ambil(r, 'type_key') ?? ''), subtype: sub ?? null, journal_date: tgl,
+          reference_no: teks(r, 'reference_no'), counterparty: teks(r, 'counterparty'), description: teks(r, 'description'),
+          amount, extra_amount: angka(ambil(r, 'extra_amount')), main_account: teks(r, 'main_account'), bank_account: teks(r, 'bank_account'),
+          offset_account: teks(r, 'offset_account'), extra_account: teks(r, 'extra_account'), branch: teks(r, 'branch'),
+          department: teks(r, 'department'), project: teks(r, 'project'), cost_center: teks(r, 'cost_center'),
+          due_date: tanggalIso(ambil(r, 'due_date')), notes: teks(r, 'notes'),
+        },
+      };
+    }));
+  };
+
+  const valid = rows.filter(r => !r.errors.length);
+  const kirim = async () => {
+    setBusy(true);
     try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-      const { groups: g, missing } = parse(rows, kodeAkun);
-      if (missing.length) { toast.error('File format not supported', { description: `Required columns not found: ${missing.join(', ')}` }); return; }
-      if (!g.length) { toast.error('No rows with a Journal No. could be read from this file.'); return; }
-      setFileName(file.name);
-      setGroups(g);
-      setResults(null);
+      const r = await importRows(clientId, valid.map(x => x.data));
+      setHasil(r.data);
+      (r.data.failed.length ? toast.warning : toast.success)(r.message);
     } catch (e) {
-      toast.error(`Failed to read file: ${(e as Error).message}`);
+      toast.error((e as Error).message);
     } finally {
-      if (inputRef.current) inputRef.current.value = '';
+      setBusy(false);
     }
   };
 
-  const impor = async () => {
-    setBusy(true);
-    const hasil: { journal_no: string; ok: boolean; message: string }[] = [];
-    for (const g of valid) {
-      try {
-        await saveOtherJournal(clientId, {
-          journal_no: g.journal_no, journal_date: g.journal_date, category: g.category,
-          reference: g.reference || null, description: g.description || null,
-          lines: g.lines.map(l => ({ coa_id: l.coa_id, description: l.description || null, debit: l.debit, credit: l.credit })),
-        });
-        hasil.push({ journal_no: g.journal_no, ok: true, message: `Imported as draft (${g.lines.length} lines).` });
-      } catch (e) {
-        hasil.push({ journal_no: g.journal_no, ok: false, message: (e as Error).message });
-      }
-    }
-    setBusy(false);
-    setResults(hasil);
-    const ok = hasil.filter(r => r.ok).length;
-    if (ok) toast.success(`${ok} of ${valid.length} journals imported as draft.`);
-    else toast.error('No journal was imported.');
+  const unduhTemplate = () => {
+    const contoh = [
+      ['Employee Advance', 'Advance Issued', '2026-03-10', 'ADV-2026-003', 'Budi Santoso', 'Travel advance for client visit', '5000000', '', '', '', '', '', 'Head Office', 'Operations', '', '', '2026-03-31', ''],
+      ['Loan & Financing', 'Loan Repayment', '2026-03-31', 'LM/012/2026', 'PT Bank Mandiri Tbk', 'Installment March', '12500000', '2500000', '', '', '', '', '', 'Finance', '', '', '', ''],
+    ];
+    const csv = [KOLOM.map(k => k.label), ...contoh].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'other-transactions-import-template.csv');
   };
 
   return (
-    <Modal open onClose={busy ? () => undefined : onClose} width="max-w-4xl" title="Upload Other Journals"
-      subtitle="Rows are grouped per Journal No.; each balanced journal is saved as a draft. See Mapping Rules for the accepted column headers."
-      footer={results ? <button type="button" onClick={onClose} className={btnPrimary}>Done</button> : groups.length ? (
-        <>
-          <button type="button" onClick={() => setGroups([])} disabled={busy} className={btnOutline}>Choose Another File</button>
-          <button type="button" onClick={impor} disabled={busy || !valid.length} className={btnPrimary}>
-            {busy ? 'Importing…' : `Import ${valid.length} Journal${valid.length === 1 ? '' : 's'}`}
-          </button>
-        </>
-      ) : undefined}>
-      {!groups.length && (
-        <div
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) baca(f); }}
-          onClick={() => inputRef.current?.click()}
-          className="cursor-pointer rounded-xl border-2 border-dashed border-border py-12 text-center hover:bg-slate-50"
-        >
-          <Upload size={28} className="mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm font-medium">Drag & drop a file here, or click to choose a file</p>
-          <p className="mt-1 text-xs text-muted-foreground">Format: .xlsx, .xls, .csv -- use the Excel Template for the expected columns</p>
-          <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) baca(f); }} />
+    <Modal open onClose={onClose} width="max-w-5xl" title="Import Other Transactions"
+      subtitle="Upload a CSV or Excel file — one row per transaction. Imported rows are saved as drafts; empty account columns use the template's default accounts."
+      footer={<>
+        <button type="button" onClick={onClose} className={btnOutline}>Close</button>
+        {!hasil && <button type="button" disabled={!valid.length || busy} onClick={kirim} className={btnPrimary}>
+          {busy && <Loader2 size={14} className="animate-spin" />} Import {valid.length} row(s)
+        </button>}
+      </>}>
+      <div className="flex flex-wrap items-center gap-2">
+        <input ref={ref} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) baca(f); e.target.value = ''; }} />
+        <button type="button" onClick={() => ref.current?.click()} className={btnPrimary}><Upload size={14} /> Choose File</button>
+        <button type="button" onClick={unduhTemplate} className={btnOutline}><Download size={14} /> Download Template</button>
+        {file && <span className="text-xs text-muted-foreground">{file}</span>}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Columns: {KOLOM.map(k => `${k.label}${k.required ? '*' : ''}`).join(', ')}. Types: {meta.types.map(t => t.name).join(', ')}.
+        Account columns take the account code from the chart of accounts.
+      </p>
+      {missing.length > 0 && <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">Missing required column(s): {missing.join(', ')}.</p>}
+      {hasil && (
+        <div className="rounded-xl border border-border p-3 text-xs">
+          <p className="font-semibold text-emerald-700">{hasil.created.length} draft(s) created{hasil.created.length ? `: ${hasil.created.slice(0, 10).join(', ')}${hasil.created.length > 10 ? '…' : ''}` : ''}</p>
+          {hasil.failed.map(f => <p key={f.row} className="text-rose-600">Row {f.row}: {f.reason}</p>)}
         </div>
       )}
-
-      {groups.length > 0 && !results && (
-        <>
-          <p className="text-sm"><b>{fileName}</b> · {groups.length} journals · <span className="text-emerald-700">{valid.length} valid</span>
-            {groups.length - valid.length > 0 && <span className="text-rose-600"> · {groups.length - valid.length} with errors (skipped)</span>}</p>
-          <div className="max-h-[50vh] overflow-auto rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-50 text-xs text-muted-foreground">
-                <tr>{['Journal No.', 'Date', 'Category', 'Lines', 'Debit', 'Credit', 'Check'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
-              </thead>
-              <tbody className="divide-y divide-border">{groups.map(g => (
-                <tr key={g.journal_no}>
-                  <td className={`${tdCls} font-mono text-xs`}>{g.journal_no}</td><td className={tdCls}>{g.journal_date || '—'}</td>
-                  <td className={tdCls}>{OTHER_CATEGORY[g.category]}</td><td className={tdCls}>{g.lines.length}</td>
-                  <td className={tdCls}>{rupiah(g.debit)}</td><td className={tdCls}>{rupiah(g.credit)}</td>
-                  <td className={tdCls}>{g.errors.length
-                    ? <span className="inline-flex items-start gap-1 text-xs text-rose-600"><XCircle size={13} className="mt-0.5 shrink-0" />{g.errors.join(' ')}</span>
-                    : <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><CheckCircle2 size={13} /> Ready</span>}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {results && (
+      {rows.length > 0 && !hasil && (
         <div className="max-h-[50vh] overflow-auto rounded-xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50 text-xs text-muted-foreground">
-              <tr>{['Journal No.', 'Status', 'Notes'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-border">{results.map(r => (
-              <tr key={r.journal_no}>
-                <td className={`${tdCls} font-mono text-xs`}>{r.journal_no}</td>
-                <td className={tdCls}>{r.ok ? <span className="text-emerald-700">Success</span> : <span className="text-rose-600">Failed</span>}</td>
-                <td className={`${tdCls} text-xs text-muted-foreground`}>{r.message}</td>
-              </tr>
-            ))}</tbody>
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50 text-left text-muted-foreground"><tr>
+              <th className="px-3 py-2">Row</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Counterparty</th>
+              <th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2">Check</th>
+            </tr></thead>
+            <tbody className="divide-y divide-border">
+              {rows.map(r => (
+                <tr key={r.data.row}>
+                  <td className={tdCls}>{r.data.row}</td>
+                  <td className={tdCls}>{meta.types.find(t => t.key === r.data.type_key)?.name ?? r.data.type_key}{r.data.subtype ? ` · ${r.data.subtype}` : ''}</td>
+                  <td className={tdCls}>{r.data.journal_date ?? '—'}</td>
+                  <td className={tdCls}>{r.data.counterparty ?? '—'}</td>
+                  <td className={`${tdCls} text-right`}>{rupiah(r.data.amount)}</td>
+                  <td className={tdCls}>{r.errors.length
+                    ? <span className="inline-flex items-center gap-1 text-rose-600"><XCircle size={13} /> {r.errors.join(', ')}</span>
+                    : <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={13} /> Ready</span>}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       )}

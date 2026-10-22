@@ -66,3 +66,4 @@ sales/seed_template_npi_multi_format_sales.sql
 purchase/seed_template_nbm_multi_format_purchase.sql
 bank_cash/seed_template_nbm_multi_format_bank_cash.sql
 bank_cash/seed_template_npi_multi_format_bank_cash.sql
+48-create_other_transaction_tables.py

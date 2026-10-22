@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
 import { toast } from 'sonner';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport } from '@/lib/printExport';
 import {
-  Plus, Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
+  Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
   Calendar, CheckCircle, Send, Trash2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
@@ -458,9 +457,6 @@ export default function SalesTransaction() {
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
 
           <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} className="ml-auto" />
-          <Link href="/transactions/sales/invoice/new" className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors">
-            <Plus size={12} /> {t('Tambah Transaksi')}
-          </Link>
           <div className="relative">
             <button onClick={() => setShowSettings(v => !v)} className="p-1.5 border border-border rounded-lg hover:bg-muted transition-colors">
               <Settings size={14} className="text-muted-foreground" />
