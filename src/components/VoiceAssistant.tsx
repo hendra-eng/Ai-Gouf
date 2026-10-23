@@ -3,6 +3,7 @@
 // Aplikasi dibuka -> Neo langsung memperkenalkan diri (sekali) + sapaan hangat -> ucapkan pertanyaan -> dijawab dengan suara.
 // TIDAK ada kata panggil: pengguna tidak perlu mengucapkan "halo neo" (menyebutnya tetap tidak masalah).
 // Saat AI sedang bicara/berpikir, kamu bisa MENYELA kapan saja: AI langsung diam dan mendengarkan.
+// [DIUBAH] Saat Neo bicara, yang menyela hanyalah ajakan berhenti ("stop", "cukup neo", "kepanjangan", ...): src/lib/hentikanSuara.ts.
 // Pakai: Web Speech API SpeechRecognition untuk MENDENGAR (Chrome/Edge). Suara utama dari server (/api/tts: Gemini TTS -> Edge TTS);
 // speechSynthesis browser hanya cadangan.
 // Otak AI: api.chatStream (POST /api/chat/stream, mode_suara = jalur cepat) -> Claude (utama), Groq lalu DeepSeek (cadangan).
@@ -11,10 +12,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { bacaNavigasi, bacaNavigasiMirip, bacaKlarifikasiTab, pilihKandidatTab, type KandidatTab } from '@/lib/navigasiSuara';
 import { ejaKode, susunPilihanClient, PESAN_TIDAK_DIKENAL } from '@/lib/salahDengarSuara';
+import { bacaTafsirUcapan } from '@/lib/tafsirUcapan'; // [BARU] koreksi salah dengar untuk pertanyaan/penjelasan soal halaman, tab, client
 import { bacaGantiClient, hasilDariKode, perluTanyaLLM, type HasilGantiClient } from '@/lib/gantiClientSuara';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import { ambilSnapshotLayar, mulaiLacakKursor, perluLayar } from '@/lib/snapshotLayar';
+import { ambilFotoKamera, mintaIzinKamera, perluKamera } from '@/lib/kameraLihat'; // [BARU] mata Neo: 1 foto kamera saat diminta
+import { daftarkanWajah, hapusProfil, kenaliWajah, panaskanModel, statusProfil } from '@/lib/wajahLokal'; // [BARU] kenali wajah untuk sapaan (profil di database)
 import NeoRobot, { type NeoMode, type NeoGerak } from './NeoRobot';
 import AnginRobot from './AnginRobot';
 // [BARU] Aturan keamanan & kenyamanan: konfirmasi, batalkan, ulangi, kecepatan, bahasa, blokir aksi berisiko.
@@ -35,6 +39,10 @@ import {
 } from '@/lib/keamananSuara';
 // [BARU] Pemutar audio Gemini streaming (PCM bertahap + buffer awal adaptif supaya tidak terbata-bata)
 import { AliranPcm, PemutarPcm, dukungPcmStream } from '@/lib/pemutarPcm';
+// [BARU] Pengenal ajakan "berhenti menjelaskan" yang luas (stop, "oke udah itu aja cukup", "kepanjangan", "aku sudah paham", dst.)
+import { bacaBerhenti } from '@/lib/hentikanSuara';
+// [BARU] Lapisan "paham maksud": kalau regex tidak mengenali, AI menilai apakah ucapan itu minta Neo berhenti; hasilnya dipelajari.
+import { putuskan, sudahDipelajari, tanyaMaksudBerhenti } from '@/lib/hentikanCerdas';
 // @ts-ignore — api.js adalah file JS
 import * as api from '@/app/agent-ai/lib/api';
 
@@ -47,35 +55,35 @@ function namaSapaan(u: { nama?: string | null; username?: string | null } | null
   return depan ? depan.charAt(0).toUpperCase() + depan.slice(1) : '';
 }
 
-// Sapaan otomatis: menyesuaikan jam + sedikit lelucon. Dipilih acak supaya tidak monoton.
-function buatSapaan(nama: string): string {
+// Sapaan hangat + sedikit lelucon sesuai jam (dipilih acak supaya tidak monoton). TANPA nama dan TANPA kalimat "ada yang bisa dibantu":
+// nama (kalau wajah dikenali) dan kalimat penutup diucapkan terpisah SETELAH ini (lihat sapa() di bagian sapaan otomatis).
+function buatSapaanHangat(): string {
   const jam = new Date().getHours();
-  const s = nama ? ` ${nama}` : ''; // diawali spasi; kosong kalau nama belum diketahui
   let daftar: string[];
   if (jam >= 4 && jam < 11) {
     daftar = [
-      `Selamat pagi${s}! Semangat banget pagi ini, sudah ngopi belum? Ada yang bisa aku bantu?`,
-      `Selamat pagi${s}! Pagi-pagi sudah buka dashboard, rajin sekali. Ada yang perlu aku bantu?`,
+      'Selamat pagi! Semangat banget pagi ini, sudah ngopi belum?',
+      'Selamat pagi! Pagi-pagi sudah buka dashboard, rajin sekali.',
     ];
   } else if (jam >= 11 && jam < 15) {
     daftar = [
-      `Selamat siang${s}! Sudah makan siang belum? Jangan sampai laporan kenyang tapi kamu kelaparan. Ada yang bisa aku bantu?`,
-      `Selamat siang${s}! Panas-panas begini, semoga angka-angkanya tetap adem. Ada yang perlu aku bantu?`,
+      'Selamat siang! Sudah makan siang belum? Jangan sampai laporan kenyang tapi kamu kelaparan.',
+      'Selamat siang! Panas-panas begini, semoga angka-angkanya tetap adem.',
     ];
   } else if (jam >= 15 && jam < 18) {
     daftar = [
-      `Selamat sore${s}! Sebentar lagi waktunya pulang nih. Ada yang perlu aku bantu dulu?`,
-      `Selamat sore${s}! Masih semangat? Kalau ada yang perlu dibantu, bilang saja.`,
+      'Selamat sore! Sebentar lagi waktunya pulang nih.',
+      'Selamat sore! Masih semangat? Semoga hari ini lancar.',
     ];
   } else if (jam >= 18 && jam < 24) {
     daftar = [
-      `Ini sudah malam, apa yang kamu lakukan${s}? Lembur lagi ya? Ada yang bisa aku bantu?`,
-      `Selamat malam${s}! Jam segini masih buka dashboard, pembukuan memang tidak kenal waktu ya. Ada yang bisa aku bantu?`,
+      'Ini sudah malam, apa yang kamu lakukan? Lembur lagi ya?',
+      'Selamat malam! Jam segini masih buka dashboard, pembukuan memang tidak kenal waktu ya.',
     ];
   } else {
     daftar = [
-      `Ini sudah lewat tengah malam lho${s}. Jurnalnya bisa menunggu besok, tapi kalau memang perlu, aku siap bantu.`,
-      `Jam segini belum tidur${s}? Aku temani deh. Ada yang bisa aku bantu?`,
+      'Ini sudah lewat tengah malam lho. Jurnalnya bisa menunggu besok.',
+      'Jam segini belum tidur? Aku temani deh.',
     ];
   }
   return daftar[Math.floor(Math.random() * daftar.length)];
@@ -86,17 +94,24 @@ function buatSapaan(nama: string): string {
 // (aturan itu juga ada di prompt backend: akuntansi_ai.py). Penanda disimpan per tab, jadi refresh tidak mengulang perkenalan.
 const KUNCI_SUDAH_KENALAN = 'neo-sudah-kenalan';
 const PERKENALAN = [
-  'Hai, aku Neo, asisten suaramu di Gouf Consulting.',
-  'Halo, kenalkan, aku Neo, teman ngobrol dan asisten suaramu di sini.',
-  'Hai, aku Neo, asisten suaramu. Senang bisa bantu urusan pembukuanmu.',
+  'Hai, aku Neo, asisten suara dari Gouf Consulting. Aku bisa bantu urusan pembukuan, laporan keuangan, dan data klienmu.',
+  'Halo, kenalkan, aku Neo dari Gouf Consulting. Tugasku membantu pembukuan, laporan keuangan, dan data klien di dashboard ini.',
+  'Hai, aku Neo, asisten suara Gouf Consulting. Aku siap bantu cek data klien, jurnal, dan laporan keuanganmu.',
 ];
-function buatSapaanAwal(nama: string): string {
+const KUNCI_WAJAH_AKTIF = 'neo-wajah-aktif'; // [BARU] petunjuk cepat di browser ini: profil wajah ada di database (isinya hanya '1', bukan data wajah)
+// Perintah mendaftarkan wajah: "aku mau kamu mengenali wajahku" (juga "kenali wajahku", "tolong kenali wajahku").
+// Pertanyaan seperti "kamu bisa mengenali wajahku?" sengaja TIDAK memicu pendaftaran. Teks sudah dinormalisasi (huruf kecil, tanpa tanda baca).
+const POLA_DAFTAR_WAJAH = /\b(?:mau|ingin|pengen|pingin|minta)\s+(?:kamu|kau|neo)\s+(?:mengenali|mengenal|kenali|kenalin)\s+(?:wajah|muka)(?:ku|\s+(?:saya|aku))\b|^(?:(?:tolong|coba|ayo|yuk|neo)\s+)*(?:mengenali|mengenal|kenali|kenalin)\s+(?:wajah|muka)(?:ku|\s+(?:saya|aku))\b/;
+const POLA_HAPUS_WAJAH = /\b(?:hapus|hapuskan|lupakan|buang)(?:kan)? (?:data )?(?:wajah|muka)(?:ku| saya| aku)?\b/;
+// Sapaan awal = DUA bagian terpisah: perkenalan (hanya sekali per tab; kosong kalau sudah kenalan) + sapaan hangat/lelucon.
+// Penutup ("Ada yang bisa aku bantu, <nama>?") dibuat di sapa(), karena bergantung pada hasil pengenalan wajah.
+function buatSapaanAwal(): { perkenalan: string; hangat: string } {
   let sudah = false;
   try { sudah = sessionStorage.getItem(KUNCI_SUDAH_KENALAN) === '1'; } catch { /* abaikan */ }
-  const sapaan = buatSapaan(nama);
-  if (sudah) return sapaan; // sudah pernah kenalan di sesi ini -> sapaan saja
+  const hangat = buatSapaanHangat();
+  if (sudah) return { perkenalan: '', hangat }; // sudah pernah kenalan di tab ini -> sapaan saja
   try { sessionStorage.setItem(KUNCI_SUDAH_KENALAN, '1'); } catch { /* abaikan */ }
-  return `${PERKENALAN[Math.floor(Math.random() * PERKENALAN.length)]} ${sapaan}`;
+  return { perkenalan: PERKENALAN[Math.floor(Math.random() * PERKENALAN.length)], hangat };
 }
 
 // [BARU] Catatan audit aksi suara (navigasi, ganti client, konfirmasi, batalkan, blokir). Hanya di sessionStorage
@@ -160,7 +175,7 @@ const POLA_NAMA = /\b(?:neo|nio|neu|ne o|ni o|neon)\b/;
 // Versi tanpa spasi: STT kadang menulis "haloneo" tanpa spasi
 const POLA_NAMA_RAPAT = /(?:halo|hallo|hello|hai|hei|hey)(?:neo|nio|neu)/;
 const POLA_SAPAAN = /\b(?:halo|hai|hei|hallo|hello|hey|oke|ok)\b/;
-const POLA_STOP = /\b(?:stop|setop|berhenti|hentikan|diam|tunggu|cukup|sudah|udah|jeda|pause|tahan|sebentar|wait|quiet|enough|hold on|jangan lanjut(?:kan)?)\b/;
+// [DIUBAH] POLA_STOP (20 kata tunggal) diganti src/lib/hentikanSuara.ts -> bacaBerhenti(): ratusan bentuk ajakan berhenti.
 // [BARU] Kalimat berakhir di kata ini = kemungkinan besar belum selesai -> tunggu lebih lama
 const POLA_MENGGANTUNG = /\b(?:dan|atau|tapi|tetapi|karena|soalnya|yang|jadi|terus|lalu|kemudian|dengan|untuk|ke|di|dari|pada|dalam|kalau|jika|bahwa|seperti|misalnya|sama|eh|em|emm|hmm|anu|apa ya|gimana ya)$/;
 // [BARU] Kata penutup yang langsung mengirim ucapan (tanpa menunggu jeda diam)
@@ -175,8 +190,8 @@ const POLA_SELESAI = /\b(?:terima kasih|makasih|sudah cukup|udah cukup|selesai|s
 const ADALAH_MOBILE =
   typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-// [BARU] Saat Neo sedang bicara, HANYA perintah berhenti (daftar POLA_STOP di atas) yang boleh menyela. Ucapan lain dianggap gema/derau dan diabaikan.
-const KATA_SELA = POLA_STOP; // satu daftar perintah berhenti: tambah kata baru di POLA_STOP saja
+// [BARU] Saat Neo sedang bicara, HANYA ajakan berhenti (bacaBerhenti) yang boleh menyela. Ucapan lain dianggap gema/derau dan diabaikan.
+// Tambah kalimat baru di src/lib/hentikanSuara.contoh.ts lalu jalankan hentikanSuara.uji.ts.
 // Warna garis balon (abu-abu sedang, tipis tapi tetap terlihat di latar putih). Mau lebih tegas? naikkan angka 60%.
 const GARIS_BALON = 'color-mix(in srgb, var(--muted-foreground) 60%, transparent)';
 // [BARU] Apakah satu kata yang terdengar cocok dengan kata dari ucapan Neo? Toleran salah dengar:
@@ -381,6 +396,13 @@ export default function VoiceAssistant() {
   };
   const [teksTerakhir, setTeksTerakhir] = useState('');
   const [galat, setGalat] = useState('');
+  const [kameraAktif, setKameraAktif] = useState(false); // [BARU] indikator saat kamera sedang mengambil gambar
+  // [BARU] Pengenalan wajah awal: hasil (nama) dipakai sapaan; analisis wajah dikerjakan di latar belakang, disimpan di memori tab ini saja.
+  const profilWajahRef = useRef<Promise<{ ada: boolean; nama: string | null } | null> | null>(null); // status profil wajah di database (ditanya di latar belakang saat dibuka)
+  const pengenalanWajahRef = useRef<() => Promise<{ nama: string } | null>>(async () => null); // dijalankan saat Neo MULAI menyapa (lihat sapa())
+  const analisaWajahRef = useRef<{ teks: string; waktu: number } | null>(null);
+  const daftarWajahRef = useRef<() => Promise<void>>(async () => {});
+  const hapusWajahRef = useRef<() => Promise<void>>(async () => {});
   // [BARU] Diagnostik di layar: buka dashboard dengan ?vdebug=1 untuk melihat kejadian mikrofon terakhir.
   const [dbg, setDbg] = useState('');
   const dbgAktif = typeof window !== 'undefined' && /[?&]vdebug\b/.test(window.location.search);
@@ -829,9 +851,9 @@ export default function VoiceAssistant() {
     const t = normalisasi(teks);
     const acuanKata = normalisasi(teksDiucapkanRef.current).split(' ');
     const acuan = new Set(acuanKata);
-    // [BARU] kata "stop/berhenti/tunggu..." = pengguna sungguhan, kecuali Neo sendiri sedang mengucapkan kata itu
-    const kunci = t.match(KATA_SELA);
-    if (lagiBicara && kunci && !acuan.has(kunci[0])) return false;
+    // [DIUBAH] ajakan berhenti ("stop", "oke udah itu aja cukup", "kepanjangan", ...) = pengguna sungguhan, bukan gema.
+    // Dulu hanya KATA PERTAMA yang dicek, jadi "sudah, stop" ditolak kalau Neo baru mengucapkan "sudah".
+    if (lagiBicara && (bacaBerhenti(t, teksDiucapkanRef.current).berhenti || sudahDipelajari(t))) return false;
     // [BARU] angka ("2.000.000") diabaikan: Neo mengucapkannya sebagai kata ("dua juta"), jadi tidak bisa dicocokkan
     const kata = t.split(' ').filter((k) => k.length > 2 && !/\d/.test(k));
     if (kata.length === 0) return true; // pecahan 1-2 huruf / angka saja: anggap derau/gema
@@ -845,10 +867,8 @@ export default function VoiceAssistant() {
   const layakMenyela = useCallback((teks: string) => {
     if (!bicaraRef.current) return true;
     if (Date.now() - bicaraSejakRef.current < 500) return false;
-    const t = normalisasi(teks);
-    const m = t.match(KATA_SELA);
-    if (!m) return false;
-    return !new Set(normalisasi(teksDiucapkanRef.current).split(' ')).has(m[0]); // kata itu bukan bagian dari ucapan Neo sendiri
+    // [DIUBAH] ratusan bentuk ajakan berhenti + penjaga gema + kalimat yang dulu dinilai AI sebagai ajakan berhenti
+    return bacaBerhenti(teks, teksDiucapkanRef.current).berhenti || sudahDipelajari(teks);
   }, []);
 
   // ---------- Navigasi suara: "buka laba rugi", "pergi ke pembelian", "kembali" ----------
@@ -867,13 +887,15 @@ export default function VoiceAssistant() {
         aktifRef.current = true; // tetap mode ngobrol: tanpa kata panggil
         setGalat('');
       };
-      const bukaHalaman = (path: string, nama: string, tabQuery?: string) => {
+      const bukaHalaman = (path: string, nama: string, tabQuery?: string, belumTersedia?: boolean) => {
         routerRef.current.push(path);
         catatAudit('navigasi', path);
         undoRef.current = { nama: tx(`buka ${nama}`, `open ${nama}`), jalankan: () => routerRef.current.back(), kedaluwarsa: Date.now() + UNDO_KEDALUWARSA_MS };
         // tab berbasis state di halaman yang SAMA tidak remount -> beri tahu lewat event (halaman baru membaca ?tab= saat dibuka)
         if (tabQuery) window.dispatchEvent(new CustomEvent('neo-tab', { detail: { tab: tabQuery } }));
-        ucapkanLokal(tx(`Membuka ${nama}.`, `Opening ${nama}.`));
+        // [BARU] kartu laporan "Coming Soon" di halaman Laporan: tab-nya dibuka, tapi Neo jujur bahwa laporannya belum ada
+        if (belumTersedia) ucapkanLokal(tx(`Laporan ${nama} belum tersedia, masih Coming Soon. Aku bukakan halaman Laporan.`, `The ${nama} report is not available yet, it's still Coming Soon. Opening the Reports page.`));
+        else ucapkanLokal(tx(`Membuka ${nama}.`, `Opening ${nama}.`));
       };
       // [BARU] Jawaban atas pertanyaan klarifikasi tab sebelumnya ("Data Sumber di Penjualan, Pembelian, atau Entri Jurnal?")
       const kl = klarifikasiRef.current;
@@ -928,10 +950,10 @@ export default function VoiceAssistant() {
             `Maksudnya pindah ke ${n.nama}, atau mengubah data yang ada di layar? Kalau pindah halaman, katakan ya. Mengubah data tidak bisa lewat suara.`,
             `Do you mean switching to ${n.nama}, or changing the data on screen? If switching, say yes. Changing data is not possible by voice.`
           ),
-          () => bukaHalaman(n.path, n.nama, n.tabQuery)
+          () => bukaHalaman(n.path, n.nama, n.tabQuery, n.belumTersedia)
         );
       } else {
-        bukaHalaman(n.path, n.nama, n.tabQuery);
+        bukaHalaman(n.path, n.nama, n.tabQuery, n.belumTersedia);
       }
       return true;
     },
@@ -1009,6 +1031,8 @@ export default function VoiceAssistant() {
   const tanyaAI = useCallback(
     async (perintah: string) => {
       if (perintahRef.current !== perintah) { perintahRef.current = perintah; lokalEntriRef.current = null; }
+      if (POLA_DAFTAR_WAJAH.test(normalisasi(perintah))) { void daftarWajahRef.current(); return; } // [BARU] "aku mau kamu mengenali wajahku" -> daftarkan wajah (dengan persetujuan)
+      if (POLA_HAPUS_WAJAH.test(normalisasi(perintah))) { void hapusWajahRef.current(); return; } // [BARU] hapus data wajah
       if (jalankanGantiClient(perintah)) return; // perintah ganti client -> tidak perlu AI (harus SEBELUM navigasi)
       // [BARU] Aksi yang mengubah/menghapus/memposting data TIDAK dijalankan lewat suara (salah dengar = salah jurnal).
       if (aksiTerlarang(normalisasi(perintah))) {
@@ -1043,9 +1067,30 @@ export default function VoiceAssistant() {
             ? crypto.randomUUID()
             : `sesi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       }
-      const pesan = `${pilihInstruksi(perintah, bahasaRef.current)}\n[Halaman yang sedang dibuka: ${pathRef.current}]\n${perintah}`;
-      // [BARU] "Berbagi layar" versi teks: hanya diambil kalau pertanyaan menyangkut isi layar
-      const konteksLayar = perluLayar(perintah) ? ambilSnapshotLayar() : '';
+      // [BARU] Pertanyaan/penjelasan soal halaman, tab, atau client: bila namanya meragukan (salah dengar), AI diberi kandidat
+      // terdekat dan diminta bertanya balik kalau ambigu/tidak dikenal. Ucapan yang sudah jelas -> string kosong.
+      const tafsir = bacaTafsirUcapan(normalisasi(perintah), clientsRef.current);
+      if (tafsir) catatAudit('tafsir-ucapan', tafsir.slice(0, 200));
+      const pesan = `${pilihInstruksi(perintah, bahasaRef.current)}\n[Halaman yang sedang dibuka: ${pathRef.current}]\n${tafsir}${perintah}`;
+      // [BARU] Kamera: HANYA kalau ucapan jelas meminta Neo melihat pengguna. Kamera menyala sebentar (1 frame) lalu dimatikan.
+      let gambarKamera = '';
+      let catatanKamera = '';
+      let analisaCache = '';
+      const cacheWajah = analisaWajahRef.current;
+      if (perluKamera(perintah) && cacheWajah && Date.now() - cacheWajah.waktu < 60000) analisaCache = cacheWajah.teks; // analisis dari sapaan masih segar (<60 dtk): tidak perlu menyalakan kamera lagi
+      else if (perluKamera(perintah)) {
+        setKameraAktif(true);
+        const hk = await ambilFotoKamera();
+        setKameraAktif(false);
+        if (id !== reqIdRef.current) return; // disela saat kamera menyala
+        if (hk.ok) gambarKamera = hk.base64;
+        else {
+          catatAudit('kamera-gagal', hk.pesan);
+          catatanKamera = `\n[KAMERA GAGAL: ${hk.pesan} Beri tahu pengguna dengan satu kalimat singkat bahwa kamu belum bisa melihat dan sebabnya; JANGAN mengarang deskripsi.]`;
+        }
+      }
+      // [BARU] "Berbagi layar" versi teks: hanya diambil kalau pertanyaan menyangkut isi layar (dilewati kalau yang diminta kamera)
+      const konteksLayar = !gambarKamera && !analisaCache && perluLayar(perintah) ? ambilSnapshotLayar() : '';
       let lengkap = '';
       let buffer = '';
       let pertama = true;
@@ -1073,13 +1118,13 @@ export default function VoiceAssistant() {
         riwayatRef.current.push({ role: 'user', content: perintah }, entriAI);
         riwayatRef.current = riwayatRef.current.slice(-MAKS_RIWAYAT * 2);
         for await (const evt of api.chatStream(
-          pesan,
+          pesan + catatanKamera,
           riwayatKirim,
           [],
           null,
           null, // tidak disimpan ke riwayat percakapan Agent AI
           ctrl.signal,
-          { modeSuara: true, pesanAsli: perintah, sesiId: sesiIdRef.current, konteksLayar } // jalur cepat + memori AI
+          { modeSuara: true, pesanAsli: perintah, sesiId: sesiIdRef.current, konteksLayar, gambarKamera, analisaWajah: analisaCache } // jalur cepat + memori AI
         )) {
           if (id !== reqIdRef.current) return; // sudah disela / diganti pertanyaan baru
           if (evt.type !== 'delta') continue;
@@ -1231,6 +1276,12 @@ export default function VoiceAssistant() {
         if (jawab === 'tidak') { catatAudit('konfirmasi-tidak', tunggu.tanya); ucapkanLokal(tx('Baik, dibatalkan.', 'Okay, cancelled.')); return; }
         catatAudit('konfirmasi-gugur', tunggu.tanya);
       }
+      // [BARU] Ajakan berhenti MURNI ("stop", "oke udah itu aja cukup", "kamu menjelaskannya kepanjangan", ...):
+      // hentikan Neo dan JANGAN kirim ke AI. Dulu kalimat yang lebih dari 3 kata lolos ke AI sebagai pertanyaan baru,
+      // sehingga Neo malah mulai menjelaskan lagi. Kalau ada permintaan baru di dalamnya ("stop, sekarang buka neraca"), tetap diproses.
+      const bh = bacaBerhenti(teks);
+      if (bh.berhenti && bh.murni) { potongAI(); return; }
+      if (sudahDipelajari(teks)) { potongAI(); return; } // [BARU] kalimat yang sudah pernah dinilai AI = berhenti: tidak dikirim ke AI sebagai pertanyaan
       // [BARU] 2) Perintah kenyamanan: batalkan, ulangi, kecepatan, bahasa
       if (bacaBatalkan(teks)) { jalankanBatalkan(); return; }
       if (bacaUlangi(teks)) { jalankanUlangi(); return; }
@@ -1266,11 +1317,8 @@ export default function VoiceAssistant() {
       // sedang dalam mode ngobrol
       if (aktifRef.current) {
         if (timerAktifRef.current) clearTimeout(timerAktifRef.current);
-        // "stop"/"berhenti" pendek = menyela saja; AI sudah diam, tunggu pertanyaan berikutnya
-        if (POLA_STOP.test(teks) && teks.split(' ').length <= 3) {
-          bukaJendelaPerintah(WAKTU_PERCAKAPAN_MS);
-          return;
-        }
+        // [DIUBAH] ajakan berhenti murni sudah ditangani di atas (bacaBerhenti); blok lama yang membuang ucapan <= 3 kata berisi
+        // "sudah"/"cukup"/"tunggu" (mis. "sudah berapa") dihapus.
         if (POLA_SELESAI.test(teks)) {
           ucapkan(tx('Siap, sama-sama. Kalau perlu apa-apa, bilang saja ya.', "You're welcome. Just say the word if you need anything."));
           return;
@@ -1279,7 +1327,7 @@ export default function VoiceAssistant() {
       }
       // selain itu: diabaikan (bukan untuk AI)
     },
-    [bukaJendelaPerintah, jalankanBatalkan, jalankanLaju, jalankanUlangi, tanyaAI, tx, ubahBahasa, ucapkan]
+    [bukaJendelaPerintah, jalankanBatalkan, jalankanLaju, jalankanUlangi, potongAI, tanyaAI, tx, ubahBahasa, ucapkan]
   );
 
   // Pintu masuk semua ucapan pengguna: saring gema, lalu sela AI bila perlu.
@@ -1308,6 +1356,32 @@ export default function VoiceAssistant() {
     [adalahGema, layakMenyela, potongAI, tanganiUcapan, tx, ucapkan]
   );
 
+  // [BARU] PAHAM MAKSUD. Regex hanya mengenali bentuk kalimat yang sudah didaftarkan. Kalau Neo sedang bicara dan ucapan
+  // pengguna TIDAK dikenali regex ("hmm iya iya aku udah ngerti kok", "eh bentar, aku mau tanya hal lain", "intinya aja"),
+  // tanyakan ke AI (POST /api/voice/stop-intent) apakah maksudnya minta Neo berhenti. Jalan di latar: Neo tetap bicara
+  // sampai AI yakin. Hasil yang terlambat (Neo sudah selesai / pertanyaan lain sudah berjalan) dibuang supaya tidak
+  // memotong jawaban yang salah.
+  const nilaiMaksudBerhenti = useCallback(
+    (ucapan: string) => {
+      const idReq = reqIdRef.current;
+      const gen = genSuaraRef.current;
+      const neoTerakhir = teksDiucapkanRef.current.slice(-300);
+      void tanyaMaksudBerhenti(ucapan, neoTerakhir, api.stopIntent).then((h) => {
+        if (!(bicaraRef.current || sedangMemprosesRef.current)) return; // Neo sudah diam sendiri
+        if (reqIdRef.current !== idReq || genSuaraRef.current !== gen) return; // jawaban/giliran sudah berganti
+        const k = putuskan(h);
+        if (!k.berhenti) return;
+        // ucapan ini milik ajakan berhenti: jangan sampai ikut terkirim ke AI sebagai pertanyaan
+        if (komitTimerRef.current) { clearTimeout(komitTimerRef.current); komitTimerRef.current = null; }
+        bufUcapanRef.current = '';
+        sementaraUcapanRef.current = '';
+        potongAI();
+        if (k.sisa) tanganiUcapan(k.sisa); // "eh bentar, berapa total PPN-nya?" -> Neo diam lalu menjawab pertanyaan barunya
+      });
+    },
+    [potongAI, tanganiUcapan]
+  );
+
   // [BARU] Kirim semua ucapan yang sudah dikumpulkan sebagai SATU pertanyaan utuh.
   const kirimKumpulan = () => {
     komitTimerRef.current = null;
@@ -1330,7 +1404,9 @@ export default function VoiceAssistant() {
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const hasil = e.results[i];
       if (hasil.isFinal) {
-        if (Date.now() - komitWaktuRef.current < 2500) continue; // sudah dikirim barusan
+        // [DIUBAH] ucapan yang datang <2,5 dtk setelah kirim dibuang (duplikat), KECUALI ajakan berhenti saat Neo sibuk
+        const neoSibuk = bicaraRef.current || sedangMemprosesRef.current;
+        if (Date.now() - komitWaktuRef.current < 2500 && !(neoSibuk && bacaBerhenti(hasil[0]?.transcript || '', teksDiucapkanRef.current).berhenti)) continue; // sudah dikirim barusan
         // cek semua alternatif — mikrofon sering menaruh tebakan yang benar di alternatif ke-2/3
         const alternatif: string[] = [];
         for (let k = 0; k < hasil.length; k++) alternatif.push(hasil[k].transcript);
@@ -1339,9 +1415,13 @@ export default function VoiceAssistant() {
           const r = bacaGantiClient(normalisasi(a), clientsRef.current, activeClientIdRef.current);
           return r?.jenis === 'ganti';
         });
-        const dipakai = normalisasi(cocokClient || alternatif[0] || '');
+        // [BARU] saat Neo sibuk, pilih alternatif yang berisi ajakan berhenti (mikrofon sering menaruh "stop" di tebakan ke-2/3)
+        const altBerhenti = neoSibuk ? alternatif.find((a) => bacaBerhenti(a, teksDiucapkanRef.current).berhenti) : undefined;
+        const dipakai = normalisasi(cocokClient || altBerhenti || alternatif[0] || '');
         if (!dipakai || adalahGema(dipakai)) continue;
         bufUcapanRef.current = gabungUcapan(bufUcapanRef.current, dipakai);
+        // [BARU] Neo sedang bicara & regex tidak mengenali ucapan ini -> biarkan AI memahami maksudnya (di latar)
+        if (bicaraRef.current && aktifRef.current && !akanMatiRef.current && !sistemMatiRef.current && !layakMenyela(dipakai)) nilaiMaksudBerhenti(dipakai);
       } else {
         sementara += hasil[0].transcript + ' ';
       }
@@ -1468,6 +1548,9 @@ export default function VoiceAssistant() {
 
     recRef.current = rec;
     if (!muteRef.current && !pttRef.current) { try { rec.start(); } catch { /* abaikan */ } }
+    // [BARU] Izin kamera diminta SEKARANG, bersamaan dengan munculnya izin mikrofon (rec.start di atas), supaya semua izin beres
+    // di awal dan tidak ada dialog izin mendadak di tengah percakapan. Ditolak / tidak ada kamera -> Neo tetap jalan tanpa mengenali wajah.
+    void mintaIzinKamera();
 
     return () => {
       if (w.__voiceAssistantPemilik === tokenInstance) w.__voiceAssistantPemilik = null;
@@ -1551,20 +1634,88 @@ export default function VoiceAssistant() {
     };
   }, []);
 
+  // ---------- [DIUBAH] Pengenalan wajah awal + analisis latar belakang ----------
+  // Alur sapaan: (1) Neo memperkenalkan diri, (2) sapaan hangat/lelucon: SELAGI itu kamera mengambil 1 foto di belakang,
+  // (3) penutup "Ada yang bisa aku bantu, <nama>?" kalau wajah dikenali, atau "Ada yang bisa aku bantu?" kalau tidak.
+  // Izin kamera diminta di awal bersamaan dengan izin mikrofon (mintaIzinKamera di init SpeechRecognition).
+  // Foto HANYA diambil kalau akun ini sudah punya profil wajah di database (tanpa profil tidak ada yang dicocokkan, kamera tidak menyala).
+  // Foto yang sama dikirim ke Claude untuk analisis penampilan hanya kalau wajah DIKENALI; yang tidak dikenali tidak dikirim ke mana pun.
+  // Mendaftarkan wajah hanya lewat ucapan "aku mau kamu mengenali wajahku".
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    profilWajahRef.current = (async () => {
+      const st = await statusProfil(); // tanya database dulu; kamera TIDAK menyala kalau belum ada profil wajah
+      try { if (st?.ada) localStorage.setItem(KUNCI_WAJAH_AKTIF, '1'); else localStorage.removeItem(KUNCI_WAJAH_AKTIF); } catch { /* abaikan */ }
+      if (st?.ada) panaskanModel(); // muat model selagi menunggu izin & sapaan, supaya pengenalan nanti cepat
+      return st;
+    })().catch(() => null);
+  }, []);
+  pengenalanWajahRef.current = async () => {
+    try {
+      let st = await profilWajahRef.current;
+      if (!st) st = await statusProfil(); // pertanyaan awal gagal (mis. login belum siap): tanya lagi sekarang
+      if (!st?.ada) return null;
+      panaskanModel();
+      setKameraAktif(true);
+      const hk = await ambilFotoKamera(1);
+      setKameraAktif(false);
+      if (!hk.ok) return null;
+      const r = await kenaliWajah(hk.kanvas);
+      if (!r.dikenali) return null;
+      const waktuFoto = Date.now();
+      void api.analisaWajah(hk.base64).then((t: string) => { if (t) analisaWajahRef.current = { teks: t, waktu: waktuFoto }; }); // latar belakang
+      return { nama: r.nama };
+    } catch {
+      setKameraAktif(false);
+      return null;
+    }
+  };
+  daftarWajahRef.current = async () => {
+    const setuju = window.confirm(
+      'Daftarkan wajahmu supaya Neo bisa menyapa dengan nama?\n\n'
+      + '• Yang disimpan di DATABASE hanya nama + angka ciri wajah (terenkripsi, BUKAN foto), khusus untuk akunmu. Berlaku di semua browser/perangkat tempat kamu login.\n'
+      + '• Saat Neo menyapa, foto sesaat dikirim ke Claude untuk analisis penampilan, lalu dibuang (tidak disimpan).\n'
+      + '• Hanya untuk menyapa, BUKAN untuk login.\n'
+      + '• Hapus kapan saja dengan perintah "hapus data wajahku".'
+    );
+    if (!setuju) { ucapkanLokal(tx('Oke, wajahmu tidak jadi didaftarkan.', 'Okay, I will not register your face.')); return; }
+    const nama = (window.prompt('Nama yang mau disebut Neo saat menyapa:', namaSapaRef.current || '') || '').trim();
+    if (!nama) { ucapkanLokal(tx('Oke, dibatalkan karena namanya kosong.', 'Cancelled: the name was empty.')); return; }
+    ucapkanLokal(tx('Hadap kamera dan diam sebentar ya.', 'Face the camera and hold still for a moment.'));
+    setKameraAktif(true);
+    const hk = await ambilFotoKamera(6, 450);
+    setKameraAktif(false);
+    if (!hk.ok) { ucapkanLokal(hk.pesan); return; }
+    const h = await daftarkanWajah(nama, hk.frames);
+    if (!h.ok) { ucapkanLokal(h.pesan); return; }
+    try { localStorage.setItem(KUNCI_WAJAH_AKTIF, '1'); } catch { /* abaikan */ }
+    catatAudit('wajah-didaftarkan', '');
+    ucapkanLokal(tx(`Selesai. Mulai sekarang aku akan menyapamu, ${nama}.`, `Done. From now on I will greet you, ${nama}.`));
+  };
+  hapusWajahRef.current = async () => {
+    const ok = await hapusProfil();
+    if (!ok) { ucapkanLokal(tx('Maaf, data wajah gagal dihapus. Coba lagi sebentar.', 'Sorry, the face data could not be deleted. Please try again.')); return; }
+    try { localStorage.removeItem(KUNCI_WAJAH_AKTIF); } catch { /* abaikan */ }
+    analisaWajahRef.current = null;
+    catatAudit('wajah-dihapus', '');
+    ucapkanLokal(tx('Data wajahmu sudah dihapus dari database.', 'Your face data has been deleted from the database.'));
+  };
+
   // ---------- Sapaan otomatis saat aplikasi dibuka ----------
   // Neo langsung memperkenalkan diri (sekali) + menyapa hangat, lalu mikrofon langsung siap menerima jawaban. Tanpa kata panggil.
   // Catatan browser: suara otomatis baru boleh diputar setelah ada satu klik/ketukan di halaman ini
   // (aturan Chrome). Habis login sudah ada klik, jadi langsung bicara; kalau halaman di-refresh,
   // sapaan menunggu klik/tombol pertama.
   const sudahSapaRef = useRef(false);
-  const sapaanAwalRef = useRef('');
+  const sapaanAwalRef = useRef<{ perkenalan: string; hangat: string } | null>(null);
   // [BARU] Begitu nama user selesai dimuat, teks sapaan dibuat dan audio kalimat pertamanya langsung diminta ke Gemini,
   // jadi saat sapaan benar-benar diucapkan (menunggu mic/klik) audionya sudah siap.
   useEffect(() => {
     if (authMemuat || sudahSapaRef.current || sapaanAwalRef.current || pttRef.current) return;
     if (typeof window === 'undefined') return;
-    sapaanAwalRef.current = buatSapaanAwal(namaSapaRef.current);
-    siapkanSuara(sapaanAwalRef.current);
+    sapaanAwalRef.current = buatSapaanAwal();
+    // Perkenalan & sapaan tidak bergantung pada wajah (nama baru disebut di penutup), jadi audio kalimat pertamanya aman disiapkan sekarang.
+    siapkanSuara(sapaanAwalRef.current.perkenalan || sapaanAwalRef.current.hangat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authMemuat]);
   useEffect(() => {
@@ -1577,7 +1728,18 @@ export default function VoiceAssistant() {
       sudahSapaRef.current = true;
       aktifRef.current = true; // langsung mode ngobrol: tanpa kata panggil
       bukaJendelaPerintah(WAKTU_PERCAKAPAN_MS);
-      ucapkan(sapaanAwalRef.current || buatSapaanAwal(namaSapaRef.current)); // perkenalan + sapaan hangat, HANYA saat aplikasi baru dibuka
+      const awal = sapaanAwalRef.current || buatSapaanAwal();
+      const gen = genSuaraRef.current;
+      // Kamera + pengenalan wajah jalan di LATAR BELAKANG selagi Neo memperkenalkan diri lalu menyapa hangat.
+      const pengenal = pengenalanWajahRef.current();
+      if (awal.perkenalan) ucapkan(awal.perkenalan);
+      ucapkan(awal.hangat);
+      // Penutup diucapkan setelah dua bagian di atas (antrean suara berurutan): wajah dikenali -> sebut nama; tidak -> tanpa nama.
+      // Hasil pengenalan ditunggu maksimal 8 dtk; kalau pengguna sudah menyela (gen berubah), penutup dibatalkan.
+      void Promise.race([pengenal, new Promise<null>((r) => setTimeout(() => r(null), 8000))]).then((h) => {
+        if (gen !== genSuaraRef.current) return;
+        ucapkan(h?.nama ? `Ada yang bisa aku bantu, ${h.nama}?` : 'Ada yang bisa aku bantu?');
+      });
     };
     let tunggu: ReturnType<typeof setTimeout> | null = null;
     let pasangKlik = false;
@@ -1700,7 +1862,7 @@ export default function VoiceAssistant() {
           aria-live="polite"
         >
           <span className="block text-foreground">
-            {sistemMati ? L('Sistem sedang mati…', 'System is off…') : label[status]}
+            {sistemMati ? L('Sistem sedang mati…', 'System is off…') : kameraAktif ? L('Kamera aktif, melihat sebentar…', 'Camera on, taking a look…') : label[status]}
           </span>
           {!sistemMati && teksTerakhir && !galat && (
             <span className="block truncate text-xs text-muted-foreground" title={teksTerakhir}>Terdengar: {teksTerakhir}</span>

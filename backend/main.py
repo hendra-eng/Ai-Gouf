@@ -88,6 +88,9 @@ import akuntansi_ai as ak
 from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/stream (dipakai Agent AI + VoiceAssistant)
 from tts_route import buat_router_tts  # [BARU] route POST /api/tts (suara neural Gemini TTS -> Edge TTS untuk VoiceAssistant)
 from client_intent_route import buat_router_client_intent  # [BARU] route POST /api/voice/client-intent (fallback LLM ganti client lewat suara)
+from stop_intent_route import buat_router_stop_intent  # [BARU] route POST /api/voice/stop-intent (AI memahami maksud 'berhenti menjelaskan')
+from wajah_profil_route import buat_router_wajah_profil  # [BARU] profil wajah (nama + embedding terenkripsi) di database: /api/wajah/...
+from wajah_route import buat_router_wajah  # [BARU] route POST /api/voice/analisa-wajah (analisis deskriptif foto kamera saat Neo menyapa)
 from memori_ai import buat_router_memori  # [BARU] memori jangka panjang AI + API halaman Memori AI (/api/ai-memory/...)
 import db_client as dbc
 from modules import (
@@ -125,7 +128,7 @@ from modules.transactions import journal_entry_import_v1 as transactions_journal
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
 from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills/...
-from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/...
+from modules.transactions import bank_cash_willi as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/...
 from modules.finance import payables_v1 as finance_payables_v1  # [BARU] Accounts Payable dari Purchase posted: /api/v1/finance/payables/...
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
@@ -365,6 +368,9 @@ app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- p
 app.include_router(buat_router_chat(auth))  # [BARU] /api/chat/stream (SSE chat AI)
 app.include_router(buat_router_tts(auth))  # [BARU] /api/tts (Gemini TTS -> Edge TTS)
 app.include_router(buat_router_client_intent(auth))  # [BARU] /api/voice/client-intent (fallback LLM ganti client)
+app.include_router(buat_router_stop_intent(auth))  # [BARU] /api/voice/stop-intent
+app.include_router(buat_router_wajah(auth))  # [BARU] /api/voice/analisa-wajah
+app.include_router(buat_router_wajah_profil(auth))  # [BARU] /api/wajah/status|profil|cocokkan
 app.include_router(buat_router_memori(auth))  # [BARU] /api/ai-memory/facts|conversations (kelola ingatan AI)
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri

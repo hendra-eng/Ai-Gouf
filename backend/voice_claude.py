@@ -89,8 +89,9 @@ def _jeda_untuk_error(e: Exception) -> int:
     return 0
 
 
-def _susun_pesan(riwayat: Optional[List[Dict[str, str]]], pesan: str) -> List[Dict[str, Any]]:
-    """Format Claude: peran harus selang-seling dan diawali 'user'."""
+def _susun_pesan(riwayat: Optional[List[Dict[str, str]]], pesan: str, gambar_b64: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Format Claude: peran harus selang-seling dan diawali 'user'.
+    [BARU] gambar_b64 (JPEG base64): dilampirkan ke pesan user TERAKHIR saja (foto kamera saat ini, bukan riwayat)."""
     hasil: List[Dict[str, Any]] = []
     for m in riwayat or []:
         role = m.get("role")
@@ -107,6 +108,12 @@ def _susun_pesan(riwayat: Optional[List[Dict[str, str]]], pesan: str) -> List[Di
         hasil[-1]["content"] += "\n" + pesan
     else:
         hasil.append({"role": "user", "content": pesan})
+    if gambar_b64:
+        teks = hasil[-1]["content"]
+        hasil[-1]["content"] = [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": gambar_b64}},
+            {"type": "text", "text": teks},
+        ]
     return hasil
 
 
@@ -120,10 +127,11 @@ def _alat_untuk_claude(neo) -> List[Dict[str, Any]]:
 
 
 def _stream_claude(
-    neo, pesan: str, system_prompt: str, riwayat, user, client_id_aktif, max_tokens: int, pakai_alat: bool
+    neo, pesan: str, system_prompt: str, riwayat, user, client_id_aktif, max_tokens: int, pakai_alat: bool,
+    gambar_b64: Optional[str] = None,
 ) -> Generator[str, None, None]:
     klien = _klien()
-    messages = _susun_pesan(riwayat, pesan)
+    messages = _susun_pesan(riwayat, pesan, gambar_b64)
     alat = _alat_untuk_claude(neo) if pakai_alat else None
     ctx = neo.Konteks(user, client_id_aktif) if pakai_alat else None
     maks_putaran = getattr(neo, "MAKS_PUTARAN_ALAT", 3) if pakai_alat else 0
@@ -185,8 +193,10 @@ def jawab_dengan_cadangan(
     cadangan: Callable[[], Generator[str, None, None]],
     max_tokens: int = 700,
     pakai_alat: bool = False,
+    gambar_b64: Optional[str] = None,
 ) -> Generator[str, None, None]:
-    """Generator delta teks: Claude dulu; kalau gagal sebelum ada token -> `cadangan()` (Groq)."""
+    """Generator delta teks: Claude dulu; kalau gagal sebelum ada token -> `cadangan()` (Groq).
+    [BARU] gambar_b64 = foto kamera; HANYA dikirim ke Claude, tidak pernah ke Groq/DeepSeek (cadangan hanya menerima teks)."""
     global _mati_sampai
     if not aktif():
         yield from cadangan()
@@ -194,7 +204,7 @@ def jawab_dengan_cadangan(
 
     keluar = False
     try:
-        for delta in _stream_claude(neo, pesan, system_prompt, riwayat, user, client_id_aktif, max_tokens, pakai_alat):
+        for delta in _stream_claude(neo, pesan, system_prompt, riwayat, user, client_id_aktif, max_tokens, pakai_alat, gambar_b64):
             keluar = True
             yield delta
         return

@@ -3300,6 +3300,98 @@ class BankCashBankMapping(Base):
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
+class BankCashStatement(Base):
+    """1 baris = 1 file rekening koran yang diimport (Cash & Bank > Source Data).
+    Kolom sama dengan DDL di modules/transactions/bank_cash_v1.py (pastikan_tabel)."""
+    __tablename__ = "financial_transaction_bank_cash_statements"
+    __table_args__ = (
+        Index("idx_bc_stmt_client", "client_id", postgresql_where=text("deleted_at IS NULL")),
+        Index("idx_bc_stmt_hash", "client_id", "bank_coa_id", "file_hash"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=True)
+    file_hash = Column(String(64), nullable=True)
+    period_start = Column(Date, nullable=True)
+    period_end = Column(Date, nullable=True)
+    opening_balance = Column(Numeric(20, 2), nullable=True)
+    closing_balance = Column(Numeric(20, 2), nullable=True)
+    total_debit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
+    total_credit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
+    line_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    duplicate_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    warnings = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    extraction_method = Column(String(20), nullable=True)
+    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id"), nullable=True)
+    validation = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashMutation(Base):
+    """1 baris = 1 mutasi / baris rekening koran. Kolom sama dengan DDL di
+    modules/transactions/bank_cash_v1.py (pastikan_tabel)."""
+    __tablename__ = "financial_transaction_bank_cash_mutations"
+    __table_args__ = (
+        Index("idx_bc_mut_client", "client_id", "bank_coa_id", "mutation_date", postgresql_where=text("deleted_at IS NULL")),
+        Index("idx_bc_mut_stmt", "statement_id"),
+        Index("idx_bc_mut_hash", "client_id", "bank_coa_id", "row_hash"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    statement_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_statements.id"), nullable=False)
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    line_no = Column(Integer, nullable=False)
+    mutation_date = Column(Date, nullable=False)
+    description = Column(Text, nullable=True)
+    debit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
+    credit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
+    balance_after = Column(Numeric(20, 2), nullable=True)
+    status = Column(String(20), nullable=False, default="unmatched", server_default=text("'unmatched'"))
+    ignore_reason = Column(Text, nullable=True)
+    matched_tx_id = Column(PG_UUID(as_uuid=False), nullable=True)
+    row_hash = Column(String(64), nullable=True)
+    confidence = Column(String(10), nullable=True)
+    confidence_notes = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    page_no = Column(Integer, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reviewed_by_name = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+def _pesan_dari_trigger(e: Exception, penanda: tuple) -> Optional[str]:
+    """Ambil teks pesan dari error trigger/fungsi PostgreSQL yang diawali penanda
+    (mis. 'MAPPING_LOCKED: ...'). None kalau error ini bukan error kunci."""
+    teks = str(getattr(e, "orig", None) or e)
+    for p in penanda:
+        i = teks.find(p)
+        if i >= 0:
+            sisa = teks[i + len(p):].split("\n")[0].strip()
+            return sisa or "Data ini terkunci."
+    return None
+
+
+def pesan_mapping_terkunci(e: Exception) -> Optional[str]:
+    """Pesan untuk error trigger kunci Account Mapping (migration 43: 'MAPPING_LOCKED: ...')."""
+    return _pesan_dari_trigger(e, ("MAPPING_LOCKED:",))
+
+
+def pesan_periode_terkunci(e: Exception) -> Optional[str]:
+    """Pesan untuk error trigger kunci periode (fn_tolak_periode_terkunci).
+    Penanda yang dikenali: 'PERIOD_LOCKED:' / 'PERIODE_TERKUNCI:'."""
+    return _pesan_dari_trigger(e, ("PERIOD_LOCKED:", "PERIODE_TERKUNCI:"))
+
+
 # ============================================================
 # [BARU] MODUL OTHER (JURNAL LAIN-LAIN) -- tabel
 # "finance_transaction_other" dibuat manual oleh user lewat Supabase SQL

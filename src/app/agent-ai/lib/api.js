@@ -609,13 +609,107 @@ export async function tentukanClientSuara(ucapan, daftar, aktif = null, signal =
 }
 
 /**
+ * [BARU] Profil wajah (untuk sapaan Neo) disimpan di DATABASE per pengguna: /api/wajah/...
+ * Semua fungsi TIDAK melempar: gagal -> null / false (Neo menyapa seperti biasa).
+ */
+async function _wajahFetch(metode, path, body) {
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}${path}`, { method: metode, headers, body: body ? JSON.stringify(body) : undefined });
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+/** @returns {Promise<{ada: boolean, nama: string|null}|null>} */
+export const wajahStatus = () => _wajahFetch("GET", "/api/wajah/status");
+/** @returns {Promise<boolean>} */
+export const wajahSimpan = async (nama, embeddings) => !!(await _wajahFetch("PUT", "/api/wajah/profil", { nama, embeddings }))?.ok;
+/** @returns {Promise<{dikenali: boolean, nama: string|null}|null>} */
+export const wajahCocokkan = (embedding) => _wajahFetch("POST", "/api/wajah/cocokkan", { embedding });
+/** @returns {Promise<boolean>} */
+export const wajahHapus = async () => !!(await _wajahFetch("DELETE", "/api/wajah/profil"))?.ok;
+
+/**
+ * [BARU] analisaWajah -- analisis deskriptif wajah dari 1 foto kamera (POST /api/voice/analisa-wajah). Dijalankan di latar
+ * belakang saat Neo menyapa. Gagal / timeout -> "" (TIDAK melempar).
+ * @param {string} gambarBase64 -- JPEG base64 tanpa prefix data:
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<string>}
+ */
+export async function analisaWajah(gambarBase64, signal = undefined) {
+  const ctrl = new AbortController();
+  const batas = setTimeout(() => ctrl.abort(), 20000);
+  const teruskan = () => ctrl.abort();
+  if (signal) { if (signal.aborted) ctrl.abort(); else signal.addEventListener("abort", teruskan, { once: true }); }
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/api/voice/analisa-wajah`, {
+      method: "POST",
+      headers,
+      signal: ctrl.signal,
+      body: JSON.stringify({ gambar_kamera: gambarBase64 }),
+    });
+    if (!res.ok) return "";
+    const d = await res.json().catch(() => null);
+    return d && typeof d.analisa === "string" ? d.analisa : "";
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(batas);
+    if (signal) signal.removeEventListener("abort", teruskan);
+  }
+}
+
+/**
+ * [BARU] Penilai maksud "berhenti": apakah ucapan pengguna meminta Neo berhenti bicara? (POST /api/voice/stop-intent)
+ * Dipanggil HANYA saat Neo sedang bicara dan regex lokal (hentikanSuara.ts) tidak mengenali ucapannya.
+ * Gagal / timeout -> null (TIDAK melempar): Neo tidak berhenti, seperti perilaku lama.
+ * @param {string} ucapan
+ * @param {string} [neoTerakhir] -- potongan terakhir ucapan Neo (konteks)
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{maksud: "berhenti"|"berhenti_lalu_minta"|"lanjut"|"abaikan", sisa: string, yakin: number}|null>}
+ */
+export async function stopIntent(ucapan, neoTerakhir = "", signal = undefined) {
+  const ctrl = new AbortController();
+  const batas = setTimeout(() => ctrl.abort(), 4500);
+  const teruskan = () => ctrl.abort();
+  if (signal) { if (signal.aborted) ctrl.abort(); else signal.addEventListener("abort", teruskan, { once: true }); }
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/api/voice/stop-intent`, {
+      method: "POST",
+      headers,
+      signal: ctrl.signal,
+      body: JSON.stringify({ ucapan, neo_terakhir: neoTerakhir }),
+    });
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null);
+    if (!d || !["berhenti", "berhenti_lalu_minta", "lanjut", "abaikan"].includes(d.maksud)) return null;
+    return { maksud: d.maksud, sisa: typeof d.sisa === "string" ? d.sisa : "", yakin: Number(d.yakin) || 0 };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(batas);
+    if (signal) signal.removeEventListener("abort", teruskan);
+  }
+}
+
+/**
  * @param {string} pesan
  * @param {{role: string, content: string}[]} [riwayat]
  * @param {string[]} [ringkasanData]
  * @param {number|string|null} [clientId]
  * @param {number|string|null} [percakapanId]
  * @param {AbortSignal} [signal]
- * @param {{modeSuara?: boolean, pesanAsli?: string, sesiId?: string, konteksLayar?: string}} [opsi]
+ * @param {{modeSuara?: boolean, pesanAsli?: string, sesiId?: string, konteksLayar?: string, gambarKamera?: string, analisaWajah?: string, tanpaStream?: boolean}} [opsi]
  */
 export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined, opsi = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -650,6 +744,8 @@ export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clien
       pesan_asli: (opsi && opsi.pesanAsli) || null, // ucapan user apa adanya -> dipakai memori AI
       sesi_id: (opsi && opsi.sesiId) || null, // id sesi suara -> mengelompokkan percakapan di memori AI
       konteks_layar: (opsi && opsi.konteksLayar) || null, // [BARU] snapshot teks layar (berbagi layar versi teks)
+      gambar_kamera: (opsi && opsi.gambarKamera) || null, // [BARU] 1 foto kamera (base64 JPEG) saat pengguna minta Neo melihat
+      analisa_wajah: (opsi && opsi.analisaWajah) || null, // [BARU] analisis wajah (teks) dari latar belakang saat sapaan awal
     }),
   });
 

@@ -289,8 +289,11 @@ def _kandidat(session, kid: str) -> Dict[str, Dict[str, Any]]:
         return None, None
 
     # Sales
-    npwp_cust = {(c.name or "").strip().upper(): c.npwp for c in session.query(dbc.ArCustomer).filter(
-        dbc.ArCustomer.client_id == kid, dbc.ArCustomer.deleted_at.is_(None)).all() if c.npwp}
+    # Model ArCustomer (tabel master customer AR) belum ada di db_client -> lewati lookup NPWP cadangan
+    # (NPWP tetap diambil dari inv.customer_npwp). Aktif otomatis kalau modelnya nanti ditambahkan.
+    _ar_customer = getattr(dbc, "ArCustomer", None)
+    npwp_cust = {(c.name or "").strip().upper(): c.npwp for c in session.query(_ar_customer).filter(
+        _ar_customer.client_id == kid, _ar_customer.deleted_at.is_(None)).all() if c.npwp} if _ar_customer is not None else {}
     for inv in session.query(SI).filter(SI.management_client_id == kid, func.lower(SI.posting_status) == "posted", SI.deleted_at.is_(None)).all():
         gross, ppn, pph = _d(inv.gross_amount), _d(inv.ppn), _d(inv.pph)
         dpp = _d(inv.dpp) or _bulat(gross / Decimal("1.11"))

@@ -366,6 +366,28 @@ def t_jurnal_terakhir(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
     return {**_info(k), "jurnal": baris}
 
 
+def t_status_data_wajah(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Status profil wajah milik PENGGUNA YANG SEDANG LOGIN (bukan klien, bukan pengguna lain).
+    Hanya status + nama panggilan + tanggal; embedding/foto TIDAK pernah dibaca atau dikirim ke model."""
+    import memori_ai as mem
+    import wajah_profil_route as wp
+    from sqlalchemy.orm import Session
+
+    pemilik = mem.pemilik_dari_user(ctx.user)
+    wp.ensure_tabel()
+    with Session(dbc.engine) as s:
+        baris = s.query(wp.WajahProfil).filter(wp.WajahProfil.pemilik == pemilik).first()
+        if not baris:
+            return {"tersimpan": False, "catatan": "Belum ada profil wajah untuk akun ini di database."}
+        diperbarui = getattr(baris, "updated_at", None)
+        return {
+            "tersimpan": True,
+            "nama_panggilan": baris.nama,
+            "terakhir_diperbarui": diperbarui.date().isoformat() if diperbarui else None,
+            "catatan": "Yang tersimpan hanya nama dan angka ciri wajah terenkripsi, bukan foto.",
+        }
+
+
 def blok_daftar_klien(user: Dict[str, Any], client_id_aktif: Optional[str] = None) -> str:
     """Teks untuk system prompt: nama + kode klien yang boleh diakses user ini, supaya Neo langsung
     mengenali semua klien (tanpa panggilan alat) dan bisa mencocokkan nama yang salah ucap."""
@@ -427,6 +449,7 @@ TOOLS: List[Dict[str, Any]] = [
           {"klien": _KLIEN}),
     _spec("jurnal_terakhir", "Beberapa jurnal terbaru klien (nomor, tanggal, keterangan, status, total).",
           {"klien": _KLIEN, "batas": {"type": "integer"}}),
+    _spec("status_data_wajah", "Cek apakah data wajah pengguna yang sedang login SUDAH tersimpan di database (ya/tidak, nama panggilan, tanggal terakhir diperbarui). Tidak butuh klien.", {}),
 ]
 
 _FUNGSI = {
@@ -434,6 +457,7 @@ _FUNGSI = {
     "saldo_akun": t_saldo_akun, "ringkasan_keuangan": t_ringkasan_keuangan,
     "ringkasan_penjualan": t_ringkasan_penjualan, "ringkasan_pembelian": t_ringkasan_pembelian,
     "umur_piutang": t_umur_piutang, "jurnal_terakhir": t_jurnal_terakhir,
+    "status_data_wajah": t_status_data_wajah,
 }
 
 
