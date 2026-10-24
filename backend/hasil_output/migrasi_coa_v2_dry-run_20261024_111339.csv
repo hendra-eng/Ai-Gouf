@@ -1,0 +1,144 @@
+﻿client,coa_id,status,old_acc_no,new_acc_no,old_name,new_name,standard_account_code,transaction_rows_using_old_code
+PT BINA RANCANG WASESA,8e396879-ed71-4c5e-b30f-e42b3ab37d3b,dipetakan ke V2,1-10001,110001,Cash on Hand,Cash on Hand,std_asset_current_cash_on_hand,0
+PT BINA RANCANG WASESA,d15f80e8-e710-4d21-9253-a71261e09f5e,dipetakan ke V2,1-10002,110002,Petty Cash,Petty Cash,std_asset_current_cash_petty,0
+PT BINA RANCANG WASESA,3a2f5922-6935-4e51-b2d3-4e353832c8b3,dipetakan ke V2,1-10003,120001,Bank Account 1,Bank Account,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,8d6094f2-770d-4933-83e8-14f51696186d,dipetakan ke V2,1-10004,120002,Bank Account 2,Bank Account 2,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,cac364c7-b2c6-4d99-b2f9-d5e9b7f0085a,dipetakan ke V2,1-10005,120003,Bank Account 3,Bank Account 3,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,8f9fca2f-b57d-4ba3-ad5b-41c1e76a2145,dipetakan ke V2,1-10006,120004,Bank Account 4,Bank Account 4,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,0fbf7d09-115c-43fc-966f-c65b8f947c80,dipetakan ke V2,1-10007,110099,Cash in Transit,Cash in Transit,std_asset_current_cash_transit,0
+PT BINA RANCANG WASESA,d675e8c6-fa3f-4b8b-8656-9cc87fec291b,dipetakan ke V2,1-10008,120099,Interbank Transfer Clearing (Ayat Silang),Interbank Transfer Clearing (Ayat Silang),std_asset_current_cash_clearing,0
+PT BINA RANCANG WASESA,1357b00e-3a64-4c23-a2da-9320cf9e6179,dipetakan ke V2,1-10009,140001,Advances and Down Payments,Advances and Down Payments,std_asset_current_advance,0
+PT BINA RANCANG WASESA,7fa3151d-dc03-4763-ab61-496fc74b6495,dipetakan ke V2,1-10010,140002,Allowance for Credit Losses,Allowance for Credit Losses,std_asset_current_receivable_allowance,0
+PT BINA RANCANG WASESA,a3c2a51d-2dce-4843-97ee-00f0ba020bd3,dipetakan ke V2,1-10011,140003,Prepaid Income Taxes,Prepaid Income Taxes,std_asset_current_tax_income_receivable,0
+PT BINA RANCANG WASESA,7ff101ec-7ba0-4fd8-874b-9284575d1bf6,dipetakan ke V2,1-10012,140004,Input VAT Receivable,Input VAT Receivable,std_asset_current_tax_vat_receivable,0
+PT BINA RANCANG WASESA,8b859490-c65a-4d80-a966-99a2bad7420b,dipetakan ke V2,1-10013,140005,Inventories,Inventories,std_asset_current_inventory,0
+PT BINA RANCANG WASESA,cfb3687a-7506-4d8e-b740-c9a200f7e4b8,dipetakan ke V2,1-10014,140006,Other Current Assets,Other Current Assets,std_asset_current_other,0
+PT BINA RANCANG WASESA,db50d705-c6c4-44ea-bf12-656d70aa1629,dipetakan ke V2,1-10015,140007,Employee Receivables,Employee Receivables,std_asset_current_receivable_employee,0
+PT BINA RANCANG WASESA,d8e6978d-5df2-4527-bdf3-7cae3c3ab008,dipetakan ke V2,1-10016,140008,Other Receivables,Other Receivables,std_asset_current_receivable_other,0
+PT BINA RANCANG WASESA,824391c7-0ea8-4306-a4c6-7c32993cfb72,dipetakan ke V2,1-10017,140009,Prepayment,Prepayment,std_asset_current_prepayment,0
+PT BINA RANCANG WASESA,4e4b9f15-cfd0-495c-bc67-23f864b3e31e,dipetakan ke V2,1-10018,140010,Related Party Receivables,Related Party Receivables,std_asset_current_receivable_related_party,0
+PT BINA RANCANG WASESA,d555b58d-65f5-4672-bac2-a9ea9708b383,dipetakan ke V2,1-10019,140011,Deposit,Deposit,std_asset_current_deposit,0
+PT BINA RANCANG WASESA,29657afc-3c37-4d81-8fe0-ae6714c871e5,dipetakan ke V2,1-10020,130001,Trade Receivables,Trade Receivables,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,240f004d-9341-4308-9c33-31b4f4afb18b,dipetakan ke V2,1-10021,140012,Service / Repair Receivables,Service / Repair Receivables,ind_s_receivable_service,0
+PT BINA RANCANG WASESA,54900dc4-cd1f-4c10-b7a0-619dabdb0573,dipetakan ke V2,1-10022,140013,Spare Parts / Consumables Inventory,Spare Parts / Consumables Inventory,ind_s_inventory_parts,0
+PT BINA RANCANG WASESA,50b7eb62-8a9c-4e00-a95a-274f89ccb897,dipetakan ke V2,1-10024,150006,Impairment Allowance,Impairment Allowance,std_asset_noncurrent_impairment_allowance,0
+PT BINA RANCANG WASESA,933e309e-4739-4358-9a77-8341ac1c10df,dipetakan ke V2,1-10025,150007,Tax Deferred,Tax Deferred,std_asset_noncurrent_tax_deferred,0
+PT BINA RANCANG WASESA,1973c1a7-3a38-4b56-a541-f015876bdc1d,dipetakan ke V2,1-10026,150008,Long-term Investments,Long-term Investments,std_asset_noncurrent_investment,0
+PT BINA RANCANG WASESA,4dbb83ae-35e5-47fa-b7ff-82052b663585,dipetakan ke V2,1-10027,150009,Security Deposit,Security Deposit,std_asset_noncurrent_security_deposit,0
+PT BINA RANCANG WASESA,9eb0cd0f-12eb-4e30-93f3-1b9f71516298,dipetakan ke V2,1-10028,150003,Ppe Building,Building,std_asset_noncurrent_ppe_building,0
+PT BINA RANCANG WASESA,fa308cce-e6f3-49c7-a320-9b4f9ed4d97c,dipetakan ke V2,1-10029,150001,Ppe Cip,CIP,std_asset_noncurrent_ppe_cip,0
+PT BINA RANCANG WASESA,ac366bdb-6025-4033-8880-7deaa39d9a91,dipetakan ke V2,1-10030,150004,Ppe Equipment,Equipment,std_asset_noncurrent_ppe_equipment,0
+PT BINA RANCANG WASESA,ee512323-5e72-44bf-a4ee-c73ab2596e09,dipetakan ke V2,1-10031,150002,Ppe Land,Land,std_asset_noncurrent_ppe_land,0
+PT BINA RANCANG WASESA,09f20b81-c2a6-486d-9bee-4f2f177a0deb,dipetakan ke V2,1-10032,150005,Ppe Vehicle,Vehicle,std_asset_noncurrent_ppe_vehicle,0
+PT BINA RANCANG WASESA,7981ed0d-cccd-474d-9975-426d655b06a0,dipetakan ke V2,2-10001,220001,Accrued Employee Costs,Accrued Employee Costs,std_liability_current_accrued_employee,0
+PT BINA RANCANG WASESA,36b521fe-a202-494e-a58d-e1defd629d93,dipetakan ke V2,2-10002,220002,Accrued Expenses,Accrued Expenses,std_liability_current_accrued_expense,0
+PT BINA RANCANG WASESA,8c237f0a-d0a6-4966-9a49-cca95393a00b,dipetakan ke V2,2-10003,220003,Current Borrowings,Current Borrowings,std_liability_current_borrowing,0
+PT BINA RANCANG WASESA,edd0a6f7-ec8e-4ca6-8130-95c1226c4223,dipetakan ke V2,2-10004,220004,Deferred / Contract Revenue,Deferred / Contract Revenue,std_liability_current_deferred_revenue,0
+PT BINA RANCANG WASESA,a8e06eca-216a-4db7-8c0f-46fdc8099098,dipetakan ke V2,2-10005,220005,Other Current Liabilities,Other Current Liabilities,std_liability_current_other,0
+PT BINA RANCANG WASESA,743e006d-464a-4974-9554-36bfbede37a9,dipetakan ke V2,2-10006,220006,Other Payables,Other Payables,std_liability_current_payable_other,0
+PT BINA RANCANG WASESA,da89f33c-7253-4da3-b8ca-ace1ff112b11,dipetakan ke V2,2-10007,220007,Related Party Payables,Related Party Payables,std_liability_current_payable_related_party,0
+PT BINA RANCANG WASESA,6f7651f3-27ca-4562-9c32-664839f52c61,dipetakan ke V2,2-10008,220008,Income Tax Payable,Income Tax Payable,std_liability_current_tax_income_payable,0
+PT BINA RANCANG WASESA,a3f00361-4e59-4837-a23e-631b351a15f6,dipetakan ke V2,2-10009,220009,Other Tax Payables,Other Tax Payables,std_liability_current_tax_other_payable,0
+PT BINA RANCANG WASESA,189e356d-635d-453a-b9aa-a4ff3ece1878,dipetakan ke V2,2-10010,220010,Output VAT Payable,Output VAT Payable,std_liability_current_tax_vat_payable,0
+PT BINA RANCANG WASESA,66e9dec6-5709-4c36-b344-7c1c0b4f010d,dipetakan ke V2,2-10011,210001,Trade Payables,Trade Payables,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,53e12d75-90a0-4af9-8b5e-143c71c0e1b6,dipetakan ke V2,2-10012,230001,Long-term Borrowings,Long-term Borrowings,std_liability_noncurrent_borrowing,0
+PT BINA RANCANG WASESA,4682cd67-bd51-4ffc-b1f9-900156f3ee18,dipetakan ke V2,2-10013,230002,Tax Deferred,Tax Deferred,std_liability_noncurrent_tax_deferred,0
+PT BINA RANCANG WASESA,bd86041d-cd6e-4a06-9a3a-c8ce4ace2bc5,dipetakan ke V2,2-10014,230003,Employee Benefit Obligations,Employee Benefit Obligations,std_liability_noncurrent_employee_benefit,0
+PT BINA RANCANG WASESA,b662affa-5e29-4243-8221-c59e624ef3bb,dipetakan ke V2,2-10015,230004,Lease Liabilities,Lease Liabilities,std_liability_noncurrent_lease,0
+PT BINA RANCANG WASESA,df992368-d344-4847-b00a-9eec726529f4,dipetakan ke V2,2-10016,230005,Borrowing Related Party,Borrowing Related Party,std_liability_noncurrent_borrowing_related_party,0
+PT BINA RANCANG WASESA,316bd2d4-6ca6-4e67-b67d-b22c507e6152,dipetakan ke V2,3-10001,310002,Additional Paid-in Capital,Additional Paid-in Capital,std_equity_additional_paid_in_capital,0
+PT BINA RANCANG WASESA,8918a177-9069-4e9b-8354-7cb8e6b472cf,dipetakan ke V2,3-10002,310004,Current Period Earnings,Current Period Earnings,std_equity_current_period_earnings,0
+PT BINA RANCANG WASESA,5e1c7b3d-6af7-46c4-8e12-8fa12e1e304b,dipetakan ke V2,3-10003,310005,Other Comprehensive Income,Other Comprehensive Income,std_equity_oci,0
+PT BINA RANCANG WASESA,2508d86e-1e77-4ee4-89e8-c731f7154007,dipetakan ke V2,3-10004,310007,Other Equity,Other Equity,std_equity_other,0
+PT BINA RANCANG WASESA,c94a4776-57d5-4972-8f68-167b3a90159c,dipetakan ke V2,3-10005,310006,Owner Drawings,Owner Drawings,std_equity_owner_drawing,0
+PT BINA RANCANG WASESA,159d4c14-72fa-4ffb-b416-698cfb8dd9ab,dipetakan ke V2,3-10006,310003,Retained Earnings,Retained Earnings,std_equity_retained_earnings,0
+PT BINA RANCANG WASESA,fbdabaa3-69b0-479e-9be9-000c2af30025,dipetakan ke V2,3-10007,310001,Share Capital,Share Capital,std_equity_share_capital,0
+PT BINA RANCANG WASESA,fc14c04c-5a47-4873-8e66-9ba5c2a4ea28,dipetakan ke V2,4-10001,410001,Sales Revenue,Sales Revenue,std_revenue_operating_sales,0
+PT BINA RANCANG WASESA,c5357bc2-fb62-461d-9e93-7c67d53dbb0c,dipetakan ke V2,4-10002,420001,Service Revenue,Service Revenue,std_revenue_operating_service,0
+PT BINA RANCANG WASESA,735be90d-17bc-4c83-81f4-3b351bd96c31,dipetakan ke V2,4-10003,430001,Repair & Maintenance Service Revenue,Repair & Maintenance Service Revenue,ind_s_revenue_repair,0
+PT BINA RANCANG WASESA,aa85eaa3-ba81-4692-aea7-91f2fdcff6b1,dipetakan ke V2,4-10004,430002,Personal / Membership Service Revenue,Personal / Membership Service Revenue,ind_s_revenue_other_services,0
+PT BINA RANCANG WASESA,e768fce0-a7a5-43de-9dcc-060723317326,dipetakan ke V2,4-10005,430003,Unbilled Revenue,Unbilled Revenue,std_revenue_operating_unbilled,0
+PT BINA RANCANG WASESA,f42a52f9-33d7-483b-9c1e-55d3d3d3a6d6,dipetakan ke V2,4-10006,430004,Other Operating Revenue,Other Operating Revenue,std_revenue_operating_other,0
+PT BINA RANCANG WASESA,59948941-dcf5-4c9d-97ff-b1ad81371a8f,dipetakan ke V2,4-10007,430005,Sales Discounts,Sales Discounts,std_revenue_operating_discount,0
+PT BINA RANCANG WASESA,5680c3d7-80e7-4f24-877e-c192aaf3ba43,dipetakan ke V2,4-10008,430006,Sales Returns,Sales Returns,std_revenue_operating_return,0
+PT BINA RANCANG WASESA,3f833f6b-99c7-4458-b4b4-d97130083232,dipetakan ke V2,5-10001,510001,Purchases / Merchandise Cost,Purchases / Merchandise Cost,std_cost_of_sales_purchase,0
+PT BINA RANCANG WASESA,8abcafd4-c8f7-443f-b7b7-c2f0e512ed11,dipetakan ke V2,5-10002,510002,Production Cost,Production Cost,std_cost_of_sales_production,0
+PT BINA RANCANG WASESA,1771c5b8-4cd1-4d24-a9f4-befc6d5eee29,dipetakan ke V2,5-10003,510003,Freight / Delivery Cost,Freight / Delivery Cost,std_cost_of_sales_freight,0
+PT BINA RANCANG WASESA,0de901c2-ab13-4948-84d6-524969131dbd,dipetakan ke V2,5-10004,510004,Spare Parts & Direct Service Cost,Spare Parts & Direct Service Cost,ind_s_cost_service_parts,0
+PT BINA RANCANG WASESA,9c9dd5a9-5e77-4afe-bae1-63d870089d1e,dipetakan ke V2,5-10005,510005,Other Cost of Sales,Other Cost of Sales,std_cost_of_sales_other,0
+PT BINA RANCANG WASESA,174119c0-89ad-4a13-931a-9ce6edcaf408,dipetakan ke V2,5-10006,510006,Purchase Discounts,Purchase Discounts,std_cost_of_sales_purchase_discount,0
+PT BINA RANCANG WASESA,5f4d8f1d-beaf-4677-8246-8ab0323b47ee,dipetakan ke V2,5-10007,510007,Purchase Returns,Purchase Returns,std_cost_of_sales_purchase_return,0
+PT BINA RANCANG WASESA,896868b2-7994-4a0d-8f1d-89188fc7adca,dipetakan ke V2,6-10001,620015,Amortisation,Amortisation,std_expense_operating_amortisation,0
+PT BINA RANCANG WASESA,3b5341fb-d952-4b79-bab5-bb28ccdb2542,dipetakan ke V2,6-10002,620016,Bank & Payment Charges,Bank & Payment Charges,std_expense_operating_bank_payment_charges,0
+PT BINA RANCANG WASESA,aed1e16d-ebb1-415c-9bbe-a0aeba76de08,dipetakan ke V2,6-10003,620003,Bonus & Overtime,Bonus & Overtime,std_expense_operating_bonus_overtime,0
+PT BINA RANCANG WASESA,e44226ae-3ca6-4916-af2e-254601026073,dipetakan ke V2,6-10004,620012,Cleaning & Security,Cleaning & Security,std_expense_operating_cleaning_security,0
+PT BINA RANCANG WASESA,d3bd70f1-c9fe-4183-8d43-a745c0077bf9,dipetakan ke V2,6-10005,620013,Communication & Internet,Communication & Internet,std_expense_operating_communication,0
+PT BINA RANCANG WASESA,189fd7bb-56d0-4b13-9596-f97c13bde9c6,dipetakan ke V2,6-10006,610004,Credit Loss / Bad Debt,Credit Loss / Bad Debt,std_expense_operating_credit_loss,0
+PT BINA RANCANG WASESA,78709f10-fd5d-4206-9713-cef0b220dc6d,dipetakan ke V2,6-10007,620005,Depreciation,Depreciation,std_expense_operating_depreciation,0
+PT BINA RANCANG WASESA,465a66de-31d8-4e50-b8f2-8f72f06ae9a6,dipetakan ke V2,6-10008,620022,Donation & Community,Donation & Community,std_expense_operating_donation,0
+PT BINA RANCANG WASESA,8a1831f7-ad21-4eaf-b5a0-97f4de6e6862,dipetakan ke V2,6-10009,620002,Employee Benefits,Employee Benefits,std_expense_operating_employee_benefits,0
+PT BINA RANCANG WASESA,94201488-ad95-4791-91ae-20cf1a38a2f4,dipetakan ke V2,6-10010,610002,Freight & Courier,Freight & Courier,std_expense_operating_freight_courier,0
+PT BINA RANCANG WASESA,d029a9f8-d8f4-4085-b78a-89c0cd1078a2,dipetakan ke V2,6-10011,620011,Insurance,Insurance,std_expense_operating_insurance,0
+PT BINA RANCANG WASESA,ce47953b-bcd3-41ea-b037-23e87f4248b7,dipetakan ke V2,6-10012,620020,Laundry & Linen,Laundry & Linen,std_expense_operating_laundry_linen,0
+PT BINA RANCANG WASESA,b643399a-6c59-4f02-b3e7-fd5f28e46d79,dipetakan ke V2,6-10013,610001,Marketing & Promotion,Marketing & Promotion,std_expense_operating_marketing,0
+PT BINA RANCANG WASESA,4f29b076-7767-43f7-b382-a858a88e5dc2,dipetakan ke V2,6-10014,610005,Meals & Entertainment,Meals & Entertainment,std_expense_operating_meals_entertainment,0
+PT BINA RANCANG WASESA,fb087ccc-4efc-435d-8244-23e5e3a6c2c3,dipetakan ke V2,6-10015,620009,Office & Administration,Office & Administration,std_expense_operating_office_admin,0
+PT BINA RANCANG WASESA,9c91fe54-e3b2-4323-917f-42dfe16ec12a,dipetakan ke V2,6-10016,620010,Operating Supplies,Operating Supplies,std_expense_operating_supplies,0
+PT BINA RANCANG WASESA,5390cf7f-46be-4db0-b94c-ea54e6d1aba6,dipetakan ke V2,6-10017,620024,Other Operating Expense,Other Operating Expense,std_expense_operating_other,0
+PT BINA RANCANG WASESA,43de9014-29ce-4be1-9765-6b4afe715781,dipetakan ke V2,6-10018,620023,Penalties & Fines,Penalties & Fines,std_expense_operating_penalty,0
+PT BINA RANCANG WASESA,ddb0dd79-f3bf-4742-bef6-32717edf7b14,dipetakan ke V2,6-10019,620021,Pre-Operating Expense,Pre-Operating Expense,std_expense_operating_preoperating,0
+PT BINA RANCANG WASESA,c747ed48-85b7-4a04-adbd-9e9502ed345b,dipetakan ke V2,6-10020,620008,Professional Fees,Professional Fees,std_expense_operating_professional_fees,0
+PT BINA RANCANG WASESA,c3bece1f-e542-4241-b937-839ec8fa0a28,dipetakan ke V2,6-10021,620004,Rent Expense,Rent Expense,std_expense_operating_rent,0
+PT BINA RANCANG WASESA,d2d56664-379d-47af-a9b6-5f9ffdde7c5d,dipetakan ke V2,6-10022,620007,Repair & Maintenance,Repair & Maintenance,std_expense_operating_repair_maintenance,0
+PT BINA RANCANG WASESA,37e6cb87-475e-4a01-bda7-812201a1918a,dipetakan ke V2,6-10023,620019,Research & Development,Research & Development,std_expense_operating_research_development,0
+PT BINA RANCANG WASESA,e1330146-7981-440c-974d-9a6dab5c1449,dipetakan ke V2,6-10024,620001,Salaries & Wages,Salaries & Wages,std_expense_operating_salary_wages,0
+PT BINA RANCANG WASESA,774825fe-ab53-4afd-87ce-9826bc60a3ec,dipetakan ke V2,6-10025,620014,Severance / Post-Employment Cost,Severance / Post-Employment Cost,std_expense_operating_severance,0
+PT BINA RANCANG WASESA,b74837e8-f579-4fd1-9432-fb12402a906d,dipetakan ke V2,6-10026,620017,Taxes & Licenses,Taxes & Licenses,std_expense_operating_tax_license,0
+PT BINA RANCANG WASESA,fde631be-710d-4c4f-96b2-7d9125998993,dipetakan ke V2,6-10027,620018,Training & Development,Training & Development,std_expense_operating_training,0
+PT BINA RANCANG WASESA,997070b2-aff3-4f18-ad2c-41a9bed3a0ac,dipetakan ke V2,6-10028,610003,Transport & Travel,Transport & Travel,std_expense_operating_transport_travel,0
+PT BINA RANCANG WASESA,e66d1fdd-9ac0-4b1a-82a8-9af1def42887,dipetakan ke V2,6-10029,620006,Utilities,Utilities,std_expense_operating_utilities,0
+PT BINA RANCANG WASESA,15cb65a7-a403-4904-9033-517e29b0f971,dipetakan ke V2,6-10030,630001,Owner / Personal Expense,Owner / Personal Expense,std_expense_other_owner_personal,0
+PT BINA RANCANG WASESA,c9d9acd0-0701-436d-afe1-d018ac24efe8,dipetakan ke V2,7-10001,710001,Commission / Investment Income,Commission / Investment Income,std_other_income_commission,0
+PT BINA RANCANG WASESA,f434d8d6-453d-4638-a374-d9c5bfd25653,dipetakan ke V2,7-10002,710002,Dividend Income,Dividend Income,std_other_income_dividend,0
+PT BINA RANCANG WASESA,26a379a5-9080-4403-a994-015cf5d59f2a,dipetakan ke V2,7-10003,710003,Foreign Exchange Gain,Foreign Exchange Gain,std_other_income_fx_gain,0
+PT BINA RANCANG WASESA,6f7fd7fd-a5fa-4624-b390-e0ec9919ce0c,dipetakan ke V2,7-10004,710004,Interest Income,Interest Income,std_other_income_interest,0
+PT BINA RANCANG WASESA,9716cc2d-99bf-476f-9f1f-59f3b66520b3,dipetakan ke V2,7-10005,710005,Other Income,Other Income,std_other_income_misc,0
+PT BINA RANCANG WASESA,21409545-c8bb-4977-abd0-9ebe8fbf7fe8,dipetakan ke V2,8-10001,810001,Interest Expense,Interest Expense,std_other_expense_interest,0
+PT BINA RANCANG WASESA,f38fd92d-d1d1-4e57-87bd-625fa1de4bbc,dipetakan ke V2,8-10002,810002,Foreign Exchange Loss,Foreign Exchange Loss,std_other_expense_fx_loss,0
+PT BINA RANCANG WASESA,90924182-2e08-4ff0-b2fc-c53ef8543c5e,dipetakan ke V2,8-10003,810003,Loss on Disposal of Assets,Loss on Disposal of Assets,std_other_expense_loss_disposal,0
+PT BINA RANCANG WASESA,977f9134-578f-4922-8c2e-ea2bdc836c6a,dipetakan ke V2,8-10004,810004,Other Expense,Other Expense,std_other_expense_misc,0
+PT BINA RANCANG WASESA,0e3c7446-1f55-4cb9-93f5-2d1417ee4473,dipetakan ke V2,9-10001,910001,Income Tax Expense,Income Tax Expense,std_income_tax_expense,0
+PT BINA RANCANG WASESA,5a55274d-27b1-4104-9eb0-61374b6e105f,kode baru (di luar template),1-10023,160004,Ppe Accum Depreciation,Ppe Accum Depreciation,std_asset_noncurrent_ppe_accum_depreciation,0
+PT BINA RANCANG WASESA,bb011073-e729-4c72-8fa1-12e1f33e47f6,kode baru (di luar template),9-10002,710006,Other Income Test,Other Income Test,std_other_income_misc,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120005,,Bank Account 5,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120006,,Bank Account 6,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120007,,Bank Account 7,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120008,,Bank Account 8,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120009,,Bank Account 9,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120010,,Bank Account 10,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120011,,Bank Account 11,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120012,,Bank Account 12,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120013,,Bank Account 13,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120014,,Bank Account 14,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,120015,,Bank Account 15,std_asset_current_cash_bank,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130002,,Trade Receivables 2,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130003,,Trade Receivables 3,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130004,,Trade Receivables 4,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130005,,Trade Receivables 5,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130006,,Trade Receivables 6,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130007,,Trade Receivables 7,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130008,,Trade Receivables 8,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130009,,Trade Receivables 9,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,130010,,Trade Receivables 10,std_asset_current_receivable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,160001,,Accumulated Depreciation - Building,std_asset_noncurrent_accumulated_depreciation_building,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,160002,,Accumulated Depreciation - Equipment,std_asset_noncurrent_accumulated_depreciation_equipment,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,160003,,Accumulated Depreciation - Vehicle,std_asset_noncurrent_accumulated_depreciation_vehicle,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210002,,Trade Payables 2,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210003,,Trade Payables 3,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210004,,Trade Payables 4,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210005,,Trade Payables 5,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210006,,Trade Payables 6,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210007,,Trade Payables 7,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210008,,Trade Payables 8,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210009,,Trade Payables 9,std_liability_current_payable_trade,0
+PT BINA RANCANG WASESA,,akun V2 ditambahkan,,210010,,Trade Payables 10,std_liability_current_payable_trade,0
