@@ -14,6 +14,7 @@ import {
   fetchGeneralLedger, type GeneralLedger, type GlAccount, type GlInclude, type GlLine, type GlMonth,
 } from '@/lib/generalLedgerStore';
 import { printReport, type PrintFormat, type PrintReport, type PrintRow, type PrintRowStyle } from '@/lib/printExport';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Reports > General Ledger. Data baru diambil setelah user menekan "Apply"
 // (filter wajib dulu). Data dikelompokkan per akun; akun yang punya transaksi
@@ -134,7 +135,7 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
   const push = (row: PrintRow, style?: PrintRowStyle) => { rows.push(row); rowStyles.push(style); };
 
   gl.accounts.forEach(a => {
-    push({ date: `${a.account_code} — ${a.account_name}` }, 'section');
+    push({ date: `${kodeAkun(a.account_code)} — ${a.account_name}` }, 'section');
     push({ description: openingLabel(a), balance: a.opening_balance });
     detailRows(a).forEach(r => {
       if (r.kind === 'line') {
@@ -149,7 +150,7 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
         push({ description: `Fiscal year ${r.year} — P&L balance starts from 0` }, 'section');
       }
     });
-    push({ description: `Total ${a.account_code}`, debit: a.total_debit, credit: a.total_credit, balance: a.closing_balance }, 'total');
+    push({ description: `Total ${kodeAkun(a.account_code)}`, debit: a.total_debit, credit: a.total_credit, balance: a.closing_balance }, 'total');
   });
 
   const include = INCLUDE_OPTIONS.find(o => o.id === gl.filter.include)?.label ?? gl.filter.include;
@@ -184,6 +185,7 @@ function AccountPicker({ clientId, value, onChange }: {
   value: string[];
   onChange: (codes: string[]) => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { accounts, loading } = useClientCoa(clientId);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -198,7 +200,7 @@ function AccountPicker({ clientId, value, onChange }: {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? accounts.filter(a => a.acc_no.toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q)) : accounts;
+    const list = q ? accounts.filter(a => a.acc_no.toLowerCase().includes(q) || kodeAkun(a.acc_no).toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q)) : accounts;
     return list.slice(0, 300);
   }, [accounts, query]);
 
@@ -215,11 +217,11 @@ function AccountPicker({ clientId, value, onChange }: {
         {value.length === 0 && <span className="text-muted-foreground py-1">Choose accounts…</span>}
         {value.map(code => (
           <span key={code} className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 rounded-md px-2 py-0.5 text-xs font-medium">
-            {code}
+            {kodeAkun(code)}
             <span
               role="button"
               tabIndex={0}
-              aria-label={`Remove ${code}`}
+              aria-label={`Remove ${kodeAkun(code)}`}
               onClick={e => { e.stopPropagation(); toggle(code); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); toggle(code); } }}
               className="hover:text-blue-900"
@@ -260,7 +262,7 @@ function AccountPicker({ clientId, value, onChange }: {
                   <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${checked ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
                     {checked && <Check size={12} className="text-white" />}
                   </span>
-                  <span className="font-mono text-xs text-muted-foreground w-24 flex-shrink-0">{a.acc_no}</span>
+                  <span className="font-mono text-xs text-muted-foreground w-24 flex-shrink-0">{kodeAkun(a.acc_no)}</span>
                   <span className="truncate text-foreground">{a.account_name}</span>
                 </button>
               );
@@ -298,7 +300,7 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
           {hasLines ? (expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />) : null}
         </span>
         <span className="min-w-0 flex items-center gap-2.5 flex-wrap">
-          <span className="font-mono text-sm font-semibold text-foreground">{account.account_code}</span>
+          <span className="font-mono text-sm font-semibold text-foreground">{kodeAkun(account.account_code)}</span>
           <span className="text-sm font-semibold text-foreground truncate">{account.account_name}</span>
           {account.classification && <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${tone}`}>{account.classification}</span>}
           <span className="text-xs text-muted-foreground">
@@ -393,6 +395,7 @@ function Figure({ label, value, strong }: { label: string; value: string; strong
 // ── Page ─────────────────────────────────────────────────────────────
 
 export default function GeneralLedgerClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { clients, activeClientId, activeClientName, hydrated } = useActiveClient();
   const { user } = useAuth();
 
@@ -509,7 +512,7 @@ export default function GeneralLedgerClient() {
     if (!data) return [];
     const q = search.trim().toLowerCase();
     if (!q) return data.accounts;
-    return data.accounts.filter(a => a.account_code.toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q));
+    return data.accounts.filter(a => a.account_code.toLowerCase().includes(q) || kodeAkun(a.account_code).toLowerCase().includes(q) || a.account_name.toLowerCase().includes(q));
   }, [data, search]);
 
   const expandable = visibleAccounts.filter(a => a.line_count > 0);

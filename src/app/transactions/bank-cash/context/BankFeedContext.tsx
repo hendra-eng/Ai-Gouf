@@ -29,6 +29,7 @@ import {
   type Confidence,
   type MutationStatus,
 } from '@/lib/bankCashStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export type MatchStatus = MutationStatus;
 
@@ -64,7 +65,7 @@ function keMutasi(m: BcMutation): BankFeedMutation {
     bankCoaId: m.bank_coa_id,
     date: m.date,
     description: m.description || '',
-    bankAccount: m.bank_account_code ? `${m.bank_account_code} - ${m.bank_account_name ?? ''}` : '',
+    bankAccount: m.bank_account_code ? `${kodeAkun(m.bank_account_code)} - ${m.bank_account_name ?? ''}` : '',
     debit: m.debit,
     credit: m.credit,
     balanceAfter: m.balance_after,
@@ -116,6 +117,7 @@ function wajibKlien(id: string | null): string {
 }
 
 export function BankFeedProvider({ children }: { children: React.ReactNode }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
   const mu = useBcMutations(clientId);

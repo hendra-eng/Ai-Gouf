@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { X, Save, AlertTriangle } from 'lucide-react';
 import { Transaction, getTransactionGroup, PAYMENT_STATUS_OPTIONS } from './transactionData';
+import { accNoDariKode, kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface Props {
   transaction: Transaction;
@@ -100,7 +101,7 @@ function normalisasiTransaksi(tx: Transaction): Transaction {
   return {
     ...tx,
     date: tx.date ?? '',
-    accountCode: tx.accountCode ?? '',
+    accountCode: kodeAkun(tx.accountCode),
     accountName: tx.accountName ?? '',
     description: tx.description ?? '',
     reference: tx.reference ?? '',
@@ -113,6 +114,7 @@ function normalisasiTransaksi(tx: Transaction): Transaction {
 }
 
 export default function TransactionEditModal({ transaction, onClose, onSave, isNew = false, siblingTransaction = null }: Props) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [form, setForm] = useState<Transaction>(() => normalisasiTransaksi(transaction));
   // Kalau kategori transaksi belum ada di daftar dikenal, tampilkan sebagai
   // input bebas dari awal (bukan dropdown) supaya nilainya tidak "hilang".
@@ -212,7 +214,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
         ...base,
         id: `${form.jeId}-D`,
         txId: `${form.txId}-D`,
-        accountCode: debetCode.trim(),
+        accountCode: accNoDariKode(debetCode),
         accountName: debetName.trim(),
         debit: nominal,
         credit: 0,
@@ -222,7 +224,7 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
         ...base,
         id: `${form.jeId}-K`,
         txId: `${form.txId}-K`,
-        accountCode: kreditCode.trim(),
+        accountCode: accNoDariKode(kreditCode),
         accountName: kreditName.trim(),
         debit: 0,
         credit: nominal,
@@ -244,11 +246,11 @@ export default function TransactionEditModal({ transaction, onClose, onSave, isN
         debit: siblingTransaction.debit > 0 ? thisAmount : 0,
         credit: siblingTransaction.credit > 0 ? thisAmount : 0,
       };
-      onSave([form, updatedSibling]);
+      onSave([{ ...form, accountCode: accNoDariKode(form.accountCode) }, updatedSibling]);
       return;
     }
 
-    onSave(form);
+    onSave({ ...form, accountCode: accNoDariKode(form.accountCode) });
   };
 
   return (

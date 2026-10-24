@@ -23,6 +23,7 @@ import {
   type BcTransaction,
 } from '@/lib/bankCashStore';
 import CashBankTransactionModal from './CashBankTransactionModal';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -58,6 +59,7 @@ function ringkasHasil(r: BcBulkResult, label: string) {
 }
 
 export default function CashBankJournalPreview() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
   const { user } = useAuth();
@@ -248,7 +250,7 @@ export default function CashBankJournalPreview() {
         <PreviewSection title="Transaction Information" step={1}>
           <FieldList rows={[
             { label: 'Date', value: formatTanggal(selected.tx_date) },
-            { label: 'Cash / bank account', value: `${selected.bank_account_code} · ${selected.bank_account_name}` },
+            { label: 'Cash / bank account', value: `${kodeAkun(selected.bank_account_code)} · ${selected.bank_account_name}` },
             { label: 'Party', value: selected.counterparty || '—' },
             { label: 'Description', value: selected.description || '—' },
             !!selected.reference && { label: 'Reference', value: selected.reference },
@@ -279,7 +281,7 @@ export default function CashBankJournalPreview() {
                     <td className="px-4 py-2.5">
                       {l.invoice_no ? <span className="font-mono">{l.invoice_no}</span> : null}
                       {l.party ? <span className="text-muted-foreground"> · {l.party}</span> : null}
-                      <span className="block text-muted-foreground">{l.account_code} · {l.account_name}</span>
+                      <span className="block text-muted-foreground">{kodeAkun(l.account_code)} · {l.account_name}</span>
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">{l.description || '—'}</td>
                     <td className={`px-4 py-2.5 text-right font-mono whitespace-nowrap ${l.amount < 0 ? 'text-rose-600' : ''}`}>{formatIDR(l.amount)}</td>

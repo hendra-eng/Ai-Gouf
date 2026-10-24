@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const COA_URL = `${API_BASE_URL}/api/v1/management/coa`;
-const COA_CHANGED_EVENT = 'gouf-coa-changed';
+export const COA_CHANGED_EVENT = 'gouf-coa-changed';
 
 export const ACCOUNT_CLASSIFICATIONS = [
   'ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'COST OF SALES',
@@ -30,7 +30,10 @@ export interface CoaAccount {
   /** null = akun unassigned (belum terhubung ke klien mana pun). */
   client_id: string | null;
   client_code: string | null;
+  /** Kode ZAFEB (kode standar sistem) -- kunci internal posting & mapping. */
   acc_no: string;
+  /** Kode akun sistem lama klien = kode yang DITAMPILKAN (kosong -> acc_no). Lihat src/lib/accountCode.tsx. */
+  source_acc_no: string | null;
   account_name: string;
   account_classification: AccountClassification;
   account_head: string | null;

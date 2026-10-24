@@ -501,6 +501,90 @@ ACCOUNT_MAPPING_DIPAKAI: Dict[str, str] = {
 }
 
 
+# Saran akun untuk input yang BELUM dipetakan (hanya tampilan, tidak disimpan).
+# Kriteria dicoba berurutan: (standard_account_code | None, kata di nama akun | None,
+# account_classification | None). Kata berawalan "=" = nama akun persis sama.
+# Kandidat = akun aktif company, urut acc_no; kriteria pertama yang cocok menang.
+_Kriteria = Tuple[Optional[str], Optional[str], Optional[str]]
+
+
+def _std(kode: str, *kata: str) -> List[_Kriteria]:
+    return [(kode, k, None) for k in kata] + [(kode, None, None)]
+
+
+def _nama(kelas: str, *kata: str) -> List[_Kriteria]:
+    return [(None, k, kelas) for k in kata]
+
+
+ACCOUNT_MAPPING_SARAN: Dict[str, List[_Kriteria]] = {
+    "sales_revenue": _std("std_revenue_operating_sales", "=penjualan", "=sales", "penjualan", "sales")
+                     + _nama("REVENUE", "penjualan", "sales", "pendapatan"),
+    "sales_discount": _std("std_revenue_operating_discount", "penjualan", "sales")
+                      + _nama("REVENUE", "diskon", "discount", "potongan"),
+    "sales_return": _std("std_revenue_operating_return") + _nama("REVENUE", "retur", "return"),
+    "sales_shipping": _nama("REVENUE", "ongkos kirim", "pengiriman", "shipping", "delivery")
+                      + _std("std_expense_operating_freight_courier", "pengiriman", "kirim", "shipping", "delivery"),
+    "unearned_revenue": _std("std_liability_current_deferred_revenue", "diterima di muka", "dimuka", "unearned")
+                        + _nama("LIABILITY", "diterima di muka", "unearned", "uang muka penjualan", "deposit"),
+    "unbilled_sales": _std("std_revenue_operating_unbilled") + _nama("REVENUE", "belum ditagih", "unbilled"),
+    "unbilled_receivable": _nama("ASSET", "piutang belum ditagih", "unbilled receivable", "belum ditagih", "unbilled"),
+    "sales_tax_payable": _std("std_liability_current_tax_vat_payable", "keluaran", "out", "output")
+                         + _nama("LIABILITY", "ppn keluaran", "pajak keluaran", "vat out", "output vat"),
+    "purchase_cogs": _std("std_cost_of_sales_direct_material", "=harga pokok penjualan", "harga pokok", "hpp", "cost of sales")
+                     + _std("std_cost_of_sales_other", "=harga pokok penjualan", "harga pokok", "hpp", "cost of sales")
+                     + _nama("COST OF SALES", "harga pokok", "hpp", "cost of", "pembelian", "purchase"),
+    "purchase_shipping": _std("std_cost_of_sales_freight")
+                         + _nama("COST OF SALES", "angkut", "freight", "pengiriman", "shipping"),
+    "prepayment": _nama("ASSET", "uang muka pembelian", "purchase advance", "advance to supplier")
+                  + _std("std_asset_current_prepayment", "=biaya dibayar di muka", "=prepayments", "dibayar di muka", "prepaid"),
+    "unbilled_payable": _nama("LIABILITY", "hutang belum ditagih", "utang belum ditagih", "unbilled payable", "belum ditagih", "unbilled"),
+    "purchase_tax_receivable": _std("std_asset_current_tax_vat_receivable", "=ppn masukan", "=pajak masukan", "masukan", "vat in", "input")
+                               + _nama("ASSET", "ppn masukan", "pajak masukan", "vat in", "input vat"),
+    "account_receivable": _std("std_asset_current_receivable_trade", "=piutang usaha", "=accounts receivable", "=account receivable",
+                               "piutang usaha", "receivable")
+                          + _nama("ASSET", "piutang usaha", "account receivable", "accounts receivable"),
+    "account_payable": _std("std_liability_current_payable_trade", "=hutang usaha", "=utang usaha", "=accounts payable", "=account payable",
+                            "hutang usaha", "utang usaha", "payable")
+                       + _nama("LIABILITY", "hutang usaha", "utang usaha", "account payable", "accounts payable"),
+    "inventory": _std("std_asset_current_inventory", "=persediaan", "=inventory", "=persediaan barang dagang", "barang dagang"),
+    "inventory_general": _nama("ASSET", "persediaan umum", "inventory general", "general inventory")
+                         + _std("std_asset_current_inventory", "=persediaan", "=inventory"),
+    "inventory_waste": _nama("ASSET", "persediaan rusak", "inventory waste", "waste")
+                       + _nama("COST OF SALES", "waste", "rusak", "susut")
+                       + _nama("OTHER EXPENSE", "penyesuaian persediaan", "waste", "rusak", "susut"),
+    "inventory_production": _nama("ASSET", "dalam proses", "work in process", "work in progress", "wip", "produksi", "production"),
+    "opening_balance_equity": _nama("EQUITY", "saldo awal", "opening balance", "opening"),
+    "retained_earnings": _std("std_equity_retained_earnings", "=laba ditahan", "=retained earnings")
+                         + _nama("EQUITY", "laba ditahan", "retained earning", "saldo laba"),
+    "fixed_asset": _std("std_asset_noncurrent_ppe_equipment", "peralatan", "equipment")
+                   + _std("std_asset_noncurrent_ppe_building") + _std("std_asset_noncurrent_ppe_vehicle")
+                   + _nama("ASSET", "aset tetap", "aktiva tetap", "fixed asset"),
+    "accumulated_depreciation": _std("std_asset_noncurrent_ppe_accum_depreciation", "peralatan", "equipment")
+                                + _nama("ASSET", "akumulasi penyusutan", "accumulated depreciation"),
+    "depreciation_expense": _std("std_expense_operating_depreciation", "=beban penyusutan", "=depreciation expense", "peralatan", "equipment")
+                            + _nama("EXPENSE", "penyusutan", "depresiasi", "depreciation"),
+}
+
+
+def _saran_akun(akun: List[Any], kriteria: List[_Kriteria], dipakai: set) -> Optional[Any]:
+    # 1 akun COA hanya boleh untuk 1 input -> akun yang sudah dipakai (dipetakan/disarankan) dilewati.
+    for std, kata, kelas in kriteria:
+        persis = bool(kata) and kata.startswith("=")
+        k = kata[1:] if persis else kata
+        for a in akun:
+            if str(a.id) in dipakai:
+                continue
+            if std and (a.standard_account_code or "") != std:
+                continue
+            if kelas and (a.account_classification or "").upper() != kelas:
+                continue
+            nama = (a.account_name or "").strip().lower()
+            if k and not (nama == k if persis else k in nama):
+                continue
+            return a
+    return None
+
+
 class AccountMappingInput(BaseModel):
     # {mapping_key: coa_id | null}; key yang tidak dikirim tidak diubah.
     mappings: Dict[str, Optional[UUID]]
@@ -526,17 +610,33 @@ def _account_mapping_data(session: Any, client_id: str) -> Dict[str, Any]:
     )
     per_key = {m.mapping_key: (m, coa) for m, coa in rows}
     terakhir = max((m.edited_at or m.created_at for m, _ in rows), default=None)
+    akun_aktif = []
+    if len(per_key.keys() & ACCOUNT_MAPPING_KEYS) < len(ACCOUNT_MAPPING_KEYS):
+        akun_aktif = (
+            session.query(dbc.ManagementClientCoa)
+            .filter(dbc.ManagementClientCoa.client_id == client_id,
+                    dbc.ManagementClientCoa.deleted_at.is_(None),
+                    dbc.ManagementClientCoa.is_active.isnot(False))
+            .order_by(dbc.ManagementClientCoa.acc_no)
+            .all()
+        )
+    dipakai = {str(coa.id) for _, coa in per_key.values()}
     groups = []
     for g_key, g_label, items in ACCOUNT_MAPPING_GROUPS:
         isi = []
         for k, label in items:
             m_coa = per_key.get(k)
+            saran = None if m_coa else _saran_akun(akun_aktif, ACCOUNT_MAPPING_SARAN.get(k, []), dipakai)
+            if saran is not None:
+                dipakai.add(str(saran.id))
             isi.append({
                 "key": k,
                 "label": label,
                 "used_in": ACCOUNT_MAPPING_DIPAKAI.get(k),
                 "coa_id": m_coa[1].id if m_coa else None,
                 "coa": _coa_ringkas(m_coa[1]) if m_coa else None,
+                # Saran dari COA company (hanya tampilan, belum tersimpan) -- null kalau sudah dipetakan.
+                "suggested_coa_id": saran.id if saran else None,
                 "is_locked": bool(m_coa and m_coa[0].is_locked),
                 "locked_at": m_coa[0].locked_at if m_coa else None,
                 "locked_by_name": m_coa[0].locked_by_name if m_coa else None,
@@ -616,6 +716,29 @@ def simpan_account_mapping(
                 message="Locked mapping cannot be changed: " + ", ".join(label.get(k, k) for k in terkunci) + ". Unlock it first.",
                 errors={"code": "MAPPING_LOCKED", "fields": terkunci},
                 status_code=409,
+            )
+
+        # 1 akun COA hanya boleh dipakai 1 input. Dicek terhadap kondisi akhir
+        # (mapping tersimpan + perubahan ini) untuk input yang diubah di sini.
+        akhir = {
+            m.mapping_key: m.coa_id for m in session.query(dbc.ManagementSettingAccountMapping).filter(
+                dbc.ManagementSettingAccountMapping.client_id == cid,
+            )
+        }
+        akhir.update({k: (str(v) if v is not None else None) for k, v in payload.mappings.items()})
+        per_akun: Dict[str, List[str]] = {}
+        for k, v in akhir.items():
+            if v:
+                per_akun.setdefault(str(v), []).append(k)
+        ganda = sorted({k for v in payload.mappings.values() if v is not None
+                        for k in per_akun[str(v)] if len(per_akun[str(v)]) > 1})
+        if ganda:
+            label = {k: l for _, _, items in ACCOUNT_MAPPING_GROUPS for k, l in items}
+            return gagal(
+                message="Each account can only be mapped once. Used more than once: "
+                        + ", ".join(label.get(k, k) for k in ganda) + ".",
+                errors={"code": "DUPLICATE_COA", "fields": ganda},
+                status_code=422,
             )
         sekarang, uid = datetime.now(), current_user.get("id")
         for key, coa_id in payload.mappings.items():

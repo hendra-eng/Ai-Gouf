@@ -1,5 +1,6 @@
 import type { PrintColumn, PrintReport, PrintRow } from '@/lib/printExport';
 import type { JeUiEntry, JeUiLine } from '@/lib/journalEntryStore';
+import { kodeAkun } from '@/lib/accountCode';
 
 // Susunan laporan Print (CSV / Excel / PDF) untuk fitur Journal Entry.
 // Daftar = format General Journal flat (1 baris per journal line, total
@@ -40,7 +41,7 @@ export function buildJeListReport(rows: JePrintRow[], companyName?: string, prin
         period: je.period,
         source: je.sourceType,
         status: statusLabel(je.status),
-        accountCode: line?.accountCode ?? '',
+        accountCode: kodeAkun(line?.accountCode),
         accountName: line?.accountName ?? '',
         description: line?.description || je.description,
         debit: line?.debit || null,
@@ -99,7 +100,7 @@ export function buildJeDetailReport(je: JeUiEntry, lines: JeUiLine[], companyNam
         { key: 'credit', header: 'Credit (IDR)', type: 'money' },
       ],
       rows: lines.map(l => ({
-        accountCode: l.accountCode,
+        accountCode: kodeAkun(l.accountCode),
         accountName: l.accountName,
         description: l.description,
         costCenter: l.costCenter || '',

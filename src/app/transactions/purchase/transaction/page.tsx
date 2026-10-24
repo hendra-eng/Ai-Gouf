@@ -20,6 +20,7 @@ import {
   PencilSquareIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Status yang masih bisa diubah lewat form Create Bill (sama dengan purchase_bill_v1.STATUS_BISA_DIUBAH).
 const BILL_EDITABLE: PurchaseStatus[] = ['draft', 'pending_review', 'rejected', 'exception'];
@@ -66,6 +67,7 @@ const paymentLabels: Record<PaymentStatus, string> = {
 };
 
 export default function PurchaseTransactionPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
   const { clients, activeClientId, activeClientName } = useActiveClient();
   // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
@@ -410,7 +412,7 @@ export default function PurchaseTransactionPage() {
                       <td className="px-3 py-2 text-right tabular-nums text-red-600">{line.discount > 0 ? `-${fmt(line.discount)}` : '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(line.taxAmount)}</td>
                       <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt(line.total)}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</td>
                     </tr>
                   ))}
                 </tbody>

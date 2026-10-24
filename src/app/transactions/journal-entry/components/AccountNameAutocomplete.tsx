@@ -2,6 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CoaAccount } from '@/lib/coaStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const MAX_SUGGESTIONS = 30;
 
@@ -27,6 +28,7 @@ export default function AccountNameAutocomplete({
   placeholder?: string;
   className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -41,7 +43,7 @@ export default function AccountNameAutocomplete({
     const mengandung: CoaAccount[] = [];
     for (const a of accounts) {
       const nama = a.account_name.toLowerCase();
-      const kode = a.acc_no.toLowerCase();
+      const kode = kodeAkun(a.acc_no).toLowerCase();
       if (nama.startsWith(q) || kode.startsWith(q)) awalan.push(a);
       else if (nama.includes(q) || kode.includes(q)) mengandung.push(a);
     }
@@ -149,7 +151,7 @@ export default function AccountNameAutocomplete({
               onClick={() => pilih(a)}
               className={`px-3 py-1.5 cursor-pointer flex items-baseline gap-2 ${i === highlight ? 'bg-primary/10' : ''}`}
             >
-              <span className="font-mono text-muted-foreground shrink-0">{a.acc_no}</span>
+              <span className="font-mono text-muted-foreground shrink-0">{kodeAkun(a.acc_no)}</span>
               <span className="text-foreground truncate flex-1">{a.account_name}</span>
               <span className="text-[10px] text-muted-foreground shrink-0">{a.account_classification}</span>
             </li>

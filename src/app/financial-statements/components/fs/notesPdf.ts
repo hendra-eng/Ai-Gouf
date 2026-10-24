@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { FsNotes } from '@/lib/fsStore';
 import { fmtAmount, fmtDate } from './fsFormat';
+import { kodeAkun } from '@/lib/accountCode';
 
 // Export CALK ke PDF (jsPDF + autotable) dari data yang sama dengan layar.
 // Versi Word dibuat backend (calk_docx.py) dari data yang sama juga.
@@ -56,7 +57,7 @@ export function downloadNotesPdf(d: FsNotes, printedBy?: string) {
         margin: { left: M, right: M, bottom: 18 },
         theme: 'plain',
         head: [[g.label, fmtDate(d.as_of), ...(compare ? [fmtDate(compare.end)] : [])]],
-        body: g.rows.map(r => [`${r.name} (${r.code})${r.override ? ' *' : ''}`, fmtAmount(r.amount), ...(compare ? [fmtAmount(r.compare_amount)] : [])]),
+        body: g.rows.map(r => [`${r.name} (${kodeAkun(r.code)})${r.override ? ' *' : ''}`, fmtAmount(r.amount), ...(compare ? [fmtAmount(r.compare_amount)] : [])]),
         foot: [['Total', fmtAmount(g.total), ...(compare ? [fmtAmount(g.compare_total)] : [])]],
         showFoot: 'lastPage',
         styles: { fontSize: 8.5, cellPadding: 1.3, textColor: DARK },

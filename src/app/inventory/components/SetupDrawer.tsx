@@ -12,10 +12,12 @@ import {
 } from '@/lib/inventoryStore';
 import { btnOutline, btnPrimary, btnSmall, Drawer, inputCls } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, isPnlAccount } from '@/components/shared/moduleUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const isInventory = (a: CoaAccount) => a.standard_code === 'std_asset_current_inventory' || /persediaan|inventory/i.test(a.name);
 
 export default function SetupDrawer({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const gudang = useInvData<Warehouse[]>(`wh:${clientId}`, s => fetchWarehouses(clientId, s), []);
   const kat = useInvData<InvCategory[]>(`icat:${clientId}`, s => fetchInvCategories(clientId, s), []);
   const akun = useInvData<CoaAccount[]>(`iacc:${clientId}`, s => fetchInvAccounts(clientId, s), []);
@@ -100,7 +102,7 @@ export default function SetupDrawer({ clientId, onClose }: { clientId: string; o
             <div key={c.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
               <div className="min-w-0">
                 <p className="font-semibold">{c.name} <span className="text-xs font-normal text-muted-foreground">· {c.item_count} item(s)</span></p>
-                <p className="text-[11px] text-muted-foreground">Inventory {c.inventory_account?.code ?? <b className="text-amber-700">missing</b>} · COGS {c.cogs_account?.code ?? '—'} · Adjustment {c.adjustment_account?.code ?? '—'}</p>
+                <p className="text-[11px] text-muted-foreground">Inventory {(c.inventory_account?.code && kodeAkun(c.inventory_account?.code)) ?? <b className="text-amber-700">missing</b>} · COGS {(c.cogs_account?.code && kodeAkun(c.cogs_account?.code)) ?? '—'} · Adjustment {(c.adjustment_account?.code && kodeAkun(c.adjustment_account?.code)) ?? '—'}</p>
               </div>
               <div className="flex gap-1">
                 <button type="button" className={btnSmall} onClick={() => setCf({ id: c.id, name: c.name, description: c.description ?? '', inventory_coa_id: c.inventory_account?.id ?? null, cogs_coa_id: c.cogs_account?.id ?? null, adjustment_coa_id: c.adjustment_account?.id ?? null })}><Pencil size={13} /></button>

@@ -9,6 +9,7 @@ import {
 } from '@/lib/fsStore';
 import FsShell, { ErrorBlock, LoadingBlock, NoClient } from './FsShell';
 import { Field, Select, inputCls } from './PeriodPicker';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Master mapping laporan keuangan per klien (Task Plan 16-19): seksi &
 // baris laporan, komponen ekuitas, kategori cash flow, note CALK -- per
@@ -36,14 +37,14 @@ function Editor({ a, m, clientId, onDone }: { a: MappedAccount; m: FsMapping; cl
   const save = async () => {
     if (!a.coa_id) return;
     setBusy(true);
-    try { await saveFsMapping(clientId, a.coa_id, f); toast.success(`Mapping saved for ${a.code}`); onDone(true); }
+    try { await saveFsMapping(clientId, a.coa_id, f); toast.success(`Mapping saved for ${kodeAkun(a.code)}`); onDone(true); }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Save failed'); }
     finally { setBusy(false); }
   };
   const reset = async () => {
     if (!a.coa_id) return;
     setBusy(true);
-    try { await resetFsMapping(clientId, a.coa_id); toast.success(`${a.code} back to default`); onDone(true); }
+    try { await resetFsMapping(clientId, a.coa_id); toast.success(`${kodeAkun(a.code)} back to default`); onDone(true); }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Reset failed'); }
     finally { setBusy(false); }
   };
@@ -105,6 +106,7 @@ function Editor({ a, m, clientId, onDone }: { a: MappedAccount; m: FsMapping; cl
 }
 
 export default function MappingClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId, hydrated } = useActiveClient();
   const [data, setData] = useState<FsMapping | null>(null);
   const [loading, setLoading] = useState(false);
@@ -135,7 +137,7 @@ export default function MappingClient() {
     return data.accounts.filter(a =>
       (statement === 'all' || a.jenis === statement)
       && (!onlyIssues || a.warnings.length > 0)
-      && (!q || a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || a.line.toLowerCase().includes(q)));
+      && (!q || a.code.toLowerCase().includes(q) || kodeAkun(a.code).toLowerCase().includes(q) || a.name.toLowerCase().includes(q) || a.line.toLowerCase().includes(q)));
   }, [data, search, statement, onlyIssues]);
 
   const applyDefaults = async (overwrite: boolean) => {
@@ -226,7 +228,7 @@ export default function MappingClient() {
                           <tr className={`border-t border-border ${editing === k ? 'bg-slate-50' : 'hover:bg-slate-50'}`}>
                             <td className="px-4 py-2">
                               <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs text-muted-foreground">{a.code}</span>
+                                <span className="font-mono text-xs text-muted-foreground">{kodeAkun(a.code)}</span>
                                 <span className="text-foreground">{a.name}</span>
                                 {a.warnings.length > 0 && (
                                   <span title={a.warnings.map(w => o?.warnings[w] ?? w).join('\n')}><AlertTriangle size={13} className="text-amber-500" /></span>

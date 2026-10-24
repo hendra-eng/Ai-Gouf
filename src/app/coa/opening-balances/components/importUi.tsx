@@ -22,7 +22,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     key: 'coa',
     no: 1,
     title: 'Import Legacy COA + Non-Subledger Opening Balances',
-    desc: 'Upload legacy chart of accounts and non-subledger balances in one file.',
+    desc: 'Upload legacy chart of accounts and non-subledger balances in one file. New accounts are added to the COA on approval.',
     icon: FileText,
     iconCls: 'bg-sky-50 text-sky-600',
     amounts: [{ label: 'Debit', field: 'total_debit' }, { label: 'Credit', field: 'total_credit' }],

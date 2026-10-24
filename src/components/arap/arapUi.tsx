@@ -9,12 +9,14 @@ import {
   reverseSettlement, rupiah, SETTLEMENT_STATUS_LABEL, SETTLEMENT_STATUS_STYLE, SOURCE_LABEL, todayIso,
   type AgingBucket, type ArApDoc, type DocStatus, type Settlement, type SettlementStatus, type SideConfig,
 } from '@/lib/receivablesPayablesStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Komponen kecil bersama halaman Accounts Receivable & Accounts Payable.
 
 export function Card({ title, subtitle, action, children, className = '' }: {
   title?: React.ReactNode; subtitle?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <section className={`rounded-2xl border border-border bg-card shadow-sm ${className}`}>
       {(title || action) && (
@@ -32,11 +34,13 @@ export function Card({ title, subtitle, action, children, className = '' }: {
 }
 
 export function AgingBadge({ bucket }: { bucket: AgingBucket | null }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (!bucket) return <span className="text-xs text-muted-foreground">—</span>;
   return <span className={`inline-flex whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold ${BUCKET_STYLE[bucket]}`}>{BUCKET_LABEL[bucket]}</span>;
 }
 
 export function DocStatusLabel({ status }: { status: DocStatus }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium ${DOC_STATUS_TEXT[status]}`}>
       <span className={`h-2 w-2 rounded-full ${DOC_STATUS_DOT[status]}`} />
@@ -46,6 +50,7 @@ export function DocStatusLabel({ status }: { status: DocStatus }) {
 }
 
 export function SettlementBadge({ status }: { status: SettlementStatus }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${SETTLEMENT_STATUS_STYLE[status]}`}>{SETTLEMENT_STATUS_LABEL[status]}</span>;
 }
 
@@ -54,6 +59,7 @@ export type SortDir = 'asc' | 'desc';
 export function SortTh<K extends string>({ label, k, sort, onSort, align = 'left', className = '' }: {
   label: string; k: K; sort: { key: K; dir: SortDir }; onSort: (k: K) => void; align?: 'left' | 'right'; className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const aktif = sort.key === k;
   const Ikon = !aktif ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
   return (
@@ -85,6 +91,7 @@ export function sortRows<T>(rows: T[], get: (r: T) => string | number | null, di
 export function Pager({ page, pageSize, total, onPage, onPageSize, sizes = [5, 10, 25, 50] }: {
   page: number; pageSize: number; total: number; onPage: (p: number) => void; onPageSize: (n: number) => void; sizes?: number[];
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const halaman = Math.max(1, Math.ceil(total / pageSize));
   const dari = total ? page * pageSize + 1 : 0;
   const sampai = Math.min(total, (page + 1) * pageSize);
@@ -112,6 +119,7 @@ export function Pager({ page, pageSize, total, onPage, onPageSize, sizes = [5, 1
 export function NumberPager({ page, pageSize, total, onPage, onPageSize, noun = 'rows', sizes = [10, 25, 50, 100] }: {
   page: number; pageSize: number; total: number; onPage: (p: number) => void; onPageSize: (n: number) => void; noun?: string; sizes?: number[];
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const halaman = Math.max(1, Math.ceil(total / pageSize));
   const dari = total ? page * pageSize + 1 : 0;
   const sampai = Math.min(total, (page + 1) * pageSize);
@@ -151,6 +159,7 @@ export function NumberPager({ page, pageSize, total, onPage, onPageSize, noun = 
 export function Menu({ button, children, align = 'right', width = 'w-56' }: {
   button: (open: boolean) => React.ReactNode; children: (close: () => void) => React.ReactNode; align?: 'left' | 'right'; width?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -174,6 +183,7 @@ export function Menu({ button, children, align = 'right', width = 'w-56' }: {
 export function MenuItem({ onClick, href, children, danger, disabled }: {
   onClick?: () => void; href?: string; children: React.ReactNode; danger?: boolean; disabled?: boolean;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const cls = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${danger ? 'text-rose-600 hover:bg-rose-50' : 'text-foreground hover:bg-slate-50'} ${disabled ? 'pointer-events-none opacity-40' : ''}`;
   if (href) return <Link href={href} className={cls} onClick={onClick}>{children}</Link>;
   return <button type="button" className={cls} onClick={onClick} disabled={disabled}>{children}</button>;
@@ -182,6 +192,7 @@ export function MenuItem({ onClick, href, children, danger, disabled }: {
 export function Drawer({ open, onClose, title, subtitle, children, footer }: {
   open: boolean; onClose: () => void; title: React.ReactNode; subtitle?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -207,6 +218,7 @@ export function Drawer({ open, onClose, title, subtitle, children, footer }: {
 }
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <div>
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
@@ -216,6 +228,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
 }
 
 export function EmptyRow({ cols, text, loading }: { cols: number; text: string; loading?: boolean }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (loading) {
     return (
       <>
@@ -237,6 +250,7 @@ export const inputCls = 'w-full rounded-xl border border-border bg-card px-3 py-
 export function DocDrawer({ cfg, doc, settlements, onClose }: {
   cfg: SideConfig; doc: ArApDoc | null; settlements: Settlement[]; onClose: () => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (!doc) return null;
   const kolom = cfg.side === 'ar' ? 'sales_invoice_id' : 'purchase_transaction_id';
   const riwayat = settlements
@@ -265,7 +279,7 @@ export function DocDrawer({ cfg, doc, settlements, onClose }: {
         <Field label={cfg.settled}>{rupiah(doc.paid)}</Field>
         <Field label="Outstanding"><span className="font-semibold">{rupiah(doc.outstanding)}</span></Field>
         <Field label="In Process (not posted)">{rupiah(doc.in_process)}</Field>
-        <Field label={cfg.side === 'ar' ? 'Receivable Account' : 'Payable Account'}>{doc.account_code} · {doc.account_name || '—'}</Field>
+        <Field label={cfg.side === 'ar' ? 'Receivable Account' : 'Payable Account'}>{kodeAkun(doc.account_code)} · {doc.account_name || '—'}</Field>
         <Field label={`Last ${cfg.settle}`}>{fmtDate(doc.last_payment_date)}</Field>
       </div>
       {doc.description && <Field label="Description"><span className="whitespace-pre-line text-muted-foreground">{doc.description}</span></Field>}
@@ -279,7 +293,7 @@ export function DocDrawer({ cfg, doc, settlements, onClose }: {
               <div key={s.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{s.tx_number}</p>
-                  <p className="text-[11px] text-muted-foreground">{fmtDate(s.tx_date)} · {s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : SOURCE_LABEL[s.source]} · {s.bank_account_code}</p>
+                  <p className="text-[11px] text-muted-foreground">{fmtDate(s.tx_date)} · {s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : SOURCE_LABEL[s.source]} · {kodeAkun(s.bank_account_code)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-foreground">{rupiah(amount)}</p>
@@ -298,6 +312,7 @@ export function DocDrawer({ cfg, doc, settlements, onClose }: {
 export function SettlementDrawer({ cfg, s, onClose, actions }: {
   cfg: SideConfig; s: Settlement | null; onClose: () => void; actions?: React.ReactNode;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (!s) return null;
   const totalD = s.journal.reduce((n, j) => n + j.debit, 0);
   const totalK = s.journal.reduce((n, j) => n + j.credit, 0);
@@ -310,7 +325,7 @@ export function SettlementDrawer({ cfg, s, onClose, actions }: {
       <div className="grid grid-cols-2 gap-4">
         <Field label="Amount"><span className="font-semibold">{rupiah(s.amount)}</span></Field>
         <Field label="Payment Method">{s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : '—'}</Field>
-        <Field label={cfg.side === 'ar' ? 'Deposited To' : 'Paid From'}>{s.bank_account_code} · {s.bank_account_name}</Field>
+        <Field label={cfg.side === 'ar' ? 'Deposited To' : 'Paid From'}>{kodeAkun(s.bank_account_code)} · {s.bank_account_name}</Field>
         <Field label="Reference">{s.reference || '—'}{s.reference_date ? ` · ${fmtDate(s.reference_date)}` : ''}</Field>
         <Field label="Allocated">{rupiah(s.allocated)}</Field>
         <Field label="Unapplied">{rupiah(s.unapplied)}</Field>
@@ -321,7 +336,7 @@ export function SettlementDrawer({ cfg, s, onClose, actions }: {
         <div className="divide-y divide-border rounded-xl border border-border">
           {s.lines.map(l => (
             <div key={l.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="min-w-0 truncate">{l.invoice_no ?? `${l.account_code} · ${l.account_name}`}</span>
+              <span className="min-w-0 truncate">{l.invoice_no ?? `${kodeAkun(l.account_code)} · ${l.account_name}`}</span>
               <span className="font-medium">{rupiah(l.amount)}</span>
             </div>
           ))}
@@ -336,7 +351,7 @@ export function SettlementDrawer({ cfg, s, onClose, actions }: {
           <tbody className="divide-y divide-border">
             {s.journal.map(j => (
               <tr key={j.line_no}>
-                <td className="py-1.5 pr-2"><span className="font-medium">{j.account_code}</span> · {j.account_name}</td>
+                <td className="py-1.5 pr-2"><span className="font-medium">{kodeAkun(j.account_code)}</span> · {j.account_name}</td>
                 <td className="py-1.5 text-right">{j.debit ? rupiah(j.debit) : ''}</td>
                 <td className="py-1.5 text-right">{j.credit ? rupiah(j.credit) : ''}</td>
               </tr>
@@ -367,6 +382,7 @@ export function SettlementDrawer({ cfg, s, onClose, actions }: {
 
 /** Modal balik receipt / payment posted. */
 export function ReverseModal({ cfg, clientId, s, onClose }: { cfg: SideConfig; clientId: string; s: Settlement | null; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [reason, setReason] = useState('');
   const [tanggal, setTanggal] = useState(todayIso());
   const [busy, setBusy] = useState(false);

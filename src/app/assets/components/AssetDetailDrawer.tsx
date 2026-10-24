@@ -14,10 +14,12 @@ import {
 import { btnOutline, btnPrimary, btnSmall, Drawer, Field, inputCls } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, Modal, Pill, ReasonDialog } from '@/components/shared/moduleUi';
 import type { FaActions } from './FixedAssetsWorkspace';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export default function AssetDetailDrawer({ clientId, assetId, asOf, actions, onClose }: {
   clientId: string; assetId: string; asOf: string; actions: FaActions; onClose: () => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const det = useFaData<AssetDetail | null>(`det:${clientId}:${assetId}:${asOf}`, s => fetchAssetDetail(clientId, assetId, asOf, s), null);
   const akun = useFaData<CoaAccount[]>(`acc:${clientId}`, s => fetchFaAccounts(clientId, s), []);
   const [mode, setMode] = useState<null | 'acquisition' | 'adjustment'>(null);
@@ -57,9 +59,9 @@ export default function AssetDetailDrawer({ clientId, assetId, asOf, actions, on
           <Field label="Custodian">{a.custodian ?? '—'}</Field>
           <Field label="Serial Number">{a.serial_number ?? '—'}</Field>
           <Field label="Supplier / Reference">{a.supplier ?? '—'} / {a.reference ?? '—'}</Field>
-          <Field label="Asset Account">{a.asset_account ? `${a.asset_account.code} · ${a.asset_account.name}` : '—'}</Field>
-          <Field label="Accumulated Dep. Account">{a.accum_account ? `${a.accum_account.code} · ${a.accum_account.name}` : '—'}</Field>
-          <Field label="Depreciation Expense">{a.expense_account ? `${a.expense_account.code} · ${a.expense_account.name}` : '—'}</Field>
+          <Field label="Asset Account">{a.asset_account ? `${kodeAkun(a.asset_account.code)} · ${a.asset_account.name}` : '—'}</Field>
+          <Field label="Accumulated Dep. Account">{a.accum_account ? `${kodeAkun(a.accum_account.code)} · ${a.accum_account.name}` : '—'}</Field>
+          <Field label="Depreciation Expense">{a.expense_account ? `${kodeAkun(a.expense_account.code)} · ${a.expense_account.name}` : '—'}</Field>
           {a.disposal_date && <Field label="Disposed">{fmtDate(a.disposal_date)} · {rupiah(a.disposal_value)}</Field>}
         </div>
         {a.description && <Field label="Description"><span className="whitespace-pre-line text-muted-foreground">{a.description}</span></Field>}

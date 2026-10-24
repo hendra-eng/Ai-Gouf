@@ -7,6 +7,7 @@ import Topbar from './Topbar';
 import { CurrencyProvider } from '@/lib/currency';
 import { LanguageProvider } from '@/lib/language';
 import { ActiveClientProvider } from '@/lib/activeClient';
+import { AccountCodeProvider } from '@/lib/accountCode';
 import { ActivePeriodProvider } from '@/lib/activePeriod';
 // [BARU] Provider transaksi dinaikkan ke sini (dari sebelumnya hanya di
 // src/app/transactions/layout.tsx) supaya halaman DI LUAR /transactions —
@@ -60,6 +61,7 @@ export default function AppLayout({ children, company }: AppLayoutProps) {
       children
     ) : (
       <ActiveClientProvider>
+      <AccountCodeProvider>
       <ActivePeriodProvider>
       <TransactionsProvider>
         <div className="flex h-screen bg-background overflow-hidden">
@@ -95,6 +97,7 @@ export default function AppLayout({ children, company }: AppLayoutProps) {
         </div>
       </TransactionsProvider>
       </ActivePeriodProvider>
+      </AccountCodeProvider>
       </ActiveClientProvider>
     )}
     </AuthProvider>

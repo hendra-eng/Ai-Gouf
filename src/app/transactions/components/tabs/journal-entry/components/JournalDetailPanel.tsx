@@ -3,6 +3,7 @@ import React from 'react';
 import { X, BookOpen, User, Calendar, Link2, AlertTriangle, CheckCircle } from 'lucide-react';
 import StatusBadge from '../../shared/TabStatusBadge';
 import type { JournalEntry } from './JournalEntryTable';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface Props {
   entry: JournalEntry;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function JournalDetailPanel({ entry, onClose }: Props) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const isBalanced = entry.balanceStatus === 'balanced';
 
   return (
@@ -106,7 +108,7 @@ export default function JournalDetailPanel({ entry, onClose }: Props) {
             <tbody>
               {entry.lines.map((line) => (
                 <tr key={`jline-${line.id}`} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-2.5 font-tabular font-500 text-primary text-xs">{line.accountCode}</td>
+                  <td className="px-4 py-2.5 font-tabular font-500 text-primary text-xs">{kodeAkun(line.accountCode)}</td>
                   <td className="px-4 py-2.5 font-500 text-foreground text-xs">{line.accountName}</td>
                   <td className="px-4 py-2.5 text-muted-foreground text-xs">{line.description}</td>
                   <td className="px-4 py-2.5 text-right font-tabular text-xs">

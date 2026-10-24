@@ -8,6 +8,7 @@ import { useActiveClient } from '@/lib/activeClient';
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { exportJournalEntryPdf } from './exportJournalEntryPdf';
 import AccountNameAutocomplete from './AccountNameAutocomplete';
+import { accNoDariKode, kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Jumlah baris jurnal yang langsung tersedia saat form dibuka. Tetap bisa
 // ditambah (Add Line) atau dikurangi sampai minimal 2 (syarat 1 debit + 1 kredit).
@@ -59,6 +60,7 @@ export default function NewJournalEntryModal({
   createdByName: string;
   onClose: () => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const today = new Date().toISOString().slice(0, 10);
   const [jeNumber, setJeNumber] = useState(nomorJeDefault());
   const [entryDate, setEntryDate] = useState(today);
@@ -84,9 +86,9 @@ export default function NewJournalEntryModal({
     setLines(prev => prev.map(l => (l.key === key ? { ...l, account_code: akun.acc_no, account_name: akun.account_name } : l)));
   };
 
-  // Account Code diketik manual & persis ada di COA -> nama akun ikut terisi.
+  // Account Code diketik manual (kode tampilan / kode ZAFEB) & ada di COA -> nama akun ikut terisi.
   const lengkapiDariKode = (key: number, kode: string) => {
-    const akun = coaByAccNo.get(kode.trim());
+    const akun = coaByAccNo.get(accNoDariKode(kode));
     if (akun) pilihAkun(key, akun);
   };
 
@@ -154,7 +156,7 @@ export default function NewJournalEntryModal({
         return;
       }
       cleanedLines.push({
-        account_code: l.account_code.trim(),
+        account_code: accNoDariKode(l.account_code),
         account_name: l.account_name.trim() || undefined,
         description: l.description.trim() || undefined,
         debit, credit,
@@ -252,7 +254,7 @@ export default function NewJournalEntryModal({
               <tbody className="divide-y divide-border">
                 {lines.map((l, idx) => (
                   <tr key={l.key}>
-                    <td className="px-2 py-1.5"><input value={l.account_code} onChange={e => updateLine(l.key, 'account_code', e.target.value)} onBlur={e => lengkapiDariKode(l.key, e.target.value)} placeholder="1100" className="je-input w-full text-xs font-mono" /></td>
+                    <td className="px-2 py-1.5"><input value={kodeAkun(l.account_code)} onChange={e => updateLine(l.key, 'account_code', e.target.value)} onBlur={e => lengkapiDariKode(l.key, e.target.value)} placeholder="1100" className="je-input w-full text-xs font-mono" /></td>
                     <td className="px-2 py-1.5">
                       <AccountNameAutocomplete
                         value={l.account_name}

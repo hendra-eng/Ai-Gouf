@@ -571,6 +571,12 @@ def notes_export_docx(
         data = _susun_calk(kid, current_user, p)
     except GagalValidasi as e:
         return _respon_gagal(e)
+    # Kode akun yang ditampilkan = Source Account Code (kosong -> kode ZAFEB), migration 50.
+    kode = dbc.peta_kode_tampil(kid)
+    for note in data.get("notes", []):
+        for g in note.get("groups", []):
+            for r in g.get("rows", []):
+                r["code"] = kode.get(str(r.get("code")), r.get("code"))
     isi = buat_docx_calk(data)
     nama = re.sub(r"[^A-Za-z0-9_\-]", "_", f"CALK_{data['client'].get('company_name') or 'client'}_{data['as_of']}").strip("_")
     return StreamingResponse(

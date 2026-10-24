@@ -9,6 +9,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { createJeDraftWithLines, uploadJeSourceFile, type JeDraftLineInput } from '@/lib/journalEntryStore';
 import { useActiveClient } from '@/lib/activeClient';
+import { accNoDariKode } from '@/lib/accountCode';
 
 // ============================================================
 // Import Journal (frontend) -- 2 jalur, dicoba berurutan tiap file:
@@ -245,7 +246,8 @@ export default function ImportJournalModal({
     const hasil: ImportResult[] = [];
     for (const g of balancedGroups) {
       const lines: JeDraftLineInput[] = g.lines.map(l => ({
-        account_code: l.account_code,
+        // Kode di file boleh kode tampilan (Source Account Code) atau kode ZAFEB.
+        account_code: accNoDariKode(l.account_code),
         account_name: l.account_name || undefined,
         description: l.description || undefined,
         debit: l.debit, credit: l.credit,

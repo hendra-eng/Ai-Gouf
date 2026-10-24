@@ -285,6 +285,14 @@ async def upload_journal_entry_import(
     groups = ekstrak["groups"]
     currency = (template.get("mapping_rules") or {}).get("currency_default", "IDR")
 
+    # Kode akun di file boleh kode tampilan (Source Account Code, migration 50) -> disimpan sebagai acc_no.
+    ke_acc_no = {kode.lower(): acc for acc, kode in dbc.peta_kode_tampil(management_client_id).items()}
+    for g in groups:
+        for l in g["lines"]:
+            kode = str(l.get("account_code") or "").strip()
+            if kode:  # kode tampilan menang (sama dengan accNoDariKode di frontend)
+                l["account_code"] = ke_acc_no.get(kode.lower(), kode)
+
     drafts_result: List[Dict[str, Any]] = []
     created = 0
     skipped_unbalanced = 0

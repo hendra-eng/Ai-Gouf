@@ -5,6 +5,7 @@ import { Transaction } from './transactionData';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { ArrowLeftRight } from 'lucide-react';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -101,6 +102,7 @@ export default function TransactionsTable({
   onEditClick,
   onBulkDelete, onBulkArchive, onBulkExport, onDeleteRow, onToggleCek, onResetFilters,
 }: TransactionsTableProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const allSelected = transactions.length > 0 && transactions.every((t) => selectedIds.has(t.id));
   const someSelected = transactions.some((t) => selectedIds.has(t.id)) && !allSelected;
 
@@ -245,7 +247,7 @@ export default function TransactionsTable({
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div>
-                        <span className="text-xs font-mono font-semibold text-foreground">{tx.accountCode}</span>
+                        <span className="text-xs font-mono font-semibold text-foreground">{kodeAkun(tx.accountCode)}</span>
                         <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{tx.accountName}</p>
                       </div>
                     </td>

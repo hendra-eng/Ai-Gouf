@@ -12,6 +12,7 @@ import {
 import {
   btnSmall, Card, EmptyRow, Menu, MenuItem, Pager, ReverseModal, SettlementBadge, SettlementDrawer, sortRows, SortTh, useSort,
 } from './arapUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Tab Collections / Payments (mode "all": semua status, aksi edit/submit/hapus/balik)
 // dan tab Posted (mode "posted": posted + reversed beserta jurnalnya).
@@ -23,6 +24,7 @@ type Kunci = 'tx_number' | 'tx_date' | 'counterparty' | 'amount' | 'status';
 export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
   cfg: SideConfig; clientId: string; mode: 'all' | 'posted'; data: Settlement[]; loading: boolean;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
   const level = roleLevel(user?.role);
   const [q, setQ] = useState('');
@@ -129,7 +131,7 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
                   </td>
                   <td className="px-3 py-2.5 text-xs text-muted-foreground">
                     {s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : '—'}
-                    <span className="block">{s.bank_account_code} · {s.bank_account_name}</span>
+                    <span className="block">{kodeAkun(s.bank_account_code)} · {s.bank_account_name}</span>
                   </td>
                   <td className={`px-3 py-2.5 text-right font-semibold ${s.status === 'reversed' ? 'text-muted-foreground line-through' : ''}`}>{rupiah(s.amount)}</td>
                   <td className="px-3 py-2.5">

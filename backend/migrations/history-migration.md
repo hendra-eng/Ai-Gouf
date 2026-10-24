@@ -67,3 +67,5 @@ purchase/seed_template_nbm_multi_format_purchase.sql
 bank_cash/seed_template_nbm_multi_format_bank_cash.sql
 bank_cash/seed_template_npi_multi_format_bank_cash.sql
 48-create_other_transaction_tables.py
+49-add_import_row_selection.py
+50-add_coa_source_acc_no.py

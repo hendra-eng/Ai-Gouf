@@ -12,6 +12,7 @@ import { fmtCompact, pctChange } from '../bs/bsData';
 import { ChartTooltip, Panel } from '../bs/BsUi';
 import { BsToolbar } from '../bs/BsToolbar';
 import { CF_COLORS, MAX_COLUMNS, cfReport, fmtRange, splitRange, useCfSeries, type CfMerged, type CfRow, type Granularity, type Method, type Tone } from './cfData';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Cash Flow Statement -- satu layout untuk metode langsung & tidak langsung:
 // filter periode (bulanan / kuartalan / tahunan + rentang), 4 KPI vs periode
@@ -49,6 +50,7 @@ function Segmented<T extends string>({ value, options, onChange }: { value: T; o
 }
 
 export default function CashFlowView({ clientId, method, onMethod, printedBy }: CfViewProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const today = todayIso();
   const y = Number(today.slice(0, 4));
   const [gran, setGran] = useState<Granularity>('monthly');
@@ -160,7 +162,7 @@ function Body({ m, method, labels, totalLabel, range, showCmp, setShowCmp, cmpBa
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
           <span>
             {unmappedMoving.length} balance sheet account{unmappedMoving.length > 1 ? 's have' : ' has'} movement but no cash flow mapping (shown under Operating in the indirect method):{' '}
-            {unmappedMoving.slice(0, 6).map(a => `${a.code} ${a.name}`).join(' · ')}{unmappedMoving.length > 6 ? ' …' : ''}.{' '}
+            {unmappedMoving.slice(0, 6).map(a => `${kodeAkun(a.code)} ${a.name}`).join(' · ')}{unmappedMoving.length > 6 ? ' …' : ''}.{' '}
             <Link href="/financial-statements/mapping" className="underline font-medium">Map them</Link>
           </span>
         </div>
@@ -430,7 +432,7 @@ function CfTable({ m, method, labels, totalLabel, range, showCmp, setShowCmp, cm
           <tr key={`${r.key}:${a.code}`} className="text-[12px] hover:bg-slate-50">
             <td className="pl-16 pr-3 py-1 sticky left-0 bg-white">
               <span className="inline-flex items-center gap-2 text-muted-foreground">
-                <span className="font-mono text-[11px]">{a.code}</span>
+                <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span>
                 <span className="truncate max-w-[220px]">{a.name}</span>
                 <Link href={glHref(a.code, range.start, range.end)} target="_blank" title="Open in General Ledger" className="hover:text-blue-700"><ExternalLink size={12} /></Link>
               </span>

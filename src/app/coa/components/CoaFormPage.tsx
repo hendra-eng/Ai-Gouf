@@ -34,6 +34,7 @@ const hintCls = 'mt-1 text-[11px] text-muted-foreground';
 
 interface FormState {
   accNo: string;
+  sourceAccNo: string;
   accountName: string;
   classification: AccountClassification;
   normalBalance: NormalBalance;
@@ -47,13 +48,14 @@ interface FormState {
 }
 
 const KOSONG: FormState = {
-  accNo: '', accountName: '', classification: 'ASSET', normalBalance: 'DEBIT', accountHead: '', accountSub: '',
+  accNo: '', sourceAccNo: '', accountName: '', classification: 'ASSET', normalBalance: 'DEBIT', accountHead: '', accountSub: '',
   standardCode: '', standardGroup: '', ifrsRef: '', description: '', isActive: true,
 };
 
 function dariAkun(a: CoaAccount): FormState {
   return {
     accNo: a.acc_no ?? '',
+    sourceAccNo: a.source_acc_no ?? '',
     accountName: a.account_name ?? '',
     classification: a.account_classification ?? 'ASSET',
     normalBalance: a.normal_balance ?? DEFAULT_NORMAL_BALANCE[a.account_classification] ?? 'DEBIT',
@@ -70,6 +72,7 @@ function dariAkun(a: CoaAccount): FormState {
 function keInput(f: FormState): CoaAccountInput {
   return {
     acc_no: f.accNo.trim(),
+    source_acc_no: f.sourceAccNo.trim() || null,
     account_name: f.accountName.trim(),
     account_classification: f.classification,
     normal_balance: f.normalBalance,
@@ -150,7 +153,7 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
   async function simpan(lagi: boolean) {
     if (submitting) return;
     const err: typeof errors = {};
-    if (!form.accNo.trim()) err.accNo = 'ACC No is required.';
+    if (!form.accNo.trim()) err.accNo = 'ZAFEB code is required.';
     if (!form.accountName.trim()) err.accountName = 'Account name is required.';
     setErrors(err);
     if (err.accNo || err.accountName) {
@@ -161,13 +164,13 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
     try {
       if (isEdit && editId) {
         const akun = await updateCoaAccount(editId, keInput(form));
-        toast.success('Account updated', { description: `${akun.acc_no} — ${akun.account_name}` });
+        toast.success('Account updated', { description: `${akun.source_acc_no || akun.acc_no} — ${akun.account_name}` });
         router.push(backHref);
         return;
       }
       const clientId = target === 'client' ? activeClientId : null;
       const akun = await createCoaAccount(clientId, keInput(form));
-      toast.success(clientId ? 'Account added' : 'Unassigned account added', { description: `${akun.acc_no} — ${akun.account_name}` });
+      toast.success(clientId ? 'Account added' : 'Unassigned account added', { description: `${akun.source_acc_no || akun.acc_no} — ${akun.account_name}` });
       if (lagi) {
         // Klasifikasi & hierarki dipertahankan -- biasanya akun berikutnya satu kelompok.
         setForm(f => ({ ...KOSONG, classification: f.classification, normalBalance: f.normalBalance, accountHead: f.accountHead, accountSub: f.accountSub }));
@@ -217,7 +220,7 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
             <ListTree size={13} />
             <Link href={backHref} className="hover:text-foreground">Chart of Accounts</Link>
             <ChevronRight size={12} />
-            <span className="font-medium text-foreground">{isEdit ? original?.acc_no ?? 'Edit' : 'New account'}</span>
+            <span className="font-medium text-foreground">{isEdit ? (original?.source_acc_no || original?.acc_no) ?? 'Edit' : 'New account'}</span>
           </nav>
           <div className="flex items-center gap-3">
             <Link href={backHref} title="Back" className="flex h-9 w-9 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground">
@@ -242,9 +245,20 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
         {/* Kolom kiri: section form */}
         <div className="space-y-5">
           <Section icon={Hash} title="Account identity" subtitle="Number and name as they appear in journals and reports.">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               <div>
-                <label className={labelCls}>ACC No <span className="text-red-500">*</span></label>
+                <label className={labelCls}>Account code</label>
+                <input
+                  value={form.sourceAccNo}
+                  onChange={e => set('sourceAccNo', e.target.value)}
+                  placeholder="Legacy code"
+                  maxLength={50}
+                  className={`${inputCls} font-mono`}
+                />
+                <p className={hintCls}>Shown everywhere in the system. Empty = ZAFEB code.</p>
+              </div>
+              <div>
+                <label className={labelCls}>ZAFEB code <span className="text-red-500">*</span></label>
                 <input
                   value={form.accNo}
                   onChange={e => set('accNo', e.target.value)}
@@ -353,7 +367,7 @@ export default function CoaFormPage({ mode }: { mode: 'create' | 'edit' }) {
             <div className={`h-1.5 ${theme.dot}`} />
             <div className="p-5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Preview</p>
-              <p className="mt-2 font-mono text-xs text-muted-foreground">{form.accNo.trim() || '— — — —'}</p>
+              <p className="mt-2 font-mono text-xs text-muted-foreground">{form.sourceAccNo.trim() || form.accNo.trim() || '— — — —'}</p>
               <p className="mt-0.5 break-words text-base font-semibold leading-snug text-foreground">{form.accountName.trim() || 'Account name'}</p>
               <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${theme.badge}`}>

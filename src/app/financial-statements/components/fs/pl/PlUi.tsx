@@ -9,6 +9,7 @@ import { Select } from '../PeriodPicker';
 import { fmtAmount, glHref } from '../fsFormat';
 import { fmtCompact, pctChange, type MLine, type MSection } from '../bs/bsData';
 import { PL_COLORS, PL_LAYOUT, type PlMerged, type Segment } from './plData';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Potongan UI bersama tampilan Profit & Loss: tabel laporan yang bisa
 // dibuka per seksi -> baris -> akun, waterfall bridge, filter segment.
@@ -17,6 +18,7 @@ import { PL_COLORS, PL_LAYOUT, type PlMerged, type Segment } from './plData';
 // ── Sel angka ────────────────────────────────────────────────────────
 
 export function Num({ v, bold, className = '' }: { v: number | null; bold?: boolean; className?: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${bold ? 'font-semibold' : ''} ${v !== null && v < -0.004 ? 'text-rose-600' : ''} ${className}`}>
       {fmtAmount(v)}
@@ -26,6 +28,7 @@ export function Num({ v, bold, className = '' }: { v: number | null; bold?: bool
 
 /** Persentase perubahan dengan segitiga; `upIsGood=false` untuk beban. */
 export function PctCell({ cur, prev, upIsGood = true, className = '' }: { cur: number; prev: number; upIsGood?: boolean; className?: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const p = pctChange(cur, prev);
   if (p === null || Math.abs(p) < 0.05) return <td className={`px-3 py-2 text-right text-xs tabular-nums text-muted-foreground ${className}`}>{p === null ? '–' : '0.0%'}</td>;
   const good = (p > 0) === upIsGood;
@@ -55,6 +58,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
   minWidth?: number;
   compact?: boolean;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [openLines, setOpenLines] = useState<Set<string>>(new Set());
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, k: string) => set(prev => {
@@ -85,7 +89,7 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
           <tr key={`${a.code ?? 'calc'}-${i}`} className="text-[12px] hover:bg-slate-50">
             <td className="pl-16 pr-3 py-1">
               <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
-                {a.code && <span className="font-mono text-[11px]">{a.code}</span>}
+                {a.code && <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span>}
                 <span className="truncate">{a.name}</span>
                 {a.code && (
                   <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" onClick={e => e.stopPropagation()} className="hover:text-blue-700">
@@ -155,6 +159,7 @@ export interface BridgeStep { name: string; delta: number }
 export function Bridge({ startLabel, start, steps, endLabel, end, height = 190 }: {
   startLabel: string; start: number; steps: BridgeStep[]; endLabel: string; end: number; height?: number;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   let run = start;
   const bars = [{ name: startLabel, base: Math.min(0, start), value: Math.abs(start), fill: PL_COLORS.muted, label: fmtCompact(start, 1) }];
   steps.filter(s => Math.abs(s.delta) >= 0.5).forEach(s => {
@@ -213,6 +218,7 @@ export function profitSteps(m: PlMerged, from: number, to: number, upTo: 'gross_
 // ── Insight bernomor ─────────────────────────────────────────────────
 
 export function NumberedInsights({ items }: { items: string[] }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <ol className="space-y-3">
       {items.map((t, i) => (
@@ -229,6 +235,7 @@ export function NumberedInsights({ items }: { items: string[] }) {
 
 /** Pilih segment (branch / cost center / project ...) -- berlaku untuk semua tampilan. */
 export function SegmentFilter({ clientId, value, onChange }: { clientId: string; value: Segment | null; onChange: (s: Segment | null) => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [types, setTypes] = useState<SegmentType[]>([]);
   const [type, setType] = useState(value?.type ?? '');
 
