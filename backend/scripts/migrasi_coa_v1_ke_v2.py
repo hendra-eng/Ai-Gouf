@@ -369,6 +369,14 @@ def main() -> int:
 
     with engine.connect() as conn:
         v2 = baca_template_v2(conn)
+        # Pengaman: template di DB harus sudah V2 (migration 30 dengan COA_Industry_V2.xlsx).
+        kode_db = [a["acc_no"] for akun in v2.values() for a in akun]
+        kode_v1 = {k for t in v1.values() for k in t["akun"]}
+        if not kode_db or sum(1 for k in kode_db if k in kode_v1) / len(kode_db) >= AMBANG_V1:
+            print("BERHENTI: template COA industri di database masih versi LAMA (V1) / kosong.")
+            print("Jalankan dulu: python migrations/30-create_management_coa_industry_templates.py")
+            print("(file dataset/COA/COA_Industry_V2.xlsx harus ada), lalu jalankan script ini lagi.")
+            return 1
         klien = [dict(r) for r in conn.execute(text(
             "SELECT id::text AS id, nama_client, client_code, industry FROM management_clients ORDER BY nama_client"
         )).mappings().all()]
