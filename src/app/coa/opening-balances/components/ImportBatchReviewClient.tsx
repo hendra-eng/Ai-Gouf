@@ -132,15 +132,16 @@ export default function ImportBatchReviewClient() {
     if (!b) return;
     const semua = terpilih.n === b.rows.length;
     const langsung = b.status === 'validated';
-    if (terpilih.n === 0) { toast.error('Select at least one row to approve.'); return; }
-    if (b.module === 'coa' && terpilih.selisih !== 0) {
-      toast.error('The selected rows are not balanced — total debit must equal total credit.');
-      return;
-    }
+    if (terpilih.n === 0) { toast.error('Select at least one valid row to approve.'); return; }
+    // COA tidak seimbang = peringatan saja: selisih diparkir ke akun suspense saat opening balance di-post.
+    const selisihInfo = b.module === 'coa' && terpilih.selisih !== 0
+      ? ` The selected rows are not balanced (difference ${formatAmount(Math.abs(terpilih.selisih))}) — the difference is parked in the suspense account when the opening balance is posted.`
+      : '';
+    const errorInfo = b.error_rows > 0 ? ` ${b.error_rows} row(s) with errors are skipped.` : '';
     const cakupan = (langsung ? ' The batch is applied right away (no review needed for your role).' : '') + (semua ? '' : ` Only the ${terpilih.n} selected of ${b.rows.length} row(s) will be applied; the other ${b.rows.length - terpilih.n} row(s) are excluded.`);
     const pesan = b.module === 'coa'
-      ? `Approve "${b.file_name}"? Opening balance lines of non-control accounts will be REPLACED with the selected rows, and ZAFEB account names will be updated from Source Account Name.${cakupan}`
-      : `Approve "${b.file_name}"? ${PESAN_APPROVE[b.module]?.(terpilih.n) ?? ''}${cakupan}`;
+      ? `Approve "${b.file_name}"? Opening balance lines of non-control accounts will be REPLACED with the selected rows, and ZAFEB account names will be updated from Source Account Name.${cakupan}${errorInfo}${selisihInfo}`
+      : `Approve "${b.file_name}"? ${PESAN_APPROVE[b.module]?.(terpilih.n) ?? ''}${cakupan}${errorInfo}`;
     if (!window.confirm(pesan)) return;
     const ids = semua ? null : b.rows.filter(r => dipilih.has(r.id)).map(r => r.id);
     jalankan('approve', () => approveImportBatch(b.id, undefined, ids), semua ? 'Batch approved' : `Batch approved — ${terpilih.n} row(s) applied`);
@@ -234,8 +235,8 @@ export default function ImportBatchReviewClient() {
               {b.permissions.can_submit && (
                 <button
                   onClick={onSubmit}
-                  disabled={!!aksi || b.blocking_issues.length > 0}
-                  title={b.blocking_issues.length > 0 ? b.blocking_issues.join(' ') : undefined}
+                  disabled={!!aksi || b.valid_rows + b.warning_rows === 0}
+                  title={b.valid_rows + b.warning_rows === 0 ? 'There are no valid rows to submit.' : undefined}
                   className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
                 >
                   {aksi === 'submit' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Submit for approval
@@ -250,8 +251,8 @@ export default function ImportBatchReviewClient() {
                   )}
                   <button
                     onClick={onApprove}
-                    disabled={!!aksi || terpilih.n === 0 || (isCoa && terpilih.selisih !== 0)}
-                    title={isCoa && terpilih.selisih !== 0 ? 'The selected rows are not balanced.' : undefined}
+                    disabled={!!aksi || terpilih.n === 0}
+                    title={terpilih.n === 0 ? 'Select at least one valid row.' : undefined}
                     className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
                   >
                     {aksi === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
@@ -265,23 +266,15 @@ export default function ImportBatchReviewClient() {
       </div>
 
       <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-6">
-        {b.blocking_issues.length > 0 && b.status === 'validated' && b.permissions.can_approve && b.error_rows > 0 && (
+        {b.issues.length > 0 && (b.status === 'validated' || b.status === 'submitted') && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
-            <p className="text-xs leading-relaxed text-amber-900">
-              {b.error_rows} row(s) have errors and cannot be selected — approve the other rows, or fix the file and import it again.
-            </p>
-          </div>
-        )}
-        {b.blocking_issues.length > 0 && b.status === 'validated' && !b.permissions.can_approve && (
-          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-600" />
-            <div className="text-xs leading-relaxed text-red-900">
-              <p className="font-semibold">This batch cannot be submitted:</p>
+            <div className="text-xs leading-relaxed text-amber-900">
+              <p className="font-semibold">Please review before approving:</p>
               <ul className="mt-1 list-disc pl-4">
-                {b.blocking_issues.map(i => <li key={i}>{i}</li>)}
+                {b.issues.map(i => <li key={i}>{i}</li>)}
               </ul>
-              <p className="mt-1">Fix the file and import it again from the Import Data tab. Warnings do not block submission — just review them.</p>
+              {b.error_rows > 0 && <p className="mt-1">Rows with errors cannot be selected. Fix them in the file and import them again if they are needed.</p>}
             </div>
           </div>
         )}

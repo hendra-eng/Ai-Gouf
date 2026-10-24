@@ -14,7 +14,10 @@ approval batch import per modul.
     POST   /api/v1/management/opening-balances/imports/{batch_id}/cancel      validated/rejected -> cancelled
 
 Modul: coa (COA legacy + saldo non-subledger), ar, ap, inventory, asset.
-Aturan modul coa (ERROR = diblok, batch tidak bisa di-submit; WARNING = boleh, cukup direview):
+Baris ERROR tidak bisa di-approve & tidak pernah diterapkan, tapi TIDAK memblokir
+batch: submit & approve tetap jalan untuk baris valid/warning (keputusan bisnis
+2026-10-24, _pilih_baris). WARNING = boleh, cukup direview.
+Aturan modul coa:
     Source Account Code / Name  teks, wajib.               Duplikat kode -> error.
     Opening Debit / Credit      desimal, wajib, >= 0.      Dua-duanya > 0 -> error; dua-duanya 0 = baris tanpa saldo.
     Balance Date                tanggal, wajib, = tanggal cut-off set opening balance (periode opening).
@@ -22,7 +25,8 @@ Aturan modul coa (ERROR = diblok, batch tidak bisa di-submit; WARNING = boleh, c
     Akun ZAFEB                  1 akun ZAFEB hanya boleh dipakai 1 baris. Kalau barisnya BERSALDO: akun harus
                                 aktif, bukan akun kontrol subledger (AR/AP/Inventory/Fixed Asset), bukan Current
                                 Year Earnings. Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
-    Batch                       total debit harus = total kredit (dicek saat submit, lihat _isu_blokir).
+    Batch                       total debit != total kredit -> peringatan saja (_catatan_batch); selisihnya
+                                diparkir ke akun suspense saat opening balance di-post.
     Akun BARU                   kode ZAFEB yang belum ada di COA klien BOLEH, asal standarnya jelas
                                 (_cek_akun_baru): format kode valid & unik, nama tidak bentrok, Standard
                                 Account Code wajib & dikenali (_katalog_standard: template COA industri +
@@ -345,29 +349,26 @@ def _baris_terpilih(session, b: Any) -> List[Any]:
     return session.query(ROW).filter(ROW.import_id == b.id, ROW.is_excluded.is_(False)).order_by(ROW.row_no).all()
 
 
-def _pilih_baris(session, b: Any, row_ids: Optional[List[str]]) -> Tuple[int, int]:
+def _pilih_baris(session, b: Any, row_ids: Optional[List[str]]) -> Tuple[int, int, int]:
     """Select data saat approve: baris di luar row_ids ditandai is_excluded (tidak
-    diterapkan). row_ids None = semua baris. Modul coa: baris terpilih tetap harus
-    seimbang (total debit = total kredit), sama dengan aturan submit batch.
-    Return (jumlah dipilih, jumlah baris)."""
+    diterapkan). row_ids None = semua baris. Baris ERROR selalu dikeluarkan
+    (tidak bisa di-approve) -- sisanya tetap jalan. Modul coa: debit != kredit
+    tidak diblokir (selisih -> akun suspense saat posting opening balance).
+    Return (jumlah dipilih, jumlah baris, jumlah baris error yang dilewati)."""
     rows = session.query(ROW).filter(ROW.import_id == b.id).all()
     semua = {r.id for r in rows}
     pilih = semua if row_ids is None else {str(x) for x in row_ids}
-    if not pilih:
-        raise _Gagal("Select at least one row to approve.", kode="NO_ROWS_SELECTED")
     if pilih - semua:
         raise _Gagal("Some selected rows do not belong to this batch — reload the page.", kode="INVALID_ROWS")
+    error = {r.id for r in rows if r.status == "error"}
+    pilih -= error
+    if not pilih:
+        raise _Gagal("There are no valid rows to approve — rows with errors cannot be approved. Fix the file and "
+                     "import it again.", kode="NO_VALID_ROWS")
     for r in rows:
         r.is_excluded = r.id not in pilih
-    if b.module == "coa":
-        debit = sum((_dec_aman(r.debit) for r in rows if r.id in pilih), NOL)
-        kredit = sum((_dec_aman(r.credit) for r in rows if r.id in pilih), NOL)
-        if debit != kredit:
-            raise _Gagal(f"The selected rows are not balanced (debit {debit:,.2f}, credit {kredit:,.2f}, difference "
-                         f"{abs(debit - kredit):,.2f}). Select rows so that total debit equals total credit.",
-                         kode="NOT_BALANCED", status_code=409)
     session.flush()
-    return len(pilih), len(rows)
+    return len(pilih), len(rows), len(error)
 
 
 def _akses_import(session, user: Dict[str, Any], client_id: str) -> Optional[str]:
@@ -416,14 +417,17 @@ def _izin_batch(session, user: Dict[str, Any], b: Any) -> Dict[str, bool]:
     }
 
 
-def _isu_blokir(b: Any) -> List[str]:
-    """Isu level batch yang membuat batch TIDAK boleh di-submit."""
+def _catatan_batch(b: Any) -> List[str]:
+    """Catatan level batch untuk reviewer -- TIDAK memblokir submit/approve
+    (baris error otomatis dilewati saat approve, lihat _pilih_baris)."""
     isu = []
     if b.error_rows:
-        isu.append(f"{b.error_rows} row(s) have errors.")
+        isu.append(f"{b.error_rows} row(s) have errors — they cannot be approved and will not be applied; the other "
+                   "rows can still be approved.")
     if b.module == "coa" and _dec_aman(b.total_debit) != _dec_aman(b.total_credit):
         selisih = abs(_dec_aman(b.total_debit) - _dec_aman(b.total_credit))
-        isu.append(f"Total debit and total credit are not equal (difference {selisih:,.2f}).")
+        isu.append(f"Total debit and total credit are not equal (difference {selisih:,.2f}) — any difference of the "
+                   "approved rows is parked in the suspense account when the opening balance is posted.")
     return isu
 
 
@@ -442,7 +446,7 @@ def _ringkas_batch(b: Any) -> Dict[str, Any]:
         "error_rows": b.error_rows,
         "total_debit": float(b.total_debit or 0),
         "total_credit": float(b.total_credit or 0),
-        "blocking_issues": _isu_blokir(b),
+        "issues": _catatan_batch(b),
         "notes": b.notes,
         "created_at": b.created_at,
         "created_by": b.created_by,
@@ -1011,7 +1015,7 @@ def _tambah_cara_penggunaan(wb: Workbook, p: Dict[str, Any]) -> None:
     baris_merge("Green-shaded cells are filled automatically by formulas — you may overwrite them where the guide says so.",
                 Font(name=_FONT, size=10, italic=True, color="FF475569"))
 
-    seksi("ERRORS — the batch cannot be submitted until these are fixed")
+    seksi("ERRORS — these rows cannot be approved and are not applied (the other rows can still be approved)")
     daftar(p["error"], _FILL_ERROR, "dot")
     seksi("WARNINGS — allowed, the reviewer only needs to check them")
     daftar(p["warning"], _FILL_WARNING, "dot")
@@ -1034,8 +1038,8 @@ def _info_panduan(nama_klien: str, ob: Any, modul: str) -> List[Tuple[str, str]]
 _LANGKAH_UMUM_AKHIR = [
     "Save the file as .xlsx (keep the sheet and column names unchanged) and upload it with the Import button on "
     "COA > Opening Balance > Import Data.",
-    "Review the validation result: fix every row marked Error in the file and upload it again; rows marked Warning can "
-    "stay but must be reviewed.",
+    "Review the validation result: rows marked Error cannot be approved and are skipped — fix them in the file and "
+    "import them again if needed; rows marked Warning can stay but must be reviewed.",
     "Internal Tahap 3-5 and client roles Org Owner to Supervisor approve the batch directly (no review needed). Other "
     "roles submit it for approval; one of those users then approves or rejects it.",
 ]
@@ -1095,10 +1099,11 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "New account: invalid or duplicate code, name already used by another account, Standard Account Code empty or "
             "not recognized, Source Classification invalid or different from the standard code, Current Year Earnings, "
             "or a balance on a subledger control standard code.",
-            "Total debit not equal to total credit (checked for the whole batch).",
         ],
         "warning": [
             "Row without a ZAFEB account (unmapped) — its balance is NOT applied to the opening balance.",
+            "Total debit not equal to total credit — the difference of the approved rows is parked in the suspense "
+            "account when the opening balance is posted.",
             "Source Classification different from the ZAFEB account classification.",
             "Branch different from this opening balance set.",
             "New account — the reviewer confirms it before it is added to the client's COA.",
@@ -3167,9 +3172,9 @@ def submit_import(batch_id: str, current_user: Dict[str, Any] = Depends(get_curr
         _wajib_akses(session, current_user, b.client_id)
         if b.status != "validated":
             raise _Gagal("Only a validated batch can be submitted.", kode=f"STATUS_{b.status.upper()}", status_code=409)
-        isu = _isu_blokir(b)
-        if isu:
-            raise _Gagal(" ".join(isu) + " Fix the file and upload it again before submitting.", kode="HAS_ERRORS")
+        if not (b.valid_rows or 0) + (b.warning_rows or 0):
+            raise _Gagal("There are no valid rows to submit — rows with errors cannot be approved. Fix the file and "
+                         "import it again.", kode="NO_VALID_ROWS")
         b.status = "submitted"
         b.submitted_at, b.submitted_by, b.submitted_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
 
@@ -3324,7 +3329,7 @@ def approve_import(
             # Grup tanpa review: approve langsung tanpa tahap submit (baris error tetap
             # tidak boleh ikut dipilih -- dicek di _terapkan_*; coa: pilihan harus seimbang).
             b.submitted_at, b.submitted_by, b.submitted_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
-        dipilih, total = _pilih_baris(session, b, payload.row_ids)
+        dipilih, total, n_error = _pilih_baris(session, b, payload.row_ids)
         if b.module == "coa":
             b.notes = _terapkan_coa(session, b, current_user)
         elif b.module == "asset":
@@ -3334,7 +3339,10 @@ def approve_import(
         else:
             b.notes = _terapkan_dok(session, b, current_user, SISI_DOK[b.module])
         if dipilih < total:
-            b.notes = f"{b.notes} Approved {dipilih} of {total} row(s); {total - dipilih} excluded by the reviewer."
+            dikeluarkan = total - dipilih - n_error
+            b.notes = (f"{b.notes} Approved {dipilih} of {total} row(s)"
+                       + (f"; {n_error} row(s) with errors skipped" if n_error else "")
+                       + (f"; {dikeluarkan} excluded by the reviewer" if dikeluarkan else "") + ".")
         b.status = "approved"
         b.reviewed_at, b.reviewed_by, b.reviewed_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
         b.review_note = (payload.note or "").strip() or None

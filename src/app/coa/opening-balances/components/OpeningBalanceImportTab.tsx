@@ -72,8 +72,8 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
     setSibuk({ module: k, jenis: 'upload' });
     try {
       const b = await uploadImportFile(ob.id, k, f);
-      if (b.blocking_issues.length > 0) {
-        toast.warning('File uploaded with errors', { description: b.blocking_issues.join(' ') });
+      if (b.issues.length > 0) {
+        toast.warning('File uploaded — please review', { description: b.issues.join(' ') });
       } else {
         toast.success('File uploaded and validated', { description: `${b.total_rows} row${b.total_rows === 1 ? '' : 's'} ready for review.` });
       }
