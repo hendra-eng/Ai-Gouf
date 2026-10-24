@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useJeDrafts, useJeDraftLines, listJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry, type JeUiStatus } from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type JEStatus = JeUiStatus;
 
@@ -44,6 +45,7 @@ const statusLabels: Record<JEStatus, string> = {
 };
 
 export default function JournalEntryTransactionPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
   const clientId = user?.id ?? null;
   const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
@@ -307,7 +309,7 @@ export default function JournalEntryTransactionPage() {
                 <tbody className="divide-y divide-border">
                   {mappedLines.map(line => (
                     <tr key={line.id} className="table-row-hover">
-                      <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</td>
                       <td className="px-3 py-2 text-foreground">{line.description}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{line.debit > 0 ? fmt(line.debit) : '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{line.credit > 0 ? fmt(line.credit) : '—'}</td>

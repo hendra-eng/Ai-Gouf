@@ -35,6 +35,7 @@ import KPIBentoGrid from './KPIBentoGrid';
 // hanya "All Branches" kalau belum ada client aktif / client belum
 // punya data cabang, supaya dropdown tidak pernah kosong.
 import { daftarBranches } from '@/app/agent-ai/lib/api';
+import { kodeAkun } from '@/lib/accountCode';
 
 const formatDateForFilename = () => new Date().toISOString().slice(0, 10);
 
@@ -54,7 +55,7 @@ function toCsvValue(v: string | number): string {
 function exportOverviewToCsv(transactions: Transaction[], companyName: string) {
   const header = ['Tanggal', 'TX ID', 'No. Jurnal', 'No. Voucher', 'Kode Akun', 'Nama Akun', 'Deskripsi', 'Pihak', 'Kategori', 'Debit', 'Kredit', 'Status'];
   const rows = transactions.map((t) => [
-    t.date, t.txId, t.jeId, t.voucherNo, t.accountCode, t.accountName, t.description, t.party, t.category, t.debit, t.credit, t.status,
+    t.date, t.txId, t.jeId, t.voucherNo, kodeAkun(t.accountCode), t.accountName, t.description, t.party, t.category, t.debit, t.credit, t.status,
   ]);
   const csv = [header, ...rows].map((r) => r.map(toCsvValue).join(',')).join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });

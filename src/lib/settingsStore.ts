@@ -242,6 +242,8 @@ export interface AccountMappingItem {
   used_in: string | null;
   coa_id: string | null;
   coa: MappedCoa | null;
+  /** Saran akun dari COA company kalau belum dipetakan -- hanya tampilan, tidak tersimpan. */
+  suggested_coa_id: string | null;
   /** Terkunci: tidak bisa diubah dari menu mana pun sampai dibuka lagi. */
   is_locked: boolean;
   locked_at: string | null;

@@ -18,6 +18,7 @@ import {
   closeFiscalYear, fetchYecDetail, fetchYecPreview, formatAmount, formatDate, formatDateTime, reopenFiscalYear, useYecWorkspace,
   type CheckStatus, type WorkspaceYear, type YecDetail, type YecPreview,
 } from '@/lib/yearEndClosingStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const glLink = (date: string) => `/reports/general-ledger?start=${date}&end=${date}`;
 const kunci = (y: { client_id: string; fiscal_year: number }) => `${y.client_id}:${y.fiscal_year}`;
@@ -32,6 +33,7 @@ type StatusFilter = 'all' | 'open' | 'closed' | 'reopened';
 type Drawer = { year: WorkspaceYear; mode: 'close' | 'view' };
 
 export default function YearEndClosingClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId, setActiveClient } = useActiveClient();
   const { data, loading, error, refresh } = useYecWorkspace();
   const [q, setQ] = useState('');
@@ -323,6 +325,7 @@ function RowMenu({ y, onClose, onReopen, onGl }: { y: WorkspaceYear; onClose: ()
 function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
   options: WorkspaceYear[]; selectedKey: string | null; onSelect: (k: string) => void; tick: number; onGl: (y: { client_id: string; client_name: string }) => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [detail, setDetail] = useState<YecDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -421,7 +424,7 @@ function ClosedDetail({ options, selectedKey, onSelect, tick, onGl }: {
                     </Link>
                   </dd>
                   <dt className="text-muted-foreground">Retained Earnings</dt>
-                  <dd className="text-foreground">{d.retained_earnings_account ? `${d.retained_earnings_account.acc_no} · ${d.retained_earnings_account.account_name}` : '—'}</dd>
+                  <dd className="text-foreground">{d.retained_earnings_account ? `${kodeAkun(d.retained_earnings_account.acc_no)} · ${d.retained_earnings_account.account_name}` : '—'}</dd>
                   <dt className="text-muted-foreground">Closed By</dt>
                   <dd className="text-foreground">{d.closed_by_name || '—'}</dd>
                   <dt className="text-muted-foreground">Closed At</dt>
@@ -543,6 +546,7 @@ function CheckCard({ c }: { c: { id: string; label?: string; status: CheckStatus
 }
 
 function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear; mode: 'close' | 'view'; onCancel: () => void; onDone: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [accountId, setAccountId] = useState('');
   const [preview, setPreview] = useState<YecPreview | null>(null);
   const [snapshot, setSnapshot] = useState<YecDetail | null>(null);
@@ -635,7 +639,7 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
               <select value={accountId} onChange={e => setAccountId(e.target.value)}
                 className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100">
                 <option value="">— Choose an equity account —</option>
-                {p.retained_earnings_options.map(a => <option key={a.id} value={a.id}>{a.acc_no} · {a.account_name}</option>)}
+                {p.retained_earnings_options.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.acc_no)} · {a.account_name}</option>)}
               </select>
             </div>
           )}
@@ -668,7 +672,7 @@ function ChecklistDrawer({ year, mode, onCancel, onDone }: { year: WorkspaceYear
                       <tbody className="divide-y divide-border">
                         {p.journal_preview.lines.map((l, i) => (
                           <tr key={i}>
-                            <td className="px-3 py-1.5"><span className="font-mono text-slate-500">{l.account_code}</span> {l.account_name}</td>
+                            <td className="px-3 py-1.5"><span className="font-mono text-slate-500">{kodeAkun(l.account_code)}</span> {l.account_name}</td>
                             <td className="px-2 py-1.5 text-right font-mono tabular-nums">{l.debit ? formatAmount(l.debit) : ''}</td>
                             <td className="px-3 py-1.5 text-right font-mono tabular-nums">{l.credit ? formatAmount(l.credit) : ''}</td>
                           </tr>

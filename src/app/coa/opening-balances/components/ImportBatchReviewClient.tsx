@@ -3,9 +3,12 @@
 // Review & approval 1 batch import (/coa/opening-balances/[id]/imports/[module]/[batchId]):
 // ringkasan validasi, jejak approval (upload -> submit -> approve/reject),
 // tabel baris + pesan validasi, dan aksi Submit / Approve / Reject / Cancel.
-// Approve/Reject = Tahap 4+, dan bukan orang yang submit (dicek backend).
+// Hak akses dari backend (permissions, _akses_import): internal Tahap 3-5 &
+// client_lv_1..5 approve langsung tanpa submit/review; role lain submit dulu.
+// Select data: saat batch submitted, approver memilih baris (checkbox / select
+// all); baris yang tidak dipilih tidak diterapkan (is_excluded di backend).
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -26,6 +29,7 @@ import {
 } from '@/lib/openingBalanceImportStore';
 import { BatchStatusBadge, formatDateTime, metaModul } from './importUi';
 import { branchLabel } from './obUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type Aksi = 'submit' | 'approve' | 'reject' | 'cancel' | null;
 type Filter = 'all' | ImportRowStatus;
@@ -38,7 +42,16 @@ const ROW_BADGE: Record<ImportRowStatus, string> = {
 
 const teks = (v: unknown) => (v === null || v === undefined || v === '' ? '' : String(v));
 
+// Status pilihan baris untuk approve (select data), dipakai semua tabel.
+type Pilih = {
+  aktif: boolean;
+  set: Set<string>;
+  toggle: (id: string) => void;
+  setBanyak: (ids: string[], pilih: boolean) => void;
+};
+
 export default function ImportBatchReviewClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const params = useParams<{ id: string; module: string; batchId: string }>();
   const id = params?.id ?? '';
   const batchId = params?.batchId ?? '';
@@ -50,11 +63,13 @@ export default function ImportBatchReviewClient() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [tolak, setTolak] = useState<{ open: boolean; alasan: string }>({ open: false, alasan: '' });
+  const [dipilih, setDipilih] = useState<Set<string>>(new Set());
 
   const muat = useCallback(() => {
     if (!batchId) return;
     fetchImportBatch(batchId)
-      .then(d => { setB(d); setError(null); })
+      // Default: semua baris yang bisa diterapkan terpilih (baris error tidak bisa dipilih).
+      .then(d => { setB(d); setDipilih(new Set(d.rows.filter(r => r.status !== 'error').map(r => r.id))); setError(null); })
       .catch(e => setError(e instanceof Error ? e.message : 'Failed to load the import batch.'));
   }, [batchId]);
 
@@ -62,6 +77,24 @@ export default function ImportBatchReviewClient() {
 
   const isCoa = b?.module === 'coa';
   const isAset = b?.module === 'asset';
+
+  const pilih: Pilih = useMemo(() => ({
+    aktif: !!b?.permissions?.can_approve,
+    set: dipilih,
+    toggle: id => setDipilih(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
+    setBanyak: (ids, on) => setDipilih(s => { const n = new Set(s); ids.forEach(i => (on ? n.add(i) : n.delete(i))); return n; }),
+  }), [b?.permissions?.can_approve, dipilih]);
+
+  // Baris yang boleh dipilih = selain baris error.
+  const bisaDipilih = useMemo(() => (b?.rows ?? []).filter(r => r.status !== 'error').map(r => r.id), [b]);
+
+  // Total baris terpilih (modul coa: harus seimbang supaya bisa di-approve).
+  const terpilih = useMemo(() => {
+    const rows = (b?.rows ?? []).filter(r => dipilih.has(r.id));
+    const debit = rows.reduce((t, r) => t + r.debit, 0);
+    const credit = rows.reduce((t, r) => t + r.credit, 0);
+    return { n: rows.length, debit, credit, selisih: Math.round((debit - credit) * 100) / 100 };
+  }, [b, dipilih]);
 
   const tampil = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -97,11 +130,20 @@ export default function ImportBatchReviewClient() {
   };
   const onApprove = () => {
     if (!b) return;
+    const semua = terpilih.n === b.rows.length;
+    const langsung = b.status === 'validated';
+    if (terpilih.n === 0) { toast.error('Select at least one row to approve.'); return; }
+    if (b.module === 'coa' && terpilih.selisih !== 0) {
+      toast.error('The selected rows are not balanced — total debit must equal total credit.');
+      return;
+    }
+    const cakupan = (langsung ? ' The batch is applied right away (no review needed for your role).' : '') + (semua ? '' : ` Only the ${terpilih.n} selected of ${b.rows.length} row(s) will be applied; the other ${b.rows.length - terpilih.n} row(s) are excluded.`);
     const pesan = b.module === 'coa'
-      ? `Approve "${b.file_name}"? Opening balance lines of non-control accounts will be REPLACED with this batch, and ZAFEB account names will be updated from Source Account Name.`
-      : `Approve "${b.file_name}"? ${PESAN_APPROVE[b.module]?.(b.total_rows) ?? ''}`;
+      ? `Approve "${b.file_name}"? Opening balance lines of non-control accounts will be REPLACED with the selected rows, and ZAFEB account names will be updated from Source Account Name.${cakupan}`
+      : `Approve "${b.file_name}"? ${PESAN_APPROVE[b.module]?.(terpilih.n) ?? ''}${cakupan}`;
     if (!window.confirm(pesan)) return;
-    jalankan('approve', () => approveImportBatch(b.id), 'Batch approved');
+    const ids = semua ? null : b.rows.filter(r => dipilih.has(r.id)).map(r => r.id);
+    jalankan('approve', () => approveImportBatch(b.id, undefined, ids), semua ? 'Batch approved' : `Batch approved — ${terpilih.n} row(s) applied`);
   };
   const onReject = () => {
     if (!b) return;
@@ -184,12 +226,12 @@ export default function ImportBatchReviewClient() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {(b.status === 'validated' || b.status === 'rejected') && (
+              {b.permissions.can_cancel && (
                 <button onClick={onCancel} disabled={!!aksi} className="flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">
                   {aksi === 'cancel' ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Cancel batch
                 </button>
               )}
-              {b.status === 'validated' && (
+              {b.permissions.can_submit && (
                 <button
                   onClick={onSubmit}
                   disabled={!!aksi || b.blocking_issues.length > 0}
@@ -199,13 +241,21 @@ export default function ImportBatchReviewClient() {
                   {aksi === 'submit' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Submit for approval
                 </button>
               )}
-              {b.status === 'submitted' && (
+              {b.permissions.can_approve && (
                 <>
-                  <button onClick={() => setTolak({ open: true, alasan: '' })} disabled={!!aksi} className={tombolSekunder}>
-                    <XCircle size={14} className="text-red-600" /> Reject
-                  </button>
-                  <button onClick={onApprove} disabled={!!aksi} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50">
-                    {aksi === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />} Approve
+                  {b.permissions.can_reject && (
+                    <button onClick={() => setTolak({ open: true, alasan: '' })} disabled={!!aksi} className={tombolSekunder}>
+                      <XCircle size={14} className="text-red-600" /> Reject
+                    </button>
+                  )}
+                  <button
+                    onClick={onApprove}
+                    disabled={!!aksi || terpilih.n === 0 || (isCoa && terpilih.selisih !== 0)}
+                    title={isCoa && terpilih.selisih !== 0 ? 'The selected rows are not balanced.' : undefined}
+                    className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
+                  >
+                    {aksi === 'approve' ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                    {terpilih.n === bisaDipilih.length ? 'Approve all' : `Approve selected (${terpilih.n})`}
                   </button>
                 </>
               )}
@@ -215,7 +265,15 @@ export default function ImportBatchReviewClient() {
       </div>
 
       <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-6">
-        {b.blocking_issues.length > 0 && b.status === 'validated' && (
+        {b.blocking_issues.length > 0 && b.status === 'validated' && b.permissions.can_approve && b.error_rows > 0 && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+            <p className="text-xs leading-relaxed text-amber-900">
+              {b.error_rows} row(s) have errors and cannot be selected — approve the other rows, or fix the file and import it again.
+            </p>
+          </div>
+        )}
+        {b.blocking_issues.length > 0 && b.status === 'validated' && !b.permissions.can_approve && (
           <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-600" />
             <div className="text-xs leading-relaxed text-red-900">
@@ -339,9 +397,35 @@ export default function ImportBatchReviewClient() {
               ))}
             </div>
           </div>
+          {pilih.aktif && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-slate-50 px-4 py-2.5 text-xs">
+              <p className="font-semibold text-foreground">
+                {terpilih.n} of {b.rows.length} row(s) selected for approval
+              </p>
+              {isCoa && (
+                <p className={`font-mono tabular-nums ${terpilih.selisih === 0 ? 'text-emerald-700' : 'text-amber-800'}`}>
+                  Debit {formatAmount(terpilih.debit)} · Credit {formatAmount(terpilih.credit)}
+                  {terpilih.selisih !== 0 && <> · Difference {formatAmount(Math.abs(terpilih.selisih))}</>}
+                </p>
+              )}
+              <div className="ml-auto flex gap-2">
+                <button onClick={() => pilih.setBanyak(bisaDipilih, true)} disabled={terpilih.n === bisaDipilih.length} className="rounded-lg border border-border bg-card px-2.5 py-1 font-medium text-foreground hover:bg-slate-100 disabled:opacity-50">
+                  Select all data
+                </button>
+                <button onClick={() => pilih.setBanyak(b.rows.map(r => r.id), false)} disabled={terpilih.n === 0} className="rounded-lg border border-border bg-card px-2.5 py-1 font-medium text-foreground hover:bg-slate-100 disabled:opacity-50">
+                  Clear selection
+                </button>
+              </div>
+            </div>
+          )}
+          {!pilih.aktif && b.excluded_rows > 0 && (
+            <div className="border-b border-border bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+              {b.excluded_rows} row(s) were excluded by the reviewer and not applied.
+            </div>
+          )}
           <div className="overflow-x-auto">
-            {isCoa ? <TabelCoa rows={tampil} /> : isAset ? <TabelAset rows={tampil} />
-              : b.module === 'inventory' ? <TabelInventory rows={tampil} /> : <TabelDokumen rows={tampil} ar={b.module === 'ar'} />}
+            {isCoa ? <TabelCoa rows={tampil} p={pilih} /> : isAset ? <TabelAset rows={tampil} p={pilih} />
+              : b.module === 'inventory' ? <TabelInventory rows={tampil} p={pilih} /> : <TabelDokumen rows={tampil} ar={b.module === 'ar'} p={pilih} />}
           </div>
         </div>
       </div>
@@ -384,19 +468,68 @@ function Pesan({ r }: { r: ImportRow }) {
   );
 }
 
-function StatusBaris({ s }: { s: ImportRowStatus }) {
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${ROW_BADGE[s]}`}>{s}</span>;
+function StatusBaris({ r }: { r: ImportRow }) {
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${ROW_BADGE[r.status]}`}>{r.status}</span>
+      {r.is_excluded && <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Excluded</span>}
+    </div>
+  );
 }
 
-const KOSONG = (n: number, ada: boolean) => (
-  <tr><td colSpan={n} className="py-14 text-center text-sm text-muted-foreground">{ada ? 'No rows match this filter.' : 'No rows.'}</td></tr>
+const KOSONG = (n: number, p: Pilih) => (
+  <tr><td colSpan={n + (p.aktif ? 1 : 0)} className="py-14 text-center text-sm text-muted-foreground">No rows match this filter.</td></tr>
 );
 
-function TabelCoa({ rows }: { rows: ImportRow[] }) {
+const kelasBaris = (r: ImportRow) =>
+  `border-b border-slate-100 align-top ${r.status === 'error' ? 'bg-red-50' : ''} ${r.is_excluded ? 'opacity-60' : ''}`;
+
+// Checkbox header = select / unselect semua baris yang sedang tampil (ikut filter & search).
+function ThPilih({ p, rows }: { p: Pilih; rows: ImportRow[] }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const boleh = rows.filter(r => r.status !== 'error');
+  const n = boleh.filter(r => p.set.has(r.id)).length;
+  const semua = boleh.length > 0 && n === boleh.length;
+  useEffect(() => { if (ref.current) ref.current.indeterminate = n > 0 && !semua; }, [n, semua]);
+  if (!p.aktif) return null;
+  return (
+    <th className="w-10 px-4 py-3">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={semua}
+        disabled={boleh.length === 0}
+        onChange={() => p.setBanyak(boleh.map(r => r.id), !semua)}
+        aria-label="Select all rows"
+        className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary"
+      />
+    </th>
+  );
+}
+
+function TdPilih({ p, r }: { p: Pilih; r: ImportRow }) {
+  if (!p.aktif) return null;
+  return (
+    <td className="px-4 py-2.5">
+      <input
+        type="checkbox"
+        checked={p.set.has(r.id)}
+        disabled={r.status === 'error'}
+        title={r.status === 'error' ? 'Rows with errors cannot be approved' : undefined}
+        onChange={() => p.toggle(r.id)}
+        aria-label={`Select row ${r.row_no}`}
+        className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary"
+      />
+    </td>
+  );
+}
+
+function TabelCoa({ rows, p }: { rows: ImportRow[]; p: Pilih }) {
   return (
     <table className="w-full min-w-[1100px] text-sm">
       <thead className="bg-slate-50">
         <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <ThPilih p={p} rows={rows} />
           <th className="w-14 px-4 py-3">Row</th>
           <th className="px-4 py-3">Source account</th>
           <th className="px-4 py-3">ZAFEB account</th>
@@ -408,11 +541,12 @@ function TabelCoa({ rows }: { rows: ImportRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? KOSONG(8, true) : rows.map(r => {
+        {rows.length === 0 ? KOSONG(8, p) : rows.map(r => {
           const d = r.data;
           const z = d.zafeb_account as { acc_no: string; account_name: string; account_classification: string; standard_account_code: string | null } | null;
           return (
-            <tr key={r.id} className={`border-b border-slate-100 align-top ${r.status === 'error' ? 'bg-red-50' : ''}`}>
+            <tr key={r.id} className={kelasBaris(r)}>
+              <TdPilih p={p} r={r} />
               <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.row_no}</td>
               <td className="px-4 py-2.5">
                 <p className="text-foreground"><span className="font-mono text-xs text-slate-500">{teks(d.source_code)}</span> {teks(d.source_name)}</p>
@@ -423,7 +557,9 @@ function TabelCoa({ rows }: { rows: ImportRow[] }) {
                   <>
                     <p className="text-foreground"><span className="font-mono text-xs text-slate-500">{z.acc_no}</span> {z.account_name}</p>
                     <p className="text-[11px] text-muted-foreground">{z.account_classification}</p>
+                    {!!d.new_account && <span className="mt-0.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">New account — added on approval</span>}
                     {!!d.rename && <p className="text-[11px] font-medium text-sky-700">Renamed to “{teks(d.source_name)}” on approval</p>}
+                    {!!d.code_change && <p className="text-[11px] font-medium text-sky-700">Shown as code {teks(d.source_code)} on approval</p>}
                   </>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Unmapped</span>
@@ -432,7 +568,7 @@ function TabelCoa({ rows }: { rows: ImportRow[] }) {
               <td className="px-4 py-2.5 font-mono text-[11px] text-slate-600">{z?.standard_account_code || teks(d.standard_code)}</td>
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{r.debit ? formatAmount(r.debit) : ''}</td>
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{r.credit ? formatAmount(r.credit) : ''}</td>
-              <td className="px-4 py-2.5"><StatusBaris s={r.status} /></td>
+              <td className="px-4 py-2.5"><StatusBaris r={r} /></td>
               <td className="px-4 py-2.5"><Pesan r={r} /></td>
             </tr>
           );
@@ -456,16 +592,17 @@ function Akun({ label, a }: { label: string; a: unknown }) {
   const x = a as AkunRingkas;
   return (
     <p className="text-[11px] text-muted-foreground">
-      <span className="text-slate-400">{label}</span> {x ? <span className="font-mono text-slate-600">{x.acc_no}</span> : '—'} {x?.account_name}
+      <span className="text-slate-400">{label}</span> {x ? <span className="font-mono text-slate-600">{kodeAkun(x.acc_no)}</span> : '—'} {x?.account_name}
     </p>
   );
 }
 
-function TabelAset({ rows }: { rows: ImportRow[] }) {
+function TabelAset({ rows, p }: { rows: ImportRow[]; p: Pilih }) {
   return (
     <table className="w-full min-w-[1200px] text-sm">
       <thead className="bg-slate-50">
         <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <ThPilih p={p} rows={rows} />
           <th className="w-14 px-4 py-3">Row</th>
           <th className="px-4 py-3">Asset</th>
           <th className="px-4 py-3">Acquired</th>
@@ -479,11 +616,12 @@ function TabelAset({ rows }: { rows: ImportRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? KOSONG(10, true) : rows.map(r => {
+        {rows.length === 0 ? KOSONG(10, p) : rows.map(r => {
           const d = r.data;
           const bulan = typeof d.life_months === 'number' ? d.life_months : null;
           return (
-            <tr key={r.id} className={`border-b border-slate-100 align-top ${r.status === 'error' ? 'bg-red-50' : ''}`}>
+            <tr key={r.id} className={kelasBaris(r)}>
+              <TdPilih p={p} r={r} />
               <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.row_no}</td>
               <td className="px-4 py-2.5">
                 <p className="text-foreground"><span className="font-mono text-xs text-slate-500">{teks(d.asset_code)}</span> {teks(d.asset_name)}</p>
@@ -502,7 +640,7 @@ function TabelAset({ rows }: { rows: ImportRow[] }) {
                 <Akun label="Accum." a={d.accum_account} />
                 <Akun label="Expense" a={d.expense_account} />
               </td>
-              <td className="px-4 py-2.5"><StatusBaris s={r.status} /></td>
+              <td className="px-4 py-2.5"><StatusBaris r={r} /></td>
               <td className="px-4 py-2.5"><Pesan r={r} /></td>
             </tr>
           );
@@ -512,11 +650,12 @@ function TabelAset({ rows }: { rows: ImportRow[] }) {
   );
 }
 
-function TabelDokumen({ rows, ar }: { rows: ImportRow[]; ar: boolean }) {
+function TabelDokumen({ rows, ar, p }: { rows: ImportRow[]; ar: boolean; p: Pilih }) {
   return (
     <table className="w-full min-w-[1100px] text-sm">
       <thead className="bg-slate-50">
         <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <ThPilih p={p} rows={rows} />
           <th className="w-14 px-4 py-3">Row</th>
           <th className="px-4 py-3">{ar ? 'Customer' : 'Vendor'}</th>
           <th className="px-4 py-3">{ar ? 'Invoice' : 'Bill'}</th>
@@ -528,10 +667,11 @@ function TabelDokumen({ rows, ar }: { rows: ImportRow[]; ar: boolean }) {
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? KOSONG(8, true) : rows.map(r => {
+        {rows.length === 0 ? KOSONG(8, p) : rows.map(r => {
           const d = r.data;
           return (
-            <tr key={r.id} className={`border-b border-slate-100 align-top ${r.status === 'error' ? 'bg-red-50' : ''}`}>
+            <tr key={r.id} className={kelasBaris(r)}>
+              <TdPilih p={p} r={r} />
               <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.row_no}</td>
               <td className="px-4 py-2.5">
                 <p className="text-foreground">{d.party_code ? <span className="font-mono text-xs text-slate-500">{teks(d.party_code)} </span> : null}{teks(d.party_name)}</p>
@@ -545,7 +685,7 @@ function TabelDokumen({ rows, ar }: { rows: ImportRow[]; ar: boolean }) {
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{typeof d.original === 'number' ? formatAmount(d.original) : ''}</td>
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{formatAmount(r.debit || r.credit)}</td>
               <td className="px-4 py-2.5"><Akun label="" a={d.account} /></td>
-              <td className="px-4 py-2.5"><StatusBaris s={r.status} /></td>
+              <td className="px-4 py-2.5"><StatusBaris r={r} /></td>
               <td className="px-4 py-2.5"><Pesan r={r} /></td>
             </tr>
           );
@@ -555,11 +695,12 @@ function TabelDokumen({ rows, ar }: { rows: ImportRow[]; ar: boolean }) {
   );
 }
 
-function TabelInventory({ rows }: { rows: ImportRow[] }) {
+function TabelInventory({ rows, p }: { rows: ImportRow[]; p: Pilih }) {
   return (
     <table className="w-full min-w-[1100px] text-sm">
       <thead className="bg-slate-50">
         <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <ThPilih p={p} rows={rows} />
           <th className="w-14 px-4 py-3">Row</th>
           <th className="px-4 py-3">Item</th>
           <th className="px-4 py-3">Warehouse</th>
@@ -572,10 +713,11 @@ function TabelInventory({ rows }: { rows: ImportRow[] }) {
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? KOSONG(9, true) : rows.map(r => {
+        {rows.length === 0 ? KOSONG(9, p) : rows.map(r => {
           const d = r.data;
           return (
-            <tr key={r.id} className={`border-b border-slate-100 align-top ${r.status === 'error' ? 'bg-red-50' : ''}`}>
+            <tr key={r.id} className={kelasBaris(r)}>
+              <TdPilih p={p} r={r} />
               <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.row_no}</td>
               <td className="px-4 py-2.5">
                 <p className="text-foreground"><span className="font-mono text-xs text-slate-500">{teks(d.item_code)}</span> {teks(d.item_name)}</p>
@@ -590,7 +732,7 @@ function TabelInventory({ rows }: { rows: ImportRow[] }) {
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{typeof d.unit_cost === 'number' ? formatAmount(d.unit_cost) : ''}</td>
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{formatAmount(r.debit)}</td>
               <td className="px-4 py-2.5"><Akun label="" a={d.inventory_account} /></td>
-              <td className="px-4 py-2.5"><StatusBaris s={r.status} /></td>
+              <td className="px-4 py-2.5"><StatusBaris r={r} /></td>
               <td className="px-4 py-2.5"><Pesan r={r} /></td>
             </tr>
           );

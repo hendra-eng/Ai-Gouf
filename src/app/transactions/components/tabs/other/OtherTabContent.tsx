@@ -12,6 +12,7 @@ import { exportToCSV, exportToPDF, exportGLSnapshot } from '../shared/exportUtil
 import { toast } from 'sonner';
 import { Layers, TrendingDown, FileWarning, Calendar, Search, ChevronDown, ChevronUp, Eye, X, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,  } from 'recharts';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type OtherTxType =
@@ -55,6 +56,7 @@ type SortDir = 'asc' | 'desc';
 
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
 function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const isBalanced = tx.debit === tx.credit;
   return (
     <div className="fixed inset-y-0 right-0 w-full max-w-md bg-card border-l border-border shadow-2xl z-50 flex flex-col overflow-hidden">
@@ -89,7 +91,7 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
             ['Date', tx.date],
             ['Reference', tx.reference],
             ['Transaction Type', tx.txType],
-            ['Account', `${tx.accountCode} — ${tx.accountName}`],
+            ['Account', `${kodeAkun(tx.accountCode)} — ${tx.accountName}`],
             ['Source', tx.source],
             ['Accounting Period', tx.accountingPeriod],
             ['Created By', tx.createdBy],
@@ -121,7 +123,7 @@ function OtherDetailPanel({ tx, onClose }: { tx: OtherTransaction; onClose: () =
             </thead>
             <tbody>
               <tr className="border-b border-border/50">
-                <td className="py-1.5 text-foreground">{tx.accountCode} — {tx.accountName}</td>
+                <td className="py-1.5 text-foreground">{kodeAkun(tx.accountCode)} — {tx.accountName}</td>
                 <td className="py-1.5 text-right font-600 text-emerald-700">{fmt(tx.debit)}</td>
                 <td className="py-1.5 text-right text-muted-foreground">—</td>
               </tr>
@@ -153,7 +155,7 @@ const otherCSVRows = otherData.map((r) => ({
   Type: r.txType,
   Description: r.description,
   Reference: r.reference,
-  'Account Code': r.accountCode,
+  'Account Code': kodeAkun(r.accountCode),
   'Account Name': r.accountName,
   Debit: `$${r.debit.toFixed(2)}`,
   Credit: `$${r.credit.toFixed(2)}`,
@@ -184,6 +186,7 @@ const typeColorMap: Record<OtherTxType, string> = {
 
 // ─── Main Content ─────────────────────────────────────────────────────────────
 export default function OtherTabContent() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -234,7 +237,7 @@ export default function OtherTabContent() {
       'Other Transactions Report',
       'Transaction period: September 2026 — Adjustments, accruals, depreciation and other entries',
       ['Txn ID', 'Date', 'Type', 'Description', 'Account', 'Debit', 'Credit', 'Balanced', 'Period', 'Status', 'Posting'],
-      otherData.map((r) => [r.id, r.date, r.txType, r.description, `${r.accountCode} — ${r.accountName}`, `$${r.debit.toFixed(2)}`, `$${r.credit.toFixed(2)}`, r.debit === r.credit ? 'Yes' : 'No', r.accountingPeriod, r.status, r.postingStatus]),
+      otherData.map((r) => [r.id, r.date, r.txType, r.description, `${kodeAkun(r.accountCode)} — ${r.accountName}`, `$${r.debit.toFixed(2)}`, `$${r.credit.toFixed(2)}`, r.debit === r.credit ? 'Yes' : 'No', r.accountingPeriod, r.status, r.postingStatus]),
       'Other_Transactions_Sep2026'
     );
     toast.success('PDF report opened for printing');
@@ -409,7 +412,7 @@ export default function OtherTabContent() {
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{tx.reference}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         <div className="font-500 text-foreground">{tx.accountName}</div>
-                        <div className="text-muted-foreground">{tx.accountCode}</div>
+                        <div className="text-muted-foreground">{kodeAkun(tx.accountCode)}</div>
                       </td>
                       <td className="px-4 py-3 text-xs font-600 text-emerald-600 whitespace-nowrap text-right">{fmt(tx.debit)}</td>
                       <td className="px-4 py-3 text-xs font-600 text-red-600 whitespace-nowrap text-right">{fmt(tx.credit)}</td>

@@ -7,6 +7,7 @@
 // nambah package baru.
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { kodeAkun } from '@/lib/accountCode';
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -99,7 +100,7 @@ export function exportGLSnapshot(entries: GLEntry[], period: string, moduleName:
     startY: 26,
     head: [['Account Code', 'Account Name', 'Opening Balance', 'Total Debits', 'Total Credits', 'Closing Balance']],
     body: entries.map((e) => [
-      e.accountCode,
+      kodeAkun(e.accountCode),
       e.accountName,
       formatAmount(e.openingBalance),
       formatAmount(e.totalDebits),

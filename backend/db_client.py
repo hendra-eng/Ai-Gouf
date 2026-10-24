@@ -1329,6 +1329,9 @@ class ManagementClientCoa(Base):
     client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)  # NULL = unassigned
     client_code = Column(String(50), nullable=True)
     acc_no = Column(String(50), nullable=False)
+    # Kode akun sistem lama klien (Source Account Code import Legacy COA, migration 50).
+    # Kode yang DITAMPILKAN = source_acc_no, kosong -> acc_no; acc_no tetap kunci internal.
+    source_acc_no = Column(String(50), nullable=True)
     account_name = Column(String(255), nullable=False)
     account_classification = Column(String(30), nullable=False)  # ASSET/LIABILITY/EQUITY/REVENUE/COST OF SALES/EXPENSE/OTHER INCOME/OTHER EXPENSE/INCOME TAX
     account_head = Column(String(50), nullable=True)             # mis. CURRENT ASSET, OPERATING EXPENSE
@@ -1464,6 +1467,8 @@ class ManagementClientCoaOpeningBalanceImportRow(Base):
     credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
     status = Column(String(10), nullable=False, default="valid", server_default=text("'valid'"))  # valid / warning / error
     messages = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    # true = baris TIDAK dipilih approver saat approve (select data) -> tidak diterapkan (migration 49).
+    is_excluded = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
 
 # source_type jurnal penutup tahun buku (Year-End Closing). Financial
@@ -4700,11 +4705,56 @@ def soft_delete_management_client(client_id: str, deleted_by: Optional[str] = No
 # ============================================================
 
 CRUD_FIELDS_MANAGEMENT_CLIENT_COA = [
-    "client_id", "client_code", "acc_no", "account_name", "account_classification",
+    "client_id", "client_code", "acc_no", "source_acc_no", "account_name", "account_classification",
     "account_head", "account_sub", "normal_balance", "description",
     "international_standard_group", "standard_account_code",
     "ifrs_taxonomy_reference", "ifrs_source", "is_active",
 ]
+
+
+def kode_tampil_akun(a: Any) -> str:
+    """Kode akun yang DITAMPILKAN ke user: Source Account Code (kode sistem lama
+    klien) kalau ada, else acc_no (kode ZAFEB). acc_no tetap kunci internal."""
+    return ((getattr(a, "source_acc_no", None) or "").strip() or str(a.acc_no or "")).strip()
+
+
+def peta_kode_tampil(client_id: Optional[str]) -> Dict[str, str]:
+    """acc_no -> kode tampilan (kode_tampil_akun) semua akun 1 klien, termasuk
+    yang nonaktif/terhapus supaya jurnal lama tetap tampil dengan kodenya.
+    Dipakai dokumen yang dibuat backend (mis. CALK .docx)."""
+    if not client_id:
+        return {}
+    session = SessionLocal()
+    try:
+        C = ManagementClientCoa
+        return {
+            str(acc): ((src or "").strip() or str(acc))
+            # Akun terhapus diproses dulu -> akun aktif dgn acc_no sama menimpa (yang menang).
+            for acc, src in session.query(C.acc_no, C.source_acc_no).filter(C.client_id == client_id)
+            .order_by(C.deleted_at.isnot(None).desc()).all()
+        }
+    finally:
+        session.close()
+
+
+def cari_bentrok_kode_tampil(client_id: Optional[str], kode: str, kecuali_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Akun aktif (belum dihapus) 1 klien yang kode tampilannya = `kode`
+    (case-insensitive), selain `kecuali_id`. None kalau tidak ada / client_id None."""
+    if not client_id or not (kode or "").strip():
+        return None
+    session = SessionLocal()
+    try:
+        C = ManagementClientCoa
+        q = session.query(C).filter(
+            C.client_id == client_id, C.deleted_at.is_(None),
+            func.lower(func.coalesce(C.source_acc_no, C.acc_no)) == kode.strip().lower(),
+        )
+        if kecuali_id:
+            q = q.filter(C.id != kecuali_id)
+        obj = q.first()
+        return _sales_row_ke_dict(obj, CRUD_FIELDS_MANAGEMENT_CLIENT_COA) if obj else None
+    finally:
+        session.close()
 
 
 def _filter_client_coa(query, client_id: Optional[str]):
@@ -4739,6 +4789,7 @@ def list_management_client_coa(
             pola = f"%{search.strip()}%"
             query = query.filter(
                 (ManagementClientCoa.acc_no.ilike(pola)) | (ManagementClientCoa.account_name.ilike(pola))
+                | (ManagementClientCoa.source_acc_no.ilike(pola))
             )
         query = query.order_by(ManagementClientCoa.acc_no)
         if limit:
@@ -4838,6 +4889,8 @@ def assign_management_client_coa(
                 ManagementClientCoa.client_id == client_id
             ).all()
         }
+        # Kode tampilan (source_acc_no / acc_no) akun aktif klien tujuan -- harus unik (migration 50).
+        tampil = {kode_tampil_akun(r).lower(): r for r in existing.values() if r.deleted_at is None}
         sekarang = datetime.now()
         for coa_id in dict.fromkeys(coa_ids):  # buang id dobel, urutan dipertahankan
             obj = by_id.get(coa_id)
@@ -4852,6 +4905,11 @@ def assign_management_client_coa(
             if bentrok is not None and bentrok.deleted_at is None:
                 hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
                                          "reason": f"ACC NO sudah dipakai akun '{bentrok.account_name}' di klien ini."})
+                continue
+            lain = tampil.get(kode_tampil_akun(obj).lower())
+            if lain is not None:
+                hasil["skipped"].append({"id": coa_id, "acc_no": obj.acc_no, "account_name": obj.account_name,
+                                         "reason": f"Kode akun {kode_tampil_akun(obj)} sudah dipakai akun '{lain.account_name}' di klien ini."})
                 continue
             if bentrok is not None:
                 for kolom in CRUD_FIELDS_MANAGEMENT_CLIENT_COA:
@@ -4872,6 +4930,7 @@ def assign_management_client_coa(
                 obj.edited_by = assigned_by
                 existing[obj.acc_no] = obj
                 target = obj
+            tampil[kode_tampil_akun(target).lower()] = target
             hasil["assigned"].append(_sales_row_ke_dict(target, CRUD_FIELDS_MANAGEMENT_CLIENT_COA))
         session.commit()
         return hasil

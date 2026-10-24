@@ -15,6 +15,7 @@ import {
 import FsShell, { ErrorBlock, LoadingBlock, NoClient } from './FsShell';
 import PeriodPicker, { Field, Select, defaultPeriod, inputCls } from './PeriodPicker';
 import { fmtAmount, fmtDate, glHref, startOfYear } from './fsFormat';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Task Plan 20 -- framework CALK: template note -> note klien -> isi per
 // periode. Tabel angka ditarik dari GL (read-only); override angka hanya
@@ -199,7 +200,7 @@ function NoteCard({ note, d, clientId, onChanged }: { note: FsNote; d: FsNotes; 
                   <tr className={`border-b border-border ${r.override ? 'bg-amber-50/70' : ''}`}>
                     <td className="py-1.5 pr-3">
                       <span className="inline-flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{r.code}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{kodeAkun(r.code)}</span>
                         <span>{r.name}</span>
                         <Link href={glHref(r.code, glStart(g.statement), d.as_of)} target="_blank" title="Open in General Ledger" className="text-muted-foreground hover:text-blue-700"><ExternalLink size={12} /></Link>
                         {r.override && (
@@ -342,6 +343,7 @@ function ManageNotes({ d, clientId, onChanged }: { d: FsNotes; clientId: string;
 // ── Halaman ──────────────────────────────────────────────────────────
 
 export default function NotesClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId, hydrated } = useActiveClient();
   const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodQuery>(defaultPeriod);
@@ -417,7 +419,7 @@ export default function NotesClient() {
                     <AlertTriangle size={16} className="text-amber-500 mt-0.5" />
                     <span>
                       {data.accounts_without_note.length} account{data.accounts_without_note.length > 1 ? 's' : ''} with balances are not shown in any note:{' '}
-                      {data.accounts_without_note.slice(0, 6).map(a => `${a.code} ${a.name}`).join(' · ')}{data.accounts_without_note.length > 6 ? ' …' : ''}{' '}
+                      {data.accounts_without_note.slice(0, 6).map(a => `${kodeAkun(a.code)} ${a.name}`).join(' · ')}{data.accounts_without_note.length > 6 ? ' …' : ''}{' '}
                       <Link href="/financial-statements/mapping" className="font-semibold underline">Map them</Link>
                     </span>
                   </div>

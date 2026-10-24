@@ -100,7 +100,7 @@ export default function CoaPageClient() {
       if (statusFilter === 'active' && !a.is_active) return false;
       if (statusFilter === 'inactive' && a.is_active) return false;
       if (!q) return true;
-      return [a.acc_no, a.account_name].some(v => v?.toLowerCase().includes(q));
+      return [a.acc_no, a.source_acc_no, a.account_name].some(v => v?.toLowerCase().includes(q));
     });
   }, [accounts, search, classification, statusFilter]);
 
@@ -147,20 +147,20 @@ export default function CoaPageClient() {
   }
 
   async function handleDelete(akun: CoaAccount) {
-    if (!window.confirm(`Delete account ${akun.acc_no} "${akun.account_name}"?`)) return;
+    if (!window.confirm(`Delete account ${akun.source_acc_no || akun.acc_no} "${akun.account_name}"?`)) return;
     try {
       await deleteCoaAccount(akun.id);
-      toast.success('Account deleted', { description: `${akun.acc_no} — ${akun.account_name}` });
+      toast.success('Account deleted', { description: `${akun.source_acc_no || akun.acc_no} — ${akun.account_name}` });
     } catch (err) {
       toast.error('Failed to delete account', { description: err instanceof Error ? err.message : undefined });
     }
   }
 
   function handleExport() {
-    const header = ['ACC NO', 'ACCOUNT NAME', 'ACCOUNT CLASSIFICATION', 'ACCOUNT HEAD', 'ACCOUNT SUB', 'NORMAL BALANCE',
+    const header = ['ACCOUNT CODE', 'ZAFEB CODE', 'ACCOUNT NAME', 'ACCOUNT CLASSIFICATION', 'ACCOUNT HEAD', 'ACCOUNT SUB', 'NORMAL BALANCE',
       'DESCRIPTION', 'INTERNATIONAL STANDARD GROUP (IFRS-ALIGNED)', 'STANDARD ACCOUNT CODE', 'IFRS TAXONOMY REFERENCE', 'STATUS',
       ...(isUnassignedView ? [] : ['BALANCE'])];
-    const rows = filtered.map(a => [a.acc_no, a.account_name, a.account_classification, a.account_head, a.account_sub,
+    const rows = filtered.map(a => [(a.source_acc_no || a.acc_no), a.acc_no, a.account_name, a.account_classification, a.account_head, a.account_sub,
       a.normal_balance, a.description, a.international_standard_group, a.standard_account_code, a.ifrs_taxonomy_reference,
       a.is_active ? 'Active' : 'Inactive',
       ...(isUnassignedView ? [] : [balanceOnNormalSide(saldoCoa.balances[a.acc_no]?.balance ?? 0, a.normal_balance)])]);
@@ -391,7 +391,10 @@ export default function CoaPageClient() {
                         <div className="flex items-center gap-3">
                           <span className={`h-8 w-1 shrink-0 rounded-full ${t.dot} ${a.is_active ? '' : 'opacity-30'}`} />
                           <div className="min-w-0">
-                            <p className="font-mono text-[11px] text-slate-500">{a.acc_no}</p>
+                            <p className="font-mono text-[11px] text-slate-500">
+                              {a.source_acc_no || a.acc_no}
+                              {a.source_acc_no && a.source_acc_no !== a.acc_no && <span className="ml-1.5 text-slate-400" title="ZAFEB standard code">· ZAFEB {a.acc_no}</span>}
+                            </p>
                             <p className={`truncate font-medium ${a.is_active ? 'text-foreground' : 'text-slate-500'}`} title={a.description ?? undefined}>{a.account_name}</p>
                           </div>
                         </div>

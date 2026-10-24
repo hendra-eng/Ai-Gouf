@@ -13,11 +13,13 @@ import {
 } from '@/lib/taxComplianceStore';
 import { btnOutline, btnPrimary, Drawer, EmptyRow, Field, inputCls, Menu, MenuItem } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, Pill, tdCls } from '@/components/shared/moduleUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export const PayPill = ({ s }: { s: PaymentStatus }) => <DotPill {...PAYMENT_STYLE[s]} />;
 export const RepPill = ({ s }: { s: ReportingStatus }) => <DotPill {...REPORTING_STYLE[s]} />;
 
 export function DotPill({ label, style }: { label: string; style: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${style}`}>
       <span className="h-1.5 w-1.5 rounded-full bg-current" />{label}
@@ -26,6 +28,7 @@ export function DotPill({ label, style }: { label: string; style: string }) {
 }
 
 export function SeverityPill({ s }: { s: Severity }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const x = SEVERITY_STYLE[s];
   return <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${x.style}`}><span className={`h-2 w-2 rounded-full ${x.dot}`} />{x.label}</span>;
 }
@@ -37,6 +40,7 @@ export function LedgerTable({ rows, loading, clientId, kolom, empty, docLabel = 
   rows: LedgerRow[]; loading: boolean; clientId: string; empty: string; docLabel?: string;
   kolom: ('date' | 'doc' | 'party' | 'module' | 'type' | 'code' | 'dpp' | 'rate' | 'amount' | 'gl' | 'taxdoc' | 'match' | 'pay' | 'rep' | 'billing')[];
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [edit, setEdit] = useState<LedgerRow | null>(null);
   const H: Record<string, { h: string; right?: boolean }> = {
     date: { h: 'Date' }, doc: { h: 'Source Document' }, party: { h: 'Party' }, module: { h: 'Source Module' }, type: { h: 'Tax Type' }, code: { h: 'Tax Code' },
@@ -66,7 +70,7 @@ export function LedgerTable({ rows, loading, clientId, kolom, empty, docLabel = 
                     {k === 'dpp' && <span>{angka(r.dpp)}{r.dpp_estimated && <span className="ml-1 text-[10px] text-amber-600" title="Estimated from the standard rate">est.</span>}</span>}
                     {k === 'rate' && (r.rate !== null ? `${r.rate}%` : '—')}
                     {k === 'amount' && <span className="font-medium">{angka(r.tax_amount)}</span>}
-                    {k === 'gl' && (r.gl_account_code ? <span className="whitespace-nowrap">{r.gl_account_code}<span className="block max-w-[160px] truncate text-[11px] text-muted-foreground">{r.gl_account_name}</span></span> : '—')}
+                    {k === 'gl' && (r.gl_account_code ? <span className="whitespace-nowrap">{kodeAkun(r.gl_account_code)}<span className="block max-w-[160px] truncate text-[11px] text-muted-foreground">{r.gl_account_name}</span></span> : '—')}
                     {k === 'taxdoc' && (r.tax_document_no ?? <span className="text-muted-foreground">—</span>)}
                     {k === 'match' && <DotPill label={r.match_status === 'matched' ? 'Matched' : 'Unmatched'} style={r.match_status === 'matched' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'} />}
                     {k === 'pay' && <PayPill s={r.payment_status} />}
@@ -100,6 +104,7 @@ const JENIS: TaxType[] = ['vat_output', 'vat_input', 'pph21', 'pph22', 'pph23', 
 
 /** Lengkapi baris pajak (nomor e-Faktur / e-Bupot, kode objek, NPWP, DPP) atau buat Add Adjustment (row null). */
 export function LedgerDrawer({ clientId, row, onClose }: { clientId: string; row: LedgerRow | null; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const akun = useTaxData<TaxAccountsData | null>(row ? null : `tacc:${clientId}`, s => fetchTaxAccounts(clientId, s), null);
   const manual = !row || row.is_manual;
   const [f, setF] = useState({
@@ -156,7 +161,7 @@ export function LedgerDrawer({ clientId, row, onClose }: { clientId: string; row
           <Field label="Payment">{<PayPill s={row.payment_status} />} {row.payment_due && <span className="text-[11px] text-muted-foreground">due {fmtDate(row.payment_due)}</span>}</Field>
           <Field label="Reporting">{<RepPill s={row.reporting_status} />} {row.filing_due && <span className="text-[11px] text-muted-foreground">due {fmtDate(row.filing_due)}</span>}</Field>
           <Field label="Party">{row.party_name ?? '—'}</Field>
-          <Field label="GL Account">{row.gl_account_code ? `${row.gl_account_code} · ${row.gl_account_name}` : '—'}</Field>
+          <Field label="GL Account">{row.gl_account_code ? `${kodeAkun(row.gl_account_code)} · ${row.gl_account_name}` : '—'}</Field>
         </div>
       )}
       {!manual && <p className="text-[11px] text-muted-foreground">Date, amount and party follow the source transaction. Complete the tax document details below.</p>}
@@ -194,6 +199,7 @@ export function LedgerDrawer({ clientId, row, onClose }: { clientId: string; row
 }
 
 export function SeverityDot({ s }: { s: Severity }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return <span className={`inline-block h-2 w-2 rounded-full ${SEVERITY_STYLE[s].dot}`} />;
 }
 

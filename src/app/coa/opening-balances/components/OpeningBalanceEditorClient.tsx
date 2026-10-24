@@ -36,6 +36,7 @@ import { useClientsList } from '@/lib/clientsStore';
 import { labelClassification, themeOf } from '../../components/coaTheme';
 import OpeningBalanceImportTab from './OpeningBalanceImportTab';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const NERACA = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
 
@@ -73,6 +74,7 @@ function kanonik(v: Record<string, Nilai>): string {
 }
 
 export default function OpeningBalanceEditorClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -162,7 +164,7 @@ export default function OpeningBalanceEditorClient() {
         ? Math.abs(totals.laba) > 0.004
         : !!v && (parseAmount(v.debit) > 0 || parseAmount(v.credit) > 0);
       if (hanyaTerisi && !terisi) continue;
-      if (q && !`${a.acc_no} ${a.account_name} ${a.account_head ?? ''} ${a.account_sub ?? ''}`.toLowerCase().includes(q)) continue;
+      if (q && !`${a.acc_no} ${kodeAkun(a.acc_no)} ${a.account_name} ${a.account_head ?? ''} ${a.account_sub ?? ''}`.toLowerCase().includes(q)) continue;
       g.set(a.account_classification, [...(g.get(a.account_classification) ?? []), a]);
     }
     return ACCOUNT_CLASSIFICATIONS.filter(k => g.has(k)).map(k => [k, g.get(k)!] as const);
@@ -237,7 +239,7 @@ export default function OpeningBalanceEditorClient() {
     if (totals.count === 0) throw new OpeningBalanceError('Fill in at least one balance before posting.');
     const pesan = seimbang
       ? `Post opening balance FY ${ob!.fiscal_year} (${branchLabel(ob!.branch)})? An opening journal will be created.`
-      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${penampung?.acc_no} ${penampung?.account_name}. Post anyway?`;
+      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Post anyway?`;
     if (!window.confirm(pesan)) return;
     if (adaPerubahan) await simpan(true);
     const d = await postOpeningBalance(ob!.id);
@@ -387,7 +389,7 @@ export default function OpeningBalanceEditorClient() {
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
             <p className="text-xs leading-relaxed text-amber-900">
               The balances were <span className="font-semibold">{formatAmount(Math.abs(ob.difference))}</span> out of balance. The difference is parked in{' '}
-              <span className="font-semibold">{ob.suspense_account.acc_no} · {ob.suspense_account.account_name}</span>. Fix the balances and{' '}
+              <span className="font-semibold">{kodeAkun(ob.suspense_account.acc_no)} · {ob.suspense_account.account_name}</span>. Fix the balances and{' '}
               {ob.status === 'posted' ? 'use Revise' : 'unlock, then Revise'}, or reclassify it with a regular journal entry.
             </p>
           </div>
@@ -520,7 +522,7 @@ export default function OpeningBalanceEditorClient() {
                         <tr key={a.id} className={`border-b border-slate-100 ${d || c ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
                           <td className="px-5 py-2">
                             <div className="flex items-center gap-3">
-                              <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{a.acc_no}</span>
+                              <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(a.acc_no)}</span>
                               <span className={`truncate ${a.is_active ? 'text-foreground' : 'text-slate-400'}`}>{a.account_name}</span>
                               {tidakNormal && (
                                 <span title="Balance is on the opposite side of this account's normal balance (fine for contra accounts)." className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
@@ -545,7 +547,7 @@ export default function OpeningBalanceEditorClient() {
                                 disabled={!draft}
                                 inputMode="decimal"
                                 placeholder="0"
-                                aria-label={`${sisi} ${a.acc_no}`}
+                                aria-label={`${sisi} ${kodeAkun(a.acc_no)}`}
                                 className="w-full rounded-lg border border-transparent bg-transparent px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-foreground placeholder:text-slate-300 transition-shadow hover:border-border focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:hover:border-transparent"
                               />
                             </td>
@@ -591,7 +593,7 @@ export default function OpeningBalanceEditorClient() {
                     : <>
                         <span className="font-mono tabular-nums">{formatAmount(Math.abs(selisih))}</span>
                         {' → '}
-                        {penampung ? `${penampung.acc_no} (${selisih > 0 ? 'credit' : 'debit'})` : 'choose a suspense account'}
+                        {penampung ? `${kodeAkun(penampung.acc_no)} (${selisih > 0 ? 'credit' : 'debit'})` : 'choose a suspense account'}
                       </>}
                 </p>
               </div>
@@ -634,7 +636,7 @@ function BarisLabaBerjalan({ akun, laba, awalTahun }: { akun: CoaAccount; laba: 
     <tr className="border-b border-slate-100 bg-violet-50">
       <td className="px-5 py-2">
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{akun.acc_no}</span>
+          <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(akun.acc_no)}</span>
           <span className="truncate text-foreground">{akun.account_name}</span>
           <span
             title={awalTahun

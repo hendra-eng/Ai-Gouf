@@ -13,6 +13,7 @@ import {
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { useActiveClient } from '@/lib/activeClient';
 import { PreviewSection, FieldList, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -126,6 +127,7 @@ const denganAkunAktif = (list: Acc[], aktif: Acc) =>
 const ITEMS_PER_PAGE = 5;
 
 export default function SalesJournalPreview() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { t } = useLanguage();
   const { user } = useAuth();
   const clientId = user?.id ?? null;
@@ -440,7 +442,7 @@ export default function SalesJournalPreview() {
             ].map(r => ({
               label: r.label,
               value: r.acc.code
-                ? <><span className="font-mono text-primary">{r.acc.code}</span> — {t(r.acc.name)}</>
+                ? <><span className="font-mono text-primary">{kodeAkun(r.acc.code)}</span> — {t(r.acc.name)}</>
                 : t(r.acc.name),
             }))} />
           ) : (
@@ -465,7 +467,7 @@ export default function SalesJournalPreview() {
                   >
                     {f.options.map(opt => (
                       <option key={String(opt.code)} value={opt.code ?? ''}>
-                        {opt.code ? `${opt.code} - ${t(opt.name)}` : t(opt.name)}
+                        {opt.code ? `${kodeAkun(opt.code)} - ${t(opt.name)}` : t(opt.name)}
                       </option>
                     ))}
                   </select>

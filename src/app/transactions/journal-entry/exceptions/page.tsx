@@ -12,6 +12,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry } from '@/lib/journalEntryStore';
 import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
@@ -35,6 +36,7 @@ function detectExceptions(journalEntries: JeUiEntry[]): FlaggedEntry[] {
 }
 
 export default function JournalEntryExceptionsPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
   const clientId = user?.id ?? null;
   const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
@@ -172,7 +174,7 @@ export default function JournalEntryExceptionsPage() {
                       <tbody className="divide-y divide-border">
                         {expandedLines.map(line => (
                           <tr key={line.id}>
-                            <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</td>
                             <td className="px-3 py-2 text-foreground">{line.description}</td>
                             <td className="px-3 py-2 text-right tabular-nums">{line.debit > 0 ? fmt(line.debit) : '—'}</td>
                             <td className="px-3 py-2 text-right tabular-nums">{line.credit > 0 ? fmt(line.credit) : '—'}</td>

@@ -9,6 +9,7 @@ import CashBankTabs from '../components/CashBankTabs';
 import { useActiveClient } from '@/lib/activeClient';
 import { useBcOverview, CASH_TYPE_LABEL } from '@/lib/bankCashStore';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Overview Cash & Bank (GET /api/v1/transactions/bank-cash/overview):
 //   - Cash In / Out / Net = transaksi Cash & Bank POSTED di tahun terpilih
@@ -19,6 +20,7 @@ import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function CashBankOverviewPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const tahunIni = new Date().getFullYear();
   const [tahun, setTahun] = useState(tahunIni);
@@ -158,8 +160,8 @@ export default function CashBankOverviewPage() {
               {akun.map((a) => (
                 <div key={a.id}>
                   <div className="flex items-center justify-between mb-1 gap-2">
-                    <span className="text-xs text-foreground truncate flex-1" title={`${a.code} ${a.name}`}>
-                      {a.code} · {a.name}
+                    <span className="text-xs text-foreground truncate flex-1" title={`${kodeAkun(a.code)} ${a.name}`}>
+                      {kodeAkun(a.code)} · {a.name}
                       <span className="text-[10px] text-muted-foreground"> · {a.cash_type ? CASH_TYPE_LABEL[a.cash_type] : ''}</span>
                     </span>
                     <span className={`text-xs font-semibold font-mono ${a.book_balance < 0 ? 'text-rose-600' : ''}`}>{formatIDR(a.book_balance, true)}</span>

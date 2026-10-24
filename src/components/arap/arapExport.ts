@@ -7,6 +7,7 @@ import {
   amountInWords, BUCKET_LABEL, BUCKETS, DOC_STATUS_LABEL, fmtDate, fmtDateLong, PAYMENT_METHOD_LABEL,
   type AgingBucket, type AgingReport, type ArApDoc, type PartyStatement, type PaymentMethod, type SideConfig,
 } from '@/lib/receivablesPayablesStore';
+import { kodeAkun } from '@/lib/accountCode';
 
 // Ekspor Accounts Receivable / Payable (PDF jsPDF + autotable, Excel exceljs):
 //   - Aging Report (layout dataset/picture/Template UI/Account Receivable/3.jpeg)
@@ -537,7 +538,7 @@ export async function downloadDocsXlsx(cfg: SideConfig, clientName: string, asOf
   gayaHeader(ws.addRow(head));
   for (const d of docs) {
     ws.addRow([d.party, d.no, ...(cfg.side === 'ap' ? [d.ref_no ?? ''] : []), d.date, d.due_date, d.total, d.paid, d.in_process,
-      d.outstanding, d.days_overdue, d.bucket ? BUCKET_LABEL[d.bucket] : '', DOC_STATUS_LABEL[d.status], `${d.account_code} ${d.account_name}`]);
+      d.outstanding, d.days_overdue, d.bucket ? BUCKET_LABEL[d.bucket] : '', DOC_STATUS_LABEL[d.status], `${kodeAkun(d.account_code)} ${d.account_name}`]);
   }
   const off = cfg.side === 'ap' ? 1 : 0;
   for (const c of [5, 6, 7, 8].map(x => x + off)) {

@@ -1311,7 +1311,9 @@ def impor(payload: ImportRequest, current_user: Dict[str, Any] = Depends(_requir
         bc._wajib_klien(kid)
         _kunci(session, kid)
         _pastikan_template(session, kid)
+        # Kode akun di file: kode ZAFEB atau kode tampilan (Source Account Code, migration 50).
         per_kode = {a.acc_no: a for a in _peta_akun(session, kid).values()}
+        per_kode.update({dbc.kode_tampil_akun(a): a for a in list(per_kode.values())})
         tpl = {t.type_key: t for t in session.query(TPL).filter(TPL.client_id == kid, TPL.is_system.is_(True), TPL.deleted_at.is_(None)).all()}
         aturan = {(r.template_id, r.subtype): r for r in session.query(RUL).filter(RUL.client_id == kid).all()}
         dibuat, gagal_ = [], []

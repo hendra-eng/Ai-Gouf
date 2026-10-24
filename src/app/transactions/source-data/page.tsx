@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type SourceStatus = 'Mapped' | 'Pending Mapping' | 'Validation Error' | 'Imported';
 type SyncStatus = 'Synced' | 'Pending Sync' | 'Sync Failed' | 'Manual';
@@ -71,6 +72,7 @@ function SyncStatusBadge({ status }: { status: SyncStatus }) {
 }
 
 export default function SourceDataPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -194,7 +196,7 @@ export default function SourceDataPage() {
                     <td className="px-4 py-3 text-xs max-w-xs truncate" title={row.description}>{row.description}</td>
                     <td className="px-4 py-3 text-xs font-semibold tabular-nums text-right whitespace-nowrap">{fmt(row.amount)}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
-                      <span className="text-muted-foreground">{row.accountCode}</span>
+                      <span className="text-muted-foreground">{kodeAkun(row.accountCode)}</span>
                       <span className="mx-1 text-border">·</span>
                       <span>{row.relatedAccount}</span>
                     </td>
@@ -235,7 +237,7 @@ export default function SourceDataPage() {
                 { label: 'Source Date', value: selectedRow.sourceDate },
                 { label: 'Amount', value: fmt(selectedRow.amount) },
                 { label: 'Currency', value: selectedRow.currency },
-                { label: 'Account Code', value: selectedRow.accountCode },
+                { label: 'Account Code', value: kodeAkun(selectedRow.accountCode) },
                 { label: 'Account Name', value: selectedRow.relatedAccount },
                 { label: 'JE Reference', value: selectedRow.jeReference || 'Not mapped' },
                 { label: 'Sync Status', value: selectedRow.syncStatus },

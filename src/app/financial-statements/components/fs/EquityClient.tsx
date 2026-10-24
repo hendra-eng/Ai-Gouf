@@ -12,6 +12,7 @@ import DownloadMenu from './DownloadMenu';
 import { CheckBanner, WarningsPanel } from './CheckBanner';
 import PeriodPicker, { defaultPeriod } from './PeriodPicker';
 import { fmtAmount, fmtDate, glHref } from './fsFormat';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Task Plan 18 -- Statement of Changes in Equity: saldo awal komponen
 // ekuitas + mutasi (setoran modal, prive/dividen, laba periode, transfer ke
@@ -40,6 +41,7 @@ function buildReport(d: ChangesInEquity, company: string, printedBy?: string): P
 }
 
 export default function EquityClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId, hydrated } = useActiveClient();
   const { user } = useAuth();
   const [period, setPeriod] = useState<PeriodQuery>(() => ({ ...defaultPeriod(), compare: 'none' }));
@@ -129,7 +131,7 @@ export default function EquityClient() {
                                         {r.accounts[c.key].map((a, i) => (
                                           <li key={`${a.code ?? 'auto'}-${i}`} className="flex items-center justify-between gap-3">
                                             <span className="inline-flex items-center gap-1.5 min-w-0">
-                                              {a.code ? <span className="font-mono text-xs text-muted-foreground">{a.code}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
+                                              {a.code ? <span className="font-mono text-xs text-muted-foreground">{kodeAkun(a.code)}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
                                               <span className="truncate">{a.name}</span>
                                               {a.code && (
                                                 <Link href={glHref(a.code, data.period.start, data.period.end)} target="_blank" title="Open in General Ledger" className="text-muted-foreground hover:text-blue-700">

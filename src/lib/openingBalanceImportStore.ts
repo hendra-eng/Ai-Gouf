@@ -75,11 +75,23 @@ export interface ImportRow {
   status: ImportRowStatus;
   messages: ImportRowMessage[];
   data: Record<string, unknown>;
+  /** true = not selected by the reviewer on approval (not applied). */
+  is_excluded: boolean;
 }
 
 export interface ImportBatchDetail extends ImportBatch {
   opening_balance: { id: string; fiscal_year: number; branch: string | null; as_of_date: string; status: string } | null;
   rows: ImportRow[];
+  excluded_rows: number;
+  /** Aksi yang boleh untuk user login (backend _izin_batch). no_review = approve langsung tanpa submit. */
+  permissions: {
+    can_input: boolean;
+    no_review: boolean;
+    can_submit: boolean;
+    can_approve: boolean;
+    can_reject: boolean;
+    can_cancel: boolean;
+  };
 }
 
 interface ApiEnvelope<T> {
@@ -142,8 +154,11 @@ export async function submitImportBatch(batchId: string): Promise<ImportBatch> {
   return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/submit`));
 }
 
-export async function approveImportBatch(batchId: string, note?: string): Promise<ImportBatch> {
-  return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/approve`, { note: note || null }));
+/** rowIds = selected rows only; omit / null = approve all rows. */
+export async function approveImportBatch(batchId: string, note?: string, rowIds?: string[] | null): Promise<ImportBatch> {
+  return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/approve`, {
+    note: note || null, row_ids: rowIds ?? null,
+  }));
 }
 
 export async function rejectImportBatch(batchId: string, reason: string): Promise<ImportBatch> {

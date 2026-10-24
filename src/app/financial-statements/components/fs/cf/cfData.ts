@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { fetchCashFlowSeries, type CashFlowSeries, type CfDirectLine, type CfLine } from '@/lib/fsStore';
 import type { PrintColumn, PrintReport, PrintRow, PrintRowStyle } from '@/lib/printExport';
 import { iso, monthEnd, parts, shiftYear } from '../bs/bsData';
+import { kodeAkun } from '@/lib/accountCode';
 
 // Data bersama tampilan Cash Flow (direct / indirect). Satu panggilan
 // /cash-flow/series berisi kolom periode (bulan / kuartal / tahun di dalam
@@ -247,7 +248,7 @@ export function cfReport(m: CfMerged, method: Method, labels: string[], totalLab
     else if (row.kind === 'total' || row.kind === 'grand') push(row.label, row.v, 'total');
     else {
       push(`  ${row.label}`, row.v);
-      row.accounts?.forEach(a => push(`      ${a.code} ${a.name}`, a.v));
+      row.accounts?.forEach(a => push(`      ${kodeAkun(a.code)} ${a.name}`, a.v));
     }
   });
   return {

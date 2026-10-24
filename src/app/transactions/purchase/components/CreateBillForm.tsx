@@ -26,6 +26,7 @@ import {
 } from '@/lib/purchaseStore';
 import { btnOutline, btnPrimary, btnSmall, inputCls } from '@/components/arap/arapUi';
 import { Label, MoneyInput } from '@/components/arap/SettlementForm';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const TERMIN_DEFAULT = ['Due on Receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
 const MAKS_CATATAN = 500;
@@ -58,7 +59,7 @@ const hariTermin = (t: string) => {
   return m ? Number(m[1]) : 0;
 };
 const labelPeriode = (iso: string) => (iso ? `${BULAN[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}` : '—');
-const labelAkun = (a?: BillAccountOption) => (a ? `${a.code} · ${a.name}` : '');
+const labelAkun = (a?: BillAccountOption) => (a ? `${kodeAkun(a.code)} · ${a.name}` : '');
 
 function Section({ icon: Ikon, title, subtitle, tone = 'bg-sky-50 text-sky-600', action, children, className = '' }: {
   icon: React.ElementType; title: React.ReactNode; subtitle?: string; tone?: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
@@ -224,7 +225,7 @@ function PreviewModal({ data, onClose }: {
                   <tr key={x.b.key} className="border-b border-slate-100">
                     <td className="px-2 py-1.5">{i + 1}</td>
                     <td className="px-2 py-1.5">{x.b.item_code && <b>{x.b.item_code} </b>}{x.b.description || '—'}</td>
-                    <td className="px-2 py-1.5">{x.b.account_code || '—'}</td>
+                    <td className="px-2 py-1.5">{kodeAkun(x.b.account_code) || '—'}</td>
                     <td className="px-2 py-1.5 text-right">{x.b.quantity}{x.b.unit ? ` ${x.b.unit}` : ''}</td>
                     <td className="px-2 py-1.5 text-right">{rupiah(x.b.unit_price)}</td>
                     <td className="px-2 py-1.5 text-right">{x.discount ? rupiah(x.discount) : '—'}</td>
@@ -248,7 +249,7 @@ function PreviewModal({ data, onClose }: {
                   <thead><tr className="bg-[#ECFDF5] text-[#0B5E5C]"><th className="px-2 py-1.5 text-left">Account</th><th className="px-2 py-1.5 text-right">Debit</th><th className="px-2 py-1.5 text-right">Credit</th></tr></thead>
                   <tbody>{data.jurnal.map(j => (
                     <tr key={`${j.code}-${j.credit ? 'c' : 'd'}`} className="border-b border-slate-100">
-                      <td className="px-2 py-1.5">{j.code} · {j.name}</td>
+                      <td className="px-2 py-1.5">{kodeAkun(j.code)} · {j.name}</td>
                       <td className="px-2 py-1.5 text-right">{j.debit ? rupiah(j.debit) : ''}</td><td className="px-2 py-1.5 text-right">{j.credit ? rupiah(j.credit) : ''}</td>
                     </tr>
                   ))}</tbody>
@@ -747,7 +748,7 @@ function CreateBillInner() {
                   <tbody className="divide-y divide-border">
                     {jurnal.map(j => (
                       <tr key={`${j.code}-${j.credit ? 'c' : 'd'}`}>
-                        <td className={`py-1.5 pr-2 ${j.credit ? 'pl-4' : ''}`}><span className="font-mono">{j.code}</span><span className="block text-[11px] text-muted-foreground">{j.name}</span></td>
+                        <td className={`py-1.5 pr-2 ${j.credit ? 'pl-4' : ''}`}><span className="font-mono">{kodeAkun(j.code)}</span><span className="block text-[11px] text-muted-foreground">{j.name}</span></td>
                         <td className="py-1.5 text-right align-top">{j.debit ? rupiah(j.debit) : ''}</td>
                         <td className="py-1.5 text-right align-top">{j.credit ? rupiah(j.credit) : ''}</td>
                       </tr>
@@ -798,6 +799,7 @@ function CreateBillInner() {
 }
 
 export default function CreateBillForm() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
       <CreateBillInner />

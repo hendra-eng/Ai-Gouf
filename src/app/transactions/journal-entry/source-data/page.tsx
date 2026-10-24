@@ -12,6 +12,7 @@ import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/com
 import ImportJournalModal, { HEADER_ALIASES, JE_REQUIRED_COLUMNS } from '@/app/transactions/journal-entry/components/ImportJournalModal';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -113,6 +114,7 @@ function SyncStatusBadge({ status }: { status: SyncStatus }) {
 }
 
 export default function SourceDataPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
   const clientId = user?.id ?? null;
   const { records: backendRecords, loading } = useJeSourceRecords(clientId);
@@ -226,7 +228,7 @@ export default function SourceDataPage() {
     sheet.getRow(1).font = { bold: true };
     filtered.forEach(r => sheet.addRow({
       sourceId: r.sourceId, type: r.sourceType, date: r.sourceDate, description: r.description, vendor: r.vendor || '-',
-      amount: r.amount, currency: r.currency, code: r.accountCode, account: r.relatedAccount,
+      amount: r.amount, currency: r.currency, code: kodeAkun(r.accountCode), account: r.relatedAccount,
       je: r.jeReference || '-', sync: r.syncStatus, status: r.sourceStatus,
     }));
     sheet.getColumn('amount').numFmt = '#,##0';
@@ -350,7 +352,7 @@ export default function SourceDataPage() {
                     <td className="px-4 py-3 text-xs max-w-xs truncate" title={row.description}>{row.description}</td>
                     <td className="px-4 py-3 text-xs font-semibold tabular-nums text-right whitespace-nowrap">{fmt(row.amount)}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
-                      <span className="text-muted-foreground">{row.accountCode}</span>
+                      <span className="text-muted-foreground">{kodeAkun(row.accountCode)}</span>
                       <span className="mx-1 text-border">·</span>
                       <span>{row.relatedAccount}</span>
                     </td>
@@ -392,7 +394,7 @@ export default function SourceDataPage() {
                 { label: 'Source Date', value: selectedRow.sourceDate },
                 { label: 'Amount', value: fmt(selectedRow.amount) },
                 { label: 'Currency', value: selectedRow.currency },
-                { label: 'Account Code', value: selectedRow.accountCode },
+                { label: 'Account Code', value: kodeAkun(selectedRow.accountCode) },
                 { label: 'Account Name', value: selectedRow.relatedAccount },
                 { label: 'JE Reference', value: selectedRow.jeReference || 'Not mapped' },
                 { label: 'Sync Status', value: selectedRow.syncStatus },
