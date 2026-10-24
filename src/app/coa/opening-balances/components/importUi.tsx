@@ -81,7 +81,7 @@ const BADGE: Record<BadgeKey, { label: string; cls: string; icon: React.ElementT
 
 export function badgeKey(batch: ImportBatch | null): BadgeKey {
   if (!batch) return 'not_started';
-  if (batch.status === 'validated' && batch.blocking_issues.length > 0) return 'has_errors';
+  if (batch.status === 'validated' && batch.error_rows > 0) return 'has_errors';
   return batch.status;
 }
 

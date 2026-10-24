@@ -30,7 +30,8 @@ export interface ImportBatch {
   total_debit: number;
   total_credit: number;
   /** Isu yang memblok submit (baris error, total debit != kredit). Kosong = boleh submit. */
-  blocking_issues: string[];
+  /** Catatan untuk reviewer (baris error dilewati, debit != kredit) -- TIDAK memblokir submit/approve. */
+  issues: string[];
   notes: string | null;
   created_at: string | null;
   created_by: string | null;
