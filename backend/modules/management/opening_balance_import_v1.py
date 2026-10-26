@@ -1101,8 +1101,8 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; a second row on the same account becomes a new account (next free code). A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
             ("Suggested ZAFEB Account Name", "Auto", "Dropdown / Text", "Linked to the account code. New account: the new name (max 255; a name already used gets a number, e.g. Bank BCA 2); empty = Source Account Name."),
             ("Standard Account Code", "Auto", "Dropdown", f'Linked to the account code. Required for a NEW account — pick from the list (see "{SHEET_STANDARD_REF}", section STANDARD ACCOUNT CODES).'),
-            ("Opening Debit", "Yes", "Number >= 0", "Debit balance on the cut-off date. Enter 0 if none."),
-            ("Opening Credit", "Yes", "Number >= 0", "Credit balance on the cut-off date. Enter 0 if none. Do not fill both debit and credit."),
+            ("Opening Debit", "No", "Number >= 0", "Debit balance on the cut-off date. Empty = 0."),
+            ("Opening Credit", "No", "Number >= 0", "Credit balance on the cut-off date. Empty = 0. Do not fill both debit and credit."),
             ("Balance Date", "Yes", "Date", f"Must be the cut-off date {cut} (prefilled)."),
             ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
             ("Branch", "No", "Text", "Informational. A branch different from this opening balance set gives a warning."),
@@ -1110,7 +1110,7 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
         ],
         "error": [
             "Source Account Name empty.",
-            "Opening Debit / Credit empty, not a number, negative, or both filled.",
+            "Opening Debit / Credit not a number, negative, or both filled.",
             f"Balance Date empty, invalid or not equal to {cut}.",
             "ZAFEB account not found, or mapping columns pointing to different accounts.",
             "A balance on an inactive account, Current Year Earnings, "
@@ -1551,11 +1551,10 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 semua_kode_sumber.add(k)
             kode_dipakai[k] = no_baris
 
-        # Opening Debit / Credit: desimal, wajib, >= 0.
+        # Opening Debit / Credit: desimal >= 0; kosong = 0 (keputusan bisnis 2026-10-26).
         debit = kredit = NOL
         for key, label in (("debit", "Opening Debit"), ("credit", "Opening Credit")):
             if kosong(nilai.get(key)):
-                err(f"{label} is required (enter 0 if there is no balance).")
                 continue
             n = _angka(nilai.get(key))
             if n is None:
@@ -1576,6 +1575,19 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         akun_baru: Optional[Dict[str, Any]] = None
         cocok: List[Tuple[str, Optional[Any]]] = []
         mapping_gagal = False
+        # Standard code yang diketik di kolom Suggested ZAFEB Account Code -> dipindah ke
+        # Standard Account Code (jangan jadi akun baru berkode "std_...").
+        if (d.get("zafeb_code") and d["zafeb_code"].lower() not in per_kode
+                and d["zafeb_code"].lower() in katalog):
+            d["standard_code"] = d.get("standard_code") or d["zafeb_code"]
+            d["zafeb_code"] = ""
+        # Standard code yang belum punya akun di COA klien -> akun BARU dengan kode otomatis
+        # (6 digit per klasifikasi, _kode_otomatis).
+        std = (d.get("standard_code") or "").lower()
+        if not d.get("zafeb_code") and std and std not in per_std and std in katalog:
+            pool = semua_kode_zafeb | set(kode_baru_dipakai)
+            d["zafeb_code"] = (_kode_otomatis(katalog[std].get("account_classification") or "", "", pool)
+                               or _kode_unik(katalog[std]["standard_account_code"], pool))
         if d.get("zafeb_code"):
             a = per_kode.get(d["zafeb_code"].lower())
             if a is None:
@@ -1590,6 +1602,8 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
             if akun_baru is not None or not d.get(key):
                 continue
             kand = (per_std if key == "standard_code" else per_nama).get(d[key].lower(), [])
+            if not kand and any(a is not None for _, a in cocok):
+                continue  # kode ZAFEB sudah menunjuk akun -> kolom lain yang tidak dikenal diabaikan
             if not kand:
                 mapping_gagal = True
                 err(f'{label} "{d[key]}" is not in this client\'s COA.')
@@ -1600,8 +1614,9 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 # Tidak unik (mis. beberapa akun bank 1 standard code) -> cukup cocok dgn kode yang dipilih.
                 cocok.append((key, pilih_per_kode(kand, d["zafeb_code"]) or kand[0]))
             else:
-                mapping_gagal = True
-                err(f'{label} "{d[key]}" matches {len(kand)} accounts — pick the ZAFEB account code.')
+                # Beberapa akun 1 standard code / nama -> akun pertama yang belum dipakai baris lain
+                # (semua sudah dipakai -> akun pertama, lalu dibuat akun baru unik di bawah).
+                cocok.append((key, next((x for x in kand if x.id not in akun_dipakai), kand[0])))
         ketemu = {a.id: a for _, a in cocok if a is not None}
         if len(ketemu) > 1:
             err("Mapping columns point to different ZAFEB accounts — clear them and pick one again.")
