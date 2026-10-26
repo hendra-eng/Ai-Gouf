@@ -18,13 +18,14 @@ Baris ERROR tidak bisa di-approve & tidak pernah diterapkan, tapi TIDAK membloki
 batch: submit & approve tetap jalan untuk baris valid/warning (keputusan bisnis
 2026-10-24, _pilih_baris). WARNING = boleh, cukup direview.
 Aturan modul coa:
-    Source Account Code / Name  teks, wajib.               Duplikat kode -> error.
+    Source Account Code / Name  teks; nama wajib. Duplikat kode -> error. Kode kosong -> dibuat otomatis
+                                6 digit format standar (digit depan = klasifikasi, _isi_kode_otomatis).
     Opening Debit / Credit      desimal, wajib, >= 0.      Dua-duanya > 0 -> error; dua-duanya 0 = baris tanpa saldo.
     Balance Date                tanggal, wajib, = tanggal cut-off set opening balance (periode opening).
-    Currency                    kode ISO, wajib, harus IDR.
+    Currency                    selalu IDR (isi file diabaikan).
     Akun ZAFEB                  1 akun ZAFEB hanya boleh dipakai 1 baris. Kalau barisnya BERSALDO: akun harus
-                                aktif, bukan akun kontrol subledger (AR/AP/Inventory/Fixed Asset), bukan Current
-                                Year Earnings. Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
+                                aktif, bukan akun kontrol Inventory/Fixed Asset, bukan Current Year Earnings.
+                                Baris bersaldo di akun kontrol AR/AP dibuang diam-diam (tidak masuk batch). Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
     Batch                       total debit != total kredit -> peringatan saja (_catatan_batch); selisihnya
                                 diparkir ke akun suspense saat opening balance di-post.
     Akun BARU                   kode ZAFEB yang belum ada di COA klien BOLEH, asal standarnya jelas
@@ -189,7 +190,18 @@ JUMLAH_BARIS_TEMPLATE = 500
 BARIS_KOSONG_TAMBAHAN = 100   # baris kosong di bawah daftar akun untuk akun legacy tambahan
 MATA_UANG = ["IDR", "USD", "SGD", "AUD", "EUR", "JPY"]
 MATA_UANG_OPENING = "IDR"
-KOLOM_WAJIB_COA = ("source_code", "source_name", "debit", "credit", "balance_date", "currency")
+# Source Account Code & Currency tidak wajib: kode kosong dibuat otomatis
+# (_isi_kode_otomatis), currency selalu IDR (keputusan bisnis 2026-10-26).
+KOLOM_WAJIB_COA = ("source_name", "debit", "credit", "balance_date")
+# Digit depan kode akun standar per klasifikasi (skema COA industri V2: 6 digit,
+# mis. 110001 asset lancar, 210001 liability lancar).
+DIGIT_KLASIFIKASI: Dict[str, str] = {
+    "ASSET": "1", "LIABILITY": "2", "EQUITY": "3", "REVENUE": "4", "COST OF SALES": "5",
+    "EXPENSE": "6", "OTHER INCOME": "7", "OTHER EXPENSE": "8", "INCOME TAX": "9",
+}
+# Akun kontrol yang saldonya di file COA dibuang diam-diam (bukan error) --
+# saldo AR/AP diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
+KONTROL_DIBUANG = ("ar", "ap")
 
 # Akun KONTROL = saldonya dikelola subledger & diimpor lewat file terpisah
 # (modul ar/ap/inventory/asset) -> DITOLAK di import COA non-subledger.
@@ -711,9 +723,11 @@ def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=N
         "ONE of Suggested ZAFEB Account Code / Account Name / Standard Account Code (the other columns fill in). "
         "To ADD A NEW account, type a new code in Suggested ZAFEB Account Code and pick its Standard Account Code "
         "(the account name is the Suggested ZAFEB Account Name, or the Source Account Name when left empty). "
-        f"Required: Source Account Code & Name, Opening Debit/Credit (>= 0), Balance Date = cut-off date "
-        f"({ob.as_of_date.strftime('%d-%b-%Y')}) and Currency IDR. Total debit must equal total credit. "
-        "Control accounts (AR, AP, Inventory, Fixed Assets) must stay 0 — they are imported through separate files."
+        f"Required: Source Account Name, Opening Debit/Credit (>= 0) and Balance Date = cut-off date "
+        f"({ob.as_of_date.strftime('%d-%b-%Y')}). An empty Source Account Code gets a standard code automatically; "
+        "all balances are in IDR. Total debit must equal total credit. "
+        "AR and AP balances are skipped here (imported through their own files); Inventory and Fixed Asset control "
+        "accounts must stay 0."
         + (f" Numbered account series (e.g. Bank Account 1-{BATAS_AKUN_BERNOMOR}) are listed up to {BATAS_AKUN_BERNOMOR} "
            f"here ({n_disembunyikan} more account(s) are in sheet \"{SHEET_STANDARD_REF}\") — to use one, add it in "
            "an empty row and pick its Suggested ZAFEB Account Code." if n_disembunyikan else "")
@@ -1067,14 +1081,18 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "(Excel asks to confirm — click Yes), pick its Standard Account Code from the dropdown (Source "
             "Classification fills in), and optionally type the name in Suggested ZAFEB Account Name (empty = Source "
             "Account Name). The account is created in the COA when the batch is approved.",
-            "Leave AR, AP, Inventory and Fixed Asset control accounts at 0 — they are imported through their own modules.",
+            "AR and AP balances in this file are skipped automatically — import them through the AR / AP modules. Leave "
+            "Inventory and Fixed Asset control accounts at 0 — they are imported through their own modules.",
+            "Leave Source Account Code empty to get a unique standard code automatically (first digit follows the "
+            "classification: 1 Asset, 2 Liability, 3 Equity, 4 Revenue, 5 Cost of Sales, 6 Expense, 7 Other Income, "
+            "8 Other Expense, 9 Income Tax).",
             f'Use sheet "{SHEET_STANDARD_REF}" as a lookup of the client\'s COA (code, name, classification, standard '
             "account code, normal balance, status and subledger control accounts). It is reference only and is not imported.",
             "Check the CONTROL SUMMARY on the right: Status must be BALANCED (total debit = total credit).",
             *_LANGKAH_UMUM_AKHIR,
         ],
         "kolom": [
-            ("Source Account Code", "Yes", "Text (max 50)", "Account code in the legacy system. Must be unique in the file and in the COA. After approval it becomes the account code SHOWN everywhere in the system (the ZAFEB code stays as the internal standard code)."),
+            ("Source Account Code", "No", "Text (max 50)", "Account code in the legacy system. Must be unique in the file and in the COA. After approval it becomes the account code SHOWN everywhere in the system (the ZAFEB code stays as the internal standard code). Empty = a unique 6-digit standard code is generated (first digit by classification)."),
             ("Source Account Name", "Yes", "Text (max 255)", "Account name in the legacy system. Becomes the ZAFEB account name after approval (not allowed for accounts locked in Account Mapping)."),
             ("Source Classification", "Auto", "Dropdown", "Follows the selected ZAFEB account. A different value only gives a warning. New account: follows the Standard Account Code and must match it."),
             ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; each ZAFEB account can be used once. A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
@@ -1083,17 +1101,17 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             ("Opening Debit", "Yes", "Number >= 0", "Debit balance on the cut-off date. Enter 0 if none."),
             ("Opening Credit", "Yes", "Number >= 0", "Credit balance on the cut-off date. Enter 0 if none. Do not fill both debit and credit."),
             ("Balance Date", "Yes", "Date", f"Must be the cut-off date {cut} (prefilled)."),
-            ("Currency", "Yes", "ISO code", "Must be IDR (prefilled)."),
+            ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
             ("Branch", "No", "Text", "Informational. A branch different from this opening balance set gives a warning."),
             ("Department / Project / Notes", "No", "Text", "Informational; Notes is copied to the opening balance line."),
         ],
         "error": [
-            "Source Account Code / Name empty, the same Source Account Code used twice, or a Source Account Code that "
+            "Source Account Name empty, the same Source Account Code used twice, or a Source Account Code that "
             "is already the account code of another account not in this file.",
             "Opening Debit / Credit empty, not a number, negative, or both filled.",
-            f"Balance Date empty, invalid or not equal to {cut}; Currency empty or not IDR.",
+            f"Balance Date empty, invalid or not equal to {cut}.",
             "ZAFEB account not found, mapping columns pointing to different accounts, or one ZAFEB account used on two rows.",
-            "A balance on an inactive account, a control account (AR / AP / Inventory / Fixed Asset), Current Year Earnings, "
+            "A balance on an inactive account, an Inventory / Fixed Asset control account, Current Year Earnings, "
             "or a P&L account when the cut-off is the start of the fiscal year.",
             "Renaming an account that is locked in Settings > Account Mapping.",
             "New account: invalid or duplicate code, name already used by another account, Standard Account Code empty or "
@@ -1185,7 +1203,7 @@ def _panduan_dok(sisi: "SisiDok", nama_klien: str, ob: Any) -> Dict[str, Any]:
         (dict(sisi.kolom)["original"], "Yes", "Number > 0", f"Original {dok.lower()} amount."),
         ("Outstanding Amount", "Yes", "Number > 0", f"Unpaid amount on the cut-off date — not more than the original amount. "
                                                     f"Fully paid {dok.lower()}s are not imported."),
-        ("Currency", "Yes", "ISO code", "Must be IDR (prefilled)."),
+        ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
         (f"{akun} Control Account", "Yes", "Dropdown", f"Prefilled with the default from Settings > Account Mapping. Must be "
                                                          f"an {akun} control account."),
     ]
@@ -1212,7 +1230,6 @@ def _panduan_dok(sisi: "SisiDok", nama_klien: str, ob: Any) -> Dict[str, Any]:
             f"{pihak} Name or {dok} Number empty; {dok} Number duplicated in the file or already recorded.",
             f"{dok} Date empty, invalid or after {cut}; Due Date before the {dok} Date.",
             "Original or Outstanding Amount empty, not greater than 0, or outstanding more than the original.",
-            "Currency empty or not IDR.",
             f"{akun} Control Account empty, not found, inactive or not an {akun} control account.",
         ],
         "warning": [
@@ -1476,9 +1493,7 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         def err(m): pesan.append({"level": "error", "message": m})
         def warn(m): pesan.append({"level": "warning", "message": m})
 
-        # Source Account Code / Name: teks, wajib.
-        if not d.get("source_code"):
-            err("Source Account Code is required.")
+        # Source Account Code opsional (kosong -> dibuat otomatis di _isi_kode_otomatis); Name wajib.
         if not d.get("source_name"):
             err("Source Account Name is required.")
         elif len(d["source_name"]) > 255:
@@ -1548,6 +1563,15 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         elif ketemu and not mapping_gagal:
             dipilih = next(iter(ketemu.values()))
 
+        # Saldo akun kontrol AR/AP -> baris dibuang tanpa pesan (diimpor lewat modul AR/AP).
+        kontrol_baris = (modul_kontrol(dipilih) if dipilih is not None
+                         else _std_kontrol(d.get("standard_code") or "") if akun_baru is not None else None)
+        if bersaldo and kontrol_baris in KONTROL_DIBUANG:
+            for catatan in (kode_dipakai, kode_baru_dipakai, nama_baru_dipakai):
+                for k in [k for k, v in catatan.items() if v == no_baris]:
+                    del catatan[k]
+            continue
+
         if not cocok and akun_baru is None:
             warn("Unmapped — this balance will not be applied to the opening balance." if bersaldo
                  else "Unmapped — no ZAFEB account selected.")
@@ -1591,14 +1615,8 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 err(f"Balance Date {tgl.strftime('%d-%b-%Y')} is outside the opening period — "
                     f"it must be the cut-off date {ob.as_of_date.strftime('%d-%b-%Y')}.")
 
-        # Currency: kode ISO, wajib, harus IDR.
-        mata_uang = (d.get("currency") or "").upper()
-        if not mata_uang:
-            err("Currency is required.")
-        elif not re.fullmatch(r"[A-Z]{3}", mata_uang):
-            err(f'Currency "{d["currency"]}" is not a valid ISO code.')
-        elif mata_uang != MATA_UANG_OPENING:
-            err(f"Currency must be {MATA_UANG_OPENING} (found {mata_uang}).")
+        # Currency: selalu IDR, isi file diabaikan.
+        mata_uang = MATA_UANG_OPENING
 
         if d.get("branch") and ob.branch and d["branch"].strip().lower() != ob.branch.strip().lower():
             warn(f'Branch "{d["branch"]}" differs from this opening balance set ({ob.branch}).')
@@ -1630,8 +1648,66 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                                     and d["source_code"] != dbc.kode_tampil_akun(dipilih)),
             },
         })
+    _isi_kode_otomatis(akun, hasil)
     _cek_kode_tampil(akun, hasil)
     return hasil
+
+
+def _kode_otomatis(kls: str, preferensi: str, dipakai: set) -> Optional[str]:
+    """Kode akun 6 digit format standar (digit depan = klasifikasi, DIGIT_KLASIFIKASI)
+    yang belum dipakai. `preferensi` (kode ZAFEB akunnya) dipakai apa adanya kalau
+    sudah format standar & masih bebas; selain itu nomor berikut di grup 2 digit
+    yang sama (mis. 21xxxx), lalu grup lain klasifikasi itu."""
+    digit = DIGIT_KLASIFIKASI.get((kls or "").upper())
+    if not digit:
+        return None
+    standar = bool(re.fullmatch(r"\d{6}", preferensi or "")) and preferensi[0] == digit
+    if standar and preferensi.lower() not in dipakai:
+        return preferensi
+    grup = [preferensi[:2]] if standar else []
+    grup += [digit + str(i) for i in range(1, 10) if digit + str(i) not in grup]
+    for g in grup:
+        nomor = [int(k[2:]) for k in dipakai if re.fullmatch(r"\d{6}", k) and k.startswith(g)]
+        n = max(nomor, default=0) + 1
+        while n <= 9999 and f"{g}{n:04d}" in dipakai:
+            n += 1
+        if n <= 9999:
+            return f"{g}{n:04d}"
+    return None
+
+
+def _isi_kode_otomatis(akun: List[Any], hasil: List[Dict[str, Any]]) -> None:
+    """Baris tanpa Source Account Code -> kode dibuat otomatis (_kode_otomatis),
+    unik terhadap kode tampilan & acc_no semua akun klien dan kode lain di file.
+    Kode tampilan akun yang ikut di-mapping di file boleh dipakai ulang oleh baris
+    akun itu sendiri (tidak berubah)."""
+    kosong = [h for h in hasil if not h["data"].get("source_code")]
+    if not kosong:
+        return
+    per_id = {a.id: a for a in akun}
+    dipakai = {str(a.acc_no or "").strip().lower() for a in akun}
+    dipakai |= {dbc.kode_tampil_akun(a).lower() for a in akun}
+    dipakai |= {h["data"]["source_code"].lower() for h in hasil if h["data"].get("source_code")}
+    for h in kosong:
+        data = h["data"]
+        a = per_id.get(h["coa_id"]) if h["coa_id"] else None
+        baru = data.get("new_account")
+        if a is not None:
+            kls, pref = a.account_classification, str(a.acc_no or "").strip()
+            sendiri = {pref.lower(), dbc.kode_tampil_akun(a).lower()}
+        else:
+            kls = (baru or {}).get("account_classification") or data.get("source_classification")
+            pref = (baru or {}).get("acc_no") or ""
+            sendiri = set()
+        kode = _kode_otomatis(kls, pref, dipakai - sendiri)
+        if not kode:
+            continue
+        dipakai.add(kode.lower())
+        data["source_code"], data["source_code_generated"] = kode, True
+        if baru is not None:
+            baru["source_acc_no"] = kode
+        if a is not None:
+            data["code_change"] = kode != dbc.kode_tampil_akun(a)
 
 
 def _cek_kode_tampil(akun: List[Any], hasil: List[Dict[str, Any]]) -> None:
@@ -2172,7 +2248,7 @@ SISI_AP = SisiDok(
     "03_Template_Import_Opening_AP",
 )
 SISI_DOK = {"ar": SISI_AR, "ap": SISI_AP}
-KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "currency", "account")
+KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "account")
 SHEET_REFERENSI_DOK = "ZAFEB_REF"
 
 
@@ -2267,7 +2343,7 @@ def buat_template_dok(sisi: SisiDok, nama_klien: str, pihak: List[Tuple[str, str
         f"{cut.strftime('%d-%b-%Y')} — one row per {sisi.dokumen.lower()}. Pick an existing {sisi.pihak} Code from the "
         f"dropdown (name and tax ID fill in) or type a new {sisi.pihak.lower()}. "
         f"Required: {sisi.pihak} Name, {sisi.dokumen} Number (unique), {sisi.dokumen} Date (on or before the cut-off date), "
-        f"Original Amount (> 0), Outstanding Amount (> 0, not more than the original), Currency IDR and the {akun_label} "
+        f"Original Amount (> 0), Outstanding Amount (> 0, not more than the original) and the {akun_label} "
         f"(prefilled with the default from Account Mapping). After approval the {sisi.dokumen.lower()}s appear in "
         f"{'Accounts Receivable' if sisi.modul == 'ar' else 'Accounts Payable'} and the opening balance of the control "
         "account(s) is recalculated from them."
@@ -2347,15 +2423,9 @@ def _posisi_kolom(header: List[str], kolom, wajib) -> Dict[str, int]:
     return posisi
 
 
-def _cek_mata_uang(d: Dict[str, str], err) -> Optional[str]:
-    mata_uang = (d.get("currency") or "").upper()
-    if not mata_uang:
-        err("Currency is required.")
-    elif not re.fullmatch(r"[A-Z]{3}", mata_uang):
-        err(f'Currency "{d["currency"]}" is not a valid ISO code.')
-    elif mata_uang != MATA_UANG_OPENING:
-        err(f"Currency must be {MATA_UANG_OPENING} (found {mata_uang}).")
-    return mata_uang or None
+def _cek_mata_uang(d: Dict[str, str], err) -> str:
+    """Opening balance selalu IDR: isi kolom Currency diabaikan (keputusan bisnis 2026-10-26)."""
+    return MATA_UANG_OPENING
 
 
 def _dokumen_terdaftar(session, client_id: str, modul: str) -> set:
