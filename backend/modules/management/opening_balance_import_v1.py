@@ -200,8 +200,8 @@ DIGIT_KLASIFIKASI: Dict[str, str] = {
     "EXPENSE": "6", "OTHER INCOME": "7", "OTHER EXPENSE": "8", "INCOME TAX": "9",
 }
 # Akun kontrol yang saldonya di file COA dibuang diam-diam (bukan error) --
-# saldo AR/AP diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
-KONTROL_DIBUANG = ("ar", "ap")
+# saldo AR/AP/Inventory diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
+KONTROL_DIBUANG = ("ar", "ap", "inventory")
 
 # Akun KONTROL = saldonya dikelola subledger & diimpor lewat file terpisah
 # (modul ar/ap/inventory/asset) -> DITOLAK di import COA non-subledger.
@@ -1081,8 +1081,11 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "(Excel asks to confirm — click Yes), pick its Standard Account Code from the dropdown (Source "
             "Classification fills in), and optionally type the name in Suggested ZAFEB Account Name (empty = Source "
             "Account Name). The account is created in the COA when the batch is approved.",
-            "AR and AP balances in this file are skipped automatically — import them through the AR / AP modules. Leave "
-            "Inventory and Fixed Asset control accounts at 0 — they are imported through their own modules.",
+            "AR, AP and Inventory balances in this file are skipped automatically — import them through the AR / AP / "
+            "Inventory modules. Leave Fixed Asset control accounts at 0 — they are imported through their own module.",
+            "Duplicates are made unique automatically: when a code or name is already used, the lower (newer) row gets "
+            "the next number (e.g. 100005 -> 100006, Bank BCA -> Bank BCA 2). A second row on the same ZAFEB account "
+            "becomes a new account with the next free code.",
             "Leave Source Account Code empty to get a unique standard code automatically (first digit follows the "
             "classification: 1 Asset, 2 Liability, 3 Equity, 4 Revenue, 5 Cost of Sales, 6 Expense, 7 Other Income, "
             "8 Other Expense, 9 Income Tax).",
@@ -1092,11 +1095,11 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             *_LANGKAH_UMUM_AKHIR,
         ],
         "kolom": [
-            ("Source Account Code", "No", "Text (max 50)", "Account code in the legacy system. Must be unique in the file and in the COA. After approval it becomes the account code SHOWN everywhere in the system (the ZAFEB code stays as the internal standard code). Empty = a unique 6-digit standard code is generated (first digit by classification)."),
+            ("Source Account Code", "No", "Text (max 50)", "Account code in the legacy system. A code already used in the file or the COA is changed to the next free number. After approval it becomes the account code SHOWN everywhere in the system (the ZAFEB code stays as the internal standard code). Empty = a unique 6-digit standard code is generated (first digit by classification)."),
             ("Source Account Name", "Yes", "Text (max 255)", "Account name in the legacy system. Becomes the ZAFEB account name after approval (not allowed for accounts locked in Account Mapping)."),
             ("Source Classification", "Auto", "Dropdown", "Follows the selected ZAFEB account. A different value only gives a warning. New account: follows the Standard Account Code and must match it."),
-            ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; each ZAFEB account can be used once. A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
-            ("Suggested ZAFEB Account Name", "Auto", "Dropdown / Text", "Linked to the account code. New account: the new name (max 255, must not equal an existing account name); empty = Source Account Name."),
+            ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; a second row on the same account becomes a new account (next free code). A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
+            ("Suggested ZAFEB Account Name", "Auto", "Dropdown / Text", "Linked to the account code. New account: the new name (max 255; a name already used gets a number, e.g. Bank BCA 2); empty = Source Account Name."),
             ("Standard Account Code", "Auto", "Dropdown", f'Linked to the account code. Required for a NEW account — pick from the list (see "{SHEET_STANDARD_REF}", section STANDARD ACCOUNT CODES).'),
             ("Opening Debit", "Yes", "Number >= 0", "Debit balance on the cut-off date. Enter 0 if none."),
             ("Opening Credit", "Yes", "Number >= 0", "Credit balance on the cut-off date. Enter 0 if none. Do not fill both debit and credit."),
@@ -1106,15 +1109,14 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             ("Department / Project / Notes", "No", "Text", "Informational; Notes is copied to the opening balance line."),
         ],
         "error": [
-            "Source Account Name empty, the same Source Account Code used twice, or a Source Account Code that "
-            "is already the account code of another account not in this file.",
+            "Source Account Name empty.",
             "Opening Debit / Credit empty, not a number, negative, or both filled.",
             f"Balance Date empty, invalid or not equal to {cut}.",
-            "ZAFEB account not found, mapping columns pointing to different accounts, or one ZAFEB account used on two rows.",
-            "A balance on an inactive account, an Inventory / Fixed Asset control account, Current Year Earnings, "
+            "ZAFEB account not found, or mapping columns pointing to different accounts.",
+            "A balance on an inactive account, a Fixed Asset control account, Current Year Earnings, "
             "or a P&L account when the cut-off is the start of the fiscal year.",
             "Renaming an account that is locked in Settings > Account Mapping.",
-            "New account: invalid or duplicate code, name already used by another account, Standard Account Code empty or "
+            "New account: invalid code, Standard Account Code empty or "
             "not recognized, Source Classification invalid or different from the standard code, Current Year Earnings, "
             "or a balance on a subledger control standard code.",
         ],
@@ -1125,6 +1127,7 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "Source Classification different from the ZAFEB account classification.",
             "Branch different from this opening balance set.",
             "New account — the reviewer confirms it before it is added to the client's COA.",
+            "Duplicate code / name / ZAFEB account — changed automatically to a unique one (the message shows the new value).",
         ],
         "setelah": [
             "Opening balance lines of all NON-control accounts are REPLACED with the balances of this batch (control account "
@@ -1358,14 +1361,41 @@ def _baca_tabel(isi: bytes, nama_file: str, header_wajib: Optional[str] = None) 
 # VALIDASI MODUL COA
 # ============================================================
 
+def _kode_unik(kode: str, dipakai: set) -> str:
+    """Kode yang sudah dipakai -> angka di belakangnya +1 sampai bebas (100005 ->
+    100006, nol di depan dipertahankan; tanpa angka: BANK -> BANK-2). `dipakai`
+    berisi kode huruf kecil. Keputusan bisnis 2026-10-26: duplikat dibuat unik."""
+    m = re.fullmatch(r"(.*?)(\d+)", kode)
+    dasar, n, lebar = (m.group(1), int(m.group(2)), len(m.group(2))) if m else (f"{kode}-", 1, 1)
+    while True:
+        n += 1
+        baru = f"{dasar}{n:0{lebar}d}"
+        if baru.lower() not in dipakai:
+            return baru
+
+
+def _nama_unik(nama: str, dipakai: set) -> str:
+    """Nama yang sudah dipakai -> nomor di belakangnya +1 (Bank BCA -> Bank BCA 2,
+    Bank BCA 2 -> Bank BCA 3). `dipakai` berisi nama huruf kecil."""
+    m = re.fullmatch(r"(.*\S)\s+(\d+)", nama)
+    dasar, n = (m.group(1), int(m.group(2))) if m else (nama, 1)
+    while True:
+        n += 1
+        baru = f"{dasar} {n}"
+        if baru.lower() not in dipakai:
+            return baru
+
+
 def _cek_akun_baru(d: Dict[str, str], no_baris: int, bersaldo: bool, katalog: Dict[str, Dict[str, Any]],
                    per_nama: Dict[str, List[Any]], kode_dipakai: Dict[str, int], nama_dipakai: Dict[str, int],
-                   awal_tahun: bool, err, warn, ada_error) -> Dict[str, Any]:
+                   semua_kode: set, awal_tahun: bool, err, warn, ada_error) -> Dict[str, Any]:
     """Baris dengan Suggested ZAFEB Account Code yang BELUM ada di COA klien =
     akun baru. Boleh, asal standarnya jelas:
-        kode    pola POLA_KODE_AKUN_BARU, unik di antara akun baru dalam file.
+        kode    pola POLA_KODE_AKUN_BARU; dipakai akun baru lain di file -> +1
+                (_kode_unik, terhadap `semua_kode`) + warning.
         nama    Suggested ZAFEB Account Name, kosong -> Source Account Name;
-                tidak boleh sama dengan nama akun yang sudah ada / akun baru lain.
+                sama dengan nama akun yang sudah ada / akun baru lain -> dibuat
+                unik (_nama_unik) + warning.
         std     Standard Account Code WAJIB & harus dikenali (_katalog_standard);
                 head/sub/saldo normal/referensi IFRS diambil dari katalog.
         kls     Source Classification (kosong -> dari katalog) harus salah satu
@@ -1377,24 +1407,24 @@ def _cek_akun_baru(d: Dict[str, str], no_baris: int, bersaldo: bool, katalog: Di
     if not POLA_KODE_AKUN_BARU.fullmatch(kode):
         err(f'New ZAFEB account code "{kode}" is invalid — use letters, digits and . - _ / only '
             "(no spaces, max 50 characters).")
-    elif kode.lower() in kode_dipakai:
-        err(f"New ZAFEB account code {kode} is also used on row {kode_dipakai[kode.lower()]} — "
-            "each new account can be added once.")
     else:
+        if kode.lower() in kode_dipakai:
+            lama, kode = kode, _kode_unik(kode, semua_kode | set(kode_dipakai))
+            warn(f"New ZAFEB account code {lama} is also used on row {kode_dipakai[lama.lower()]} — "
+                 f"changed to {kode} to keep it unique.")
         kode_dipakai[kode.lower()] = no_baris
+        semua_kode.add(kode.lower())
 
     nama = d.get("zafeb_name") or d.get("source_name") or ""
     if d.get("zafeb_name") and len(nama) > 255:
         err("Suggested ZAFEB Account Name is longer than 255 characters.")
     elif nama:
         lain = per_nama.get(nama.lower())
-        if lain:
-            err(f'Account name "{nama}" already belongs to account {lain[0].acc_no} — pick that account code instead, '
-                "or give the new account a different name.")
-        elif nama.lower() in nama_dipakai:
-            err(f'New account name "{nama}" is also used on row {nama_dipakai[nama.lower()]}.')
-        else:
-            nama_dipakai[nama.lower()] = no_baris
+        if lain or nama.lower() in nama_dipakai:
+            pemilik = f"account {dbc.kode_tampil_akun(lain[0])}" if lain else f"row {nama_dipakai[nama.lower()]}"
+            lama, nama = nama, _nama_unik(nama, set(per_nama) | set(nama_dipakai))
+            warn(f'Account name "{lama}" is already used by {pemilik} — changed to "{nama}" to keep it unique.')
+        nama_dipakai[nama.lower()] = no_baris
 
     std = d.get("standard_code") or ""
     info = katalog.get(std.lower()) if std else None
@@ -1477,6 +1507,16 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
     def pilih_per_kode(kand: List[Any], kode: str) -> Optional[Any]:
         return next((x for x in kand if str(x.acc_no).strip().lower() == kode.lower()), None)
 
+    # Kode yang sudah terpakai (COA klien + semua kode di file) -> acuan +1 di _kode_unik
+    # supaya kode hasil +1 tidak menabrak kode baris lain di bawahnya.
+    def kode_di_file(key: str) -> set:
+        p = posisi.get(key)
+        if p is None:
+            return set()
+        return {_teks(r[p]).lower() for _, r in data if p < len(r) and _teks(r[p])}
+    semua_kode_zafeb = set(per_kode) | kode_di_file("zafeb_code")
+    semua_kode_sumber = set(per_kode) | {dbc.kode_tampil_akun(a).lower() for a in akun} | kode_di_file("source_code")
+
     hasil, kode_dipakai, akun_dipakai = [], {}, {}
     kode_baru_dipakai: Dict[str, int] = {}
     nama_baru_dipakai: Dict[str, int] = {}
@@ -1503,9 +1543,13 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         if d.get("source_code"):
             k = d["source_code"].lower()
             if k in kode_dipakai:
-                err(f"Duplicate Source Account Code (also on row {kode_dipakai[k]}).")
-            else:
-                kode_dipakai[k] = no_baris
+                # Duplikat -> baris yang lebih bawah (data terbaru) dibuat unik: +1.
+                baru = _kode_unik(d["source_code"], semua_kode_sumber | set(kode_dipakai))
+                warn(f"Source Account Code {d['source_code']} is also used on row {kode_dipakai[k]} — "
+                     f"changed to {baru} to keep it unique.")
+                d["source_code"], k = baru, baru.lower()
+                semua_kode_sumber.add(k)
+            kode_dipakai[k] = no_baris
 
         # Opening Debit / Credit: desimal, wajib, >= 0.
         debit = kredit = NOL
@@ -1536,8 +1580,9 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
             a = per_kode.get(d["zafeb_code"].lower())
             if a is None:
                 akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
-                                           nama_baru_dipakai, awal_tahun, err, warn,
+                                           nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
                                            lambda: any(p["level"] == "error" for p in pesan))
+                d["zafeb_code"], d["zafeb_name"] = akun_baru["acc_no"], akun_baru["account_name"]
             else:
                 cocok.append(("code", a))
         for key, label in (("standard_code", "Standard account code"), ("zafeb_name", "ZAFEB account name")):
@@ -1572,17 +1617,30 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                     del catatan[k]
             continue
 
+        # 1 akun ZAFEB = 1 baris. Baris berikutnya yang menunjuk akun yang sama (data terbaru)
+        # -> akun BARU dengan kode +1 & nama unik, standard code ikut akun asal
+        # (keputusan bisnis 2026-10-26: duplikat dibuat unik, bukan error).
+        if dipilih is not None and dipilih.id in akun_dipakai:
+            asal, baris_asal = dipilih, akun_dipakai[dipilih.id]
+            d = {**d, "zafeb_code": _kode_unik(str(asal.acc_no).strip(), semua_kode_zafeb | set(kode_baru_dipakai)),
+                 "zafeb_name": d.get("source_name") or asal.account_name,
+                 "standard_code": asal.standard_account_code or "", "source_classification": ""}
+            warn(f"ZAFEB account {dbc.kode_tampil_akun(asal)} {asal.account_name} is already used on row {baris_asal} "
+                 f"— this row becomes new account {d['zafeb_code']} to keep it unique.")
+            dipilih = None
+            akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
+                                       nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
+                                       lambda: any(p["level"] == "error" for p in pesan))
+            d.update(zafeb_code=akun_baru["acc_no"], zafeb_name=akun_baru["account_name"],
+                     source_classification=akun_baru["account_classification"] or "")
+
         if not cocok and akun_baru is None:
             warn("Unmapped — this balance will not be applied to the opening balance." if bersaldo
                  else "Unmapped — no ZAFEB account selected.")
         if dipilih is not None:
             kls = (dipilih.account_classification or "").upper()
             # 1 akun ZAFEB = 1 baris (baris saldo awal unik per akun & nama akun diambil dari baris ini).
-            if dipilih.id in akun_dipakai:
-                err(f"ZAFEB account {dipilih.acc_no} is already used on row {akun_dipakai[dipilih.id]} — "
-                    "each ZAFEB account can be mapped once.")
-            else:
-                akun_dipakai[dipilih.id] = no_baris
+            akun_dipakai[dipilih.id] = no_baris
             # Aturan akun berlaku untuk baris bersaldo saja (template memuat semua akun, termasuk akun kontrol).
             if bersaldo:
                 if not dipilih.is_active:
@@ -1714,23 +1772,36 @@ def _cek_kode_tampil(akun: List[Any], hasil: List[Dict[str, Any]]) -> None:
     """Setelah approve, Source Account Code menjadi kode akun yang DITAMPILKAN
     (management_client_coa.source_acc_no, migration 50) -> kode tampilan harus
     unik per klien. Akun yang tidak ada di file tetap memakai kode tampilannya
-    sekarang. Bentrok -> error di baris yang bersangkutan."""
+    sekarang. Bentrok dengan akun itu / baris di atasnya -> kode baris ini dibuat
+    unik (+1, _kode_unik) + warning (keputusan bisnis 2026-10-26)."""
     dipakai = [h for h in hasil if h["status"] != "error" and h["data"].get("source_code")
                and (h["coa_id"] or h["data"].get("new_account"))]
     dipetakan = {h["coa_id"] for h in dipakai if h["coa_id"]}
-    pemilik: Dict[str, List[str]] = {}
+    per_id = {a.id: a for a in akun}
+    pemilik: Dict[str, str] = {}
     for a in akun:
         if a.id not in dipetakan:
-            pemilik.setdefault(dbc.kode_tampil_akun(a).lower(), []).append(f"{a.account_name} (not in this file)")
+            pemilik.setdefault(dbc.kode_tampil_akun(a).lower(), f"{a.account_name} (not in this file)")
+    semua = set(pemilik) | {str(a.acc_no or "").strip().lower() for a in akun}
+    semua |= {dbc.kode_tampil_akun(a).lower() for a in akun}
+    semua |= {h["data"]["source_code"].lower() for h in hasil if h["data"].get("source_code")}
     for h in dipakai:
-        pemilik.setdefault(h["data"]["source_code"].lower(), []).append(f"row {h['row_no']}")
-    for h in dipakai:
-        lain = [x for x in pemilik[h["data"]["source_code"].lower()] if x != f"row {h['row_no']}"]
-        if lain:
-            h["messages"].append({"level": "error", "message": (
-                f"Source Account Code {h['data']['source_code']} becomes the account code shown in the system, but it is "
-                f"already used by {', '.join(lain[:3])} — each account code must be unique.")})
-            h["status"] = "error"
+        data = h["data"]
+        kode = data["source_code"]
+        if kode.lower() in pemilik:
+            baru = _kode_unik(kode, semua)
+            semua.add(baru.lower())
+            h["messages"].append({"level": "warning", "message": (
+                f"Source Account Code {kode} becomes the account code shown in the system, but it is already used by "
+                f"{pemilik[kode.lower()]} — changed to {baru} to keep it unique.")})
+            if h["status"] == "valid":
+                h["status"] = "warning"
+            data["source_code"] = kode = baru
+            if data.get("new_account"):
+                data["new_account"]["source_acc_no"] = baru
+            if h["coa_id"] in per_id:
+                data["code_change"] = baru != dbc.kode_tampil_akun(per_id[h["coa_id"]])
+        pemilik[kode.lower()] = f"row {h['row_no']}"
 
 
 # ============================================================
