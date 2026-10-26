@@ -1101,8 +1101,8 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; a second row on the same account becomes a new account (next free code). A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
             ("Suggested ZAFEB Account Name", "Auto", "Dropdown / Text", "Linked to the account code. New account: the new name (max 255; a name already used gets a number, e.g. Bank BCA 2); empty = Source Account Name."),
             ("Standard Account Code", "Auto", "Dropdown", f'Linked to the account code. Required for a NEW account — pick from the list (see "{SHEET_STANDARD_REF}", section STANDARD ACCOUNT CODES).'),
-            ("Opening Debit", "No", "Number >= 0", "Debit balance on the cut-off date. Empty = 0."),
-            ("Opening Credit", "No", "Number >= 0", "Credit balance on the cut-off date. Empty = 0. Do not fill both debit and credit."),
+            ("Opening Debit", "No", "Number", "Debit balance on the cut-off date. Empty = 0."),
+            ("Opening Credit", "No", "Number", "Credit balance on the cut-off date. Empty = 0. A negative amount moves to the other side; if both are filled they are netted."),
             ("Balance Date", "Yes", "Date", f"Must be the cut-off date {cut} (prefilled)."),
             ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
             ("Branch", "No", "Text", "Informational. A branch different from this opening balance set gives a warning."),
@@ -1110,7 +1110,6 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
         ],
         "error": [
             "Source Account Name empty.",
-            "Opening Debit / Credit not a number, negative, or both filled.",
             f"Balance Date empty, invalid or not equal to {cut}.",
             "ZAFEB account not found, or mapping columns pointing to different accounts.",
             "A balance on an inactive account, Current Year Earnings, "
@@ -1128,6 +1127,8 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "Branch different from this opening balance set.",
             "New account — the reviewer confirms it before it is added to the client's COA.",
             "Duplicate code / name / ZAFEB account — changed automatically to a unique one (the message shows the new value).",
+            "Opening Debit / Credit not a number (treated as 0), negative (moved to the other side) or both filled (netted). "
+            "Empty = 0 without a message.",
         ],
         "setelah": [
             "Opening balance lines of all NON-control accounts are REPLACED with the balances of this batch (control account "
@@ -1551,22 +1552,22 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 semua_kode_sumber.add(k)
             kode_dipakai[k] = no_baris
 
-        # Opening Debit / Credit: desimal >= 0; kosong = 0 (keputusan bisnis 2026-10-26).
-        debit = kredit = NOL
+        # Opening Debit / Credit tanpa error (keputusan bisnis 2026-10-26): kosong / "-" = 0,
+        # bukan angka = 0 (warning), negatif = saldo di sisi lawan, dua-duanya terisi -> dinetkan.
+        dk: Dict[str, Decimal] = {}
         for key, label in (("debit", "Opening Debit"), ("credit", "Opening Credit")):
-            if kosong(nilai.get(key)):
-                continue
-            n = _angka(nilai.get(key))
+            n = NOL if kosong(nilai.get(key)) else _angka(nilai.get(key))
             if n is None:
-                err(f"{label} must be a number.")
-            elif n < 0:
-                err(f"{label} must be 0 or more.")
-            elif key == "debit":
-                debit = n
-            else:
-                kredit = n
-        if debit > 0 and kredit > 0:
-            err("Fill either Opening Debit or Opening Credit, not both.")
+                if _teks(nilai.get(key)).strip("- "):
+                    warn(f'{label} "{_teks(nilai.get(key))}" is not a number — treated as 0.')
+                n = NOL
+            dk[key] = n
+        selisih = dk["debit"] - dk["credit"]
+        debit, kredit = (selisih, NOL) if selisih > 0 else (NOL, -selisih)
+        if dk["debit"] < 0 or dk["credit"] < 0 or (dk["debit"] > 0 and dk["credit"] > 0):
+            sisi = f"Opening Debit {debit:,.2f}" if debit > 0 else f"Opening Credit {kredit:,.2f}"
+            warn(f"Debit {dk['debit']:,.2f} / Credit {dk['credit']:,.2f} recorded as {sisi} "
+                 "(negative amounts move to the other side, debit and credit are netted).")
         bersaldo = debit > 0 or kredit > 0
 
         # Mapping ke akun ZAFEB: kode / standard code / nama harus menunjuk akun yang sama.
@@ -1636,12 +1637,10 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         # -> akun BARU dengan kode +1 & nama unik, standard code ikut akun asal
         # (keputusan bisnis 2026-10-26: duplikat dibuat unik, bukan error).
         if dipilih is not None and dipilih.id in akun_dipakai:
-            asal, baris_asal = dipilih, akun_dipakai[dipilih.id]
+            asal = dipilih
             d = {**d, "zafeb_code": _kode_unik(str(asal.acc_no).strip(), semua_kode_zafeb | set(kode_baru_dipakai)),
                  "zafeb_name": d.get("source_name") or asal.account_name,
                  "standard_code": asal.standard_account_code or "", "source_classification": ""}
-            warn(f"ZAFEB account {dbc.kode_tampil_akun(asal)} {asal.account_name} is already used on row {baris_asal} "
-                 f"— this row becomes new account {d['zafeb_code']} to keep it unique.")
             dipilih = None
             akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
                                        nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
