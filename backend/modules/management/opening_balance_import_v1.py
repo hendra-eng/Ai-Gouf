@@ -200,8 +200,8 @@ DIGIT_KLASIFIKASI: Dict[str, str] = {
     "EXPENSE": "6", "OTHER INCOME": "7", "OTHER EXPENSE": "8", "INCOME TAX": "9",
 }
 # Akun kontrol yang saldonya di file COA dibuang diam-diam (bukan error) --
-# saldo AR/AP/Inventory diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
-KONTROL_DIBUANG = ("ar", "ap", "inventory")
+# saldo AR/AP/Inventory/Fixed Asset diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
+KONTROL_DIBUANG = ("ar", "ap", "inventory", "asset")
 
 # Akun KONTROL = saldonya dikelola subledger & diimpor lewat file terpisah
 # (modul ar/ap/inventory/asset) -> DITOLAK di import COA non-subledger.
@@ -1081,8 +1081,8 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "(Excel asks to confirm — click Yes), pick its Standard Account Code from the dropdown (Source "
             "Classification fills in), and optionally type the name in Suggested ZAFEB Account Name (empty = Source "
             "Account Name). The account is created in the COA when the batch is approved.",
-            "AR, AP and Inventory balances in this file are skipped automatically — import them through the AR / AP / "
-            "Inventory modules. Leave Fixed Asset control accounts at 0 — they are imported through their own module.",
+            "AR, AP, Inventory and Fixed Asset balances in this file are skipped automatically — import them through the "
+            "AR / AP / Inventory / Fixed Asset modules.",
             "Duplicates are made unique automatically: when a code or name is already used, the lower (newer) row gets "
             "the next number (e.g. 100005 -> 100006, Bank BCA -> Bank BCA 2). A second row on the same ZAFEB account "
             "becomes a new account with the next free code.",
@@ -1113,7 +1113,7 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "Opening Debit / Credit empty, not a number, negative, or both filled.",
             f"Balance Date empty, invalid or not equal to {cut}.",
             "ZAFEB account not found, or mapping columns pointing to different accounts.",
-            "A balance on an inactive account, a Fixed Asset control account, Current Year Earnings, "
+            "A balance on an inactive account, Current Year Earnings, "
             "or a P&L account when the cut-off is the start of the fiscal year.",
             "Renaming an account that is locked in Settings > Account Mapping.",
             "New account: invalid code, Standard Account Code empty or "
@@ -1608,7 +1608,7 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         elif ketemu and not mapping_gagal:
             dipilih = next(iter(ketemu.values()))
 
-        # Saldo akun kontrol AR/AP -> baris dibuang tanpa pesan (diimpor lewat modul AR/AP).
+        # Saldo akun kontrol AR/AP/Inventory/Fixed Asset -> baris dibuang tanpa pesan (diimpor lewat modulnya).
         kontrol_baris = (modul_kontrol(dipilih) if dipilih is not None
                          else _std_kontrol(d.get("standard_code") or "") if akun_baru is not None else None)
         if bersaldo and kontrol_baris in KONTROL_DIBUANG:
