@@ -14,7 +14,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, FileText, GitBranch, Inbox, ListTree, Loader2,
+  AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, GitBranch, Inbox, ListTree, Loader2,
   Lock, LockOpen, RotateCcw, Save, Search, Send, Table2, Trash2, Upload, X,
 } from 'lucide-react';
 import { ACCOUNT_CLASSIFICATIONS, useClientCoa, type CoaAccount } from '@/lib/coaStore';
@@ -35,6 +35,7 @@ import {
 import { useClientsList } from '@/lib/clientsStore';
 import { labelClassification, themeOf } from '../../components/coaTheme';
 import OpeningBalanceImportTab from './OpeningBalanceImportTab';
+import { exportOpeningBalanceXlsx } from './obExport';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -272,6 +273,27 @@ export default function OpeningBalanceEditorClient() {
     router.push('/coa/opening-balances');
   });
 
+  // Export = semua akun yang tampil (abaikan search/filter), nilai sesuai layar (termasuk yang belum disimpan).
+  const [mengekspor, setMengekspor] = useState(false);
+  const onExport = async () => {
+    if (!ob || mengekspor) return;
+    setMengekspor(true);
+    try {
+      await exportOpeningBalanceXlsx({
+        ob,
+        clientName: clients.find(c => c.id === ob.client_id)?.companyName ?? '',
+        accounts: akunTampil,
+        saldo: coaId => ({ debit: parseAmount(nilai[coaId]?.debit ?? ''), credit: parseAmount(nilai[coaId]?.credit ?? '') }),
+        isLabaBerjalan,
+        laba: awalTahun ? 0 : totals.laba,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to export.');
+    } finally {
+      setMengekspor(false);
+    }
+  };
+
   const toggleGrup = (k: string) => setTertutup(prev => {
     const n = new Set(prev);
     if (n.has(k)) n.delete(k); else n.add(k);
@@ -469,6 +491,13 @@ export default function OpeningBalanceEditorClient() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={onExport}
+              disabled={mengekspor || akunTampil.length === 0}
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              {mengekspor ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export
+            </button>
           </div>
 
           {awalTahun && (
