@@ -35,6 +35,8 @@ import {
 import { useClientsList } from '@/lib/clientsStore';
 import { labelClassification, themeOf } from '../../components/coaTheme';
 import OpeningBalanceImportTab from './OpeningBalanceImportTab';
+import { ControlStatusBanner } from './importUi';
+import { fetchImportOverview, type ImportControlStatus } from '@/lib/openingBalanceImportStore';
 import { exportOpeningBalanceXlsx } from './obExport';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
@@ -92,6 +94,8 @@ export default function OpeningBalanceEditorClient() {
   const [sorotPenampung, setSorotPenampung] = useState(false);
   const penampungRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>('import');
+  // Saldo akun kontrol yang masih sementara (detail subledger belum diimpor) / beda dengan file COA.
+  const [kontrol, setKontrol] = useState<ImportControlStatus[]>([]);
   const { clients } = useClientsList();
 
   const { accounts, loading: loadingCoa } = useClientCoa(ob?.client_id ?? null);
@@ -110,6 +114,19 @@ export default function OpeningBalanceEditorClient() {
       .then(d => { terapkan(d); setLoadError(null); })
       .catch(e => setLoadError(e instanceof Error ? e.message : 'Failed to load opening balance.'));
   }, [id, terapkan]);
+
+  const muatKontrol = useCallback(async () => {
+    if (!id) return [] as ImportControlStatus[];
+    try {
+      const k = (await fetchImportOverview(id)).control_status ?? [];
+      setKontrol(k);
+      return k;
+    } catch {
+      return [] as ImportControlStatus[];
+    }
+  }, [id]);
+
+  useEffect(() => { if (tab === 'detail') muatKontrol(); }, [tab, muatKontrol]);
 
   const draft = ob?.status === 'draft';
   const awalTahun = !!ob && header.asOf === `${ob.fiscal_year - 1}-12-31`;
@@ -238,9 +255,18 @@ export default function OpeningBalanceEditorClient() {
       throw new OpeningBalanceError(`Out of balance by ${formatAmount(Math.abs(selisih))}. Choose a suspense account first.`, 'SUSPENSE_REQUIRED_LOCAL');
     }
     if (totals.count === 0) throw new OpeningBalanceError('Fill in at least one balance before posting.');
-    const pesan = seimbang
+    // Posting tetap boleh walau detail subledger belum diimpor (keputusan bisnis 2026-10-31) -- cukup diingatkan.
+    const pending = (await muatKontrol()).filter(k => k.status === 'pending');
+    const catatanDetail = pending.length
+      ? `
+
+Provisional balances — subledger detail still required for: ${pending.map(k => `${k.label} (${formatAmount(k.opening_balance)})`).join(', ')}. `
+        + 'You can post now; to import the detail later, use Revise, approve the import, then post again.'
+      : '';
+    const pesan = (seimbang
       ? `Post opening balance FY ${ob!.fiscal_year} (${branchLabel(ob!.branch)})? An opening journal will be created.`
-      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Post anyway?`;
+      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Post anyway?`)
+      + catatanDetail;
     if (!window.confirm(pesan)) return;
     if (adaPerubahan) await simpan(true);
     const d = await postOpeningBalance(ob!.id);
@@ -416,6 +442,7 @@ export default function OpeningBalanceEditorClient() {
             </p>
           </div>
         )}
+        <ControlStatusBanner items={kontrol} obId={ob.id} />
         {!draft && (
           <div className="flex items-start gap-3 rounded-2xl border border-border bg-slate-50 px-4 py-3">
             {ob.status === 'locked' ? <Lock size={16} className="mt-0.5 shrink-0 text-slate-500" /> : <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />}

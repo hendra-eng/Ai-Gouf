@@ -57,9 +57,23 @@ export interface ImportModuleSummary {
   setup: { label: string; href: string };
 }
 
+/** Saldo akun kontrol AR/AP/Inventory/Fixed Asset vs detail subledger (backend _status_kontrol).
+ *  pending = saldo sementara (dari file COA) tapi detail belum diimpor; difference / reconciled =
+ *  detail sudah diimpor, dibanding angka file COA. Angka di sisi normal (AP kredit = positif). */
+export interface ImportControlStatus {
+  module: Exclude<ImportModule, 'coa'>;
+  module_label: string;
+  label: string;
+  status: 'pending' | 'difference' | 'reconciled';
+  opening_balance: number;
+  coa_amount: number | null;
+  difference: number | null;
+}
+
 export interface ImportOverview {
   modules: ImportModuleSummary[];
   batches: ImportBatch[];
+  control_status: ImportControlStatus[];
 }
 
 export interface ImportRowMessage {

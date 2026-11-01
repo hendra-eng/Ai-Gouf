@@ -24,8 +24,9 @@ Aturan modul coa:
     Balance Date                tanggal, wajib, = tanggal cut-off set opening balance (periode opening).
     Currency                    selalu IDR (isi file diabaikan).
     Akun ZAFEB                  1 akun ZAFEB hanya boleh dipakai 1 baris. Kalau barisnya BERSALDO: akun harus
-                                aktif, bukan akun kontrol Inventory/Fixed Asset, bukan Current Year Earnings.
-                                Baris bersaldo di akun kontrol AR/AP dibuang diam-diam (tidak masuk batch). Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
+                                aktif, bukan Current Year Earnings. Baris bersaldo di akun kontrol
+                                AR/AP/Inventory/Fixed Asset -> warning, saldonya diterima SEMENTARA
+                                (detail tetap wajib lewat modul 2-5). Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
     Batch                       total debit != total kredit -> peringatan saja (_catatan_batch); selisihnya
                                 diparkir ke akun suspense saat opening balance di-post.
     Akun BARU                   kode ZAFEB yang belum ada di COA klien BOLEH, asal standarnya jelas
@@ -34,9 +35,10 @@ Aturan modul coa:
                                 COA klien), klasifikasi = klasifikasi standard code. Selalu warning "New
                                 account" supaya direview; akun dibuat saat approve (_buat_akun_baru).
 
-Saat batch coa di-APPROVE (_terapkan_coa): baris saldo AKUN NON-KONTROL set
-opening balance DIGANTI dengan baris bersaldo dari batch ini (saldo akun
-kontrol AR/AP/Inventory/Fixed Asset tidak disentuh -- milik modul 2-5), dan
+Saat batch coa di-APPROVE (_terapkan_coa): baris saldo set opening balance
+DIGANTI dengan baris bersaldo dari batch ini, KECUALI akun kontrol modul yang
+subledgernya sudah di-approve (saldo subledger menang; akun kontrol modul yang
+belum punya detail memakai saldo file ini sebagai saldo sementara), dan
 nama akun ZAFEB diganti dengan Source Account Name (akun yang dikunci Account
 Mapping tidak boleh berganti nama -> sudah ditolak saat validasi).
 
@@ -140,6 +142,7 @@ from ..api_response import gagal, sukses
 from ..logging_config import get_module_logger
 from .coa_v1 import KLASIFIKASI_AKUN
 from .opening_balance_v1 import KLASIFIKASI_NERACA, STANDARD_CODE_LABA_BERJALAN, _awal_tahun
+from .year_end_closing_v1 import STANDARD_CODE_LABA_DITAHAN
 
 logger = get_module_logger("management_opening_balance_import_v1")
 
@@ -199,9 +202,11 @@ DIGIT_KLASIFIKASI: Dict[str, str] = {
     "ASSET": "1", "LIABILITY": "2", "EQUITY": "3", "REVENUE": "4", "COST OF SALES": "5",
     "EXPENSE": "6", "OTHER INCOME": "7", "OTHER EXPENSE": "8", "INCOME TAX": "9",
 }
-# Akun kontrol yang saldonya di file COA dibuang diam-diam (bukan error) --
-# saldo AR/AP/Inventory/Fixed Asset diimpor lewat modulnya sendiri (keputusan bisnis 2026-10-26).
-KONTROL_DIBUANG = ("ar", "ap", "inventory", "asset")
+# Akun kontrol yang saldonya di file COA DITERIMA SEMENTARA (warning, keputusan bisnis
+# 2026-10-31, menggantikan "dibuang diam-diam" 2026-10-26): saldo ini masuk opening
+# balance sampai modul subledgernya di-approve -- setelah itu saldo subledger yang
+# berlaku (_ganti_saldo_kontrol) dan angka file COA hanya jadi pembanding (_status_kontrol).
+KONTROL_SEMENTARA = ("ar", "ap", "inventory", "asset")
 
 # Akun KONTROL = saldonya dikelola subledger & diimpor lewat file terpisah
 # (modul ar/ap/inventory/asset) -> DITOLAK di import COA non-subledger.
@@ -609,6 +614,91 @@ def _std_kontrol(std: str) -> Optional[str]:
 
 
 # ============================================================
+# SALDO SEMENTARA AKUN KONTROL (file COA) vs DETAIL SUBLEDGER
+# ============================================================
+
+CATATAN_SEMENTARA = "Provisional — from the COA import; detail pending in {modul}"
+
+
+def _modul_sudah_detail(session, ob_id: str) -> set:
+    """Modul subledger yang sudah punya batch approved di set opening balance ini."""
+    return {m for (m,) in session.query(IMP.module).filter(
+        IMP.opening_balance_id == ob_id, IMP.status == "approved", IMP.module.in_(KONTROL_SEMENTARA)).distinct().all()}
+
+
+def _tanda_kontrol(modul: str, net: Decimal) -> Decimal:
+    """Net debit(+)/kredit(-) -> angka sisi normal (AP bersaldo kredit jadi positif)."""
+    return -net if modul == "ap" else net
+
+
+def _saldo_ob_kontrol(session, ob: Any) -> Dict[str, Decimal]:
+    """Saldo net baris opening balance per modul akun kontrol (debit - kredit)."""
+    OBL = dbc.ManagementClientCoaOpeningBalanceLine
+    modul_kontrol = _penentu_kontrol(session, ob.client_id)
+    saldo = {m: NOL for m in KONTROL_SEMENTARA}
+    for l, a in session.query(OBL, COA).join(COA, COA.id == OBL.coa_id).filter(OBL.opening_balance_id == ob.id).all():
+        m = modul_kontrol(a)
+        if m in saldo:
+            saldo[m] += _dec_aman(l.debit) - _dec_aman(l.credit)
+    return saldo
+
+
+def _angka_coa_kontrol(session, ob: Any) -> Dict[str, Decimal]:
+    """Saldo akun kontrol per modul menurut batch COA approved TERAKHIR (pembanding detail subledger)."""
+    b = (session.query(IMP).filter(IMP.opening_balance_id == ob.id, IMP.module == "coa", IMP.status == "approved")
+         .order_by(IMP.reviewed_at.desc().nullslast(), IMP.created_at.desc()).first())
+    angka: Dict[str, Decimal] = {}
+    if b is None:
+        return angka
+    for r in _baris_terpilih(session, b):
+        m = (r.data or {}).get("control_module")
+        if m in KONTROL_SEMENTARA and r.status != "error":
+            angka[m] = angka.get(m, NOL) + _dec_aman(r.debit) - _dec_aman(r.credit)
+    return angka
+
+
+def _status_kontrol(session, ob: Any) -> List[Dict[str, Any]]:
+    """Notifikasi per modul subledger untuk tab Import Data & halaman Opening Balance:
+        pending     saldo akun kontrol ada (sementara, dari file COA / input manual) tapi detail belum diimpor
+        difference  detail sudah diimpor, total subledger beda dari angka file COA (subledger yang berlaku)
+        reconciled  detail sudah diimpor & sama dengan angka file COA
+    Modul tanpa saldo & tanpa detail tidak dilaporkan (mis. perusahaan jasa tanpa persediaan)."""
+    sudah = _modul_sudah_detail(session, ob.id)
+    saldo, coa = _saldo_ob_kontrol(session, ob), _angka_coa_kontrol(session, ob)
+    hasil = []
+    for m in KONTROL_SEMENTARA:
+        if m in sudah:
+            if m not in coa:
+                continue
+            selisih = saldo[m] - coa[m]
+            status = "difference" if abs(selisih) >= SEN else "reconciled"
+        elif abs(saldo[m]) >= SEN:
+            status, selisih = "pending", None
+        else:
+            continue
+        hasil.append({
+            "module": m, "module_label": MODUL[m], "label": _LABEL_SUBLEDGER[m], "status": status,
+            "opening_balance": float(_tanda_kontrol(m, saldo[m])),
+            "coa_amount": float(_tanda_kontrol(m, coa[m])) if m in coa else None,
+            "difference": float(_tanda_kontrol(m, selisih)) if selisih is not None else None,
+        })
+    return hasil
+
+
+def _banding_kontrol(session, ob: Any, modul: str) -> str:
+    """Kalimat catatan batch subledger: total detail vs saldo sementara file COA."""
+    coa = _angka_coa_kontrol(session, ob).get(modul)
+    if coa is None:
+        return ""
+    total = _tanda_kontrol(modul, _saldo_ob_kontrol(session, ob)[modul])
+    coa = _tanda_kontrol(modul, coa)
+    if abs(total - coa) < SEN:
+        return f" Subledger total {total:,.2f} matches the provisional balance from the COA import."
+    return (f" Subledger total {total:,.2f} differs from the provisional balance from the COA import ({coa:,.2f}) by "
+            f"{total - coa:,.2f} — the subledger total is used.")
+
+
+# ============================================================
 # TEMPLATE MODUL COA
 # ============================================================
 
@@ -882,9 +972,9 @@ def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], m
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_kolom)
     c = ws.cell(2, 1, (
         f"Reference only — this sheet is not imported. It lists all {len(akun)} accounts of this client's COA to help "
-        f"you map legacy accounts in sheet {SHEET_TEMPLATE}. Accounts marked as Subledger Control must stay 0 there "
-        "(their balances are imported through the AR / AP / Inventory / Fixed Asset files); inactive accounts must "
-        "also stay 0."
+        f"you map legacy accounts in sheet {SHEET_TEMPLATE}. Balances of accounts marked as Subledger Control are "
+        "accepted as provisional — their detail must still be imported through the AR / AP / Inventory / Fixed Asset "
+        "files (the subledger total replaces the provisional amount). Inactive accounts must stay 0."
     ))
     c.font, c.fill = Font(name=_FONT, size=11, color="FF475569"), _FILL_KET
     c.alignment = Alignment(vertical="top", wrap_text=True)
@@ -917,7 +1007,7 @@ def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], m
         c = ws.cell(r, 1, (
             f"STANDARD ACCOUNT CODES — for NEW accounts ({len(katalog)} codes). A new account in sheet "
             f"{SHEET_TEMPLATE} must use one of these codes; its classification, head, sub and normal balance follow "
-            "the code. Codes marked as Subledger Control may be added but must stay 0."
+            "the code. Balances on codes marked as Subledger Control are provisional until the subledger detail is imported."
         ))
         c.font, c.fill = Font(name=_FONT, size=11, bold=True, color="FF134E4A"), _FILL_RINGKAS
         c.alignment = Alignment(vertical="top", wrap_text=True)
@@ -1081,8 +1171,9 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "(Excel asks to confirm — click Yes), pick its Standard Account Code from the dropdown (Source "
             "Classification fills in), and optionally type the name in Suggested ZAFEB Account Name (empty = Source "
             "Account Name). The account is created in the COA when the batch is approved.",
-            "AR, AP, Inventory and Fixed Asset balances in this file are skipped automatically — import them through the "
-            "AR / AP / Inventory / Fixed Asset modules.",
+            "AR, AP, Inventory and Fixed Asset balances in this file are accepted as PROVISIONAL balances. Their detail "
+            "(invoices, bills, stock, asset register) must still be imported through the AR / AP / Inventory / Fixed Asset "
+            "modules — once approved, the subledger total replaces the provisional amount and any difference is shown.",
             "Duplicates are made unique automatically: when a code or name is already used, the lower (newer) row gets "
             "the next number (e.g. 100005 -> 100006, Bank BCA -> Bank BCA 2). A second row on the same ZAFEB account "
             "becomes a new account with the next free code.",
@@ -1112,12 +1203,11 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "Source Account Name empty.",
             f"Balance Date empty, invalid or not equal to {cut}.",
             "ZAFEB account not found, or mapping columns pointing to different accounts.",
-            "A balance on an inactive account, Current Year Earnings, "
+            "A balance on an inactive account, "
             "or a P&L account when the cut-off is the start of the fiscal year.",
             "Renaming an account that is locked in Settings > Account Mapping.",
             "New account: invalid code, Standard Account Code empty or "
-            "not recognized, Source Classification invalid or different from the standard code, Current Year Earnings, "
-            "or a balance on a subledger control standard code.",
+            "not recognized, or Source Classification invalid or different from the standard code.",
         ],
         "warning": [
             "Row without a ZAFEB account (unmapped) — its balance is NOT applied to the opening balance.",
@@ -1127,12 +1217,20 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
             "Branch different from this opening balance set.",
             "New account — the reviewer confirms it before it is added to the client's COA.",
             "Duplicate code / name / ZAFEB account — changed automatically to a unique one (the message shows the new value).",
+            "Suggested ZAFEB Account Code not in the COA while an existing account with the same account code or name "
+            "(same classification) is not used anywhere else in the file — mapped to that existing account instead of "
+            "creating a duplicate.",
             "Opening Debit / Credit not a number (treated as 0), negative (moved to the other side) or both filled (netted). "
             "Empty = 0 without a message.",
+            "Balance on an AR / AP / Inventory / Fixed Asset control account — accepted as provisional; the detail must "
+            "still be imported through its module.",
+            "Balance on Current Year Earnings — it is calculated from the P&L accounts, so the legacy balance is treated as "
+            "prior-year earnings not yet closed and moved to a new Retained Earnings account (\"<name> - Prior Years\").",
         ],
         "setelah": [
-            "Opening balance lines of all NON-control accounts are REPLACED with the balances of this batch (control account "
-            "balances from AR / AP / Inventory / Fixed Assets are kept).",
+            "Opening balance lines are REPLACED with the balances of this batch. AR / AP / Inventory / Fixed Asset control "
+            "accounts take the provisional balance from this file until their module is approved; once a module is "
+            "approved its subledger total is kept and this file's amount is only compared (difference shown).",
             "ZAFEB account names are updated from Source Account Name, and the Source Account Code is saved as the "
             "account code shown in the system.",
             "New accounts are added to the client's COA (active) with the classification, head, sub and normal balance of "
@@ -1402,7 +1500,7 @@ def _cek_akun_baru(d: Dict[str, str], no_baris: int, bersaldo: bool, katalog: Di
         kls     Source Classification (kosong -> dari katalog) harus salah satu
                 KLASIFIKASI_AKUN & sama dengan klasifikasi standard code.
     Aturan saldo sama dengan akun lama: Current Year Earnings ditolak, akun
-    kontrol subledger harus bersaldo 0, cut-off awal tahun hanya akun neraca.
+    kontrol subledger = saldo sementara, cut-off awal tahun hanya akun neraca.
     Return atribut akun yang dibuat saat approve (_buat_akun_baru)."""
     kode = d["zafeb_code"]
     if not POLA_KODE_AKUN_BARU.fullmatch(kode):
@@ -1445,10 +1543,7 @@ def _cek_akun_baru(d: Dict[str, str], no_baris: int, bersaldo: bool, katalog: Di
     if info is not None:
         if std.lower() == STANDARD_CODE_LABA_BERJALAN:
             err("Current Year Earnings is calculated automatically — it cannot be added as a new account.")
-        kontrol = _std_kontrol(std)
-        if kontrol and bersaldo:
-            err(f"Standard account code {info['standard_account_code']} is a {_LABEL_SUBLEDGER[kontrol]} control account — "
-                f"the new account may be added, but its balance must be imported through \"{MODUL[kontrol]}\" (keep 0 here).")
+        # Saldo di standard code akun kontrol subledger = saldo sementara (warning di _validasi_coa).
     if bersaldo and awal_tahun and kls and kls not in KLASIFIKASI_NERACA:
         err("Start-of-year cut-off accepts balance sheet accounts only (P&L belongs in Retained Earnings).")
 
@@ -1518,6 +1613,14 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
     semua_kode_zafeb = set(per_kode) | kode_di_file("zafeb_code")
     semua_kode_sumber = set(per_kode) | {dbc.kode_tampil_akun(a).lower() for a in akun} | kode_di_file("source_code")
 
+    # Akun klien yang dirujuk kode ZAFEB di file (baris template / baris lain) -> bukan
+    # kandidat auto-koreksi mapping (_akun_lama_cocok).
+    dirujuk = {per_kode[k].id for k in kode_di_file("zafeb_code") if k in per_kode}
+    per_tampil: Dict[str, Any] = {}
+    for a in akun:
+        per_tampil.setdefault(str(a.acc_no).strip().lower(), a)
+        per_tampil.setdefault(dbc.kode_tampil_akun(a).lower(), a)
+
     hasil, kode_dipakai, akun_dipakai = [], {}, {}
     kode_baru_dipakai: Dict[str, int] = {}
     nama_baru_dipakai: Dict[str, int] = {}
@@ -1582,6 +1685,26 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 and d["zafeb_code"].lower() in katalog):
             d["standard_code"] = d.get("standard_code") or d["zafeb_code"]
             d["zafeb_code"] = ""
+        # Baris ke Current Year Earnings (laba berjalan dihitung otomatis dari akun P&L) ->
+        # bersaldo: saldo legacy = laba periode lalu yang belum ditutup -> akun BARU di bawah
+        # Retained Earnings (keputusan bisnis 2026-10-31, bukan error supaya debit = kredit tetap).
+        # Tanpa saldo: cukup dipetakan ke akun Current Year Earnings klien yang sudah ada.
+        paksa_baru = False
+        if _ke_laba_berjalan(d, per_kode, per_nama):
+            pool = semua_kode_zafeb | set(kode_baru_dipakai)
+            paksa_baru = bersaldo
+            if bersaldo:
+                kode_lama = d.get("zafeb_code") or STANDARD_CODE_LABA_BERJALAN
+                d.update(standard_code=STANDARD_CODE_LABA_DITAHAN, source_classification="",
+                         zafeb_code=_kode_otomatis("EQUITY", "", pool) or _kode_unik(STANDARD_CODE_LABA_DITAHAN, pool),
+                         zafeb_name=f"{d.get('source_name') or 'Current Year Earnings'} - Prior Years")
+                warn(f"Current Year Earnings is calculated automatically from the P&L accounts — this legacy balance "
+                     f"({kode_lama}) is treated as prior-year earnings not yet closed and moved to new Retained Earnings "
+                     f"account {d['zafeb_code']} {d['zafeb_name']}.")
+            else:
+                laba = per_std.get(STANDARD_CODE_LABA_BERJALAN, [])
+                d.update(standard_code=STANDARD_CODE_LABA_BERJALAN if laba else "", source_classification="",
+                         zafeb_code=str(laba[0].acc_no).strip() if laba else "", zafeb_name="")
         # Standard code yang belum punya akun di COA klien -> akun BARU dengan kode otomatis
         # (6 digit per klasifikasi, _kode_otomatis).
         std = (d.get("standard_code") or "").lower()
@@ -1591,6 +1714,16 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                                or _kode_unik(katalog[std]["standard_account_code"], pool))
         if d.get("zafeb_code"):
             a = per_kode.get(d["zafeb_code"].lower())
+            if a is None and not paksa_baru:
+                # Salah mapping (keputusan bisnis 2026-10-31): kode ZAFEB baru padahal akun lama yang
+                # cocok tidak dipakai baris mana pun -> pakai akun lama, jangan buat akun dobel.
+                a, alasan = _akun_lama_cocok(d, per_tampil, per_nama, katalog, dirujuk | set(akun_dipakai))
+                if a is not None:
+                    warn(f"Suggested ZAFEB Account Code {d['zafeb_code']} is not in the COA, but existing account "
+                         f"{dbc.kode_tampil_akun(a)} {a.account_name} ({alasan}) is not used anywhere else in this file — "
+                         "mapped to that account instead of creating a duplicate.")
+                    d.update(zafeb_code=str(a.acc_no).strip(), zafeb_name="",
+                             standard_code=a.standard_account_code or "", source_classification="")
             if a is None:
                 akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
                                            nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
@@ -1624,15 +1757,6 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         elif ketemu and not mapping_gagal:
             dipilih = next(iter(ketemu.values()))
 
-        # Saldo akun kontrol AR/AP/Inventory/Fixed Asset -> baris dibuang tanpa pesan (diimpor lewat modulnya).
-        kontrol_baris = (modul_kontrol(dipilih) if dipilih is not None
-                         else _std_kontrol(d.get("standard_code") or "") if akun_baru is not None else None)
-        if bersaldo and kontrol_baris in KONTROL_DIBUANG:
-            for catatan in (kode_dipakai, kode_baru_dipakai, nama_baru_dipakai):
-                for k in [k for k, v in catatan.items() if v == no_baris]:
-                    del catatan[k]
-            continue
-
         # 1 akun ZAFEB = 1 baris. Baris berikutnya yang menunjuk akun yang sama (data terbaru)
         # -> akun BARU dengan kode +1 & nama unik, standard code ikut akun asal
         # (keputusan bisnis 2026-10-26: duplikat dibuat unik, bukan error).
@@ -1648,6 +1772,16 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
             d.update(zafeb_code=akun_baru["acc_no"], zafeb_name=akun_baru["account_name"],
                      source_classification=akun_baru["account_classification"] or "")
 
+        # Saldo akun kontrol AR/AP/Inventory/Fixed Asset -> diterima SEMENTARA (warning); detail
+        # subledger tetap wajib diimpor lewat modulnya (KONTROL_SEMENTARA, keputusan bisnis 2026-10-31).
+        kontrol_baris = (modul_kontrol(dipilih) if dipilih is not None
+                         else _std_kontrol(akun_baru.get("standard_account_code") or "") if akun_baru is not None else None)
+        if kontrol_baris not in KONTROL_SEMENTARA:
+            kontrol_baris = None
+        if bersaldo and kontrol_baris:
+            warn(f"{_LABEL_SUBLEDGER[kontrol_baris]} control account — balance accepted as provisional. The detail must "
+                 f"still be imported through \"{MODUL[kontrol_baris]}\"; the subledger total will replace this amount.")
+
         if not cocok and akun_baru is None:
             warn("Unmapped — this balance will not be applied to the opening balance." if bersaldo
                  else "Unmapped — no ZAFEB account selected.")
@@ -1659,10 +1793,6 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
             if bersaldo:
                 if not dipilih.is_active:
                     err(f"ZAFEB account {dipilih.acc_no} {dipilih.account_name} is inactive.")
-                kontrol = modul_kontrol(dipilih)
-                if kontrol:
-                    err(f"{dipilih.acc_no} {dipilih.account_name} is a control account — import its balance through "
-                        f"\"{MODUL[kontrol]}\" instead.")
                 if (dipilih.standard_account_code or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN:
                     err("Current Year Earnings is calculated automatically — map this balance to another account.")
                 if awal_tahun and kls not in KLASIFIKASI_NERACA:
@@ -1716,6 +1846,8 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 } if akun_baru is not None else None,
                 # Atribut akun yang dibuat di COA klien saat batch di-approve (_buat_akun_baru).
                 "new_account": akun_baru,
+                # Modul subledger kalau baris ini akun kontrol (saldo sementara, _status_kontrol).
+                "control_module": kontrol_baris,
                 "code_change": bool(dipilih is not None and d.get("source_code")
                                     and d["source_code"] != dbc.kode_tampil_akun(dipilih)),
             },
@@ -1723,6 +1855,45 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
     _isi_kode_otomatis(akun, hasil)
     _cek_kode_tampil(akun, hasil)
     return hasil
+
+
+def _akun_lama_cocok(d: Dict[str, Any], per_tampil: Dict[str, Any], per_nama: Dict[str, List[Any]],
+                     katalog: Dict[str, Dict[str, Any]], terpakai: set) -> Tuple[Optional[Any], str]:
+    """Akun LAMA pengganti akun baru yang salah mapping (mis. kode katalog 6 digit
+    diketik di Suggested ZAFEB Account Code padahal akun kliennya sudah ada).
+    Kandidat: aktif, bukan Current Year Earnings, tidak dirujuk baris lain di file
+    (`terpakai`), klasifikasi sama dengan standard code / Source Classification baris.
+        1. Source Account Code = kode tampilan / kode ZAFEB akun lama (template mengisi
+           Source Account Code dengan kode akun -> baris akun itu yang mapping-nya diubah).
+        2. Source Account Name = nama akun lama.
+    Standard code saja TIDAK cukup (beberapa akun 1 standard code -> bisa salah pilih).
+    Return (akun, alasan) atau (None, "")."""
+    std = (d.get("standard_code") or "").strip().lower()
+    kls = ((katalog.get(std) or {}).get("account_classification") or d.get("source_classification") or "").strip().upper()
+
+    def boleh(a: Any) -> bool:
+        return (a is not None and a.is_active and a.id not in terpakai
+                and (a.standard_account_code or "").strip().lower() != STANDARD_CODE_LABA_BERJALAN
+                and (not kls or (a.account_classification or "").upper() == kls))
+    a = per_tampil.get((d.get("source_code") or "").strip().lower())
+    if boleh(a):
+        return a, "same account code"
+    a = next((x for x in per_nama.get((d.get("source_name") or "").strip().lower(), []) if boleh(x)), None)
+    return (a, "same account name") if a is not None else (None, "")
+
+
+def _ke_laba_berjalan(d: Dict[str, Any], per_kode: Dict[str, Any], per_nama: Dict[str, List[Any]]) -> bool:
+    """Baris COA menunjuk Current Year Earnings? (standard code, kode ZAFEB akun laba
+    berjalan / kode baru, atau -- tanpa kode & standard code -- nama akun laba berjalan)."""
+    def laba(a: Any) -> bool:
+        return (a.standard_account_code or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN
+    if (d.get("standard_code") or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN:
+        return True
+    kode = (d.get("zafeb_code") or "").strip().lower()
+    if kode:
+        return kode in per_kode and laba(per_kode[kode])
+    nama = (d.get("zafeb_name") or "").strip().lower()
+    return bool(nama) and any(laba(a) for a in per_nama.get(nama, []))
 
 
 def _kode_otomatis(kls: str, preferensi: str, dipakai: set) -> Optional[str]:
@@ -2283,6 +2454,8 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
             saldo[akun_aset] = saldo.get(akun_aset, NOL) + _dec_aman(a.cost)
         if akun_akum and _dec_aman(a.opening_accumulated_depreciation):
             saldo[akun_akum] = saldo.get(akun_akum, NOL) - _dec_aman(a.opening_accumulated_depreciation)
+    # Saldo sementara di akun kontrol aset tetap lain (dari file COA) ikut diganti -- subledger menang.
+    akun_fa |= {a.id for a in _akun_kontrol(session, kid, "asset")}
     session.query(OBL).filter(OBL.opening_balance_id == ob.id, OBL.coa_id.in_(akun_fa or {""})).delete(synchronize_session=False)
     for coa_id, n in saldo.items():
         if n != 0:
@@ -2292,7 +2465,7 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
     session.flush()
     return (f"Applied: {len(rows)} asset(s) added to the Fixed Asset register; opening balances of "
             f"{sum(1 for n in saldo.values() if n != 0)} fixed asset / accumulated depreciation account(s) recalculated "
-            "from the register.")
+            f"from the register.{_banding_kontrol(session, ob, 'asset')}")
 
 
 # ============================================================
@@ -2776,7 +2949,8 @@ def _terapkan_dok(session, b: Any, user: Dict[str, Any], sisi: SisiDok) -> str:
     tambahan = f"; {pelanggan_baru} new customer(s) added" if pelanggan_baru else ""
     return (f"Applied: {len(rows)} {sisi.dokumen.lower()}(s) added to "
             f"{'Accounts Receivable' if sisi.modul == 'ar' else 'Accounts Payable'}{tambahan}; opening balance of "
-            f"{n} control account(s) recalculated from all approved {sisi.modul.upper()} batches.")
+            f"{n} control account(s) recalculated from all approved {sisi.modul.upper()} batches."
+            f"{_banding_kontrol(session, ob, sisi.modul)}")
 
 
 # ============================================================
@@ -3120,7 +3294,8 @@ def _terapkan_inv(session, b: Any, user: Dict[str, Any]) -> str:
     n = _ganti_saldo_kontrol(session, ob, "inventory", saldo, uid, "From the Inventory stock valuation (opening balance import).")
     tambahan = "".join(f"; {k} new {lbl}(s) created" for k, lbl in ((baru_item, "item"), (baru_wh, "warehouse")) if k)
     return (f"Applied: opening stock posted in Inventory ({', '.join(dokumen)}) for {len(rows)} row(s){tambahan}; "
-            f"opening balance of {n} inventory account(s) recalculated from the stock valuation.")
+            f"opening balance of {n} inventory account(s) recalculated from the stock valuation."
+            f"{_banding_kontrol(session, ob, 'inventory')}")
 
 
 # ============================================================
@@ -3148,7 +3323,8 @@ def daftar_import(ob_id: str, _current_user: Dict[str, Any] = Depends(get_curren
                 "pending_approval": sum(1 for b in riwayat if b.status == "submitted"),
                 **dict(zip(("missing_mappings", "setup"), _setup_kurang(session, ob.client_id, key, mapping))),
             })
-        return sukses(data={"modules": modul, "batches": [_ringkas_batch(b) for b in batch]})
+        return sukses(data={"modules": modul, "batches": [_ringkas_batch(b) for b in batch],
+                            "control_status": _status_kontrol(session, ob)})
     except _Gagal as e:
         return _respon_gagal(e)
     finally:
@@ -3378,20 +3554,34 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
     id_baru = {r.id for r in baru}
     rows = sorted(rows + baru, key=lambda r: r.row_no)
     OBL = dbc.ManagementClientCoaOpeningBalanceLine
-    # Saldo akun kontrol (AR/AP/Inventory/Fixed Asset) dikelola modul 2-5 -> dipertahankan.
+    # Akun kontrol modul yang subledgernya SUDAH di-approve -> saldo subledger dipertahankan
+    # (angka file ini hanya pembanding, _status_kontrol). Modul yang belum punya detail ->
+    # saldo file ini dipakai sebagai saldo SEMENTARA (keputusan bisnis 2026-10-31).
     modul_kontrol = _penentu_kontrol(session, ob.client_id)
+    sudah_detail = _modul_sudah_detail(session, ob.id)
     lama = session.query(OBL, COA).join(COA, COA.id == OBL.coa_id).filter(OBL.opening_balance_id == ob.id).all()
-    dipertahankan = {l.coa_id for l, a in lama if modul_kontrol(a)}
+    dipertahankan = {l.coa_id for l, a in lama if modul_kontrol(a) in sudah_detail}
     for l, a in lama:
         if l.coa_id not in dipertahankan:
             session.delete(l)
     session.flush()
     n_saldo = n_nama = 0
+    sementara: Dict[str, int] = {}
     for r in rows:
-        if (_dec_aman(r.debit) > 0 or _dec_aman(r.credit) > 0) and r.coa_id not in dipertahankan:
+        if _dec_aman(r.debit) > 0 or _dec_aman(r.credit) > 0:
+            m = modul_kontrol(akun[r.coa_id])
+            if m not in KONTROL_SEMENTARA:
+                m = None
+            if m in sudah_detail:
+                continue
+            if m:
+                sementara[m] = sementara.get(m, 0) + 1
+            catatan = (r.data or {}).get("notes")
+            if m:
+                catatan = " · ".join(t for t in (CATATAN_SEMENTARA.format(modul=MODUL[m]), catatan) if t)
             session.add(OBL(
                 opening_balance_id=ob.id, coa_id=r.coa_id, debit=_dec_aman(r.debit), credit=_dec_aman(r.credit),
-                notes=(r.data or {}).get("notes"), created_by=uid,
+                notes=catatan, created_by=uid,
             ))
             n_saldo += 1
         if r.id in id_baru:
@@ -3414,11 +3604,14 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
                          "Settings > Account Mapping, or reject the batch and keep their current names.",
                          kode="MAPPING_LOCKED", status_code=409)
         raise
-    kontrol = f"; {len(dipertahankan)} control account balance(s) kept" if dipertahankan else ""
+    kontrol = (f"; subledger balances kept for {', '.join(_LABEL_SUBLEDGER[m] for m in KONTROL_SEMENTARA if m in sudah_detail)}"
+               if sudah_detail else "")
     tambah = f"; {len(baru)} new account(s) added to the COA" if baru else ""
     kode = f"; {len(berubah)} account code(s) updated from Source Account Code" if berubah else ""
-    return (f"Applied to the opening balance: {n_saldo} account balance(s) replaced the previous non-control lines"
-            f"{kontrol}; {n_nama} account name(s) updated from Source Account Name{kode}{tambah}.")
+    perlu = (" Provisional control balances — detail still required for: "
+             + ", ".join(f"{MODUL[m]} ({n} account(s))" for m, n in sementara.items()) + ".") if sementara else ""
+    return (f"Applied to the opening balance: {n_saldo} account balance(s) replaced the previous lines"
+            f"{kontrol}; {n_nama} account name(s) updated from Source Account Name{kode}{tambah}.{perlu}")
 
 
 @contextmanager
