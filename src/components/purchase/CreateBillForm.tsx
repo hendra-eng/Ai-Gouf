@@ -27,6 +27,7 @@ import {
 import { btnOutline, btnPrimary, btnSmall, inputCls } from '@/components/arap/arapUi';
 import { Label, MoneyInput } from '@/components/arap/SettlementForm';
 import { useActiveClient } from '@/lib/activeClient';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 import { useAuth } from '@/lib/auth';
 import { LEVEL_INPUT, roleLevel } from '@/lib/receivablesPayablesStore';
 import {
@@ -159,7 +160,7 @@ function AccountSelect({ value, onChange, options, className = '', placeholder =
     <select value={value} onChange={e => onChange(e.target.value)} className={`${inputCls} py-2 ${!value ? 'text-muted-foreground' : ''} ${className}`}>
       <option value="">{placeholder}</option>
       {!punyaNilai && <option value={value}>{value}</option>}
-      {options.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+      {options.map(a => <option key={a.code} value={a.code}>{kodeAkun(a.code)} — {a.name}</option>)}
     </select>
   );
 }
@@ -184,7 +185,7 @@ function JournalTable({ lines, balanced }: { lines: JournalLine[]; balanced: boo
         <tbody className="divide-y divide-border">
           {lines.map((l, i) => (
             <tr key={`${l.code}-${i}`}>
-              <td className="px-2 py-2"><span className="font-mono font-semibold text-[#0F7D4E]">{l.code}</span> <span className="text-foreground">{l.name}</span><span className="block text-[10px] text-muted-foreground">{l.memo}</span></td>
+              <td className="px-2 py-2"><span className="font-mono font-semibold text-[#0F7D4E]">{kodeAkun(l.code)}</span> <span className="text-foreground">{l.name}</span><span className="block text-[10px] text-muted-foreground">{l.memo}</span></td>
               <td className="px-2 py-2 text-right tabular-nums">{l.debit ? rupiah(l.debit) : '—'}</td>
               <td className="px-2 py-2 text-right tabular-nums">{l.credit ? rupiah(l.credit) : '—'}</td>
             </tr>
@@ -254,6 +255,7 @@ function PreviewModal({ onClose, data, rows, inclusive, totals, journal, balance
 
 // ── Halaman ────────────────────────────────────────────────────────────────
 function CreateBillInner() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get('id');
