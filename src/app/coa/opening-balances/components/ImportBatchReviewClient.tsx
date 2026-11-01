@@ -140,7 +140,7 @@ export default function ImportBatchReviewClient() {
     const errorInfo = b.error_rows > 0 ? ` ${b.error_rows} row(s) with errors are skipped.` : '';
     const cakupan = (langsung ? ' The batch is applied right away (no review needed for your role).' : '') + (semua ? '' : ` Only the ${terpilih.n} selected of ${b.rows.length} row(s) will be applied; the other ${b.rows.length - terpilih.n} row(s) are excluded.`);
     const pesan = b.module === 'coa'
-      ? `Approve "${b.file_name}"? Opening balance lines of non-control accounts will be REPLACED with the selected rows, and ZAFEB account names will be updated from Source Account Name.${cakupan}${errorInfo}${selisihInfo}`
+      ? `Approve "${b.file_name}"? Opening balance lines will be REPLACED with the selected rows (AR / AP / Inventory / Fixed Asset balances are provisional until their module is approved; modules already imported keep their subledger total), and ZAFEB account names will be updated from Source Account Name.${cakupan}${errorInfo}${selisihInfo}`
       : `Approve "${b.file_name}"? ${PESAN_APPROVE[b.module]?.(terpilih.n) ?? ''}${cakupan}${errorInfo}`;
     if (!window.confirm(pesan)) return;
     const ids = semua ? null : b.rows.filter(r => dipilih.has(r.id)).map(r => r.id);
@@ -573,8 +573,8 @@ function TabelCoa({ rows, p }: { rows: ImportRow[]; p: Pilih }) {
 
 const PESAN_APPROVE: Partial<Record<string, (n: number) => string>> = {
   asset: n => `${n} asset(s) will be created in the Fixed Asset register, and the opening balances of the fixed asset and accumulated depreciation accounts will be recalculated from the register.`,
-  ar: n => `${n} invoice(s) will be added to Accounts Receivable, and the opening balance of the AR control account(s) will be recalculated.`,
-  ap: n => `${n} bill(s) will be added to Accounts Payable, and the opening balance of the AP control account(s) will be recalculated.`,
+  ar: n => `${n} invoice(s) will be added to Accounts Receivable, and the opening balance of the AR control account(s) will be recalculated (replacing any provisional balance from the COA import).`,
+  ap: n => `${n} bill(s) will be added to Accounts Payable, and the opening balance of the AP control account(s) will be recalculated (replacing any provisional balance from the COA import).`,
   inventory: n => `Opening stock for ${n} row(s) will be posted in Inventory (new items and warehouses are created), and the opening balance of the inventory account(s) will be recalculated.`,
 };
 

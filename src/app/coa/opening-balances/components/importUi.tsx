@@ -1,6 +1,8 @@
 import React from 'react';
-import { Ban, Building2, CheckCircle2, Circle, Clock, FileText, Package, ShieldCheck, Users, XCircle } from 'lucide-react';
-import type { ImportBatch, ImportBatchStatus, ImportModule } from '@/lib/openingBalanceImportStore';
+import Link from 'next/link';
+import { AlertTriangle, Ban, Building2, CheckCircle2, Circle, Clock, FileText, Package, ShieldCheck, Users, XCircle } from 'lucide-react';
+import type { ImportBatch, ImportBatchStatus, ImportControlStatus, ImportModule } from '@/lib/openingBalanceImportStore';
+import { formatAmount } from '@/lib/openingBalanceStore';
 
 // Metadata 5 modul import opening balance (dipakai tab Import Data & halaman
 // monitoring/approval). Semua template dibuat server dari data klien.
@@ -101,4 +103,54 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '—' : fmtWaktu.format(d);
+}
+
+// Status saldo akun kontrol per modul subledger (backend _status_kontrol): saldo dari
+// file COA diterima SEMENTARA -> notifikasi "detail required" sampai modulnya di-approve,
+// lalu dibandingkan dengan total subledger (subledger yang berlaku).
+export function controlStatusText(s: ImportControlStatus): string {
+  if (s.status === 'pending') return `Provisional balance ${formatAmount(s.opening_balance)} — detail required`;
+  if (s.status === 'reconciled') return `Subledger ${formatAmount(s.opening_balance)} matches the COA import`;
+  return `Subledger ${formatAmount(s.opening_balance)} vs COA import ${formatAmount(s.coa_amount ?? 0)} — difference ${formatAmount(s.difference ?? 0)}`;
+}
+
+export function ControlStatusLine({ status }: { status: ImportControlStatus }) {
+  const cls = status.status === 'reconciled' ? 'text-emerald-700' : status.status === 'pending' ? 'text-amber-700' : 'text-red-700';
+  const Icon = status.status === 'reconciled' ? CheckCircle2 : AlertTriangle;
+  return (
+    <p className={`mt-0.5 flex items-center gap-1 text-[11px] font-medium ${cls}`}>
+      <Icon size={12} className="shrink-0" /> {controlStatusText(status)}
+    </p>
+  );
+}
+
+/** Banner: modul subledger yang saldonya masih sementara / beda dengan file COA. */
+export function ControlStatusBanner({ items, obId }: { items: ImportControlStatus[]; obId?: string }) {
+  const tampil = items.filter(s => s.status !== 'reconciled');
+  if (tampil.length === 0) return null;
+  const pending = tampil.filter(s => s.status === 'pending');
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+      <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+      <div className="min-w-0 text-xs leading-relaxed text-amber-900">
+        {pending.length > 0 && (
+          <p>
+            <span className="font-semibold">Subledger detail still required:</span> the balances of{' '}
+            {pending.map(s => s.label).join(', ')} are provisional (from the COA import). The opening balance can still be
+            posted — import the detail through their modules later; the subledger total then replaces the provisional amount.
+          </p>
+        )}
+        <ul className="mt-1 space-y-0.5">
+          {tampil.map(s => (
+            <li key={s.module}>
+              {obId
+                ? <Link href={`/coa/opening-balances/${obId}/imports/${s.module}`} className="font-semibold hover:underline">{s.module_label}</Link>
+                : <span className="font-semibold">{s.module_label}</span>}
+              {': '}{controlStatusText(s)}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
 }
