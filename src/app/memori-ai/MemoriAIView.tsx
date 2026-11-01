@@ -1,13 +1,13 @@
 'use client';
 // MemoriAIView — kelola ingatan jangka panjang AI.
 // Tab "Ingatan": fakta yang dipelajari AI dari percakapan (bisa diedit/dihapus/dinonaktifkan).
-// Tab "Percakapan": riwayat percakapan suara & Agent AI yang tercatat.
+// Tab "Percakapan": riwayat percakapan suara & Zafeb AI yang tercatat.
 
 import { useTabSuara } from '@/lib/tabSuara';
 import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 // @ts-ignore — api.js adalah file JS
-import * as api from '@/app/agent-ai/lib/api';
+import * as api from '@/app/zafeb-ai/lib/api';
 
 type Fakta = {
   id: number;
@@ -141,7 +141,7 @@ export default function MemoriAIView() {
       <div>
         <h1 className="text-xl font-semibold text-foreground">Memori AI</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Informasi penting yang kamu sampaikan lewat suara maupun Agent AI disimpan di sini, lalu dipakai AI untuk
+          Informasi penting yang kamu sampaikan lewat suara maupun Zafeb AI disimpan di sini, lalu dipakai AI untuk
           menjawab pertanyaan berikutnya. Kamu juga bisa bilang langsung: “halo ai, ingat bahwa …” atau “lupakan …”.
           Password, PIN, dan nomor rekening/kartu tidak pernah disimpan.
         </p>
@@ -270,7 +270,7 @@ export default function MemoriAIView() {
             <li key={p.id} className="rounded-xl border border-border bg-card">
               <div className="flex items-start">
                 <button type="button" onClick={() => bukaPercakapan(p.id)} className="flex min-w-0 flex-1 items-start gap-3 p-4 text-left">
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{p.sumber === 'suara' ? 'Suara' : 'Agent AI'}</span>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{p.sumber === 'suara' ? 'Suara' : 'Zafeb AI'}</span>
                   <span className="flex-1 truncate text-sm text-foreground">{p.cuplikan || '(kosong)'}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">{waktu(p.updated_at)}</span>
                 </button>

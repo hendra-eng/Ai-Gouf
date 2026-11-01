@@ -32,7 +32,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: 'Overview',
     items: [
       { id: 'nav-overview', label: 'Overview', icon: LayoutDashboard, href: '/' },
-      { id: 'nav-agent-ai', label: 'Agent AI', icon: Bot, href: '/agent-ai', badge: 'AI', badgeVariant: 'ai' },
+      { id: 'nav-zafeb-ai', label: 'Zafeb AI', icon: Bot, href: '/zafeb-ai', badge: 'AI', badgeVariant: 'ai' },
       { id: 'nav-memori-ai', label: 'Memori AI', icon: Brain, href: '/memori-ai' },
     ],
   },
@@ -98,7 +98,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
       { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
       { id: 'nav-payroll', label: 'Payroll', icon: Banknote, href: '/payroll' },
-      { id: 'nav-kantor-ai', label: 'Kantor AI', icon: Cuboid, href: '/kantor-ai', badge: 'AI', badgeVariant: 'ai' },
+      { id: 'nav-agentic-ai', label: 'Agentic AI', icon: Cuboid, href: '/agentic-ai', badge: 'AI', badgeVariant: 'ai' },
     ],
   },
 ];

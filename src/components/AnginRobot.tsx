@@ -22,7 +22,6 @@ export default function AnginRobot({
   useEffect(() => {
     const cv = cvRef.current;
     if (!cv) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const cx = cv.getContext('2d');
     if (!cx) return;
     let raf = 0;

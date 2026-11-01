@@ -6,7 +6,7 @@ import { KPICardSkeleton } from '@/components/ui/LoadingSkeleton';
 import { formatMoney, useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilKpiBento, ambilFinancialBudget } from '@/app/agent-ai/lib/api';
+import { ambilKpiBento, ambilFinancialBudget } from '@/app/zafeb-ai/lib/api';
 import { useProfitLossData, fetchMonthlyPLForYear } from '@/app/financial-statements/lib/useProfitLossData';
 import type { OverviewViewMode } from './OverviewCharts';
 

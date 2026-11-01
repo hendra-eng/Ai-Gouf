@@ -27,7 +27,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { auditLogClient, bankCashActivityLogClient } from '@/app/agent-ai/lib/api';
+import { auditLogClient, bankCashActivityLogClient } from '@/app/zafeb-ai/lib/api';
 import { extractPostingId } from './jurnalBridge';
 import { extractBankCashId } from './bankCashBridge';
 

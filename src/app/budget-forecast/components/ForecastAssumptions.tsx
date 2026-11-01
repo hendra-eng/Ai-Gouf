@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 // bukan cuma set state lokal `saved`. Nilai awal slider diambil dari
 // asumsi tersimpan (kalau client sudah pernah Apply sebelumnya), fallback
 // ke rasio actual client seperti semula kalau belum pernah.
-import { simpanForecastAssumption } from '@/app/agent-ai/lib/api';
+import { simpanForecastAssumption } from '@/app/zafeb-ai/lib/api';
 import { useBudgetData, useForecastAssumption } from '../lib/budgetBridge';
 
 interface Assumption {

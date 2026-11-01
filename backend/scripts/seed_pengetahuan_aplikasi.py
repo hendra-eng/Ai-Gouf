@@ -5,7 +5,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 """
 seed_pengetahuan_aplikasi.py
 ============================
-Mengisi ulang PENGETAHUAN TENTANG APLIKASI milik Neo (asisten suara) dan Agent AI.
+Mengisi ulang PENGETAHUAN TENTANG APLIKASI milik Neo (asisten suara) dan Zafeb AI.
 
 Kenapa perlu: Neo mode suara memakai prompt ringkas. Semua yang dia tahu soal halaman, tab, KPI dan
 tabel aplikasi datang dari fakta GLOBAL di tabel ai_memory_facts (pemilik = "__global__"), lihat
@@ -52,7 +52,7 @@ def f(isi, penting=2):
 # =====================================================================
 f("Aplikasi ini bernama Gouf Consulting Accounting: dashboard akuntansi web (Next.js + FastAPI + database Supabase) untuk konsultan dan tim finance yang mengelola pembukuan banyak client sekaligus. Semua halaman menampilkan data client yang sedang aktif (dipilih di Switch Company) dan periode yang dipilih di Topbar. Asisten suaranya bernama Neo, tampil sebagai robot kecil yang bisa diseret.", 3)
 
-f("Sidebar punya 6 grup. Overview: Overview (/), Agent AI, Memori AI. Financial: Financial Statements (Profit & Loss, Balance Sheet, Cash Flow, Statement of Changes in Equity, Notes to Financial Statements, Statement Mapping), Transactions (Sales, Purchase, Journal Entry, Cash & Bank, Other), Accounts Receivable, Accounts Payable. Assets & Equity: Fixed Assets, Inventory, Liabilities, Equity.", 3)
+f("Sidebar punya 6 grup. Overview: Overview (/), Zafeb AI, Memori AI. Financial: Financial Statements (Profit & Loss, Balance Sheet, Cash Flow, Statement of Changes in Equity, Notes to Financial Statements, Statement Mapping), Transactions (Sales, Purchase, Journal Entry, Cash & Bank, Other), Accounts Receivable, Accounts Payable. Assets & Equity: Fixed Assets, Inventory, Liabilities, Equity.", 3)
 
 f("Lanjutan sidebar. Planning: Budget & Forecast, Tax Compliance, Financial Analytics. Intelligence: AI Financial Analyst, Audit. Management: Reports (termasuk General Ledger), Clients, Chart of Accounts (termasuk Opening Balances), Year-End Closing, Documents, Settings (Company, User Management, Purchase, Product, Account Mapping), Payroll. Halaman login terpisah dan tanpa sidebar.", 3)
 
@@ -72,13 +72,13 @@ f("Overview punya 8 kartu KPI: Total Revenue (kartu besar), Net Profit, Gross Pr
 f("Di bawah KPI, Overview punya grafik Revenue vs Expenses vs Net Profit (bisa di-zoom dengan drag, klik dua kali untuk reset), grafik Actual vs Budget saat mode Budget, dan AR Aging Analysis berbentuk donat interaktif. Lalu tiga kartu pintas: Accounts Receivable (total dan jumlah overdue), Accounts Payable (total dan yang jatuh tempo minggu ini), dan AI Financial Analyst.")
 
 # =====================================================================
-# AGENT AI & MEMORI AI
+# ZAFEB AI & MEMORI AI
 # =====================================================================
-f("Agent AI (/agent-ai): halaman chat dengan AI untuk tanya jawab akuntansi dan upload file (ikon klip, bisa banyak file sekaligus, Excel, PDF, gambar). Ada sidebar daftar obrolan, indikator proses bertahap, panel hasil terpadu, pengaturan pajak (NPWP perusahaan), Deteksi Kesalahan Pembelian, dan Checklist Pembelian. Hasil bisa diunduh sebagai Excel, CSV, JSON, atau PDF. Ini halaman yang berbeda dari AI Financial Analyst.")
+f("Zafeb AI (/zafeb-ai): halaman chat dengan AI untuk tanya jawab akuntansi dan upload file (ikon klip, bisa banyak file sekaligus, Excel, PDF, gambar). Ada sidebar daftar obrolan, indikator proses bertahap, panel hasil terpadu, pengaturan pajak (NPWP perusahaan), Deteksi Kesalahan Pembelian, dan Checklist Pembelian. Hasil bisa diunduh sebagai Excel, CSV, JSON, atau PDF. Ini halaman yang berbeda dari AI Financial Analyst.")
 
-f("Agent AI mengenali 15 jenis dokumen otomatis: Rekening Koran, Data Penjualan, Penilaian Klien/Maker, Buku Bantu Piutang, Faktur Pajak, Bukti Potong Pajak, SPT, Slip Gaji, Bukti Kas Masuk/Keluar, Kartu Stok, Daftar Aset Tetap, PO dan Invoice Pembelian, Rekonsiliasi Bank, Buku Bantu Utang, Absensi. Yang transaksional dijurnal lalu muncul di Transactions; Penilaian Klien, Kartu Stok, SPT, Rekonsiliasi Bank, Absensi tersimpan tanpa halaman viewer khusus.")
+f("Zafeb AI mengenali 15 jenis dokumen otomatis: Rekening Koran, Data Penjualan, Penilaian Klien/Maker, Buku Bantu Piutang, Faktur Pajak, Bukti Potong Pajak, SPT, Slip Gaji, Bukti Kas Masuk/Keluar, Kartu Stok, Daftar Aset Tetap, PO dan Invoice Pembelian, Rekonsiliasi Bank, Buku Bantu Utang, Absensi. Yang transaksional dijurnal lalu muncul di Transactions; Penilaian Klien, Kartu Stok, SPT, Rekonsiliasi Bank, Absensi tersimpan tanpa halaman viewer khusus.")
 
-f("Memori AI (/memori-ai) punya dua tab. Ingatan: fakta yang dipelajari AI dari percakapan; bisa ditambah manual, diedit, dinonaktifkan, atau dihapus, dengan kategori (klien, preferensi, aturan, orang, umum, lainnya), tingkat penting 1 sampai 3, dan klien terkait. Percakapan: riwayat percakapan suara dan Agent AI, bisa dibuka atau dihapus. Pengetahuan tentang aplikasi (fakta global) ditampilkan hanya-baca.")
+f("Memori AI (/memori-ai) punya dua tab. Ingatan: fakta yang dipelajari AI dari percakapan; bisa ditambah manual, diedit, dinonaktifkan, atau dihapus, dengan kategori (klien, preferensi, aturan, orang, umum, lainnya), tingkat penting 1 sampai 3, dan klien terkait. Percakapan: riwayat percakapan suara dan Zafeb AI, bisa dibuka atau dihapus. Pengetahuan tentang aplikasi (fakta global) ditampilkan hanya-baca.")
 
 # =====================================================================
 # FINANCIAL STATEMENTS
@@ -217,7 +217,7 @@ f("Financial Analytics analisis rinci: Profitability (margin vs Internal Target)
 # =====================================================================
 # INTELLIGENCE
 # =====================================================================
-f("AI Financial Analyst (/ai-financial-analyst): analisis terstruktur berbasis AI yang disimpan sebagai percakapan dan laporan, berbeda dari Agent AI. Ada sidebar percakapan (Rename, Duplicate, Archive, Delete), tombol New Financial Analysis (pilih Company, Period, Branch, Currency), panel konteks (Liquidity, Profitability, Cash Flow, Solvency, Working Capital, Last Updated), dan pertanyaan cepat seperti Why did profit change, Which customers have the highest credit risk, Forecast the next quarter.")
+f("AI Financial Analyst (/ai-financial-analyst): analisis terstruktur berbasis AI yang disimpan sebagai percakapan dan laporan, berbeda dari Zafeb AI. Ada sidebar percakapan (Rename, Duplicate, Archive, Delete), tombol New Financial Analysis (pilih Company, Period, Branch, Currency), panel konteks (Liquidity, Profitability, Cash Flow, Solvency, Working Capital, Last Updated), dan pertanyaan cepat seperti Why did profit change, Which customers have the highest credit risk, Forecast the next quarter.")
 
 f("Enam jenis analisis di AI Financial Analyst: Penurunan Laba / net profit decrease (Executive Summary, Monthly P&L Trend, Performance Drivers), Risiko Piutang / AR risk, Risiko Utang / AP risk (Total AP, Overdue AP, 90+ Days, DPO, On-Time Payment Rate, Vendor Concentration), Arus Kas / cash flow, Perbandingan Kuartal (Q1 vs Q2), dan Anomali Biaya / expense anomaly. Hasil punya AI Recommendations dan tombol Analyze Further, View Transactions, View AR Aging, View AP Aging, View Report.")
 
@@ -292,7 +292,7 @@ f("Reports pilihan dan jadwal: pilihan akun All accounts, Accounts with transact
 
 f("Financial Analytics rasio dan growth: Gross Profit Growth, EBITDA Growth, Net Profit Growth, Asset Growth, Cash Conv. Cycle (cash conversion cycle), D/E Ratio (debt to equity), DSO (days) umur piutang, DPO (days) umur utang. Documents: kolom Related Record, Uploaded By, File Size, status dokumen bisa diubah, dan penanda AI flags detected.")
 
-f("Agent AI deteksi kesalahan pembelian (Checklist Pembelian): Deteksi PPh 23 atas jasa, Deteksi harga tidak wajar (riwayat), Deteksi supplier baru, Validasi tanggal, Rekap per Supplier, dan Cross-check ke AP Aging. Ada tombol Hentikan proses, Hapus file, dan Tutup panel.")
+f("Zafeb AI deteksi kesalahan pembelian (Checklist Pembelian): Deteksi PPh 23 atas jasa, Deteksi harga tidak wajar (riwayat), Deteksi supplier baru, Validasi tanggal, Rekap per Supplier, dan Cross-check ke AP Aging. Ada tombol Hentikan proses, Hapus file, dan Tutup panel.")
 
 f("AI Financial Analyst nama menu analisis (Inggris): Profitability Analysis, Receivables Risk, Payables Risk, Cash Flow Analysis, Quarter Comparison, Anomaly Detection. Tombol cepat: Analyze receivables risk, Review payables risk, Explain cash flow, Compare quarters, Find unusual expenses. Indikator: Anomalies Detected, Total Variance, High Risk Items, Payment Risk Exposure, Bad Debt Exposure, Overdue AR, Due Soon.")
 

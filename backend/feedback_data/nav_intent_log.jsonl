@@ -1,0 +1,9 @@
+{"waktu": 1792738393, "ucapan": "inventory dong", "maksud": "buka", "tujuan": "/inventory", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1792767323, "ucapan": "zainal coba kamu cek halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.92, "sumber": "groq"}
+{"waktu": 1792767806, "ucapan": "iya sales", "maksud": "buka", "tujuan": "/reports?tab=sales", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1792769337, "ucapan": "zainal coba kamu cek halaman sales", "maksud": "buka", "tujuan": "/transactions/sales", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1792771755, "ucapan": "stop zeno cek halaman cash and bank", "maksud": "buka", "tujuan": "/transactions/bank-cash", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1792773750, "ucapan": "halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1792773754, "ucapan": "deno coba kamu cek halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.92, "sumber": "groq"}
+{"waktu": 1792773758, "ucapan": "stop zeno coba kamu cek halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.92, "sumber": "groq"}
+{"waktu": 1792941532, "ucapan": "minta zona untuk cek halaman purchase", "maksud": "buka", "tujuan": "/transactions/purchase", "yakin": 0.9, "sumber": "groq"}

@@ -54,7 +54,6 @@ const CSS = `
 .neo-eyeW,.neo-mW{display:none}
 .neo-drag .neo-eyeN,.neo-drag .neo-mN{display:none}
 .neo-drag .neo-eyeW,.neo-drag .neo-mW{display:inline}
-@media (prefers-reduced-motion:reduce){.neo-bob,.neo-eye,.neo-dot,.neo-ring,.neo-wave,.neo-hand{animation:none!important}}
 `;
 
 const klem = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -112,7 +111,7 @@ export default function NeoRobot({
 
   // Animasi tarik: hanya berjalan selama ditarik + sampai pegas kembali diam.
   useEffect(() => {
-    const kurangGerak = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const kurangGerak = false; // animasi selalu menyala (tidak mengikuti pengaturan 'kurangi animasi' perangkat)
     let raf = 0;
     const set = (el: Element | null, k: string, v: string) => { if (el) el.setAttribute(k, v); };
     const tick = () => {

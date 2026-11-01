@@ -94,19 +94,73 @@ TIMEOUT_EDGE_DETIK = float(os.environ.get("TTS_EDGE_TIMEOUT", "8") or 8)
 class TtsRequest(BaseModel):
     teks: str
     bahasa: str = "id"  # [BARU] "id" (default) atau "en": VoiceAssistant mengikuti bahasa yang kamu pakai
+    agen: str = "neo"  # [BARU -- AGENTIC AI] "neo" (default, suara lama TIDAK berubah) | "atlas" | "zeno"
 
 
-def _suara(bahasa: str = "id") -> str:
+# [BARU -- AGENTIC AI] Suara per agen. Neo memakai pengaturan lama (GEMINI_TTS_VOICE, TTS_VOICE, TTS_RATE, ...), jadi
+# VoiceAssistant global tidak berubah sama sekali. Atlas & Zeno punya profil sendiri; semuanya bisa diganti lewat .env:
+#   GEMINI_TTS_VOICE_ATLAS / GEMINI_TTS_GAYA_ATLAS / TTS_VOICE_ATLAS / TTS_VOICE_EN_ATLAS / TTS_RATE_ATLAS / TTS_PITCH_ATLAS
+#   (sama untuk _ZENO). Edge TTS bahasa Indonesia cuma punya 2 suara (Gadis = perempuan, Ardi = laki-laki), jadi di jalur
+# cadangan Edge, Atlas dan Zeno dibedakan lewat laju + nada bicara.
+AGEN_SUARA = ("neo", "atlas", "zeno")
+_PROFIL_SUARA = {
+    "atlas": {
+        "gemini": "Orus",
+        "gaya": "Ucapkan dengan tenang, mantap, dan berwibawa, seperti senior yang berpengalaman dan teliti",
+        "edge": "id-ID-ArdiNeural",
+        "edge_en": "en-US-GuyNeural",
+        "laju": "-6%",
+        "pitch": "-6Hz",
+    },
+    "zeno": {
+        "gemini": "Puck",
+        "gaya": "Ucapkan dengan ceria, bersemangat, dan ringan, seperti rekan kerja yang ramah dan sigap",
+        "edge": "id-ID-ArdiNeural",
+        "edge_en": "en-US-AndrewNeural",
+        "laju": "+8%",
+        "pitch": "+8Hz",
+    },
+}
+
+
+def _agen_bersih(agen) -> str:
+    a = (agen or "neo").strip().lower()
+    return a if a in AGEN_SUARA else "neo"
+
+
+def _profil_agen(agen: str, kunci: str, env_dasar: str) -> str:
+    """Nilai profil suara untuk agen non-Neo: env <NAMA>_<AGEN> kalau ada, kalau tidak bawaan di _PROFIL_SUARA."""
+    env = (os.environ.get(f"{env_dasar}_{agen.upper()}") or "").strip()
+    return env or _PROFIL_SUARA[agen][kunci]
+
+
+def _suara(bahasa: str = "id", agen: str = "neo") -> str:
+    if agen != "neo":
+        if bahasa == "en":
+            return _profil_agen(agen, "edge_en", "TTS_VOICE_EN")
+        return _profil_agen(agen, "edge", "TTS_VOICE")
     if bahasa == "en":  # [BARU] suara bahasa Inggris (ubah lewat TTS_VOICE_EN, mis. en-US-GuyNeural)
         return (os.environ.get("TTS_VOICE_EN") or "en-US-AriaNeural").strip()
     return (os.environ.get("TTS_VOICE") or os.environ.get("AZURE_TTS_VOICE") or "id-ID-GadisNeural").strip()
 
 
-def _laju() -> str:
+def _laju(agen: str = "neo") -> str:
+    if agen != "neo":
+        return _profil_agen(agen, "laju", "TTS_RATE")
     return (os.environ.get("TTS_RATE") or os.environ.get("AZURE_TTS_RATE") or "+0%").strip()
 
 
-async def _sintesis_edge(teks: str, bahasa: str = "id") -> bytes:
+def _nada(agen: str = "neo") -> str:
+    if agen != "neo":
+        return _profil_agen(agen, "pitch", "TTS_PITCH")
+    return (os.environ.get("TTS_PITCH") or "+0Hz").strip()
+
+
+_cache_audio: dict = {}  # [BARU] kalimat pendek -> bytes mp3 (maks 200 entri)
+_kunci_cache_audio = threading.Lock()
+
+
+async def _sintesis_edge(teks: str, bahasa: str = "id", agen: str = "neo") -> bytes:
     try:
         import edge_tts
     except ImportError:
@@ -115,7 +169,7 @@ async def _sintesis_edge(teks: str, bahasa: str = "id") -> bytes:
 
     async def _kumpulkan() -> bytes:
         komunikasi = edge_tts.Communicate(
-            teks, _suara(bahasa), rate=_laju(), pitch=(os.environ.get("TTS_PITCH") or "+0Hz").strip()
+            teks, _suara(bahasa, agen), rate=_laju(agen), pitch=_nada(agen)
         )
         potongan = []
         async for chunk in komunikasi.stream():
@@ -567,9 +621,13 @@ def _ekstrak_audio_sse(baris: bytes):
         return None
 
 
-def _badan_stream(teks: str, model: str) -> dict:
-    gaya = (os.environ.get("GEMINI_TTS_GAYA") or "Ucapkan dengan santai, hangat, dan natural seperti ngobrol dengan teman").strip()
-    suara = (os.environ.get("GEMINI_TTS_VOICE") or "Sulafat").strip()
+def _badan_stream(teks: str, model: str, agen: str = "neo") -> dict:
+    if agen != "neo":  # [BARU -- AGENTIC AI] suara + gaya bicara per agen
+        gaya = _profil_agen(agen, "gaya", "GEMINI_TTS_GAYA")
+        suara = _profil_agen(agen, "gemini", "GEMINI_TTS_VOICE")
+    else:
+        gaya = (os.environ.get("GEMINI_TTS_GAYA") or "Ucapkan dengan santai, hangat, dan natural seperti ngobrol dengan teman").strip()
+        suara = (os.environ.get("GEMINI_TTS_VOICE") or "Sulafat").strip()
     anotasi = [{"type": "speech_metadata", "style": gaya}] if gaya else []
     teks_item = {"type": "text", "text": teks}
     if anotasi:
@@ -669,12 +727,12 @@ def _coba_kunci_stream(kunci: str, model: str, badan: dict, batas: float, semua:
     return "ok", (pertama, gen, tutup, nomor)
 
 
-def _coba_model_stream(model: str, teks: str, batas: float, semua: list, jeda: int, izinkan_paksa: bool):
+def _coba_model_stream(model: str, teks: str, batas: float, semua: list, jeda: int, izinkan_paksa: bool, agen: str = "neo"):
     """[BARU] Coba SEMUA kunci di SATU model (kunci istirahat dilewati). Mengembalikan (status, hasil):
     "ok" (hasil = (pertama, iterator, tutup)) | "limit" (semua kunci yang dicoba kena limit) | "tak_ada_kunci" (semua kunci
     sedang istirahat, tidak ada yang dicoba) | "404" (model ditolak server) | "lain" (gagal sebab lain).
     Raise HTTPException 504 kalau batas waktu total habis."""
-    badan = _badan_stream(teks, model)
+    badan = _badan_stream(teks, model, agen)
 
     def kirim(kunci):
         return _coba_kunci_stream(kunci, model, badan, batas, semua, jeda)
@@ -725,7 +783,7 @@ def _coba_model_stream(model: str, teks: str, batas: float, semua: list, jeda: i
     return ("limit" if ada_limit else "lain"), None
 
 
-def _buka_stream_gemini(teks: str, batas: float):
+def _buka_stream_gemini(teks: str, batas: float, agen: str = "neo"):
     """[DIUBAH] Buka stream Gemini dengan ALUR MODEL BERURUTAN dan tunggu potongan audio PERTAMA.
     Model 1: semua kunci (#1 -> terakhir). Semua kunci kena limit/istirahat -> Model 2: semua kunci. Dst.
     Mengembalikan (potongan_pertama, iterator_sisa, tutup).
@@ -741,7 +799,7 @@ def _buka_stream_gemini(teks: str, batas: float):
     # Putaran 1: hanya kunci SEGAR. Putaran 2 (hanya mode strict): kunci istirahat ikut dipaksa jalan, karena strict tidak punya Edge.
     for izinkan_paksa in ([False, True] if _gemini_strict() else [False]):
         for indeks, model in enumerate(daftar):
-            status, hasil = _coba_model_stream(model, teks, batas, semua, jeda, izinkan_paksa)
+            status, hasil = _coba_model_stream(model, teks, batas, semua, jeda, izinkan_paksa, agen)
             if status == "ok":
                 with _kunci_lock:
                     berganti = _model_terakhir_dipakai["nama"] != model
@@ -785,6 +843,7 @@ def buat_router_tts(auth) -> APIRouter:
         Dipanggil frontend kalau /api/tts/stream menjawab 502/503/504 (Gemini habis di semua model)."""
         teks = (body.teks or "").strip()
         bahasa = "en" if (body.bahasa or "").strip().lower().startswith("en") else "id"
+        agen = _agen_bersih(body.agen)
         if not teks:
             raise HTTPException(status_code=400, detail="Teks kosong.")
         if len(teks) > MAKS_KARAKTER:
@@ -793,12 +852,24 @@ def buat_router_tts(auth) -> APIRouter:
                 detail=f"Teks terlalu panjang untuk satu permintaan suara ({len(teks)} > {MAKS_KARAKTER} karakter). Pecah per kalimat.",
             )
         provider = os.environ.get("TTS_PROVIDER", "auto").strip().lower()
-        if provider == "azure":
-            audio = await run_in_threadpool(_sintesis_azure, teks, bahasa)
-            return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
         if provider == "gemini":  # strict: jangan pindah suara ke Edge
             raise HTTPException(status_code=502, detail="Mode strict (TTS_PROVIDER=gemini): suara hanya dari Gemini lewat /api/tts/stream, tanpa Edge.")
-        audio = await _sintesis_edge(teks, bahasa)
+        # [BARU] Cache audio kalimat yang sama (sapaan, frasa pendek): diputar instan tanpa sintesis ulang.
+        kunci_cache = (provider, bahasa, agen, _suara(bahasa, agen) if provider != "azure" else "", _laju(agen) if provider != "azure" else "", teks)
+        if len(teks) <= 160:
+            with _kunci_cache_audio:
+                audio_siap = _cache_audio.get(kunci_cache)
+            if audio_siap:
+                return Response(content=audio_siap, media_type="audio/mpeg", headers={"Cache-Control": "no-store", "X-Cache": "hit"})
+        if provider == "azure":
+            audio = await run_in_threadpool(_sintesis_azure, teks, bahasa)
+        else:
+            audio = await _sintesis_edge(teks, bahasa, agen)
+        if len(teks) <= 160 and audio:
+            with _kunci_cache_audio:
+                if len(_cache_audio) >= 200:
+                    _cache_audio.pop(next(iter(_cache_audio)))
+                _cache_audio[kunci_cache] = audio
         return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
     @router.post("/api/tts/stream")
@@ -810,6 +881,9 @@ def buat_router_tts(auth) -> APIRouter:
             raise HTTPException(status_code=400, detail="Teks kosong.")
         if len(teks) > MAKS_KARAKTER:
             raise HTTPException(status_code=413, detail=f"Teks terlalu panjang ({len(teks)} > {MAKS_KARAKTER} karakter). Pecah per kalimat.")
+        # [BARU] TTS_PROVIDER=edge/azure -> jangan coba Gemini sama sekali: 503 langsung, frontend meminta /api/tts (Edge/Azure).
+        if os.environ.get("TTS_PROVIDER", "auto").strip().lower() in ("edge", "azure"):
+            raise HTTPException(status_code=503, detail="TTS_PROVIDER mematikan Gemini; pakai /api/tts.")
         siap_stream = _gemini_siap()
         _catat_peralihan(siap_stream)
         if not siap_stream:
@@ -818,7 +892,7 @@ def buat_router_tts(auth) -> APIRouter:
         total = float(os.environ.get("GEMINI_TTS_BATAS", "6") or 6)
         batas = time.monotonic() + max(2.0, total)
         try:
-            pertama, sisa, tutup = await run_in_threadpool(_buka_stream_gemini, teks, batas)
+            pertama, sisa, tutup = await run_in_threadpool(_buka_stream_gemini, teks, batas, _agen_bersih(body.agen))
         except HTTPException as e:
             if e.status_code == 504 and not _gemini_strict():
                 jeda_lambat = int(os.environ.get("GEMINI_TTS_JEDA_LAMBAT", "60") or 60)

@@ -4,7 +4,7 @@
 // ke tabel insight client aktif:
 //   ..._profit and loss_finance_insights (schema 3_Financial)
 //   -> GET /api/client/{id}/pl-insights (ambilPlInsights di
-//      agent-ai/lib/api.js) -> dbc.daftar_pl_insights().
+//      zafeb-ai/lib/api.js) -> dbc.daftar_pl_insights().
 // Hanya baris dengan modul = "profit_loss" yang diambil (default backend).
 // Bentuk hasil = props `insights` milik AIInsightsPanel. Kalau client belum
 // punya insight (atau request gagal), hasilnya array kosong.
@@ -17,7 +17,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilPlInsights } from '@/app/agent-ai/lib/api';
+import { ambilPlInsights } from '@/app/zafeb-ai/lib/api';
 
 export interface PLInsight {
   id: string;

@@ -85,11 +85,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import akuntansi_ai as ak
-from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/stream (dipakai Agent AI + VoiceAssistant)
+from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/stream (dipakai Zafeb AI + VoiceAssistant)
 from tts_route import buat_router_tts  # [BARU] route POST /api/tts (suara neural Gemini TTS -> Edge TTS untuk VoiceAssistant)
 from client_intent_route import buat_router_client_intent  # [BARU] route POST /api/voice/client-intent (fallback LLM ganti client lewat suara)
 from stop_intent_route import buat_router_stop_intent  # [BARU] route POST /api/voice/stop-intent (AI memahami maksud 'berhenti menjelaskan')
+from nav_intent_route import buat_router_nav_intent  # [BARU] route POST /api/voice/nav-intent (AI memahami maksud 'pindah halaman/tab')
 from wajah_profil_route import buat_router_wajah_profil  # [BARU] profil wajah (nama + embedding terenkripsi) di database: /api/wajah/...
+from kantor_tugas_route import buat_router_kantor_tugas  # [BARU] tugas agen Agentic AI 3D di database: /api/kantor-tugas
+from hermes_agent_route import buat_router_hermes  # [BARU] pintu penuh agen Hermes: /api/hermes/*
+from whatsapp_masuk_route import buat_router_wa_masuk  # [BARU] file masuk WhatsApp: /api/whatsapp/masuk, /api/whatsapp/file-masuk
 from wajah_route import buat_router_wajah  # [BARU] route POST /api/voice/analisa-wajah (analisis deskriptif foto kamera saat Neo menyapa)
 from memori_ai import buat_router_memori  # [BARU] memori jangka panjang AI + API halaman Memori AI (/api/ai-memory/...)
 import db_client as dbc
@@ -235,7 +239,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
-        # [BARU] Frontend "Agent AI" sekarang di-port ke dalam Dashboard
+        # [BARU] Frontend "Zafeb AI" sekarang di-port ke dalam Dashboard
         # Next.js (default dev server port 3000), bukan lagi project Vite
         # yang lama (5173/5174) -- tanpa origin ini browser akan menolak
         # semua request dari Dashboard ke backend ini (CORS error di
@@ -369,8 +373,12 @@ app.include_router(buat_router_chat(auth))  # [BARU] /api/chat/stream (SSE chat 
 app.include_router(buat_router_tts(auth))  # [BARU] /api/tts (Gemini TTS -> Edge TTS)
 app.include_router(buat_router_client_intent(auth))  # [BARU] /api/voice/client-intent (fallback LLM ganti client)
 app.include_router(buat_router_stop_intent(auth))  # [BARU] /api/voice/stop-intent
+app.include_router(buat_router_nav_intent(auth))  # [BARU] /api/voice/nav-intent
 app.include_router(buat_router_wajah(auth))  # [BARU] /api/voice/analisa-wajah
 app.include_router(buat_router_wajah_profil(auth))  # [BARU] /api/wajah/status|profil|cocokkan
+app.include_router(buat_router_kantor_tugas(auth))  # [BARU] /api/kantor-tugas (GET daftar, PUT mulai, DELETE selesai)
+app.include_router(buat_router_hermes(auth))  # [BARU] /api/hermes/alat, /api/hermes/alat/{nama}, /api/hermes/chat
+app.include_router(buat_router_wa_masuk(auth))  # [BARU] /api/whatsapp/masuk (konektor) + /api/whatsapp/file-masuk
 app.include_router(buat_router_memori(auth))  # [BARU] /api/ai-memory/facts|conversations (kelola ingatan AI)
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri
 app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri

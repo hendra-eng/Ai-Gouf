@@ -7,7 +7,7 @@
 // karena belum ada jembatan yang membaca 4 tabel Supabase modul Audit --
 // padahal backend (db_client.py::ambil_data_audit/tambah_audit_finding/
 // ubah_audit_finding/tambah_audit_evidence/ubah_audit_stage) dan client API
-// (src/app/agent-ai/lib/api.js::auditDataClient/dst) SUDAH lengkap. File
+// (src/app/zafeb-ai/lib/api.js::auditDataClient/dst) SUDAH lengkap. File
 // ini melengkapi bagian yang hilang itu, mengikuti pola bridge lain
 // (purchasebridge.ts, assetRegisterBridge.ts): satu hook `useAuditData()`
 // yang fetch + memetakan raw response ke tipe yang dipakai page.tsx, plus
@@ -22,7 +22,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { auditDataClient } from '@/app/agent-ai/lib/api';
+import { auditDataClient } from '@/app/zafeb-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
 
 // ─── Bentuk mentah dari backend (lihat db_client.py::ambil_data_audit) ─────

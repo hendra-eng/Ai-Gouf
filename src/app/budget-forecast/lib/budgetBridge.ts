@@ -28,7 +28,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilForecastAssumption, daftarScenario, tambahScenario, hapusScenario } from '@/app/agent-ai/lib/api';
+import { ambilForecastAssumption, daftarScenario, tambahScenario, hapusScenario } from '@/app/zafeb-ai/lib/api';
 import { useProfitLossData, type MonthlyPLRow, type BreakdownItem, type PLCoreValues } from '@/app/financial-statements/lib/useProfitLossData';
 
 export const BUDGET_ASSUMPTIONS = {

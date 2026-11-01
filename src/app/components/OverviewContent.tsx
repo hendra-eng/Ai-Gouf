@@ -20,7 +20,7 @@ import ImportRekeningKoranModal from '@/app/transactions/components/ImportRekeni
 import type { Transaction } from '@/app/transactions/components/transactionData';
 // [BARU] KPI grid sekarang REAL: KPIBentoGrid.tsx sudah lengkap ambil data
 // dari backend (GET /api/client/{id}/kpi-bento, lihat ambilKpiBento() di
-// agent-ai/lib/api.js) untuk client yang lagi aktif (useActiveClient) --
+// zafeb-ai/lib/api.js) untuk client yang lagi aktif (useActiveClient) --
 // sebelumnya komponen ini sudah ada & sudah benar, tapi TIDAK PERNAH dipakai
 // di halaman manapun; OverviewContent (halaman "/" yang sebenarnya) masih
 // pakai 8 kartu KPI hardcoded sendiri (`kpiCards` di bawah, sekarang
@@ -34,7 +34,7 @@ import KPIBentoGrid from './KPIBentoGrid';
 // sama seperti pola KPIBentoGrid (ambilKpiBento) di atas: fallback ke
 // hanya "All Branches" kalau belum ada client aktif / client belum
 // punya data cabang, supaya dropdown tidak pernah kosong.
-import { daftarBranches } from '@/app/agent-ai/lib/api';
+import { daftarBranches } from '@/app/zafeb-ai/lib/api';
 
 const formatDateForFilename = () => new Date().toISOString().slice(0, 10);
 
@@ -98,7 +98,7 @@ export default function OverviewContent() {
   // teks hardcoded ("Rp 1.24M", "Rp 320M overdue", dst) -- sekarang dihitung
   // dari transaksi client aktif (TransactionsContext, SAMA PERSIS dgn sumber
   // AR Aging Donut di OverviewCharts.tsx & halaman AR/AP), jadi ikut
-  // ter-update otomatis begitu Agent AI selesai upload (TransactionsContext
+  // ter-update otomatis begitu Zafeb AI selesai upload (TransactionsContext
   // sudah dengarkan listenClientDataChanged).
   const { transactions, isSampleData: txIsSample, addTransactions, refetch: refetchTransactions, loading: transactionsLoading } = useTransactions();
   // [BARU] State modal import di Financial Overview. Toast konfirmasi sudah

@@ -367,7 +367,7 @@ const formatIDR = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
 // [DIUBAH] URL backend LANGSUNG (bukan lewat proxy /api/... di next.config.mjs
 // rewrites) sekarang dari resolveBackendUrlLangsung() (src/lib/backendUrl.ts)
-// -- satu sumber kebenaran dipakai bersama agent-ai/lib/api.js (importBankFeed),
+// -- satu sumber kebenaran dipakai bersama zafeb-ai/lib/api.js (importBankFeed),
 // bukan konstanta lokal duplikat lagi (itu penyebab bug "Failed to fetch" di
 // tab Bank Feed: kedua salinan gampang tidak sinkron begitu backend pindah
 // host/port, dan fallback hardcode "localhost:8000" salah kalau browser
@@ -480,7 +480,7 @@ export default function ImportRekeningKoranModal({ onClose, onImported, mode = '
       let res: Response;
       try {
         // [BARU] credentials: 'include' ditambahkan untuk konsistensi dengan
-        // importBankFeed() (agent-ai/lib/api.js) -- endpoint INI sendiri
+        // importBankFeed() (zafeb-ai/lib/api.js) -- endpoint INI sendiri
         // (/api/proses-file) belum diproteksi jwt_v1_middleware (tidak
         // diawali /api/v1/), jadi belum wajib, tapi aman dipasang sekarang
         // supaya tidak kebobolan lagi kalau endpoint ini nanti dipindah ke

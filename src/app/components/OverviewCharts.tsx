@@ -32,7 +32,7 @@ import { invoicesFromTransactions, arAgingFromInvoices } from '@/app/transaction
 // (schema 2_Overview) lewat ambilFinancialBudget(), SAMA PERSIS dengan
 // pola yang sudah dipakai KPIBentoGrid.tsx, supaya angka Budget di kedua
 // tempat ini selalu konsisten.
-import { ambilFinancialBudget } from '@/app/agent-ai/lib/api';
+import { ambilFinancialBudget } from '@/app/zafeb-ai/lib/api';
 
 export type OverviewViewMode = 'Actual' | 'Budget' | 'Previous Year';
 

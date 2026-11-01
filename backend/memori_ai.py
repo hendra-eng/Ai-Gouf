@@ -1,7 +1,7 @@
 """
 memori_ai.py
 ============
-Memori jangka panjang untuk AI (asisten suara + halaman Agent AI).
+Memori jangka panjang untuk AI (asisten suara + halaman Zafeb AI).
 
 Cara kerja (singkat):
   1. SIMPAN  : tiap percakapan (pesan user + jawaban AI) dicatat di tabel
@@ -29,6 +29,7 @@ import logging
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _WaktuHabis
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -198,6 +199,12 @@ def deteksi_perintah_lupakan(teks: str) -> Optional[str]:
 # ============================================================
 _cache: Dict[str, Any] = {}
 _kunci_cache = threading.Lock()
+# [BARU] Cache pasangan percakapan untuk recall (dulu query DB join SETIAP ucapan = 0,7-2,6 dtk sebelum AI mulai berpikir).
+_cache_pasangan: Dict[str, Any] = {}
+TTL_CACHE_PASANGAN_DETIK = int(os.environ.get("AI_RECALL_CACHE_DETIK", "120") or 120)
+# [BARU] Batas waktu memori: lewat ini, AI jalan TANPA recall percakapan lama (query tetap selesai di latar & mengisi cache).
+BATAS_MEMORI_DETIK = float(os.environ.get("AI_MEMORI_BATAS_DETIK", "1.0") or 1.0)
+_pool_memori = ThreadPoolExecutor(max_workers=4, thread_name_prefix="memori")
 
 
 def _invalidate(pemilik: str) -> None:
@@ -658,6 +665,11 @@ def blok_rekaman_percakapan(terpilih: List[tuple], merujuk_lalu: bool, sekarang:
 
 def ambil_pasangan_percakapan(pemilik: str) -> List[tuple]:
     """Ambil giliran tanya-jawab terbaru milik pengguna dari DB. Return [(waktu, user, ai)] urut lama -> baru."""
+    sekarang = time.time()
+    with _kunci_cache:
+        hit = _cache_pasangan.get(pemilik)
+        if hit and sekarang - hit[0] < TTL_CACHE_PASANGAN_DETIK:
+            return hit[1]
     ensure_tabel()
     hari = int(os.environ.get("AI_RECALL_HARI", "0") or 0)  # 0 = tanpa batas umur
     with dbc.SessionLocal() as s:
@@ -677,6 +689,8 @@ def ambil_pasangan_percakapan(pemilik: str) -> List[tuple]:
         elif role == "assistant" and cur is not None and cur[0] == percakapan_id:
             pasangan.append((cur[2], cur[1], isi))
             cur = None
+    with _kunci_cache:
+        _cache_pasangan[pemilik] = (sekarang, pasangan)
     return pasangan
 
 
@@ -741,7 +755,16 @@ def siapkan_konteks(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, 
                        "Katakan singkat bahwa kamu tidak menemukan catatan itu.")
         fakta = pilih_relevan(ambil_fakta_aktif(pemilik), ucapan)
         fakta_global = pilih_global(ambil_fakta_aktif(PEMILIK_GLOBAL), ucapan) if pemilik != PEMILIK_GLOBAL else []
-        rekaman = "" if (isi_ingat or isi_lupa) else ingat_percakapan(pemilik, ucapan, riwayat)  # [BARU] recall percakapan lama
+        # [DIUBAH] recall percakapan lama diberi batas waktu: kalau DB lambat, AI jalan tanpa recall (query tetap selesai di latar & mengisi cache)
+        rekaman = ""
+        if not (isi_ingat or isi_lupa):
+            fut = _pool_memori.submit(ingat_percakapan, pemilik, ucapan, riwayat)
+            try:
+                rekaman = fut.result(timeout=BATAS_MEMORI_DETIK)
+            except _WaktuHabis:
+                logger.info("Recall percakapan > %.1f dtk, dilewati untuk jawaban ini", BATAS_MEMORI_DETIK)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Recall percakapan gagal: %s", e)
         hasil["tambahan_prompt"] = blok_pengetahuan_aplikasi(fakta_global) + blok_ingatan(fakta) + rekaman + catatan
         hasil["fakta_ids"] = [f["id"] for f in fakta] + [f["id"] for f in fakta_global]
     except Exception as e:  # noqa: BLE001
@@ -755,6 +778,8 @@ def setelah_jawaban(pemilik: str, sumber: str, kunci: Optional[str], ucapan: str
         return
     try:
         konv_id = catat_percakapan(pemilik, sumber, kunci, ucapan, jawaban)
+        with _kunci_cache:
+            _cache_pasangan.pop(pemilik, None)  # [BARU] giliran baru tercatat -> recall berikutnya memuat ulang
         tandai_dipakai(fakta_ids)
         if deteksi_perintah_lupakan(ucapan) is None:
             pelajari(pemilik, ucapan, jawaban, konv_id)

@@ -126,13 +126,40 @@ def _alat_untuk_claude(neo) -> List[Dict[str, Any]]:
     return hasil
 
 
+def _system_berlapis(system_prompt: str, prefix_stabil: str):
+    """[BARU] Prompt caching: bagian awal prompt yang SAMA tiap permintaan (prompt dasar + persona) dijadikan blok terpisah
+    bertanda cache_control, sisanya (ingatan, layar, daftar client, dst) blok biasa. Tidak ada prefix stabil -> string biasa."""
+    if prefix_stabil and system_prompt.startswith(prefix_stabil) and len(system_prompt) > len(prefix_stabil):
+        return [
+            {"type": "text", "text": prefix_stabil, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": system_prompt[len(prefix_stabil):]},
+        ]
+    return system_prompt
+
+
+def _tandai_cache_pesan_terakhir(messages) -> None:
+    """[BARU] Breakpoint cache di akhir pesan terakhir -> putaran ke-2 (setelah alat) memakai ulang prefix putaran 1."""
+    if not messages:
+        return
+    terakhir = messages[-1]
+    isi = terakhir.get("content")
+    if isinstance(isi, str):
+        terakhir["content"] = [{"type": "text", "text": isi, "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(isi, list) and isi and isinstance(isi[-1], dict) and isi[-1].get("type") in ("text", "tool_result"):
+        isi[-1] = {**isi[-1], "cache_control": {"type": "ephemeral"}}
+
+
 def _stream_claude(
     neo, pesan: str, system_prompt: str, riwayat, user, client_id_aktif, max_tokens: int, pakai_alat: bool,
-    gambar_b64: Optional[str] = None,
+    gambar_b64: Optional[str] = None, prefix_stabil: str = "",
+    data_prefetch: str = "", tanpa_alat=frozenset(),
 ) -> Generator[str, None, None]:
     klien = _klien()
+    system_prompt = system_prompt + (data_prefetch or "")  # [BARU] data yang sudah diambil server (neo_prefetch), hanya untuk Claude
     messages = _susun_pesan(riwayat, pesan, gambar_b64)
     alat = _alat_untuk_claude(neo) if pakai_alat else None
+    if alat and tanpa_alat:
+        alat = [t for t in alat if t["name"] not in tanpa_alat] or None  # [BARU] alat yang datanya sudah disisipkan tidak ditawarkan lagi
     ctx = neo.Konteks(user, client_id_aktif) if pakai_alat else None
     maks_putaran = getattr(neo, "MAKS_PUTARAN_ALAT", 3) if pakai_alat else 0
 
@@ -142,11 +169,13 @@ def _stream_claude(
             max_tokens=max_tokens,
             # [DIUBAH] `temperature=0.4` dihapus: di instalasi ini SDK menolaknya ("Messages.stream() got an unexpected
             # keyword argument 'temperature'"), sehingga SETIAP permintaan gagal di Claude lalu jatuh ke Groq (lambat).
-            system=system_prompt,
+            system=_system_berlapis(system_prompt, prefix_stabil),
             messages=messages,
         )
         if alat and putaran < maks_putaran:
             kw["tools"] = alat
+        if putaran > 0 and messages and isinstance(messages[-1].get("content"), list):
+            _tandai_cache_pesan_terakhir(messages)  # hanya setelah ada hasil alat (putaran ke-2 dst)
         t_putaran = time.perf_counter()
         t_pertama = None
         with klien.messages.stream(**kw) as stream:
@@ -164,7 +193,9 @@ def _stream_claude(
                 f"token-pertama={'-' if t_pertama is None else f'{t_pertama:.2f}s'} "
                 f"selesai={time.perf_counter() - t_putaran:.2f}s alat={nama_alat or '-'} "
                 f"token-masuk={getattr(getattr(akhir, 'usage', None), 'input_tokens', '-')} "
-                f"token-keluar={getattr(getattr(akhir, 'usage', None), 'output_tokens', '-')}",
+                f"token-keluar={getattr(getattr(akhir, 'usage', None), 'output_tokens', '-')} "
+                f"cache-baca={getattr(getattr(akhir, 'usage', None), 'cache_read_input_tokens', '-')} "
+                f"cache-tulis={getattr(getattr(akhir, 'usage', None), 'cache_creation_input_tokens', '-')}",
                 flush=True,
             )
         if akhir.stop_reason != "tool_use":
@@ -194,6 +225,9 @@ def jawab_dengan_cadangan(
     max_tokens: int = 700,
     pakai_alat: bool = False,
     gambar_b64: Optional[str] = None,
+    prefix_stabil: str = "",
+    data_prefetch: str = "",
+    tanpa_alat=frozenset(),
 ) -> Generator[str, None, None]:
     """Generator delta teks: Claude dulu; kalau gagal sebelum ada token -> `cadangan()` (Groq).
     [BARU] gambar_b64 = foto kamera; HANYA dikirim ke Claude, tidak pernah ke Groq/DeepSeek (cadangan hanya menerima teks)."""
@@ -204,7 +238,7 @@ def jawab_dengan_cadangan(
 
     keluar = False
     try:
-        for delta in _stream_claude(neo, pesan, system_prompt, riwayat, user, client_id_aktif, max_tokens, pakai_alat, gambar_b64):
+        for delta in _stream_claude(neo, pesan, system_prompt, riwayat, user, client_id_aktif, max_tokens, pakai_alat, gambar_b64, prefix_stabil, data_prefetch, tanpa_alat):
             keluar = True
             yield delta
         return

@@ -1154,7 +1154,8 @@ const translations: Dict = {
 
   // ─── Sidebar: nav item labels ───
   'Overview': { en: 'Overview', id: 'Ringkasan', zh: '概览' },
-  'Agent AI': { en: 'Agent AI', id: 'Agent AI', zh: 'AI 代理' },
+  'Zafeb AI': { en: 'Zafeb AI', id: 'Zafeb AI', zh: 'Zafeb AI' },
+  'Agentic AI': { en: 'Agentic AI', id: 'Agentic AI', zh: '代理式 AI' },
   'Transactions': { en: 'Transactions', id: 'Transaksi', zh: '交易' },
   'Sales': { en: 'Sales', id: 'Penjualan', zh: '销售' },
   'Purchase': { en: 'Purchase', id: 'Pembelian', zh: '采购' },

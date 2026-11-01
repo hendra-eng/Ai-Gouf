@@ -9,7 +9,7 @@
 //
 // Usia / tanggal lahir sengaja tidak disimpan. PENTING: hanya untuk MENYAPA, jangan dipakai sebagai login / otorisasi.
 
-import * as api from '@/app/agent-ai/lib/api';
+import * as api from '@/app/zafeb-ai/lib/api';
 
 const LOKASI_MODEL = '/models/face';
 const MIN_SAMPEL = 3;

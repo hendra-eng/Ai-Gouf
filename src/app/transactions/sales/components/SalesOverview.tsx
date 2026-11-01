@@ -72,7 +72,7 @@ const TABLE_PAGE_SIZE = 10;
 // Tab "Overview" halaman Transactions > Sales. Seluruh angkanya dihitung dari
 // invoice di financial_transaction_sales_invoices (useSalesInvoices, sumber
 // yang SAMA dengan tab Sales Transaction / Journal Preview / Posted) --
-// bukan lagi dari TransactionsContext (pipeline jurnal-posting lama Agent AI).
+// bukan lagi dari TransactionsContext (pipeline jurnal-posting lama Zafeb AI).
 // Jadi invoice hasil "Create Invoice" dari Source Data maupun input manual di
 // Sales Transaction langsung tampil di sini.
 //

@@ -8,7 +8,7 @@ import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
 import { useAuditTrail } from './lib/useAuditTrail';
 import { useAuditData, type AuditFinding, type FindingRisk, type FindingStatus, type AuditEvidenceItem } from './lib/auditBridge';
-import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/agent-ai/lib/api';
+import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/zafeb-ai/lib/api';
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 // [FIX] Sebelumnya auditStages/findings/auditActivities di sini SENGAJA

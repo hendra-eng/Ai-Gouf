@@ -43,7 +43,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/zafeb-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
 import { COMPANY } from '@/lib/financialData';
 
@@ -499,7 +499,7 @@ export function useAnalyticsData(): AnalyticsData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, activeClientId]);
 
-  // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
+  // [BARU] Auto-refresh begitu Zafeb AI selesai upload & auto-posting utk
   // client yang sedang aktif -- supaya Financial Analytics ikut ter-update
   // tanpa perlu ganti client / reload manual (sama seperti Transaksi).
   useEffect(() => {

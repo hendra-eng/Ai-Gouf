@@ -10,7 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { bacaNavigasi, bacaNavigasiMirip, bacaKlarifikasiTab, pilihKandidatTab, type KandidatTab } from '@/lib/navigasiSuara';
+import { bacaNavigasi, bacaNavigasiMirip, bacaKlarifikasiTab, pilihKandidatTab, kandidatUntukAI, type KandidatTab } from '@/lib/navigasiSuara';
 import { ejaKode, susunPilihanClient, PESAN_TIDAK_DIKENAL } from '@/lib/salahDengarSuara';
 import { bacaTafsirUcapan } from '@/lib/tafsirUcapan'; // [BARU] koreksi salah dengar untuk pertanyaan/penjelasan soal halaman, tab, client
 import { bacaGantiClient, hasilDariKode, perluTanyaLLM, type HasilGantiClient } from '@/lib/gantiClientSuara';
@@ -19,6 +19,8 @@ import { useAuth } from '@/lib/auth';
 import { ambilSnapshotLayar, mulaiLacakKursor, perluLayar } from '@/lib/snapshotLayar';
 import { ambilFotoKamera, mintaIzinKamera, perluKamera } from '@/lib/kameraLihat'; // [BARU] mata Neo: 1 foto kamera saat diminta
 import { daftarkanWajah, hapusProfil, kenaliWajah, panaskanModel, statusProfil } from '@/lib/wajahLokal'; // [BARU] kenali wajah untuk sapaan (profil di database)
+import { berikanTugas, selesaiTugas, bacaPerintahTugas, bacaPerintahTugasBanyak, perintahTugasBaru, bacaPerintahPulang, bacaPerintahProsesFile, bacaTanyaFileBelumUpload, bacaPerintahUploadLama, pilihFileDariUcapan, halamanTujuan, halamanDalamUcapan, cariKlienDalamUcapan, type FileLama, sinkronTugasServer, tugasSaatIni, HALAMAN_MEJA } from '@/lib/tugasKantor'; // [BARU] tugas halaman: agen berjalan ke meja yang terhubung dengan halaman itu
+import { aturRapat, bacaPerintahRapat, rapatSedangBerlangsung, umumkanRapat } from '@/lib/rapatKantor'; // [BARU] rapat di halaman Agentic AI: Neo memanggil Atlas & Zeno
 import NeoRobot, { type NeoMode, type NeoGerak } from './NeoRobot';
 import AnginRobot from './AnginRobot';
 // [BARU] Aturan keamanan & kenyamanan: konfirmasi, batalkan, ulangi, kecepatan, bahasa, blokir aksi berisiko.
@@ -43,8 +45,9 @@ import { AliranPcm, PemutarPcm, dukungPcmStream } from '@/lib/pemutarPcm';
 import { bacaBerhenti } from '@/lib/hentikanSuara';
 // [BARU] Lapisan "paham maksud": kalau regex tidak mengenali, AI menilai apakah ucapan itu minta Neo berhenti; hasilnya dipelajari.
 import { putuskan, sudahDipelajari, tanyaMaksudBerhenti } from '@/lib/hentikanCerdas';
+import { dipelajariNav, putuskanNav, tanyaMaksudNavigasi, type KeputusanNav } from '@/lib/navigasiCerdas';
 // @ts-ignore — api.js adalah file JS
-import * as api from '@/app/agent-ai/lib/api';
+import * as api from '@/app/zafeb-ai/lib/api';
 
 // ====== Pengaturan (ubah di sini) ======
 // [DIUBAH] Nama yang disebut Neo saat menyapa kini diambil dari user yang sedang login (bukan nama tetap).
@@ -127,15 +130,11 @@ function catatAudit(jenis: string, detail = '') {
 
 const WAKTU_MENUNGGU_PERINTAH_MS = 12000; // setelah disapa, AI menunggu perintah sebanyak ini
 const WAKTU_PERCAKAPAN_MS = 30000; // setelah AI selesai menjawab, mic tetap 'terbuka' selama ini (mode ngobrol terus)
-// [DIUBAH] Dulu: diam 1 detik -> langsung dikirim, sehingga penjelasan panjang terpotong saat kamu berpikir.
-// Sekarang ucapan DIKUMPULKAN dulu; baru dikirim setelah kamu diam cukup lama. Makin panjang kamu bicara,
-// makin sabar Neo menunggu. Kalimat menggantung (berakhir "dan", "karena", "eh"...) menunggu lebih lama lagi.
-// Mau cepat? kecilkan angka. Mau lebih sabar? besarkan. Atau akhiri dengan "itu saja" / "silakan jawab" -> langsung dikirim.
-const JEDA_PENDEK_MS = 1200; // ucapan pendek (<= 4 kata), mis. "ya", "buka laba rugi"
-const JEDA_NORMAL_MS = 2000;
-const JEDA_PANJANG_MS = 3200; // ucapan panjang (>= 15 kata): kamu sedang menjelaskan
-const JEDA_TAMBAHAN_MS = 1800; // tambahan kalau kalimat terasa menggantung
-const JEDA_MAKS_MS = 6000;
+// [DIUBAH] Ucapan DIKUMPULKAN tanpa batas panjang dan tanpa batas waktu bicara. Pesan baru dikirim ke AI setelah kamu
+// berhenti bicara JEDA_SENYAP_MS (1 detik) penuh; setiap kata baru mengulang hitungan dari awal. Jeda ini sama untuk ucapan
+// pendek maupun panjang ("ya" juga menunggu 1 detik). Mau lebih cepat/lambat? Ubah angkanya. Atau akhiri dengan
+// "itu saja" / "silakan jawab" -> langsung dikirim (POLA_KIRIM).
+const JEDA_SENYAP_MS = 1000; // [DIUBAH dari 5000] 1 detik hening setelah kamu bicara -> langsung dikirim, AI mulai berpikir
 const JEDA_COBA_LAGI_TTS_MS = 45000; // suara server (/api/tts) gagal -> pakai suara browser hanya sementara, setelah ini dicoba lagi
 const GEMA_JENDELA_MS = 3500; // setelah AI selesai bicara, suara yang mirip ucapannya sendiri (gema speaker) diabaikan selama ini
 const MAKS_RIWAYAT = 40; // [DIUBAH dari 6] jumlah pesan terakhir (6 giliran) yang dikirim sebagai konteks; yang lebih lama dicari backend lewat recall memori
@@ -177,7 +176,6 @@ const POLA_NAMA_RAPAT = /(?:halo|hallo|hello|hai|hei|hey)(?:neo|nio|neu)/;
 const POLA_SAPAAN = /\b(?:halo|hai|hei|hallo|hello|hey|oke|ok)\b/;
 // [DIUBAH] POLA_STOP (20 kata tunggal) diganti src/lib/hentikanSuara.ts -> bacaBerhenti(): ratusan bentuk ajakan berhenti.
 // [BARU] Kalimat berakhir di kata ini = kemungkinan besar belum selesai -> tunggu lebih lama
-const POLA_MENGGANTUNG = /\b(?:dan|atau|tapi|tetapi|karena|soalnya|yang|jadi|terus|lalu|kemudian|dengan|untuk|ke|di|dari|pada|dalam|kalau|jika|bahwa|seperti|misalnya|sama|eh|em|emm|hmm|anu|apa ya|gimana ya)$/;
 // [BARU] Kata penutup yang langsung mengirim ucapan (tanpa menunggu jeda diam)
 const POLA_KIRIM = /\b(?:itu saja|sudah itu|itu dulu|itu pertanyaannya|silakan jawab|tolong jawab|jawab sekarang|jawab ya)$/;
 // ucapan penutup -> Neo berpamitan singkat (mic tetap siap, tanpa kata panggil)
@@ -221,12 +219,11 @@ function bacaPerintahSistem(teks: string): { aksi: 'nyala' | 'mati'; bahasa: Bah
 }
 
 const gabungUcapan = (a: string, b: string) => `${a} ${b}`.replace(/\s+/g, ' ').trim();
-const hitungJeda = (teks: string) => {
-  const n = teks.split(' ').filter(Boolean).length;
-  let jeda = n <= 4 ? JEDA_PENDEK_MS : n >= 15 ? JEDA_PANJANG_MS : JEDA_NORMAL_MS;
-  if (POLA_MENGGANTUNG.test(teks)) jeda += JEDA_TAMBAHAN_MS;
-  return Math.min(jeda, JEDA_MAKS_MS);
-};
+// [BARU] Ucapan yang sudah cukup panjang (>= MIN_KATA_CEPAT kata) dikirim lebih cepat (JEDA_CEPAT_MS): kecil kemungkinan masih
+// di tengah kalimat. Ucapan pendek ("ya", "oke") tetap menunggu JEDA_SENYAP_MS. Ubah angkanya kalau terasa terlalu cepat/lambat.
+const JEDA_CEPAT_MS = 700;
+const MIN_KATA_CEPAT = 4;
+const hitungJeda = (teks: string = '') => (teks.split(/\s+/).filter(Boolean).length >= MIN_KATA_CEPAT ? JEDA_CEPAT_MS : JEDA_SENYAP_MS);
 
 
 // Bersihkan teks agar enak dibacakan
@@ -427,6 +424,8 @@ export default function VoiceAssistant() {
   const matikanSistemRef = useRef<() => void>(() => {});
   const nyalakanSistemRef = useRef<() => void>(() => {});
   const aktifRef = useRef(true); // SELALU true: tidak perlu kata panggil, Neo menjawab semua ucapan
+  const saatSuaraMulaiRef = useRef<{ fn: () => void; timer: ReturnType<typeof setTimeout> } | null>(null); // [BARU] aksi yang jalan tepat saat suara Neo MULAI terdengar (mis. agen berjalan ke meja rapat)
+  const setelahBicaraRef = useRef<{ fn: () => void; timer: ReturnType<typeof setTimeout> } | null>(null); // [BARU] aksi yang menunggu Neo selesai bicara (mis. agen berdiri dari meja rapat)
   const timerAktifRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bicaraRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -456,6 +455,7 @@ export default function VoiceAssistant() {
   const teksDiucapkanRef = useRef(''); // apa yang baru saja diucapkan AI (untuk mengenali gema)
   const selesaiBicaraSejakRef = useRef(0);
   const komitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const semuaTerakhirRef = useRef(''); // [BARU] teks gabungan pada event suara sebelumnya (untuk mengenali interim -> final yang isinya sama)
   const komitWaktuRef = useRef(0);
   const bufUcapanRef = useRef(''); // [BARU] potongan ucapan FINAL yang dikumpulkan sampai kamu benar-benar selesai
   const sementaraUcapanRef = useRef(''); // [BARU] potongan yang masih diketik Chrome (interim)
@@ -469,6 +469,11 @@ export default function VoiceAssistant() {
   const lajuRef = useRef(1); // faktor kecepatan bicara (1 = normal)
   const jawabanTerakhirRef = useRef(''); // untuk perintah "ulangi"
   const konfirmasiRef = useRef<{ tanya: string; ya: () => void; timer: ReturnType<typeof setTimeout> } | null>(null);
+  // [BARU] File lama (sudah tersimpan, belum diupload): daftar yang baru dibacakan Neo (aktif 10 menit) + perintah upload yang masih
+  // kurang data (file / halaman / klien), dicicil lewat beberapa ucapan (aktif 30 detik per pertanyaan).
+  const fileLamaRef = useRef<{ daftar: FileLama[]; sampai: number } | null>(null);
+  const uploadLamaRef = useRef<{ agen: 'Neo' | 'Atlas' | 'Zeno'; meja: number | null; kode: string | null; file: FileLama | null; kandidat: FileLama[]; sampai: number } | null>(null);
+  const prosesFileKlienRef = useRef<{ agen: 'Neo' | 'Atlas' | 'Zeno'; meja: number; sampai: number } | null>(null); // [BARU] perintah proses file yang menunggu kode klien
   const undoRef = useRef<{ nama: string; jalankan: () => void; kedaluwarsa: number } | null>(null);
   const aktivitasTerakhirRef = useRef(Date.now()); // untuk mematikan mic otomatis kalau lama tidak dipakai
   const pttRef = useRef(false);
@@ -541,6 +546,25 @@ export default function VoiceAssistant() {
     }, ms);
   }, [ubahStatus]);
 
+  // [BARU] Jalankan aksi yang menunggu Neo selesai bicara (sekali). Dipanggil saat suara habis, dibatalkan, atau batas waktu.
+  const lepasSetelahBicara = useCallback(() => {
+    const x = setelahBicaraRef.current;
+    if (!x) return;
+    setelahBicaraRef.current = null;
+    clearTimeout(x.timer);
+    x.fn();
+  }, []);
+
+  // [BARU] Jalankan aksi yang menunggu suara Neo MULAI terdengar (sekali). Dipanggil saat audio benar-benar bunyi,
+  // atau saat suara gagal/dibatalkan/habis batas waktu, supaya aksinya tidak pernah tertahan.
+  const lepasSaatSuaraMulai = useCallback(() => {
+    const x = saatSuaraMulaiRef.current;
+    if (!x) return;
+    saatSuaraMulaiRef.current = null;
+    clearTimeout(x.timer);
+    x.fn();
+  }, []);
+
   // Batalkan semua suara yang sedang/antri diputar (tanpa memicu "selesai bicara")
   const batalkanSuara = useCallback(() => {
     genSuaraRef.current += 1;
@@ -553,9 +577,13 @@ export default function VoiceAssistant() {
     ttsCtrlRef.current.forEach((c) => { try { c.abort(); } catch { /* abaikan */ } });
     ttsCtrlRef.current.clear();
     rantaiSuaraRef.current = Promise.resolve();
-  }, []);
+    lepasSaatSuaraMulai(); // [BARU] disela sebelum suara bunyi -> aksi yang menunggu suara mulai tetap jalan
+    lepasSetelahBicara(); // [BARU] suara dihentikan (disela) -> aksi yang menunggu langsung jalan
+  }, [lepasSaatSuaraMulai, lepasSetelahBicara]);
 
   const akhiriBicara = useCallback(() => {
+    lepasSaatSuaraMulai(); // [BARU] jaga-jaga: suara habis tanpa pernah memicu "mulai"
+    lepasSetelahBicara(); // [BARU] Neo selesai bicara -> aksi yang menunggu (agen beranjak dari meja rapat) jalan
     antrianSuaraRef.current = 0;
     utteranceRef.current = [];
     selesaiBicaraSejakRef.current = Date.now();
@@ -564,7 +592,7 @@ export default function VoiceAssistant() {
     if (aktifRef.current) bukaJendelaPerintah(WAKTU_PERCAKAPAN_MS); // mode ngobrol: tunggu pertanyaan lanjutan
     setelahBicaraSelesai();
     if (akanMatiRef.current) selesaikanMatiRef.current(); // [BARU] "sistem telah dimatikan" sudah terucap -> sekarang benar-benar mati
-  }, [bukaJendelaPerintah, setelahBicaraSelesai]);
+  }, [bukaJendelaPerintah, lepasSaatSuaraMulai, lepasSetelahBicara, setelahBicaraSelesai]);
 
   // [BARU] Putar satu potongan audio (MP3 dari Edge / WAV dari Gemini); selesai saat audio habis / dibatalkan / gagal.
   const mainkanBlob = useCallback((blob: Blob) => {
@@ -590,12 +618,13 @@ export default function VoiceAssistant() {
       audio.play().then(() => {
         // [BARU] audio benar-benar mulai terdengar -> baru tampil "Sedang menjawab…" (sebelumnya sudah tampil saat masih menunggu Gemini)
         if (!sudah) ubahStatus('bicara');
+        lepasSaatSuaraMulai(); // [BARU] suara benar-benar bunyi -> agen mulai bergerak
       }).catch((e: any) => {
         if (e?.name === 'NotAllowedError') setGalat('Suara diblokir browser — klik halaman ini sekali lalu coba lagi.');
         beres();
       });
     });
-  }, [ubahStatus]);
+  }, [lepasSaatSuaraMulai, ubahStatus]);
 
   // [BARU] Siapkan audio potongan pertama SEBELUM dibutuhkan (dipakai untuk sapaan awal). Stream dibuka dan dibaca ke memori
   // sejak sekarang; saat ucapkan() dipanggil dengan teks yang sama, audionya sudah ada -> suara langsung bunyi.
@@ -621,21 +650,77 @@ export default function VoiceAssistant() {
     prefetchSuaraRef.current.set(pertama, p);
   }, []);
 
+  // [BARU] CACHE SUARA GEMINI untuk kalimat tetap (ajakan/penutup meeting): audio PCM Gemini disimpan di memori + localStorage,
+  // jadi suaranya SAMA (Gemini) tapi langsung bunyi tanpa menunggu server. Diisi di latar belakang saat halaman Agentic AI dibuka.
+  const pcmCacheRef = useRef<Map<string, Uint8Array[]>>(new Map());
+  const pcmSedangRef = useRef<Set<string>>(new Set());
+  const kunciSuara = useCallback((teks: string) => pecahTeksPanjang(bersihkanUntukSuara(teks))[0] || '', []);
+  const ambilCachePcm = useCallback((kunci: string): Uint8Array[] | null => {
+    const m = pcmCacheRef.current.get(kunci);
+    if (m) return m;
+    try {
+      const b64 = localStorage.getItem('neo_pcm:' + kunci);
+      if (!b64) return null;
+      const bin = atob(b64);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      pcmCacheRef.current.set(kunci, [u8]);
+      return [u8];
+    } catch { return null; }
+  }, []);
+  const siapkanCachePcm = useCallback((teks: string) => {
+    const kunci = kunciSuara(teks);
+    if (!kunci || azureMatiRef.current || streamMatiRef.current || !dukungPcmStream()) return;
+    if (ambilCachePcm(kunci) || pcmSedangRef.current.has(kunci)) return;
+    pcmSedangRef.current.add(kunci);
+    (async () => {
+      const JEDA = [0, 3000, 8000, 15000, 30000];
+      for (const jeda of JEDA) {
+        if (jeda) await new Promise((r) => setTimeout(r, jeda));
+        const ctrl = new AbortController();
+        const batas = setTimeout(() => ctrl.abort(), 20000);
+        try {
+          const reader = await (api as any).ttsStream(kunci, ctrl.signal, bahasaRef.current);
+          const potongan: Uint8Array[] = [];
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value && value.length) potongan.push(value);
+          }
+          if (potongan.length) {
+            pcmCacheRef.current.set(kunci, potongan);
+            try {
+              let total = 0; potongan.forEach((c) => (total += c.length));
+              const gab = new Uint8Array(total); let o = 0;
+              potongan.forEach((c) => { gab.set(c, o); o += c.length; });
+              let bin = ''; for (let i = 0; i < gab.length; i += 0x8000) bin += String.fromCharCode(...gab.subarray(i, i + 0x8000));
+              localStorage.setItem('neo_pcm:' + kunci, btoa(bin));
+            } catch { /* localStorage penuh: cache memori saja */ }
+            break;
+          }
+        } catch (e: any) {
+          if ([429, 502, 503, 504].includes(e?.status)) break; // kuota/server suara habis: jangan diulang (hemat kuota harian Gemini)
+        } finally { clearTimeout(batas); }
+      }
+      pcmSedangRef.current.delete(kunci);
+    })();
+  }, [ambilCachePcm, kunciSuara]);
+
   // [DIUBAH] ucapkanSatu = membacakan SATU potongan yang sudah bersih (<= MAKS_POTONGAN_SUARA). Isinya sama seperti ucapkan lama.
   const ucapkanSatu = useCallback(
-    (bersih: string) => {
+    (bersih: string, paksaBrowser = false) => {
       if (!bersih || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
       bicaraRef.current = true;
       bicaraSejakRef.current = Date.now();
       // [DIUBAH] bicaraRef tetap true sejak sekarang (mic tidak menangkap gema), tapi TAMPILAN status baru "bicara"
       // saat audio mulai diputar (lihat mainkanBlob). Selama menunggu audio dari server -> "Memikirkan jawaban…".
       // Kalau audio kalimat sebelumnya sedang terdengar, status dibiarkan "bicara".
-      ubahStatus(azureMatiRef.current || statusRef.current === 'bicara' ? 'bicara' : 'berpikir');
+      ubahStatus(azureMatiRef.current || paksaBrowser || statusRef.current === 'bicara' ? 'bicara' : 'berpikir');
       teksDiucapkanRef.current = (teksDiucapkanRef.current + ' ' + bersih).slice(-1500);
 
       // [BARU] Jalur utama: suara neural server (/api/tts). Tiap kalimat diminta ke server LANGSUNG (paralel),
       // tapi diputar berurutan lewat rantai promise. Gagal -> kalimat itu dibacakan suara browser.
-      if (!azureMatiRef.current) {
+      if (!azureMatiRef.current && !paksaBrowser) { // [DIUBAH] paksaBrowser = suara browser langsung (tanpa menunggu server)
         const genA = genSuaraRef.current;
         antrianSuaraRef.current += 1;
         const ctrl = new AbortController();
@@ -651,6 +736,13 @@ export default function VoiceAssistant() {
         type HasilSuara = { aliran?: AliranPcm; blob?: Blob };
         const audioP: Promise<HasilSuara | null> = (async (): Promise<HasilSuara | null> => {
           for (let percobaan = 0; percobaan <= JEDA_ULANG_MS.length; percobaan++) {
+            // [BARU] Kalimat tetap yang audionya sudah di-cache (Gemini): langsung diputar, suara sama, tanpa menunggu
+            const tersimpan = ambilCachePcm(bersih);
+            if (tersimpan) {
+              let idx = 0;
+              const pembaca = { read: async () => (idx < tersimpan.length ? { done: false, value: tersimpan[idx++] } : { done: true, value: undefined }) } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+              return { aliran: new AliranPcm(pembaca) };
+            }
             // [BARU] Audio yang sudah disiapkan lebih awal (mis. sapaan): langsung dipakai, tanpa menunggu Gemini lagi
             const siap = prefetchSuaraRef.current.get(bersih);
             if (siap) {
@@ -687,7 +779,8 @@ export default function VoiceAssistant() {
                   return { blob: (await (api as any).ttsAudio(bersih, ctrl.signal, bahasaTts)) as Blob };
                 } catch (e2: any) {
                   if (ctrl.signal.aborted || e2?.name === 'AbortError') return null;
-                  // Edge juga gagal -> lanjut ke coba-ulang biasa di bawah
+                  // [DIUBAH] Gemini habis DAN Edge tidak ada (503 = edge-tts belum terpasang): mengulang 4x (total ~20 dtk) percuma -> langsung menyerah
+                  if (e2?.status === 503) return null;
                 }
               }
               if (percobaan === JEDA_ULANG_MS.length) {
@@ -711,7 +804,7 @@ export default function VoiceAssistant() {
           try {
             if (hasil?.aliran) {
               // [BARU] Streaming: status "Sedang menjawab…" baru tampil saat suara pertama benar-benar terdengar (saatMulai).
-              const pemutar = new PemutarPcm({ laju: () => lajuRef.current, saatMulai: () => { if (genA === genSuaraRef.current) ubahStatus('bicara'); } });
+              const pemutar = new PemutarPcm({ laju: () => lajuRef.current, saatMulai: () => { if (genA === genSuaraRef.current) { ubahStatus('bicara'); lepasSaatSuaraMulai(); } } });
               const hentikan = () => pemutar.hentikan();
               hentikanAudioRef.current = hentikan;
               audioSedangRef.current = true;
@@ -724,6 +817,7 @@ export default function VoiceAssistant() {
             } else if (hasil?.blob) {
               await mainkanBlob(hasil.blob);
             } else {
+              lepasSaatSuaraMulai(); // [BARU] suara gagal -> agen tetap bergerak, jangan menunggu
               setGalat('Suara AI sedang tidak tersedia (kuota Gemini habis atau server suara bermasalah). Teks jawaban tetap tampil.'); // diam, tanpa suara browser
             }
           } finally {
@@ -754,6 +848,7 @@ export default function VoiceAssistant() {
         antrianSuaraRef.current = Math.max(0, antrianSuaraRef.current - 1);
         if (antrianSuaraRef.current === 0) akhiriBicara();
       };
+      u.onstart = () => { if (gen === genSuaraRef.current) { ubahStatus('bicara'); lepasSaatSuaraMulai(); } }; // [BARU] suara bunyi -> agen mulai bergerak
       u.onend = selesai;
       u.onerror = selesai;
       const putar = () => {
@@ -765,15 +860,15 @@ export default function VoiceAssistant() {
       const tunggu = Math.max(0, 120 - (Date.now() - batalSejakRef.current));
       if (tunggu > 0) setTimeout(putar, tunggu); else putar();
     },
-    [akhiriBicara, mainkanBlob, ubahStatus]
+    [akhiriBicara, ambilCachePcm, lepasSaatSuaraMulai, mainkanBlob, ubahStatus]
   );
 
   // [BARU] Pintu masuk bicara: teks panjang dipecah per kalimat/klausa, tidak ada bagian yang terpotong diam-diam.
   const ucapkan = useCallback(
-    (teks: string) => {
+    (teks: string, paksaBrowser = false) => {
       const bersih = bersihkanUntukSuara(teks);
       if (!bersih) return;
-      for (const potongan of pecahTeksPanjang(bersih)) ucapkanSatu(potongan);
+      for (const potongan of pecahTeksPanjang(bersih)) ucapkanSatu(potongan, paksaBrowser);
     },
     [ucapkanSatu]
   );
@@ -796,7 +891,7 @@ export default function VoiceAssistant() {
     riwayatRef.current = riwayatRef.current.slice(-MAKS_RIWAYAT * 2);
     lokalEntriRef.current = entri;
   }, []);
-  const ucapkanLokal = useCallback((teks: string) => { catatLokal(teks); ucapkan(teks); }, [catatLokal, ucapkan]);
+  const ucapkanLokal = useCallback((teks: string, paksaBrowser = false) => { catatLokal(teks); ucapkan(teks, paksaBrowser); }, [catatLokal, ucapkan]);
 
   // ---------- Konfirmasi "yakin?" (HANYA untuk ucapan yang benar-benar membingungkan) ----------
   // Ganti halaman/tab/client yang jelas atau salah dengar 1-2 kata TIDAK ditanyakan lagi. Konfirmasi hanya dipakai
@@ -845,6 +940,14 @@ export default function VoiceAssistant() {
     // [BARU] Jawaban atas pertanyaan klarifikasi tab ("penjualan") memuat kata yang Neo sendiri ucapkan -> jangan dianggap gema
     const kl = klarifikasiRef.current;
     if (kl && Date.now() <= kl.sampai && !bicaraRef.current && Date.now() - selesaiBicaraSejakRef.current > 500 && pilihKandidatTab(normalisasi(teks), kl.kandidat)) return false;
+    // [BARU] Jawaban atas daftar file lama / pertanyaan "halaman mana?" memuat nama file dan kata yang Neo baru ucapkan -> bukan gema
+    const lm = fileLamaRef.current;
+    const ul = uploadLamaRef.current;
+    if (((ul && Date.now() < ul.sampai) || (lm && Date.now() < lm.sampai)) && !bicaraRef.current && Date.now() - selesaiBicaraSejakRef.current > 500) {
+      const n = normalisasi(teks);
+      if (bacaPerintahUploadLama(n, lm?.daftar ?? [])) return false;
+      if (ul && (pilihFileDariUcapan(n, ul.kandidat).file || (ul.meja === null && halamanDalamUcapan(n) >= 0) || (!ul.kode && cariKlienDalamUcapan(n, clientsRef.current)))) return false;
+    }
     const lagiBicara = bicaraRef.current;
     const pascaBicara = Date.now() - selesaiBicaraSejakRef.current < GEMA_JENDELA_MS;
     if (!lagiBicara && !pascaBicara) return false; // tidak ada suara AI -> pasti suara pengguna
@@ -878,7 +981,8 @@ export default function VoiceAssistant() {
   // langsung dibuka. Neo hanya bertanya bila memang membingungkan: (a) beberapa halaman sama miripnya,
   // (b) "ganti journal transaction" tanpa tujuan -> pindah tab atau mengubah data di layar?
   const jalankanNavigasi = useCallback(
-    (teks: string): boolean => {
+    // tujuanPaksa: hasil lapis AI (navigasiCerdas.ts) -> langsung dibuka / dibatalkan tanpa membaca ulang teksnya
+    (teks: string, tujuanPaksa?: { path: string; nama: string; tabQuery?: string; belumTersedia?: boolean } | 'batal'): boolean => {
       const hentikanDulu = () => {
         abortRef.current?.abort();
         reqIdRef.current += 1;
@@ -897,6 +1001,16 @@ export default function VoiceAssistant() {
         if (belumTersedia) ucapkanLokal(tx(`Laporan ${nama} belum tersedia, masih Coming Soon. Aku bukakan halaman Laporan.`, `The ${nama} report is not available yet, it's still Coming Soon. Opening the Reports page.`));
         else ucapkanLokal(tx(`Membuka ${nama}.`, `Opening ${nama}.`));
       };
+      if (tujuanPaksa === 'batal') {
+        hentikanDulu();
+        ucapkanLokal(tx('Oke, aku tidak pindah.', "Okay, I won't switch."));
+        return true;
+      }
+      if (tujuanPaksa) {
+        hentikanDulu();
+        bukaHalaman(tujuanPaksa.path, tujuanPaksa.nama, tujuanPaksa.tabQuery, tujuanPaksa.belumTersedia);
+        return true;
+      }
       // [BARU] Jawaban atas pertanyaan klarifikasi tab sebelumnya ("Data Sumber di Penjualan, Pembelian, atau Entri Jurnal?")
       const kl = klarifikasiRef.current;
       if (kl) {
@@ -939,7 +1053,10 @@ export default function VoiceAssistant() {
         return true;
       }
       hentikanDulu();
-      if (n.jenis === 'kembali') {
+      if (n.jenis === 'batal') {
+        // "jangan buka neraca", "nggak jadi pindah": Neo mengakui, tidak berpindah
+        ucapkanLokal(tx('Oke, aku tidak pindah.', "Okay, I won't switch."));
+      } else if (n.jenis === 'kembali') {
         routerRef.current.back();
         catatAudit('navigasi', 'kembali');
         ucapkanLokal(tx('Kembali ke halaman sebelumnya.', 'Going back to the previous page.'));
@@ -1096,8 +1213,29 @@ export default function VoiceAssistant() {
       let pertama = true;
       let kelamaan = false;
       setGalat('');
-      const timerKelamaan = setTimeout(() => { kelamaan = true; ctrl.abort(); }, 60000);
+      // [DIUBAH] Batas 60 dtk dihitung dari data TERAKHIR yang diterima, bukan dari awal: jawaban panjang yang terus mengalir tidak lagi terpotong.
+      let timerKelamaan = setTimeout(() => { kelamaan = true; ctrl.abort(); }, 60000);
+      const tungguLagi = () => { clearTimeout(timerKelamaan); timerKelamaan = setTimeout(() => { kelamaan = true; ctrl.abort(); }, 60000); };
       try {
+        // [BARU] PAHAM MAKSUD pindah halaman. Aturan lokal (navigasiSuara.ts) sudah memutuskan semua yang jelas. Yang tersisa:
+        // ucapan yang menyebut halaman/tab tapi niatnya ragu ("neraca dong", "oke sekarang laba rugi"). Kalimat yang dulu sudah
+        // dinilai AI diingat (instan); selebihnya ditanyakan ke AI, yang HANYA boleh memilih dari kandidat -> tidak bisa membuka rute lain.
+        if (!cobaLLM) {
+          const tNav = normalisasi(perintah);
+          const kandNav = kandidatUntukAI(tNav);
+          if (kandNav.length > 0) {
+            let putus: KeputusanNav = null;
+            const ingat = dipelajariNav(tNav, kandNav);
+            if (ingat) putus = { aksi: 'buka', tujuan: ingat };
+            else {
+              const hasilNav = await tanyaMaksudNavigasi(tNav, kandNav, pathRef.current, teksDiucapkanRef.current.slice(-300), (u, k, h, n) => (api as any).navIntent(u, k, h, n, ctrl.signal));
+              if (id !== reqIdRef.current) return; // disela saat AI menilai
+              putus = putuskanNav(hasilNav, kandNav);
+            }
+            if (putus?.aksi === 'buka') { catatAudit('navigasi-ai', putus.tujuan.path); jalankanNavigasi(perintah, putus.tujuan); return; }
+            if (putus?.aksi === 'batal') { jalankanNavigasi(perintah, 'batal'); return; }
+          }
+        }
         if (cobaLLM) {
           const daftarKode = clientsRef.current
             .filter((c) => c.clientCode && c.clientCode !== '-')
@@ -1122,11 +1260,12 @@ export default function VoiceAssistant() {
           riwayatKirim,
           [],
           null,
-          null, // tidak disimpan ke riwayat percakapan Agent AI
+          null, // tidak disimpan ke riwayat percakapan Zafeb AI
           ctrl.signal,
           { modeSuara: true, pesanAsli: perintah, sesiId: sesiIdRef.current, konteksLayar, gambarKamera, analisaWajah: analisaCache } // jalur cepat + memori AI
         )) {
           if (id !== reqIdRef.current) return; // sudah disela / diganti pertanyaan baru
+          tungguLagi();
           if (evt.type !== 'delta') continue;
           lengkap += evt.text;
           entriAI.content = lengkap;
@@ -1251,6 +1390,194 @@ export default function VoiceAssistant() {
   );
 
   // ---------- Proses ucapan pengguna (sudah final / sudah dianggap selesai) ----------
+  // [BARU] Neo sebagai manager: "ayo kita meeting" -> Neo (bersuara) mengajak Zeno dan Atlas; keduanya duduk di meja rapat di
+  // halaman Agentic AI sampai pengguna bilang "meeting selesai". Mulai rapat hanya berlaku saat halaman Agentic AI terbuka.
+  const jalankanRapat = useCallback(
+    (aksi: 'mulai' | 'selesai') => {
+      if (aksi === 'mulai') {
+        if (rapatSedangBerlangsung()) return; // sudah rapat (atau gema ucapan Neo sendiri)
+        // [DIUBAH] Status rapat langsung aktif, tapi agen baru BERJALAN tepat saat suara Neo mulai terdengar (bukan saat Neo masih
+        // "memikirkan jawaban"). Kalau suara tidak kunjung bunyi, batas 6 dtk menggerakkan agen supaya tidak tertahan.
+        aturRapat('mulai', { tanpaEvent: true });
+        if (saatSuaraMulaiRef.current) clearTimeout(saatSuaraMulaiRef.current.timer);
+        saatSuaraMulaiRef.current = { fn: umumkanRapat, timer: setTimeout(lepasSaatSuaraMulai, 1000) };
+        {
+          const kal = tx('Ayo Zeno, Atlas, ini waktunya kita meeting.', "Come on Zeno, Atlas, it's time for our meeting.");
+          ucapkanLokal(kal, !ambilCachePcm(kunciSuara(kal))); // suara Gemini dari cache (langsung bunyi); kalau cache belum siap -> suara browser sementara
+        }
+      } else {
+        if (!rapatSedangBerlangsung()) return;
+        {
+          const kal = tx('Meeting selesai. Silakan kembali bekerja, Zeno, Atlas.', 'The meeting is over. Please get back to work, Zeno, Atlas.');
+          ucapkanLokal(kal, !ambilCachePcm(kunciSuara(kal)));
+        }
+        // Agen TETAP duduk selama Neo bicara; baru beranjak sesudah Neo selesai (atau disela / batas 30 dtk kalau suara gagal).
+        aturRapat('selesai', { tanpaEvent: true });
+        if (setelahBicaraRef.current) clearTimeout(setelahBicaraRef.current.timer);
+        setelahBicaraRef.current = { fn: () => setTimeout(umumkanRapat, 400), timer: setTimeout(lepasSetelahBicara, 30000) };
+      }
+    },
+    [ambilCachePcm, kunciSuara, lepasSaatSuaraMulai, lepasSetelahBicara, tx, ucapkanLokal]
+  );
+
+  // [BARU] Tugas halaman Agentic AI: "Atlas cek halaman sales" -> Atlas berjalan ke meja Sales, bekerja, lalu kembali ke meja rapat.
+  const jalankanTugas = useCallback(
+    (agen: 'Neo' | 'Atlas' | 'Zeno', meja: number) => {
+      const halaman = HALAMAN_MEJA[meja].nama;
+      const hasil = berikanTugas(agen, meja);
+      if (!hasil.ok) {
+        ucapkanLokal(tx(`Meja ${halaman} sedang dipakai ${hasil.pemakai}.`, `The ${halaman} desk is being used by ${hasil.pemakai}.`));
+        return;
+      }
+      ucapkanLokal(
+        agen === 'Neo'
+          ? tx(`Baik, aku cek halaman ${halaman} sekarang.`, `Okay, I'll check the ${halaman} page now.`)
+          : tx(`Baik, ${agen}, tolong cek halaman ${halaman} ya.`, `Okay ${agen}, please check the ${halaman} page.`)
+      );
+    },
+    [tx, ucapkanLokal]
+  );
+
+  // [BARU] Beberapa agen sekaligus: "Neo di sales, Zeno di purchase, Atlas di cash bank". Tiap agen punya tugas & mejanya sendiri.
+  const jalankanTugasBanyak = useCallback(
+    (daftar: { agen: 'Neo' | 'Atlas' | 'Zeno'; meja: number }[]) => {
+      const jalan: string[] = [];
+      const bentrok: string[] = [];
+      for (const { agen, meja } of daftar) {
+        const halaman = HALAMAN_MEJA[meja].nama;
+        const hasil = berikanTugas(agen, meja);
+        if (hasil.ok) jalan.push(`${agen} ${tx('ke', 'on')} ${halaman}`);
+        else bentrok.push(tx(`meja ${halaman} sedang dipakai ${hasil.pemakai}`, `the ${halaman} desk is used by ${hasil.pemakai}`));
+      }
+      const kalimat = [
+        jalan.length ? tx(`Baik, ${jalan.join(', ')}.`, `Okay, ${jalan.join(', ')}.`) : '',
+        bentrok.length ? tx(`Tapi ${bentrok.join(', ')}.`, `But ${bentrok.join(', ')}.`) : '',
+      ].filter(Boolean).join(' ');
+      ucapkanLokal(kalimat);
+    },
+    [tx, ucapkanLokal]
+  );
+
+  const jalankanPulang = useCallback(
+    (agen: 'Neo' | 'Atlas' | 'Zeno') => {
+      selesaiTugas(agen);
+      ucapkanLokal(tx(`Oke ${agen}, kembali ke meja rapat.`, `Okay ${agen}, back to the meeting table.`));
+    },
+    [tx, ucapkanLokal]
+  );
+
+  // [BARU] "Atlas, upload file penjualan klien SAU sampai posting": agen berjalan ke meja halaman, memproses file WhatsApp terbaru
+  // sampai Posted (backend, di background), lalu pulang ke meja rapat; hasilnya diumumkan Neo (efek laporan di bawah).
+  // Memposting itu sulit dibatalkan, jadi Neo SELALU membacakan klien + halaman dan menunggu "ya" dulu (salah dengar = salah jurnal).
+  const mulaiProsesFile = useCallback(
+    async (agen: 'Neo' | 'Atlas' | 'Zeno', meja: number, kode: string, file?: FileLama) => {
+      const halaman = HALAMAN_MEJA[meja];
+      catatAudit('proses-file', `${agen} ${halaman.id} ${kode}${file ? ` | ${file.lisan}` : ''}`);
+      const hasil = await api.kantorProsesFile(agen, halaman.id, kode, file?.nama);
+      if (!hasil.ok) {
+        ucapkanLokal(hasil.pesan || tx('Prosesnya tidak bisa dimulai.', 'It could not be started.'));
+        return;
+      }
+      fileLamaRef.current = null; // daftar lama sudah tidak akurat: satu file sudah berangkat
+      await sinkronTugasServer(); // agen langsung berangkat ke meja; tunggu dulu supaya ucapan di bawah tidak dikira perintah baru
+      ucapkanLokal(
+        tx(
+          `Baik, ${agen} berangkat ke meja ${halaman.nama} untuk klien ${ejaKode(kode)}. Nanti aku kabari kalau sudah selesai.`,
+          `Okay, ${agen} is heading to the ${halaman.nama} desk for client ${ejaKode(kode)}. I'll let you know when it's done.`
+        )
+      );
+    },
+    [tx, ucapkanLokal]
+  );
+
+  const mintaProsesFile = useCallback(
+    (agen: 'Neo' | 'Atlas' | 'Zeno', meja: number, kode: string, file?: FileLama) => {
+      const halaman = HALAMAN_MEJA[meja].nama;
+      mintaKonfirmasi(
+        file
+          ? tx(
+              `Aku konfirmasi dulu. File ${file.lisan} ke halaman ${halaman} untuk klien ${ejaKode(kode)} akan dikerjakan ${agen} sampai diposting. Lanjut?`,
+              `Let me confirm first. The file ${file.lisan} will go to the ${halaman} page for client ${ejaKode(kode)} and ${agen} will handle it all the way to posting. Go ahead?`
+            )
+          : tx(
+              `Aku konfirmasi dulu. File ${halaman} untuk klien ${ejaKode(kode)} akan dikerjakan ${agen} sampai diposting. Lanjut?`,
+              `Let me confirm first. The ${halaman} file for client ${ejaKode(kode)} will be handled by ${agen} all the way to posting. Go ahead?`
+            ),
+        () => { void mulaiProsesFile(agen, meja, kode, file); }
+      );
+    },
+    [mintaKonfirmasi, mulaiProsesFile, tx]
+  );
+
+  // [BARU] "File apa yang kamu pegang tapi belum diupload?" -> Neo membacakan daftar bernomor (nama dari server) lalu menunggu pilihan.
+  const tanyaFileBelumUpload = useCallback(async () => {
+    catatAudit('file-lama-tanya');
+    const daftar = await api.kantorFileBelumDiupload();
+    if (daftar === null) { ucapkanLokal(tx('Maaf, daftar file belum bisa diambil sekarang. Coba lagi sebentar.', 'Sorry, I cannot fetch the file list right now. Please try again shortly.')); return; }
+    if (!daftar.length) { fileLamaRef.current = null; ucapkanLokal(tx('Tidak ada file di WhatsApp yang belum diupload.', 'There are no files in WhatsApp waiting to be uploaded.')); return; }
+    fileLamaRef.current = { daftar, sampai: Date.now() + 10 * 60000 };
+    uploadLamaRef.current = null;
+    const lalu = (m: number) =>
+      m < 1 ? tx('baru saja', 'just now')
+      : m < 60 ? tx(`${m} menit lalu`, `${m} minutes ago`)
+      : m < 1440 ? tx(`${Math.floor(m / 60)} jam lalu`, `${Math.floor(m / 60)} hours ago`)
+      : tx(`${Math.floor(m / 1440)} hari lalu`, `${Math.floor(m / 1440)} days ago`);
+    const urut = bahasaRef.current === 'en' ? ['First', 'Second', 'Third', 'Fourth', 'Fifth'] : ['Pertama', 'Kedua', 'Ketiga', 'Keempat', 'Kelima'];
+    const sebut = daftar.slice(0, 5).map((f, i) => `${urut[i]}, ${f.lisan}, ${tx('masuk', 'received')} ${lalu(f.menit_lalu)}.`).join(' ');
+    const sisa = daftar.length - 5;
+    const penutup = pathRef.current.startsWith('/agentic-ai')
+      ? tx('Mau yang mana? Sebut nama atau nomornya, halamannya, dan kode klien.', 'Which one? Say its name or number, the page, and the client code.')
+      : tx('Untuk mengunggahnya, buka halaman Agentic AI lalu minta lagi.', 'To upload one, open the Agentic AI page and ask again.');
+    ucapkanLokal(
+      tx(`Ada ${daftar.length} file yang belum diupload. `, `There are ${daftar.length} files not uploaded yet. `) + sebut +
+      (sisa > 0 ? tx(` Dan ${sisa} file lain.`, ` And ${sisa} more.`) : '') + ' ' + penutup
+    );
+  }, [tx, ucapkanLokal]);
+
+  // [BARU] Lanjutkan perintah "upload file lama": tanyakan data yang masih kurang (file -> halaman -> klien), lalu minta konfirmasi "ya".
+  const lanjutkanUploadLama = useCallback(
+    (s: { agen: 'Neo' | 'Atlas' | 'Zeno'; meja: number | null; kode: string | null; file: FileLama | null; kandidat: FileLama[] }) => {
+      const tunggu = (tanya: string) => { uploadLamaRef.current = { ...s, sampai: Date.now() + 30000 }; ucapkanLokal(tanya); };
+      if (!s.file) {
+        const sebut = s.kandidat.slice(0, 5).map((f, i) => `${i + 1}, ${f.lisan}`).join('. ');
+        tunggu(tx(`Ada beberapa file yang cocok. ${sebut}. Yang mana? Sebut nomornya.`, `Several files match. ${sebut}. Which one? Say its number.`));
+        return;
+      }
+      if (s.meja === null) { tunggu(tx('Diupload ke halaman mana?', 'Which page should it go to?')); return; }
+      if (!s.kode) { tunggu(tx('Untuk klien mana? Sebut kodenya ya.', 'Which client is it for? Please say its code.')); return; }
+      uploadLamaRef.current = null;
+      mintaProsesFile(s.agen, s.meja, s.kode, s.file);
+    },
+    [mintaProsesFile, tx, ucapkanLokal]
+  );
+
+  // [BARU] Neo mengumumkan laporan agen yang baru selesai memproses file (sekali per laporan; id yang sudah diumumkan diingat
+  // di localStorage, jadi refresh / tab kedua tidak mengulang). Server menandai agen pulang di saat yang sama, jadi agen sudah
+  // kembali ke meja rapat ketika Neo bicara.
+  useEffect(() => {
+    const KUNCI = 'kantor-laporan-diumumkan-v1';
+    let mati = false;
+    const baca = (): string[] => { try { return JSON.parse(window.localStorage.getItem(KUNCI) || '[]'); } catch { return []; } };
+    const cek = async () => {
+      if (mati || sistemMatiRef.current || akanMatiRef.current) return;
+      const daftar = await api.kantorLaporan();
+      if (mati || !daftar?.length) return;
+      const sudah = baca();
+      const baru = daftar.filter((l) => !sudah.includes(l.id)).reverse(); // paling lama dulu
+      if (!baru.length) return;
+      try { window.localStorage.setItem(KUNCI, JSON.stringify([...sudah, ...baru.map((l) => l.id)].slice(-60))); } catch { /* abaikan */ }
+      catatAudit('proses-file-laporan', baru.map((l) => `${l.agen} ${l.hasil}`).join(', '));
+      ucapkanLokal(
+        baru
+          .map((l) => (l.klien ? l.ringkasan.replace(new RegExp(`\\b${l.klien}\\b`, 'g'), ejaKode(l.klien)) : l.ringkasan))
+          .join(' ')
+      );
+    };
+    const timer = setInterval(() => { void cek(); }, 6000);
+    void cek();
+    return () => { mati = true; clearInterval(timer); };
+  }, [ucapkanLokal]);
+
   const tanganiUcapan = useCallback(
     (mentah: string) => {
       const teks = normalisasi(mentah);
@@ -1289,6 +1616,81 @@ export default function VoiceAssistant() {
       if (laju) { jalankanLaju(laju); return; }
       const bahasaBaru = bacaGantiBahasa(teks);
       if (bahasaBaru) { ubahBahasa(bahasaBaru); return; }
+      // [BARU] "File apa yang kamu pegang tapi belum diupload?" (hanya membaca daftar; boleh di halaman mana pun). Suara Neo sendiri diabaikan.
+      if (!adalahGema(teks) && bacaTanyaFileBelumUpload(teks)) { aktifRef.current = true; void tanyaFileBelumUpload(); return; }
+      // [BARU] Proses file WhatsApp oleh agen (hanya di halaman /agentic-ai). HARUS sebelum perintah tugas biasa di bawah (yang cuma
+      // menggerakkan agen) dan sebelum jalur AI/aksiTerlarang (yang menolak "upload"/"posting" lewat suara). Suara Neo sendiri diabaikan.
+      if (pathRef.current.startsWith('/agentic-ai') && !adalahGema(teks)) {
+        // [BARU] File LAMA. (a) melengkapi perintah yang masih kurang data (file / halaman / klien), (b) perintah baru setelah Neo membacakan daftar.
+        const lamaTunggu = uploadLamaRef.current;
+        if (lamaTunggu && Date.now() < lamaTunggu.sampai) {
+          uploadLamaRef.current = null;
+          let file = lamaTunggu.file;
+          let kandidat = lamaTunggu.kandidat;
+          if (!file) {
+            const p = pilihFileDariUcapan(teks, lamaTunggu.kandidat);
+            file = p.file;
+            if (!file && p.ambigu.length) kandidat = p.ambigu;
+          }
+          let meja = lamaTunggu.meja;
+          if (meja === null) {
+            const hm = halamanTujuan(teks);
+            const pendek = halamanDalamUcapan(teks);
+            meja = hm >= 0 ? hm : teks.split(' ').length <= 5 && pendek >= 0 ? pendek : null;
+          }
+          const kode = lamaTunggu.kode ?? cariKlienDalamUcapan(teks, clientsRef.current)?.clientCode ?? null;
+          if ((file && !lamaTunggu.file) || (meja !== null && lamaTunggu.meja === null) || (kode && !lamaTunggu.kode)) {
+            aktifRef.current = true;
+            lanjutkanUploadLama({ agen: lamaTunggu.agen, meja, kode, file, kandidat });
+            return;
+          }
+        }
+        const daftarLama = fileLamaRef.current && Date.now() < fileLamaRef.current.sampai ? fileLamaRef.current.daftar : [];
+        const pl = bacaPerintahUploadLama(teks, daftarLama);
+        if (pl) {
+          aktifRef.current = true;
+          if (pl.pilih.diluar) { ucapkanLokal(tx('Nomor itu tidak ada di daftar. Sebut nomor yang tadi kubacakan.', 'That number is not on the list. Please say one of the numbers I read.')); return; }
+          const kl = cariKlienDalamUcapan(teks, clientsRef.current);
+          lanjutkanUploadLama({ agen: pl.agen, meja: pl.meja, kode: kl?.clientCode ?? null, file: pl.pilih.file, kandidat: pl.pilih.ambigu.length ? pl.pilih.ambigu : daftarLama });
+          return;
+        }
+        const tunggu = prosesFileKlienRef.current;
+        prosesFileKlienRef.current = null;
+        if (tunggu && Date.now() < tunggu.sampai) {
+          const k = cariKlienDalamUcapan(teks, clientsRef.current);
+          if (k) { aktifRef.current = true; mintaProsesFile(tunggu.agen, tunggu.meja, k.clientCode); return; }
+        }
+        const pf = bacaPerintahProsesFile(teks);
+        if (pf) {
+          aktifRef.current = true;
+          const k = cariKlienDalamUcapan(teks, clientsRef.current);
+          if (k) {
+            mintaProsesFile(pf.agen, pf.meja, k.clientCode);
+          } else {
+            prosesFileKlienRef.current = { agen: pf.agen, meja: pf.meja, sampai: Date.now() + 30000 };
+            ucapkanLokal(tx('Untuk klien mana? Sebut kodenya ya.', 'Which client is it for? Please say its code.'));
+          }
+          return;
+        }
+      }
+
+      // [BARU] Perintah rapat Agentic AI (tanpa harus menyebut nama): mulai hanya di halaman /agentic-ai, selesai di mana pun bila rapat sedang berlangsung
+      const rapat = bacaPerintahRapat(teks);
+      if (rapat && (rapat === 'selesai' ? rapatSedangBerlangsung() : pathRef.current.startsWith('/agentic-ai'))) {
+        aktifRef.current = true;
+        jalankanRapat(rapat);
+        return;
+      }
+
+      // [BARU] Tugas halaman Agentic AI (hanya saat halaman /agentic-ai terbuka)
+      if (pathRef.current.startsWith('/agentic-ai')) {
+        const banyak = bacaPerintahTugasBanyak(teks);
+        if (banyak.length) { aktifRef.current = true; jalankanTugasBanyak(banyak); return; }
+        const tugas = bacaPerintahTugas(teks);
+        if (tugas) { aktifRef.current = true; jalankanTugas(tugas.agen, tugas.meja); return; }
+        const pulang = bacaPerintahPulang(teks);
+        if (pulang && tugasSaatIni()[pulang] !== null) { aktifRef.current = true; jalankanPulang(pulang); return; }
+      }
 
       // posisi nama di dalam ucapan (dan panjangnya); -1 = tidak ada
       let namaIdx = -1;
@@ -1327,7 +1729,7 @@ export default function VoiceAssistant() {
       }
       // selain itu: diabaikan (bukan untuk AI)
     },
-    [bukaJendelaPerintah, jalankanBatalkan, jalankanLaju, jalankanUlangi, potongAI, tanyaAI, tx, ubahBahasa, ucapkan]
+    [adalahGema, bukaJendelaPerintah, jalankanBatalkan, jalankanLaju, jalankanPulang, jalankanRapat, jalankanTugas, jalankanTugasBanyak, jalankanUlangi, lanjutkanUploadLama, mintaProsesFile, potongAI, tanyaAI, tanyaFileBelumUpload, tx, ubahBahasa, ucapkan]
   );
 
   // Pintu masuk semua ucapan pengguna: saring gema, lalu sela AI bila perlu.
@@ -1335,6 +1737,15 @@ export default function VoiceAssistant() {
     (mentah: string) => {
       const teks = normalisasi(mentah);
       if (!teks) return;
+      // [PERBAIKAN] Perintah tugas BARU di halaman Agentic AI ("Zeno cek halaman sales" saat Atlas sudah bekerja) jangan dibuang
+      // sebagai gema: kalimat konfirmasi Neo ("Baik, Atlas, tolong cek halaman Other") mirip dengan perintah berikutnya, jadi
+      // filter gema menganggapnya suara Neo sendiri dan Neo "tidak paham". Gema konfirmasi Neo aman: ia selalu sama dengan
+      // keadaan yang sudah diset (perintahTugasBaru = false), jadi tetap disaring seperti biasa. Hanya berlaku saat sistem menyala.
+      if (!sistemMatiRef.current && !akanMatiRef.current && pathRef.current.startsWith('/agentic-ai') && perintahTugasBaru(teks)) {
+        aktifRef.current = true;
+        tanganiUcapan(mentah);
+        return;
+      }
       if (adalahGema(teks)) return; // suara AI sendiri
       // [BARU] Nyalakan/matikan sistem lewat suara. Saat sistem mati, HANYA "nyalakan sistem" yang ditanggapi.
       if (akanMatiRef.current) return; // sedang mengucapkan "sistem telah dimatikan": jangan diselaku
@@ -1385,6 +1796,7 @@ export default function VoiceAssistant() {
   // [BARU] Kirim semua ucapan yang sudah dikumpulkan sebagai SATU pertanyaan utuh.
   const kirimKumpulan = () => {
     komitTimerRef.current = null;
+    semuaTerakhirRef.current = '';
     const teks = gabungUcapan(bufUcapanRef.current, sementaraUcapanRef.current).replace(POLA_KIRIM, '').trim();
     bufUcapanRef.current = '';
     sementaraUcapanRef.current = '';
@@ -1397,7 +1809,7 @@ export default function VoiceAssistant() {
 
   // Dipanggil dari SpeechRecognition (lewat ref supaya selalu memakai versi terbaru)
   // [DIUBAH] Potongan final TIDAK lagi langsung dikirim ke AI. Semua potongan dikumpulkan; pengiriman
-  // ditunda sampai kamu diam cukup lama (lihat hitungJeda) -> penjelasan panjang dengan jeda berpikir tidak terpotong.
+  // ditunda sampai kamu diam cukup lama (lihat JEDA_SENYAP_MS) -> penjelasan panjang dengan jeda berpikir tidak terpotong.
   hasilRef.current = (e: any) => {
     errorBeruntunRef.current = 0;
     let sementara = '';
@@ -1439,9 +1851,14 @@ export default function VoiceAssistant() {
       potongAI();
     }
 
+    // [BARU] Browser baru menandai ucapan "final" 1-2 detik setelah kamu diam. Kalau teksnya SAMA dengan event sebelumnya
+    // (interim -> final) dan jadwal kirim sudah berjalan, jangan ulang hitungan: kalau diulang, jeda terasa 1-2 detik lebih lama.
+    if (semua === semuaTerakhirRef.current && komitTimerRef.current) return;
+    semuaTerakhirRef.current = semua;
+
     // Kamu masih bicara -> jadwal kirim diulang dari awal; kirim hanya setelah diam cukup lama
     if (komitTimerRef.current) { clearTimeout(komitTimerRef.current); komitTimerRef.current = null; }
-    komitTimerRef.current = setTimeout(kirimKumpulan, POLA_KIRIM.test(semua) ? 300 : hitungJeda(semua));
+    komitTimerRef.current = setTimeout(kirimKumpulan, bacaPerintahRapat(semua) ? 0 : POLA_KIRIM.test(semua) ? 300 : hitungJeda(semua)); // [DIUBAH] perintah meeting langsung diproses, tanpa menunggu jeda hening
   };
 
   // ---------- Pengaturan tersimpan: hanya kecepatan bicara ----------
@@ -1718,6 +2135,13 @@ export default function VoiceAssistant() {
     siapkanSuara(sapaanAwalRef.current.perkenalan || sapaanAwalRef.current.hangat);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authMemuat]);
+  // [BARU] Di halaman Agentic AI, siapkan (cache) audio Gemini untuk kalimat meeting di latar belakang, dengan coba ulang otomatis.
+  useEffect(() => {
+    if (authMemuat || pttRef.current || !pathname?.startsWith('/agentic-ai')) return;
+    siapkanCachePcm(tx('Ayo Zeno, Atlas, ini waktunya kita meeting.', "Come on Zeno, Atlas, it's time for our meeting."));
+    siapkanCachePcm(tx('Meeting selesai. Silakan kembali bekerja, Zeno, Atlas.', 'The meeting is over. Please get back to work, Zeno, Atlas.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authMemuat, pathname, bahasaTampil]);
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     const sapa = () => {

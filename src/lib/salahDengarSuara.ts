@@ -44,7 +44,8 @@ export const SALAH_DENGAR_CLIENT: Record<string, string[]> = {
 // ======================================================================================
 export const SALAH_DENGAR_HALAMAN: Record<string, string[]> = {
   '/': ['ringkasan', 'ringkas an', 'ring kasan', 'ringkasa', 'beranda', 'beranda utama', 'dashbor', 'dasbor', 'dashboard utama', 'halaman depan', 'hom'],
-  '/agent-ai': ['agen ai', 'agent ei ai', 'eijen ai', 'agent a i', 'agen a i', 'ejen ai', 'agent hai', 'agen hai', 'agent ay', 'agent ei', 'asisten ai'],
+  '/zafeb-ai': ['zafeb ai', 'zapeb ai', 'sapeb ai', 'zafep ai', 'safeb ai', 'zapheb ai', 'zafeb hai', 'zafeb a i', 'zafeb ei ai', 'asisten ai'],
+  '/agentic-ai': ['agen ai', 'agent ei ai', 'eijen ai', 'agent a i', 'agen a i', 'ejen ai', 'agent hai', 'agen hai', 'agent ay', 'agent ei', 'agentic ai', 'agentik ai', 'ejentik ai', 'agentic ei ai', 'agentik hai', 'kantor ai'],
   '/memori-ai': ['memori ai', 'memory ai', 'memori a i', 'mamori ai', 'memoria ai', 'memori hai', 'memori ay', 'mamori', 'memoria', 'ingatan ai'],
   '/financial-statements': ['laporan keuangan', 'lapor an keuangan', 'laporan keuangan', 'laporan keuangan', 'laporan kuangan', 'laporan keuagan', 'laporan keu angan', 'financial statemen', 'finansial statement', 'fainansial statement', 'financial setatmen', 'lapuran keuangan', 'laporan keuangn'],
   '/financial-statements/profit-loss': ['laba rugi', 'laba lugi', 'lava rugi', 'laba rugy', 'labarugi', 'laba ruki', 'raba rugi', 'laba rugi', 'laba ruge', 'lapa rugi', 'rugi laba', 'profit and lost', 'profit n loss', 'profit en loss', 'profit dan loss', 'profit loss', 'profit lost', 'p n l', 'pi en el', 'pe en el', 'pnl', 'pnl laporan', 'profit end loss', 'profid and loss', 'proffit and loss'],

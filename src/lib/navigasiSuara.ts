@@ -7,10 +7,12 @@
 // menambah satu baris di HALAMAN di bawah. Alias ditulis huruf kecil, tanpa tanda baca.
 
 import { cariHalamanMirip, type EntriNav, type KandidatHalaman } from './salahDengarSuara';
+import { bacaNiat } from './niatNavigasi';
 
 export type HasilNavigasi =
   | { jenis: 'buka'; path: string; nama: string; tabQuery?: string; belumTersedia?: boolean }
-  | { jenis: 'kembali' };
+  | { jenis: 'kembali' }
+  | { jenis: 'batal' }; // "jangan buka neraca", "nggak jadi pindah" -> Neo cukup mengakui, tidak berpindah
 
 type Tab = { nama: string; alias: string[]; path?: string; query?: string };
 // aksi: true = halaman form baru / export; boleh dipicu juga dengan kata "buat", "tambah", "export"
@@ -34,7 +36,8 @@ const tabQuery = (daftar: [string, string, string[]][]): Tab[] =>
 
 export const HALAMAN: Halaman[] = [
   { path: '/', nama: 'Ringkasan', alias: ['ringkasan', 'overview', 'beranda', 'dashboard', 'halaman utama', 'home'] },
-  { path: '/agent-ai', nama: 'Agent AI', alias: ['agent ai', 'agen ai', 'halaman agent', 'agent'] },
+  { path: '/zafeb-ai', nama: 'Zafeb AI', alias: ['zafeb ai', 'zafeb', 'halaman zafeb', 'chat ai'] },
+  { path: '/agentic-ai', nama: 'Agentic AI', alias: ['agentic ai', 'agentik ai', 'agent ai', 'agen ai', 'halaman agent', 'agent', 'kantor ai', 'kantor 3d'] },
   {
     path: '/memori-ai', nama: 'Memori AI', alias: ['memori ai', 'memori', 'ingatan ai', 'ingatan', 'memory ai', 'ai memory'],
     tab: tabQuery([
@@ -317,6 +320,17 @@ const POLA_TANYA_TENGAH_NAV = /\b(?:berapa|kenapa|mengapa|kapan|siapa|apakah|jel
 const hapusBasaBasi = (t: string) => t.replace(/\b(?:bisa|bisakah|mau|boleh)\s+(?:nggak|gak|enggak|ga|tidak)\b/g, ' ');
 // [BARU] ucapan santai boleh lebih panjang; tapi kalimat panjang yang bernada tanya/negasi tetap diserahkan ke AI
 const MAKS_KATA_SANTAI = 30;
+// [BARU] Pintu masuk semua pencocokan navigasi: memahami NIAT ucapan (lihat niatNavigasi.ts) sebelum mencocokkan nama halaman.
+// perintah = pindah; batal = "jangan buka ..."; selain itu (tanya / cerita masa lalu / orang lain / ragu) = BUKAN perintah pindah.
+function gerbang(teksNormal: string): { teks: string; batal: boolean; perintah: boolean } | null {
+  const asal = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
+  if (!asal || asal.split(' ').length > MAKS_KATA_SANTAI) return null;
+  const n = bacaNiat(asal);
+  if (n.niat === 'batal') return { teks: n.teks, batal: true, perintah: false };
+  if (n.niat === 'perintah') return { teks: n.teks, batal: false, perintah: true };
+  if ((n.niat === 'ragu' || n.niat === 'netral') && POLA_AKSI.test(n.teks)) return { teks: n.teks, batal: false, perintah: false };
+  return null;
+}
 function layakSebagaiPerintah(teks: string): boolean {
   const n = teks.split(' ').length;
   if (n > MAKS_KATA_SANTAI) return false;
@@ -393,13 +407,14 @@ function halamanBertabSaatIni(path?: string): Halaman | null {
 }
 
 export function bacaNavigasi(teksNormal: string, pathSaatIni?: string): HasilNavigasi | null {
-  const teks = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
-  if (!teks) return null;
+  const g = gerbang(teksNormal);
+  if (!g) return null; // tanya / cerita masa lalu / orang lain / ragu -> bukan perintah pindah (diserahkan ke AI)
+  if (g.batal) return { jenis: 'batal' };
+  const teks = g.teks;
   const jumlahKata = teks.split(' ').length;
-  if (!layakSebagaiPerintah(teks)) return null; // [DIUBAH] dulu: > 14 kata langsung ditolak
   if (POLA_ABAIKAN.test(teks)) return null;
 
-  const pemicuBuka = POLA_BUKA.test(teks) || (jumlahKata <= 8 && POLA_BUKA_LEMAH.test(teks) && !POLA_TANYA_TENGAH_NAV.test(teks));
+  const pemicuBuka = g.perintah;
   if (pemicuBuka || POLA_AKSI.test(teks)) {
     const padded = ` ${teks} `;
 
@@ -468,8 +483,10 @@ export function bacaNavigasi(teksNormal: string, pathSaatIni?: string): HasilNav
 export type KandidatTab = { path: string; nama: string; tabQuery?: string; halaman: string; aliasHalaman: string[] };
 
 export function bacaKlarifikasiTab(teksNormal: string): { nama: string; kandidat: KandidatTab[] } | null {
-  const teks = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
-  if (!teks || !layakSebagaiPerintah(teks) || POLA_ABAIKAN.test(teks) || !(POLA_BUKA.test(teks) || (teks.split(' ').length <= 8 && POLA_BUKA_LEMAH.test(teks) && !POLA_TANYA_TENGAH_NAV.test(teks)))) return null;
+  const g = gerbang(teksNormal);
+  if (!g || !g.perintah) return null;
+  const teks = g.teks;
+  if (POLA_ABAIKAN.test(teks)) return null;
   const padded = ` ${teks} `;
   for (const h of HALAMAN) if (cariAlias(padded, h.alias)) return null; // halaman sudah disebut -> bukan kasus ambigu
   const ketemu: { k: KandidatTab; len: number; nama: string }[] = [];
@@ -532,11 +549,48 @@ function ratakanHalaman(): EntriNav[] {
   return out;
 }
 
+// ---------- [BARU] kandidat untuk lapis AI (navigasiCerdas.ts) ----------
+// Dipakai HANYA bila aturan lokal ragu (niat "ragu"/"netral": "neraca dong", "oke sekarang laba rugi", pengandaian)
+// dan ucapan menyebut / mirip dengan halaman atau tab tertentu. AI hanya boleh memilih di antara kandidat ini, jadi
+// tidak mungkin membuka rute yang bukan bagian dari aplikasi. Tidak ada kandidat = AI tidak dipanggil sama sekali.
+export type KandidatNav = { id: string; nama: string; path: string; tabQuery?: string; belumTersedia?: boolean };
+
+export function kandidatUntukAI(teksNormal: string, maks = 6): KandidatNav[] {
+  const asal = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
+  if (!asal || asal.split(' ').length > 20) return [];
+  const n = bacaNiat(asal);
+  if (n.niat !== 'ragu' && n.niat !== 'netral') return []; // perintah/tanya/cerita/orang lain/batal sudah jelas tanpa AI
+  const teks = n.teks || asal;
+  const padded = ` ${teks} `;
+  const hasil: { k: KandidatNav; skor: number }[] = [];
+  const tambah = (path: string, nama: string, skor: number, tabQuery?: string, belum?: boolean) => {
+    if (hasil.some((x) => x.k.path === path)) return;
+    hasil.push({ k: { id: path, nama, path, ...(tabQuery ? { tabQuery } : {}), ...(belum ? { belumTersedia: true } : {}) }, skor });
+  };
+  for (const h of HALAMAN) {
+    const ph = cariAlias(padded, h.alias);
+    if (ph) tambah(h.path, h.nama, 100 + ph.len + (h.kartu ? 5 : 0), h.belum ? h.tabQuery : undefined, h.belum);
+    for (const t of h.tab ?? []) {
+      const pt = cariAlias(padded, t.alias);
+      if (pt) {
+        const tg = targetTab(h, t);
+        tambah(tg.path, tg.nama, 200 + pt.len, tg.tabQuery);
+      }
+    }
+  }
+  if (hasil.length === 0 && asal.split(' ').length <= 4) {
+    // salah dengar (hanya ucapan pendek: kalimat panjang yang ngawur tidak boleh "mirip" apa pun) ("neraka dong") -> kandidat terdekat
+    for (const m of cariHalamanMirip(teks, ratakanHalaman())) tambah(m.entri.path, m.entri.nama, 50 - m.jarak, m.entri.tabQuery);
+  }
+  return hasil.sort((a, b) => b.skor - a.skor).slice(0, maks).map((x) => x.k);
+}
+
 export function bacaNavigasiMirip(teksNormal: string): KandidatHalaman[] {
-  const teks = teksNormal.replace(/&/g, ' and ').replace(/\s+/g, ' ').trim();
-  if (!teks || teks.split(' ').length > MAKS_KATA) return [];
+  const g = gerbang(teksNormal);
+  if (!g || g.batal) return [];
+  const teks = g.teks;
+  if (teks.split(' ').length > MAKS_KATA) return [];
   if (POLA_ABAIKAN.test(teks) || POLA_TANYA_NAV.test(teks)) return [];
-  if (!(POLA_BUKA.test(teks) || POLA_AKSI.test(teks))) return [];
   return cariHalamanMirip(teks, ratakanHalaman());
 }
 

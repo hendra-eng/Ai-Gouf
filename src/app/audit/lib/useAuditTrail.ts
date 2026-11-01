@@ -8,7 +8,7 @@
 // status (daftarJurnalPosting(clientId, '') -- status kosong = semua
 // status: draft/terposting/ditolak), endpoint & fungsi yang SAMA dipakai
 // jurnalBridge.ts di halaman Transaksi. Ini juga yang dirujuk komentar di
-// agent-ai/lib/api.js dan clientActivityBridge.ts.
+// zafeb-ai/lib/api.js dan clientActivityBridge.ts.
 //
 // [Keterbatasan yang SENGAJA dibiarkan jujur, bukan bug]
 // 1) Backend jurnal_posting TIDAK menyimpan histori before/after per field
@@ -20,7 +20,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { daftarJurnalPosting } from '@/app/agent-ai/lib/api';
+import { daftarJurnalPosting } from '@/app/zafeb-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
 
 export interface AuditTrailRow {
