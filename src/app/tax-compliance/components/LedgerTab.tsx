@@ -16,18 +16,20 @@ import { btnOutline, btnPrimary, Card, inputCls, Menu, MenuItem, NumberPager } f
 import { Delta, KpiGrid } from '@/components/shared/moduleUi';
 import { LedgerDrawer, LedgerTable } from './taxUi';
 import type { TaxTabProps } from './TaxWorkspace';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export const LEDGER_EXPORT = [
   { header: 'Date', value: (r: LedgerRow) => r.date }, { header: 'Source Document', value: (r: LedgerRow) => r.source_document },
   { header: 'Party', value: (r: LedgerRow) => r.party_name }, { header: 'Source Module', value: (r: LedgerRow) => SOURCE_LABEL[r.source_module] },
   { header: 'Tax Type', value: (r: LedgerRow) => TAX_LABEL[r.tax_type] }, { header: 'Tax Code', value: (r: LedgerRow) => r.tax_code },
   { header: 'DPP', value: (r: LedgerRow) => r.dpp, type: 'money' as const }, { header: 'Rate %', value: (r: LedgerRow) => r.rate, type: 'number' as const },
-  { header: 'Tax Amount', value: (r: LedgerRow) => r.tax_amount, type: 'money' as const }, { header: 'GL Account', value: (r: LedgerRow) => r.gl_account_code },
+  { header: 'Tax Amount', value: (r: LedgerRow) => r.tax_amount, type: 'money' as const }, { header: 'GL Account', value: (r: LedgerRow) => kodeAkun(r.gl_account_code) },
   { header: 'e-Faktur / e-Bupot', value: (r: LedgerRow) => r.tax_document_no }, { header: 'Payment Status', value: (r: LedgerRow) => PAYMENT_STYLE[r.payment_status].label },
   { header: 'Reporting Status', value: (r: LedgerRow) => REPORTING_STYLE[r.reporting_status].label },
 ];
 
 export default function LedgerTab({ clientId, clientName, range }: TaxTabProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const lg = useTaxData<LedgerData | null>(`tlg:${clientId}:${range.date_from}:${range.date_to}`, s => fetchLedger(clientId, range, s), null);
   const [jenis, setJenis] = useState<'' | TaxType>('');
   const [bayar, setBayar] = useState<'' | PaymentStatus>('');

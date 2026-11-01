@@ -26,6 +26,7 @@ import PurchaseTabContent from './tabs/purchase/PurchaseTabContent';
 import JournalEntryTabContent from './tabs/journal-entry/JournalEntryTabContent';
 import CashBankTabContent from './tabs/cash-bank/CashBankTabContent';
 import OtherTabContent from './tabs/other/OtherTabContent';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface Filters {
   type: string;
@@ -68,6 +69,7 @@ function blankTransaction(): Transaction {
 }
 
 export default function TransactionsContent() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const {
     transactions,
     unpostedCount,
@@ -126,7 +128,8 @@ export default function TransactionsContent() {
           !tx.description.toLowerCase().includes(q) &&
           !tx.party.toLowerCase().includes(q) &&
           !tx.reference.toLowerCase().includes(q) &&
-          !String(tx.accountCode ?? '').toLowerCase().includes(q)
+          !String(tx.accountCode ?? '').toLowerCase().includes(q) &&
+          !kodeAkun(tx.accountCode).toLowerCase().includes(q)
         ) return false;
       }
       if (filters.type !== 'all' && tx.type !== filters.type) return false;

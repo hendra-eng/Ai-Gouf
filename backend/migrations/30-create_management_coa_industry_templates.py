@@ -3,7 +3,7 @@ migrations/30-create_management_coa_industry_templates.py
 ===========================================================
 Template COA default per industri (KBLI 2020 kategori A..U) untuk onboarding
 client baru. Menambahkan 2 tabel BARU + mengisinya dari
-dataset/COA/COA_Industry.xlsx:
+dataset/COA/COA_Industry_V2.xlsx (revisi 2026-10-24; versi lama COA_Industry.xlsx):
 
     management_coa_industry_templates          1 baris per industri, dari sheet
         "COA_JENIS INDUSTRY": KBLI CATEGORY, INDUSTRY (INDONESIA),
@@ -22,6 +22,10 @@ AMAN DIPANGGIL BERKALI-KALI (idempoten) -- data template di-upsert dari
 Excel (industri by KBLI CATEGORY, akun by template + ACC NO); akun template
 yang sudah tidak ada di Excel dihapus dari TEMPLATE (COA client yang sudah
 terbentuk tidak disentuh). Jalankan ulang setelah Excel direvisi.
+
+Kolom OPSIONAL (KOLOM_OPSIONAL): V2 tidak lagi punya OFFICIAL SOURCE (sheet
+industri) & IFRS SOURCE (sheet akun). Kolom yang tidak ada di Excel TIDAK
+ditimpa (nilai lama di DB dipertahankan, akun baru -> NULL).
 
 Cara pakai:
     cd backend
@@ -48,7 +52,7 @@ from _history import catat_history
 from db_client import engine
 from generate_seed_coa import HEADER_WAJIB, KOLOM_DB, normal_balance
 
-FILE_EXCEL = Path(__file__).resolve().parent.parent.parent / "dataset" / "COA" / "COA_Industry.xlsx"
+FILE_EXCEL = Path(__file__).resolve().parent.parent.parent / "dataset" / "COA" / "COA_Industry_V2.xlsx"
 SHEET_INDUSTRI = "COA_JENIS INDUSTRY"
 TABEL_TEMPLATE = "management_coa_industry_templates"
 TABEL_AKUN = "management_coa_industry_template_accounts"
@@ -66,6 +70,8 @@ KOLOM_INDUSTRI = {
     "ACCOUNTING FRAMEWORK NOTE": "framework_note",
     "OFFICIAL SOURCE": "official_source",
 }
+# Header yang boleh tidak ada di Excel (lihat docstring).
+KOLOM_OPSIONAL = {"OFFICIAL SOURCE", "IFRS SOURCE"}
 
 
 def _teks(v):
@@ -80,30 +86,34 @@ def baca_excel():
     wb = openpyxl.load_workbook(FILE_EXCEL, read_only=True, data_only=True)
     rows = list(wb[SHEET_INDUSTRI].iter_rows(values_only=True))
     header = [_teks(h) for h in rows[0]]
-    kurang = [h for h in KOLOM_INDUSTRI if h not in header]
+    kurang = [h for h in KOLOM_INDUSTRI if h not in header and h not in KOLOM_OPSIONAL]
     if kurang:
         raise ValueError(f"Sheet '{SHEET_INDUSTRI}' tidak punya kolom: {kurang}")
-    idx = {h: header.index(h) for h in KOLOM_INDUSTRI}
+    idx = {h: header.index(h) for h in KOLOM_INDUSTRI if h in header}
 
     hasil = []
     for r in rows[1:]:
         if not _teks(r[idx["KBLI CATEGORY"]]):
             continue
-        ind = {kolom: r[idx[h]] for h, kolom in KOLOM_INDUSTRI.items()}
+        ind = {kolom: r[idx[h]] for h, kolom in KOLOM_INDUSTRI.items() if h in idx}
         for k in ("kbli_category", "industry_name_id", "industry_name_en", "template_sheet", "recommended_use", "framework_note", "official_source"):
-            ind[k] = _teks(ind[k])
+            if k in ind:
+                ind[k] = _teks(ind[k])
         for k in ("universal_accounts", "industry_specific_accounts", "total_template_accounts"):
             ind[k] = int(ind[k]) if ind[k] not in (None, "") else None
         if ind["template_sheet"] not in wb.sheetnames:
             raise ValueError(f"TEMPLATE SHEET '{ind['template_sheet']}' ({ind['industry_name_en']}) tidak ada di workbook.")
 
         arows = list(wb[ind["template_sheet"]].iter_rows(values_only=True))
-        aheader = [_teks(h) for h in arows[0]][:len(HEADER_WAJIB)]
-        if aheader != HEADER_WAJIB:
-            raise ValueError(f"Header sheet '{ind['template_sheet']}' tidak sesuai: {aheader}")
+        aheader = [_teks(h) for h in arows[0]]
+        kurang = [h for h in HEADER_WAJIB if h not in aheader and h not in KOLOM_OPSIONAL]
+        if kurang:
+            raise ValueError(f"Header sheet '{ind['template_sheet']}' tidak punya kolom: {kurang}")
+        # header -> kolom DB, by nama (bukan posisi) supaya kolom opsional boleh hilang.
+        aidx = {k: aheader.index(h) for h, k in zip(HEADER_WAJIB, KOLOM_DB) if h in aheader}
         akun, dilihat = [], set()
         for no, ar in enumerate(arows[1:], start=1):
-            nilai = {k: _teks(v) for k, v in zip(KOLOM_DB, ar[:len(KOLOM_DB)])}
+            nilai = {k: _teks(ar[i]) if i < len(ar) else None for k, i in aidx.items()}
             if not nilai["acc_no"] or not nilai["account_name"]:
                 continue
             if nilai["acc_no"] in dilihat:
@@ -134,11 +144,11 @@ def _buat_tabel(connection, nama, orm_class) -> bool:
 
 
 def _muat_data(connection, data) -> bool:
-    kolom_ind = list(KOLOM_INDUSTRI.values())
-    kolom_akun = KOLOM_DB + ["normal_balance", "sort_order"]
     try:
         total_akun = 0
         for ind, akun in data:
+            kolom_ind = list(ind.keys())
+            kolom_akun = [k for k in KOLOM_DB if not akun or k in akun[0]] + ["normal_balance", "sort_order"]
             tpl_id = connection.execute(text(
                 f"INSERT INTO {TABEL_TEMPLATE} ({', '.join(kolom_ind)}) "
                 f"VALUES ({', '.join(':' + k for k in kolom_ind)}) "
@@ -169,7 +179,7 @@ def _muat_data(connection, data) -> bool:
 
 def main() -> int:
     print("=" * 60)
-    print("🔄 MIGRATION: template COA per industri (COA_Industry.xlsx)")
+    print(f"🔄 MIGRATION: template COA per industri ({FILE_EXCEL.name})")
     print("=" * 60)
 
     from db_client import ManagementCoaIndustryTemplate, ManagementCoaIndustryTemplateAccount

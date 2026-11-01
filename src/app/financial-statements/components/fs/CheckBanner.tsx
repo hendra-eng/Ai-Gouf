@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { FsWarning, UnbalancedJournal } from '@/lib/fsStore';
 import { fmtAmount, fmtDate } from './fsFormat';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Status pengecekan laporan (seimbang / terekonsiliasi) + daftar jurnal
 // tidak seimbang & peringatan mapping akun.
@@ -56,6 +57,7 @@ export function CheckBanner({ ok, okText, failText, journals }: {
 }
 
 export function WarningsPanel({ warnings }: { warnings: FsWarning[] }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [open, setOpen] = useState(false);
   if (!warnings.length) return null;
   return (
@@ -69,7 +71,7 @@ export function WarningsPanel({ warnings }: { warnings: FsWarning[] }) {
       {open && (
         <ul className="mt-2 space-y-1 text-xs">
           {warnings.map((w, i) => (
-            <li key={`${w.account_code}-${w.code}-${i}`}><span className="font-mono">{w.account_code}</span> {w.account_name} — {w.message}</li>
+            <li key={`${w.account_code}-${w.code}-${i}`}><span className="font-mono">{kodeAkun(w.account_code)}</span> {w.account_name} — {w.message}</li>
           ))}
         </ul>
       )}

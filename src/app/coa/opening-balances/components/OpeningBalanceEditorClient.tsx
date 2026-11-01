@@ -14,7 +14,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, FileText, GitBranch, Inbox, ListTree, Loader2,
+  AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, GitBranch, Inbox, ListTree, Loader2,
   Lock, LockOpen, RotateCcw, Save, Search, Send, Table2, Trash2, Upload, X,
 } from 'lucide-react';
 import { ACCOUNT_CLASSIFICATIONS, useClientCoa, type CoaAccount } from '@/lib/coaStore';
@@ -35,7 +35,11 @@ import {
 import { useClientsList } from '@/lib/clientsStore';
 import { labelClassification, themeOf } from '../../components/coaTheme';
 import OpeningBalanceImportTab from './OpeningBalanceImportTab';
+import { ControlStatusBanner } from './importUi';
+import { fetchImportOverview, type ImportControlStatus } from '@/lib/openingBalanceImportStore';
+import { exportOpeningBalanceXlsx } from './obExport';
 import { StatusBadge, SuspenseSelect, branchLabel, formatDate } from './obUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const NERACA = new Set(['ASSET', 'LIABILITY', 'EQUITY']);
 
@@ -73,6 +77,7 @@ function kanonik(v: Record<string, Nilai>): string {
 }
 
 export default function OpeningBalanceEditorClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -89,6 +94,8 @@ export default function OpeningBalanceEditorClient() {
   const [sorotPenampung, setSorotPenampung] = useState(false);
   const penampungRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>('import');
+  // Saldo akun kontrol yang masih sementara (detail subledger belum diimpor) / beda dengan file COA.
+  const [kontrol, setKontrol] = useState<ImportControlStatus[]>([]);
   const { clients } = useClientsList();
 
   const { accounts, loading: loadingCoa } = useClientCoa(ob?.client_id ?? null);
@@ -107,6 +114,19 @@ export default function OpeningBalanceEditorClient() {
       .then(d => { terapkan(d); setLoadError(null); })
       .catch(e => setLoadError(e instanceof Error ? e.message : 'Failed to load opening balance.'));
   }, [id, terapkan]);
+
+  const muatKontrol = useCallback(async () => {
+    if (!id) return [] as ImportControlStatus[];
+    try {
+      const k = (await fetchImportOverview(id)).control_status ?? [];
+      setKontrol(k);
+      return k;
+    } catch {
+      return [] as ImportControlStatus[];
+    }
+  }, [id]);
+
+  useEffect(() => { if (tab === 'detail') muatKontrol(); }, [tab, muatKontrol]);
 
   const draft = ob?.status === 'draft';
   const awalTahun = !!ob && header.asOf === `${ob.fiscal_year - 1}-12-31`;
@@ -162,7 +182,7 @@ export default function OpeningBalanceEditorClient() {
         ? Math.abs(totals.laba) > 0.004
         : !!v && (parseAmount(v.debit) > 0 || parseAmount(v.credit) > 0);
       if (hanyaTerisi && !terisi) continue;
-      if (q && !`${a.acc_no} ${a.account_name} ${a.account_head ?? ''} ${a.account_sub ?? ''}`.toLowerCase().includes(q)) continue;
+      if (q && !`${a.acc_no} ${kodeAkun(a.acc_no)} ${a.account_name} ${a.account_head ?? ''} ${a.account_sub ?? ''}`.toLowerCase().includes(q)) continue;
       g.set(a.account_classification, [...(g.get(a.account_classification) ?? []), a]);
     }
     return ACCOUNT_CLASSIFICATIONS.filter(k => g.has(k)).map(k => [k, g.get(k)!] as const);
@@ -235,9 +255,18 @@ export default function OpeningBalanceEditorClient() {
       throw new OpeningBalanceError(`Out of balance by ${formatAmount(Math.abs(selisih))}. Choose a suspense account first.`, 'SUSPENSE_REQUIRED_LOCAL');
     }
     if (totals.count === 0) throw new OpeningBalanceError('Fill in at least one balance before posting.');
-    const pesan = seimbang
+    // Posting tetap boleh walau detail subledger belum diimpor (keputusan bisnis 2026-10-31) -- cukup diingatkan.
+    const pending = (await muatKontrol()).filter(k => k.status === 'pending');
+    const catatanDetail = pending.length
+      ? `
+
+Provisional balances — subledger detail still required for: ${pending.map(k => `${k.label} (${formatAmount(k.opening_balance)})`).join(', ')}. `
+        + 'You can post now; to import the detail later, use Revise, approve the import, then post again.'
+      : '';
+    const pesan = (seimbang
       ? `Post opening balance FY ${ob!.fiscal_year} (${branchLabel(ob!.branch)})? An opening journal will be created.`
-      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${penampung?.acc_no} ${penampung?.account_name}. Post anyway?`;
+      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Post anyway?`)
+      + catatanDetail;
     if (!window.confirm(pesan)) return;
     if (adaPerubahan) await simpan(true);
     const d = await postOpeningBalance(ob!.id);
@@ -269,6 +298,27 @@ export default function OpeningBalanceEditorClient() {
     toast.success('Opening balance deleted');
     router.push('/coa/opening-balances');
   });
+
+  // Export = semua akun yang tampil (abaikan search/filter), nilai sesuai layar (termasuk yang belum disimpan).
+  const [mengekspor, setMengekspor] = useState(false);
+  const onExport = async () => {
+    if (!ob || mengekspor) return;
+    setMengekspor(true);
+    try {
+      await exportOpeningBalanceXlsx({
+        ob,
+        clientName: clients.find(c => c.id === ob.client_id)?.companyName ?? '',
+        accounts: akunTampil,
+        saldo: coaId => ({ debit: parseAmount(nilai[coaId]?.debit ?? ''), credit: parseAmount(nilai[coaId]?.credit ?? '') }),
+        isLabaBerjalan,
+        laba: awalTahun ? 0 : totals.laba,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to export.');
+    } finally {
+      setMengekspor(false);
+    }
+  };
 
   const toggleGrup = (k: string) => setTertutup(prev => {
     const n = new Set(prev);
@@ -384,11 +434,12 @@ export default function OpeningBalanceEditorClient() {
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
             <p className="text-xs leading-relaxed text-amber-900">
               The balances were <span className="font-semibold">{formatAmount(Math.abs(ob.difference))}</span> out of balance. The difference is parked in{' '}
-              <span className="font-semibold">{ob.suspense_account.acc_no} · {ob.suspense_account.account_name}</span>. Fix the balances and{' '}
+              <span className="font-semibold">{kodeAkun(ob.suspense_account.acc_no)} · {ob.suspense_account.account_name}</span>. Fix the balances and{' '}
               {ob.status === 'posted' ? 'use Revise' : 'unlock, then Revise'}, or reclassify it with a regular journal entry.
             </p>
           </div>
         )}
+        <ControlStatusBanner items={kontrol} obId={ob.id} />
         {!draft && (
           <div className="flex items-start gap-3 rounded-2xl border border-border bg-slate-50 px-4 py-3">
             {ob.status === 'locked' ? <Lock size={16} className="mt-0.5 shrink-0 text-slate-500" /> : <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600" />}
@@ -464,6 +515,13 @@ export default function OpeningBalanceEditorClient() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={onExport}
+              disabled={mengekspor || akunTampil.length === 0}
+              className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            >
+              {mengekspor ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Export
+            </button>
           </div>
 
           {awalTahun && (
@@ -517,7 +575,7 @@ export default function OpeningBalanceEditorClient() {
                         <tr key={a.id} className={`border-b border-slate-100 ${d || c ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
                           <td className="px-5 py-2">
                             <div className="flex items-center gap-3">
-                              <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{a.acc_no}</span>
+                              <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(a.acc_no)}</span>
                               <span className={`truncate ${a.is_active ? 'text-foreground' : 'text-slate-400'}`}>{a.account_name}</span>
                               {tidakNormal && (
                                 <span title="Balance is on the opposite side of this account's normal balance (fine for contra accounts)." className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
@@ -542,7 +600,7 @@ export default function OpeningBalanceEditorClient() {
                                 disabled={!draft}
                                 inputMode="decimal"
                                 placeholder="0"
-                                aria-label={`${sisi} ${a.acc_no}`}
+                                aria-label={`${sisi} ${kodeAkun(a.acc_no)}`}
                                 className="w-full rounded-lg border border-transparent bg-transparent px-2.5 py-1.5 text-right font-mono text-sm tabular-nums text-foreground placeholder:text-slate-300 transition-shadow hover:border-border focus:border-blue-400 focus:bg-card focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:hover:border-transparent"
                               />
                             </td>
@@ -588,7 +646,7 @@ export default function OpeningBalanceEditorClient() {
                     : <>
                         <span className="font-mono tabular-nums">{formatAmount(Math.abs(selisih))}</span>
                         {' → '}
-                        {penampung ? `${penampung.acc_no} (${selisih > 0 ? 'credit' : 'debit'})` : 'choose a suspense account'}
+                        {penampung ? `${kodeAkun(penampung.acc_no)} (${selisih > 0 ? 'credit' : 'debit'})` : 'choose a suspense account'}
                       </>}
                 </p>
               </div>
@@ -631,7 +689,7 @@ function BarisLabaBerjalan({ akun, laba, awalTahun }: { akun: CoaAccount; laba: 
     <tr className="border-b border-slate-100 bg-violet-50">
       <td className="px-5 py-2">
         <div className="flex items-center gap-3">
-          <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{akun.acc_no}</span>
+          <span className="w-24 shrink-0 font-mono text-[11px] text-slate-500">{kodeAkun(akun.acc_no)}</span>
           <span className="truncate text-foreground">{akun.account_name}</span>
           <span
             title={awalTahun

@@ -14,6 +14,7 @@ import { useActiveClient } from '@/lib/activeClient';
 import { useBcOverview, TX_STATUS_LABEL, type BcOverviewAccount, type TxStatus } from '@/lib/bankCashStore';
 import { useCashPaymentsFromPurchase } from '../lib/usePurchaseCashPayments';
 import { useCashReceiptsFromSales } from '../lib/useSalesCashReceipts';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Ringkasan per rekening bank: saldo menurut rekening koran (baris mutasi terakhir yang
 // ber-saldo di Bank Feed) vs saldo menurut buku (GL: transaksi posted, termasuk saldo awal).
@@ -62,7 +63,7 @@ function ReconciliationSummary({ accounts }: { accounts: BcOverviewAccount[] }) 
                 const d = (a.bank_balance ?? 0) - a.book_balance;
                 return (
                   <tr key={a.id} className="border-b border-border/50">
-                    <td className="px-4 py-2">{a.code} · {a.name}{a.bank_balance_date ? <span className="text-muted-foreground"> · as of {a.bank_balance_date}</span> : null}</td>
+                    <td className="px-4 py-2">{kodeAkun(a.code)} · {a.name}{a.bank_balance_date ? <span className="text-muted-foreground"> · as of {a.bank_balance_date}</span> : null}</td>
                     <td className="px-4 py-2 text-right font-mono">{formatIDR(a.bank_balance ?? 0, true)}</td>
                     <td className="px-4 py-2 text-right font-mono">{formatIDR(a.book_balance, true)}</td>
                     <td className={`px-4 py-2 text-right font-mono ${Math.abs(d) < 1 ? 'text-emerald-700' : 'text-amber-700'}`}>{formatIDR(d, true)}</td>
@@ -93,6 +94,7 @@ const pihakKandidat = (k: SaranKandidat) =>
   Array.from(new Set(k.allocations.map((a) => a.party).filter(Boolean))).join(', ') || '-';
 
 export default function ReconciliationPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { mutations, ignoreMutation } = useBankFeed();
   const { activeClientId } = useActiveClient();
   const { overview } = useBcOverview(activeClientId ? String(activeClientId) : null);

@@ -30,7 +30,8 @@ export interface ImportBatch {
   total_debit: number;
   total_credit: number;
   /** Isu yang memblok submit (baris error, total debit != kredit). Kosong = boleh submit. */
-  blocking_issues: string[];
+  /** Catatan untuk reviewer (baris error dilewati, debit != kredit) -- TIDAK memblokir submit/approve. */
+  issues: string[];
   notes: string | null;
   created_at: string | null;
   created_by: string | null;
@@ -56,9 +57,23 @@ export interface ImportModuleSummary {
   setup: { label: string; href: string };
 }
 
+/** Saldo akun kontrol AR/AP/Inventory/Fixed Asset vs detail subledger (backend _status_kontrol).
+ *  pending = saldo sementara (dari file COA) tapi detail belum diimpor; difference / reconciled =
+ *  detail sudah diimpor, dibanding angka file COA. Angka di sisi normal (AP kredit = positif). */
+export interface ImportControlStatus {
+  module: Exclude<ImportModule, 'coa'>;
+  module_label: string;
+  label: string;
+  status: 'pending' | 'difference' | 'reconciled';
+  opening_balance: number;
+  coa_amount: number | null;
+  difference: number | null;
+}
+
 export interface ImportOverview {
   modules: ImportModuleSummary[];
   batches: ImportBatch[];
+  control_status: ImportControlStatus[];
 }
 
 export interface ImportRowMessage {
@@ -75,11 +90,23 @@ export interface ImportRow {
   status: ImportRowStatus;
   messages: ImportRowMessage[];
   data: Record<string, unknown>;
+  /** true = not selected by the reviewer on approval (not applied). */
+  is_excluded: boolean;
 }
 
 export interface ImportBatchDetail extends ImportBatch {
   opening_balance: { id: string; fiscal_year: number; branch: string | null; as_of_date: string; status: string } | null;
   rows: ImportRow[];
+  excluded_rows: number;
+  /** Aksi yang boleh untuk user login (backend _izin_batch). no_review = approve langsung tanpa submit. */
+  permissions: {
+    can_input: boolean;
+    no_review: boolean;
+    can_submit: boolean;
+    can_approve: boolean;
+    can_reject: boolean;
+    can_cancel: boolean;
+  };
 }
 
 interface ApiEnvelope<T> {
@@ -142,8 +169,11 @@ export async function submitImportBatch(batchId: string): Promise<ImportBatch> {
   return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/submit`));
 }
 
-export async function approveImportBatch(batchId: string, note?: string): Promise<ImportBatch> {
-  return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/approve`, { note: note || null }));
+/** rowIds = selected rows only; omit / null = approve all rows. */
+export async function approveImportBatch(batchId: string, note?: string, rowIds?: string[] | null): Promise<ImportBatch> {
+  return baca<ImportBatch>(await kirim(`${OB_URL}/imports/${encodeURIComponent(batchId)}/approve`, {
+    note: note || null, row_ids: rowIds ?? null,
+  }));
 }
 
 export async function rejectImportBatch(batchId: string, reason: string): Promise<ImportBatch> {

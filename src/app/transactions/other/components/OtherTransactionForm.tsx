@@ -19,6 +19,7 @@ import {
 import { btnOutline, btnPrimary, inputCls, Menu, MenuItem } from '@/components/arap/arapUi';
 import { AccountSelect, FormField } from '@/components/shared/moduleUi';
 import { IssueList, StatusPill, TYPE_UI, TypeIcon, type DetailField } from './otherUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const STEPS = [
   ['Transaction Details', 'Enter transaction information'], ['Journal Preview', 'Review automatic journal'],
@@ -79,6 +80,7 @@ function Suggest({ id, value, onChange, options, placeholder, disabled }: {
 }
 
 export default function OtherTransactionForm() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const params = useSearchParams();
   const { activeClientId } = useActiveClient();
@@ -245,7 +247,7 @@ export default function OtherTransactionForm() {
 
   const err = (label: string) => tampilErr && wajibKosong.includes(label) ? 'border-rose-400' : '';
   const roleLabel = (p: Role) => jenis.roles[p] ?? p;
-  const akunNama = (id: string | null) => { const a = m?.accounts.find(x => x.id === id); return a ? `${a.code} - ${a.name}` : '—'; };
+  const akunNama = (id: string | null) => { const a = m?.accounts.find(x => x.id === id); return a ? `${kodeAkun(a.code)} - ${a.name}` : '—'; };
   const statusTx = t?.status ?? 'draft';
   const bolehPost = !!t && t.status === 'approved' && !!m?.can_post;
 
@@ -298,7 +300,7 @@ export default function OtherTransactionForm() {
           {baris.map((l, i) => (
             <tr key={i}>
               <td className="px-2 py-2 align-top">{i + 1}</td>
-              <td className="px-2 py-2 align-top"><b className="font-semibold">{l.account_code}</b><span className="block text-[10px] text-muted-foreground">{l.account_name}</span></td>
+              <td className="px-2 py-2 align-top"><b className="font-semibold">{kodeAkun(l.account_code)}</b><span className="block text-[10px] text-muted-foreground">{l.account_name}</span></td>
               <td className="px-2 py-2 align-top text-[11px]">{l.description}</td>
               <td className="px-2 py-2 text-right align-top">{l.debit ? l.debit.toLocaleString('id-ID') : '-'}</td>
               <td className="px-2 py-2 text-right align-top">{l.credit ? l.credit.toLocaleString('id-ID') : '-'}</td>

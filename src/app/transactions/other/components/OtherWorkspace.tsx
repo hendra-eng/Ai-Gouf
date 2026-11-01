@@ -27,6 +27,7 @@ import {
 } from './otherUi';
 import TemplatesModal from './TemplatesModal';
 import OtherImportModal from './OtherImportModal';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type Tab = 'overview' | 'categories' | 'review' | 'preview' | 'exceptions' | 'posted';
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -41,6 +42,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 interface Ctx { clientId: string; meta: Meta | null; txs: OtherTx[]; loading: boolean; error: string | null; open: (id: string) => void }
 
 export default function OtherWorkspace() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -69,7 +71,7 @@ export default function OtherWorkspace() {
           { header: 'Counterparty', value: t => t.counterparty }, { header: 'Reference', value: t => t.reference_no },
           { header: 'Description', value: t => t.description }, { header: 'Amount (IDR)', value: t => t.amount_idr, type: 'money' },
           { header: 'Status', value: t => t.status_label },
-          { header: 'Journal', value: t => t.lines.map(l => `${l.debit ? 'Dr' : 'Cr'} ${l.account_code} ${(l.debit || l.credit).toLocaleString('id-ID')}`).join('; ') },
+          { header: 'Journal', value: t => t.lines.map(l => `${l.debit ? 'Dr' : 'Cr'} ${kodeAkun(l.account_code)} ${(l.debit || l.credit).toLocaleString('id-ID')}`).join('; ') },
         ],
       });
     } catch (e) {

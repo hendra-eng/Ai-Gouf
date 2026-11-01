@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import type { Transaction } from '../transactionData';
 import { downloadBlob, type ExcelExportResult } from './exportExcelShared';
+import { kodeAkun } from '@/lib/accountCode';
 
 // [BARU] Template export khusus client "PT Sumber Alodie Utama" (SAU), meniru
 // PERSIS struktur & styling file contoh user:
@@ -277,7 +278,7 @@ function writeGlRow(sheet: ExcelJS.Worksheet, rowNumber: number, tx: Transaction
   if (tx) {
     // 8 kolom sesuai mapping final (lihat komentar atas file).
     row.getCell(3).value = parseDateOnly(tx.date);
-    row.getCell(6).value = tx.accountCode;
+    row.getCell(6).value = kodeAkun(tx.accountCode);
     row.getCell(7).value = tx.accountName;
     row.getCell(8).value = tx.jeId;
     row.getCell(10).value = tx.description;

@@ -1,5 +1,6 @@
 import type { PrintReport } from '@/lib/printExport';
 import type { PurchaseTransaction, PurchaseLine } from '@/data/purchaseData';
+import { kodeAkun } from '@/lib/accountCode';
 
 // Susunan laporan Print (CSV / Excel / PDF) untuk fitur Purchase.
 // Daftar = 1 baris per transaksi pembelian (sesuai kolom tabel);
@@ -101,7 +102,7 @@ export function buildPurchaseDetailReport(tx: PurchaseTransaction, lines: Purcha
         discount: l.discount || null,
         taxAmount: l.taxAmount,
         total: l.total,
-        account: [l.accountCode, l.accountName].filter(Boolean).join(' · '),
+        account: [kodeAkun(l.accountCode), l.accountName].filter(Boolean).join(' · '),
       })),
     },
     summary: [

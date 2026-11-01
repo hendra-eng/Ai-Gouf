@@ -26,6 +26,7 @@ import {
 import { buildVoucherPdf } from './arapExport';
 import { btnOutline, btnPrimary, inputCls, SettlementBadge } from './arapUi';
 import { useReportHeader } from './StatementsTab';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const angka = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
 const parseUang = (s: string) => {
@@ -37,6 +38,7 @@ const parseUang = (s: string) => {
 export function MoneyInput({ value, onChange, disabled, autoFocus, className = '' }: {
   value: number; onChange: (n: number) => void; disabled?: boolean; autoFocus?: boolean; className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [teks, setTeks] = useState(value ? angka.format(value) : '');
   const fokus = useRef(false);
   useEffect(() => { if (!fokus.current) setTeks(value ? angka.format(value) : ''); }, [value]);
@@ -55,6 +57,7 @@ export function MoneyInput({ value, onChange, disabled, autoFocus, className = '
 }
 
 export function Label({ children, wajib }: { children: React.ReactNode; wajib?: boolean }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return <label className="mb-1 block text-sm font-medium text-foreground">{children}{wajib && <span className="ml-0.5 text-rose-500">*</span>}</label>;
 }
 
@@ -287,7 +290,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
     try {
       const bank = akunKas.find(a => a.id === bankId);
       const doc = await buildVoucherPdf({
-        cfg, header, number: nomor, date: tanggal, party, method: metode, bank: bank ? `${bank.code} · ${bank.name}` : '—',
+        cfg, header, number: nomor, date: tanggal, party, method: metode, bank: bank ? `${kodeAkun(bank.code)} · ${bank.name}` : '—',
         reference: referensi, referenceDate: tglRef, notes: catatan, status: asal ? asal.status.toUpperCase() : 'NOT SAVED YET',
         allocations: docs.data.filter(d => alokasi[d.id]).map(d => ({ no: d.no, date: d.date, due_date: d.due_date, amount: alokasi[d.id] })),
         unapplied: nilaiSisa,
@@ -379,7 +382,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
                 <Landmark size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <select value={bankId} disabled={terkunci} onChange={e => setBankId(e.target.value)} className={`${inputCls} pl-9`}>
                   {!akunKas.length && <option value="">{accounts.loading ? 'Loading...' : 'No cash / bank accounts in the COA'}</option>}
-                  {akunKas.map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+                  {akunKas.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}</option>)}
                 </select>
               </div>
             </div>
@@ -490,7 +493,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
                   <MoneyInput value={sisa} onChange={setSisa} disabled={terkunci} className="py-1" />
                   <select value={akunSisa} disabled={terkunci} onChange={e => setAkunSisa(e.target.value)} className={inputCls}>
                     <option value="">Select account...</option>
-                    {akunLain.map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}{a.classification ? ` (${a.classification})` : ''}</option>)}
+                    {akunLain.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}{a.classification ? ` (${a.classification})` : ''}</option>)}
                   </select>
                 </div>
               )}
@@ -546,6 +549,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
 }
 
 export default function SettlementForm({ side }: { side: ArApSide }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <Suspense fallback={<div className="p-8 text-sm text-muted-foreground">Loading...</div>}>
       <SettlementFormInner side={side} />

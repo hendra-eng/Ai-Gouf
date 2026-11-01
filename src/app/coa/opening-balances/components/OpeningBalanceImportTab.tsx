@@ -9,6 +9,8 @@
 // missing_mappings + setup) -> kalau belum, tampilkan dialog info + link ke
 // Settings > Account Mapping atau Fixed Assets > Categories (modul asset);
 // backend juga menolak, kode MAPPING_REQUIRED.
+// Saldo akun kontrol AR/AP/Inventory/Fixed Asset dari file COA = saldo sementara
+// -> notifikasi "detail required" per modul + banner (control_status backend).
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -20,10 +22,11 @@ import {
   downloadImportTemplate,
   fetchImportOverview,
   uploadImportFile,
+  type ImportControlStatus,
   type ImportModule,
   type ImportModuleSummary,
 } from '@/lib/openingBalanceImportStore';
-import { BatchStatusBadge, IMPORT_MODULE_META, type ImportModuleMeta } from './importUi';
+import { BatchStatusBadge, ControlStatusBanner, ControlStatusLine, IMPORT_MODULE_META, type ImportModuleMeta } from './importUi';
 
 const fmtPeriode = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' });
 
@@ -33,11 +36,12 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
   const [target, setTarget] = useState<ImportModule | null>(null);
   const [sibuk, setSibuk] = useState<{ module: ImportModule; jenis: 'upload' | 'template' } | null>(null);
   const [ringkasan, setRingkasan] = useState<ImportModuleSummary[] | null>(null);
+  const [kontrol, setKontrol] = useState<ImportControlStatus[]>([]);
   const [infoMapping, setInfoMapping] = useState<{ mod: ImportModuleMeta; kurang: string[]; setup: ImportModuleSummary['setup'] } | null>(null);
 
   const muat = useCallback(() => {
     fetchImportOverview(ob.id)
-      .then(d => setRingkasan(d.modules))
+      .then(d => { setRingkasan(d.modules); setKontrol(d.control_status ?? []); })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load import status.'));
   }, [ob.id]);
 
@@ -72,8 +76,8 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
     setSibuk({ module: k, jenis: 'upload' });
     try {
       const b = await uploadImportFile(ob.id, k, f);
-      if (b.blocking_issues.length > 0) {
-        toast.warning('File uploaded with errors', { description: b.blocking_issues.join(' ') });
+      if (b.issues.length > 0) {
+        toast.warning('File uploaded — please review', { description: b.issues.join(' ') });
       } else {
         toast.success('File uploaded and validated', { description: `${b.total_rows} row${b.total_rows === 1 ? '' : 's'} ready for review.` });
       }
@@ -130,7 +134,7 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
           ['Total Modules', total, Layers, 'bg-sky-50 text-sky-600'],
           ['Imported', imported, CheckCircle2, 'bg-emerald-50 text-emerald-600'],
           ['Pending', total - imported, Clock, 'bg-amber-50 text-amber-600'],
-          ['Reconciled', 0, BarChart3, 'bg-violet-50 text-violet-600'],
+          ['Reconciled', kontrol.filter(k => k.status === 'reconciled').length, BarChart3, 'bg-violet-50 text-violet-600'],
         ] as const).map(([label, val, Icon, cls]) => (
           <div key={label} className="flex items-center gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
             <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${cls}`}><Icon size={26} /></div>
@@ -149,12 +153,15 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
         </div>
       )}
 
+      <ControlStatusBanner items={kontrol} obId={ob.id} />
+
       {/* Daftar modul import */}
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         {IMPORT_MODULE_META.map(mod => {
           const r = ringkasanOf(mod.key);
           const Icon = mod.icon;
           const latest = r?.latest ?? null;
+          const statusKontrol = kontrol.find(k => k.module === mod.key);
           return (
             <div key={mod.key} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center">
               <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -168,6 +175,7 @@ export default function OpeningBalanceImportTab({ ob, clientName }: { ob: Openin
                       <AlertTriangle size={12} /> Setup required ({r.setup.label}): {r.missing_mappings.join(', ')}
                     </p>
                   )}
+                  {statusKontrol && <ControlStatusLine status={statusKontrol} />}
                   {latest && (
                     <Link href={`/coa/opening-balances/${ob.id}/imports/${mod.key}/${latest.id}`} className="mt-0.5 block truncate text-[11px] font-medium text-sky-700 hover:underline">
                       {latest.file_name} · {latest.total_rows} row{latest.total_rows === 1 ? '' : 's'}

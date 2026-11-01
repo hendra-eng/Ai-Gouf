@@ -10,8 +10,10 @@ import { toast } from 'sonner';
 import { Loader2, Search } from 'lucide-react';
 import { fetchTaxAccounts, saveTaxMappings, syncTax, useTaxData, type TaxAccountsData, type TaxType } from '@/lib/taxComplianceStore';
 import { btnOutline, btnPrimary, Drawer, inputCls } from '@/components/arap/arapUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export default function TaxSettingsDrawer({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const data = useTaxData<TaxAccountsData | null>(`tacc:${clientId}`, s => fetchTaxAccounts(clientId, s), null);
   const [peta, setPeta] = useState<Record<string, TaxType | ''>>({});
   const [cari, setCari] = useState('');
@@ -24,7 +26,7 @@ export default function TaxSettingsDrawer({ clientId, onClose }: { clientId: str
   const akun = useMemo(() => {
     const q = cari.trim().toLowerCase();
     return (data.data?.accounts ?? []).filter(a => (semua || peta[a.id] || /pajak|tax|pph|ppn|vat/i.test(`${a.name} ${a.standard_code ?? ''}`))
-      && (!q || `${a.code} ${a.name}`.toLowerCase().includes(q)));
+      && (!q || `${a.code} ${kodeAkun(a.code)} ${a.name}`.toLowerCase().includes(q)));
   }, [data.data, peta, cari, semua]);
 
   const simpan = async () => {
@@ -55,7 +57,7 @@ export default function TaxSettingsDrawer({ clientId, onClose }: { clientId: str
         {data.loading && !data.data && <div className="h-24 animate-pulse bg-slate-50" />}
         {akun.map(a => (
           <div key={a.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-            <span className="min-w-0 flex-1"><b>{a.code}</b> · {a.name}<span className="block text-[11px] text-muted-foreground">{a.classification} · {a.standard_code ?? '—'}</span></span>
+            <span className="min-w-0 flex-1"><b>{kodeAkun(a.code)}</b> · {a.name}<span className="block text-[11px] text-muted-foreground">{a.classification} · {a.standard_code ?? '—'}</span></span>
             <select value={peta[a.id] ?? ''} onChange={e => setPeta(p => ({ ...p, [a.id]: e.target.value as TaxType | '' }))} className="w-48 rounded-lg border border-border bg-card px-2 py-1.5 text-xs">
               <option value="">Not a tax account</option>
               {data.data?.tax_types.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}

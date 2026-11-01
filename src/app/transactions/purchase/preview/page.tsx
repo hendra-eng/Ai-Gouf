@@ -15,6 +15,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const PICKER_PAGE_SIZE = 20;
 
@@ -99,6 +100,7 @@ function getAccountingEntries(tx: PurchaseTransaction) {
 }
 
 export default function PurchasePreviewPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
   const { transactions: backendTransactions } = usePurchaseTransactions(activeClientId ?? null);
@@ -284,7 +286,7 @@ export default function PurchasePreviewPage() {
                         <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{line.taxRate}%</td>
                         <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap text-muted-foreground">{fmt(line.taxAmount)}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-semibold">{fmt(line.total)}</td>
-                        <td className="px-4 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">{line.accountCode || '—'}</td>
+                        <td className="px-4 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">{kodeAkun(line.accountCode) || '—'}</td>
                         <td className="px-4 py-2.5 text-foreground min-w-[160px]">{line.accountName || '—'}</td>
                       </tr>
                     ))}

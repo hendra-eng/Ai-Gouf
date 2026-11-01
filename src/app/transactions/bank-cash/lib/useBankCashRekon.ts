@@ -10,6 +10,7 @@ import { useMemo } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useBcTransactions, type BcTransaction } from '@/lib/bankCashStore';
 import type { CashBankTx } from './cashBankMock';
+import { kodeAkun } from '@/lib/accountCode';
 
 export interface PembayaranRekon {
   /** id baris transaksi (alokasi). */
@@ -80,7 +81,7 @@ export function keDaftarPembayaran(txs: BcTransaction[]): PembayaranRekon[] {
         direction: t.direction === 'receipt' ? 'cash_receipt' : 'cash_payment',
         payment_date: t.tx_date,
         amount: l.amount,
-        bank_account: `${t.bank_account_code} - ${t.bank_account_name}`,
+        bank_account: `${kodeAkun(t.bank_account_code)} - ${t.bank_account_name}`,
         bank_mutation_ref: t.mutation?.id ?? '',
         purchase_id: l.purchase_transaction_id,
         sales_id: l.sales_invoice_id,
@@ -112,7 +113,7 @@ export function usePembayaranRekon() {
 export function keTxPosted(t: BcTransaction): CashBankTxReal {
   const receipt = t.direction === 'receipt';
   const inv = t.lines.filter(l => l.line_type !== 'account');
-  const akunLawan = t.lines.map(l => `${l.account_code} - ${l.account_name}`);
+  const akunLawan = t.lines.map(l => `${kodeAkun(l.account_code)} - ${l.account_name}`);
   return {
     id: t.id,
     tx_no: t.tx_number,
@@ -120,7 +121,7 @@ export function keTxPosted(t: BcTransaction): CashBankTxReal {
     tx_date: t.tx_date,
     amount: t.amount,
     direction: receipt ? 'Cash Receipt' : 'Cash Payment',
-    bank_account: `${t.bank_account_code} - ${t.bank_account_name}`,
+    bank_account: `${kodeAkun(t.bank_account_code)} - ${t.bank_account_name}`,
     transaction_type: t.category || (receipt ? 'Cash Receipt' : 'Cash Payment'),
     tax_status: 'Non-Taxable',
     dpp: t.amount,

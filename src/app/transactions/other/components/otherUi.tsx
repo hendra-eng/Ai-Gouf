@@ -17,6 +17,7 @@ import {
 } from '@/lib/otherTransactionStore';
 import { btnSmall, Drawer, Field, inputCls } from '@/components/arap/arapUi';
 import { JournalLines, Pill, ReasonDialog } from '@/components/shared/moduleUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // ============================================================
 // KONFIGURASI PER JENIS
@@ -120,6 +121,7 @@ export const TYPE_UI: Record<TypeKey, TypeUi> = {
 export const TYPE_ORDER: TypeKey[] = ['employee_advance', 'security_deposit', 'loan_financing', 'capital_injection', 'intercompany', 'refund_reimbursement', 'other_event'];
 
 export function TypeIcon({ type, size = 'sm' }: { type: TypeKey; size?: 'sm' | 'md' | 'lg' }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const u = TYPE_UI[type] ?? TYPE_UI.other_event;
   const Ikon = u.icon;
   const box = size === 'lg' ? 'h-14 w-14 rounded-2xl' : size === 'md' ? 'h-10 w-10 rounded-xl' : 'h-7 w-7 rounded-lg';
@@ -133,7 +135,7 @@ export const createHref = (type: TypeKey, templateId?: string | null) =>
 export const editHref = (id: string) => `/transactions/other/create?id=${id}`;
 
 export const cocok = (t: OtherTx, q: string) => !q || [t.journal_no, t.counterparty, t.reference_no, t.description, t.type_name, t.subtype_label,
-  ...t.lines.map(l => `${l.account_code} ${l.account_name}`)].some(x => (x || '').toLowerCase().includes(q.toLowerCase()));
+  ...t.lines.map(l => `${l.account_code} ${kodeAkun(l.account_code)} ${l.account_name}`)].some(x => (x || '').toLowerCase().includes(q.toLowerCase()));
 
 export const EDITABLE: TxStatus[] = ['draft', 'pending_review', 'approved', 'rejected'];
 
@@ -150,6 +152,7 @@ export async function runBulk(clientId: string, action: BulkAction, ids: string[
 }
 
 export function SearchBox({ value, onChange, placeholder, className = '' }: { value: string; onChange: (v: string) => void; placeholder: string; className?: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <div className={`relative ${className}`}>
       <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
@@ -159,6 +162,7 @@ export function SearchBox({ value, onChange, placeholder, className = '' }: { va
 }
 
 export function IssueList({ issues }: { issues: OtherTx['issues'] }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (!issues.length) return <p className="flex items-center gap-1.5 text-xs text-emerald-700"><CheckCircle2 size={14} /> All checks passed.</p>;
   return (
     <ul className="space-y-1 rounded-xl border border-border p-3 text-xs">
@@ -180,6 +184,7 @@ const AKSI: Record<string, string> = {
 
 /** Drawer detail 1 transaksi; `txId` null = tertutup. Detail (lampiran + riwayat) dimuat ulang dari backend. */
 export function TransactionDrawer({ clientId, txId, canPost, onClose }: { clientId: string; txId: string | null; canPost: boolean; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const d = useOtherTxData<OtherTx | null>(txId ? `otx:${clientId}:${txId}` : null, s => fetchTransaction(clientId, txId as string, s), null);
   if (!txId) return null;
   if (!d.data || d.data.id !== txId) {

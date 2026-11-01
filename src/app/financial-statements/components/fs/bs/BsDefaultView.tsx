@@ -15,6 +15,7 @@ import {
 import { ChartTooltip, Delta, KpiCard, KpiRow, Panel } from './BsUi';
 import { BsToolbar, type ViewProps } from './BsToolbar';
 import { bsTemplateReport, fmtLongDate } from '../statementTemplate';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // (a) Balance Sheet default -- posisi per tanggal vs akhir bulan lalu & tanggal
 // yang sama tahun lalu, ringkasan varians (waterfall), trend 12 bulan & insight.
@@ -30,6 +31,7 @@ const METRICS: { id: Metric; label: string; sections: string[] }[] = [
 ];
 
 export default function BsDefaultView({ clientId, companyName, printedBy }: ViewProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [asOf, setAsOf] = useState(todayIso());
   const dates = useMemo(() => {
     const [y, m] = parts(asOf);
@@ -154,7 +156,7 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
     <tr key={`${a.code ?? 'calc'}-${i}`} className="text-[12.5px] hover:bg-slate-50">
       <td className="pl-14 pr-3 py-1">
         <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
-          {a.code ? <span className="font-mono text-[11px]">{a.code}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
+          {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
           <span className="truncate">{a.name}</span>
           {a.code && <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" className="hover:text-blue-700"><ExternalLink size={12} /></Link>}
         </span>

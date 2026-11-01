@@ -16,10 +16,12 @@ import {
 import { btnSmall, Card, Drawer, EmptyRow, Field, NumberPager } from '@/components/arap/arapUi';
 import { Delta, JournalLines, KpiGrid, Pill, ReasonDialog, tableHeadRow, tdCls, thCls } from '@/components/shared/moduleUi';
 import type { FaActions } from './FixedAssetsWorkspace';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const uang = (n: number | null) => (n === null ? '—' : n < 0 ? `(${rupiah(-n)})` : rupiah(n));
 
 export default function DisposalTab({ clientId, asOf, actions }: { clientId: string; asOf: string; actions: FaActions }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const ds = useFaData<DisposalSummary | null>(`dsp:${clientId}:${asOf}`, s => fetchDisposals(clientId, asOf, s), null);
   const [bukaId, setBukaId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'' | DisposalStatus>('');
@@ -195,8 +197,8 @@ function DisposalDrawer({ clientId, id, actions, onClose }: { clientId: string; 
           <Field label="Net Book Value">{uang(x.net_book_value)}</Field>
           <Field label="Gain / Loss"><span className={(x.gain_loss ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-700'}>{uang(x.gain_loss)}</span>
             {!x.values_final && <span className="ml-1 text-[10px] text-muted-foreground">(estimate)</span>}</Field>
-          <Field label="Proceeds Account">{x.proceeds_account ? `${x.proceeds_account.code} · ${x.proceeds_account.name}` : '—'}</Field>
-          <Field label="Gain / Loss Account">{x.gain_loss_account ? `${x.gain_loss_account.code} · ${x.gain_loss_account.name}` : '—'}</Field>
+          <Field label="Proceeds Account">{x.proceeds_account ? `${kodeAkun(x.proceeds_account.code)} · ${x.proceeds_account.name}` : '—'}</Field>
+          <Field label="Gain / Loss Account">{x.gain_loss_account ? `${kodeAkun(x.gain_loss_account.code)} · ${x.gain_loss_account.name}` : '—'}</Field>
         </div>
         {x.reason && <Field label="Reason">{x.reason}</Field>}
         <div>

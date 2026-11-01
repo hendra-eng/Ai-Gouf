@@ -14,6 +14,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
@@ -50,6 +51,7 @@ const paymentLabels: Record<string, string> = {
 };
 
 export default function PurchasePostedPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
   const clientId = activeClientId ?? null;
@@ -284,7 +286,7 @@ export default function PurchasePostedPage() {
                                       <td className="px-3 py-2 text-right tabular-nums">{fmt(line.unitPrice)}</td>
                                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(line.taxAmount)}</td>
                                       <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmt(line.total)}</td>
-                                      <td className="px-3 py-2 text-muted-foreground">{line.accountCode} · {line.accountName}</td>
+                                      <td className="px-3 py-2 text-muted-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</td>
                                     </tr>
                                   ))}
                                 </tbody>

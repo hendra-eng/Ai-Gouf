@@ -12,6 +12,7 @@ import { COMPANY } from '@/lib/financialData';
 import { useTransactionAuditTrail } from '../lib/auditTrailBridge';
 import { exportJournalToPdf } from './exportJournalPdf';
 import TransactionEditModal from './TransactionEditModal';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface TransactionDrawerProps {
   transaction: Transaction;
@@ -37,6 +38,7 @@ const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' 
 // [FIX - audit #3] mock lama dihapus — lihat lib/auditTrailBridge.ts untuk riwayat asli.
 
 export default function TransactionDrawer({ transaction: tx, onClose }: TransactionDrawerProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { transactions, saveEdit } = useTransactions();
   const { activeClientName } = useActiveClient();
   const [showJournalEditor, setShowJournalEditor] = useState(false);
@@ -139,7 +141,7 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                 { label: 'No Voucher', value: tx.voucherNo, copyable: true },
                 { label: 'Jurnal Entri', value: tx.jeId, copyable: true },
                 { label: 'Tanggal', value: formatDate(tx.date), copyable: false },
-                { label: 'Kode Akun', value: `${tx.accountCode} — ${tx.accountName}`, copyable: false },
+                { label: 'Kode Akun', value: `${kodeAkun(tx.accountCode)} — ${tx.accountName}`, copyable: false },
                 { label: 'Deskripsi', value: tx.description, copyable: false },
                 { label: 'Referensi', value: tx.reference, copyable: true },
                 { label: 'Pihak', value: tx.party, copyable: false },
@@ -219,7 +221,7 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                 <tbody>
                   <tr className="border-b border-border/50">
                     <td className="px-4 py-2.5">
-                      <p className="text-xs font-semibold text-foreground">{tx.accountCode}</p>
+                      <p className="text-xs font-semibold text-foreground">{kodeAkun(tx.accountCode)}</p>
                       <p className="text-[10px] text-muted-foreground">{tx.accountName}</p>
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -237,7 +239,7 @@ export default function TransactionDrawer({ transaction: tx, onClose }: Transact
                   <tr className="border-b border-border/50 bg-muted/20">
                     <td className="px-4 py-2.5">
                       <p className="text-xs font-semibold text-foreground">
-                        {siblingTx ? siblingTx.accountCode : '—'}
+                        {siblingTx ? kodeAkun(siblingTx.accountCode) : '—'}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
                         {siblingTx ? siblingTx.accountName : 'Pasangan jurnal tidak ditemukan'}

@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Transaction } from './transactionData';
+import { kodeAkun } from '@/lib/accountCode';
 
 // [BARU] Export seluruh data transaksi menjadi PDF Jurnal Umum (General
 // Journal) — format standar akuntansi: setiap baris transaksi (yang sudah
@@ -60,7 +61,7 @@ export function exportJournalToPdf(
     formatTanggal(tx.date),
     tx.jeId,
     tx.voucherNo,
-    tx.accountCode,
+    kodeAkun(tx.accountCode),
     tx.accountName,
     tx.description,
     tx.debit ? formatRupiah(tx.debit) : '-',

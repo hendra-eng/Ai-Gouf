@@ -21,6 +21,7 @@ import {
   type BcTransaction,
   type Direction,
 } from '@/lib/bankCashStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const KATEGORI: Record<Direction, string[]> = {
   receipt: ['Customer Payment', 'Other Income', 'Interest Income', 'Capital Injection', 'Loan Received', 'Transfer In', 'Other'],
@@ -55,6 +56,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
   initial?: BcTransaction | null;
   onSaved?: (tx: BcTransaction) => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
   const { accounts } = useBcAccounts(open ? clientId : null);
@@ -221,7 +223,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
             <select value={bankCoaId} onChange={(e) => setBankCoaId(e.target.value)} disabled={dariBankFeed} className={`mt-1 ${input}`}>
               {akunKas.length === 0 && <option value="">No cash/bank account in the COA yet</option>}
               {akunKas.map((a) => (
-                <option key={a.id} value={a.id}>{a.code} - {a.name} ({a.cash_type ? CASH_TYPE_LABEL[a.cash_type] : ''})</option>
+                <option key={a.id} value={a.id}>{kodeAkun(a.code)} - {a.name} ({a.cash_type ? CASH_TYPE_LABEL[a.cash_type] : ''})</option>
               ))}
             </select>
           </label>
@@ -250,7 +252,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
           <p className="text-xs font-semibold text-foreground">Counter lines</p>
           {baris.map((b) => {
             const q = b.cari.trim().toLowerCase();
-            const pilihanAkun = akunLawan.filter((a) => a.id === b.coaId || !q || `${a.code} ${a.name}`.toLowerCase().includes(q)).slice(0, 80);
+            const pilihanAkun = akunLawan.filter((a) => a.id === b.coaId || !q || `${a.code} ${kodeAkun(a.code)} ${a.name}`.toLowerCase().includes(q)).slice(0, 80);
             const inv = invoices.find((i) => i.id === b.invoiceId);
             return (
               <div key={b.key} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
@@ -294,7 +296,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
                     <input value={b.cari} onChange={(e) => ubah(b.key, { cari: e.target.value })} placeholder="Search account (no. or name)…" className={input} />
                     <select value={b.coaId} onChange={(e) => ubah(b.key, { coaId: e.target.value })} className={input}>
                       <option value="">— select account —</option>
-                      {pilihanAkun.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+                      {pilihanAkun.map((a) => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}</option>)}
                     </select>
                   </div>
                 )}

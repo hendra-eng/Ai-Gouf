@@ -17,6 +17,7 @@ import Pagination from '@/components/shared/Pagination';
 import { Transaction, TransactionGroup, tambahHariISO } from './transactionData';
 import { exportJournalToPdf } from './exportJournalPdf';
 import { useTransactions } from '../context/TransactionsContext';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 interface Filters {
   type: string;
@@ -102,7 +103,7 @@ function toCsvValue(v: string | number): string {
 function exportGroupToCsv(transactions: Transaction[], groupLabel: string) {
   const header = ['Tanggal', 'TX ID', 'No. Jurnal', 'No. Voucher', 'Kode Akun', 'Nama Akun', 'Deskripsi', 'Pihak', 'Kategori', 'Debit', 'Kredit', 'Status'];
   const rows = transactions.map((t) => [
-    t.date, t.txId, t.jeId, t.voucherNo, t.accountCode, t.accountName, t.description, t.party, t.category, t.debit, t.credit, t.status,
+    t.date, t.txId, t.jeId, t.voucherNo, kodeAkun(t.accountCode), t.accountName, t.description, t.party, t.category, t.debit, t.credit, t.status,
   ]);
   const csv = [header, ...rows].map((r) => r.map(toCsvValue).join(',')).join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
@@ -117,6 +118,7 @@ function exportGroupToCsv(transactions: Transaction[], groupLabel: string) {
 export default function TransactionsGroupPanel({
   group, groupLabel, defaultCategory, columns, onRowClick, importMode = 'append', searchPlaceholder,
 }: Props) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { getByGroup, addTransactions, replaceGroup, addTransaction, postAllUnpostedInGroup } = useTransactions();
   const groupTx = useMemo(() => getByGroup(group), [getByGroup, group]);
 
@@ -138,7 +140,8 @@ export default function TransactionsGroupPanel({
           !tx.description.toLowerCase().includes(q) &&
           !tx.party.toLowerCase().includes(q) &&
           !tx.reference.toLowerCase().includes(q) &&
-          !String(tx.accountCode ?? '').toLowerCase().includes(q)
+          !String(tx.accountCode ?? '').toLowerCase().includes(q) &&
+          !kodeAkun(tx.accountCode).toLowerCase().includes(q)
         ) return false;
       }
       if (filters.type !== 'all' && tx.type !== filters.type) return false;

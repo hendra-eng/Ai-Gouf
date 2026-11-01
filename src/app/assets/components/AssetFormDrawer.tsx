@@ -13,12 +13,14 @@ import {
 } from '@/lib/fixedAssetsStore';
 import { btnOutline, btnPrimary, Drawer, inputCls } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, isAccumAccount, isDepExpense, isPpeAccount } from '@/components/shared/moduleUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const kosong = (s: string) => (s.trim() ? s.trim() : null);
 
 export default function AssetFormDrawer({ clientId, asset, onClose, onManageCategories }: {
   clientId: string; asset: FixedAsset | null; onClose: () => void; onManageCategories: () => void;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const kategori = useFaData<Category[]>(`cat:${clientId}`, s => fetchCategories(clientId, s), []);
   const akun = useFaData<CoaAccount[]>(`acc:${clientId}`, s => fetchFaAccounts(clientId, s), []);
   const edit = !!asset;
@@ -159,7 +161,7 @@ export default function AssetFormDrawer({ clientId, asset, onClose, onManageCate
 
       <div className="rounded-xl border border-border">
         <button type="button" onClick={() => setAkunTerbuka(x => !x)} className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-semibold text-foreground">
-          Accounts <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">Category defaults: {kat?.asset_account?.code ?? '—'} / {kat?.accum_account?.code ?? '—'} / {kat?.expense_account?.code ?? '—'}
+          Accounts <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">Category defaults: {(kat?.asset_account?.code && kodeAkun(kat?.asset_account?.code)) ?? '—'} / {(kat?.accum_account?.code && kodeAkun(kat?.accum_account?.code)) ?? '—'} / {(kat?.expense_account?.code && kodeAkun(kat?.expense_account?.code)) ?? '—'}
             <ChevronDown size={14} className={akunTerbuka ? 'rotate-180' : ''} /></span>
         </button>
         {akunTerbuka && (

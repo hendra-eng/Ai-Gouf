@@ -11,8 +11,10 @@ import { AlertTriangle, ArrowRight, Building2, CalendarDays, ChevronRight, GitBr
 import { useActiveClient } from '@/lib/activeClient';
 import { formatAmount, useOpeningBalances } from '@/lib/openingBalanceStore';
 import { StatusBadge, branchLabel, formatDate } from './obUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export default function OpeningBalanceListClient() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { clients, activeClientId, setActiveClient } = useActiveClient();
   const { items, loading, error, refresh } = useOpeningBalances(activeClientId);
   const [tahun, setTahun] = useState<number | 'all'>('all');
@@ -159,7 +161,7 @@ export default function OpeningBalanceListClient() {
                       <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
                         <AlertTriangle size={13} className="mt-px shrink-0" />
                         Out of balance by {formatAmount(Math.abs(s.difference))}
-                        {s.status !== 'draft' && s.suspense_account ? ` — parked in ${s.suspense_account.acc_no}` : ''}
+                        {s.status !== 'draft' && s.suspense_account ? ` — parked in ${kodeAkun(s.suspense_account.acc_no)}` : ''}
                       </p>
                     )}
 

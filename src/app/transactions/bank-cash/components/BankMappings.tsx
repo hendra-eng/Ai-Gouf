@@ -22,6 +22,7 @@ import {
   type BcBankMapping,
   type BcBankMappingInput,
 } from '@/lib/bankCashStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const KOSONG: BcBankMappingInput = { bank_name: '', bank_coa_id: '', account_number: '', match_keyword: '', template_id: '', notes: '', is_active: true };
 
@@ -84,7 +85,7 @@ function MappingForm({ clientId, awal, onClose }: { clientId: string; awal: BcBa
             <span className="font-semibold text-foreground">Target account (COA)</span>
             <select value={isi.bank_coa_id} onChange={(e) => ubah('bank_coa_id', e.target.value)} className={`${kelasInput} mt-1`}>
               <option value="">Select account...</option>
-              {akunKas.map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+              {akunKas.map((a) => <option key={a.id} value={a.id}>{kodeAkun(a.code)} - {a.name}</option>)}
             </select>
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -131,6 +132,7 @@ function MappingForm({ clientId, awal, onClose }: { clientId: string; awal: BcBa
 }
 
 export default function BankMappings() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const clientId = activeClientId ? String(activeClientId) : null;
   const { mappings, loading } = useBcBankMappings(clientId);
@@ -204,7 +206,7 @@ export default function BankMappings() {
                     </td>
                     <td className="px-4 py-3 text-xs font-mono whitespace-nowrap">{m.account_number || '—'}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">{m.match_keyword || '—'}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap">{m.bank_account_code} - {m.bank_account_name}</td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">{kodeAkun(m.bank_account_code)} - {m.bank_account_name}</td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground max-w-[220px] truncate" title={m.template_name || undefined}>{m.template_name || '—'}</td>
                     <td className="px-4 py-3 text-xs whitespace-nowrap">
                       {m.usage_count}×

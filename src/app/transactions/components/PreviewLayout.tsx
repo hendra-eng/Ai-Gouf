@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Blok-blok tampilan Journal Preview (Sales, Purchase, Journal Entry, Cash & Bank).
 // Setiap bagian ditumpuk satu kolom dari atas ke bawah, dan isinya berupa daftar
@@ -33,6 +34,7 @@ interface PreviewSectionProps {
 export function PreviewSection({
   title, step, stepColor = 'blue', aside, onHeaderClick, flush, className = '', children,
 }: PreviewSectionProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const header = (
     <>
       <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -70,6 +72,7 @@ export interface FieldRow {
 
 /** Daftar label : nilai, satu baris per field, dibaca dari atas ke bawah. */
 export function FieldList({ rows, className = '' }: { rows: (FieldRow | false | null | undefined)[]; className?: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <dl className={`divide-y divide-slate-100 text-xs ${className}`}>
       {rows.filter((r): r is FieldRow => !!r).map((r, i) => (
@@ -84,6 +87,7 @@ export function FieldList({ rows, className = '' }: { rows: (FieldRow | false | 
 
 /** Judul kecil pemisah grup field di dalam satu section. */
 export function FieldGroupTitle({ children }: { children: React.ReactNode }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mt-5 mb-2 first:mt-0">{children}</p>
   );
@@ -114,6 +118,7 @@ export function JournalTable({
   showCostCenter?: boolean;
   labels?: { no?: string; code?: string; name?: string; description?: string; costCenter?: string; debit?: string; credit?: string; total?: string };
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const L = {
     no: 'No.', code: 'Account Code', name: 'Account Name', description: 'Description', costCenter: 'Cost Center',
     debit: 'Debit', credit: 'Credit', total: 'Total', ...labels,
@@ -138,7 +143,7 @@ export function JournalTable({
           {lines.map((l, i) => (
             <tr key={l.key}>
               <td className="px-4 py-2.5 text-muted-foreground">{i + 1}</td>
-              <td className="px-4 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">{l.code || '—'}</td>
+              <td className="px-4 py-2.5 font-mono font-semibold text-primary whitespace-nowrap">{(typeof l.code === 'string' ? kodeAkun(l.code) : l.code) || '—'}</td>
               <td className="px-4 py-2.5 text-foreground">{l.name || '—'}</td>
               {showDescription && <td className="px-4 py-2.5 text-muted-foreground">{l.description || '—'}</td>}
               {showCostCenter && <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{l.costCenter || '—'}</td>}
@@ -173,6 +178,7 @@ export function PickerPagination({
   onPageChange: (page: number) => void;
   className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (totalPages <= 1) return null;
   return (
     <div className={`flex items-center justify-between border-t border-border text-xs text-muted-foreground ${className}`}>

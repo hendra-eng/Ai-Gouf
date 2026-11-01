@@ -13,6 +13,7 @@ import {
 } from '@/lib/fixedAssetsStore';
 import { btnOutline, btnPrimary, btnSmall, Drawer, inputCls } from '@/components/arap/arapUi';
 import { AccountSelect, FormField, isAccumAccount, isDepExpense, isPpeAccount } from '@/components/shared/moduleUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const BARU: CategoryInput = {
   name: '', description: '', is_depreciable: true, depreciation_method: 'straight_line', useful_life_months: 48, residual_rate: 0,
@@ -20,6 +21,7 @@ const BARU: CategoryInput = {
 };
 
 export default function CategoriesDrawer({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const kategori = useFaData<Category[]>(`cat:${clientId}`, s => fetchCategories(clientId, s), []);
   const akun = useFaData<CoaAccount[]>(`acc:${clientId}`, s => fetchFaAccounts(clientId, s), []);
   const [form, setForm] = useState<{ id?: string; v: CategoryInput } | null>(null);
@@ -106,7 +108,7 @@ export default function CategoriesDrawer({ clientId, onClose }: { clientId: stri
                   {c.is_depreciable ? `${METHOD_LABEL[c.depreciation_method]} · ${lifeLabel(c.useful_life_months)} · residual ${c.residual_rate}%` : 'Not depreciated'}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Asset {c.asset_account?.code ?? '—'} · Accum. {c.is_depreciable ? c.accum_account?.code ?? <b className="text-amber-700">missing</b> : '—'} · Expense {c.is_depreciable ? c.expense_account?.code ?? <b className="text-amber-700">missing</b> : '—'}
+                  Asset {(c.asset_account?.code && kodeAkun(c.asset_account?.code)) ?? '—'} · Accum. {c.is_depreciable ? (c.accum_account?.code && kodeAkun(c.accum_account?.code)) ?? <b className="text-amber-700">missing</b> : '—'} · Expense {c.is_depreciable ? (c.expense_account?.code && kodeAkun(c.expense_account?.code)) ?? <b className="text-amber-700">missing</b> : '—'}
                 </p>
               </div>
               <div className="flex shrink-0 gap-1">

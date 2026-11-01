@@ -91,6 +91,8 @@ class CoaCreateRequest(BaseModel):
     # None = akun unassigned (belum terhubung ke klien mana pun).
     client_id: Optional[str] = None
     acc_no: str = Field(..., min_length=1, max_length=50)
+    # Kode akun sistem lama klien = kode yang DITAMPILKAN (kosong -> acc_no). migration 50.
+    source_acc_no: Optional[str] = Field(None, max_length=50)
     account_name: str = Field(..., min_length=1, max_length=255)
     account_classification: str = Field(..., max_length=30)
     account_head: Optional[str] = Field(None, max_length=50)
@@ -110,6 +112,7 @@ class CoaCreateRequest(BaseModel):
 class CoaUpdateRequest(BaseModel):
     """Semua field opsional -- partial update. client_id tidak bisa dipindah."""
     acc_no: Optional[str] = Field(None, min_length=1, max_length=50)
+    source_acc_no: Optional[str] = Field(None, max_length=50)
     account_name: Optional[str] = Field(None, min_length=1, max_length=255)
     account_classification: Optional[str] = Field(None, max_length=30)
     account_head: Optional[str] = Field(None, max_length=50)
@@ -145,6 +148,20 @@ def _acc_no_bentrok(client_id: Optional[str], acc_no: str, kecuali_id: Optional[
     return ("aktif" if row["aktif"] else "terhapus"), row
 
 
+def _gagal_kode_tampil(client_id: Optional[str], data: Dict[str, Any], lama: Optional[Dict[str, Any]] = None):
+    """Kode tampilan (source_acc_no / acc_no) wajib unik per klien. Return
+    response gagal kalau bentrok, None kalau aman."""
+    gabung = {**(lama or {}), **data}
+    kode = (gabung.get("source_acc_no") or gabung.get("acc_no") or "").strip()
+    lain = dbc.cari_bentrok_kode_tampil(client_id, kode, kecuali_id=(lama or {}).get("id"))
+    if lain is None:
+        return None
+    return gagal(
+        message=f"Account code {kode} is already shown for account '{lain['account_name']}' in this client.",
+        errors={"code": "DUPLICATE_ACCOUNT_CODE"}, status_code=409,
+    )
+
+
 def _label_tempat(client_id: Optional[str]) -> str:
     return "klien ini" if client_id else "daftar akun unassigned"
 
@@ -171,6 +188,17 @@ def daftar_coa_client(
         hanya_aktif=active_only,
         limit=limit,
     )
+    return sukses(data=data, message="OK")
+
+
+@router.get("/client/{client_id}/codes", summary="Peta acc_no -> kode akun yang ditampilkan (Source Account Code)")
+def kode_tampil_client(client_id: str, _current_user: Dict[str, Any] = Depends(get_current_user_v1)):
+    """Kode akun yang DITAMPILKAN di seluruh UI = source_acc_no, kosong -> acc_no
+    (kode ZAFEB, tetap kunci internal). Termasuk akun nonaktif/terhapus supaya
+    jurnal lama tetap tampil dengan kodenya. Dipakai src/lib/accountCode.tsx."""
+    if dbc.get_management_client_by_id(client_id) is None:
+        return gagal(message="Client tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
+    data = [{"acc_no": acc, "code": kode} for acc, kode in dbc.peta_kode_tampil(client_id).items()]
     return sukses(data=data, message="OK")
 
 
@@ -283,6 +311,9 @@ def buat_coa(
             errors={"code": "DUPLICATE_ACC_NO"},
             status_code=409,
         )
+    bentrok_tampil = _gagal_kode_tampil(client_id, data)
+    if bentrok_tampil is not None:
+        return bentrok_tampil
     if status_bentrok == "terhapus":
         # UNIQUE (client_id, acc_no) tetap berlaku untuk baris terhapus --
         # hidupkan lagi baris lama dengan isi baru.
@@ -329,6 +360,10 @@ def ubah_coa(
                 errors={"code": "DUPLICATE_ACC_NO"},
                 status_code=409,
             )
+    if "source_acc_no" in data or data.get("acc_no"):
+        bentrok_tampil = _gagal_kode_tampil(lama["client_id"], data, lama)
+        if bentrok_tampil is not None:
+            return bentrok_tampil
     kunci = _mapping_terkunci(coa_id)
     if kunci and ((data.get("acc_no") and data["acc_no"] != lama["acc_no"]) or data.get("is_active") is False
                   or (data.get("account_name") and data["account_name"] != lama["account_name"])):

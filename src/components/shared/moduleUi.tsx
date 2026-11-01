@@ -9,10 +9,12 @@ import { ArrowDown, ArrowUp, Loader2 } from 'lucide-react';
 import { pctChange, todayIso } from '@/lib/receivablesPayablesStore';
 import type { CoaAccount } from '@/lib/fixedAssetsStore';  // bentuk sama dengan akun COA Inventory
 import { btnOutline, inputCls } from '@/components/arap/arapUi';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 export function Delta({ now, prev, goodWhenDown = false, suffix, unit = 'pct' }: {
   now: number | null | undefined; prev: number | null | undefined; goodWhenDown?: boolean; suffix: string; unit?: 'pct' | 'abs';
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   if (now === null || now === undefined || prev === null || prev === undefined) return <span className="text-[11px] text-muted-foreground">{suffix}</span>;
   const selisih = unit === 'pct' ? pctChange(now, prev) : now - prev;
   if (selisih === null) {
@@ -51,6 +53,7 @@ const TONE: Record<KpiCardSpec['tone'], { card: string; icon: string }> = {
 const KOLOM_KPI: Record<4 | 5 | 6, string> = { 4: 'xl:grid-cols-4', 5: 'lg:grid-cols-3 xl:grid-cols-5', 6: 'lg:grid-cols-3 xl:grid-cols-6' };
 
 export function KpiGrid({ cards, loading, cols = 4 }: { cards: KpiCardSpec[]; loading?: boolean; cols?: 4 | 5 | 6 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${KOLOM_KPI[cols]}`}>
       {cards.map(c => {
@@ -76,6 +79,7 @@ export function KpiGrid({ cards, loading, cols = 4 }: { cards: KpiCardSpec[]; lo
 }
 
 export function Pill({ label, style }: { label: string; style: string }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${style}`}>{label}</span>;
 }
 
@@ -84,6 +88,7 @@ export function AccountSelect<A extends CoaAccount>({ accounts, value, onChange,
   accounts: A[]; value: string | null | undefined; onChange: (id: string | null) => void; placeholder?: string;
   filter?: (a: A) => boolean; disabled?: boolean; allowEmpty?: boolean;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const daftar = useMemo(() => {
     const d = filter ? accounts.filter(filter) : accounts;
     // Akun terpilih tetap tampil walau di luar filter.
@@ -96,7 +101,7 @@ export function AccountSelect<A extends CoaAccount>({ accounts, value, onChange,
   return (
     <select value={value ?? ''} onChange={e => onChange(e.target.value || null)} disabled={disabled} className={inputCls}>
       {allowEmpty && <option value="">{placeholder}</option>}
-      {daftar.map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+      {daftar.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}</option>)}
     </select>
   );
 }
@@ -104,6 +109,7 @@ export function AccountSelect<A extends CoaAccount>({ accounts, value, onChange,
 export function FormField({ label, hint, required, children, className = '' }: {
   label: string; hint?: React.ReactNode; required?: boolean; children: React.ReactNode; className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
     <label className={`block ${className}`}>
       <span className="mb-1 block text-xs font-medium text-foreground">{label}{required && <span className="text-rose-500"> *</span>}</span>
@@ -116,6 +122,7 @@ export function FormField({ label, hint, required, children, className = '' }: {
 export function Modal({ open, onClose, title, subtitle, children, footer, width = 'max-w-md' }: {
   open: boolean; onClose: () => void; title: React.ReactNode; subtitle?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; width?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -140,6 +147,7 @@ export function ReasonDialog({ open, title, subtitle, withDate, minDate, default
   open: boolean; title: string; subtitle?: string; withDate?: boolean; minDate?: string; defaultDate?: string; confirmLabel?: string; danger?: boolean;
   onClose: () => void; onConfirm: (reason: string, date: string) => Promise<void>;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [reason, setReason] = useState('');
   const [tanggal, setTanggal] = useState(defaultDate || todayIso());
   const [busy, setBusy] = useState(false);
@@ -177,6 +185,7 @@ export function ReasonDialog({ open, title, subtitle, withDate, minDate, default
 
 /** Tabel jurnal (akun, debit, kredit) + total. */
 export function JournalLines({ lines }: { lines: { account_code: string; account_name: string; debit: number; credit: number; description?: string | null }[] }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const d = lines.reduce((n, l) => n + l.debit, 0);
   const k = lines.reduce((n, l) => n + l.credit, 0);
   const f = (n: number) => (n ? n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '');
@@ -188,7 +197,7 @@ export function JournalLines({ lines }: { lines: { account_code: string; account
       <tbody className="divide-y divide-border">
         {lines.map((l, i) => (
           <tr key={i}>
-            <td className="py-1.5 pr-2"><span className="font-medium">{l.account_code}</span> · {l.account_name}
+            <td className="py-1.5 pr-2"><span className="font-medium">{kodeAkun(l.account_code)}</span> · {l.account_name}
               {l.description && <span className="block text-[10px] text-muted-foreground">{l.description}</span>}</td>
             <td className="py-1.5 text-right">{f(l.debit)}</td>
             <td className="py-1.5 text-right">{f(l.credit)}</td>

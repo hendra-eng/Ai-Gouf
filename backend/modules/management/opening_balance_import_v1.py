@@ -14,26 +14,40 @@ approval batch import per modul.
     POST   /api/v1/management/opening-balances/imports/{batch_id}/cancel      validated/rejected -> cancelled
 
 Modul: coa (COA legacy + saldo non-subledger), ar, ap, inventory, asset.
-Aturan modul coa (ERROR = diblok, batch tidak bisa di-submit; WARNING = boleh, cukup direview):
-    Source Account Code / Name  teks, wajib.               Duplikat kode -> error.
+Baris ERROR tidak bisa di-approve & tidak pernah diterapkan, tapi TIDAK memblokir
+batch: submit & approve tetap jalan untuk baris valid/warning (keputusan bisnis
+2026-10-24, _pilih_baris). WARNING = boleh, cukup direview.
+Aturan modul coa:
+    Source Account Code / Name  teks; nama wajib. Duplikat kode -> error. Kode kosong -> dibuat otomatis
+                                6 digit format standar (digit depan = klasifikasi, _isi_kode_otomatis).
     Opening Debit / Credit      desimal, wajib, >= 0.      Dua-duanya > 0 -> error; dua-duanya 0 = baris tanpa saldo.
     Balance Date                tanggal, wajib, = tanggal cut-off set opening balance (periode opening).
-    Currency                    kode ISO, wajib, harus IDR.
+    Currency                    selalu IDR (isi file diabaikan).
     Akun ZAFEB                  1 akun ZAFEB hanya boleh dipakai 1 baris. Kalau barisnya BERSALDO: akun harus
-                                aktif, bukan akun kontrol subledger (AR/AP/Inventory/Fixed Asset), bukan Current
-                                Year Earnings. Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
-    Batch                       total debit harus = total kredit (dicek saat submit, lihat _isu_blokir).
+                                aktif, bukan Current Year Earnings. Baris bersaldo di akun kontrol
+                                AR/AP/Inventory/Fixed Asset -> warning, saldonya diterima SEMENTARA
+                                (detail tetap wajib lewat modul 2-5). Belum di-mapping -> warning (saldonya tidak ikut diterapkan).
+    Batch                       total debit != total kredit -> peringatan saja (_catatan_batch); selisihnya
+                                diparkir ke akun suspense saat opening balance di-post.
+    Akun BARU                   kode ZAFEB yang belum ada di COA klien BOLEH, asal standarnya jelas
+                                (_cek_akun_baru): format kode valid & unik, nama tidak bentrok, Standard
+                                Account Code wajib & dikenali (_katalog_standard: template COA industri +
+                                COA klien), klasifikasi = klasifikasi standard code. Selalu warning "New
+                                account" supaya direview; akun dibuat saat approve (_buat_akun_baru).
 
-Saat batch coa di-APPROVE (_terapkan_coa): baris saldo AKUN NON-KONTROL set
-opening balance DIGANTI dengan baris bersaldo dari batch ini (saldo akun
-kontrol AR/AP/Inventory/Fixed Asset tidak disentuh -- milik modul 2-5), dan
+Saat batch coa di-APPROVE (_terapkan_coa): baris saldo set opening balance
+DIGANTI dengan baris bersaldo dari batch ini, KECUALI akun kontrol modul yang
+subledgernya sudah di-approve (saldo subledger menang; akun kontrol modul yang
+belum punya detail memakai saldo file ini sebagai saldo sementara), dan
 nama akun ZAFEB diganti dengan Source Account Name (akun yang dikunci Account
 Mapping tidak boleh berganti nama -> sudah ditolak saat validasi).
 
 Account Mapping WAJIB (MAPPING_WAJIB): download template & upload tiap modul
 ditolak (MAPPING_REQUIRED) selama akun yang dibutuhkan modul itu belum
-di-mapping di Settings > Account Mapping. Modul coa butuh keempat akun
-kontrol supaya saldo subledger bisa dikenali & ditolak dari import COA.
+di-mapping di Settings > Account Mapping. Modul coa butuh akun kontrol AR, AP
+& Fixed Asset supaya saldo subledger bisa dikenali & ditolak dari import COA;
+Inventory opsional (perusahaan jasa tanpa persediaan) -- akun persediaan tetap
+dikenali dari standard code / kategori persediaan.
 Modul asset TIDAK memakai Account Mapping tunggal tapi KATEGORI aset tetap
 (Fixed Assets > Categories): tiap kategori punya akun aset, akumulasi
 penyusutan & beban penyusutan (fallback: Account Mapping fixed_asset /
@@ -87,9 +101,15 @@ Setiap template punya sheet "Cara Penggunaan" (_tambah_cara_penggunaan):
 langkah pengisian, panduan per kolom, daftar error/warning & efek approve.
 Pembaca upload (_baca_tabel) melewati sheet ini.
 
-Hak akses: baca = token valid; upload/submit/cancel = Tahap 3 (sama dengan
-editor opening balance); approve/reject = Tahap 4, dan approver tidak boleh
-orang yang submit (maker-checker) kecuali super admin.
+Hak akses (keputusan bisnis 2026-10-24, _akses_import): baca = token valid.
+    Tanpa review ("langsung")  super_admin, internal tahap_3..5, user klien
+                               client_lv_1..5 (klien itu sendiri). Boleh upload &
+                               langsung approve (tanpa submit, termasuk batch
+                               sendiri), juga approve/reject batch orang lain.
+    Perlu review ("review")    internal tahap_1..2, user klien client_lv_6
+                               (Accounting Staff). Boleh upload/submit/cancel;
+                               batch-nya di-approve user grup "langsung".
+    Selain itu (client_lv_7..9 / klien lain) ditolak 403.
 """
 
 from __future__ import annotations
@@ -97,6 +117,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -119,15 +140,18 @@ from ..auth import core as auth
 from ..auth.v1 import get_current_user_v1
 from ..api_response import gagal, sukses
 from ..logging_config import get_module_logger
-from .clients_v1 import _require_level_v1
+from .coa_v1 import KLASIFIKASI_AKUN
 from .opening_balance_v1 import KLASIFIKASI_NERACA, STANDARD_CODE_LABA_BERJALAN, _awal_tahun
+from .year_end_closing_v1 import STANDARD_CODE_LABA_DITAHAN
 
 logger = get_module_logger("management_opening_balance_import_v1")
 
 router = APIRouter(prefix="/api/v1/management/opening-balances", tags=["management-opening-balance-import-v1"])
 
-LEVEL_MINIMAL_UPLOAD = 3
-LEVEL_MINIMAL_APPROVE = 4
+# Hak akses import -- lihat _akses_import.
+TAHAP_TANPA_REVIEW = 3        # internal tahap_3..5 (+ super_admin)
+CLIENT_LV_TANPA_REVIEW = 5    # client_lv_1..5 (Org Owner .. Supervisor)
+CLIENT_LV_MAKS_INPUT = 6      # client_lv_6 (Accounting Staff) boleh input, perlu review
 MAKS_UKURAN_FILE = 10 * 1024 * 1024
 MAKS_BARIS = 5000
 NOL = Decimal("0")
@@ -169,7 +193,20 @@ JUMLAH_BARIS_TEMPLATE = 500
 BARIS_KOSONG_TAMBAHAN = 100   # baris kosong di bawah daftar akun untuk akun legacy tambahan
 MATA_UANG = ["IDR", "USD", "SGD", "AUD", "EUR", "JPY"]
 MATA_UANG_OPENING = "IDR"
-KOLOM_WAJIB_COA = ("source_code", "source_name", "debit", "credit", "balance_date", "currency")
+# Source Account Code & Currency tidak wajib: kode kosong dibuat otomatis
+# (_isi_kode_otomatis), currency selalu IDR (keputusan bisnis 2026-10-26).
+KOLOM_WAJIB_COA = ("source_name", "debit", "credit", "balance_date")
+# Digit depan kode akun standar per klasifikasi (skema COA industri V2: 6 digit,
+# mis. 110001 asset lancar, 210001 liability lancar).
+DIGIT_KLASIFIKASI: Dict[str, str] = {
+    "ASSET": "1", "LIABILITY": "2", "EQUITY": "3", "REVENUE": "4", "COST OF SALES": "5",
+    "EXPENSE": "6", "OTHER INCOME": "7", "OTHER EXPENSE": "8", "INCOME TAX": "9",
+}
+# Akun kontrol yang saldonya di file COA DITERIMA SEMENTARA (warning, keputusan bisnis
+# 2026-10-31, menggantikan "dibuang diam-diam" 2026-10-26): saldo ini masuk opening
+# balance sampai modul subledgernya di-approve -- setelah itu saldo subledger yang
+# berlaku (_ganti_saldo_kontrol) dan angka file COA hanya jadi pembanding (_status_kontrol).
+KONTROL_SEMENTARA = ("ar", "ap", "inventory", "asset")
 
 # Akun KONTROL = saldonya dikelola subledger & diimpor lewat file terpisah
 # (modul ar/ap/inventory/asset) -> DITOLAK di import COA non-subledger.
@@ -197,8 +234,11 @@ _MAP_AR = ("Account Receivable", ("account_receivable",))
 _MAP_AP = ("Account Payable", ("account_payable",))
 _MAP_INVENTORY = ("Inventory", ("inventory", "inventory_general", "inventory_waste", "inventory_production"))
 _MAP_ASET = ("Fixed Asset", ("fixed_asset",))
+# Inventory TIDAK wajib untuk modul coa: perusahaan jasa umumnya tidak punya
+# persediaan. Akun persediaan tetap dikenali sebagai akun kontrol lewat
+# standard code / kategori persediaan / mapping kalau ada (_penentu_kontrol).
 MAPPING_WAJIB: Dict[str, List[Tuple[str, Tuple[str, ...]]]] = {
-    "coa": [_MAP_AR, _MAP_AP, _MAP_INVENTORY, _MAP_ASET],
+    "coa": [_MAP_AR, _MAP_AP, _MAP_ASET],
     "ar": [_MAP_AR],
     "ap": [_MAP_AP],
 }
@@ -225,6 +265,8 @@ class RejectRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     note: Optional[str] = Field(None, max_length=1000)
+    # Select data: id baris yang disetujui. None = semua baris (all data).
+    row_ids: Optional[List[str]] = Field(None, max_length=MAKS_BARIS)
 
 
 # ============================================================
@@ -319,14 +361,90 @@ def _dec_aman(v: Any) -> Decimal:
     return Decimal(str(v or 0)).quantize(SEN)
 
 
-def _isu_blokir(b: Any) -> List[str]:
-    """Isu level batch yang membuat batch TIDAK boleh di-submit."""
+def _baris_terpilih(session, b: Any) -> List[Any]:
+    """Baris batch yang diterapkan saat approve = yang tidak di-exclude approver (select data)."""
+    return session.query(ROW).filter(ROW.import_id == b.id, ROW.is_excluded.is_(False)).order_by(ROW.row_no).all()
+
+
+def _pilih_baris(session, b: Any, row_ids: Optional[List[str]]) -> Tuple[int, int, int]:
+    """Select data saat approve: baris di luar row_ids ditandai is_excluded (tidak
+    diterapkan). row_ids None = semua baris. Baris ERROR selalu dikeluarkan
+    (tidak bisa di-approve) -- sisanya tetap jalan. Modul coa: debit != kredit
+    tidak diblokir (selisih -> akun suspense saat posting opening balance).
+    Return (jumlah dipilih, jumlah baris, jumlah baris error yang dilewati)."""
+    rows = session.query(ROW).filter(ROW.import_id == b.id).all()
+    semua = {r.id for r in rows}
+    pilih = semua if row_ids is None else {str(x) for x in row_ids}
+    if pilih - semua:
+        raise _Gagal("Some selected rows do not belong to this batch — reload the page.", kode="INVALID_ROWS")
+    error = {r.id for r in rows if r.status == "error"}
+    pilih -= error
+    if not pilih:
+        raise _Gagal("There are no valid rows to approve — rows with errors cannot be approved. Fix the file and "
+                     "import it again.", kode="NO_VALID_ROWS")
+    for r in rows:
+        r.is_excluded = r.id not in pilih
+    session.flush()
+    return len(pilih), len(rows), len(error)
+
+
+def _akses_import(session, user: Dict[str, Any], client_id: str) -> Optional[str]:
+    """Hak akses user ke import opening balance 1 klien: "langsung" (tanpa
+    review), "review" (batch perlu di-approve user lain) atau None (ditolak).
+    Lihat docstring modul."""
+    role = (user.get("role") or "").strip()
+    if role == auth.SUPER_ADMIN_ROLE:
+        return "langsung"
+    if role in auth.LEVELS:
+        level = auth.role_level(role)
+        return "langsung" if level >= TAHAP_TANPA_REVIEW else "review" if level >= 1 else None
+    if role in auth.CLIENT_LEVELS:
+        # User klien hanya untuk klien miliknya sendiri (management_users.client_id).
+        u = session.get(dbc.User, str(user.get("id"))) if user.get("id") else None
+        if u is None or u.deleted_at is not None or u.is_active is False or str(u.client_id) != str(client_id):
+            return None
+        level = auth.client_role_level(role) or 99
+        return "langsung" if level <= CLIENT_LV_TANPA_REVIEW else "review" if level <= CLIENT_LV_MAKS_INPUT else None
+    return None
+
+
+def _wajib_akses(session, user: Dict[str, Any], client_id: str, perlu: str = "review") -> str:
+    """perlu="review" = cukup boleh input; perlu="langsung" = boleh approve/reject."""
+    akses = _akses_import(session, user, client_id)
+    if akses is None:
+        raise _Gagal("You do not have access to import opening balances for this client.",
+                     kode="FORBIDDEN", status_code=403)
+    if perlu == "langsung" and akses != "langsung":
+        raise _Gagal("Your role cannot approve import batches. Internal Tahap 3+ or client roles Org Owner to "
+                     "Supervisor can approve.", kode="FORBIDDEN", status_code=403)
+    return akses
+
+
+def _izin_batch(session, user: Dict[str, Any], b: Any) -> Dict[str, bool]:
+    """Tombol aksi untuk FE (halaman review)."""
+    akses = _akses_import(session, user, b.client_id)
+    langsung = akses == "langsung"
+    return {
+        "can_input": akses is not None,
+        "no_review": langsung,
+        "can_submit": akses is not None and not langsung and b.status == "validated",
+        "can_approve": langsung and b.status in ("validated", "submitted"),
+        "can_reject": langsung and b.status == "submitted",
+        "can_cancel": akses is not None and b.status in ("validated", "rejected"),
+    }
+
+
+def _catatan_batch(b: Any) -> List[str]:
+    """Catatan level batch untuk reviewer -- TIDAK memblokir submit/approve
+    (baris error otomatis dilewati saat approve, lihat _pilih_baris)."""
     isu = []
     if b.error_rows:
-        isu.append(f"{b.error_rows} row(s) have errors.")
+        isu.append(f"{b.error_rows} row(s) have errors — they cannot be approved and will not be applied; the other "
+                   "rows can still be approved.")
     if b.module == "coa" and _dec_aman(b.total_debit) != _dec_aman(b.total_credit):
         selisih = abs(_dec_aman(b.total_debit) - _dec_aman(b.total_credit))
-        isu.append(f"Total debit and total credit are not equal (difference {selisih:,.2f}).")
+        isu.append(f"Total debit and total credit are not equal (difference {selisih:,.2f}) — any difference of the "
+                   "approved rows is parked in the suspense account when the opening balance is posted.")
     return isu
 
 
@@ -345,7 +463,7 @@ def _ringkas_batch(b: Any) -> Dict[str, Any]:
         "error_rows": b.error_rows,
         "total_debit": float(b.total_debit or 0),
         "total_credit": float(b.total_credit or 0),
-        "blocking_issues": _isu_blokir(b),
+        "issues": _catatan_batch(b),
         "notes": b.notes,
         "created_at": b.created_at,
         "created_by": b.created_by,
@@ -445,13 +563,7 @@ def _penentu_kontrol(session, client_id: str):
             kontrol_mapping.setdefault(c.inventory_coa_id, "inventory")
 
     def modul_kontrol(a: Any) -> Optional[str]:
-        std = (a.standard_account_code or "").strip().lower()
-        if std in AKUN_KONTROL_STD:
-            return AKUN_KONTROL_STD[std]
-        for prefix, m in AKUN_KONTROL_STD_PREFIX.items():
-            if std.startswith(prefix):
-                return m
-        return kontrol_mapping.get(a.id)
+        return _std_kontrol(a.standard_account_code) or kontrol_mapping.get(a.id)
 
     return modul_kontrol
 
@@ -463,6 +575,127 @@ def _akun_klien(session, client_id: str) -> List[Any]:
         .order_by(COA.acc_no)
         .all()
     )
+
+
+# Akun BARU dari import COA: kode boleh huruf/angka + . - _ / (maks 50, sama
+# dengan kolom acc_no), diawali huruf/angka.
+POLA_KODE_AKUN_BARU = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-_/]{0,49}")
+KLASIFIKASI_SALDO_DEBIT = ("ASSET", "COST OF SALES", "EXPENSE", "OTHER EXPENSE", "INCOME TAX")
+_KOLOM_KATALOG = ("account_classification", "account_head", "account_sub", "normal_balance",
+                  "international_standard_group", "ifrs_taxonomy_reference", "ifrs_source")
+
+
+def _katalog_standard(session, client_id: str) -> Dict[str, Dict[str, Any]]:
+    """Daftar standard account code yang dikenali sistem -> atribut akunnya
+    (klasifikasi, head, sub, saldo normal, referensi IFRS). Sumber: akun
+    template COA industri (semua industri) + COA klien sendiri (menimpa).
+    Dipakai untuk akun BARU di import COA: standard code wajib ada di sini
+    supaya akun baru langsung punya lapisan semantik yang benar (FS mapping)."""
+    TA = dbc.ManagementCoaIndustryTemplateAccount
+    katalog: Dict[str, Dict[str, Any]] = {}
+    sumber = [
+        session.query(TA).filter(TA.standard_account_code.isnot(None)).order_by(TA.sort_order).all(),
+        _akun_klien(session, client_id),
+    ]
+    for daftar in sumber:
+        for a in daftar:
+            std = (a.standard_account_code or "").strip()
+            if not std or not a.account_classification:
+                continue
+            katalog[std.lower()] = {"standard_account_code": std, **{k: getattr(a, k) for k in _KOLOM_KATALOG}}
+    return dict(sorted(katalog.items()))
+
+
+def _std_kontrol(std: str) -> Optional[str]:
+    std = (std or "").strip().lower()
+    if std in AKUN_KONTROL_STD:
+        return AKUN_KONTROL_STD[std]
+    return next((m for prefix, m in AKUN_KONTROL_STD_PREFIX.items() if std.startswith(prefix)), None)
+
+
+# ============================================================
+# SALDO SEMENTARA AKUN KONTROL (file COA) vs DETAIL SUBLEDGER
+# ============================================================
+
+CATATAN_SEMENTARA = "Provisional — from the COA import; detail pending in {modul}"
+
+
+def _modul_sudah_detail(session, ob_id: str) -> set:
+    """Modul subledger yang sudah punya batch approved di set opening balance ini."""
+    return {m for (m,) in session.query(IMP.module).filter(
+        IMP.opening_balance_id == ob_id, IMP.status == "approved", IMP.module.in_(KONTROL_SEMENTARA)).distinct().all()}
+
+
+def _tanda_kontrol(modul: str, net: Decimal) -> Decimal:
+    """Net debit(+)/kredit(-) -> angka sisi normal (AP bersaldo kredit jadi positif)."""
+    return -net if modul == "ap" else net
+
+
+def _saldo_ob_kontrol(session, ob: Any) -> Dict[str, Decimal]:
+    """Saldo net baris opening balance per modul akun kontrol (debit - kredit)."""
+    OBL = dbc.ManagementClientCoaOpeningBalanceLine
+    modul_kontrol = _penentu_kontrol(session, ob.client_id)
+    saldo = {m: NOL for m in KONTROL_SEMENTARA}
+    for l, a in session.query(OBL, COA).join(COA, COA.id == OBL.coa_id).filter(OBL.opening_balance_id == ob.id).all():
+        m = modul_kontrol(a)
+        if m in saldo:
+            saldo[m] += _dec_aman(l.debit) - _dec_aman(l.credit)
+    return saldo
+
+
+def _angka_coa_kontrol(session, ob: Any) -> Dict[str, Decimal]:
+    """Saldo akun kontrol per modul menurut batch COA approved TERAKHIR (pembanding detail subledger)."""
+    b = (session.query(IMP).filter(IMP.opening_balance_id == ob.id, IMP.module == "coa", IMP.status == "approved")
+         .order_by(IMP.reviewed_at.desc().nullslast(), IMP.created_at.desc()).first())
+    angka: Dict[str, Decimal] = {}
+    if b is None:
+        return angka
+    for r in _baris_terpilih(session, b):
+        m = (r.data or {}).get("control_module")
+        if m in KONTROL_SEMENTARA and r.status != "error":
+            angka[m] = angka.get(m, NOL) + _dec_aman(r.debit) - _dec_aman(r.credit)
+    return angka
+
+
+def _status_kontrol(session, ob: Any) -> List[Dict[str, Any]]:
+    """Notifikasi per modul subledger untuk tab Import Data & halaman Opening Balance:
+        pending     saldo akun kontrol ada (sementara, dari file COA / input manual) tapi detail belum diimpor
+        difference  detail sudah diimpor, total subledger beda dari angka file COA (subledger yang berlaku)
+        reconciled  detail sudah diimpor & sama dengan angka file COA
+    Modul tanpa saldo & tanpa detail tidak dilaporkan (mis. perusahaan jasa tanpa persediaan)."""
+    sudah = _modul_sudah_detail(session, ob.id)
+    saldo, coa = _saldo_ob_kontrol(session, ob), _angka_coa_kontrol(session, ob)
+    hasil = []
+    for m in KONTROL_SEMENTARA:
+        if m in sudah:
+            if m not in coa:
+                continue
+            selisih = saldo[m] - coa[m]
+            status = "difference" if abs(selisih) >= SEN else "reconciled"
+        elif abs(saldo[m]) >= SEN:
+            status, selisih = "pending", None
+        else:
+            continue
+        hasil.append({
+            "module": m, "module_label": MODUL[m], "label": _LABEL_SUBLEDGER[m], "status": status,
+            "opening_balance": float(_tanda_kontrol(m, saldo[m])),
+            "coa_amount": float(_tanda_kontrol(m, coa[m])) if m in coa else None,
+            "difference": float(_tanda_kontrol(m, selisih)) if selisih is not None else None,
+        })
+    return hasil
+
+
+def _banding_kontrol(session, ob: Any, modul: str) -> str:
+    """Kalimat catatan batch subledger: total detail vs saldo sementara file COA."""
+    coa = _angka_coa_kontrol(session, ob).get(modul)
+    if coa is None:
+        return ""
+    total = _tanda_kontrol(modul, _saldo_ob_kontrol(session, ob)[modul])
+    coa = _tanda_kontrol(modul, coa)
+    if abs(total - coa) < SEN:
+        return f" Subledger total {total:,.2f} matches the provisional balance from the COA import."
+    return (f" Subledger total {total:,.2f} differs from the provisional balance from the COA import ({coa:,.2f}) by "
+            f"{total - coa:,.2f} — the subledger total is used.")
 
 
 # ============================================================
@@ -503,13 +736,61 @@ def _formula_link(r: int, kolom: str, dari_kode: bool = False) -> str:
         "C": [("D", "ZCOA_CODE"), ("E", "ZCOA_NAME"), ("F", "ZCOA_STD")],
     }[kolom]
     hasil = {"C": "ZCOA_CLASS", "D": "ZCOA_CODE", "E": "ZCOA_NAME", "F": "ZCOA_STD"}[kolom]
-    rumus = '""'
+    # Klasifikasi yang tidak ketemu di COA klien -> dari katalog standard code (kolom F).
+    rumus = f'IFERROR({cari("ZSTD_CLASS", "F", "ZSTD_CODE")},"")' if kolom == "C" else '""'
     for sel, rng in reversed(sumber):
         rumus = f"IFERROR({cari(hasil, sel, rng)},{rumus})"
-    return "=" + rumus
+    if dari_kode or kolom == "D":
+        return "=" + rumus
+    # Kode ZAFEB diketik & belum ada di COA klien = AKUN BARU: nama & standard code
+    # diisi user sendiri (tidak ikut akun lama), klasifikasi mengikuti standard code.
+    baru = f'AND(D{r}<>"",ISNA(MATCH(D{r}&"",ZCOA_CODE,0)))'
+    isi_baru = f'IFERROR({cari("ZSTD_CLASS", "F", "ZSTD_CODE")},"")' if kolom == "C" else '""'
+    return f"=IF({baru},{isi_baru},{rumus})"
 
 
-def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=None) -> bytes:
+# Seri akun bernomor (mis. "Bank Account", "Bank Account 2" .. "Bank Account 15"):
+# di sheet COA_NON_SUBLEDGER cukup BATAS_AKUN_BERNOMOR pertama; daftar lengkap
+# tetap di sheet Standard Reference & dropdown (ZAFEB_COA). Keputusan bisnis 2026-10-24.
+BATAS_AKUN_BERNOMOR = 5
+_POLA_BERNOMOR = re.compile(r"^(.*\D)\s*(\d+)\s*$")
+
+
+def _akun_sheet_coa(akun: List[Any], dipertahankan: Optional[set] = None) -> List[Any]:
+    """Akun untuk sheet COA_NON_SUBLEDGER. Seri = nama sama setelah angka di
+    belakang dibuang + standard code sama, dan nomornya memuat 2 (seri berurutan
+    -- "PPh 21 / 23" bukan seri). Akun tanpa angka dihitung nomor 1. Nomor di atas
+    BATAS_AKUN_BERNOMOR disembunyikan, kecuali akunnya sudah punya saldo awal /
+    Source Account Code (id di `dipertahankan`)."""
+    dipertahankan = dipertahankan or set()
+
+    def kunci_no(a: Any) -> Tuple[Tuple[str, str], int]:
+        nama = (a.account_name or "").strip()
+        m = _POLA_BERNOMOR.match(nama)
+        dasar, no = (m.group(1).strip(), int(m.group(2))) if m else (nama, 1)
+        return (dasar.lower(), (a.standard_account_code or "").strip().lower()), no
+
+    seri: Dict[Tuple[str, str], set] = {}
+    for a in akun:
+        k, no = kunci_no(a)
+        seri.setdefault(k, set()).add(no)
+    hasil = []
+    for a in akun:
+        k, no = kunci_no(a)
+        if 2 in seri[k] and no > BATAS_AKUN_BERNOMOR and a.id not in dipertahankan:
+            continue
+        hasil.append(a)
+    return hasil
+
+
+def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=None,
+                      katalog: Optional[Dict[str, Dict[str, Any]]] = None,
+                      dipertahankan: Optional[set] = None) -> bytes:
+    katalog = katalog or {}
+    semua_akun = akun
+    # Sheet data: seri akun bernomor dibatasi (_akun_sheet_coa); referensi & dropdown tetap semua akun.
+    akun = _akun_sheet_coa(semua_akun, dipertahankan)
+    n_disembunyikan = len(semua_akun) - len(akun)
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET_TEMPLATE
@@ -530,13 +811,20 @@ def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=N
         "after approval the Source Account Name becomes the account name, and these balances REPLACE all opening "
         "balance lines. Each ZAFEB account may be used once. For extra legacy accounts use the empty rows below and pick "
         "ONE of Suggested ZAFEB Account Code / Account Name / Standard Account Code (the other columns fill in). "
-        f"Required: Source Account Code & Name, Opening Debit/Credit (>= 0), Balance Date = cut-off date "
-        f"({ob.as_of_date.strftime('%d-%b-%Y')}) and Currency IDR. Total debit must equal total credit. "
-        "Control accounts (AR, AP, Inventory, Fixed Assets) must stay 0 — they are imported through separate files."
+        "To ADD A NEW account, type a new code in Suggested ZAFEB Account Code and pick its Standard Account Code "
+        "(the account name is the Suggested ZAFEB Account Name, or the Source Account Name when left empty). "
+        f"Required: Source Account Name, Opening Debit/Credit (>= 0) and Balance Date = cut-off date "
+        f"({ob.as_of_date.strftime('%d-%b-%Y')}). An empty Source Account Code gets a standard code automatically; "
+        "all balances are in IDR. Total debit must equal total credit. "
+        "AR and AP balances are skipped here (imported through their own files); Inventory and Fixed Asset control "
+        "accounts must stay 0."
+        + (f" Numbered account series (e.g. Bank Account 1-{BATAS_AKUN_BERNOMOR}) are listed up to {BATAS_AKUN_BERNOMOR} "
+           f"here ({n_disembunyikan} more account(s) are in sheet \"{SHEET_STANDARD_REF}\") — to use one, add it in "
+           "an empty row and pick its Suggested ZAFEB Account Code." if n_disembunyikan else "")
     ))
     c.font, c.fill = Font(name=_FONT, size=11, color="FF475569"), _FILL_KET
     c.alignment = Alignment(vertical="top", wrap_text=True)
-    ws.row_dimensions[2].height = 80
+    ws.row_dimensions[2].height = 96
 
     for i, (_, judul) in enumerate(KOLOM_COA, 1):
         c = ws.cell(BARIS_HEADER, i, judul)
@@ -556,7 +844,7 @@ def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=N
             c.fill = _FILL_LINK
         if a is not None:
             # Baris akun klien: kode akun ZAFEB = kunci (nilai, bukan formula).
-            ws[f"A{r}"].value = str(a.acc_no)
+            ws[f"A{r}"].value = dbc.kode_tampil_akun(a)
             ws[f"B{r}"].value = a.account_name
             ws[f"D{r}"].value = str(a.acc_no)
             if not a.is_active:
@@ -596,44 +884,58 @@ def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=N
 
     # Sheet referensi (tersembunyi) = sumber dropdown, diambil dari COA klien.
     ref = wb.create_sheet(SHEET_REFERENSI)
-    ref.append(["Account Code", "Account Name", "Classification", "Standard Account Code", "", "Classifications"])
-    # Semua akun (termasuk nonaktif) supaya baris akun nonaktif tetap terbaca;
-    # akun nonaktif bersaldo ditolak saat validasi upload.
-    for a in akun:
+    ref.append(["Account Code", "Account Name", "Classification", "Standard Account Code", "", "Classifications", "",
+                "Standard Codes", "Std Classification"])
+    # Semua akun (termasuk nonaktif & seri bernomor yang tidak tampil di sheet data)
+    # supaya tetap bisa dipilih; akun nonaktif bersaldo ditolak saat validasi upload.
+    for a in semua_akun:
         ref.append([str(a.acc_no), a.account_name, a.account_classification or "", a.standard_account_code or ""])
-    klasifikasi = sorted({a.account_classification for a in akun if a.account_classification})
+    # Klasifikasi = daftar lengkap (akun baru boleh klasifikasi yang belum dipakai klien).
+    klasifikasi = list(KLASIFIKASI_AKUN)
     for i, k in enumerate(klasifikasi, 2):
         ref.cell(i, 6, k)
-    for i, lebar in enumerate([18, 40, 20, 42, 2, 20], 1):
+    # Katalog standard code (_katalog_standard) = sumber dropdown kolom F & klasifikasi akun baru.
+    for i, info in enumerate(katalog.values(), 2):
+        ref.cell(i, 8, info["standard_account_code"])
+        ref.cell(i, 9, info["account_classification"])
+    for i, lebar in enumerate([18, 40, 20, 42, 2, 20, 2, 42, 20], 1):
         ref.column_dimensions[get_column_letter(i)].width = lebar
     ref.sheet_state = "hidden"
 
-    n = max(len(akun), 1) + 1
+    n = max(len(semua_akun), 1) + 1
     nama_range = {
         "ZCOA_CODE": f"$A$2:$A${n}",
         "ZCOA_NAME": f"$B$2:$B${n}",
         "ZCOA_CLASS": f"$C$2:$C${n}",
         "ZCOA_STD": f"$D$2:$D${n}",
         "ZCLASS_LIST": f"$F$2:$F${max(len(klasifikasi), 1) + 1}",
+        "ZSTD_CODE": f"$H$2:$H${max(len(katalog), 1) + 1}",
+        "ZSTD_CLASS": f"$I$2:$I${max(len(katalog), 1) + 1}",
     }
     for nama, rng in nama_range.items():
         wb.defined_names[nama] = DefinedName(nama, attr_text=f"'{SHEET_REFERENSI}'!{rng}")
 
-    def dropdown(rumus: str, kolom: str, judul: str, strict: bool = True):
+    def dropdown(rumus: str, kolom: str, judul: str, strict: bool = True, pesan: Optional[str] = None):
         dv = DataValidation(type="list", formula1=rumus, allow_blank=True, showErrorMessage=True,
                             errorStyle="stop" if strict else "warning",
-                            errorTitle="Invalid value", error=f"Pick a {judul} from the list.")
+                            errorTitle="Invalid value" if pesan is None else "New account?",
+                            error=pesan or f"Pick a {judul} from the list.")
         dv.add(f"{kolom}{BARIS_DATA_AWAL}:{kolom}{akhir}")
         ws.add_data_validation(dv)
 
     dropdown("ZCLASS_LIST", "C", "classification")
-    dropdown("ZCOA_CODE", "D", "ZAFEB account code")
-    dropdown("ZCOA_NAME", "E", "ZAFEB account name")
-    dropdown("ZCOA_STD", "F", "standard account code")
+    # Kode & nama ZAFEB boleh diketik di luar daftar (= akun BARU) -> peringatan, bukan blokir.
+    dropdown("ZCOA_CODE", "D", "ZAFEB account code", strict=False, pesan=(
+        "This code is not in the client's COA. Click Yes to ADD it as a NEW account, then pick its Standard Account "
+        "Code. Click No to pick an existing account."))
+    dropdown("ZCOA_NAME", "E", "ZAFEB account name", strict=False, pesan=(
+        "This name is not in the client's COA. Keep it only for a NEW account (new code in Suggested ZAFEB "
+        "Account Code)."))
+    dropdown("ZSTD_CODE", "F", "standard account code")
     dropdown('"' + ",".join(MATA_UANG) + '"', "J", "currency", strict=False)
 
     _tambah_cara_penggunaan(wb, _panduan_coa(nama_klien, ob))
-    _tambah_standard_reference(wb, nama_klien, akun, modul_kontrol)
+    _tambah_standard_reference(wb, nama_klien, semua_akun, modul_kontrol, katalog)
 
     # Formula kolom mapping saling merujuk -> wajib iterative calculation.
     wb.calculation.iterate = True
@@ -649,12 +951,14 @@ def buat_template_coa(nama_klien: str, akun: List[Any], ob: Any, modul_kontrol=N
 _LABEL_SUBLEDGER = {"ar": "AR", "ap": "AP", "inventory": "Inventory", "asset": "Fixed Assets"}
 
 
-def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], modul_kontrol=None) -> None:
+def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], modul_kontrol=None,
+                               katalog: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
     """Sheet "Standard Reference" (setelah "Cara Penggunaan"): seluruh COA klien
     sebagai acuan pengisian -- kode, nama, klasifikasi, standard code, saldo
-    normal, status & akun kontrol subledger (saldonya wajib 0 di template ini)."""
+    normal, status & akun kontrol subledger (saldonya wajib 0 di template ini).
+    Di bawahnya: katalog standard account code (_katalog_standard) untuk akun BARU."""
     ws = wb.create_sheet(SHEET_STANDARD_REF, 2)
-    kolom = ["Account Code", "Account Name", "Classification", "Account Head", "Account Sub",
+    kolom = ["ZAFEB Account Code", "Account Code Shown", "Account Name", "Classification", "Account Head", "Account Sub",
              "Standard Account Code", "Normal Balance", "Status", "Subledger Control", "Description"]
     n_kolom = len(kolom)
     font = Font(name=_FONT, size=11)
@@ -668,9 +972,9 @@ def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], m
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_kolom)
     c = ws.cell(2, 1, (
         f"Reference only — this sheet is not imported. It lists all {len(akun)} accounts of this client's COA to help "
-        f"you map legacy accounts in sheet {SHEET_TEMPLATE}. Accounts marked as Subledger Control must stay 0 there "
-        "(their balances are imported through the AR / AP / Inventory / Fixed Asset files); inactive accounts must "
-        "also stay 0."
+        f"you map legacy accounts in sheet {SHEET_TEMPLATE}. Balances of accounts marked as Subledger Control are "
+        "accepted as provisional — their detail must still be imported through the AR / AP / Inventory / Fixed Asset "
+        "files (the subledger total replaces the provisional amount). Inactive accounts must stay 0."
     ))
     c.font, c.fill = Font(name=_FONT, size=11, color="FF475569"), _FILL_KET
     c.alignment = Alignment(vertical="top", wrap_text=True)
@@ -685,7 +989,7 @@ def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], m
     for r, a in enumerate(akun, BARIS_DATA_AWAL):
         kontrol = modul_kontrol(a) if modul_kontrol else None
         nilai = [
-            str(a.acc_no), a.account_name, a.account_classification or "", a.account_head or "",
+            str(a.acc_no), dbc.kode_tampil_akun(a), a.account_name, a.account_classification or "", a.account_head or "",
             a.account_sub or "", a.standard_account_code or "", a.normal_balance or "",
             "Active" if a.is_active else "Inactive", _LABEL_SUBLEDGER.get(kontrol, "") if kontrol else "",
             a.description or "",
@@ -696,8 +1000,39 @@ def _tambah_standard_reference(wb: Workbook, nama_klien: str, akun: List[Any], m
             if kontrol or not a.is_active:
                 c.fill = _FILL_WARNING
 
+    # Daftar standard account code yang dikenali sistem -> acuan untuk akun BARU.
+    if katalog:
+        r = BARIS_DATA_AWAL + len(akun) + 2
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n_kolom)
+        c = ws.cell(r, 1, (
+            f"STANDARD ACCOUNT CODES — for NEW accounts ({len(katalog)} codes). A new account in sheet "
+            f"{SHEET_TEMPLATE} must use one of these codes; its classification, head, sub and normal balance follow "
+            "the code. Balances on codes marked as Subledger Control are provisional until the subledger detail is imported."
+        ))
+        c.font, c.fill = Font(name=_FONT, size=11, bold=True, color="FF134E4A"), _FILL_RINGKAS
+        c.alignment = Alignment(vertical="top", wrap_text=True)
+        ws.row_dimensions[r].height = 32
+        r += 1
+        kolom_std = ["Standard Account Code", "Classification", "Account Head", "Account Sub", "Normal Balance",
+                     "Used in this COA", "Subledger Control"]
+        for i, judul in enumerate(kolom_std, 1):
+            c = ws.cell(r, i, judul)
+            c.font, c.fill = Font(name=_FONT, size=11, bold=True, color="FFFFFFFF"), _FILL_HEADER
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        dipakai = {(a.standard_account_code or "").strip().lower() for a in akun}
+        for r, (kunci, info) in enumerate(katalog.items(), r + 1):
+            kontrol = _std_kontrol(kunci)
+            nilai = [info["standard_account_code"], info["account_classification"] or "", info["account_head"] or "",
+                     info["account_sub"] or "", info["normal_balance"] or "", "Yes" if kunci in dipakai else "No",
+                     _LABEL_SUBLEDGER.get(kontrol, "") if kontrol else ""]
+            for i, v in enumerate(nilai, 1):
+                c = ws.cell(r, i, v)
+                c.font = font
+                if kontrol:
+                    c.fill = _FILL_WARNING
+
     ws.auto_filter.ref = f"A{BARIS_HEADER}:{get_column_letter(n_kolom)}{BARIS_HEADER + max(len(akun), 1)}"
-    ws.freeze_panes = f"C{BARIS_DATA_AWAL}"
+    ws.freeze_panes = f"D{BARIS_DATA_AWAL}"
     for huruf, lebar in _lebar_kolom_dari_isi(ws).items():
         ws.column_dimensions[huruf].width = lebar
 
@@ -784,7 +1119,7 @@ def _tambah_cara_penggunaan(wb: Workbook, p: Dict[str, Any]) -> None:
     baris_merge("Green-shaded cells are filled automatically by formulas — you may overwrite them where the guide says so.",
                 Font(name=_FONT, size=10, italic=True, color="FF475569"))
 
-    seksi("ERRORS — the batch cannot be submitted until these are fixed")
+    seksi("ERRORS — these rows cannot be approved and are not applied (the other rows can still be approved)")
     daftar(p["error"], _FILL_ERROR, "dot")
     seksi("WARNINGS — allowed, the reviewer only needs to check them")
     daftar(p["warning"], _FILL_WARNING, "dot")
@@ -807,10 +1142,10 @@ def _info_panduan(nama_klien: str, ob: Any, modul: str) -> List[Tuple[str, str]]
 _LANGKAH_UMUM_AKHIR = [
     "Save the file as .xlsx (keep the sheet and column names unchanged) and upload it with the Import button on "
     "COA > Opening Balance > Import Data.",
-    "Review the validation result: fix every row marked Error in the file and upload it again; rows marked Warning can "
-    "stay but must be reviewed.",
-    "Submit the batch for approval. Another user with approval rights (Tahap 4+) approves or rejects it — the uploader "
-    "cannot approve their own batch.",
+    "Review the validation result: rows marked Error cannot be approved and are skipped — fix them in the file and "
+    "import them again if needed; rows marked Warning can stay but must be reviewed.",
+    "Internal Tahap 3-5 and client roles Org Owner to Supervisor approve the batch directly (no review needed). Other "
+    "roles submit it for approval; one of those users then approves or rejects it.",
 ]
 
 
@@ -822,51 +1157,84 @@ def _panduan_coa(nama_klien: str, ob: Any) -> Dict[str, Any]:
         "langkah": [
             "Every account of this client's chart of accounts is already listed (one row per account). Do not delete rows "
             "you do not use — leave their balance at 0.",
+            f"Numbered account series (e.g. Bank Account, Bank Account 2 .. 15) are listed only up to number "
+            f"{BATAS_AKUN_BERNOMOR}. The full list is in sheet \"{SHEET_STANDARD_REF}\" — to use a higher number, add it "
+            "in an empty row below the list and pick its Suggested ZAFEB Account Code.",
             "Replace Source Account Code and Source Account Name with the code and name from the legacy system. After "
-            "approval the Source Account Name becomes the account name in ZAFEB.",
+            "approval the Source Account Code becomes the account code shown in the system and the Source Account Name "
+            "becomes the account name (the ZAFEB code stays as the internal standard code).",
             "Fill Opening Debit OR Opening Credit with the balance on the cut-off date (the other stays 0).",
             "For an extra legacy account, use an empty row below the list and pick ONE of Suggested ZAFEB Account Code / "
             "Account Name / Standard Account Code — the other mapping columns fill in. To change a mapping, clear all four "
             "mapping cells of that row first.",
-            "Leave AR, AP, Inventory and Fixed Asset control accounts at 0 — they are imported through their own modules.",
+            "To ADD A NEW account that is not in the client's COA yet: type a new code in Suggested ZAFEB Account Code "
+            "(Excel asks to confirm — click Yes), pick its Standard Account Code from the dropdown (Source "
+            "Classification fills in), and optionally type the name in Suggested ZAFEB Account Name (empty = Source "
+            "Account Name). The account is created in the COA when the batch is approved.",
+            "AR, AP, Inventory and Fixed Asset balances in this file are accepted as PROVISIONAL balances. Their detail "
+            "(invoices, bills, stock, asset register) must still be imported through the AR / AP / Inventory / Fixed Asset "
+            "modules — once approved, the subledger total replaces the provisional amount and any difference is shown.",
+            "Duplicates are made unique automatically: when a code or name is already used, the lower (newer) row gets "
+            "the next number (e.g. 100005 -> 100006, Bank BCA -> Bank BCA 2). A second row on the same ZAFEB account "
+            "becomes a new account with the next free code.",
+            "Leave Source Account Code empty to get a unique standard code automatically (first digit follows the "
+            "classification: 1 Asset, 2 Liability, 3 Equity, 4 Revenue, 5 Cost of Sales, 6 Expense, 7 Other Income, "
+            "8 Other Expense, 9 Income Tax).",
             f'Use sheet "{SHEET_STANDARD_REF}" as a lookup of the client\'s COA (code, name, classification, standard '
             "account code, normal balance, status and subledger control accounts). It is reference only and is not imported.",
             "Check the CONTROL SUMMARY on the right: Status must be BALANCED (total debit = total credit).",
             *_LANGKAH_UMUM_AKHIR,
         ],
         "kolom": [
-            ("Source Account Code", "Yes", "Text", "Account code in the legacy system. Must be unique in the file."),
+            ("Source Account Code", "No", "Text (max 50)", "Account code in the legacy system. A code already used in the file or the COA is changed to the next free number. After approval it becomes the account code SHOWN everywhere in the system (the ZAFEB code stays as the internal standard code). Empty = a unique 6-digit standard code is generated (first digit by classification)."),
             ("Source Account Name", "Yes", "Text (max 255)", "Account name in the legacy system. Becomes the ZAFEB account name after approval (not allowed for accounts locked in Account Mapping)."),
-            ("Source Classification", "Auto", "Dropdown", "Follows the selected ZAFEB account. A different value only gives a warning."),
-            ("Suggested ZAFEB Account Code", "Auto", "Dropdown", "ZAFEB account this row maps to. Prefilled for listed accounts; each ZAFEB account can be used once."),
-            ("Suggested ZAFEB Account Name", "Auto", "Dropdown", "Linked to the account code."),
-            ("Standard Account Code", "Auto", "Dropdown", "Linked to the account code."),
-            ("Opening Debit", "Yes", "Number >= 0", "Debit balance on the cut-off date. Enter 0 if none."),
-            ("Opening Credit", "Yes", "Number >= 0", "Credit balance on the cut-off date. Enter 0 if none. Do not fill both debit and credit."),
+            ("Source Classification", "Auto", "Dropdown", "Follows the selected ZAFEB account. A different value only gives a warning. New account: follows the Standard Account Code and must match it."),
+            ("Suggested ZAFEB Account Code", "Auto", "Dropdown / Text", "ZAFEB account this row maps to. Prefilled for listed accounts; a second row on the same account becomes a new account (next free code). A code not in the COA = NEW account: letters, digits and . - _ / only, no spaces, max 50 characters."),
+            ("Suggested ZAFEB Account Name", "Auto", "Dropdown / Text", "Linked to the account code. New account: the new name (max 255; a name already used gets a number, e.g. Bank BCA 2); empty = Source Account Name."),
+            ("Standard Account Code", "Auto", "Dropdown", f'Linked to the account code. Required for a NEW account — pick from the list (see "{SHEET_STANDARD_REF}", section STANDARD ACCOUNT CODES).'),
+            ("Opening Debit", "No", "Number", "Debit balance on the cut-off date. Empty = 0."),
+            ("Opening Credit", "No", "Number", "Credit balance on the cut-off date. Empty = 0. A negative amount moves to the other side; if both are filled they are netted."),
             ("Balance Date", "Yes", "Date", f"Must be the cut-off date {cut} (prefilled)."),
-            ("Currency", "Yes", "ISO code", "Must be IDR (prefilled)."),
+            ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
             ("Branch", "No", "Text", "Informational. A branch different from this opening balance set gives a warning."),
             ("Department / Project / Notes", "No", "Text", "Informational; Notes is copied to the opening balance line."),
         ],
         "error": [
-            "Source Account Code / Name empty, or the same Source Account Code used twice.",
-            "Opening Debit / Credit empty, not a number, negative, or both filled.",
-            f"Balance Date empty, invalid or not equal to {cut}; Currency empty or not IDR.",
-            "ZAFEB account not found, mapping columns pointing to different accounts, or one ZAFEB account used on two rows.",
-            "A balance on an inactive account, a control account (AR / AP / Inventory / Fixed Asset), Current Year Earnings, "
+            "Source Account Name empty.",
+            f"Balance Date empty, invalid or not equal to {cut}.",
+            "ZAFEB account not found, or mapping columns pointing to different accounts.",
+            "A balance on an inactive account, "
             "or a P&L account when the cut-off is the start of the fiscal year.",
             "Renaming an account that is locked in Settings > Account Mapping.",
-            "Total debit not equal to total credit (checked for the whole batch).",
+            "New account: invalid code, Standard Account Code empty or "
+            "not recognized, or Source Classification invalid or different from the standard code.",
         ],
         "warning": [
             "Row without a ZAFEB account (unmapped) — its balance is NOT applied to the opening balance.",
+            "Total debit not equal to total credit — the difference of the approved rows is parked in the suspense "
+            "account when the opening balance is posted.",
             "Source Classification different from the ZAFEB account classification.",
             "Branch different from this opening balance set.",
+            "New account — the reviewer confirms it before it is added to the client's COA.",
+            "Duplicate code / name / ZAFEB account — changed automatically to a unique one (the message shows the new value).",
+            "Suggested ZAFEB Account Code not in the COA while an existing account with the same account code or name "
+            "(same classification) is not used anywhere else in the file — mapped to that existing account instead of "
+            "creating a duplicate.",
+            "Opening Debit / Credit not a number (treated as 0), negative (moved to the other side) or both filled (netted). "
+            "Empty = 0 without a message.",
+            "Balance on an AR / AP / Inventory / Fixed Asset control account — accepted as provisional; the detail must "
+            "still be imported through its module.",
+            "Balance on Current Year Earnings — it is calculated from the P&L accounts, so the legacy balance is treated as "
+            "prior-year earnings not yet closed and moved to a new Retained Earnings account (\"<name> - Prior Years\").",
         ],
         "setelah": [
-            "Opening balance lines of all NON-control accounts are REPLACED with the balances of this batch (control account "
-            "balances from AR / AP / Inventory / Fixed Assets are kept).",
-            "ZAFEB account names are updated from Source Account Name.",
+            "Opening balance lines are REPLACED with the balances of this batch. AR / AP / Inventory / Fixed Asset control "
+            "accounts take the provisional balance from this file until their module is approved; once a module is "
+            "approved its subledger total is kept and this file's amount is only compared (difference shown).",
+            "ZAFEB account names are updated from Source Account Name, and the Source Account Code is saved as the "
+            "account code shown in the system.",
+            "New accounts are added to the client's COA (active) with the classification, head, sub and normal balance of "
+            "their Standard Account Code; their balances become opening balance lines.",
         ],
     }
 
@@ -937,7 +1305,7 @@ def _panduan_dok(sisi: "SisiDok", nama_klien: str, ob: Any) -> Dict[str, Any]:
         (dict(sisi.kolom)["original"], "Yes", "Number > 0", f"Original {dok.lower()} amount."),
         ("Outstanding Amount", "Yes", "Number > 0", f"Unpaid amount on the cut-off date — not more than the original amount. "
                                                     f"Fully paid {dok.lower()}s are not imported."),
-        ("Currency", "Yes", "ISO code", "Must be IDR (prefilled)."),
+        ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
         (f"{akun} Control Account", "Yes", "Dropdown", f"Prefilled with the default from Settings > Account Mapping. Must be "
                                                          f"an {akun} control account."),
     ]
@@ -964,7 +1332,6 @@ def _panduan_dok(sisi: "SisiDok", nama_klien: str, ob: Any) -> Dict[str, Any]:
             f"{pihak} Name or {dok} Number empty; {dok} Number duplicated in the file or already recorded.",
             f"{dok} Date empty, invalid or after {cut}; Due Date before the {dok} Date.",
             "Original or Outstanding Amount empty, not greater than 0, or outstanding more than the original.",
-            "Currency empty or not IDR.",
             f"{akun} Control Account empty, not found, inactive or not an {akun} control account.",
         ],
         "warning": [
@@ -1093,6 +1460,112 @@ def _baca_tabel(isi: bytes, nama_file: str, header_wajib: Optional[str] = None) 
 # VALIDASI MODUL COA
 # ============================================================
 
+def _kode_unik(kode: str, dipakai: set) -> str:
+    """Kode yang sudah dipakai -> angka di belakangnya +1 sampai bebas (100005 ->
+    100006, nol di depan dipertahankan; tanpa angka: BANK -> BANK-2). `dipakai`
+    berisi kode huruf kecil. Keputusan bisnis 2026-10-26: duplikat dibuat unik."""
+    m = re.fullmatch(r"(.*?)(\d+)", kode)
+    dasar, n, lebar = (m.group(1), int(m.group(2)), len(m.group(2))) if m else (f"{kode}-", 1, 1)
+    while True:
+        n += 1
+        baru = f"{dasar}{n:0{lebar}d}"
+        if baru.lower() not in dipakai:
+            return baru
+
+
+def _nama_unik(nama: str, dipakai: set) -> str:
+    """Nama yang sudah dipakai -> nomor di belakangnya +1 (Bank BCA -> Bank BCA 2,
+    Bank BCA 2 -> Bank BCA 3). `dipakai` berisi nama huruf kecil."""
+    m = re.fullmatch(r"(.*\S)\s+(\d+)", nama)
+    dasar, n = (m.group(1), int(m.group(2))) if m else (nama, 1)
+    while True:
+        n += 1
+        baru = f"{dasar} {n}"
+        if baru.lower() not in dipakai:
+            return baru
+
+
+def _cek_akun_baru(d: Dict[str, str], no_baris: int, bersaldo: bool, katalog: Dict[str, Dict[str, Any]],
+                   per_nama: Dict[str, List[Any]], kode_dipakai: Dict[str, int], nama_dipakai: Dict[str, int],
+                   semua_kode: set, awal_tahun: bool, err, warn, ada_error) -> Dict[str, Any]:
+    """Baris dengan Suggested ZAFEB Account Code yang BELUM ada di COA klien =
+    akun baru. Boleh, asal standarnya jelas:
+        kode    pola POLA_KODE_AKUN_BARU; dipakai akun baru lain di file -> +1
+                (_kode_unik, terhadap `semua_kode`) + warning.
+        nama    Suggested ZAFEB Account Name, kosong -> Source Account Name;
+                sama dengan nama akun yang sudah ada / akun baru lain -> dibuat
+                unik (_nama_unik) + warning.
+        std     Standard Account Code WAJIB & harus dikenali (_katalog_standard);
+                head/sub/saldo normal/referensi IFRS diambil dari katalog.
+        kls     Source Classification (kosong -> dari katalog) harus salah satu
+                KLASIFIKASI_AKUN & sama dengan klasifikasi standard code.
+    Aturan saldo sama dengan akun lama: Current Year Earnings ditolak, akun
+    kontrol subledger = saldo sementara, cut-off awal tahun hanya akun neraca.
+    Return atribut akun yang dibuat saat approve (_buat_akun_baru)."""
+    kode = d["zafeb_code"]
+    if not POLA_KODE_AKUN_BARU.fullmatch(kode):
+        err(f'New ZAFEB account code "{kode}" is invalid — use letters, digits and . - _ / only '
+            "(no spaces, max 50 characters).")
+    else:
+        if kode.lower() in kode_dipakai:
+            lama, kode = kode, _kode_unik(kode, semua_kode | set(kode_dipakai))
+            warn(f"New ZAFEB account code {lama} is also used on row {kode_dipakai[lama.lower()]} — "
+                 f"changed to {kode} to keep it unique.")
+        kode_dipakai[kode.lower()] = no_baris
+        semua_kode.add(kode.lower())
+
+    nama = d.get("zafeb_name") or d.get("source_name") or ""
+    if d.get("zafeb_name") and len(nama) > 255:
+        err("Suggested ZAFEB Account Name is longer than 255 characters.")
+    elif nama:
+        lain = per_nama.get(nama.lower())
+        if lain or nama.lower() in nama_dipakai:
+            pemilik = f"account {dbc.kode_tampil_akun(lain[0])}" if lain else f"row {nama_dipakai[nama.lower()]}"
+            lama, nama = nama, _nama_unik(nama, set(per_nama) | set(nama_dipakai))
+            warn(f'Account name "{lama}" is already used by {pemilik} — changed to "{nama}" to keep it unique.')
+        nama_dipakai[nama.lower()] = no_baris
+
+    std = d.get("standard_code") or ""
+    info = katalog.get(std.lower()) if std else None
+    if not std:
+        err(f"Standard Account Code is required for new account {kode} — pick one from the dropdown.")
+    elif info is None:
+        err(f'Standard account code "{std}" is not recognized — pick one from the dropdown '
+            f'(list in sheet "{SHEET_STANDARD_REF}").')
+    kls_std = ((info or {}).get("account_classification") or "").upper()
+    # Klasifikasi kosong -> dari standard code (kalau standard code gagal, error-nya sudah di atas).
+    kls = (d.get("source_classification") or "").strip().upper() or kls_std
+    if kls and kls not in KLASIFIKASI_AKUN:
+        err(f'Source Classification "{d.get("source_classification")}" is invalid — use one of: {", ".join(KLASIFIKASI_AKUN)}.')
+    elif kls_std and kls != kls_std:
+        err(f"Source Classification {kls} does not match standard account code {info['standard_account_code']} ({kls_std}).")
+
+    if info is not None:
+        if std.lower() == STANDARD_CODE_LABA_BERJALAN:
+            err("Current Year Earnings is calculated automatically — it cannot be added as a new account.")
+        # Saldo di standard code akun kontrol subledger = saldo sementara (warning di _validasi_coa).
+    if bersaldo and awal_tahun and kls and kls not in KLASIFIKASI_NERACA:
+        err("Start-of-year cut-off accepts balance sheet accounts only (P&L belongs in Retained Earnings).")
+
+    if not ada_error():
+        warn(f"New account — {kode} {nama} will be added to this client's COA on approval.")
+    info = info or {}
+    return {
+        "acc_no": kode,
+        "account_name": nama,
+        "account_classification": kls or None,
+        "account_head": info.get("account_head"),
+        "account_sub": info.get("account_sub"),
+        "normal_balance": info.get("normal_balance") or ("DEBIT" if kls in KLASIFIKASI_SALDO_DEBIT else "CREDIT"),
+        "standard_account_code": info.get("standard_account_code") or std or None,
+        "international_standard_group": info.get("international_standard_group"),
+        "ifrs_taxonomy_reference": info.get("ifrs_taxonomy_reference"),
+        "ifrs_source": info.get("ifrs_source"),
+        "description": f"Added by opening balance import (legacy account {d.get('source_code') or '-'}).",
+        "source_acc_no": d.get("source_code") or None,
+    }
+
+
 def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, List[Any]]]) -> List[Dict[str, Any]]:
     posisi: Dict[str, int] = {}
     norm = [_norm_header(h) for h in header]
@@ -1122,13 +1595,35 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
     ).all():
         kunci_mapping.setdefault(str(coa_id), []).append(key)
 
+    katalog = _katalog_standard(session, ob.client_id)
+
     def kosong(v: Any) -> bool:
         return not _teks(v)
 
     def pilih_per_kode(kand: List[Any], kode: str) -> Optional[Any]:
         return next((x for x in kand if str(x.acc_no).strip().lower() == kode.lower()), None)
 
+    # Kode yang sudah terpakai (COA klien + semua kode di file) -> acuan +1 di _kode_unik
+    # supaya kode hasil +1 tidak menabrak kode baris lain di bawahnya.
+    def kode_di_file(key: str) -> set:
+        p = posisi.get(key)
+        if p is None:
+            return set()
+        return {_teks(r[p]).lower() for _, r in data if p < len(r) and _teks(r[p])}
+    semua_kode_zafeb = set(per_kode) | kode_di_file("zafeb_code")
+    semua_kode_sumber = set(per_kode) | {dbc.kode_tampil_akun(a).lower() for a in akun} | kode_di_file("source_code")
+
+    # Akun klien yang dirujuk kode ZAFEB di file (baris template / baris lain) -> bukan
+    # kandidat auto-koreksi mapping (_akun_lama_cocok).
+    dirujuk = {per_kode[k].id for k in kode_di_file("zafeb_code") if k in per_kode}
+    per_tampil: Dict[str, Any] = {}
+    for a in akun:
+        per_tampil.setdefault(str(a.acc_no).strip().lower(), a)
+        per_tampil.setdefault(dbc.kode_tampil_akun(a).lower(), a)
+
     hasil, kode_dipakai, akun_dipakai = [], {}, {}
+    kode_baru_dipakai: Dict[str, int] = {}
+    nama_baru_dipakai: Dict[str, int] = {}
     for no_baris, r in data:
         nilai = {k: (r[p] if p < len(r) else None) for k, p in posisi.items()}
         d = {k: _teks(v) for k, v in nilai.items() if k not in ("debit", "credit", "balance_date")}
@@ -1142,53 +1637,107 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
         def err(m): pesan.append({"level": "error", "message": m})
         def warn(m): pesan.append({"level": "warning", "message": m})
 
-        # Source Account Code / Name: teks, wajib.
-        if not d.get("source_code"):
-            err("Source Account Code is required.")
+        # Source Account Code opsional (kosong -> dibuat otomatis di _isi_kode_otomatis); Name wajib.
         if not d.get("source_name"):
             err("Source Account Name is required.")
         elif len(d["source_name"]) > 255:
             err("Source Account Name is longer than 255 characters.")
+        if len(d.get("source_code") or "") > 50:
+            err("Source Account Code is longer than 50 characters.")
         if d.get("source_code"):
             k = d["source_code"].lower()
             if k in kode_dipakai:
-                err(f"Duplicate Source Account Code (also on row {kode_dipakai[k]}).")
-            else:
-                kode_dipakai[k] = no_baris
+                # Duplikat -> baris yang lebih bawah (data terbaru) dibuat unik: +1.
+                baru = _kode_unik(d["source_code"], semua_kode_sumber | set(kode_dipakai))
+                warn(f"Source Account Code {d['source_code']} is also used on row {kode_dipakai[k]} — "
+                     f"changed to {baru} to keep it unique.")
+                d["source_code"], k = baru, baru.lower()
+                semua_kode_sumber.add(k)
+            kode_dipakai[k] = no_baris
 
-        # Opening Debit / Credit: desimal, wajib, >= 0.
-        debit = kredit = NOL
+        # Opening Debit / Credit tanpa error (keputusan bisnis 2026-10-26): kosong / "-" = 0,
+        # bukan angka = 0 (warning), negatif = saldo di sisi lawan, dua-duanya terisi -> dinetkan.
+        dk: Dict[str, Decimal] = {}
         for key, label in (("debit", "Opening Debit"), ("credit", "Opening Credit")):
-            if kosong(nilai.get(key)):
-                err(f"{label} is required (enter 0 if there is no balance).")
-                continue
-            n = _angka(nilai.get(key))
+            n = NOL if kosong(nilai.get(key)) else _angka(nilai.get(key))
             if n is None:
-                err(f"{label} must be a number.")
-            elif n < 0:
-                err(f"{label} must be 0 or more.")
-            elif key == "debit":
-                debit = n
-            else:
-                kredit = n
-        if debit > 0 and kredit > 0:
-            err("Fill either Opening Debit or Opening Credit, not both.")
+                if _teks(nilai.get(key)).strip("- "):
+                    warn(f'{label} "{_teks(nilai.get(key))}" is not a number — treated as 0.')
+                n = NOL
+            dk[key] = n
+        selisih = dk["debit"] - dk["credit"]
+        debit, kredit = (selisih, NOL) if selisih > 0 else (NOL, -selisih)
+        if dk["debit"] < 0 or dk["credit"] < 0 or (dk["debit"] > 0 and dk["credit"] > 0):
+            sisi = f"Opening Debit {debit:,.2f}" if debit > 0 else f"Opening Credit {kredit:,.2f}"
+            warn(f"Debit {dk['debit']:,.2f} / Credit {dk['credit']:,.2f} recorded as {sisi} "
+                 "(negative amounts move to the other side, debit and credit are netted).")
         bersaldo = debit > 0 or kredit > 0
 
         # Mapping ke akun ZAFEB: kode / standard code / nama harus menunjuk akun yang sama.
+        # Kode ZAFEB yang BELUM ada di COA klien = akun BARU (dibuat saat approve) -> _cek_akun_baru.
         dipilih: Optional[Any] = None
+        akun_baru: Optional[Dict[str, Any]] = None
         cocok: List[Tuple[str, Optional[Any]]] = []
         mapping_gagal = False
+        # Standard code yang diketik di kolom Suggested ZAFEB Account Code -> dipindah ke
+        # Standard Account Code (jangan jadi akun baru berkode "std_...").
+        if (d.get("zafeb_code") and d["zafeb_code"].lower() not in per_kode
+                and d["zafeb_code"].lower() in katalog):
+            d["standard_code"] = d.get("standard_code") or d["zafeb_code"]
+            d["zafeb_code"] = ""
+        # Baris ke Current Year Earnings (laba berjalan dihitung otomatis dari akun P&L) ->
+        # bersaldo: saldo legacy = laba periode lalu yang belum ditutup -> akun BARU di bawah
+        # Retained Earnings (keputusan bisnis 2026-10-31, bukan error supaya debit = kredit tetap).
+        # Tanpa saldo: cukup dipetakan ke akun Current Year Earnings klien yang sudah ada.
+        paksa_baru = False
+        if _ke_laba_berjalan(d, per_kode, per_nama):
+            pool = semua_kode_zafeb | set(kode_baru_dipakai)
+            paksa_baru = bersaldo
+            if bersaldo:
+                kode_lama = d.get("zafeb_code") or STANDARD_CODE_LABA_BERJALAN
+                d.update(standard_code=STANDARD_CODE_LABA_DITAHAN, source_classification="",
+                         zafeb_code=_kode_otomatis("EQUITY", "", pool) or _kode_unik(STANDARD_CODE_LABA_DITAHAN, pool),
+                         zafeb_name=f"{d.get('source_name') or 'Current Year Earnings'} - Prior Years")
+                warn(f"Current Year Earnings is calculated automatically from the P&L accounts — this legacy balance "
+                     f"({kode_lama}) is treated as prior-year earnings not yet closed and moved to new Retained Earnings "
+                     f"account {d['zafeb_code']} {d['zafeb_name']}.")
+            else:
+                laba = per_std.get(STANDARD_CODE_LABA_BERJALAN, [])
+                d.update(standard_code=STANDARD_CODE_LABA_BERJALAN if laba else "", source_classification="",
+                         zafeb_code=str(laba[0].acc_no).strip() if laba else "", zafeb_name="")
+        # Standard code yang belum punya akun di COA klien -> akun BARU dengan kode otomatis
+        # (6 digit per klasifikasi, _kode_otomatis).
+        std = (d.get("standard_code") or "").lower()
+        if not d.get("zafeb_code") and std and std not in per_std and std in katalog:
+            pool = semua_kode_zafeb | set(kode_baru_dipakai)
+            d["zafeb_code"] = (_kode_otomatis(katalog[std].get("account_classification") or "", "", pool)
+                               or _kode_unik(katalog[std]["standard_account_code"], pool))
         if d.get("zafeb_code"):
             a = per_kode.get(d["zafeb_code"].lower())
-            cocok.append(("code", a))
+            if a is None and not paksa_baru:
+                # Salah mapping (keputusan bisnis 2026-10-31): kode ZAFEB baru padahal akun lama yang
+                # cocok tidak dipakai baris mana pun -> pakai akun lama, jangan buat akun dobel.
+                a, alasan = _akun_lama_cocok(d, per_tampil, per_nama, katalog, dirujuk | set(akun_dipakai))
+                if a is not None:
+                    warn(f"Suggested ZAFEB Account Code {d['zafeb_code']} is not in the COA, but existing account "
+                         f"{dbc.kode_tampil_akun(a)} {a.account_name} ({alasan}) is not used anywhere else in this file — "
+                         "mapped to that account instead of creating a duplicate.")
+                    d.update(zafeb_code=str(a.acc_no).strip(), zafeb_name="",
+                             standard_code=a.standard_account_code or "", source_classification="")
             if a is None:
-                mapping_gagal = True
-                err(f'ZAFEB account code "{d["zafeb_code"]}" is not in this client\'s COA.')
+                akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
+                                           nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
+                                           lambda: any(p["level"] == "error" for p in pesan))
+                d["zafeb_code"], d["zafeb_name"] = akun_baru["acc_no"], akun_baru["account_name"]
+            else:
+                cocok.append(("code", a))
         for key, label in (("standard_code", "Standard account code"), ("zafeb_name", "ZAFEB account name")):
-            if not d.get(key):
+            # Akun baru: standard code & nama sudah dicek di _cek_akun_baru (boleh sama dgn akun lain).
+            if akun_baru is not None or not d.get(key):
                 continue
             kand = (per_std if key == "standard_code" else per_nama).get(d[key].lower(), [])
+            if not kand and any(a is not None for _, a in cocok):
+                continue  # kode ZAFEB sudah menunjuk akun -> kolom lain yang tidak dikenal diabaikan
             if not kand:
                 mapping_gagal = True
                 err(f'{label} "{d[key]}" is not in this client\'s COA.')
@@ -1199,33 +1748,51 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 # Tidak unik (mis. beberapa akun bank 1 standard code) -> cukup cocok dgn kode yang dipilih.
                 cocok.append((key, pilih_per_kode(kand, d["zafeb_code"]) or kand[0]))
             else:
-                mapping_gagal = True
-                err(f'{label} "{d[key]}" matches {len(kand)} accounts — pick the ZAFEB account code.')
+                # Beberapa akun 1 standard code / nama -> akun pertama yang belum dipakai baris lain
+                # (semua sudah dipakai -> akun pertama, lalu dibuat akun baru unik di bawah).
+                cocok.append((key, next((x for x in kand if x.id not in akun_dipakai), kand[0])))
         ketemu = {a.id: a for _, a in cocok if a is not None}
         if len(ketemu) > 1:
             err("Mapping columns point to different ZAFEB accounts — clear them and pick one again.")
         elif ketemu and not mapping_gagal:
             dipilih = next(iter(ketemu.values()))
 
-        if not cocok:
+        # 1 akun ZAFEB = 1 baris. Baris berikutnya yang menunjuk akun yang sama (data terbaru)
+        # -> akun BARU dengan kode +1 & nama unik, standard code ikut akun asal
+        # (keputusan bisnis 2026-10-26: duplikat dibuat unik, bukan error).
+        if dipilih is not None and dipilih.id in akun_dipakai:
+            asal = dipilih
+            d = {**d, "zafeb_code": _kode_unik(str(asal.acc_no).strip(), semua_kode_zafeb | set(kode_baru_dipakai)),
+                 "zafeb_name": d.get("source_name") or asal.account_name,
+                 "standard_code": asal.standard_account_code or "", "source_classification": ""}
+            dipilih = None
+            akun_baru = _cek_akun_baru(d, no_baris, bersaldo, katalog, per_nama, kode_baru_dipakai,
+                                       nama_baru_dipakai, semua_kode_zafeb, awal_tahun, err, warn,
+                                       lambda: any(p["level"] == "error" for p in pesan))
+            d.update(zafeb_code=akun_baru["acc_no"], zafeb_name=akun_baru["account_name"],
+                     source_classification=akun_baru["account_classification"] or "")
+
+        # Saldo akun kontrol AR/AP/Inventory/Fixed Asset -> diterima SEMENTARA (warning); detail
+        # subledger tetap wajib diimpor lewat modulnya (KONTROL_SEMENTARA, keputusan bisnis 2026-10-31).
+        kontrol_baris = (modul_kontrol(dipilih) if dipilih is not None
+                         else _std_kontrol(akun_baru.get("standard_account_code") or "") if akun_baru is not None else None)
+        if kontrol_baris not in KONTROL_SEMENTARA:
+            kontrol_baris = None
+        if bersaldo and kontrol_baris:
+            warn(f"{_LABEL_SUBLEDGER[kontrol_baris]} control account — balance accepted as provisional. The detail must "
+                 f"still be imported through \"{MODUL[kontrol_baris]}\"; the subledger total will replace this amount.")
+
+        if not cocok and akun_baru is None:
             warn("Unmapped — this balance will not be applied to the opening balance." if bersaldo
                  else "Unmapped — no ZAFEB account selected.")
         if dipilih is not None:
             kls = (dipilih.account_classification or "").upper()
             # 1 akun ZAFEB = 1 baris (baris saldo awal unik per akun & nama akun diambil dari baris ini).
-            if dipilih.id in akun_dipakai:
-                err(f"ZAFEB account {dipilih.acc_no} is already used on row {akun_dipakai[dipilih.id]} — "
-                    "each ZAFEB account can be mapped once.")
-            else:
-                akun_dipakai[dipilih.id] = no_baris
+            akun_dipakai[dipilih.id] = no_baris
             # Aturan akun berlaku untuk baris bersaldo saja (template memuat semua akun, termasuk akun kontrol).
             if bersaldo:
                 if not dipilih.is_active:
                     err(f"ZAFEB account {dipilih.acc_no} {dipilih.account_name} is inactive.")
-                kontrol = modul_kontrol(dipilih)
-                if kontrol:
-                    err(f"{dipilih.acc_no} {dipilih.account_name} is a control account — import its balance through "
-                        f"\"{MODUL[kontrol]}\" instead.")
                 if (dipilih.standard_account_code or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN:
                     err("Current Year Earnings is calculated automatically — map this balance to another account.")
                 if awal_tahun and kls not in KLASIFIKASI_NERACA:
@@ -1250,14 +1817,8 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 err(f"Balance Date {tgl.strftime('%d-%b-%Y')} is outside the opening period — "
                     f"it must be the cut-off date {ob.as_of_date.strftime('%d-%b-%Y')}.")
 
-        # Currency: kode ISO, wajib, harus IDR.
-        mata_uang = (d.get("currency") or "").upper()
-        if not mata_uang:
-            err("Currency is required.")
-        elif not re.fullmatch(r"[A-Z]{3}", mata_uang):
-            err(f'Currency "{d["currency"]}" is not a valid ISO code.')
-        elif mata_uang != MATA_UANG_OPENING:
-            err(f"Currency must be {MATA_UANG_OPENING} (found {mata_uang}).")
+        # Currency: selalu IDR, isi file diabaikan.
+        mata_uang = MATA_UANG_OPENING
 
         if d.get("branch") and ob.branch and d["branch"].strip().lower() != ob.branch.strip().lower():
             warn(f'Branch "{d["branch"]}" differs from this opening balance set ({ob.branch}).')
@@ -1274,16 +1835,158 @@ def _validasi_coa(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
                 **{k: d.get(k) or None for k, _ in KOLOM_COA if k not in ("debit", "credit", "balance_date")},
                 "balance_date": tgl.isoformat() if tgl else None,
                 "currency": mata_uang or None,
-                "mapping_status": "matched" if dipilih is not None else "unmapped",
+                "mapping_status": "matched" if dipilih is not None else "new" if akun_baru is not None else "unmapped",
                 "rename": bool(dipilih is not None and d.get("source_name") and d["source_name"] != dipilih.account_name),
                 "zafeb_account": {
                     "acc_no": dipilih.acc_no, "account_name": dipilih.account_name,
                     "account_classification": dipilih.account_classification,
                     "standard_account_code": dipilih.standard_account_code,
-                } if dipilih is not None else None,
+                } if dipilih is not None else {
+                    k: akun_baru.get(k) for k in ("acc_no", "account_name", "account_classification", "standard_account_code")
+                } if akun_baru is not None else None,
+                # Atribut akun yang dibuat di COA klien saat batch di-approve (_buat_akun_baru).
+                "new_account": akun_baru,
+                # Modul subledger kalau baris ini akun kontrol (saldo sementara, _status_kontrol).
+                "control_module": kontrol_baris,
+                "code_change": bool(dipilih is not None and d.get("source_code")
+                                    and d["source_code"] != dbc.kode_tampil_akun(dipilih)),
             },
         })
+    _isi_kode_otomatis(akun, hasil)
+    _cek_kode_tampil(akun, hasil)
     return hasil
+
+
+def _akun_lama_cocok(d: Dict[str, Any], per_tampil: Dict[str, Any], per_nama: Dict[str, List[Any]],
+                     katalog: Dict[str, Dict[str, Any]], terpakai: set) -> Tuple[Optional[Any], str]:
+    """Akun LAMA pengganti akun baru yang salah mapping (mis. kode katalog 6 digit
+    diketik di Suggested ZAFEB Account Code padahal akun kliennya sudah ada).
+    Kandidat: aktif, bukan Current Year Earnings, tidak dirujuk baris lain di file
+    (`terpakai`), klasifikasi sama dengan standard code / Source Classification baris.
+        1. Source Account Code = kode tampilan / kode ZAFEB akun lama (template mengisi
+           Source Account Code dengan kode akun -> baris akun itu yang mapping-nya diubah).
+        2. Source Account Name = nama akun lama.
+    Standard code saja TIDAK cukup (beberapa akun 1 standard code -> bisa salah pilih).
+    Return (akun, alasan) atau (None, "")."""
+    std = (d.get("standard_code") or "").strip().lower()
+    kls = ((katalog.get(std) or {}).get("account_classification") or d.get("source_classification") or "").strip().upper()
+
+    def boleh(a: Any) -> bool:
+        return (a is not None and a.is_active and a.id not in terpakai
+                and (a.standard_account_code or "").strip().lower() != STANDARD_CODE_LABA_BERJALAN
+                and (not kls or (a.account_classification or "").upper() == kls))
+    a = per_tampil.get((d.get("source_code") or "").strip().lower())
+    if boleh(a):
+        return a, "same account code"
+    a = next((x for x in per_nama.get((d.get("source_name") or "").strip().lower(), []) if boleh(x)), None)
+    return (a, "same account name") if a is not None else (None, "")
+
+
+def _ke_laba_berjalan(d: Dict[str, Any], per_kode: Dict[str, Any], per_nama: Dict[str, List[Any]]) -> bool:
+    """Baris COA menunjuk Current Year Earnings? (standard code, kode ZAFEB akun laba
+    berjalan / kode baru, atau -- tanpa kode & standard code -- nama akun laba berjalan)."""
+    def laba(a: Any) -> bool:
+        return (a.standard_account_code or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN
+    if (d.get("standard_code") or "").strip().lower() == STANDARD_CODE_LABA_BERJALAN:
+        return True
+    kode = (d.get("zafeb_code") or "").strip().lower()
+    if kode:
+        return kode in per_kode and laba(per_kode[kode])
+    nama = (d.get("zafeb_name") or "").strip().lower()
+    return bool(nama) and any(laba(a) for a in per_nama.get(nama, []))
+
+
+def _kode_otomatis(kls: str, preferensi: str, dipakai: set) -> Optional[str]:
+    """Kode akun 6 digit format standar (digit depan = klasifikasi, DIGIT_KLASIFIKASI)
+    yang belum dipakai. `preferensi` (kode ZAFEB akunnya) dipakai apa adanya kalau
+    sudah format standar & masih bebas; selain itu nomor berikut di grup 2 digit
+    yang sama (mis. 21xxxx), lalu grup lain klasifikasi itu."""
+    digit = DIGIT_KLASIFIKASI.get((kls or "").upper())
+    if not digit:
+        return None
+    standar = bool(re.fullmatch(r"\d{6}", preferensi or "")) and preferensi[0] == digit
+    if standar and preferensi.lower() not in dipakai:
+        return preferensi
+    grup = [preferensi[:2]] if standar else []
+    grup += [digit + str(i) for i in range(1, 10) if digit + str(i) not in grup]
+    for g in grup:
+        nomor = [int(k[2:]) for k in dipakai if re.fullmatch(r"\d{6}", k) and k.startswith(g)]
+        n = max(nomor, default=0) + 1
+        while n <= 9999 and f"{g}{n:04d}" in dipakai:
+            n += 1
+        if n <= 9999:
+            return f"{g}{n:04d}"
+    return None
+
+
+def _isi_kode_otomatis(akun: List[Any], hasil: List[Dict[str, Any]]) -> None:
+    """Baris tanpa Source Account Code -> kode dibuat otomatis (_kode_otomatis),
+    unik terhadap kode tampilan & acc_no semua akun klien dan kode lain di file.
+    Kode tampilan akun yang ikut di-mapping di file boleh dipakai ulang oleh baris
+    akun itu sendiri (tidak berubah)."""
+    kosong = [h for h in hasil if not h["data"].get("source_code")]
+    if not kosong:
+        return
+    per_id = {a.id: a for a in akun}
+    dipakai = {str(a.acc_no or "").strip().lower() for a in akun}
+    dipakai |= {dbc.kode_tampil_akun(a).lower() for a in akun}
+    dipakai |= {h["data"]["source_code"].lower() for h in hasil if h["data"].get("source_code")}
+    for h in kosong:
+        data = h["data"]
+        a = per_id.get(h["coa_id"]) if h["coa_id"] else None
+        baru = data.get("new_account")
+        if a is not None:
+            kls, pref = a.account_classification, str(a.acc_no or "").strip()
+            sendiri = {pref.lower(), dbc.kode_tampil_akun(a).lower()}
+        else:
+            kls = (baru or {}).get("account_classification") or data.get("source_classification")
+            pref = (baru or {}).get("acc_no") or ""
+            sendiri = set()
+        kode = _kode_otomatis(kls, pref, dipakai - sendiri)
+        if not kode:
+            continue
+        dipakai.add(kode.lower())
+        data["source_code"], data["source_code_generated"] = kode, True
+        if baru is not None:
+            baru["source_acc_no"] = kode
+        if a is not None:
+            data["code_change"] = kode != dbc.kode_tampil_akun(a)
+
+
+def _cek_kode_tampil(akun: List[Any], hasil: List[Dict[str, Any]]) -> None:
+    """Setelah approve, Source Account Code menjadi kode akun yang DITAMPILKAN
+    (management_client_coa.source_acc_no, migration 50) -> kode tampilan harus
+    unik per klien. Akun yang tidak ada di file tetap memakai kode tampilannya
+    sekarang. Bentrok dengan akun itu / baris di atasnya -> kode baris ini dibuat
+    unik (+1, _kode_unik) + warning (keputusan bisnis 2026-10-26)."""
+    dipakai = [h for h in hasil if h["status"] != "error" and h["data"].get("source_code")
+               and (h["coa_id"] or h["data"].get("new_account"))]
+    dipetakan = {h["coa_id"] for h in dipakai if h["coa_id"]}
+    per_id = {a.id: a for a in akun}
+    pemilik: Dict[str, str] = {}
+    for a in akun:
+        if a.id not in dipetakan:
+            pemilik.setdefault(dbc.kode_tampil_akun(a).lower(), f"{a.account_name} (not in this file)")
+    semua = set(pemilik) | {str(a.acc_no or "").strip().lower() for a in akun}
+    semua |= {dbc.kode_tampil_akun(a).lower() for a in akun}
+    semua |= {h["data"]["source_code"].lower() for h in hasil if h["data"].get("source_code")}
+    for h in dipakai:
+        data = h["data"]
+        kode = data["source_code"]
+        if kode.lower() in pemilik:
+            baru = _kode_unik(kode, semua)
+            semua.add(baru.lower())
+            h["messages"].append({"level": "warning", "message": (
+                f"Source Account Code {kode} becomes the account code shown in the system, but it is already used by "
+                f"{pemilik[kode.lower()]} — changed to {baru} to keep it unique.")})
+            if h["status"] == "valid":
+                h["status"] = "warning"
+            data["source_code"] = kode = baru
+            if data.get("new_account"):
+                data["new_account"]["source_acc_no"] = baru
+            if h["coa_id"] in per_id:
+                data["code_change"] = baru != dbc.kode_tampil_akun(per_id[h["coa_id"]])
+        pemilik[kode.lower()] = f"row {h['row_no']}"
 
 
 # ============================================================
@@ -1693,7 +2396,7 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
     # Kunci yang sama dengan modul Fixed Assets supaya tidak bentrok dengan input/penyusutan paralel.
     session.execute(text("select pg_advisory_xact_lock(hashtext(:k))"), {"k": f"fixed-asset:{kid}"})
 
-    rows = session.query(ROW).filter(ROW.import_id == b.id).order_by(ROW.row_no).all()
+    rows = _baris_terpilih(session, b)
     if any(r.status == "error" for r in rows):
         raise _Gagal("The batch has rows with errors.", kode="HAS_ERRORS")
     kategori = {c.id: c for c in session.query(CAT).filter(CAT.client_id == kid, CAT.deleted_at.is_(None)).all()}
@@ -1751,6 +2454,8 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
             saldo[akun_aset] = saldo.get(akun_aset, NOL) + _dec_aman(a.cost)
         if akun_akum and _dec_aman(a.opening_accumulated_depreciation):
             saldo[akun_akum] = saldo.get(akun_akum, NOL) - _dec_aman(a.opening_accumulated_depreciation)
+    # Saldo sementara di akun kontrol aset tetap lain (dari file COA) ikut diganti -- subledger menang.
+    akun_fa |= {a.id for a in _akun_kontrol(session, kid, "asset")}
     session.query(OBL).filter(OBL.opening_balance_id == ob.id, OBL.coa_id.in_(akun_fa or {""})).delete(synchronize_session=False)
     for coa_id, n in saldo.items():
         if n != 0:
@@ -1760,7 +2465,7 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
     session.flush()
     return (f"Applied: {len(rows)} asset(s) added to the Fixed Asset register; opening balances of "
             f"{sum(1 for n in saldo.values() if n != 0)} fixed asset / accumulated depreciation account(s) recalculated "
-            "from the register.")
+            f"from the register.{_banding_kontrol(session, ob, 'asset')}")
 
 
 # ============================================================
@@ -1801,7 +2506,7 @@ SISI_AP = SisiDok(
     "03_Template_Import_Opening_AP",
 )
 SISI_DOK = {"ar": SISI_AR, "ap": SISI_AP}
-KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "currency", "account")
+KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "account")
 SHEET_REFERENSI_DOK = "ZAFEB_REF"
 
 
@@ -1896,7 +2601,7 @@ def buat_template_dok(sisi: SisiDok, nama_klien: str, pihak: List[Tuple[str, str
         f"{cut.strftime('%d-%b-%Y')} — one row per {sisi.dokumen.lower()}. Pick an existing {sisi.pihak} Code from the "
         f"dropdown (name and tax ID fill in) or type a new {sisi.pihak.lower()}. "
         f"Required: {sisi.pihak} Name, {sisi.dokumen} Number (unique), {sisi.dokumen} Date (on or before the cut-off date), "
-        f"Original Amount (> 0), Outstanding Amount (> 0, not more than the original), Currency IDR and the {akun_label} "
+        f"Original Amount (> 0), Outstanding Amount (> 0, not more than the original) and the {akun_label} "
         f"(prefilled with the default from Account Mapping). After approval the {sisi.dokumen.lower()}s appear in "
         f"{'Accounts Receivable' if sisi.modul == 'ar' else 'Accounts Payable'} and the opening balance of the control "
         "account(s) is recalculated from them."
@@ -1976,15 +2681,9 @@ def _posisi_kolom(header: List[str], kolom, wajib) -> Dict[str, int]:
     return posisi
 
 
-def _cek_mata_uang(d: Dict[str, str], err) -> Optional[str]:
-    mata_uang = (d.get("currency") or "").upper()
-    if not mata_uang:
-        err("Currency is required.")
-    elif not re.fullmatch(r"[A-Z]{3}", mata_uang):
-        err(f'Currency "{d["currency"]}" is not a valid ISO code.')
-    elif mata_uang != MATA_UANG_OPENING:
-        err(f"Currency must be {MATA_UANG_OPENING} (found {mata_uang}).")
-    return mata_uang or None
+def _cek_mata_uang(d: Dict[str, str], err) -> str:
+    """Opening balance selalu IDR: isi kolom Currency diabaikan (keputusan bisnis 2026-10-26)."""
+    return MATA_UANG_OPENING
 
 
 def _dokumen_terdaftar(session, client_id: str, modul: str) -> set:
@@ -2166,7 +2865,8 @@ def _saldo_dari_batch(session, b: Any) -> Dict[str, Decimal]:
     batch_ids = [x for (x,) in session.query(IMP.id).filter(
         IMP.opening_balance_id == b.opening_balance_id, IMP.module == b.module, IMP.status == "approved").all()]
     saldo: Dict[str, Decimal] = {}
-    for r in session.query(ROW).filter(ROW.import_id.in_(set(batch_ids) | {b.id}), ROW.coa_id.isnot(None)).all():
+    for r in session.query(ROW).filter(ROW.import_id.in_(set(batch_ids) | {b.id}), ROW.coa_id.isnot(None),
+                                       ROW.is_excluded.is_(False)).all():
         saldo[r.coa_id] = saldo.get(r.coa_id, NOL) + _dec_aman(r.debit) - _dec_aman(r.credit)
     return saldo
 
@@ -2176,7 +2876,7 @@ def _terapkan_dok(session, b: Any, user: Dict[str, Any], sisi: SisiDok) -> str:
     (is_opening_balance, tidak dibaca GL) + saldo awal akun kontrol dihitung ulang."""
     ob = _wajib_ob_draft(session, b)
     kid = ob.client_id
-    rows = session.query(ROW).filter(ROW.import_id == b.id).order_by(ROW.row_no).all()
+    rows = _baris_terpilih(session, b)
     if any(r.status == "error" for r in rows):
         raise _Gagal("The batch has rows with errors.", kode="HAS_ERRORS")
     terdaftar = _dokumen_terdaftar(session, kid, sisi.modul)
@@ -2249,7 +2949,8 @@ def _terapkan_dok(session, b: Any, user: Dict[str, Any], sisi: SisiDok) -> str:
     tambahan = f"; {pelanggan_baru} new customer(s) added" if pelanggan_baru else ""
     return (f"Applied: {len(rows)} {sisi.dokumen.lower()}(s) added to "
             f"{'Accounts Receivable' if sisi.modul == 'ar' else 'Accounts Payable'}{tambahan}; opening balance of "
-            f"{n} control account(s) recalculated from all approved {sisi.modul.upper()} batches.")
+            f"{n} control account(s) recalculated from all approved {sisi.modul.upper()} batches."
+            f"{_banding_kontrol(session, ob, sisi.modul)}")
 
 
 # ============================================================
@@ -2533,7 +3234,7 @@ def _terapkan_inv(session, b: Any, user: Dict[str, Any]) -> str:
     ob = _wajib_ob_draft(session, b)
     kid = ob.client_id
     session.execute(text("select pg_advisory_xact_lock(hashtext(:k))"), {"k": f"inventory:{kid}"})
-    rows = session.query(ROW).filter(ROW.import_id == b.id).order_by(ROW.row_no).all()
+    rows = _baris_terpilih(session, b)
     if any(r.status == "error" for r in rows):
         raise _Gagal("The batch has rows with errors.", kode="HAS_ERRORS")
     IT, WH, MV = dbc.InventoryItem, dbc.InventoryWarehouse, dbc.InventoryMovement
@@ -2593,7 +3294,8 @@ def _terapkan_inv(session, b: Any, user: Dict[str, Any]) -> str:
     n = _ganti_saldo_kontrol(session, ob, "inventory", saldo, uid, "From the Inventory stock valuation (opening balance import).")
     tambahan = "".join(f"; {k} new {lbl}(s) created" for k, lbl in ((baru_item, "item"), (baru_wh, "warehouse")) if k)
     return (f"Applied: opening stock posted in Inventory ({', '.join(dokumen)}) for {len(rows)} row(s){tambahan}; "
-            f"opening balance of {n} inventory account(s) recalculated from the stock valuation.")
+            f"opening balance of {n} inventory account(s) recalculated from the stock valuation."
+            f"{_banding_kontrol(session, ob, 'inventory')}")
 
 
 # ============================================================
@@ -2621,7 +3323,8 @@ def daftar_import(ob_id: str, _current_user: Dict[str, Any] = Depends(get_curren
                 "pending_approval": sum(1 for b in riwayat if b.status == "submitted"),
                 **dict(zip(("missing_mappings", "setup"), _setup_kurang(session, ob.client_id, key, mapping))),
             })
-        return sukses(data={"modules": modul, "batches": [_ringkas_batch(b) for b in batch]})
+        return sukses(data={"modules": modul, "batches": [_ringkas_batch(b) for b in batch],
+                            "control_status": _status_kontrol(session, ob)})
     except _Gagal as e:
         return _respon_gagal(e)
     finally:
@@ -2639,7 +3342,12 @@ def download_template(ob_id: str, module: str, _current_user: Dict[str, Any] = D
         nama_klien = klien.get("company_name") or klien.get("client_code") or "Client"
         akun = _akun_klien(session, ob.client_id)
         if m == "coa":
-            isi = buat_template_coa(nama_klien, akun, ob, _penentu_kontrol(session, ob.client_id))
+            # Akun seri bernomor yang sudah bersaldo awal / punya Source Account Code tetap tampil.
+            OBL = dbc.ManagementClientCoaOpeningBalanceLine
+            dipertahankan = {c for (c,) in session.query(OBL.coa_id).filter(OBL.opening_balance_id == ob.id).all()}
+            dipertahankan |= {a.id for a in akun if a.source_acc_no}
+            isi = buat_template_coa(nama_klien, akun, ob, _penentu_kontrol(session, ob.client_id),
+                                    _katalog_standard(session, ob.client_id), dipertahankan)
         elif m == "asset":
             mapping = dbc.akun_mapping_setting(ob.client_id, session=session)
             isi = buat_template_aset(nama_klien, akun,
@@ -2675,7 +3383,7 @@ async def upload_import(
     ob_id: str,
     module: str,
     file: UploadFile = File(...),
-    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_UPLOAD)),
+    current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     isi = await file.read()
     nama_file = (file.filename or "upload").strip()[:255]
@@ -2683,6 +3391,7 @@ async def upload_import(
     def aksi(session):
         ob = _ambil_ob(session, ob_id)
         m = _cek_modul(module)
+        _wajib_akses(session, current_user, ob.client_id)
         if ob.status != "draft":
             raise _Gagal("Opening balance is not in draft — click Revise first to import new data.", kode=f"STATUS_{ob.status.upper()}", status_code=409)
         _wajib_mapping(session, ob.client_id, m)
@@ -2747,7 +3456,7 @@ async def upload_import(
 
 
 @router.get("/imports/{batch_id}", summary="Detail batch import + baris")
-def detail_import(batch_id: str, _current_user: Dict[str, Any] = Depends(get_current_user_v1)):
+def detail_import(batch_id: str, current_user: Dict[str, Any] = Depends(get_current_user_v1)):
     session = dbc.SessionLocal()
     try:
         b = _ambil_batch(session, batch_id)
@@ -2761,7 +3470,10 @@ def detail_import(batch_id: str, _current_user: Dict[str, Any] = Depends(get_cur
         data["rows"] = [{
             "id": r.id, "row_no": r.row_no, "coa_id": r.coa_id, "debit": float(r.debit or 0),
             "credit": float(r.credit or 0), "status": r.status, "messages": r.messages or [], "data": r.data or {},
+            "is_excluded": bool(r.is_excluded),
         } for r in rows]
+        data["excluded_rows"] = sum(1 for r in rows if r.is_excluded)
+        data["permissions"] = _izin_batch(session, current_user, b)
         return sukses(data=data)
     except _Gagal as e:
         return _respon_gagal(e)
@@ -2786,22 +3498,18 @@ def _ubah_status(batch_id: str, fn, pesan: str):
 
 
 @router.post("/imports/{batch_id}/submit", summary="Ajukan batch untuk approval")
-def submit_import(batch_id: str, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_UPLOAD))):
+def submit_import(batch_id: str, current_user: Dict[str, Any] = Depends(get_current_user_v1)):
     def fn(session, b):
+        _wajib_akses(session, current_user, b.client_id)
         if b.status != "validated":
             raise _Gagal("Only a validated batch can be submitted.", kode=f"STATUS_{b.status.upper()}", status_code=409)
-        isu = _isu_blokir(b)
-        if isu:
-            raise _Gagal(" ".join(isu) + " Fix the file and upload it again before submitting.", kode="HAS_ERRORS")
+        if not (b.valid_rows or 0) + (b.warning_rows or 0):
+            raise _Gagal("There are no valid rows to submit — rows with errors cannot be approved. Fix the file and "
+                         "import it again.", kode="NO_VALID_ROWS")
         b.status = "submitted"
         b.submitted_at, b.submitted_by, b.submitted_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
 
     return _ubah_status(batch_id, fn, "Batch submitted for approval.")
-
-
-def _cek_maker_checker(b: Any, user: Dict[str, Any]) -> None:
-    if user.get("role") != auth.SUPER_ADMIN_ROLE and b.submitted_by and str(b.submitted_by) == str(user.get("id")):
-        raise _Gagal("You submitted this batch — another user must review it.", kode="SELF_APPROVAL", status_code=403)
 
 
 def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
@@ -2815,9 +3523,11 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
         raise _Gagal("Opening balance is not in draft — click Revise first, then approve this batch.",
                      kode=f"STATUS_{ob.status.upper()}", status_code=409)
 
-    rows = session.query(ROW).filter(ROW.import_id == b.id, ROW.coa_id.isnot(None)).order_by(ROW.row_no).all()
-    if any(r.status == "error" for r in rows):
+    semua = _baris_terpilih(session, b)
+    if any(r.status == "error" for r in semua):
         raise _Gagal("The batch has rows with errors.", kode="HAS_ERRORS")
+    rows = [r for r in semua if r.coa_id is not None]
+    baru = [r for r in semua if r.coa_id is None and (r.data or {}).get("new_account")]
     akun = {
         a.id: a for a in session.query(COA).filter(
             COA.id.in_({r.coa_id for r in rows} or {""}), COA.client_id == ob.client_id, COA.deleted_at.is_(None),
@@ -2829,23 +3539,53 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
                      "Reject the batch and upload it again.", kode="COA_NOT_FOUND", status_code=409)
 
     sekarang, uid = datetime.now(), user.get("id")
+    # Source Account Code -> kode tampilan akun (source_acc_no). 2 tahap: kode yang berubah
+    # diganti sementara dulu supaya tukar kode antar akun tidak melanggar unique index.
+    kode_baru = {r.coa_id: r.data["source_code"] for r in rows if (r.data or {}).get("source_code")}
+    berubah = [akun[k] for k, v in kode_baru.items() if dbc.kode_tampil_akun(akun[k]) != v]
+    for a in berubah:
+        a.source_acc_no = f"~{a.id}"
+    with _bentrok_kode_tampil():
+        session.flush()
+        # Akun baru dibuat dulu di COA klien -> baris batch-nya ikut diproses seperti akun lama.
+        akun.update(_buat_akun_baru(session, ob, baru, uid, sekarang))
+    for a in berubah:
+        a.source_acc_no, a.edited_at, a.edited_by = kode_baru[a.id], sekarang, uid
+    id_baru = {r.id for r in baru}
+    rows = sorted(rows + baru, key=lambda r: r.row_no)
     OBL = dbc.ManagementClientCoaOpeningBalanceLine
-    # Saldo akun kontrol (AR/AP/Inventory/Fixed Asset) dikelola modul 2-5 -> dipertahankan.
+    # Akun kontrol modul yang subledgernya SUDAH di-approve -> saldo subledger dipertahankan
+    # (angka file ini hanya pembanding, _status_kontrol). Modul yang belum punya detail ->
+    # saldo file ini dipakai sebagai saldo SEMENTARA (keputusan bisnis 2026-10-31).
     modul_kontrol = _penentu_kontrol(session, ob.client_id)
+    sudah_detail = _modul_sudah_detail(session, ob.id)
     lama = session.query(OBL, COA).join(COA, COA.id == OBL.coa_id).filter(OBL.opening_balance_id == ob.id).all()
-    dipertahankan = {l.coa_id for l, a in lama if modul_kontrol(a)}
+    dipertahankan = {l.coa_id for l, a in lama if modul_kontrol(a) in sudah_detail}
     for l, a in lama:
         if l.coa_id not in dipertahankan:
             session.delete(l)
     session.flush()
     n_saldo = n_nama = 0
+    sementara: Dict[str, int] = {}
     for r in rows:
-        if (_dec_aman(r.debit) > 0 or _dec_aman(r.credit) > 0) and r.coa_id not in dipertahankan:
+        if _dec_aman(r.debit) > 0 or _dec_aman(r.credit) > 0:
+            m = modul_kontrol(akun[r.coa_id])
+            if m not in KONTROL_SEMENTARA:
+                m = None
+            if m in sudah_detail:
+                continue
+            if m:
+                sementara[m] = sementara.get(m, 0) + 1
+            catatan = (r.data or {}).get("notes")
+            if m:
+                catatan = " · ".join(t for t in (CATATAN_SEMENTARA.format(modul=MODUL[m]), catatan) if t)
             session.add(OBL(
                 opening_balance_id=ob.id, coa_id=r.coa_id, debit=_dec_aman(r.debit), credit=_dec_aman(r.credit),
-                notes=(r.data or {}).get("notes"), created_by=uid,
+                notes=catatan, created_by=uid,
             ))
             n_saldo += 1
+        if r.id in id_baru:
+            continue  # nama akun baru sudah final (Suggested ZAFEB Account Name / Source Account Name)
         a = akun[r.coa_id]
         nama = ((r.data or {}).get("source_name") or "").strip()
         if nama and nama != a.account_name:
@@ -2853,7 +3593,10 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
             n_nama += 1
     ob.edited_at, ob.edited_by = sekarang, uid
     try:
-        session.flush()
+        with _bentrok_kode_tampil():
+            session.flush()
+    except _Gagal:
+        raise
     except Exception as e:
         # Trigger trg_kunci_coa_mapping: akun terkunci Account Mapping tidak boleh ganti nama.
         if "MAPPING_LOCKED" in str(e):
@@ -2861,21 +3604,80 @@ def _terapkan_coa(session, b: Any, user: Dict[str, Any]) -> str:
                          "Settings > Account Mapping, or reject the batch and keep their current names.",
                          kode="MAPPING_LOCKED", status_code=409)
         raise
-    kontrol = f"; {len(dipertahankan)} control account balance(s) kept" if dipertahankan else ""
-    return (f"Applied to the opening balance: {n_saldo} account balance(s) replaced the previous non-control lines"
-            f"{kontrol}; {n_nama} account name(s) updated from Source Account Name.")
+    kontrol = (f"; subledger balances kept for {', '.join(_LABEL_SUBLEDGER[m] for m in KONTROL_SEMENTARA if m in sudah_detail)}"
+               if sudah_detail else "")
+    tambah = f"; {len(baru)} new account(s) added to the COA" if baru else ""
+    kode = f"; {len(berubah)} account code(s) updated from Source Account Code" if berubah else ""
+    perlu = (" Provisional control balances — detail still required for: "
+             + ", ".join(f"{MODUL[m]} ({n} account(s))" for m, n in sementara.items()) + ".") if sementara else ""
+    return (f"Applied to the opening balance: {n_saldo} account balance(s) replaced the previous lines"
+            f"{kontrol}; {n_nama} account name(s) updated from Source Account Name{kode}{tambah}.{perlu}")
 
 
-@router.post("/imports/{batch_id}/approve", summary="Setujui batch (Tahap 4+)")
+@contextmanager
+def _bentrok_kode_tampil():
+    """Pelanggaran unique index kode tampilan (migration 50) -> pesan yang jelas."""
+    try:
+        yield
+    except Exception as e:
+        if "uq_management_client_coa_display_code" in str(e):
+            raise _Gagal("Some Source Account Codes are already used as account codes of other accounts (for example "
+                         "accounts excluded from this approval). Change the selection, or reject the batch and use "
+                         "unique codes.", kode="DUPLICATE_ACCOUNT_CODE", status_code=409)
+        raise
+
+
+def _buat_akun_baru(session, ob: Any, rows: List[Any], uid: Any, sekarang: datetime) -> Dict[str, Any]:
+    """Buat akun BARU (data.new_account dari _cek_akun_baru) di COA klien saat
+    batch coa di-approve; baris batch diisi coa_id-nya. Kode yang dulu pernah
+    di-soft-delete dihidupkan lagi (UNIQUE client_id + acc_no tetap berlaku untuk
+    baris terhapus, sama seperti POST /api/v1/management/coa)."""
+    if not rows:
+        return {}
+    kode = [r.data["new_account"]["acc_no"] for r in rows]
+    ada = {
+        str(a.acc_no).strip().lower(): a for a in session.query(COA).filter(
+            COA.client_id == ob.client_id, func.lower(func.trim(COA.acc_no)).in_([k.lower() for k in kode]),
+        ).all()
+    }
+    bentrok = [k for k in kode if k.lower() in ada and ada[k.lower()].deleted_at is None]
+    if bentrok:
+        raise _Gagal(f"Account code(s) {', '.join(bentrok[:10])} were added to this client's COA after the upload. "
+                     "Reject the batch and upload it again.", kode="COA_CONFLICT", status_code=409)
+    klien = dbc.get_management_client_by_id(ob.client_id, termasuk_nonaktif=True) or {}
+    hasil: Dict[str, Any] = {}
+    for r in rows:
+        kolom = dict(r.data["new_account"])
+        a = ada.get(kolom["acc_no"].lower())
+        if a is None:
+            a = COA(client_id=ob.client_id, client_code=klien.get("client_code"), is_active=True, created_by=uid, **kolom)
+            session.add(a)
+        else:
+            for k, v in kolom.items():
+                setattr(a, k, v)
+            a.is_active, a.deleted_at, a.deleted_by, a.edited_at, a.edited_by = True, None, None, sekarang, uid
+        session.flush()
+        r.coa_id = a.id
+        hasil[a.id] = a
+    return hasil
+
+
+@router.post("/imports/{batch_id}/approve", summary="Setujui batch (grup tanpa review, lihat _akses_import)")
 def approve_import(
     batch_id: str,
     payload: ApproveRequest = ApproveRequest(),
-    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_APPROVE)),
+    current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     def fn(session, b):
-        if b.status != "submitted":
-            raise _Gagal("Only a submitted batch can be approved.", kode=f"STATUS_{b.status.upper()}", status_code=409)
-        _cek_maker_checker(b, current_user)
+        _wajib_akses(session, current_user, b.client_id, perlu="langsung")
+        if b.status not in ("validated", "submitted"):
+            raise _Gagal("Only a validated or submitted batch can be approved.", kode=f"STATUS_{b.status.upper()}",
+                         status_code=409)
+        if b.status == "validated":
+            # Grup tanpa review: approve langsung tanpa tahap submit (baris error tetap
+            # tidak boleh ikut dipilih -- dicek di _terapkan_*; coa: pilihan harus seimbang).
+            b.submitted_at, b.submitted_by, b.submitted_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
+        dipilih, total, n_error = _pilih_baris(session, b, payload.row_ids)
         if b.module == "coa":
             b.notes = _terapkan_coa(session, b, current_user)
         elif b.module == "asset":
@@ -2884,6 +3686,11 @@ def approve_import(
             b.notes = _terapkan_inv(session, b, current_user)
         else:
             b.notes = _terapkan_dok(session, b, current_user, SISI_DOK[b.module])
+        if dipilih < total:
+            dikeluarkan = total - dipilih - n_error
+            b.notes = (f"{b.notes} Approved {dipilih} of {total} row(s)"
+                       + (f"; {n_error} row(s) with errors skipped" if n_error else "")
+                       + (f"; {dikeluarkan} excluded by the reviewer" if dikeluarkan else "") + ".")
         b.status = "approved"
         b.reviewed_at, b.reviewed_by, b.reviewed_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
         b.review_note = (payload.note or "").strip() or None
@@ -2891,16 +3698,16 @@ def approve_import(
     return _ubah_status(batch_id, fn, "Batch approved.")
 
 
-@router.post("/imports/{batch_id}/reject", summary="Tolak batch (Tahap 4+)")
+@router.post("/imports/{batch_id}/reject", summary="Tolak batch (grup tanpa review, lihat _akses_import)")
 def reject_import(
     batch_id: str,
     payload: RejectRequest,
-    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_APPROVE)),
+    current_user: Dict[str, Any] = Depends(get_current_user_v1),
 ):
     def fn(session, b):
+        _wajib_akses(session, current_user, b.client_id, perlu="langsung")
         if b.status != "submitted":
             raise _Gagal("Only a submitted batch can be rejected.", kode=f"STATUS_{b.status.upper()}", status_code=409)
-        _cek_maker_checker(b, current_user)
         b.status = "rejected"
         b.reviewed_at, b.reviewed_by, b.reviewed_by_name = datetime.now(), current_user.get("id"), _nama_user(current_user)
         b.review_note = payload.reason.strip()
@@ -2909,8 +3716,9 @@ def reject_import(
 
 
 @router.post("/imports/{batch_id}/cancel", summary="Batalkan batch (validated/rejected)")
-def cancel_import(batch_id: str, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_MINIMAL_UPLOAD))):
+def cancel_import(batch_id: str, current_user: Dict[str, Any] = Depends(get_current_user_v1)):
     def fn(session, b):
+        _wajib_akses(session, current_user, b.client_id)
         if b.status not in ("validated", "rejected"):
             raise _Gagal("Only a validated or rejected batch can be cancelled.", kode=f"STATUS_{b.status.upper()}", status_code=409)
         b.status, b.cancelled_at, b.cancelled_by = "cancelled", datetime.now(), current_user.get("id")

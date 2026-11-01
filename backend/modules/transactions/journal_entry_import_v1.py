@@ -840,6 +840,14 @@ async def upload_journal_entry_import(
             status_code=201,
         )
 
+    # Kode akun di file boleh kode tampilan (Source Account Code, migration 50) -> disimpan sebagai acc_no.
+    ke_acc_no = {kode.lower(): acc for acc, kode in (await run_in_threadpool(dbc.peta_kode_tampil, management_client_id)).items()}
+    for g in ekstrak["groups"]:
+        for l in g["lines"]:
+            kode = str(l.get("account_code") or "").strip()
+            if kode:  # kode tampilan menang (sama dengan accNoDariKode di frontend)
+                l["account_code"] = ke_acc_no.get(kode.lower(), kode)
+
     baris = await run_in_threadpool(
         _susun_baris_staging, ekstrak["groups"], template, management_client_id, file.filename, user_id, diproses_oleh,
     )

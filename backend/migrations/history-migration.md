@@ -55,3 +55,5 @@ bank_cash/seed_template_npi_multi_format_bank_cash.sql
 43-add_lock_to_account_mappings.py
 44-add_bill_fields_to_purchase.py
 48-create_other_transaction_tables.py
+49-add_import_row_selection.py
+50-add_coa_source_acc_no.py

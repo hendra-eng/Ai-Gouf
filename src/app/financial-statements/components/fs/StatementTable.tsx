@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import type { FsAccountRow, FsLine, FsSection } from '@/lib/fsStore';
 import { fmtAmount, fmtMonth, fmtPct, glHref, variance } from './fsFormat';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Tabel statement bersama Balance Sheet & Profit & Loss: seksi -> baris
 // laporan (bisa di-expand) -> akun -> drill ke General Ledger.
@@ -46,6 +47,7 @@ function VarianceCells({ cur, prev, strong }: { cur: number; prev: number | null
 }
 
 export default function StatementTable({ rows, currentLabel, compareLabel, months, glRange, expandAll, warningText }: StatementTableProps) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const monthly = !!months?.length;
   const showCompare = !!compareLabel && !monthly;
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -81,7 +83,7 @@ export default function StatementTable({ rows, currentLabel, compareLabel, month
     <tr key={`${a.code ?? 'calc'}-${i}`} className="hover:bg-slate-50 text-[13px]">
       <td className="pl-12 pr-3 py-1.5">
         <span className="inline-flex items-center gap-2 min-w-0">
-          {a.code ? <span className="font-mono text-xs text-muted-foreground">{a.code}</span> : <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-50 text-violet-700 rounded px-1.5 py-0.5">Auto</span>}
+          {a.code ? <span className="font-mono text-xs text-muted-foreground">{kodeAkun(a.code)}</span> : <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-50 text-violet-700 rounded px-1.5 py-0.5">Auto</span>}
           <span className="text-foreground/90 truncate">{a.name}</span>
           {a.warnings?.length > 0 && (
             <span title={a.warnings.map(w => warningText?.[w] ?? w).join('\n')}>

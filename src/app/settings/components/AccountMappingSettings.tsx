@@ -16,14 +16,16 @@ import { AlertTriangle, Check, ChevronDown, ChevronsDownUp, ChevronsUpDown, Load
 import { useActiveClient } from '@/lib/activeClient';
 import { fetchClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { fetchAccountMapping, lockAccountMapping, saveAccountMapping, useLoader, type AccountMapping, type MappedCoa } from '@/lib/settingsStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type Form = Record<string, string | null>;
 
 const fmtTanggal = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-function keForm(m: AccountMapping): Form {
+/** Nilai tersimpan; `pakaiSaran` = input kosong diisi saran backend (default, belum tersimpan). */
+function keForm(m: AccountMapping, pakaiSaran = false): Form {
   const f: Form = {};
-  m.groups.forEach(g => g.items.forEach(it => { f[it.key] = it.coa_id; }));
+  m.groups.forEach(g => g.items.forEach(it => { f[it.key] = it.coa_id ?? (pakaiSaran ? it.suggested_coa_id : null); }));
   return f;
 }
 
@@ -31,6 +33,7 @@ function keForm(m: AccountMapping): Form {
 type Opsi = { id: string; acc_no: string; account_name: string; account_classification: string; catatan?: string };
 
 export default function AccountMappingSettings() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const { data: mapping, setData, loading, error } = useLoader<AccountMapping | null>(activeClientId, fetchAccountMapping, null);
   const { data: coa, loading: coaLoading } = useLoader<CoaAccount[]>(activeClientId, id => fetchClientCoa(id), []);
@@ -39,7 +42,9 @@ export default function AccountMappingSettings() {
   const [saving, setSaving] = useState(false);
   const [locking, setLocking] = useState<string | null>(null);
 
-  useEffect(() => { setForm(mapping ? keForm(mapping) : {}); }, [mapping]);
+  // Form dibuka dengan saran sebagai default -> terhitung perubahan sampai disimpan.
+  const bawaan = useMemo(() => (mapping ? keForm(mapping, true) : {}), [mapping]);
+  useEffect(() => { setForm(bawaan); }, [bawaan]);
 
   const awal = useMemo(() => (mapping ? keForm(mapping) : {}), [mapping]);
   const berubah = useMemo(() => {
@@ -48,6 +53,15 @@ export default function AccountMappingSettings() {
     return out;
   }, [form, awal]);
   const jumlahBerubah = Object.keys(berubah).length;
+
+  // 1 akun COA hanya boleh dipakai 1 input: coa_id -> key input yang memakainya.
+  const labelKey = useMemo(() => new Map(mapping?.groups.flatMap(g => g.items.map(it => [it.key, it.label] as const)) ?? []), [mapping]);
+  const pemakai = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const [k, v] of Object.entries(form)) if (v) m.set(v, [...(m.get(v) ?? []), k]);
+    return m;
+  }, [form]);
+  const jumlahGanda = [...pemakai.values()].filter(ks => ks.length > 1).reduce((n, ks) => n + ks.length, 0);
 
   // Akun terpetakan yang tidak lagi ada di daftar aktif tetap ditampilkan.
   const opsi = useMemo<Opsi[]>(() => {
@@ -64,6 +78,7 @@ export default function AccountMappingSettings() {
 
   async function simpan() {
     if (!activeClientId || saving || !jumlahBerubah) return;
+    if (jumlahGanda) { toast.error('Each account can only be mapped once', { description: 'Pick a different account for the inputs marked in red.' }); return; }
     setSaving(true);
     try {
       setData(await saveAccountMapping(activeClientId, berubah));
@@ -178,12 +193,16 @@ export default function AccountMappingSettings() {
                 {g.items.map(it => {
                   const nilai = form[it.key] ?? null;
                   const pilih = nilai ? opsiById.get(nilai) : undefined;
+                  // Saran backend yang masih jadi nilai default (belum tersimpan).
+                  const disarankan = !!nilai && !it.coa_id && nilai === it.suggested_coa_id;
+                  const lain = nilai ? (pemakai.get(nilai) ?? []).filter(k => k !== it.key) : [];
                   return (
                     <div key={it.key}>
                       <div className="mb-1.5 flex items-center justify-between gap-2">
                         <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                           {it.label}
                           {it.is_locked && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700"><Lock size={10} /> Locked</span>}
+                          {disarankan && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" title="Suggested from the chart of accounts — not saved yet">Suggested</span>}
                           {nilai !== (awal[it.key] ?? null) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Unsaved" />}
                         </label>
                         {(it.coa_id || it.is_locked) && (
@@ -195,7 +214,14 @@ export default function AccountMappingSettings() {
                           </button>
                         )}
                       </div>
-                      <CoaSelect value={nilai} opsi={opsi} loading={coaLoading} disabled={it.is_locked} onChange={v => setForm(f => ({ ...f, [it.key]: v }))} />
+                      <CoaSelect value={nilai} opsi={opsi} loading={coaLoading} disabled={it.is_locked} ganda={lain.length > 0}
+                        dipakai={id => (pemakai.get(id) ?? []).filter(k => k !== it.key).map(k => labelKey.get(k) ?? k)}
+                        onChange={v => setForm(f => ({ ...f, [it.key]: v }))} />
+                      {lain.length > 0 && (
+                        <p className="mt-1 text-[11px] font-medium text-red-600">
+                          This account is also mapped to {lain.map(k => labelKey.get(k) ?? k).join(', ')} — each account can only be mapped once.
+                        </p>
+                      )}
                       {it.is_locked && (
                         <p className="mt-1 text-[11px] text-sky-700">Locked{it.locked_by_name ? ` by ${it.locked_by_name}` : ''}{it.locked_at ? ` · ${fmtTanggal.format(new Date(it.locked_at))}` : ''}</p>
                       )}
@@ -217,16 +243,18 @@ export default function AccountMappingSettings() {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.18)]">
         <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-3 px-6 py-3">
           <p className="text-xs text-muted-foreground">
-            {jumlahBerubah
+            {jumlahGanda
+              ? <span className="font-medium text-red-600">{jumlahGanda} inputs share the same account — fix them before saving</span>
+              : jumlahBerubah
               ? <span className="font-medium text-amber-700">{jumlahBerubah} unsaved change{jumlahBerubah > 1 ? 's' : ''}</span>
               : mapping.edited_at ? `Updated ${fmtTanggal.format(new Date(mapping.edited_at))}` : 'No changes yet'}
             <span className="hidden sm:inline"> · Saving requires Tahap 5 (Partner) access.</span>
           </p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setForm(awal)} disabled={saving || !jumlahBerubah} className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">
+            <button onClick={() => setForm(bawaan)} disabled={saving || Object.keys(form).every(k => form[k] === bawaan[k])} className="flex h-9 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-slate-50 disabled:opacity-50">
               <RotateCcw size={14} /> Reset
             </button>
-            <button onClick={simpan} disabled={saving || !jumlahBerubah} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
+            <button onClick={simpan} disabled={saving || !jumlahBerubah || jumlahGanda > 0} className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-800 disabled:opacity-50">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save changes
             </button>
           </div>
@@ -240,9 +268,14 @@ export default function AccountMappingSettings() {
 
 const MAKS_TAMPIL = 100;
 
-function CoaSelect({ value, opsi, loading, onChange, disabled }: {
+function CoaSelect({ value, opsi, loading, onChange, disabled, ganda, dipakai }: {
   value: string | null; opsi: Opsi[]; loading: boolean; onChange: (v: string | null) => void; disabled?: boolean;
+  /** Akun terpilih juga dipakai input lain. */
+  ganda?: boolean;
+  /** Label input lain yang sudah memakai akun ini (akun tsb tidak bisa dipilih). */
+  dipakai: (id: string) => string[];
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [buka, setBuka] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -259,7 +292,7 @@ function CoaSelect({ value, opsi, loading, onChange, disabled }: {
 
   const hasil = useMemo(() => {
     const k = q.trim().toLowerCase();
-    const cocok = k ? opsi.filter(o => o.acc_no.toLowerCase().includes(k) || o.account_name.toLowerCase().includes(k)) : opsi;
+    const cocok = k ? opsi.filter(o => o.acc_no.toLowerCase().includes(k) || kodeAkun(o.acc_no).toLowerCase().includes(k) || o.account_name.toLowerCase().includes(k)) : opsi;
     return { list: cocok.slice(0, MAKS_TAMPIL), total: cocok.length };
   }, [opsi, q]);
 
@@ -269,11 +302,11 @@ function CoaSelect({ value, opsi, loading, onChange, disabled }: {
         type="button"
         onClick={() => { if (disabled) return; setBuka(b => !b); setQ(''); }}
         disabled={disabled}
-        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-4 focus:ring-blue-100 ${buka ? 'border-blue-400 ring-4 ring-blue-100' : 'border-border'}`}
+        className={`flex w-full items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2.5 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-80 text-left text-sm transition-shadow focus:outline-none focus:ring-4 focus:ring-blue-100 ${buka ? 'border-blue-400 ring-4 ring-blue-100' : ganda ? 'border-red-400' : 'border-border'}`}
       >
         {pilih ? (
           <span className="min-w-0 truncate text-foreground">
-            <span className="font-mono text-xs text-slate-500">{pilih.acc_no}</span> · {pilih.account_name}
+            <span className="font-mono text-xs text-slate-500">{kodeAkun(pilih.acc_no)}</span> · {pilih.account_name}
           </span>
         ) : value ? (
           <span className="truncate text-slate-400">Loading account…</span>
@@ -313,23 +346,28 @@ function CoaSelect({ value, opsi, loading, onChange, disabled }: {
               <li className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><Loader2 size={12} className="animate-spin" /> Loading accounts…</li>
             ) : hasil.list.length === 0 ? (
               <li className="px-3 py-2 text-xs text-muted-foreground">No accounts found.</li>
-            ) : hasil.list.map(o => (
+            ) : hasil.list.map(o => {
+              const lain = dipakai(o.id);
+              return (
               <li key={o.id}>
                 <button
                   type="button"
+                  disabled={lain.length > 0}
                   onClick={() => { onChange(o.id); setBuka(false); }}
-                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 ${o.id === value ? 'bg-blue-50' : ''}`}
+                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent ${o.id === value ? 'bg-blue-50' : ''}`}
                 >
                   <span className="mt-0.5 w-4 shrink-0 text-blue-600">{o.id === value && <Check size={14} />}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-foreground"><span className="font-mono text-xs text-slate-500">{o.acc_no}</span> · {o.account_name}</span>
+                    <span className="block truncate text-foreground"><span className="font-mono text-xs text-slate-500">{kodeAkun(o.acc_no)}</span> · {o.account_name}</span>
                     <span className="block text-[10px] uppercase tracking-wider text-slate-400">
                       {o.account_classification}{o.catatan && <span className="text-amber-600"> · {o.catatan}</span>}
+                      {lain.length > 0 && <span className="normal-case tracking-normal text-slate-500"> · used in {lain.join(', ')}</span>}
                     </span>
                   </span>
                 </button>
               </li>
-            ))}
+              );
+            })}
             {hasil.total > hasil.list.length && (
               <li className="px-3 py-2 text-[11px] text-muted-foreground">Showing {hasil.list.length} of {hasil.total} — type to narrow down.</li>
             )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle2, Lock, PencilLine } from 'lucide-react';
 import type { CoaAccount } from '@/lib/coaStore';
 import type { OpeningBalanceStatus } from '@/lib/openingBalanceStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 /** Pilih akun penampung selisih. Equity & Liability ditaruh paling atas
  *  (biasanya "Opening Balance Equity" / akun suspense). */
@@ -12,6 +13,7 @@ export function SuspenseSelect({ accounts, value, onChange, disabled, className 
   disabled?: boolean;
   className?: string;
 }) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const urut = ['EQUITY', 'LIABILITY'];
   const grup = new Map<string, CoaAccount[]>();
   for (const a of accounts.filter(x => x.is_active || x.id === value)) {
@@ -26,7 +28,7 @@ export function SuspenseSelect({ accounts, value, onChange, disabled, className 
       <option value="">— Choose a suspense account —</option>
       {kunci.map(k => (
         <optgroup key={k} label={k}>
-          {(grup.get(k) ?? []).map(a => <option key={a.id} value={a.id}>{a.acc_no} · {a.account_name}</option>)}
+          {(grup.get(k) ?? []).map(a => <option key={a.id} value={a.id}>{kodeAkun(a.acc_no)} · {a.account_name}</option>)}
         </optgroup>
       ))}
     </select>

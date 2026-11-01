@@ -30,6 +30,7 @@ import {
   useBcAccounts, METHOD_LABEL, TX_STATUS_LABEL, VALIDATION_LABEL,
   type BcPreview, type BcStatement, type BcUploadResult,
 } from '@/lib/bankCashStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const STATUS_LABEL: Record<MatchStatus, string> = { unmatched: 'Unmatched', matched: 'Matched', ignored: 'Ignored' };
 const STATUS_VARIANT: Record<MatchStatus, 'warning' | 'positive' | 'neutral'> = { unmatched: 'warning', matched: 'positive', ignored: 'neutral' };
@@ -48,10 +49,10 @@ function toastImport({ data, message }: { data: BcUploadResult; message: string 
     : '';
   const map = data.bank_mapping
     ? data.bank_mapping.action === 'created'
-      ? ` Bank mapping saved: ${data.bank_mapping.bank_name}${data.bank_mapping.account_number ? ` ${data.bank_mapping.account_number}` : ''} → ${data.bank_account_code}.`
+      ? ` Bank mapping saved: ${data.bank_mapping.bank_name}${data.bank_mapping.account_number ? ` ${data.bank_mapping.account_number}` : ''} → ${kodeAkun(data.bank_account_code)}.`
       : ''
     : '';
-  toast.success(`${message} Posted to ${data.bank_account_code} - ${data.bank_account_name}.`, {
+  toast.success(`${message} Posted to ${kodeAkun(data.bank_account_code)} - ${data.bank_account_name}.`, {
     description: (data.confidence?.low
       ? 'Lines marked “Needs review” are skipped by auto-match until you review them below.'
       : 'Match the imported lines in the Reconciliation tab.') + tpl + map,
@@ -126,12 +127,12 @@ function UploadPanel() {
           <option value={AUTO}>{loadingAkun ? 'Loading accounts...' : 'Auto-detect account (bank mapping)'}</option>
           {akunBank.length > 0 && (
             <optgroup label="Bank accounts">
-              {akunBank.map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+              {akunBank.map((a) => <option key={a.id} value={a.id}>{kodeAkun(a.code)} - {a.name}</option>)}
             </optgroup>
           )}
           {akunKas.length > 0 && (
             <optgroup label="Cash accounts">
-              {akunKas.map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+              {akunKas.map((a) => <option key={a.id} value={a.id}>{kodeAkun(a.code)} - {a.name}</option>)}
             </optgroup>
           )}
         </select>
@@ -162,7 +163,7 @@ function UploadPanel() {
             <p className="text-sm text-foreground font-medium">Drop a file here or click to browse</p>
             <p className="text-xs text-muted-foreground">
               {akunTerpilih
-                ? `Statement for account ${akunTerpilih.code} - ${akunTerpilih.name}`
+                ? `Statement for account ${kodeAkun(akunTerpilih.code)} - ${akunTerpilih.name}`
                 : 'Target account detected from the bank / account number in the file'}
             </p>
           </>
@@ -181,7 +182,7 @@ function UploadPanel() {
         <StatementReviewModal
           file={review.file}
           bankCoaId={review.preview.bank_coa_id}
-          bankLabel={`${review.preview.bank_account_code} - ${review.preview.bank_account_name}`}
+          bankLabel={`${kodeAkun(review.preview.bank_account_code)} - ${review.preview.bank_account_name}`}
           initial={review.preview}
           onClose={() => setReview(null)}
           onImported={(hasil) => {
@@ -234,7 +235,7 @@ function StatementList() {
                   )}
                   {s.duplicate_count > 0 && <span className="block text-[11px] text-muted-foreground">{s.duplicate_count} duplicate lines skipped</span>}
                 </td>
-                <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{s.bank_account_code} - {s.bank_account_name}</td>
+                <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{kodeAkun(s.bank_account_code)} - {s.bank_account_name}</td>
                 <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{s.period_start} – {s.period_end}</td>
                 <td className="px-4 py-3 text-xs font-mono text-right whitespace-nowrap">{s.opening_balance === null ? '—' : formatIDR(s.opening_balance, true)}</td>
                 <td className="px-4 py-3 text-xs font-mono text-right whitespace-nowrap">{s.closing_balance === null ? '—' : formatIDR(s.closing_balance, true)}</td>
@@ -271,6 +272,7 @@ function StatementList() {
 }
 
 export default function BankFeedPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { mutations, loading, error, refetch, removeMutation, ignoreMutation, restoreMutation } = useBankFeed();
   const [statusFilter, setStatusFilter] = useState<'all' | MatchStatus | 'review'>('all');
   const [akunFilter, setAkunFilter] = useState('all');

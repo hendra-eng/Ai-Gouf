@@ -23,6 +23,7 @@ import { usePostedJurnalRekon, type CashBankTxReal } from '../lib/useBankCashRek
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { reverseBcTransaction } from '@/lib/bankCashStore';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 // Tab Posted (Cash & Bank) = transaksi kas & bank yang sudah diposting ke buku besar
 // (usePostedJurnalRekon -> GET /api/v1/transactions/bank-cash/transactions?status=posted,reversed).
@@ -126,6 +127,7 @@ const KOLOM: { label: string; field?: SortField; align?: 'right' }[] = [
 ];
 
 export default function CashBankPostedPage() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { activeClientId } = useActiveClient();
   const { user } = useAuth();
   const { txs, loading, error, refresh } = usePostedJurnalRekon();
@@ -438,7 +440,7 @@ export default function CashBankPostedPage() {
                                 {[
                                   { label: 'Type', value: row.transaction_type },
                                   { label: 'Invoice Type', value: row.linkedInvoice?.type ?? 'No invoice' },
-                                  { label: 'Counter Account', value: row.linkedInvoice?.counterpartyAccount ?? ((row.realLines || []).slice(1).map((l) => `${l.code} - ${l.name}`).join(', ') || '—') },
+                                  { label: 'Counter Account', value: row.linkedInvoice?.counterpartyAccount ?? ((row.realLines || []).slice(1).map((l) => `${kodeAkun(l.code)} - ${l.name}`).join(', ') || '—') },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
                                     <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -483,7 +485,7 @@ export default function CashBankPostedPage() {
                                         <tr key={l.no}>
                                           <td className="px-3 py-2 text-muted-foreground">{l.no}</td>
                                           <td className="px-3 py-2 text-foreground">
-                                            <span className="font-mono">{l.code}</span> · {l.name}
+                                            <span className="font-mono">{kodeAkun(l.code)}</span> · {l.name}
                                           </td>
                                           <td className="px-3 py-2 text-right font-mono tabular-nums">{l.debit > 0 ? formatIDR(l.debit) : '—'}</td>
                                           <td className="px-3 py-2 text-right font-mono tabular-nums">{l.credit > 0 ? formatIDR(l.credit) : '—'}</td>

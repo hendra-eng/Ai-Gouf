@@ -11,6 +11,7 @@ import React, { useMemo, useState } from 'react';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { formatIDR } from '../../lib/groupAnalytics';
 import type { AkunLawan, BarisLawanInput } from '../lib/useBankReconciliation';
+import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const KATEGORI = [
   'Bank charges',
@@ -41,6 +42,7 @@ interface Props {
 let seq = 0;
 
 export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }: Props) {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const sisiUtama: 'debit' | 'credit' = masuk ? 'credit' : 'debit';
   const [buka, setBuka] = useState(false);
   const [kategori, setKategori] = useState<string>(KATEGORI[0]);
@@ -131,7 +133,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
       {baris.map((b) => {
         const q = b.cari.trim().toLowerCase();
         const pilihan = akun.filter(
-          (a) => a.id === b.coaId || !q || `${a.no_akun} ${a.nama_akun}`.toLowerCase().includes(q),
+          (a) => a.id === b.coaId || !q || `${a.no_akun} ${kodeAkun(a.no_akun)} ${a.nama_akun}`.toLowerCase().includes(q),
         ).slice(0, 60);
         return (
           <div key={b.key} className="rounded-md border border-border bg-card p-2 space-y-1.5">
@@ -148,7 +150,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
             >
               <option value="">— select account —</option>
               {pilihan.map((a) => (
-                <option key={a.id} value={a.id}>{a.no_akun} · {a.nama_akun}</option>
+                <option key={a.id} value={a.id}>{kodeAkun(a.no_akun)} · {a.nama_akun}</option>
               ))}
             </select>
             <div className="flex items-center gap-2">

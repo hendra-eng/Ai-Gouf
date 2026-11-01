@@ -2,15 +2,15 @@ r"""
 scripts/hapus_semua_data.py
 ===========================
 Kosongkan SEMUA tabel (schema public) KECUALI tabel user login
-(management_users) dan template ekstraksi data -- COA, pengaturan, master,
+(management_users) -- klien, template ekstraksi, COA, pengaturan, master,
 transaksi, saldo awal, tutup buku, audit trail, semuanya hilang. Untuk hapus
 data TRANSAKSI saja (master & pengaturan tetap), pakai scripts/hapus_data_transaksi.py.
 
-Template ekstraksi/import menu transaksi tetap dipertahankan kecuali --with-templates:
+--keep-templates: pertahankan template ekstraksi/import menu transaksi
     financial_transaction_{sales,purchase,journal_entry,bank_cash}_import_templates
-Template terikat ke klien (client_id NOT NULL), jadi management_clients dan
-management_user_client_access (akses user ke klien) IKUT dipertahankan.
-Bank mapping (bank -> akun COA) tetap terhapus karena COA-nya terhapus.
+beserta management_clients & management_user_client_access (template terikat ke
+klien, client_id NOT NULL). Bank mapping (bank -> akun COA) tetap terhapus karena
+COA-nya terhapus.
 
 Tabel referensi SISTEM (isi seed, bukan data klien) tetap dipertahankan
 kecuali --with-reference, karena dipakai generator COA & laporan keuangan:
@@ -19,8 +19,8 @@ kecuali --with-reference, karena dipakai generator COA & laporan keuangan:
     management_fs_note_templates, management_coa_industry_templates,
     management_coa_industry_template_accounts
 
-Dengan --with-templates klien ikut terhapus; akun user tetap bisa login, tapi
-management_users.client_id dikosongkan & akses user ke klien hilang -- user
+Karena klien ikut terhapus (tanpa --keep-templates), akun user tetap bisa login
+tapi management_users.client_id dikosongkan & akses user ke klien hilang -- user
 level klien (client_lv_N) perlu di-assign ulang ke klien baru.
 
 Cara kerja (SATU transaksi -- 1 langkah gagal = tidak ada yang berubah):
@@ -36,7 +36,7 @@ Cara kerja (SATU transaksi -- 1 langkah gagal = tidak ada yang berubah):
 Cara pakai (dari folder backend):
     venv\Scripts\python scripts\hapus_semua_data.py --dry-run
     venv\Scripts\python scripts\hapus_semua_data.py              (ketik nama database untuk konfirmasi)
-    Opsi: --with-templates  --with-reference  --yes
+    Opsi: --keep-templates  --with-reference  --yes
 """
 
 import argparse
@@ -101,7 +101,7 @@ def main() -> int:
     _konsol_utf8()
     parser = argparse.ArgumentParser(description="Kosongkan semua tabel kecuali user login.")
     parser.add_argument("--dry-run", action="store_true", help="jalankan semuanya lalu ROLLBACK (tidak ada yang tersimpan)")
-    parser.add_argument("--with-templates", action="store_true", help="ikut hapus template ekstraksi + klien")
+    parser.add_argument("--keep-templates", action="store_true", help="pertahankan template ekstraksi + klien")
     parser.add_argument("--with-reference", action="store_true", help="ikut kosongkan tabel referensi sistem (seed)")
     parser.add_argument("--yes", action="store_true", help="tanpa konfirmasi (untuk mode simpan)")
     args = parser.parse_args()
@@ -115,7 +115,7 @@ def main() -> int:
     print(f"🔌 Database: {engine.url.render_as_string(hide_password=True)}")
     nama_db = engine.url.database
 
-    simpan = (set(TABEL_USER) | (set() if args.with_templates else set(TABEL_TEMPLATE))
+    simpan = (set(TABEL_USER) | (set(TABEL_TEMPLATE) if args.keep_templates else set())
               | (set() if args.with_reference else set(TABEL_REFERENSI)))
     conn = engine.raw_connection()
     try:

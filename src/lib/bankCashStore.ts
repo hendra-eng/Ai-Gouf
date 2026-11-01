@@ -9,6 +9,7 @@
 // (dan tab Sales/Purchase yang membaca status bayar invoice) memuat ulang.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { kodeAkun } from '@/lib/accountCode';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const BC_URL = `${API_BASE_URL}/api/v1/transactions/bank-cash`;
@@ -727,4 +728,4 @@ export const TX_STATUS_LABEL: Record<TxStatus, string> = {
 export const arahMutasi = (m: Pick<BcMutation, 'debit' | 'credit'>): { direction: Direction; amount: number } =>
   m.credit > 0 ? { direction: 'receipt', amount: m.credit } : { direction: 'payment', amount: m.debit };
 
-export const labelAkun = (a: { code: string; name: string } | null | undefined) => (a ? `${a.code} · ${a.name}` : '—');
+export const labelAkun = (a: { code: string; name: string } | null | undefined) => (a ? `${kodeAkun(a.code)} · ${a.name}` : '—');
