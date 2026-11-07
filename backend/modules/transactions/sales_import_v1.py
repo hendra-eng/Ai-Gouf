@@ -104,11 +104,40 @@ def _baca_csv_baris(content: bytes, encoding: str, delimiter: str, quoted_fields
     return [baris.split(delimiter) for baris in baris_mentah]
 
 
+def _norm_nama_sheet(nama: str) -> str:
+    """Nama sheet dibandingkan tanpa peduli huruf besar/kecil, spasi di ujung, spasi ganda,
+    underscore maupun strip ("DATA", "Data ", "data_penjualan" == "Data Penjualan").
+    (Diambil dari playground-hendra commit d2ed6fa.)"""
+    return re.sub(r"[\s_\-]+", " ", (nama or "").strip().lower())
+
+
+def _pilih_sheet_excel(wb, sheet_name: Optional[str]):
+    """Sheet persis -> sheet dengan nama setara (lihat _norm_nama_sheet) -> sheet aktif."""
+    if sheet_name:
+        if sheet_name in wb.sheetnames:
+            return wb[sheet_name]
+        target = _norm_nama_sheet(sheet_name)
+        for nama in wb.sheetnames:
+            if _norm_nama_sheet(nama) == target:
+                return wb[nama]
+    return wb.active
+
+
+def _nama_sheet_excel(content: bytes) -> List[str]:
+    import openpyxl
+
+    wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    try:
+        return list(wb.sheetnames)
+    finally:
+        wb.close()
+
+
 def _baca_excel_baris(content: bytes, sheet_name: Optional[str]) -> List[List[str]]:
     import openpyxl
 
     wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
-    ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.active
+    ws = _pilih_sheet_excel(wb, sheet_name)
     hasil: List[List[str]] = []
     for row in ws.iter_rows(values_only=True):
         hasil.append(["" if v is None else str(v) for v in row])
@@ -217,11 +246,75 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
         except Exception as e:
             logger.warning(f"Gagal decode file pakai template {template['id']}: {e}")
             continue
-        idx = template["header_row_index"] - 1
-        if idx < 0 or idx >= len(rows):
-            continue
-        if _hash_baris(rows[idx]) == template["column_signature_hash"]:
-            return template, rows
+        cocok = _cocokkan_header_fleksibel(rows, template)
+        if cocok is not None:
+            return cocok, rows
+        # Opsional (resep "cari_di_semua_sheet"): tabel data bisa pindah/ganti nama sheet -> coba sheet lain.
+        if file_type == "Excel" and mapping_rules.get("cari_di_semua_sheet"):
+            try:
+                nama_semua = _nama_sheet_excel(content)
+            except Exception as e:
+                logger.warning(f"Gagal membaca daftar sheet untuk template {template['id']}: {e}")
+                continue
+            sudah = _norm_nama_sheet(template.get("sheet_name") or "")
+            for nama in nama_semua:
+                if _norm_nama_sheet(nama) == sudah:
+                    continue
+                try:
+                    rows_lain = _baca_excel_baris(content, nama)
+                except Exception:
+                    continue
+                cocok = _cocokkan_header_fleksibel(rows_lain, template)
+                if cocok is not None:
+                    return cocok, rows_lain
+    return None
+
+
+def _norm_label(v: Any) -> str:
+    return " ".join(str(v).strip().lower().split()) if v is not None else ""
+
+
+def _hash_header(row: List[str], abaikan_kosong_di_ujung: bool) -> str:
+    if abaikan_kosong_di_ujung:
+        row = list(row)
+        while row and not (row[-1] or "").strip():
+            row.pop()
+    return _hash_baris(row)
+
+
+def _cocokkan_header_fleksibel(rows: List[List[str]], template: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Cocokkan baris header file ke template (diambil dari playground-hendra commit d2ed6fa).
+    Tanpa opsi di resep, perilakunya SAMA seperti sebelumnya (hash baris header_row_index
+    persis). Opsi resep (semuanya opsional):
+      signature_abaikan_kolom_kosong_di_ujung  sel kosong di ujung baris header tidak ikut di-hash
+                                               (kolom bantu tanpa judul boleh ditambah/dihapus)
+      header_cari_dalam_baris N                header juga dicari di N baris pertama (baris judul/
+                                               subtotal di atasnya boleh bertambah/berkurang)
+      cocok_jika_kolom_ada [nama, ...]         cadangan kalau hash beda: cocok bila semua kolom wajib
+                                               ada di baris header (urutan/kolom tambahan bebas)
+    Kembalian = template (header_row_index/data_start_row_index digeser kalau header ditemukan di
+    baris lain), atau None."""
+    recipe = template.get("mapping_rules") or {}
+    resmi = template["header_row_index"] - 1
+    trim = bool(recipe.get("signature_abaikan_kolom_kosong_di_ujung", False))
+    scan = int(recipe.get("header_cari_dalam_baris") or 0)
+    urutan = [resmi] + [i for i in range(min(scan, len(rows))) if i != resmi]
+    urutan = [i for i in urutan if 0 <= i < len(rows)]
+
+    def geser(i: int) -> Dict[str, Any]:
+        if i == resmi:
+            return template
+        selisih = (i + 1) - template["header_row_index"]
+        return {**template, "header_row_index": i + 1, "data_start_row_index": template["data_start_row_index"] + selisih}
+
+    for i in urutan:
+        if _hash_header(rows[i], trim) == template["column_signature_hash"]:
+            return geser(i)
+    wajib = {_norm_label(k) for k in recipe.get("cocok_jika_kolom_ada", []) if k}
+    if wajib:
+        for i in urutan:
+            if wajib <= {_norm_label(c) for c in rows[i]}:
+                return geser(i)
     return None
 
 
@@ -440,6 +533,7 @@ def _susun_baris_hasil(agregat: "Dict[str, Dict[str, Any]]", date_format: str) -
             catatan.append("No. invoice kosong")
         if tanggal is None:
             catatan.append("Tanggal tidak terbaca")
+        info = a.get("catatan_extra")  # mis. nomor dobel di file (resep key_ganda_pisah) -- peringatan, bukan galat
         hasil.append({
             "row_no": len(hasil) + 1,
             "tanggal": tanggal,
@@ -450,8 +544,8 @@ def _susun_baris_hasil(agregat: "Dict[str, Dict[str, Any]]", date_format: str) -
             "ppn": ppn,
             "total": round(dpp + ppn, 2),
             "is_valid": not catatan,
-            "validation_notes": "; ".join(catatan) or None,
-            "is_duplicate_candidate": False,  # agregat per no. invoice -> tidak mungkin dobel di dalam 1 file
+            "validation_notes": "; ".join(catatan + ([info] if info else [])) or None,
+            "is_duplicate_candidate": bool(a.get("ganda")),  # selain resep key_ganda_pisah: agregat per no. invoice -> tidak mungkin dobel
         })
     return hasil
 
@@ -462,52 +556,166 @@ def _parse_flat_grouped_by_key(rows: List[List[str]], template: Dict[str, Any]) 
     1 baris kanonis per key. Kolom dicari lewat NAMA di baris header, bukan
     posisi. dpp = jumlah kolom `dpp_columns`, ppn = jumlah `ppn_columns`,
     total = dpp + ppn. Baris refund yang bernilai negatif otomatis
-    mengurangi total struk asalnya."""
+    mengurangi total struk asalnya.
+
+    Opsi resep tambahan (semuanya opsional, tanpa opsi perilaku lama tidak berubah):
+      invoice_key_gabung        key dirakit dari beberapa kolom, bukan 1 kolom. Isi = daftar; item
+                                string = nama kolom header, item {"kolom_setelah": nama, "geser": n}
+                                = kolom ke-n di kanan kolom bernama itu (untuk kolom TANPA judul).
+                                Dipakai Evita: Kode Transaksi + nomor urut tanpa judul. Tidak
+                                bergantung pada kolom rumus, jadi aman walau file tersimpan tanpa
+                                nilai hasil rumus. Salah satu bagian kosong -> key kosong.
+      invoice_key_pemisah       pemisah bagian key (default "/")
+      invoice_key_nomor_pad N   bagian TERAKHIR yang angka dipadatkan nol ke N digit ("1" -> "0001")
+      key_ganda_pisah           key yang sama dipakai transaksi BEDA (tanggal/customer beda): jangan
+                                digabung; yang kedua dst disimpan sebagai "<key>-2", "<key>-3", semua
+                                pemakai nomor itu ditandai is_duplicate_candidate + catatan
+      abaikan_baris_ringkasan   lewati baris tanpa key, tanpa tanggal dan tanpa customer (baris
+                                total/subtotal/sisa rumus); baris tanpa key tapi ada tanggal atau
+                                customer TETAP muncul sebagai invalid "No. invoice kosong"
+      kolom_opsional            daftar nama kolom yang BOLEH tidak ada di header file (mis. laporan POS
+                                versi lain membuang kolom VAT). Kolom yang hilang dianggap kosong/0 --
+                                tanpa opsi ini kolom yang tidak ada = ekstraksi gagal. Hanya untuk kolom
+                                tambahan (ppn/customer/cabang/kolom bantu); jangan untuk key & tanggal.
+      invoice_key_cadangan      nama kolom pengganti key kalau kolom `invoice_key` kosong di suatu baris
+                                (mis. Bill Number kosong -> pakai Sales Number). Bila ada pun tetap
+                                dianggap sama dengan key utama untuk baris yang berbagi nilainya.
+      peringatan_nilai_kolom    {"Nama Kolom": ["nilai wajar", ...]} -- baris yang nilainya di luar daftar
+                                TIDAK dibuang dan TIDAK invalid, hanya diberi catatan peringatan di
+                                validation_notes (mis. Sales Type selain "Sales": void/refund/komplimen)
+      peringatan_teks_mengandung {"Nama Kolom": ["kata", ...]} -- baris yang teks kolomnya memuat salah satu
+                                kata (tanpa peduli huruf besar/kecil) diberi catatan peringatan, tidak
+                                dibuang dan tidak invalid (mis. keterangan jurnal berisi "RETUR")
+      dpp_kurang_columns        kolom yang DIKURANGKAN dari dpp (mis. UBD: dpp = Kredit - Debit, supaya
+                                koreksi/retur yang dicatat di sisi debit mengurangi pendapatan)
+      abaikan_baris_tanpa_penanda  nama kolom penanda (mis. "No" = nomor urut): baris yang kolom penandanya
+                                kosong DAN tanggalnya tidak terbaca dianggap bukan data (tabel rekonsiliasi/
+                                catatan di bawah data) dan dilewati. Baris bertanggal valid tetap diproses.
+                                Kalau kolom penanda tidak ada di header, opsi diabaikan.
+    """
     recipe = template["mapping_rules"]
     header_idx = template["header_row_index"] - 1
     if header_idx < 0 or header_idx >= len(rows):
         return []
     header = [h.strip().lower() for h in rows[header_idx]]
+    opsional = {n.strip().lower() for n in recipe.get("kolom_opsional", [])}
 
     def kolom(nama: str) -> int:
         try:
             return header.index(nama.strip().lower())
         except ValueError:
+            if nama.strip().lower() in opsional:
+                return -1  # kolom opsional tidak ada: _ambil_kolom(row, 0) -> "" dan angka -> 0
             raise ValueError(f"Kolom '{nama}' tidak ada di header file")
 
+    def kolom_gabung(item: Any) -> int:
+        if isinstance(item, dict):
+            return kolom(item["kolom_setelah"]) + int(item.get("geser", 1))
+        return kolom(item)
+
     number_format = recipe.get("number_format", {})
-    i_key = kolom(recipe["invoice_key"])
+    gabung = recipe.get("invoice_key_gabung")
+    i_gabung = [kolom_gabung(g) for g in gabung] if gabung else []
+    i_key = None if gabung else kolom(recipe["invoice_key"])
+    i_key_cadangan = kolom(recipe["invoice_key_cadangan"]) if recipe.get("invoice_key_cadangan") else None
+    peringatan_kolom = {kolom(n): {str(v).strip().lower() for v in daftar}
+                        for n, daftar in (recipe.get("peringatan_nilai_kolom") or {}).items()
+                        if kolom(n) >= 0}  # kolom opsional yang tidak ada di file -> tanpa peringatan
+    pemisah = recipe.get("invoice_key_pemisah", "/")
+    pad = int(recipe.get("invoice_key_nomor_pad") or 0)
     i_tanggal = kolom(recipe["tanggal"])
     i_customer = kolom(recipe["customer"]) if recipe.get("customer") else None
     i_cabang = kolom(recipe["cabang"]) if recipe.get("cabang") else None
     i_dpp = [kolom(n) for n in recipe["dpp_columns"]]
     i_ppn = [kolom(n) for n in recipe.get("ppn_columns", [])]
+    i_dpp_kurang = [kolom(n) for n in recipe.get("dpp_kurang_columns", [])]
+    i_penanda = kolom(recipe["abaikan_baris_tanpa_penanda"]) if recipe.get("abaikan_baris_tanpa_penanda") else -1
+    peringatan_teks = {kolom(n): [str(k).strip().lower() for k in daftar]
+                       for n, daftar in (recipe.get("peringatan_teks_mengandung") or {}).items()
+                       if kolom(n) >= 0}
     fallback = recipe.get("customer_fallback")  # mis. "Penjualan POS - {Outlet}"
     fallback_kolom = {n: kolom(n) for n in re.findall(r"\{([^}]+)\}", fallback or "")}
     customer_kosong = {v.strip().lower() for v in recipe.get("customer_kosong_jika", [])}  # mis. ["-"]
     abaikan_tanpa_key = recipe.get("abaikan_baris_tanpa_key", False)  # baris ringkasan/total di bawah data
+    abaikan_ringkasan = recipe.get("abaikan_baris_ringkasan", False)
+    pisah_ganda = recipe.get("key_ganda_pisah", False)
 
     def angka(row: List[str], idx: int) -> float:
         return _parse_angka(_ambil_kolom(row, idx + 1), number_format)
 
+    def ambil_key(row: List[str]) -> str:
+        if i_key is not None:
+            nilai = _ambil_kolom(row, i_key + 1)
+            if not nilai and i_key_cadangan is not None:
+                nilai = _ambil_kolom(row, i_key_cadangan + 1)
+            return nilai
+        bagian = [_ambil_kolom(row, i + 1) for i in i_gabung]
+        if pad and bagian and re.fullmatch(r"\d+(\.0+)?", bagian[-1]):
+            bagian[-1] = bagian[-1].split(".")[0].zfill(pad)
+        if not bagian or any(not b for b in bagian):
+            return ""
+        return pemisah.join(bagian)
+
     agregat: Dict[str, Dict[str, Any]] = {}
+    pemakai_key: Dict[str, List[str]] = {}  # key asli -> daftar key entri (hanya dipakai key_ganda_pisah)
     for row in rows[template["data_start_row_index"] - 1:]:
         if all((c or "").strip() == "" for c in row):
             continue
-        key = _ambil_kolom(row, i_key + 1)
-        if not key and abaikan_tanpa_key:
-            continue
-        a = agregat.get(key)
+        key = ambil_key(row)
+        tanggal_raw = _ambil_kolom(row, i_tanggal + 1)
+        customer_asli = _ambil_kolom(row, i_customer + 1) if i_customer is not None else ""
+        if not key:
+            if abaikan_tanpa_key:
+                continue
+            if abaikan_ringkasan and not tanggal_raw and not customer_asli:
+                continue
+        if i_penanda >= 0 and not _ambil_kolom(row, i_penanda + 1) and _parse_tanggal(tanggal_raw, recipe.get("date_format", "DD/MM/YYYY")) is None:
+            continue  # tabel rekonsiliasi/catatan di bawah data (penanda kosong + tanggal tidak terbaca)
+        entri = key
+        if pisah_ganda and key and key in pemakai_key:
+            entri = None
+            for k2 in pemakai_key[key]:
+                if agregat[k2]["tanggal_raw"] == tanggal_raw and agregat[k2]["customer_asli"] == customer_asli:
+                    entri = k2  # transaksi yang sama (banyak line) -> digabung
+                    break
+            if entri is None:
+                entri = f"{key}-{len(pemakai_key[key]) + 1}"
+        a = agregat.get(entri)
         if a is None:
-            customer = _ambil_kolom(row, i_customer + 1) if i_customer is not None else ""
+            customer = customer_asli
             if customer.lower() in customer_kosong:
                 customer = ""
             if not customer and fallback:
                 customer = re.sub(r"\{([^}]+)\}", lambda m: _ambil_kolom(row, fallback_kolom[m.group(1)] + 1), fallback)
             cabang = _ambil_kolom(row, i_cabang + 1) if i_cabang is not None else ""
-            a = agregat[key] = {"tanggal_raw": _ambil_kolom(row, i_tanggal + 1), "customer": customer, "cabang": cabang, "dpp": 0.0, "ppn": 0.0}
-        a["dpp"] += sum(angka(row, i) for i in i_dpp)
+            a = agregat[entri] = {"tanggal_raw": tanggal_raw, "customer": customer, "customer_asli": customer_asli, "cabang": cabang, "dpp": 0.0, "ppn": 0.0}
+            if pisah_ganda and key:
+                daftar = pemakai_key.setdefault(key, [])
+                daftar.append(entri)
+                if len(daftar) > 1:
+                    for k2 in daftar:
+                        agregat[k2]["ganda"] = True
+                        agregat[k2]["catatan_extra"] = (
+                            f"No. invoice '{key}' dipakai >1 transaksi berbeda di file ini"
+                            + (f"; disimpan sebagai '{k2}'" if k2 != key else "")
+                        )
+        a["dpp"] += sum(angka(row, i) for i in i_dpp) - sum(angka(row, i) for i in i_dpp_kurang)
         a["ppn"] += sum(angka(row, i) for i in i_ppn)
+        for i_t, kata_kunci in peringatan_teks.items():
+            teks = _ambil_kolom(row, i_t + 1).lower()
+            cocok_kata = next((k for k in kata_kunci if k and k in teks), None)
+            if cocok_kata:
+                pesan = f"{rows[header_idx][i_t].strip()} memuat '{cocok_kata}' -- periksa apakah ini pendapatan"
+                lama = a.get("catatan_extra") or ""
+                if pesan not in lama:
+                    a["catatan_extra"] = f"{lama}; {pesan}" if lama else pesan
+        for i_p, wajar in peringatan_kolom.items():
+            nilai_p = _ambil_kolom(row, i_p + 1)
+            if nilai_p.strip().lower() not in wajar:
+                pesan = f"{rows[header_idx][i_p].strip()} = '{nilai_p or '(kosong)'}' di luar nilai biasa"
+                lama = a.get("catatan_extra") or ""
+                if pesan not in lama:
+                    a["catatan_extra"] = f"{lama}; {pesan}" if lama else pesan
     return _susun_baris_hasil(agregat, recipe.get("date_format", "DD/MM/YYYY"))
 
 
@@ -789,7 +997,13 @@ def promote_source_file_to_invoices(
         return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
 
     user_id = current_user.get("id")  # management_users.id -- untuk created_by / dibuat_oleh
-    client_id = source_file.get("management_client_id")  # FK client_id -> management_clients
+    # [FIX 2026-11-07] Di skema ini invoices.client_id ber-FK ke management_users
+    # (sama seperti POST /sales/invoices di sales_v1.py & 168 invoice SAU yang ada),
+    # BUKAN management_clients -- mengisinya dengan id perusahaan (perubahan dari
+    # skema playground-hendra, commit 7086b34) membuat SEMUA insert gagal FK
+    # tanpa pesan. Perusahaan pemilik tetap tercatat di management_client_id.
+    client_id = user_id
+    management_client_id = source_file.get("management_client_id")
     rows = dbc.list_sales_source_rows(source_file_id=source_file_id, termasuk_nonaktif=False)
 
     dibuat = 0
@@ -808,13 +1022,16 @@ def promote_source_file_to_invoices(
         if not no_invoice:
             dilewati_tidak_valid += 1
             continue
-        if dbc.get_sales_invoice_by_client_and_no(client_id, no_invoice):
+        # Bentrok dicek per PERUSAHAAN (bukan per user pembuat) dan per user
+        # (UniqueConstraint client_id + invoice_no di DB).
+        if (dbc.get_sales_invoice_by_management_client_and_no(management_client_id, no_invoice)
+                or dbc.get_sales_invoice_by_client_and_no(client_id, no_invoice)):
             dilewati_invoice_bentrok += 1
             continue
 
         invoice_baru = dbc.create_sales_invoice({
             "client_id": client_id,
-            "management_client_id": source_file.get("management_client_id"),
+            "management_client_id": management_client_id,
             "invoice_no": no_invoice,
             "invoice_date": row.get("tanggal"),
             "customer_name": row.get("nama_customer") or "-",
@@ -830,12 +1047,13 @@ def promote_source_file_to_invoices(
             dibuat += 1
             # Akun jurnal langsung mengikuti akun default klien (COA klien) --
             # dilewati diam-diam kalau klien belum punya pengaturan akun.
-            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=client_id)
+            # dibuat_oleh -> mapped_by/created_by (FK management_users), jadi id user, bukan id perusahaan.
+            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=user_id)
         else:
             dilewati_invoice_bentrok += 1  # gagal simpan (mis. race condition duplikat) -- hitung sbg dilewati, bukan error keras
 
     if dibuat > 0:
-        dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=client_id)
+        dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=user_id)
 
     ringkasan = {
         "total_baris": len(rows),
