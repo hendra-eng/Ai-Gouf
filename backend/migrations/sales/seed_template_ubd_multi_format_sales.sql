@@ -9,7 +9,22 @@
 -- template Multi. Format lain nanti cukup ditambahkan ke array itu (lihat
 -- bagian "Menambah varian lagi" di bawah).
 --
--- SUMBER EXCEL:
+-- SUMBER EXCEL (dataset/Sales/UBD/<Bulan>/, header 13 kolom IDENTIK di ketiganya,
+-- jadi 1 varian ini melayani semuanya):
+--   Juni/UBD_monitoring_project_income_202606.xlsx      A2:M61 (tanpa baris subtotal J1)
+--   Juli/UBD_monitoring_project_income_202607.xlsx      A2:M69 (tanpa baris subtotal J1)
+--   Agustus/UBD_monitoring_project_income_202608_roy.xlsx  A1:M72 (rincian di bawah)
+--
+-- HASIL UJI 3 FILE (parser asli, 2026-11-07) -- total = baris total tabel rekonsiliasi:
+--   202606: 42 invoice valid, 06-01 s/d 30-06-2026, TOTAL 3.988.722.322
+--   202607: 50 invoice valid, 06-01 s/d 31-07-2026, TOTAL 4.564.815.958
+--   202608: 52 invoice valid, 06-01 s/d 18-08-2026, TOTAL 5.040.866.328
+--   PERHATIAN: file 202608 MEMBUANG 3 voucher yang masih ada di 202606/202607
+--   (OCBC CWU IDR-2026-1-48 BEYOND DESIGN 19.000.000; -2-21 AGORA COMMISSION
+--   3.498.000; -2-75 CAMBIUM COMMISSION 36.000.000). Invoice yang sudah dibuat dari
+--   file lama TIDAK otomatis terhapus saat file baru di-upload -- void manual.
+--
+-- RINCIAN FILE 202608:
 --   UBD_monitoring_project_income_202608_roy.xlsx
 --   1 sheet bernama "Monitoring Project Income", A1:M72. Ini BUKAN laporan
 --   invoice, melainkan jurnal buku besar akun 4-40101 PROJECT INCOME yang
@@ -149,6 +164,12 @@
 -- ulang hash level baris = SHA-256("<hash_excel>:<hash_baru>") (urutan = urutan
 -- array), isi v_hash_baru dengan hash itu dan PINDAHKAN hash baris yang lama ke
 -- v_hash_lama di blok DO, lalu jalankan ulang file ini.
+--
+-- PRASYARAT KODE: opsi resep di bawah + pencocokan header fleksibel
+-- (_cocokkan_header_fleksibel: header_cari_dalam_baris, cocok_jika_kolom_ada,
+-- signature_abaikan_kolom_kosong_di_ujung, cari_di_semua_sheet) berasal dari
+-- playground-hendra (d2ed6fa) dan di-port ke playground-willi 2026-11-07. Tanpa
+-- itu parser lama mengabaikan opsi ini dan upload bisa jatuh ke "Butuh Review".
 --
 -- OPSI RESEP BARU di sales_import_v1.py (_parse_flat_grouped_by_key; opsional,
 -- resep lain tidak berubah perilakunya): dpp_kurang_columns,
