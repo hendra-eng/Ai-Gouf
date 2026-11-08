@@ -9,6 +9,26 @@
 -- template Multi. Format lain (mis. CSV) nanti cukup ditambahkan ke array itu
 -- (lihat bagian "Menambah varian lagi" di bawah).
 --
+-- REVISI 2026-11-08 -- diuji ulang ke 3 file di dataset/Sales/NPI/ (Juni, juli, Agustus;
+-- 1 file = 1 bulan, tidak kumulatif). Semua cocok ke varian Excel (header baris 11,
+-- hash persis) dan terbaca tanpa baris invalid / Bill Number ganda:
+--     Juni    : 1.709 bill (PLAZA MARIETTA 1.423, SIBARITA 286)  TOTAL 428.438.521,73
+--     Juli    : 1.867 bill (PLAZA MARIETTA 1.606, SIBARITA 261)  TOTAL 495.152.086,92
+--     Agustus : 2.036 bill (PLAZA MARIETTA 1.602, SIBARITA 434)  TOTAL 592.437.499,94
+-- Perubahan resep: ditambah "pendapatan_account_by_cabang" (PLAZA MARIETTA & SIBARITA ->
+-- 4-1004 Sales food). Alasannya: di db_client.akun_default_sales() urutannya
+-- pendapatan per cabang > Settings > Account Mapping (sales_revenue) > pendapatan_account,
+-- dan Account Mapping NPI di database lokal berisi sales_revenue = 1-1100 Cash on hand
+-- (store) -- tanpa peta per cabang, Cr Pendapatan jatuh ke akun KAS. Kalau suatu saat
+-- pendapatan memang harus mengikuti Settings, hapus peta per cabang ini.
+-- Akun default sekarang DIPILIH dari COA klien saat seed dijalankan (lihat blok DO):
+-- COA NPI lama (1-2001 / 4-1004 / 2-1005) kalau ada, kalau tidak COA template industri
+-- (130001 Trade Receivables / 430002 Food & Beverage Revenue / 220009 Other Tax Payables).
+-- Ini perlu karena klien NPI di database lokal pernah DIHAPUS lalu DIBUAT ULANG (id baru,
+-- COA dari template industri): template menempel ke client_id, jadi klien baru tidak punya
+-- template -> semua upload "not match" / Need Review. Kalau klien dibuat ulang lagi,
+-- cukup jalankan ulang seed ini (klien dicari lewat nama di antara klien AKTIF).
+--
 -- SUMBER EXCEL (dataset/template_laporan/NPI/):
 --   Sales Recapitulation Detail Report_PLAZAACCOUNTING_17897817030237.xlsx
 --   1 sheet bernama "Report", A1:AT8600 (46 kolom). Kop baris 1-9 (judul, nama
@@ -157,6 +177,10 @@ DECLARE
     v_id          UUID;
     v_bentrok     INTEGER;
     v_lama        RECORD;
+    v_akun        TEXT;
+    v_akun_json   JSONB;
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
     -- Hash baris seed ini = SHA-256("<hash_excel>"). Belum ada versi lama.
     v_hash_baru   CONSTANT TEXT := 'f61baeab964efb7858e1fb4b782e84c0fefe7709038a8bf472e39ad69e5f2159';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
@@ -287,6 +311,16 @@ DECLARE
     "account_code": "4-1004",
     "account_name": "Sales food"
   },
+  "pendapatan_account_by_cabang": {
+    "PLAZA MARIETTA": {
+      "account_code": "4-1004",
+      "account_name": "Sales food"
+    },
+    "SIBARITA": {
+      "account_code": "4-1004",
+      "account_name": "Sales food"
+    }
+  },
   "ppn_account": {
     "account_code": "2-1005",
     "account_name": "PB 1 Payable"
@@ -308,6 +342,39 @@ BEGIN
     IF v_client_id IS NULL THEN
         RAISE EXCEPTION 'Klien NPI belum ada di management_clients (dicari nama_client = ''PT NUSA PENIDA INVESTMENTS''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
+
+    -- Akun default dipilih dari COA klien yang SEBENARNYA: untuk tiap peran, kandidat
+    -- pertama yang ada (acc_no, belum dihapus) dipakai, nama akun diambil dari COA.
+    -- Kandidat 1 = COA NPI lama (seed_coa_npi.sql), kandidat 2 = COA template industri
+    -- (klien yang dibuat ulang lewat halaman Clients). Tidak ada satu pun -> kandidat 1
+    -- dipertahankan + NOTICE (posting ditolak sampai akunnya ada / dipetakan di Settings).
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('piutang_account',    ARRAY['1-2001', '130001']),
+            ('pendapatan_account', ARRAY['4-1004', '430002']),
+            ('ppn_account',        ARRAY['2-1005', '220009'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien NPI -- tambahkan di halaman COA atau isi Settings > Account Mapping sebelum posting.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        v_rules := jsonb_set(v_rules, ARRAY[v_peran], v_akun_json);
+        IF v_peran = 'pendapatan_account' THEN
+            v_rules := jsonb_set(v_rules, '{pendapatan_account_by_cabang,PLAZA MARIETTA}', v_akun_json);
+            v_rules := jsonb_set(v_rules, '{pendapatan_account_by_cabang,SIBARITA}', v_akun_json);
+        END IF;
+        RAISE NOTICE 'Akun % NPI = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
     SELECT t.id INTO v_id
