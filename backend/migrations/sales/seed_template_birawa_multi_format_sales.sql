@@ -1,170 +1,101 @@
 -- seed_template_birawa_multi_format_sales.sql
 -- =============================================================
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
--- klien BIRAWA. SATU baris setting ("Multi") untuk halaman Transactions > Sales >
--- Source Data, dengan SATU varian Excel: register tagihan manual
--- "DETAIL INVOICE 2026 + PPN".
+-- klien BIRAWA / BRW (PT BINA RANCANG WASESA). SATU baris setting ("Multi") untuk
+-- halaman Transactions > Sales > Source Data, dengan SATU varian Excel: register
+-- tagihan manual "DETAIL INVOICE 2026 & PPN".
 --
--- STATUS: hanya varian Excel (register invoice berblok bulanan). Varian lain nanti
--- cukup ditambahkan ke array "variants" (lihat "Menambah varian lagi" di bawah).
+-- REVISI 2026-11-08 (upload file BRW masih error / "Butuh Review"):
+--   1. Klien tidak ketemu: seed lama mencari nama_client 'PT BINA RANCANG WASISA', padahal
+--      di database tertulis 'PT BINA RANCANG WASESA' -> seed RAISE, template tidak pernah
+--      masuk. Sekarang kedua ejaan diterima (tetap berhenti kalau >1 klien aktif cocok).
+--   2. Parser format_type "monthly_block_invoice_register" belum ada di sales_import_v1.py
+--      branch ini (seed datang dari playground-hendra tanpa parsernya) -> sudah di-port
+--      (bagian 3d sales_import_v1.py). Seed ini butuh kode tersebut.
+--   3. File Juni "(Revisi)" judul kolom "Klasifikasi" di baris header KOSONG -> hash header
+--      beda. Resep sekarang punya cadangan "cocok_jika_kolom_ada" (cocok kalau kolom BULAN,
+--      NO INVOICE, BEBAN, NILAI INVOICE, PPN(11%) ada di baris header) dan
+--      "header_cari_dalam_baris" (header boleh bergeser beberapa baris).
+--   4. Akun jurnal: kode akun di seed lama (140001 Piutang - ASF, 411001 Pendapatan Jasa - ASF,
+--      246001, 149999, 481001, dst) TIDAK ADA di COA BRW di database -- bahkan sebagian kode
+--      dipakai akun lain (140005 = Inventories 2, 140009 = Prepayment 2). Peta per pelanggan
+--      (pendapatan/piutang_account_by_cabang) DIHAPUS; default sekarang memakai akun standar
+--      yang ada di COA BRW (lihat "AKUN JURNAL" di bawah).
 --
--- PENTING -- BENTUK FILE BIRAWA BEDA DARI NBM/SAU/AADL:
---   Bukan laporan dari software, melainkan REGISTER TAGIHAN MANUAL (bisnis
---   outsourcing/manpower: tagihan gaji + BPJS + fee ke tiap pelanggan). Nomor invoice
---   ADA di file, tetapi TANGGAL invoice tidak ada -- hanya BULAN. Karena itu dipakai
---   format_type "monthly_block_invoice_register" (sales_import_v1.py, bagian 3d).
+-- FILE CONTOH (dataset/Sales/Birawa/):
+--   Juni/DETAIL INVOICE 2026 & PPN (Revisi).xlsx  -> header baris 2, "Klasifikasi" kosong
+--   Juli/DETAIL INVOICE 2026 & PPN (1) jun.xlsx    -> header baris 2 (hash = varian)
+--   Agustus/DETAIL INVOICE 2026 & PPN.xlsx          -> header baris 2 (hash = varian)
+--   Workbook: Sheet1 (register, DIBACA), Sheet2 / sheet / Sheet3 (pivot & rekap, ada #REF!,
+--   TIDAK dibaca). Sheet1 = 12 blok bulan Jan-Des 2026; tiap blok = baris header (diulang),
+--   1 baris per invoice, baris kosong. Kolom A kosong (kolom_awal = 2). Kolom BULAN berisi
+--   tanggal 1 bulan itu (file Agustus: hanya di baris pertama blok; Juni/Juli: tiap baris) --
+--   parser membawa nilai terakhir ke baris di bawahnya.
+--   Kolom yang dipakai: BULAN | NO INVOICE | BEBAN (pelanggan) | NILAI INVOICE | PPN(11%).
 --
--- SUMBER (dataset/template_laporan/BIRAWA/DETAIL_INVOICE_2026___PPN.xlsx):
---   4 sheet; yang dibaca HANYA "Sheet1" (A1:AI324). Sheet2 / "sheet" / Sheet3 adalah
---   pivot & rekap (ada #REF!) dan tidak dibaca.
---   Sheet1: 12 BLOK bulan (Jan-Des 2026). Tiap blok = baris header (DIULANG), lalu 1 baris
---   per invoice, lalu baris kosong:
---     header di baris 2, 26, 53, 84, 110, 137, 168, 194, 222, 249, 274, 298
---     kolom BULAN (B) berisi tanggal 1 bulan itu, hanya di baris PERTAMA blok (sel
---     gabungan) -> dibawa ke baris di bawahnya oleh parser
---   Kolom A kosong; kolom data mulai B. Kolom yang dipakai (nama di header):
---     BULAN | NO INVOICE (F) | BEBAN (D = pelanggan) | NILAI INVOICE (I) | PPN(11%) (W)
---   Kolom E-I dan K-U DISEMBUNYIKAN di Excel (termasuk NILAI INVOICE), tetapi tetap
---   terbaca normal oleh parser.
---   Pelanggan (BEBAN): ASF, ASF-INT, CSDI, CSDI-OPCENT, CSDI-TECHNO, AAF, SBSF, FIF, AAD.
+-- PENTING -- FILE BERSIFAT KUMULATIF: tiap file memuat SEMUA bulan sampai bulan itu (file
+--   Agustus juga berisi invoice Jan-Jul). Upload file bulan berikutnya akan mengekstrak ulang
+--   invoice lama; saat "promote" ke invoice, nomor invoice yang sudah ada otomatis DILEWATI
+--   (tidak dobel). Nomor invoice dipakai apa adanya ("No.001/..." dan "No. 003/..." beda).
+--
+-- HASIL PARSING (resep ini + parser sales_import_v1.py, dijalankan ke 3 file contoh):
+--   semua baris VALID, tanpa nomor invoice ganda, di tiap invoice dpp + ppn = total persis.
+--     Juni (Revisi): 153 invoice Jan-Jun  TOTAL 48.538.857.783,81 (PPN 252.682.503,47)
+--     Juli         : 176 invoice Jan-Jul  TOTAL 57.818.765.683,65 (PPN 300.471.539,22)
+--     Agustus      : 202 invoice Jan-Agu  TOTAL 68.373.710.583,46 (PPN 354.014.796,41)
+--   Per bulan: Jan 22, Feb 25, Mar 29, Apr 24, Mei 25, Jun 28, Jul 23, Agu 26.
 --
 -- CARA APLIKASI MEMBACA UPLOAD:
---   1. User upload file di Sales > Source Data dengan klien BIRAWA aktif.
---   2. Backend mencari sheet bernama "Sheet1" lalu meng-hash baris header ke-2, mulai
---      kolom ke-2 (kolom_awal = 2; sel kosong di ujung dibuang). Cocok dengan
---      column_signature_hash varian -> dipakai resep ini. Tidak cocok -> "Butuh Review".
---   3. Parser membaca semua baris dari baris 3: header yang diulang di tiap blok dan baris
---      tanpa nilai (placeholder) dilewati; tanggal = kolom BULAN blok.
---   4. Hasil: 1 baris source_rows = 1 baris register = 1 invoice.
---      invoice = NO INVOICE, tanggal = BULAN blok (selalu tanggal 1), customer = BEBAN,
---      cabang = BEBAN (cabang_dari_kolom_customer, dipakai memilih akun pendapatan),
---      total = NILAI INVOICE, ppn = PPN(11%), dpp = total - ppn.
+--   1. Upload di Sales > Source Data dengan klien BRW aktif.
+--   2. Backend membuka sheet "Sheet1" (tidak peka huruf besar/kecil), ambil baris header ke-2
+--      mulai kolom B (sel kosong di ujung dibuang) -> cocok dengan column_signature_hash ATAU
+--      memuat semua kolom "cocok_jika_kolom_ada" -> resep ini dipakai.
+--   3. Baris header yang diulang & baris tanpa NILAI INVOICE (placeholder Sep-Des, subtotal)
+--      dilewati. 1 baris = 1 invoice: invoice = NO INVOICE, tanggal = BULAN blok (tgl 1),
+--      customer = cabang = BEBAN, total = NILAI INVOICE, ppn = PPN(11%), dpp = total - ppn.
 --
--- KENAPA dasar = "tagihan" (BUKAN "fee") -- ASUMSI, mohon dikonfirmasi:
---   NILAI INVOICE adalah yang benar-benar ditagihkan dan dibayar pelanggan (gaji, BPJS,
---   dst yang ditagihkan ulang + fee). PPN 11 persen hanya atas FEE NET(DPP). Jadi:
---     Dr Piutang = NILAI INVOICE; Cr PPN = PPN(11%); Cr Pendapatan = NILAI INVOICE - PPN.
---   Dasar "fee" (dpp = FEE NET(DPP)) membuat total tagihan jauh di bawah nilai tagihan
---   sebenarnya (invoice kompensasi/gaji tanpa fee, mis. No. 006/I, jadi 0) dan
---   menjadikan baris subtotal 166 invoice invalid. Konsekuensi dasar "tagihan": Cr
---   Pendapatan = fee + gaji yang ditagihkan ulang, tidak dipisah (COA punya 481001
---   Pengembalian biaya Outsourching, tapi 1 invoice hanya 1 baris pendapatan).
+-- DASAR "tagihan" (ASUMSI, sama dengan seed lama): NILAI INVOICE = yang ditagihkan ke
+--   pelanggan (gaji/BPJS yang ditagihkan ulang + fee); PPN 11% hanya atas fee.
+--   Dr Piutang = NILAI INVOICE; Cr PPN = PPN(11%); Cr Pendapatan = NILAI INVOICE - PPN.
 --
--- HASIL UJI (kode parser ASLI sales_import_v1.py -- _cocokkan_template_excel_register_blok
--- dan _ekstrak_dengan_template -- dijalankan ke file contoh):
---   202 baris hasil = 202 invoice VALID, 0 invalid; tanpa nomor invoice ganda, tanggal
---   01-01-2026 s/d 01-08-2026; di setiap invoice dpp + ppn = total persis
---   DPP 68.019.695.787,05 + PPN 354.014.796,41 = TOTAL 68.373.710.583,46
---   (jumlah per baris yang sudah dibulatkan; hitungan Decimal dari sel mentah:
---    total 68.373.710.583,47 dan PPN 354.014.796,38 -- selisih beberapa sen = pembulatan)
---   Jurnal default (db_client.akun_default_sales) diuji per BEBAN: ASF -> Piutang 140001 /
---   Pendapatan 411001; CSDI-TECHNO -> 140002 / 411002; AAD -> 140009 / 411009; BEBAN tidak
---   dikenal -> 149999 / 481001.
---   Per bulan (invoice / total):
---     Jan 22 / 6.888.839.626,09   Feb 25 / 7.051.481.183,95   Mar 29 / 10.132.288.170,08
---     Apr 24 / 7.504.237.427,97   Mei 25 / 8.271.466.269,71   Jun 28 /  8.690.545.106,01
---     Jul 23 / 9.279.907.899,84   Agu 26 / 10.554.944.899,81  Sep-Des 0 (placeholder)
---   Per BEBAN: ASF 48, CSDI-OPCENT 48, CSDI-TECHNO 32, AAF 26, SBSF 24, FIF 8, ASF-INT 8,
---   AAD 5, CSDI 3.
+-- AKUN JURNAL (dibaca db_client.akun_default_sales()). Prioritas di kode:
+--   Settings > Account Mapping klien (account_receivable / sales_revenue / sales_tax_payable)
+--   > akun di resep ini. Di database lokal Account Mapping BRW sudah terisi (1-10020 /
+--   4-10001 / 2-10010), jadi resep ini hanya cadangan kalau mapping itu dikosongkan:
+--     Dr Piutang     1-10020 Trade Receivables
+--     Cr Pendapatan  4-10002 Service Revenue   (BRW = jasa outsourcing)
+--     Cr PPN         2-10010 Output VAT Payable
+--   Seed memberi NOTICE (tidak gagal) kalau salah satu akun ini tidak ada di COA klien.
+--   Akun bisa diubah per invoice di Journal Preview. Kalau nanti COA BRW punya akun piutang/
+--   pendapatan per pelanggan (ASF, CSDI, AAF, ...), tambahkan "pendapatan_account_by_cabang"
+--   dengan kunci HURUF BESAR = nilai kolom BEBAN.
 --
--- PRASYARAT KODE -- seed ini mengandalkan 2 perubahan kecil di backend (diterapkan bersamaan
--- dengan seed ini):
---   * sales_import_v1.py, _parse_monthly_block_invoice_register: pada dasar "tagihan" baris
---     dengan NILAI INVOICE kosong/0 dilewati (dulu baris subtotal 166 -- tanpa nomor invoice,
---     hanya kolom PPN terisi -- lolos dan muncul sebagai 1 baris invalid), dan ppn dibulatkan
---     lebih dulu sebelum dpp = total - ppn (dulu invoice No. 018 dan 019 /V/2026 punya dpp +
---     ppn berbeda 0,01 dari total). Baris 83 (subtotal Maret, hanya kolom GAJI) dari dulu
---     sudah dilewati.
---   * db_client.py, akun_default_sales(): membaca "piutang_account_by_cabang" (pola sama dengan
---     pendapatan_account_by_cabang). Tanpa perubahan ini peta piutang per cabang DIABAIKAN
---     (aman, tidak error) dan semua invoice default ke piutang_account 149999.
+-- KLIEN: nama_client 'PT BINA RANCANG WASESA' atau 'PT BINA RANCANG WASISA'; client_id &
+-- client_code diambil otomatis; GAGAL dengan pesan jelas kalau tidak ada / lebih dari 1.
 --
--- HAL YANG PERLU DIKETAHUI PENGGUNA (batas resep/parser, bukan galat):
---   * Tanggal invoice = tanggal 1 bulan blok (file tidak punya tanggal invoice). Tanggal
---     transfer/bayar di file tidak dipakai.
---   * Header baris ke-2 HARUS sama persis (33 kolom dari kolom B, termasuk kolom rekonsiliasi
---     "SELISIH KOLOM G - R" ... "Klasifikasi", "Cek", dan "FEE INCLUDE PPN" yang hanya ada di
---     blok Januari). Kalau kolom tersebut diubah/dihapus -> signature tidak cocok -> file masuk
---     "Butuh Review" (aman, tidak diekstrak salah) dan varian baru perlu ditambahkan. Blok
---     bulan lain boleh berbeda jumlah kolomnya (blok Sep-Des hanya 26 kolom, header memakai
---     "FEE"), karena kolom dicari lewat nama di header baris ke-2.
---   * Nama sheet HARUS "Sheet1" (tidak peka huruf besar/kecil). Sheet "sheet" (huruf kecil,
---     salinan data) berbeda dari "Sheet1" dan tidak dibaca.
---   * Baris dengan nomor invoice tetapi tanpa nilai (blok Sep-Des) dilewati diam-diam;
---     invoice bernilai negatif tidak ada di file contoh.
---   * Nomor invoice dipakai apa adanya (spasi tidak dirapikan: "No.001/..." dan "No. 003/..."
---     tercatat berbeda). Tidak ada duplikat di file contoh.
---
--- AKUN JURNAL (dibaca db_client.akun_default_sales() dari mapping_rules level atas baris
--- ini; semua akun ada di sheet 'COA BIRAWA'). INI ASUMSI -- mohon dikonfirmasi:
---   Dr Piutang      per pelanggan lewat cabang (= BEBAN), kunci HURUF BESAR
---                   (piutang_account_by_cabang):
---                     ASF, ASF-INT -> 140001 | CSDI, CSDI-OPCENT, CSDI-TECHNO -> 140002
---                     AAF 140005 | FIF 140006 | SBSF 140008 | AAD 140009
---                     (PSS 140003, KAF 140004, SERA 140007 disiapkan untuk pelanggan baru)
---                   BEBAN yang tidak dikenal -> 149999 Piutang - Lain-lain
---   Cr Pendapatan   per pelanggan lewat cabang (= BEBAN), kunci HURUF BESAR:
---                     ASF, ASF-INT                       -> 411001 Pendapatan Jasa - ASF
---                     CSDI, CSDI-OPCENT, CSDI-TECHNO     -> 411002 Pendapatan Jasa - CSDI
---                     AAF -> 411005 | FIF -> 411006 | SBSF -> 411008 | AAD -> 411009
---                     (PSS 411003, KAF 411004, SERA 411007 sudah disiapkan untuk pelanggan baru)
---                   BEBAN yang tidak dikenal -> 481001 Pengembalian biaya Outsourching
---   Cr PPN          246001 Hutang Pajak - PPN
--- Catatan: (a) Piutang dan pendapatan sama-sama dipilih per cabang (= BEBAN); Settings > Account
--- Mapping klien (account_receivable / sales_revenue / sales_tax_payable), kalau diisi, hanya
--- dipakai untuk BEBAN yang tidak ada di peta resep ini dan untuk PPN. Kolom "Klasifikasi" di file
--- (piutang tiap invoice) tidak dibaca; peta resep ini yang menentukan. (b) Semua akun harus ada
--- di COA klien Birawa di database (management_client_coa) -- tanpa itu posting ditolak. Seed
--- COA Birawa dibuat lewat migrations/generate_seed_coa.py (tambahkan BIRAWA ke KLIEN lalu
--- jalankan). (c) Pendapatan = fee + gaji yang ditagihkan ulang (dasar "tagihan"), tidak
--- dipisah ke 481001. (d) Data file menunjukkan ASF-INT memakai "Piutang - ASF"; 8 invoice
--- insentif AAF/SBSF di file diklasifikasikan "Piutang - ASF" (kemungkinan salah ketik di file).
---
--- column_signature_hash level baris = SHA-256 dari gabungan hash varian, urut seperti array
--- "variants" dan dipisah ':' (pola seed SAU/NBM). Untuk SATU varian = SHA-256(hash varian):
+-- column_signature_hash level baris = SHA-256 dari hash varian (1 varian):
 --   hash_excel = b6cf5de9d3cb6de54091be4ac0d61fcae14cfa58969fa177e0f36df6b88d7e45
---   -> 9fc6bf2f4962f95bf08b9d6064ab10af03b78a0b917a30b8f0206dbf3c17f3be
--- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
--- kolom NOT NULL untuk template Multi; yang dipakai pencocokan adalah nilai di dalam varian.
+--   -> 9fc6bf2f4962f95bf08b9d6064ab10af03b78a0b917a30b8f0206dbf3c17f3be  (tidak berubah)
 --
--- KLIEN: dicari lewat nama_client = 'PT BINA RANCANG WASISA' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
--- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
---
--- SEED LAMA: tidak ada (seed Birawa pertama; file ini sebelumnya kosong).
---
--- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
--- File ini ada di subfolder sales/, jadi berikan PATH-nya (nama file saja akan dicari
--- run_seed.py hanya di folder migrations/ dan tidak ketemu):
+-- Cara pakai (runner: 1 transaksi + tercatat di history-migration.md):
 --   cd backend
 --   venv\Scripts\python migrations\run_seed.py migrations\sales\seed_template_birawa_multi_format_sales.sql
--- (jalur psql tetap bisa, tapi tidak tercatat di history-migration.md)
 --
--- Idempotensi / upgrade di tempat: seed ini AMAN dijalankan berkali-kali. Di blok DO, baris
--- Multi klien dicari lewat hash baris seed ini (v_hash_baru) atau hash versi lamanya
--- (v_hash_lama), termasuk yang sudah soft-delete (UNIQUE tidak melihat deleted_at):
---   * ketemu -> UPDATE: hash, posisi header dan resep (mapping_rules) diganti dengan isi seed
---               ini, is_active = true, deleted_at dikosongkan. id, usage_count, created_at dan
---               source_files.template_id TETAP, jadi riwayat file yang sudah diupload tidak putus.
+-- Idempotensi: AMAN dijalankan berkali-kali. Baris Multi klien dicari lewat hash baris
+-- (v_hash_baru / v_hash_lama), termasuk yang soft-delete:
+--   * ketemu -> UPDATE di tempat (resep diganti, is_active = true, deleted_at dikosongkan;
+--               id, usage_count, source_files.template_id TETAP).
 --   * tidak  -> INSERT baris baru.
--- Konsekuensi: menjalankan ulang seed ini MENIMPA resep baris itu dengan isi file ini
--- (termasuk perubahan manual lewat UPDATE).
--- Pengaman: kalau ada baris Multi AKTIF lain milik klien ini (bukan baris yang di-upgrade) yang
--- memuat varian Excel dengan header yang sama, seed berhenti dengan pesan jelas supaya tidak ada
--- 2 template aktif (usage_count terbagi). Singkirkan yang tidak dipakai (soft-delete, aman
--- terhadap FK source_files):
+-- Pengaman: kalau ada baris Multi AKTIF lain milik klien ini dengan varian Excel yang sama,
+-- seed berhenti. Singkirkan yang tidak dipakai:
 --   UPDATE financial_transaction_sales_import_templates
 --      SET is_active = false, deleted_at = now(), edited_at = now()
 --    WHERE id = '<id baris yang tidak dipakai>';
 --
--- Menambah varian lagi nanti (mis. layout register 2027 atau format lain): tambahkan 1 objek
--- lagi di array "variants" (file_type, sheet_name, header_row_index, data_start_row_index,
--- column_signature_hash dari baris header file contoh, header_columns, mapping_rules), hitung
--- ulang hash level baris = SHA-256("<hash_excel>:<hash_baru>") (urutan = urutan array), isi
--- v_hash_baru dengan hash itu dan PINDAHKAN hash baris yang lama ke v_hash_lama di blok DO, lalu
--- jalankan ulang file ini: baris yang sudah ada otomatis di-upgrade di tempat.
+-- SETELAH seed dijalankan: file BRW yang sebelumnya sudah diupload dan berstatus
+-- "Butuh Review" (0 baris) TIDAK diproses ulang otomatis -- hapus lalu upload ulang filenya.
 --
--- is_active & usage_count disebut eksplisit karena default-nya hanya di sisi ORM (bukan DEFAULT
--- kolom database) -- lihat catatan di seed SAU.
+-- is_active & usage_count disebut eksplisit karena default-nya hanya di sisi ORM.
 
 DO $do$
 DECLARE
@@ -172,14 +103,14 @@ DECLARE
     v_client_code VARCHAR(50);
     v_id          UUID;
     v_bentrok     INTEGER;
-    -- Hash baris seed ini = SHA-256("<hash_excel>") dan hash baris versi-versi LAMA seed yang
-    -- sama (belum ada). Baris lama ditemukan lewat daftar ini lalu di-UPDATE di tempat --
-    -- lihat "Idempotensi" di kepala file.
+    v_jumlah      INTEGER;
+    v_akun        TEXT;
+    v_nama_klien  CONSTANT TEXT[] := ARRAY['PT BINA RANCANG WASESA', 'PT BINA RANCANG WASISA'];
     v_hash_baru   CONSTANT TEXT := '9fc6bf2f4962f95bf08b9d6064ab10af03b78a0b917a30b8f0206dbf3c17f3be';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
     v_rules       JSONB := $json${
   "format_type": "multi_format",
-  "description": "1 setting klien Birawa untuk laporan penjualan. Varian Excel: register tagihan manual 'DETAIL INVOICE 2026 + PPN' (berblok bulanan, 1 baris = 1 invoice). Tiap varian membawa file_type, sheet, posisi header, signature & resep parsing sendiri; backend memilih varian yang tipe file dan signature header-nya cocok (lihat _template_dari_varian di sales_import_v1.py).",
+  "description": "1 setting klien BRW (Birawa) untuk laporan penjualan. Varian Excel: register tagihan manual 'DETAIL INVOICE 2026 & PPN' (berblok bulanan, 1 baris = 1 invoice). Backend memilih varian yang tipe file dan header-nya cocok (lihat _template_dari_varian dan _cocokkan_template_excel_register_blok di sales_import_v1.py).",
   "variants": [
     {
       "file_type": "Excel",
@@ -188,44 +119,19 @@ DECLARE
       "data_start_row_index": 3,
       "column_signature_hash": "b6cf5de9d3cb6de54091be4ac0d61fcae14cfa58969fa177e0f36df6b88d7e45",
       "header_columns": [
-        "BULAN",
-        "KETERANGAN",
-        "BEBAN",
-        "MAN POWER",
-        "NO INVOICE",
-        "TANGGAL TRANSFER",
-        "TANGGAL BAYAR",
-        "NILAI INVOICE",
-        "GAJI",
-        "KET GAJI",
-        "BPJS TK",
-        "BPJS KS",
-        "PPH21",
-        "POT ABSEN",
-        "POT KOPERASI",
-        "SPD",
-        "POT LAIN - LAIN",
-        "FEE INCLUDE PPN",
-        "TOTAL",
-        "SELISIH KOLOM G - R",
-        "FEE NET(DPP)",
-        "PPN(11%)",
-        "PPH 23(2%)",
-        "Total Tagihan",
-        "Pph23",
-        "Tagihan - Pph23",
-        "TERIMA DI RK",
-        "TANGGAL DI RK",
-        "SELISIH",
-        "KET",
-        "no rekon",
-        "Klasifikasi",
-        "Cek"
+        "BULAN", "KETERANGAN", "BEBAN", "MAN POWER", "NO INVOICE", "TANGGAL TRANSFER",
+        "TANGGAL BAYAR", "NILAI INVOICE", "GAJI", "KET GAJI", "BPJS TK", "BPJS KS", "PPH21",
+        "POT ABSEN", "POT KOPERASI", "SPD", "POT LAIN - LAIN", "FEE INCLUDE PPN", "TOTAL",
+        "SELISIH KOLOM G - R", "FEE NET(DPP)", "PPN(11%)", "PPH 23(2%)", "Total Tagihan", "Pph23",
+        "Tagihan - Pph23", "TERIMA DI RK", "TANGGAL DI RK", "SELISIH", "KET", "no rekon",
+        "Klasifikasi", "Cek"
       ],
       "mapping_rules": {
         "format_type": "monthly_block_invoice_register",
-        "description": "Register tagihan manual Birawa (DETAIL INVOICE 2026 + PPN), sheet 'Sheet1': 1 sheet = 1 tahun, tiap bulan = 1 BLOK (baris header diulang di tiap blok, kolom BULAN hanya terisi di baris pertama blok), 1 baris = 1 invoice. Nomor invoice ADA di file (kolom NO INVOICE), tanggal invoice TIDAK ada -- tanggal = kolom BULAN blok (tanggal 1 bulan itu). Nilai = NILAI INVOICE (tagihan penuh ke pelanggan, termasuk gaji/BPJS yang ditagihkan ulang), PPN = kolom PPN(11%), DPP = NILAI INVOICE - PPN. Pelanggan = kolom BEBAN. Sheet lain di workbook (Sheet2, sheet, Sheet3 = pivot/rekap) tidak dibaca. Kolom dicari lewat NAMA di baris header; kolom A kosong tidak ikut di-hash (kolom_awal = 2).",
+        "description": "Register tagihan manual BRW (DETAIL INVOICE 2026 & PPN), sheet 'Sheet1': 1 sheet = 1 tahun, tiap bulan = 1 BLOK (baris header diulang di tiap blok), 1 baris = 1 invoice. Tanggal = kolom BULAN blok (tanggal 1 bulan itu). Total = NILAI INVOICE, PPN = PPN(11%), DPP = total - PPN. Pelanggan = BEBAN. Sheet lain (Sheet2, sheet, Sheet3 = pivot/rekap) tidak dibaca. Kolom dicari lewat NAMA di baris header; kolom A kosong tidak ikut di-hash (kolom_awal = 2).",
         "kolom_awal": 2,
+        "header_cari_dalam_baris": 5,
+        "cocok_jika_kolom_ada": ["BULAN", "NO INVOICE", "BEBAN", "NILAI INVOICE", "PPN(11%)"],
         "dasar": "tagihan",
         "date_format": "DD/MM/YYYY",
         "number_format": {
@@ -242,150 +148,61 @@ DECLARE
         },
         "cabang_dari_kolom_customer": true,
         "field_mapping": {
-          "tanggal": "kolom BULAN blok (sel gabungan, dibawa ke baris di bawahnya)",
+          "tanggal": "kolom BULAN blok (dibawa ke baris di bawahnya kalau kosong)",
           "invoice": "kolom NO INVOICE",
           "customer": "kolom BEBAN",
-          "cabang": "= kolom BEBAN (dipakai memilih akun pendapatan per pelanggan)",
+          "cabang": "= kolom BEBAN",
           "dpp": "NILAI INVOICE - PPN(11%)",
-          "ppn": "kolom PPN(11%) (0 untuk invoice kompensasi PKWT/tanpa fee)",
+          "ppn": "kolom PPN(11%) (0 untuk invoice kompensasi tanpa fee)",
           "total": "kolom NILAI INVOICE"
         },
         "row_granularity": "per_invoice",
-        "catatan_analisis": "Dianalisis dari 1 file contoh DETAIL_INVOICE_2026___PPN.xlsx (Sheet1 A1:AI324): 12 blok bulan Jan-Des 2026, header di baris 2, 26, 53, 84, 110, 137, 168, 194, 222, 249, 274, 298. Hanya Jan-Agu yang berisi nilai (202 invoice bernilai, semua nomor unik); blok Sep-Des berisi nomor invoice urut tanpa nilai (placeholder) dan dilewati. Pelanggan (BEBAN): ASF, ASF-INT, CSDI, CSDI-OPCENT, CSDI-TECHNO, AAF, SBSF, FIF, AAD. Baris 83 dan 166 adalah baris subtotal tanpa nomor invoice (lihat catatan di kepala seed)."
+        "catatan_analisis": "Dianalisis 2026-11-08 dari 3 file di dataset/Sales/Birawa (Juni Revisi, Juli, Agustus). Semua: Sheet1, header baris 2 dari kolom B; file Juni judul 'Klasifikasi' kosong (cocok lewat cocok_jika_kolom_ada). File kumulatif Jan s/d bulan file; blok bulan berikutnya berisi nomor invoice tanpa nilai (placeholder, dilewati). Pelanggan (BEBAN): ASF, ASF-INT, CSDI, CSDI-OPCENT, CSDI-TECHNO, AAF, SBSF, FIF, AAD."
       }
     }
   ],
   "piutang_account": {
-    "account_code": "149999",
-    "account_name": "Piutang - Lain-lain"
+    "account_code": "1-10020",
+    "account_name": "Trade Receivables"
   },
   "pendapatan_account": {
-    "account_code": "481001",
-    "account_name": "Pengembalian biaya Outsourching"
-  },
-  "pendapatan_account_by_cabang": {
-    "ASF": {
-      "account_code": "411001",
-      "account_name": "Pendapatan Jasa - ASF"
-    },
-    "ASF-INT": {
-      "account_code": "411001",
-      "account_name": "Pendapatan Jasa - ASF"
-    },
-    "CSDI": {
-      "account_code": "411002",
-      "account_name": "Pendapatan Jasa - CSDI"
-    },
-    "CSDI-OPCENT": {
-      "account_code": "411002",
-      "account_name": "Pendapatan Jasa - CSDI"
-    },
-    "CSDI-TECHNO": {
-      "account_code": "411002",
-      "account_name": "Pendapatan Jasa - CSDI"
-    },
-    "PSS": {
-      "account_code": "411003",
-      "account_name": "Pendapatan Jasa - PSS"
-    },
-    "KAF": {
-      "account_code": "411004",
-      "account_name": "Pendapatan Jasa - KAF"
-    },
-    "AAF": {
-      "account_code": "411005",
-      "account_name": "Pendapatan Jasa - AAF"
-    },
-    "FIF": {
-      "account_code": "411006",
-      "account_name": "Pendapatan Jasa - FIF"
-    },
-    "SERA": {
-      "account_code": "411007",
-      "account_name": "Pendapatan Jasa - SERA"
-    },
-    "SBSF": {
-      "account_code": "411008",
-      "account_name": "Pendapatan Jasa - SBSF"
-    },
-    "AAD": {
-      "account_code": "411009",
-      "account_name": "Pendapatan Jasa - AAD"
-    }
-  },
-  "piutang_account_by_cabang": {
-    "ASF": {
-      "account_code": "140001",
-      "account_name": "Piutang - ASF"
-    },
-    "ASF-INT": {
-      "account_code": "140001",
-      "account_name": "Piutang - ASF"
-    },
-    "CSDI": {
-      "account_code": "140002",
-      "account_name": "Piutang - CSDI"
-    },
-    "CSDI-OPCENT": {
-      "account_code": "140002",
-      "account_name": "Piutang - CSDI"
-    },
-    "CSDI-TECHNO": {
-      "account_code": "140002",
-      "account_name": "Piutang - CSDI"
-    },
-    "PSS": {
-      "account_code": "140003",
-      "account_name": "Piutang - PSS"
-    },
-    "KAF": {
-      "account_code": "140004",
-      "account_name": "Piutang - KAF"
-    },
-    "AAF": {
-      "account_code": "140005",
-      "account_name": "Piutang - AAF"
-    },
-    "FIF": {
-      "account_code": "140006",
-      "account_name": "Piutang - FIF"
-    },
-    "SERA": {
-      "account_code": "140007",
-      "account_name": "Piutang - SERA"
-    },
-    "SBSF": {
-      "account_code": "140008",
-      "account_name": "Piutang - SBSF"
-    },
-    "AAD": {
-      "account_code": "140009",
-      "account_name": "Piutang - AAD"
-    }
+    "account_code": "4-10002",
+    "account_name": "Service Revenue"
   },
   "ppn_account": {
-    "account_code": "246001",
-    "account_name": "Hutang Pajak - PPN"
+    "account_code": "2-10010",
+    "account_name": "Output VAT Payable"
   },
-  "catatan_akun": "Akun default dipilih dari COA BIRAWA (sheet 'COA BIRAWA' di COA_Clients_GOUF_IFRS_Standardized.xlsx); ASUMSI, bisa diubah per invoice di Journal Preview atau lewat Settings > Account Mapping (yang diutamakan setelah peta per cabang). Pendapatan dan piutang dipilih per pelanggan lewat kolom BEBAN (= cabang invoice): 'Pendapatan Jasa - <pelanggan>' dan 'Piutang - <pelanggan>' (kunci HURUF BESAR). BEBAN yang tidak dikenal jatuh ke akun umum: piutang 149999 Piutang - Lain-lain, pendapatan 481001 Pengembalian biaya Outsourching. piutang_account_by_cabang dibaca db_client.akun_default_sales() (butuh db_client versi yang memuat peta piutang per cabang; versi lama mengabaikannya dan memakai piutang_account)."
+  "catatan_akun": "Akun default dari COA BRW di database (akun standar). Settings > Account Mapping klien (account_receivable / sales_revenue / sales_tax_payable) diutamakan di atas akun ini. Bisa diubah per invoice di Journal Preview. COA BRW belum punya akun piutang/pendapatan per pelanggan; kalau ditambahkan, isi pendapatan_account_by_cabang dengan kunci HURUF BESAR = kolom BEBAN (ASF, ASF-INT, CSDI, CSDI-OPCENT, CSDI-TECHNO, AAF, SBSF, FIF, AAD)."
 }$json$::jsonb;
 BEGIN
+    SELECT count(*) INTO v_jumlah
+    FROM management_clients
+    WHERE deleted_at IS NULL AND upper(trim(nama_client)) = ANY (v_nama_klien);
+    IF v_jumlah > 1 THEN
+        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT BINA RANCANG WASESA/WASISA di management_clients. Hapus/gabungkan duplikatnya dulu, lalu jalankan ulang seed ini.';
+    END IF;
+
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
-    WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT BINA RANCANG WASISA'
-    ORDER BY created_at
+    WHERE deleted_at IS NULL AND upper(trim(nama_client)) = ANY (v_nama_klien)
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT BINA RANCANG WASISA') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT BINA RANCANG WASISA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien BIRAWA belum ada di management_clients (dicari nama_client = ''PT BINA RANCANG WASISA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien BRW belum ada di management_clients (dicari nama_client = ''PT BINA RANCANG WASESA'' / ''PT BINA RANCANG WASISA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
-    -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
+    -- Peringatan (tidak menggagalkan seed): akun default yang belum ada di COA klien.
+    FOR v_akun IN
+        SELECT a FROM unnest(ARRAY['1-10020', '4-10002', '2-10010']) AS a
+        WHERE NOT EXISTS (
+            SELECT 1 FROM management_client_coa c
+            WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = a
+        )
+    LOOP
+        RAISE NOTICE 'Akun % belum ada di COA klien BRW -- tambahkan di halaman COA atau isi Settings > Account Mapping sebelum posting.', v_akun;
+    END LOOP;
+
     SELECT t.id INTO v_id
     FROM financial_transaction_sales_import_templates t
     WHERE t.client_id = v_client_id
@@ -394,8 +211,6 @@ BEGIN
     ORDER BY (t.column_signature_hash = v_hash_baru) DESC, t.created_at
     LIMIT 1;
 
-    -- Pengaman: template Multi AKTIF LAIN milik klien ini yang sudah memuat varian Excel
-    -- dengan header yang sama (baris yang di-upgrade dikecualikan).
     SELECT count(*) INTO v_bentrok
     FROM financial_transaction_sales_import_templates t
     WHERE t.client_id = v_client_id
@@ -410,36 +225,18 @@ BEGIN
       );
 
     IF v_bentrok > 0 THEN
-        RAISE EXCEPTION 'Klien BIRAWA sudah punya template Multi AKTIF lain dengan varian Excel yang sama. Singkirkan baris yang tidak dipakai (UPDATE ... SET is_active = false, deleted_at = now(); lihat bagian Idempotensi di kepala file ini), lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien BRW sudah punya template Multi AKTIF lain dengan varian Excel yang sama. Singkirkan baris yang tidak dipakai (lihat bagian Idempotensi di kepala file ini), lalu jalankan ulang seed ini.';
     END IF;
 
     IF v_id IS NULL THEN
         INSERT INTO financial_transaction_sales_import_templates (
-            client_id,
-            client_code,
-            file_type,
-            header_row_index,
-            data_start_row_index,
-            column_signature_hash,
-            header_columns,
-            mapping_rules,
-            detected_by,
-            is_active,
-            usage_count
+            client_id, client_code, file_type, header_row_index, data_start_row_index,
+            column_signature_hash, header_columns, mapping_rules, detected_by, is_active, usage_count
         ) VALUES (
-            v_client_id,
-            v_client_code,
-            'Multi',
-            2,
-            3,
-            v_hash_baru,
-            '[]'::jsonb,
-            v_rules,
-            'manual',
-            true,
-            0
+            v_client_id, v_client_code, 'Multi', 2, 3,
+            v_hash_baru, '[]'::jsonb, v_rules, 'manual', true, 0
         );
-        RAISE NOTICE 'Template Multi BIRAWA dibuat (baris baru).';
+        RAISE NOTICE 'Template Multi BRW dibuat (baris baru).';
     ELSE
         UPDATE financial_transaction_sales_import_templates
            SET header_row_index = 2,
@@ -452,15 +249,15 @@ BEGIN
                deleted_by = NULL,
                edited_at = now()
          WHERE id = v_id;
-        RAISE NOTICE 'Template Multi BIRAWA sudah ada: hash dan resep diperbarui di tempat (usage_count dan riwayat file tetap).';
+        RAISE NOTICE 'Template Multi BRW sudah ada: resep diperbarui di tempat (usage_count dan riwayat file tetap).';
     END IF;
 END
 $do$;
 
 -- Verifikasi setelah dijalankan:
--- SELECT t.id, m.nama_client, t.client_code, t.file_type, t.column_signature_hash, t.detected_by, t.is_active,
---        jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian,
---        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
+-- SELECT t.id, m.nama_client, t.client_code, t.file_type, t.column_signature_hash, t.is_active,
+--        t.mapping_rules->'variants'->0->'mapping_rules'->>'format_type' AS format_type
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT BINA RANCANG WASISA';
+-- WHERE t.file_type = 'Multi'
+--   AND upper(trim(m.nama_client)) IN ('PT BINA RANCANG WASESA', 'PT BINA RANCANG WASISA');

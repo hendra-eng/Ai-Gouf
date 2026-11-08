@@ -110,21 +110,33 @@
 --     (cocok "persis") -- potongan admin lalu dicatat sebagai beban terpisah.
 --   * Omah dan Villa: biaya booking.com ikut mengurangi dpp (sudah netto di TOTAL).
 --
--- AKUN JURNAL: BELUM DIISI. COA AADL belum ada di repo (tidak ada seed_coa_aadl.sql),
--- dan akun tidak boleh ditebak karena posting ditolak kalau kode tidak ada di COA klien.
--- Selama kosong: db_client.akun_default_sales() memakai Settings > Account Mapping
--- klien (account_receivable / sales_revenue); kalau itu juga kosong, mapping akun
--- invoice dilewati diam-diam saat Buat Invoice. Setelah COA AADL ada, tambahkan di
--- v_rules (sejajar "variants") lalu jalankan ulang seed ini (idempoten):
---   "piutang_account":   {"account_code": "<kode>", "account_name": "<nama>"},
---   "pendapatan_account": {"account_code": "<kode>", "account_name": "<nama>"},
---   "pendapatan_account_by_cabang": {          -- kunci HURUF BESAR, persis nilai cabang
---     "WARUNG SOEMANTRI":      {"account_code": "...", "account_name": "..."},
---     "KAFE KAPU":             {...}, "OMAH & KOPI SOEMANTRI": {...},
---     "VILLA PUTU SOEMANTRI":  {...}, "KAPU SOEMANTRI": {...},
---     "KOST WARUNG SOEMANTRI": {...}
---   }
--- (ppn_account tidak perlu: file AADL tidak punya pajak, ppn selalu 0.)
+-- AKUN JURNAL (REVISI 2026-11-08): DIPILIH OTOMATIS dari COA klien AADL saat seed
+-- dijalankan (blok DO): untuk tiap peran/cabang dipakai kandidat PERTAMA yang ada di
+-- management_client_coa; nama akun diambil dari COA. COA AADL di database lokal = COA
+-- template industri hospitality (kode 6 digit). ASUMSI, mohon dikonfirmasi:
+--   Dr Piutang                         130001 Trade Receivables       (cadangan 140013)
+--   Cr Pendapatan per cabang (pendapatan_account_by_cabang, diutamakan di atas Settings):
+--     WARUNG SOEMANTRI, KAFE KAPU      430002 Food & Beverage Revenue (cadangan 410001)
+--     OMAH & KOPI SOEMANTRI,           430001 Room Revenue            (cadangan 420001)
+--     VILLA PUTU SOEMANTRI,
+--     KAPU SOEMANTRI, KOST WARUNG SOEMANTRI
+--   Cr Pendapatan umum (cabang lain)   430005 Other Operating Revenue (cadangan 410001)
+--   ppn_account tidak diisi: file AADL tidak punya pajak, ppn selalu 0.
+-- Catatan: Omah & Kopi menggabungkan kamar + breakfast + kopi dalam 1 baris TOTAL -> semua
+-- ke Room Revenue (bagian terbesar); pisahkan per invoice di Journal Preview kalau perlu.
+-- Kandidat tidak ada di COA -> NOTICE, peran itu tidak diisi (jatuh ke Settings > Account
+-- Mapping). Kalau COA klien diganti / klien dibuat ulang, jalankan ulang seed ini.
+--
+-- HASIL UJI ULANG 2026-11-08 (18 file di dataset/Sales/AADL/{Juni,Juli,agustus}, parser
+-- yang di-port ke sales_import_v1.py bagian 3e): ke-18 file cocok ke varian yang benar.
+-- Semua baris VALID, kecuali file Juni "Kapu Soemantri" yang punya sheet salinan
+-- "Juni 2026 (2)": sheet itu dilewati dan dilaporkan sebagai 1 baris peringatan (invalid),
+-- jadi file itu berstatus "Butuh Review" -- hapus/ganti nama sheet salinan itu kalau tidak
+-- dipakai. FILE KUMULATIF: tiap file berisi Jan s/d bulan file, ditambah sebagian bulan
+-- berikutnya (mis. file Juli: Agustus hari 1-3; Kost Warung Agustus 5.100.000 di file Juli
+-- vs 18.600.000 di file Agustus). Nomor invoice sama di tiap upload dan Buat Invoice
+-- MELEWATI nomor yang sudah ada, jadi angka bulan yang belum lengkap TERKUNCI kalau
+-- di-promote lebih dulu -- promote hanya bulan yang sudah tutup.
 --
 -- column_signature_hash level baris = SHA-256 dari gabungan hash varian, urut
 -- seperti array "variants" dan dipisah ':' (pola seed NBM/SAU):
@@ -190,6 +202,10 @@ DECLARE
     -- versi-versi LAMA seed yang sama ditaruh di v_hash_lama (kosong = belum ada).
     v_hash_baru   CONSTANT TEXT := '252e33a2be444d161a0eba521163dc95dd5dfbcc86b6fcf7b0707d716c97e534';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
+    v_akun        TEXT;
+    v_akun_json   JSONB;
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
     v_rules       JSONB := $json${
   "format_type": "multi_format",
   "description": "1 setting klien AADL (PT Akshaya Ananda Dylan Lestari) untuk laporan pendapatan. 6 varian Excel (1 workbook per cabang, 1 sheet per bulan): Warung Soemantri, Kafe Kapu, Omah & Kopi, Villa Putu (rekap harian, 1 invoice = 1 hari) dan Kost Kapu Soemantri, Kost Warung Soemantri (daftar sewa kamar, 1 invoice = 1 bulan). Tiap varian membawa signature judul sheet & resep sendiri; cabang tetap per varian. Backend memilih varian lewat hash baris judul sheet bulanan (lihat _cocokkan_template_excel_bulanan di sales_import_v1.py).",
@@ -432,7 +448,7 @@ DECLARE
       }
     }
   ],
-  "catatan_akun": "Akun jurnal (piutang_account, pendapatan_account, pendapatan_account_by_cabang, ppn_account) SENGAJA belum diisi: COA klien AADL belum ada di repo (belum ada seed_coa_aadl.sql). Selama kosong, Journal Preview memakai Settings > Account Mapping klien; kalau itu juga kosong, mapping akun invoice dilewati diam-diam saat Buat Invoice. Lihat bagian AKUN JURNAL di kepala file untuk cara mengisinya."
+  "catatan_akun": "piutang_account, pendapatan_account dan pendapatan_account_by_cabang DIISI OTOMATIS oleh blok DO seed ini dari COA klien AADL (kandidat pertama yang ada): piutang 130001 Trade Receivables; F&B (Warung, Kafe Kapu) 430002 Food & Beverage Revenue; hotel/villa/kost (Omah & Kopi, Villa Putu, Kapu Soemantri, Kost Warung) 430001 Room Revenue; cadangan 430005 Other Operating Revenue. ppn_account tidak diisi (file AADL tanpa pajak, ppn selalu 0). Pendapatan per cabang diutamakan di atas Settings > Account Mapping; bisa diubah per invoice di Journal Preview."
 }$json$::jsonb;
 BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
@@ -449,6 +465,46 @@ BEGIN
     IF v_client_id IS NULL THEN
         RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari nama_client = ''PT AKSHAYA ANANDA DYLAN LESTARI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
+
+    -- Akun default dipilih dari COA klien yang SEBENARNYA (lihat AKUN JURNAL di kepala file):
+    -- untuk tiap peran/cabang, kandidat pertama yang ada di management_client_coa (acc_no,
+    -- belum dihapus) dipakai, nama akun diambil dari COA. Tidak ada satu pun -> peran itu
+    -- tidak diisi + NOTICE (jatuh ke Settings > Account Mapping klien).
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('piutang_account',                           ARRAY['130001', '140013']),
+            ('pendapatan_account',                        ARRAY['430005', '410001']),
+            ('pendapatan_account_by_cabang/WARUNG SOEMANTRI',      ARRAY['430002', '410001']),
+            ('pendapatan_account_by_cabang/KAFE KAPU',             ARRAY['430002', '410001']),
+            ('pendapatan_account_by_cabang/OMAH & KOPI SOEMANTRI', ARRAY['430001', '420001']),
+            ('pendapatan_account_by_cabang/VILLA PUTU SOEMANTRI',  ARRAY['430001', '420001']),
+            ('pendapatan_account_by_cabang/KAPU SOEMANTRI',        ARRAY['430001', '420001']),
+            ('pendapatan_account_by_cabang/KOST WARUNG SOEMANTRI', ARRAY['430001', '420001'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien AADL -- isi Settings > Account Mapping atau tambahkan akunnya di COA, lalu jalankan ulang seed ini.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        IF position('/' IN v_peran) > 0 THEN
+            IF NOT (v_rules ? 'pendapatan_account_by_cabang') THEN
+                v_rules := v_rules || '{"pendapatan_account_by_cabang": {}}'::jsonb;
+            END IF;
+            v_rules := jsonb_set(v_rules, ARRAY['pendapatan_account_by_cabang', split_part(v_peran, '/', 2)], v_akun_json);
+        ELSE
+            v_rules := jsonb_set(v_rules, ARRAY[v_peran], v_akun_json);
+        END IF;
+        RAISE NOTICE 'Akun % AADL = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
     SELECT t.id INTO v_id
