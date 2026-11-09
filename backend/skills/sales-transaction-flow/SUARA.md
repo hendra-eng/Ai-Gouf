@@ -15,6 +15,14 @@ ALUR LANGKAH PENGGUNA
 6. Tab Posted: invoice Posted, Partial, atau Paid, lengkap dengan sisa piutang. Pelunasan dari Cash dan Bank mengubah status ke Partial lalu Paid.
 7. Tab Exceptions: daftar masalah (Open, In Review, Resolved). Belum terisi otomatis, jadi kosong bukan berarti semua data bersih.
 
+ARTI TOMBOL (ringkas)
+- Jalur upload sampai Posted hanya empat tombol: Upload File (Source Data), Buat Invoice (File Preview di Source Data), Approve, lalu Post Journal (Journal Preview). Tombol lain bersifat bantu.
+- Template Excel: unduh contoh format. Export: unduh daftar file. Mapping Rules: atur pemetaan kolom file. Hapus file: invoice yang sudah dibuat tidak ikut terhapus.
+- Tambah Transaksi: bikin satu invoice manual, bukan dari file. Print All: cetak daftar sesuai filter. Ikon roda gigi: pilih kolom tampil. Reset: hapus filter.
+- Kotak centang di layar hanya penanda, tidak memicu aksi massal. Edit di Sales Transaction menghitung ulang PPN 11 persen dan PPh 1 persen dari DPP.
+- Edit Mapping: ubah akun jurnal. Resolve dan Accept Suggestion: di tab Exceptions. Salin No. Jurnal, Export, Cetak: di tab Posted.
+- Lewat alat proses_file_whatsapp seluruh jalur berjalan massal dan cepat; tidak perlu mencentang satu per satu.
+
 HAL YANG HARUS JUJUR DISAMPAIKAN
 - Tombol Post di tab Sales Transaction memposting langsung dari Draft tanpa Approve dan tanpa cek akun. Sarankan selalu lewat Journal Preview.
 - Tombol Approve di Sales Transaction praktis tidak muncul karena status Review tidak pernah terisi; Approve dilakukan di Journal Preview.

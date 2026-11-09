@@ -411,6 +411,26 @@ def t_file_belum_diupload(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def t_cari_file_whatsapp(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Cari file WhatsApp berdasarkan nama yang disebut pengguna, semua status (belum diproses, sedang, sudah diproses, gagal)."""
+    import memori_ai as _mem
+    from whatsapp_masuk_route import cari_file_nama, teks_lalu
+    nama = str(args.get("nama") or "").strip()
+    if not nama:
+        return {"error": "Sebutkan nama file yang dicari."}
+    cocok = cari_file_nama(_mem.pemilik_dari_user(ctx.user), nama, 8)
+    if not cocok:
+        return {"ditemukan": 0, "dicari": nama, "catatan": "Tidak ada file WhatsApp (30 hari terakhir) dengan nama itu. Katakan terus terang belum ada, jangan mengarang."}
+    return {
+        "ditemukan": len(cocok), "dicari": nama,
+        "file": [{"nama": f["lisan"], "masuk": teks_lalu(int(f.get("menit_lalu") or 0)), "status": f["status_lisan"],
+                  "sudah_masuk_source_data": bool(f.get("source_file_id")), "kecocokan": f["cocok"]} for f in cocok],
+        "petunjuk": ("Jawab langsung: sebut nama file, kapan masuk, dan statusnya. Kalau ada beberapa yang cocok, sebut yang paling cocok dulu lalu "
+                     "tanyakan apakah itu yang dimaksud. Kalau pengguna minta file itu diproses, panggil proses_file_whatsapp dengan "
+                     "nama_mengandung = nama file itu (wajib tahu klien dan halamannya)."),
+    }
+
+
 def t_file_whatsapp_masuk(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
     """File yang masuk ke WhatsApp pengguna (30 hari terakhir), dipisah BARU (baru saja dikirim) dan LAMA. Nama file sengaja tidak diberikan."""
     import memori_ai as _mem
@@ -427,7 +447,7 @@ def t_file_whatsapp_masuk(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
         "JANGAN menganggap file LAMA sebagai file yang baru dikirim. "
         "Kalau pengguna bertanya ada file apa saja / berapa file yang kamu pegang / sudah berapa file yang dikirim, sebut jumlah_total dan "
         "rinciannya per jenis (gabungan BARU dan LAMA). "
-        "Jangan sebut nama file. Isi file belum bisa dibaca; tanyakan pengguna mau diapakan file itu."
+        "Untuk menyebut / mencari nama file pakai alat cari_file_whatsapp. Isi file belum bisa dibaca; tanyakan pengguna mau diapakan file itu."
     )
     return hasil
 
@@ -623,7 +643,7 @@ def t_status_proses_file(ctx: Konteks, args: Dict[str, Any]) -> Dict[str, Any]:
             "status diproses = masih berjalan (lihat rincian.tahap, diposting, menunggu_posting). selesai = semua transaksi terposting. rincian.halaman = Sales, Purchase, atau Journal Entry. "
             "selesai_sebagian = sebagian tidak diposting; sebut jumlahnya dan alasan_tidak_diposting (untuk Cash dan Bank juga mutasi_belum_cocok: mutasi tanpa invoice pasti, arahkan ke tab Reconciliation; untuk Other juga baris_gagal_impor), arahkan ke Journal Preview (Sales) atau tab transaksinya (Purchase, Journal Entry) untuk memperbaiki lalu Post. "
             "perlu_template = file belum bisa dibaca: belum ada template kolom untuk klien itu, atau (Cash dan Bank) polanya belum dikenal atau saldonya belum cocok sehingga Neo tidak mengimpornya, atau (Other) kolom wajib tidak ada. gagal = sebut rincian.pesan. "
-            "Sebut angka apa adanya (dibuat, diposting, tidak diposting); jangan mengarang. Jangan sebut nama file."
+            "Untuk Sales, rincian.atlas berisi temuan pemeriksaan Atlas (ditahan, tahan_semua, ringkas = semua jenis masalah, detail = nomor invoice + masalahnya, catatan_file, info_file, langkah = buku kerja Atlas per tahap dengan alasan akuntansinya, jurnal + jurnal_seimbang = uraian Debit/Kredit): sebut SEMUA jenis masalah apa adanya; sebut nomor invoice hanya kalau pengguna menanyakan rinciannya. Invoice yang ditahan ada di status Draft di halaman Sales; tidak ada yang perlu dilakukan di halaman Agentic AI. Sebut angka apa adanya (dibuat, diposting, tidak diposting); jangan mengarang. Jangan sebut nama file."
         ),
     }
 
@@ -692,6 +712,8 @@ TOOLS: List[Dict[str, Any]] = [
           {"klien": _KLIEN, "batas": {"type": "integer"}}),
     _spec("status_data_wajah", "Cek apakah data wajah pengguna yang sedang login SUDAH tersimpan di database (ya/tidak, nama panggilan, tanggal terakhir diperbarui). Tidak butuh klien.", {}),
     _spec("file_whatsapp_masuk", "Cek file yang masuk ke WhatsApp pengguna (30 hari terakhir), dipisah menjadi file BARU (baru saja dikirim, 10 menit terakhir) dan file LAMA (sudah ada sebelumnya), diringkas per jenis dengan jumlahnya. Panggil kalau pengguna bertanya ada file apa saja / berapa file yang dipegang, atau bertanya apakah file yang baru saja dia kirim sudah diterima, dengan kalimat apa pun. Jangan sebut nama file. Isi file belum bisa dibaca.", {}),
+    _spec("cari_file_whatsapp", "Cari file WhatsApp berdasarkan NAMA yang disebut pengguna (semua status: belum diproses, sedang diproses, sudah diproses, gagal). Panggil kalau pengguna menyebut nama file, mis. 'ada file data penjualan wsi?', 'file penjualan okt sudah masuk belum?', 'file X sudah diproses?'. Pencocokan tidak peduli huruf besar/kecil, spasi, atau ekstensi.",
+          {"nama": {"type": "string", "description": "Nama file (atau sebagian) persis seperti yang diucapkan pengguna."}}, ["nama"]),
     _spec("file_belum_diupload", "Daftar file (CSV/Excel/PDF) yang SUDAH tersimpan di WhatsApp tetapi BELUM berhasil diupload/diposting, DENGAN nama file dan kapan masuknya. Panggil kalau pengguna bertanya file apa yang kamu pegang tapi belum diupload, file mana yang belum diproses, atau minta disebutkan nama filenya. Beda dengan file_whatsapp_masuk (ringkasan jenis tanpa nama).", {}),
     _spec("status_transaksi", "Jumlah dan total transaksi per status (draft, approved, posted, dst) di SATU halaman Transactions klien: sales, purchase, journal_entry, cash_bank, atau other. Panggil kalau pengguna bertanya berapa transaksi, sudah sampai tahap mana, atau kenapa belum posted.",
           {"klien": _KLIEN, "halaman": _HALAMAN_ARG}, ["halaman"]),
@@ -699,7 +721,7 @@ TOOLS: List[Dict[str, Any]] = [
           {"klien": _KLIEN, "halaman": _HALAMAN_ARG, "batas": {"type": "integer"}}, ["halaman"]),
     _spec("daftar_exceptions", "Ringkasan tab Exceptions satu halaman Transactions: per status dan jenis masalah (sales, purchase, cash_bank) atau hitungan jurnal bermasalah (journal_entry). Panggil kalau pengguna bertanya soal exception, masalah, atau data yang perlu ditinjau.",
           {"klien": _KLIEN, "halaman": _HALAMAN_ARG, "batas": {"type": "integer"}}, ["halaman"]),
-    _spec("proses_file_whatsapp", "AKSI TULIS. Memproses file (CSV/Excel/PDF) terbaru yang masuk ke WhatsApp pengguna untuk halaman Sales, Purchase, Journal Entry, Cash dan Bank (rekening koran), atau Other (CSV/Excel): upload atau import, buat transaksi, Approve, lalu Post, otomatis tanpa konfirmasi tambahan. Panggil HANYA kalau pengguna jelas meminta file yang dia kirim diproses/diupload/diposting. Wajib tahu klien tujuan DAN halamannya (sales, purchase, journal_entry, cash_bank, other): kalau salah satu belum disebut, tanyakan dulu. Berjalan di latar belakang; jawab singkat bahwa proses dimulai.",
+    _spec("proses_file_whatsapp", "AKSI TULIS. Memproses file (CSV/Excel/PDF) terbaru yang masuk ke WhatsApp pengguna untuk halaman Sales, Purchase, Journal Entry, Cash dan Bank (rekening koran), atau Other (CSV/Excel): upload atau import, buat transaksi, Approve, lalu Post. Panggil HANYA kalau pengguna jelas meminta file yang dia kirim diproses/diupload/diposting. Wajib tahu klien tujuan DAN halamannya (sales, purchase, journal_entry, cash_bank, other): kalau salah satu belum disebut, tanyakan HANYA yang kurang. Kalau pengguna sudah menyebut halaman dan klien dengan jelas, jangan tanya ulang keduanya. Sebelum memanggil, SEBUTKAN klien (kodenya) dan halaman tujuan lalu tanya \"Lanjut?\" sekali saja dan tunggu jawaban setuju (\"ya\"); jangan panggil sebelum pengguna setuju. Berjalan di latar belakang; jawab singkat bahwa proses dimulai. KHUSUS halaman Sales (ATURAN MUTLAK): upload SELALU dikerjakan Atlas (master expert accounting yang memeriksa kejanggalan sebelum Approve/Post dan menahan invoice janggal), siapa pun yang diminta pengguna, termasuk Neo dan Zeno. Kalau pengguna meminta kamu (Neo/Zeno) upload ke Sales, JANGAN bilang tidak bisa dan jangan menolak: konfirmasi klien dan halaman, lalu panggil alat ini; sistem otomatis menyerahkan pekerjaannya ke Atlas. Katakan 'aku serahkan ke Atlas', jangan mengaku kamu sendiri yang upload.",
           {"klien": {"type": "string", "description": "Kode atau nama klien tujuan, WAJIB (mis. SAU)."}, "halaman": {"type": "string", "enum": ["sales", "purchase", "journal_entry", "cash_bank", "other"], "description": "Halaman tujuan: sales (penjualan), purchase (pembelian), journal_entry (jurnal umum), cash_bank (rekening koran), atau other (transaksi lain)."}, "nama_mengandung": {"type": "string", "description": "Nama file yang disebut pengguna (dari daftar file_belum_diupload). WAJIB diisi kalau pengguna menyebut file tertentu; kosong = file terbaru."}, "agen": {"type": "string", "enum": ["Neo", "Atlas", "Zeno"], "description": "Opsional: karyawan AI di halaman Agentic AI yang ditugaskan pengguna (mis. Atlas). Dia berjalan ke meja halaman, bekerja sampai selesai, lalu kembali ke meja rapat. Isi HANYA kalau pengguna menyebut namanya."}},
           ["klien", "halaman"]),
     _spec("status_proses_file", "Progres dan hasil pemrosesan file WhatsApp oleh Neo (berapa transaksi dibuat, diposting, tidak diposting, dan alasannya). Panggil kalau pengguna bertanya sudah selesai/sampai mana/hasilnya setelah memintamu memproses file.", {}),
@@ -712,7 +734,7 @@ _FUNGSI = {
     "saldo_akun": t_saldo_akun, "ringkasan_keuangan": t_ringkasan_keuangan,
     "ringkasan_penjualan": t_ringkasan_penjualan, "ringkasan_pembelian": t_ringkasan_pembelian,
     "umur_piutang": t_umur_piutang, "jurnal_terakhir": t_jurnal_terakhir,
-    "status_data_wajah": t_status_data_wajah, "file_whatsapp_masuk": t_file_whatsapp_masuk, "file_belum_diupload": t_file_belum_diupload,
+    "status_data_wajah": t_status_data_wajah, "file_whatsapp_masuk": t_file_whatsapp_masuk, "file_belum_diupload": t_file_belum_diupload, "cari_file_whatsapp": t_cari_file_whatsapp,
     "status_transaksi": t_status_transaksi, "file_sumber": t_file_sumber, "daftar_exceptions": t_daftar_exceptions,
     "proses_file_whatsapp": t_proses_file_whatsapp, "status_proses_file": t_status_proses_file,
 }

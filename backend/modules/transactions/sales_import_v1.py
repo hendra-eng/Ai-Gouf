@@ -2970,49 +2970,14 @@ def promote_source_file_to_invoices(
 
     user_id = current_user.get("id")  # management_users.id -- untuk created_by / dibuat_oleh
     client_id = source_file.get("management_client_id")  # FK client_id -> management_clients
-    rows = dbc.list_sales_source_rows(source_file_id=source_file_id, termasuk_nonaktif=False)
-
-    dibuat = 0
-    dilewati_tidak_valid = 0
-    dilewati_sudah_pernah = 0
-    dilewati_invoice_bentrok = 0
-
-    for row in rows:
-        if not row.get("is_valid"):
-            dilewati_tidak_valid += 1
-            continue
-        if dbc.get_sales_invoice_by_source_row_id(row["id"]):
-            dilewati_sudah_pernah += 1
-            continue
-        no_invoice = row.get("no_invoice")
-        if not no_invoice:
-            dilewati_tidak_valid += 1
-            continue
-        if dbc.get_sales_invoice_by_client_and_no(client_id, no_invoice):
-            dilewati_invoice_bentrok += 1
-            continue
-
-        invoice_baru = dbc.create_sales_invoice({
-            "client_id": client_id,
-            "management_client_id": source_file.get("management_client_id"),
-            "invoice_no": no_invoice,
-            "invoice_date": row.get("tanggal"),
-            "customer_name": row.get("nama_customer") or "-",
-            "cabang": row.get("cabang"),
-            "dpp": row.get("dpp") or 0,
-            "ppn": row.get("ppn") or 0,
-            "gross_amount": row.get("total") or 0,
-            "tax_invoice_status": "Belum Terbit Faktur",
-            "posting_status": "Draft",
-            "source_row_id": row["id"],
-        }, created_by=user_id)
-        if invoice_baru is not None:
-            dibuat += 1
-            # Akun jurnal langsung mengikuti akun default klien (COA klien) --
-            # dilewati diam-diam kalau klien belum punya pengaturan akun.
-            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=client_id)
-        else:
-            dilewati_invoice_bentrok += 1  # gagal simpan (mis. race condition duplikat) -- hitung sbg dilewati, bukan error keras
+    # [DIUBAH] Promote MASSAL (dbc.promote_sales_rows_bulk): sebelumnya loop per baris (~8 query/baris) -> file ribuan
+    # baris berjam-jam. Aturan dilewati / bentrok tetap sama.
+    hasil_promote = dbc.promote_sales_rows_bulk(source_file_id, client_id, user_id)
+    dibuat = hasil_promote["invoice_dibuat"]
+    dilewati_tidak_valid = hasil_promote["dilewati_tidak_valid"]
+    dilewati_sudah_pernah = hasil_promote["dilewati_sudah_pernah_dipromosikan"]
+    dilewati_invoice_bentrok = hasil_promote["dilewati_invoice_no_bentrok"]
+    rows = [None] * hasil_promote["total_baris"]  # hanya untuk len(rows) di ringkasan di bawah
 
     if dibuat > 0:
         dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=client_id)

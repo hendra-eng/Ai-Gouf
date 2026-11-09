@@ -347,15 +347,47 @@ const POLA_PROSES_LEMAH = /\b(?:proses|prosesin|prosesnya|memproses|process|inpu
 const POLA_KATA_FILE = /\b(?:file|berkas|dokumen|document|data|kiriman|csv|excel|xlsx|whatsapp|wa)\b/;
 const POLA_BATAL_PROSES = /\b(?:jangan|jgn|batal|batalkan|cancel|stop|berhenti|tidak\s+usah|gak\s+usah|nggak\s+usah)\b/;
 
-export function bacaPerintahProsesFile(teks: string): { agen: AgenKantor; meja: number } | null {
+// [BARU] Upload file di halaman Sales HANYA oleh Atlas (master expert accounting: memeriksa kejanggalan sebelum Approve/Post).
+// Aturan yang sama dijaga di backend (neo_wa_pipeline.mulai), jadi ini hanya supaya Neo menolak dengan ramah sebelum memanggil API.
+export const AGEN_UPLOAD_SALES: AgenKantor = 'Atlas';
+
+// [ATURAN MUTLAK] Upload file di halaman Sales SELALU dikerjakan Atlas, siapa pun yang diminta pengguna (Neo, Zeno, atau tanpa
+// nama). Agen yang diminta TIDAK menolak: ia mengonfirmasi klien + halaman, lalu MENYERAHKAN pekerjaan ke Atlas.
+// Halaman lain: dikerjakan agen yang diminta, seperti sebelumnya. Backend menjaga aturan yang sama (neo_wa_pipeline.mulai).
+export function pelaksanaUpload(agen: AgenKantor, meja: number): AgenKantor {
+  return meja === 0 ? AGEN_UPLOAD_SALES : agen; // meja 0 = Sales
+}
+
+// "Atlas, upload file ke halaman sales untuk klien SAU" / "Neo, upload file ke sales" / "upload file ke halaman sales" (tanpa nama).
+// Tanpa nama agen, ucapan harus jelas soal FILE dan menyebut halaman dengan penanda ("ke halaman sales"), supaya "posting jurnal"
+// biasa tidak dikira perintah memproses file. Tanpa nama agen = yang diajak bicara, yaitu Neo.
+// [DIUBAH] adaKlien = ucapan yang sama sudah menyebut kode klien yang valid. Kalau halaman (dengan penanda "ke halaman ...") DAN klien sama-sama
+// jelas, kata "file" tidak wajib lagi ("upload ke halaman purchase untuk klien AADL"), jadi Neo langsung bertanya "Lanjut?", tidak bertanya ulang.
+export function bacaPerintahProsesFile(teks: string, adaKlien = false): { agen: AgenKantor; meja: number } | null {
   const t = bersihkan(teks);
   if (!t || POLA_BATAL_PROSES.test(t) || POLA_TANYA_MAKNA.test(t)) return null; // pertanyaan ("apa itu posting?") bukan perintah
   const kuat = POLA_PROSES_KUAT.test(t);
   if (!kuat && !(POLA_PROSES_LEMAH.test(t) && POLA_KATA_FILE.test(t))) return null;
-  const agen = cariAgen(t);
-  if (!agen) return null;
-  const meja = halamanPertama(t);
-  return meja >= 0 ? { agen, meja } : null;
+  const disebut = cariAgen(t);
+  if (disebut) {
+    const meja = halamanPertama(t);
+    return meja >= 0 ? { agen: disebut, meja } : null;
+  }
+  if (!POLA_KATA_FILE.test(t) && !(adaKlien && kuat)) return null;
+  const meja = halamanTujuan(teks);
+  return meja >= 0 ? { agen: 'Neo', meja } : null;
+}
+
+// "upload file dong" / "Atlas, tolong upload file yang barusan": jelas minta upload file tapi halamannya belum disebut.
+// Neo menanyakan halamannya (bukan menolak). Sengaja sempit: hanya kata kerja upload/unggah + kata file/berkas/WhatsApp.
+const POLA_UNGGAH = /\b(?:upload|uploadkan|uploud|unggah|unggahkan|ungah)\b/;
+const POLA_KATA_FILE_KETAT = /\b(?:file|berkas|dokumen|document|kiriman|csv|excel|xlsx|whatsapp|wa)\b/;
+export function bacaPerintahProsesFileTanpaHalaman(teks: string): { agen: AgenKantor } | null {
+  const t = bersihkan(teks);
+  if (!t || t.split(' ').length > 20 || POLA_BATAL_PROSES.test(t) || POLA_TANYA_MAKNA.test(t)) return null;
+  if (!POLA_UNGGAH.test(t) || !POLA_KATA_FILE_KETAT.test(t)) return null;
+  if (halamanPertama(t) >= 0 || halamanTujuan(teks) >= 0) return null;
+  return { agen: cariAgen(t) ?? 'Neo' };
 }
 
 // Cari klien yang disebut dalam ucapan: kode persis ("sau") atau huruf-huruf terpisah yang membentuk kode ("s a u").

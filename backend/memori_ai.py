@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func, or_
 
 import db_client as dbc
 
@@ -81,6 +81,11 @@ class AiMemoriPesan(dbc.Base):
     role = Column(String(20), nullable=False)  # 'user' | 'assistant'
     isi = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_sekarang)
+    # [BARU] pemilik disalin ke tiap pesan -> "giliran terakhir pengguna" = 1 query indeks (pemilik, id) tanpa JOIN.
+    pemilik = Column(String(100), nullable=True)
+    # [BARU] 'ai' = lewat /api/chat/stream; 'lokal' = ditangani kode frontend (buka halaman, pilih halaman/klien, konfirmasi "ya")
+    asal = Column(String(10), nullable=False, default="ai", server_default="ai")
+    agen = Column(String(20), nullable=True)  # Neo / Atlas / Zeno / penghuni lain bila diketahui
 
 
 class AiMemoriFakta(dbc.Base):
@@ -121,6 +126,17 @@ def ensure_tabel() -> None:
                         conn.exec_driver_sql(f'ALTER TABLE "{t.name}" ENABLE ROW LEVEL SECURITY')
             except Exception as e:  # noqa: BLE001
                 logger.warning("Gagal ENABLE ROW LEVEL SECURITY untuk tabel memori AI: %s", e)
+            # [BARU] tabel lama (dibuat sebelum kolom pemilik/asal/agen ada) -> tambahkan, idempoten. Sudah dijalankan juga lewat migrasi Supabase.
+            try:
+                with dbc.engine.begin() as conn:
+                    conn.exec_driver_sql("ALTER TABLE ai_memory_messages ADD COLUMN IF NOT EXISTS pemilik varchar(100)")
+                    conn.exec_driver_sql("ALTER TABLE ai_memory_messages ADD COLUMN IF NOT EXISTS asal varchar(10) NOT NULL DEFAULT 'ai'")
+                    conn.exec_driver_sql("ALTER TABLE ai_memory_messages ADD COLUMN IF NOT EXISTS agen varchar(20)")
+                    conn.exec_driver_sql("UPDATE ai_memory_messages m SET pemilik = c.pemilik FROM ai_memory_conversations c WHERE c.id = m.percakapan_id AND m.pemilik IS NULL")
+                    conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ai_memory_messages_pemilik_id ON ai_memory_messages (pemilik, id DESC)")
+                    conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ai_memory_conversations_pemilik_updated ON ai_memory_conversations (pemilik, updated_at DESC)")
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Gagal menambah kolom/index recall cepat memori AI: %s", e)
         _tabel_siap = True
 
 
@@ -201,6 +217,26 @@ _cache: Dict[str, Any] = {}
 _kunci_cache = threading.Lock()
 # [BARU] Cache pasangan percakapan untuk recall (dulu query DB join SETIAP ucapan = 0,7-2,6 dtk sebelum AI mulai berpikir).
 _cache_pasangan: Dict[str, Any] = {}
+
+
+# [BARU -- KESADARAN TERPISAH] Tiap agen Agentic AI (Neo / Atlas / Zeno) hanya mengingat obrolannya SENDIRI dengan pengguna.
+# agen=None -> tanpa filter (perilaku lama, dipakai Hermes). agen="neo" -> baris milik Neo + baris lama yang belum bertanda agen.
+# agen lain ("atlas", "zeno", ...) -> hanya baris bertanda agen itu.
+def _filter_agen(kolom, agen):
+    a = (agen or "").strip().lower()
+    if a == "neo":
+        return or_(func.lower(kolom) == "neo", kolom.is_(None))
+    return func.lower(kolom) == a
+
+
+def _kunci_agen(pemilik: str, agen: Optional[str]) -> str:
+    return f"{pemilik}|{(agen or '').strip().lower()}"
+
+
+def _buang_cache_pasangan(pemilik: str) -> None:
+    with _kunci_cache:
+        for k in [k for k in _cache_pasangan if k.startswith(pemilik + "|")]:
+            _cache_pasangan.pop(k, None)
 TTL_CACHE_PASANGAN_DETIK = int(os.environ.get("AI_RECALL_CACHE_DETIK", "120") or 120)
 # [BARU] Batas waktu memori: lewat ini, AI jalan TANPA recall percakapan lama (query tetap selesai di latar & mengisi cache).
 BATAS_MEMORI_DETIK = float(os.environ.get("AI_MEMORI_BATAS_DETIK", "1.0") or 1.0)
@@ -392,7 +428,8 @@ def nonaktifkan_fakta_mirip(pemilik: str, kalimat: str) -> Optional[str]:
 # ============================================================
 # CATAT PERCAKAPAN
 # ============================================================
-def catat_percakapan(pemilik: str, sumber: str, kunci: Optional[str], pesan_user: str, jawaban: str) -> Optional[int]:
+def catat_percakapan(pemilik: str, sumber: str, kunci: Optional[str], pesan_user: str, jawaban: str,
+                     asal: str = "ai", agen: Optional[str] = None) -> Optional[int]:
     ensure_tabel()
     kunci = (kunci or "")[:100] or None
     with dbc.SessionLocal() as s:
@@ -409,11 +446,147 @@ def catat_percakapan(pemilik: str, sumber: str, kunci: Optional[str], pesan_user
             s.add(konv)
             s.flush()
         konv.updated_at = _sekarang()
-        s.add(AiMemoriPesan(percakapan_id=konv.id, role="user", isi=pesan_user))
+        s.add(AiMemoriPesan(percakapan_id=konv.id, role="user", isi=pesan_user, pemilik=pemilik, asal=asal, agen=agen))
         if jawaban.strip():
-            s.add(AiMemoriPesan(percakapan_id=konv.id, role="assistant", isi=jawaban[:8000]))
+            s.add(AiMemoriPesan(percakapan_id=konv.id, role="assistant", isi=jawaban[:8000], pemilik=pemilik, asal=asal, agen=agen))
         s.commit()
+        _buang_cache_giliran(pemilik)
         return konv.id
+
+
+# ============================================================
+# [BARU] GILIRAN TERAKHIR (jangka pendek) - supaya Neo tetap nyambung saat pengguna MENJAWAB pertanyaannya
+# ============================================================
+# Beda dengan recall pasangan di bawah (jangka panjang, relevansi kata kunci, hanya pasangan lengkap user->AI):
+#   - memuat SEMUA pesan terbaru, termasuk giliran yang ditangani kode frontend ('lokal': "Diupload ke halaman mana?",
+#     "Aku konfirmasi dulu... Lanjut?") dan ucapan pengguna yang belum sempat dijawab;
+#   - 1 query berindeks (pemilik, id DESC) ~3 ms + cache memori yang di-invalidate tiap ada tulisan baru -> jauh < 1 dtk.
+_cache_giliran: Dict[str, Any] = {}
+TTL_CACHE_GILIRAN_DETIK = float(os.environ.get("AI_GILIRAN_CACHE_DETIK", "10") or 10)
+MENIT_GILIRAN = int(os.environ.get("AI_GILIRAN_MENIT", "30") or 30)
+JUMLAH_GILIRAN = int(os.environ.get("AI_GILIRAN_JUMLAH", "12") or 12)
+
+
+def _buang_cache_giliran(pemilik: str) -> None:
+    with _kunci_cache:
+        for k in [k for k in _cache_giliran if k.startswith(pemilik + "|")]:
+            _cache_giliran.pop(k, None)
+
+
+def ambil_giliran_terakhir(pemilik: str, jumlah: int = 0, menit: int = 0, agen: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Pesan terbaru pengguna (lama -> baru) dari DB: [{"role","content","waktu"(datetime UTC),"asal"}]. Tidak melempar error."""
+    if not aktif() or not pemilik or pemilik == PEMILIK_GLOBAL:
+        return []
+    jumlah = jumlah or JUMLAH_GILIRAN
+    menit = menit or MENIT_GILIRAN
+    kini = time.time()
+    kunci_c = _kunci_agen(pemilik, agen)
+    with _kunci_cache:
+        hit = _cache_giliran.get(kunci_c)
+        if hit and kini - hit[0] < TTL_CACHE_GILIRAN_DETIK:
+            daftar = hit[1]
+        else:
+            daftar = None
+    try:
+        if daftar is None:
+            ensure_tabel()
+            with dbc.SessionLocal() as s:
+                q_g = s.query(AiMemoriPesan.role, AiMemoriPesan.isi, AiMemoriPesan.created_at, AiMemoriPesan.asal).filter(AiMemoriPesan.pemilik == pemilik)
+                if (agen or "").strip():
+                    q_g = q_g.filter(_filter_agen(AiMemoriPesan.agen, agen))
+                baris = q_g.order_by(AiMemoriPesan.id.desc()).limit(40).all()
+            daftar = [{"role": r, "content": i, "waktu": _jadi_utc(w), "asal": a or "ai"} for r, i, w, a in reversed(baris)]
+            with _kunci_cache:
+                _cache_giliran[kunci_c] = (kini, daftar)
+        batas = _sekarang() - timedelta(minutes=max(1, menit))
+        return [m for m in daftar if m["waktu"] >= batas and not mengandung_rahasia(m["content"])][-jumlah:]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Gagal mengambil giliran terakhir dari DB: %s", e)
+        return []
+
+
+def riwayat_dari_giliran(giliran: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Ubah giliran DB jadi riwayat chat yang selang-seling (user dulu, berakhir di assistant).
+    Pesan beruntun dengan peran sama digabung; ucapan pengguna terakhir yang belum dijawab dibuang (pesan sekarang menggantikannya)."""
+    hasil: List[Dict[str, str]] = []
+    for m in giliran:
+        isi = _potong((m.get("content") or "").strip(), 600)
+        if not isi:
+            continue
+        if hasil and hasil[-1]["role"] == m["role"]:
+            hasil[-1]["content"] += " " + isi
+        else:
+            hasil.append({"role": m["role"], "content": isi})
+    while hasil and hasil[0]["role"] != "user":
+        hasil.pop(0)
+    while hasil and hasil[-1]["role"] == "user":
+        hasil.pop()
+    return hasil
+
+
+_POLA_PERTANYAAN = re.compile(
+    r"\?\s*[\"')]*\s*$|jawab ya|ya atau tidak|dilanjutkan|lanjut\?|sebut(kan)? (kode|nama|nomor)|"
+    r"(yang|klien|halaman|file|kode|nomor) mana|mau (yang )?mana|untuk (halaman|klien) apa|maksudnya",
+    re.IGNORECASE,
+)
+
+
+_POLA_TAWARAN_UMUM = re.compile(r"(yang )?(bisa|boleh) (aku|saya|kubantu)[^?]{0,30}bantu\s*\??\s*$|apa kabar\s*\??\s*$", re.IGNORECASE)
+
+
+def pertanyaan_menunggu(riwayat: List[Dict[str, str]]) -> str:
+    """Kalau pesan TERAKHIR di riwayat adalah pertanyaan/permintaan konfirmasi dari AI, kembalikan teksnya ('' bila tidak)."""
+    if not riwayat or riwayat[-1].get("role") != "assistant":
+        return ""
+    teks = (riwayat[-1].get("content") or "").strip()
+    if not teks or _POLA_TAWARAN_UMUM.search(teks[-120:]):  # "Ada yang bisa aku bantu?" bukan pertanyaan yang menunggu jawaban
+        return ""
+    return teks if _POLA_PERTANYAAN.search(teks[-220:]) else ""
+
+
+def blok_pertanyaan_menunggu(pertanyaan: str) -> str:
+    if not pertanyaan:
+        return ""
+    return (
+        "\n\n[PERTANYAAN YANG KAMU AJUKAN DAN MASIH MENUNGGU JAWABAN]\n"
+        f"Kamu baru saja berkata: \"{_potong(pertanyaan, 400)}\"\n"
+        "Ucapan pengguna sekarang ADALAH JAWABAN atas pertanyaan itu (walau pendek, mis. \"iya\", \"sales\", \"brw\", \"yang pertama\"). "
+        "Lanjutkan pekerjaan yang sedang dibahas dengan memakai jawaban itu; JANGAN memulai topik baru, JANGAN bertanya ulang hal yang sudah dijawab, "
+        "dan JANGAN bilang kamu lupa. Kalau jawabannya \"iya/ya/lanjut\" dan kamu tadi menawarkan sebuah aksi, jalankan aksi itu dengan alat yang tersedia. "
+        "Kalau jawabannya kurang jelas (mis. salah dengar), tanyakan SATU hal yang masih kurang saja, sambil menyebut apa yang sudah kamu ketahui. "
+        "Kalau ucapan itu jelas-jelas permintaan baru yang tidak berhubungan dengan pertanyaanmu, abaikan catatan ini.\n"
+    )
+
+
+def catat_giliran_lokal(pemilik: str, sumber: str, kunci: Optional[str], ucapan: str, jawaban: str, agen: Optional[str] = None) -> bool:
+    """Catat giliran yang ditangani kode frontend (bukan lewat /api/chat/stream). Kalau ucapan yang sama baru saja dicatat
+    sebagai giliran lokal (satu ucapan bisa menghasilkan beberapa kalimat Neo), jawabannya DIGABUNG ke baris assistant itu."""
+    if not aktif() or not pemilik or pemilik == PEMILIK_GLOBAL:
+        return False
+    ucapan = (ucapan or "").strip()[:2000]
+    jawaban = (jawaban or "").strip()[:4000]
+    if not ucapan or not jawaban or mengandung_rahasia(ucapan):
+        return False
+    ensure_tabel()
+    with dbc.SessionLocal() as s:
+        terakhir = (
+            s.query(AiMemoriPesan).filter(AiMemoriPesan.pemilik == pemilik)
+            .order_by(AiMemoriPesan.id.desc()).limit(2).all()
+        )
+        if (
+            len(terakhir) == 2 and terakhir[0].role == "assistant" and terakhir[0].asal == "lokal"
+            and terakhir[1].role == "user" and terakhir[1].isi == ucapan
+            and (terakhir[0].agen or "").lower() == (agen or "").strip().lower()
+            and _jadi_utc(terakhir[0].created_at) > _sekarang() - timedelta(seconds=90)
+        ):
+            if jawaban not in terakhir[0].isi:
+                terakhir[0].isi = (terakhir[0].isi + " " + jawaban)[:8000]
+                s.commit()
+                _buang_cache_giliran(pemilik)
+            return True
+    catat_percakapan(pemilik, sumber, kunci, ucapan, jawaban, asal="lokal", agen=agen)
+    _buang_cache_pasangan(pemilik)
+    return True
 
 
 def tandai_dipakai(ids: List[int]) -> None:
@@ -663,11 +836,12 @@ def blok_rekaman_percakapan(terpilih: List[tuple], merujuk_lalu: bool, sekarang:
     )
 
 
-def ambil_pasangan_percakapan(pemilik: str) -> List[tuple]:
+def ambil_pasangan_percakapan(pemilik: str, agen: Optional[str] = None) -> List[tuple]:
     """Ambil giliran tanya-jawab terbaru milik pengguna dari DB. Return [(waktu, user, ai)] urut lama -> baru."""
     sekarang = time.time()
+    kunci_c = _kunci_agen(pemilik, agen)
     with _kunci_cache:
-        hit = _cache_pasangan.get(pemilik)
+        hit = _cache_pasangan.get(kunci_c)
         if hit and sekarang - hit[0] < TTL_CACHE_PASANGAN_DETIK:
             return hit[1]
     ensure_tabel()
@@ -678,6 +852,8 @@ def ambil_pasangan_percakapan(pemilik: str) -> List[tuple]:
             .join(AiMemoriPercakapan, AiMemoriPercakapan.id == AiMemoriPesan.percakapan_id)
             .filter(AiMemoriPercakapan.pemilik == pemilik)
         )
+        if (agen or "").strip():
+            q = q.filter(_filter_agen(AiMemoriPesan.agen, agen))
         if hari > 0:
             q = q.filter(AiMemoriPesan.created_at >= _sekarang() - timedelta(days=hari))
         baris = q.order_by(AiMemoriPesan.id.desc()).limit(MAKS_PESAN_DIPINDAI).all()
@@ -690,7 +866,7 @@ def ambil_pasangan_percakapan(pemilik: str) -> List[tuple]:
             pasangan.append((cur[2], cur[1], isi))
             cur = None
     with _kunci_cache:
-        _cache_pasangan[pemilik] = (sekarang, pasangan)
+        _cache_pasangan[kunci_c] = (sekarang, pasangan)
     return pasangan
 
 
@@ -716,19 +892,19 @@ def ambil_riwayat_terbaru(pemilik: str, jumlah_pasangan: int = 6, jam: int = 12)
     return hasil
 
 
-def ingat_percakapan(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, str]]] = None) -> str:
+def ingat_percakapan(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, str]]] = None, agen: Optional[str] = None) -> str:
     """Blok prompt berisi percakapan lama yang relevan ('' bila tidak ada). Tidak pernah melempar error."""
     if not recall_aktif() or pemilik == PEMILIK_GLOBAL or not (ucapan or "").strip():
         return ""
     try:
-        hasil = pilih_pasangan_relevan(ambil_pasangan_percakapan(pemilik), ucapan, riwayat)
+        hasil = pilih_pasangan_relevan(ambil_pasangan_percakapan(pemilik, agen), ucapan, riwayat)
         return blok_rekaman_percakapan(hasil["terpilih"], hasil["merujuk_lalu"])
     except Exception as e:  # noqa: BLE001
         logger.warning("Gagal mengambil ingatan percakapan lama: %s", e)
         return ""
 
 
-def siapkan_konteks(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+def siapkan_konteks(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, str]]] = None, agen: Optional[str] = None) -> Dict[str, Any]:
     """Sebelum AI menjawab: tangani perintah ingat/lupa + ambil ingatan relevan.
     Return {"tambahan_prompt": str, "fakta_ids": [int]}. Tidak pernah melempar error."""
     hasil = {"tambahan_prompt": "", "fakta_ids": []}
@@ -758,7 +934,7 @@ def siapkan_konteks(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, 
         # [DIUBAH] recall percakapan lama diberi batas waktu: kalau DB lambat, AI jalan tanpa recall (query tetap selesai di latar & mengisi cache)
         rekaman = ""
         if not (isi_ingat or isi_lupa):
-            fut = _pool_memori.submit(ingat_percakapan, pemilik, ucapan, riwayat)
+            fut = _pool_memori.submit(ingat_percakapan, pemilik, ucapan, riwayat, agen)
             try:
                 rekaman = fut.result(timeout=BATAS_MEMORI_DETIK)
             except _WaktuHabis:
@@ -772,14 +948,13 @@ def siapkan_konteks(pemilik: str, ucapan: str, riwayat: Optional[List[Dict[str, 
     return hasil
 
 
-def setelah_jawaban(pemilik: str, sumber: str, kunci: Optional[str], ucapan: str, jawaban: str, fakta_ids: List[int]) -> None:
+def setelah_jawaban(pemilik: str, sumber: str, kunci: Optional[str], ucapan: str, jawaban: str, fakta_ids: List[int], agen: Optional[str] = None) -> None:
     """Setelah AI selesai menjawab (jalan di latar belakang): catat percakapan, lalu belajar."""
     if not aktif():
         return
     try:
-        konv_id = catat_percakapan(pemilik, sumber, kunci, ucapan, jawaban)
-        with _kunci_cache:
-            _cache_pasangan.pop(pemilik, None)  # [BARU] giliran baru tercatat -> recall berikutnya memuat ulang
+        konv_id = catat_percakapan(pemilik, sumber, kunci, ucapan, jawaban, agen=agen)  # [DIUBAH] jawaban ditandai agen yang menjawab
+        _buang_cache_pasangan(pemilik)  # [BARU] giliran baru tercatat -> recall berikutnya memuat ulang
         tandai_dipakai(fakta_ids)
         if deteksi_perintah_lupakan(ucapan) is None:
             pelajari(pemilik, ucapan, jawaban, konv_id)
@@ -805,8 +980,23 @@ class FaktaUbah(BaseModel):
     aktif: Optional[bool] = None
 
 
+class GiliranLokal(BaseModel):
+    ucapan: str
+    jawaban: str
+    sesi_id: Optional[str] = None
+    agen: Optional[str] = None
+
+
 def buat_router_memori(auth) -> APIRouter:
     router = APIRouter(prefix="/api/ai-memory", tags=["ai-memory"])
+
+    @router.post("/local-turn")
+    def catat_lokal(body: GiliranLokal, user: dict = Depends(auth.get_current_user)):
+        """[BARU] Frontend melaporkan giliran yang ia tangani sendiri (buka halaman, pilih halaman/klien, "ya" konfirmasi...),
+        supaya Neo di giliran berikutnya tahu apa yang barusan ia tanyakan/katakan."""
+        agen = (body.agen or "").strip()[:20] or None
+        ok = catat_giliran_lokal(pemilik_dari_user(user), "suara", body.sesi_id, body.ucapan, body.jawaban, agen)
+        return {"ok": bool(ok)}
 
     @router.get("/facts")
     def daftar_fakta(q: str = "", status: str = "aktif", limit: int = 500, user: dict = Depends(auth.get_current_user)):

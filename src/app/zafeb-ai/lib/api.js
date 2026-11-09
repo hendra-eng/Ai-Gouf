@@ -705,6 +705,48 @@ export async function stopIntent(ucapan, neoTerakhir = "", signal = undefined) {
 }
 
 /**
+ * [BARU] Penilai maksud sapaan di halaman Agentic AI (POST /api/voice/sapaan-intent).
+ * Dipanggil HANYA bila parser lokal (sapaanAgen.ts) ragu. Gagal / timeout -> null (TIDAK melempar): ucapan diproses alur lama.
+ * @param {string} ucapan
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{jenis: "sapaan"|"cek_hadir"|"panggil"|"bukan", kepada: string[], gaya: string, basa: string|null, waktu: string|null, islam: boolean, yakin: number}|null>}
+ */
+export async function sapaanIntent(ucapan, signal = undefined) {
+  const ctrl = new AbortController();
+  const batas = setTimeout(() => ctrl.abort(), 3500);
+  const teruskan = () => ctrl.abort();
+  if (signal) { if (signal.aborted) ctrl.abort(); else signal.addEventListener("abort", teruskan, { once: true }); }
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}/api/voice/sapaan-intent`, {
+      method: "POST",
+      headers,
+      signal: ctrl.signal,
+      body: JSON.stringify({ ucapan }),
+    });
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null);
+    if (!d || !["sapaan", "cek_hadir", "panggil", "bukan"].includes(d.jenis)) return null;
+    return {
+      jenis: d.jenis,
+      kepada: Array.isArray(d.kepada) ? d.kepada.map(String) : [],
+      gaya: typeof d.gaya === "string" ? d.gaya : "netral",
+      basa: typeof d.basa === "string" ? d.basa : null,
+      waktu: typeof d.waktu === "string" ? d.waktu : null,
+      islam: !!d.islam,
+      yakin: Number(d.yakin) || 0,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(batas);
+    if (signal) signal.removeEventListener("abort", teruskan);
+  }
+}
+
+/**
  * [BARU] Penilai maksud "pindah halaman/tab": apakah ucapan ini minta membuka salah satu kandidat? (POST /api/voice/nav-intent)
  * Dipanggil HANYA bila aturan lokal (navigasiSuara.ts) ragu DAN ada kandidat tujuan yang disebut di ucapan.
  * Gagal / timeout -> null (TIDAK melempar): Neo tidak pindah, ucapan dijawab AI biasa.
@@ -749,7 +791,7 @@ export async function navIntent(ucapan, kandidat, halamanSekarang = "", neoTerak
  * @param {number|string|null} [clientId]
  * @param {number|string|null} [percakapanId]
  * @param {AbortSignal} [signal]
- * @param {{modeSuara?: boolean, pesanAsli?: string, sesiId?: string, konteksLayar?: string, gambarKamera?: string, analisaWajah?: string, tanpaStream?: boolean}} [opsi]
+ * @param {{modeSuara?: boolean, pesanAsli?: string, sesiId?: string, konteksLayar?: string, gambarKamera?: string, analisaWajah?: string, tanpaStream?: boolean, agen?: string}} [opsi]
  */
 export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clientId = null, percakapanId = null, signal = undefined, opsi = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -2762,10 +2804,49 @@ export const kantorProsesFile = async (agen, halaman, klien, nama) => {
   const detail = r.data && typeof r.data.detail === "string" ? r.data.detail : "";
   return { ok: false, pesan: detail || "Permintaan ditolak server." };
 };
+/**
+ * [ATURAN MUTLAK] Status rapat (meeting) disimpan di DATABASE (/api/kantor-rapat), bukan di browser.
+ * @returns {Promise<boolean|null>} true/false = status dari server; null = server tidak terjangkau (jangan ubah apa pun)
+ */
+export const kantorRapatBaca = async () => {
+  const r = await _kantorTugasFetch("GET", "/api/kantor-rapat");
+  return r && r.status === 200 && r.data && typeof r.data.aktif === "boolean" ? r.data.aktif : null;
+};
+/** @returns {Promise<boolean>} true = tersimpan di server */
+export const kantorRapatAtur = async (aktif) => {
+  const r = await _kantorTugasFetch("PUT", "/api/kantor-rapat", { aktif: !!aktif });
+  return !!r && r.status === 200;
+};
+
 /** [BARU] Laporan tugas file WhatsApp yang baru selesai (untuk diumumkan Neo). @returns {Promise<Array<{id: string, agen: string, halaman: string, hasil: "ok"|"sebagian"|"gagal", klien: string|null, ringkasan: string, ms_lalu: number}>|null>} */
 export const kantorLaporan = async () => {
   const r = await _kantorTugasFetch("GET", "/api/kantor-tugas/laporan?menit=30");
   return r && r.status === 200 && r.data && Array.isArray(r.data.laporan) ? r.data.laporan : null;
+};
+
+/**
+ * [BARU] catatGiliranLokal -- laporkan giliran yang ditangani kode frontend (bukan lewat /api/chat/stream) ke memori AI di DB,
+ * supaya AI di giliran berikutnya tahu apa yang barusan Neo tanyakan/katakan ("Diupload ke halaman mana?", "Lanjut?").
+ * Fire-and-forget: tidak pernah melempar dan tidak menahan suara.
+ * @param {string} ucapan -- ucapan pengguna
+ * @param {string} jawaban -- kalimat yang Neo ucapkan sebagai balasan lokal
+ * @param {string} [sesiId]
+ * @param {string} [agen] [BARU] agen yang berbicara (neo | atlas | zeno) -- giliran dicatat atas namanya, bukan atas nama Neo
+ */
+export const catatGiliranLokal = (ucapan, jawaban, sesiId = "", agen = "") => {
+  try {
+    const headers = { "Content-Type": "application/json" };
+    const token = tokenTersimpan();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    void fetch(`${API_BASE_URL}/api/ai-memory/local-turn`, {
+      method: "POST",
+      headers,
+      keepalive: true,
+      body: JSON.stringify({ ucapan: String(ucapan || "").slice(0, 2000), jawaban: String(jawaban || "").slice(0, 4000), sesi_id: sesiId || null, agen: agen || null }),
+    }).catch(() => {});
+  } catch {
+    /* memori hanya pelengkap: gagal = abaikan */
+  }
 };
 
 /** [BARU] File WhatsApp yang tersimpan tapi belum berhasil diupload/diposting, terbaru dulu. @returns {Promise<Array<{nama: string, lisan: string, menit_lalu: number, status: string}>|null>} null = server tidak terjangkau */

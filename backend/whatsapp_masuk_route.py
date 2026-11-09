@@ -191,7 +191,7 @@ def daftar_file_masuk(pemilik: str, jam: int = 24, batas: int = 10) -> List[Dict
 def _ambil_file_masuk(pemilik: str, jam: int, batas: int) -> List[Dict[str, Any]]:
     with dbc.engine.begin() as conn:
         baris = conn.execute(text("""
-            select nama_file, mime, ukuran_byte, pengirim, pesan, diterima_at,
+            select nama_file, mime, ukuran_byte, pengirim, pesan, diterima_at, status_proses,
                    floor(extract(epoch from (now() - diterima_at)) / 60)::int as menit_lalu
               from wa_file_masuk
              where pemilik = :p and diterima_at > now() - make_interval(hours => :j)
@@ -218,7 +218,7 @@ def daftar_file_belum_upload(pemilik: str, batas: int = 20) -> List[Dict[str, An
     pemilik = pemilik_wa(pemilik)
     with dbc.engine.begin() as conn:
         baris = conn.execute(text("""
-            select nama_file, coalesce(status_proses, 'baru') as status,
+            select id, nama_file, coalesce(status_proses, 'baru') as status,
                    floor(extract(epoch from (now() - diterima_at)) / 60)::int as menit_lalu
               from wa_file_masuk
              where pemilik = :p and diterima_at > now() - make_interval(hours => :j)
@@ -233,6 +233,50 @@ def daftar_file_belum_upload(pemilik: str, batas: int = 20) -> List[Dict[str, An
         d["lisan"] = nama_lisan(d.get("nama_file"))
         hasil.append(d)
     return hasil
+
+
+# [BARU] Cari file WhatsApp berdasarkan NAMA yang diucapkan pengguna (semua status: belum diproses, sedang, selesai, gagal).
+# Pencocokan tidak peduli huruf besar/kecil, spasi, garis bawah, atau ekstensi: "data penjualan wsi" cocok dengan "Data_Penjualan_WSI.xlsx".
+STATUS_LISAN = {
+    None: "belum diproses", "baru": "belum diproses", "diproses": "sedang diproses", "selesai": "sudah diproses",
+    "selesai_sebagian": "sudah diproses sebagian (ada yang tidak terposting)", "gagal": "pernah dicoba tapi gagal",
+    "perlu_template": "menunggu template kolom",
+}
+
+
+def _norm_cari(s: Optional[str]) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def cari_file_nama(pemilik: str, kata: str, batas: int = 8) -> List[Dict[str, Any]]:
+    """File WhatsApp (30 hari terakhir) yang namanya cocok dengan kata yang diucapkan. Terbaik dulu: persis > semua kata > sebagian kata."""
+    pemilik = pemilik_wa(pemilik)
+    with dbc.engine.begin() as conn:
+        baris = conn.execute(text("""
+            select id, nama_file, status_proses, client_id, source_file_id,
+                   floor(extract(epoch from (now() - diterima_at)) / 60)::int as menit_lalu
+              from wa_file_masuk
+             where pemilik = :p and diterima_at > now() - make_interval(hours => :j) and nama_file is not null
+             order by diterima_at desc limit 300
+        """), {"p": pemilik, "j": JAM_RIWAYAT}).mappings().all()
+    kunci = _norm_cari(re.sub(r"\.[A-Za-z0-9]{2,5}$", "", kata or ""))
+    token = [t for t in re.split(r"[^a-z0-9]+", (kata or "").lower()) if t]
+    hasil: List[Dict[str, Any]] = []
+    for b in baris:
+        n = _norm_cari(b["nama_file"])
+        if kunci and kunci in n:
+            skor, cocok = 3, "persis"
+        elif token and all(t in n for t in token):
+            skor, cocok = 2, "semua kata cocok"
+        elif len(token) >= 3 and sum(t in n for t in token) >= -(-2 * len(token) // 3):
+            skor, cocok = 1, "sebagian kata cocok"
+        else:
+            continue
+        d = dict(b)
+        d.update({"skor": skor, "cocok": cocok, "lisan": nama_lisan(b["nama_file"]), "status_lisan": STATUS_LISAN.get(b["status_proses"], str(b["status_proses"]))})
+        hasil.append(d)
+    hasil.sort(key=lambda x: (-x["skor"], x["menit_lalu"]))
+    return hasil[:batas]
 
 
 def _unduh_isi(wa_id: int, url: Optional[str], nama: Optional[str]) -> None:
@@ -277,7 +321,16 @@ def buat_router_wa_masuk(auth) -> APIRouter:
             d = dict(await request.form())
         if isinstance(d, dict):  # bantu tes paket Free: lihat field apa saja yang Fonnte kirim
             logger.info("fonnte webhook kolom=%s pesan=%r", sorted(d.keys()), str(d.get("message") or "")[:100])
-        if not isinstance(d, dict) or not d.get("url"):
+        if isinstance(d, dict):  # [BARU] catat isi payload non-teks apa adanya (tanpa rahasia) untuk diagnosa
+            _tipe = str(d.get("type") or d.get("messageType") or "").lower()
+            if d.get("url") or d.get("filename") or d.get("extension") or _tipe not in ("", "text"):
+                logger.info("fonnte payload non-teks: %s", {k: str(v)[:80] for k, v in d.items() if k not in ("message",)})
+        # [DIUBAH] Dulu: tanpa field "url" -> dibuang sebagai "bukan file", sehingga file yang dikirim tanpa link
+        # (mis. paket Free) tidak pernah tercatat dan Neo bilang tidak ada file. Sekarang file tetap dicatat (metadata)
+        # selama ada tanda file: url, filename, extension, atau type bukan teks. Isinya baru bisa diunduh kalau ada url.
+        _tipe = str((d or {}).get("type") or (d or {}).get("messageType") or "").lower() if isinstance(d, dict) else ""
+        ada_tanda_file = isinstance(d, dict) and bool(d.get("url") or d.get("filename") or d.get("extension") or _tipe not in ("", "text"))
+        if not ada_tanda_file:
             return {"ok": True, "abaikan": "bukan file"}  # pesan teks biasa tidak dicatat
         if _dari_pemilik_sendiri(d):  # hanya file dari nomor LAIN yang diterima; kiriman pemilik sendiri dibuang
             logger.info("fonnte file diabaikan: dikirim pemilik sendiri")
@@ -291,7 +344,7 @@ def buat_router_wa_masuk(auth) -> APIRouter:
                       message_id=_id_pesan(d), url_file=str(d.get("url") or "") or None)
         id_baru = await run_in_threadpool(_simpan, pemilik, b)
         baru = id_baru is not None
-        if baru:  # [BARU] simpan salinan isi file di server supaya Neo bisa memprosesnya (link Fonnte bisa kedaluwarsa)
+        if baru and b.url_file:  # [BARU] simpan salinan isi file di server supaya Neo bisa memprosesnya (link Fonnte bisa kedaluwarsa)
             background.add_task(_unduh_isi, id_baru, b.url_file, nama)
         logger.info("fonnte file masuk nama=%s baru=%s", nama, baru)
         return {"ok": True, "baru": baru}

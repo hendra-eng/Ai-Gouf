@@ -95,6 +95,13 @@ const nextConfig = {
           : undefined,
       };
     }
+    // [BARU] Peringatan "Critical dependency: require function is used in a way..." berasal dari
+    // @vladmandic/face-api (require dinamis internal library). Tidak berbahaya dan library ini
+    // sudah dimuat lazy (import() di src/lib/wajahLokal.ts), jadi peringatannya disembunyikan saja.
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      { module: /node_modules[\\/]@vladmandic[\\/]face-api/, message: /Critical dependency: require function is used in a way/ },
+    ];
     return config;
   },
 };

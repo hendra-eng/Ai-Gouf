@@ -57,3 +57,4 @@ bank_cash/seed_template_npi_multi_format_bank_cash.sql
 48-create_other_transaction_tables.py
 49-add_import_row_selection.py
 50-add_coa_source_acc_no.py
+45-create_opening_balance_imports.py

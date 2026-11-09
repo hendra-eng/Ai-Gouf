@@ -11,6 +11,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Billboard, OrbitControls, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { OtakPenghuni, type Penghuni } from '@/lib/penghuniOtak';
+import { buatDunia, type DuniaPenghuni, type KonfigRuang, type KursiDunia } from '@/lib/duniaPenghuni';
+import { PetaLantai } from '@/lib/petaLantai';
+import { EVENT_TUGAS_AI, tugasAISaatIni, tugasAIDariUrl } from '@/lib/tugasAi';
 
 export type AgentStatus = 'bekerja' | 'berjalan' | 'rapat' | 'santai';
 export type NeoStatus = AgentStatus;
@@ -320,37 +324,102 @@ function Ball({ pos, r, color, emissive, flat = true }: { pos: V3; r: number; co
 // ---- Ruangan ---------------------------------------------------------------
 
 // Dinding tinggi: memudar saat kamera berada di sisi luarnya, supaya isi ruangan tetap terlihat saat diputar.
-function Wall({ pos, size, axis }: { pos: V3; size: V3; axis: 'x' | 'z' }) {
-  const mat = useRef<THREE.MeshLambertMaterial>(null);
+// [DIUBAH] `luar` = sisi luar dinding (px/nx/pz/nz) dicat putih (PUTIH_LUAR, didefinisikan di dekat <Dinding />); sisi lain tetap C.wall. Keduanya ikut memudar.
+function Wall({ pos, size, axis, luar }: { pos: V3; size: V3; axis: 'x' | 'z'; luar?: 'px' | 'nx' | 'pz' | 'nz' }) {
+  const mats = useMemo(() => {
+    const a = new THREE.MeshLambertMaterial({ color: C.wall, transparent: true });
+    const b = luar ? new THREE.MeshLambertMaterial({ color: PUTIH_LUAR, transparent: true }) : a;
+    const idx = luar ? { px: 0, nx: 1, pz: 4, nz: 5 }[luar] : -1; // urutan sisi boxGeometry: +x, -x, +y, -y, +z, -z
+    // [DIUBAH] ujung dinding (sudut) juga putih: axis 'z' membentang sepanjang x -> ujung = sisi 0 & 1; axis 'x' -> sisi 4 & 5
+    const ujung = luar ? (axis === 'z' ? [0, 1] : [4, 5]) : [];
+    return { a, b, arr: [0, 1, 2, 3, 4, 5].map((k) => (k === idx || ujung.includes(k) ? b : a)) };
+  }, [luar, axis]);
+  useEffect(() => () => { mats.a.dispose(); if (mats.b !== mats.a) mats.b.dispose(); }, [mats]);
   useFrame(({ camera }, dt) => {
-    const m = mat.current;
-    if (!m) return;
     const outside = axis === 'z' ? camera.position.z < pos[2] : camera.position.x < pos[0];
-    m.opacity += ((outside ? 0.1 : 1) - m.opacity) * Math.min(1, dt * 8);
+    const k = Math.min(1, dt * 8);
+    for (const m of mats.b === mats.a ? [mats.a] : [mats.a, mats.b]) m.opacity += ((outside ? 0.1 : 1) - m.opacity) * k;
   });
   return (
-    <mesh position={pos} castShadow receiveShadow>
+    <mesh position={pos} castShadow receiveShadow material={mats.arr}>
       <boxGeometry args={size} />
-      <meshLambertMaterial ref={mat} color={C.wall} transparent />
     </mesh>
   );
 }
 
 // Lantai berpola ubin (tekstur dari canvas, 1 ubin = 1 unit).
+// [DIUBAH] Porselen krem 1x1 dua nada (papan catur halus) dengan urat marmer, bintik, sambungan, bevel, dan penanda berlian di tiap sambungan.
 function FloorTiles({ w = 16 }: { w?: number }) {
   const tex = useMemo(() => {
+    const S = 512, T = 256;
     const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const x = c.getContext('2d');
-    if (x) {
-      x.fillStyle = '#E8E2D0';
-      x.fillRect(0, 0, 128, 128);
-      x.fillStyle = 'rgba(120,105,70,0.05)';
-      x.fillRect(0, 0, 64, 64);
-      x.fillRect(64, 64, 64, 64);
-      x.strokeStyle = '#D3CBB4';
-      x.lineWidth = 3;
-      x.strokeRect(0, 0, 128, 128);
+    c.width = c.height = S;
+    const g = c.getContext('2d');
+    if (g) {
+      const r = mulberry32(2026);
+      for (let j = 0; j < 2; j++) {
+        for (let i = 0; i < 2; i++) {
+          const x0 = i * T, y0 = j * T;
+          g.fillStyle = (i + j) % 2 === 1 ? '#E2DBC6' : '#EAE4D3';
+          g.fillRect(x0, y0, T, T);
+          const gr = g.createLinearGradient(x0, y0, x0 + T, y0 + T);
+          gr.addColorStop(0, 'rgba(255,255,255,0.18)');
+          gr.addColorStop(1, 'rgba(120,100,60,0.06)');
+          g.fillStyle = gr;
+          g.fillRect(x0, y0, T, T);
+          g.save();
+          g.beginPath();
+          g.rect(x0, y0, T, T);
+          g.clip();
+          for (let k = 0; k < 3; k++) {
+            let x = x0 + r() * T, y = y0 - 10;
+            g.beginPath();
+            g.moveTo(x, y);
+            for (let sg = 0; sg < 5; sg++) {
+              const nx = x + (r() - 0.5) * 90, ny = y + T / 4.5;
+              g.quadraticCurveTo(x + (r() - 0.5) * 70, (y + ny) / 2, nx, ny);
+              x = nx; y = ny;
+            }
+            g.strokeStyle = k === 0 ? 'rgba(150,132,96,0.20)' : 'rgba(150,132,96,0.10)';
+            g.lineWidth = k === 0 ? 1.6 : 0.9;
+            g.stroke();
+          }
+          for (let k = 0; k < 50; k++) {
+            g.fillStyle = `rgba(120,100,60,${0.05 + r() * 0.05})`;
+            g.fillRect(x0 + r() * T, y0 + r() * T, 1.5, 1.5);
+          }
+          g.restore();
+        }
+      }
+      // sambungan (grout) + bevel tiap ubin
+      g.fillStyle = '#CBC2A6';
+      for (const p of [0, T]) { g.fillRect(p - 2, 0, 4, S); g.fillRect(0, p - 2, S, 4); }
+      g.fillRect(S - 2, 0, 2, S);
+      g.fillRect(0, S - 2, S, 2);
+      for (let j = 0; j < 2; j++) {
+        for (let i = 0; i < 2; i++) {
+          const x0 = i * T, y0 = j * T;
+          g.fillStyle = 'rgba(255,255,255,0.55)';
+          g.fillRect(x0 + 3, y0 + 3, T - 6, 1.5);
+          g.fillRect(x0 + 3, y0 + 3, 1.5, T - 6);
+          g.fillStyle = 'rgba(110,95,60,0.25)';
+          g.fillRect(x0 + 3, y0 + T - 4.5, T - 6, 1.5);
+          g.fillRect(x0 + T - 4.5, y0 + 3, 1.5, T - 6);
+        }
+      }
+      // penanda berlian kecil di tiap pertemuan sambungan
+      for (const px of [0, T, S]) {
+        for (const py of [0, T, S]) {
+          g.save();
+          g.translate(px, py);
+          g.rotate(Math.PI / 4);
+          g.fillStyle = '#BDB293';
+          g.fillRect(-5, -5, 10, 10);
+          g.fillStyle = '#E9E2CD';
+          g.fillRect(-2.5, -2.5, 5, 5);
+          g.restore();
+        }
+      }
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -456,13 +525,23 @@ function Room() {
       <Box pos={[0, -0.1, 0]} size={[TRX_LANTAI_W, 0.2, 11]} color={C.floor} cast={false} />
       <FloorTiles w={TRX_LANTAI_W} />
       {/* dinding belakang & kiri */}
-      <Wall pos={[0, 0.8, -5.6]} size={[ATAS_W + 0.2, 1.6, 0.2]} axis="z" />
-      <Wall pos={[-ATAS_W / 2, 0.8, 0]} size={[0.2, 1.6, 11]} axis="x" />
-      <Box pos={[0, 1.62, -5.6]} size={[ATAS_W + 0.2, 0.04, 0.24]} color={C.wallEdge} cast={false} />
-      <Box pos={[-ATAS_W / 2, 1.62, 0]} size={[0.24, 0.04, 11]} color={C.wallEdge} cast={false} />
-      {/* plint */}
-      <Box pos={[0, 0.07, -5.47]} size={[TRX_LANTAI_W, 0.14, 0.05]} color="#8FA39A" cast={false} />
-      <Box pos={[-ATAS_W / 2 + 0.13, 0.07, 0]} size={[0.05, 0.14, 11]} color="#8FA39A" cast={false} />
+      <Wall pos={[0, 0.8, -5.6]} size={[ATAS_W + 0.2, 1.6, 0.2]} axis="z" luar="nz" />
+      <Wall pos={[-ATAS_W / 2, 0.8, 0]} size={[0.2, 1.6, 11]} axis="x" luar="nx" />
+      {/* [DIUBAH] lis atas: separuh sisi luar putih, separuh sisi dalam warna lama */}
+      <Box pos={[0, 1.62, -5.66]} size={[ATAS_W + 0.2, 0.04, 0.12]} color={PUTIH_LUAR} cast={false} />
+      <Box pos={[0, 1.62, -5.54]} size={[ATAS_W + 0.2, 0.04, 0.12]} color={C.wallEdge} cast={false} />
+      <Box pos={[-ATAS_W / 2 - 0.06, 1.62, 0]} size={[0.12, 0.04, 11]} color={PUTIH_LUAR} cast={false} />
+      <Box pos={[-ATAS_W / 2 + 0.06, 1.62, 0]} size={[0.12, 0.04, 11]} color={C.wallEdge} cast={false} />
+      {/* [DIUBAH] plint lama diganti lapisan dinding baru (plint hijau tua + dado + kertas dinding + list) di belakang, barat, dan timur */}
+      <DindingDekorTrx s={-5.5} segs={[[-8.9, 8.7]]} />
+      <group rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorTrx s={-8.9} segs={[[-5.43, 5.45]]} />
+      </group>
+      <group rotation={[0, -Math.PI / 2, 0]}>
+        <DindingDekorTrx s={-8.7} segs={[[-5.43, 5.45]]} />
+      </group>
+      {/* [BARU] hiasan lantai (inlay, karpet meja, runner, keset, cincin meja rapat) */}
+      <LantaiDekorTrx />
       {/* dinding depan & kanan Kantor = partisi kaca dari <Gedung /> */}
       {/* hiasan dinding belakang */}
       <Window pos={[-6.2, 1.0, -5.46]} />
@@ -1390,9 +1469,9 @@ function CoatRack({ pos }: { pos: V3 }) {
 
 // ---- Perabot pendukung ---------------------------------------------------------------
 
-function CoffeeStation({ pos }: { pos: V3 }) {
+function CoffeeStation({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
   return (
-    <group position={pos}>
+    <group position={pos} rotation={[0, rotY, 0]}>
       {/* [DIUBAH] kabinet putih: badan putih-abu, alas hijau-abu, 4 pintu berpanel dengan gagang kuning, daun meja kayu */}
       <Box pos={[0, 0.045, 0]} size={[1.5, 0.09, 0.55]} color="#7FA9A4" />
       <Box pos={[0, 0.465, 0]} size={[1.5, 0.75, 0.55]} color="#E8EDF1" />
@@ -1571,6 +1650,224 @@ function DekorTransaksi() {
   );
 }
 
+// ---- [BARU] LANTAI & DINDING TRANSACTIONS: tema "buku besar" (hijau botol + kuningan + krem), hangat-klasik tapi modern -----------------
+// Lantai: porselen krem berurat marmer, karpet modular per meja (tepi berwarna sesuai halaman meja), 
+// inlay keliling, ambang pintu + keset, cincin kuningan di sekeliling karpet meja rapat, kotak colokan lantai, penanda alat pemadam.
+// Dinding (belakang, barat, timur): plint hijau tua, dado panel bingkai kuningan, rel krem, kertas dinding hijau bergaris ala kertas buku besar
+// (kolom, angka, koin kecil), list krem + garis kuningan. Dado dibuat rendah (0,5) supaya jendela, papan, dan TV yang sudah ada tidak tertutup.
+const TRXC = { hijau: '#2E5B4C', hijau2: '#3A6D5A', hijauTua: '#22443A', kuningan: '#D9B24C', krem: '#F1ECDD' };
+
+function KertasDindingTrx({ pos, w, h = 0.97 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 248, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#D9E6D7');
+    gr.addColorStop(1, '#CEDDCE');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    const RH = H / 16;
+    // garis baris (seperti kertas kolom akuntansi)
+    g.lineWidth = 1;
+    g.strokeStyle = 'rgba(78,128,102,0.20)';
+    for (let r = 1; r < 16; r++) { g.beginPath(); g.moveTo(0, r * RH); g.lineTo(W, r * RH); g.stroke(); }
+    // garis kolom
+    g.strokeStyle = 'rgba(78,128,102,0.38)';
+    g.lineWidth = 1.5;
+    for (let c = 0; c < 4; c++) { g.beginPath(); g.moveTo(c * 64 + 1, 0); g.lineTo(c * 64 + 1, H); g.stroke(); }
+    // garis margin ganda merah muda
+    g.strokeStyle = 'rgba(196,92,104,0.45)';
+    g.lineWidth = 1;
+    for (const x of [124.5, 131.5]) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+    // angka samar + koin kecil
+    g.font = '9px ui-monospace, Menlo, Consolas, monospace';
+    g.textAlign = 'right';
+    g.textBaseline = 'middle';
+    const rnd = mulberry32(77);
+    for (let r = 0; r < 16; r++) {
+      for (let c = 0; c < 4; c++) {
+        const v = rnd();
+        if (v < 0.2) {
+          const n = Math.floor(rnd() * 900000 + 10000);
+          g.fillStyle = 'rgba(52,96,74,0.5)';
+          g.fillText(String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.'), c * 64 + 60, (r + 0.5) * RH);
+        } else if (v > 0.94) {
+          g.fillStyle = '#E3BC55';
+          g.strokeStyle = '#B8923A';
+          g.lineWidth = 1;
+          g.beginPath();
+          g.arc(c * 64 + 1, r * RH, 3.2, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+        }
+      }
+    }
+  }, 'trx-kertas-buku-besar');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(1, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias satu dinding. s = z permukaan dinding (menghadap +z lokal); segs = rentang x lokal.
+function DindingDekorTrx({ s, segs }: { s: number; segs: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        const n = Math.max(1, Math.round(L / 0.9));
+        const mw = L / n;
+        return (
+          <React.Fragment key={`d${a}`}>
+            {/* plint hijau tua + garis kuningan */}
+            <Box pos={[cx, 0.07, s + 0.025]} size={[L, 0.14, 0.05]} color={TRXC.hijauTua} cast={false} />
+            <Box pos={[cx, 0.147, s + 0.027]} size={[L, 0.012, 0.054]} color={TRXC.kuningan} cast={false} />
+            {/* dado: papan dasar + panel bingkai kuningan per modul */}
+            <Box pos={[cx, 0.32, s + 0.01]} size={[L, 0.36, 0.02]} color={TRXC.hijau} cast={false} />
+            {Array.from({ length: n }, (_, i) => {
+              const x = a + (i + 0.5) * mw;
+              return (
+                <React.Fragment key={i}>
+                  <Box pos={[x, 0.32, s + 0.024]} size={[mw - 0.1, 0.3, 0.016]} color={TRXC.kuningan} cast={false} />
+                  <Box pos={[x, 0.32, s + 0.034]} size={[mw - 0.14, 0.26, 0.012]} color={TRXC.hijau2} cast={false} />
+                </React.Fragment>
+              );
+            })}
+            {/* rel dado krem + garis kuningan di bawahnya */}
+            <Box pos={[cx, 0.525, s + 0.03]} size={[L, 0.045, 0.06]} color={TRXC.krem} cast={false} />
+            <Box pos={[cx, 0.497, s + 0.031]} size={[L, 0.012, 0.062]} color={TRXC.kuningan} cast={false} />
+            {/* kertas dinding buku besar */}
+            <KertasDindingTrx pos={[cx, 1.035, s + 0.002]} w={L} />
+            {/* list atas krem + garis kuningan */}
+            <Box pos={[cx, 1.545, s + 0.035]} size={[L, 0.05, 0.07]} color={TRXC.krem} cast={false} />
+            <Box pos={[cx, 1.515, s + 0.03]} size={[L, 0.012, 0.05]} color={TRXC.kuningan} cast={false} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Karpet modular satu meja (2,5 x 2,0): ubin 0,5 dua nada, binding, dan garis tepi berwarna halaman meja.
+function KarpetMejaTrx({ pos, aksen }: { pos: V3; aksen: string }) {
+  const dasar = useKanvasMg(256, 256, (g, W, H) => {
+    const r = mulberry32(31);
+    const nada = ['#AAB9CB', '#A2B1C4'];
+    for (let j = 0; j < 2; j++) {
+      for (let i = 0; i < 2; i++) {
+        g.fillStyle = nada[(i + j) % 2];
+        g.fillRect(i * 128, j * 128, 128, 128);
+        for (let k = 0; k < 70; k++) {
+          g.fillStyle = r() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(70,90,120,0.10)';
+          g.fillRect(i * 128 + r() * 124, j * 128 + r() * 124, 2, 1);
+        }
+      }
+    }
+    g.fillStyle = 'rgba(80,98,125,0.55)';
+    for (const p of [0, 128]) { g.fillRect(p, 0, 1.5, H); g.fillRect(0, p, W, 1.5); }
+    g.fillRect(W - 1.5, 0, 1.5, H);
+    g.fillRect(0, H - 1.5, W, 1.5);
+  }, 'trx-karpet-modular');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(2.5, 2.0);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar]);
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.007, 0]} size={[2.56, 0.008, 2.06]} color="#6F8199" cast={false} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0125, 0]} receiveShadow>
+        <planeGeometry args={[2.5, 2.0]} />
+        <meshLambertMaterial map={tex} />
+      </mesh>
+      <Box pos={[0, 0.0145, -0.9]} size={[2.3, 0.004, 0.03]} color={aksen} cast={false} />
+      <Box pos={[0, 0.0145, 0.9]} size={[2.3, 0.004, 0.03]} color={aksen} cast={false} />
+      <Box pos={[-1.15, 0.0145, 0]} size={[0.03, 0.004, 1.8]} color={aksen} cast={false} />
+      <Box pos={[1.15, 0.0145, 0]} size={[0.03, 0.004, 1.8]} color={aksen} cast={false} />
+    </group>
+  );
+}
+
+function KotakColokanLantai({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.0195, 0]} size={[0.18, 0.012, 0.12]} color="#C9D1D9" cast={false} />
+      <Box pos={[0, 0.0262, 0]} size={[0.14, 0.004, 0.08]} color="#A9B3BD" cast={false} />
+      <Box pos={[-0.03, 0.0288, 0]} size={[0.025, 0.002, 0.025]} color="#3A4150" cast={false} />
+      <Box pos={[0.03, 0.0288, 0]} size={[0.025, 0.002, 0.025]} color="#3A4150" cast={false} />
+    </group>
+  );
+}
+
+function LantaiDekorTrx() {
+  const ix0 = -8.54, ix1 = 8.31, iz0 = -5.14, iz1 = 5.14;
+  const iw = ix1 - ix0, ih = iz1 - iz0;
+  const icx = (ix0 + ix1) / 2, icz = (iz0 + iz1) / 2;
+  const lantaiDepan = runs(ix0, ix1, [0], 2.4); // inlay depan terputus di celah pintu
+  return (
+    <group>
+      {/* inlay keliling: pita hijau + garis kuningan di dalamnya + penanda sudut */}
+      <Box pos={[icx, 0.007, iz0]} size={[iw + 0.1, 0.008, 0.1]} color={TRXC.hijau} cast={false} />
+      <Box pos={[ix0, 0.007, icz]} size={[0.1, 0.008, ih]} color={TRXC.hijau} cast={false} />
+      <Box pos={[ix1, 0.007, icz]} size={[0.1, 0.008, ih]} color={TRXC.hijau} cast={false} />
+      {lantaiDepan.map(([m, l]) => (
+        <Box key={`h${m}`} pos={[m, 0.007, iz1]} size={[l, 0.008, 0.1]} color={TRXC.hijau} cast={false} />
+      ))}
+      <Box pos={[icx, 0.0075, iz0 + 0.13]} size={[iw - 0.26, 0.008, 0.022]} color={TRXC.kuningan} cast={false} />
+      <Box pos={[ix0 + 0.13, 0.0075, icz]} size={[0.022, 0.008, ih - 0.26]} color={TRXC.kuningan} cast={false} />
+      <Box pos={[ix1 - 0.13, 0.0075, icz]} size={[0.022, 0.008, ih - 0.26]} color={TRXC.kuningan} cast={false} />
+      {lantaiDepan.map(([m, l]) => (
+        <Box key={`k${m}`} pos={[m, 0.0075, iz1 - 0.13]} size={[l, 0.008, 0.022]} color={TRXC.kuningan} cast={false} />
+      ))}
+      {[[ix0, iz0], [ix1, iz0], [ix0, iz1], [ix1, iz1]].map(([x, z], i) => (
+        <Box key={i} pos={[x, 0.0078, z]} size={[0.2, 0.008, 0.2]} rot={[0, Math.PI / 4, 0]} color={TRXC.kuningan} cast={false} />
+      ))}
+
+      {/* karpet modular di bawah tiap meja; tepinya berwarna sesuai halaman meja */}
+      {DESKS.map(({ p: [x, z], page }) => (
+        <React.Fragment key={`${x}-${z}`}>
+          <KarpetMejaTrx pos={[x, 0, z + 0.45]} aksen={PAGE_STYLE[page].color} />
+          <KotakColokanLantai pos={[x + 1.02, 0, z + 0.3]} />
+        </React.Fragment>
+      ))}
+
+      {/* ambang pintu aluminium + keset bertulisan */}
+      <Box pos={[0, 0.012, 5.52]} size={[1.9, 0.024, 0.14]} color="#B8C0C9" cast={false} />
+      <Box pos={[0, 0.026, 5.52]} size={[1.9, 0.004, 0.03]} color="#E3E8ED" cast={false} />
+      <group position={[0, 0, 4.85]}>
+        <Box pos={[0, 0.008, 0]} size={[1.7, 0.012, 0.8]} color="#233A5E" cast={false} />
+        <Box pos={[0, 0.0145, 0.36]} size={[1.64, 0.003, 0.02]} color={TRXC.kuningan} cast={false} />
+        <Box pos={[0, 0.0145, -0.36]} size={[1.64, 0.003, 0.02]} color={TRXC.kuningan} cast={false} />
+        <Teks pos={[0, 0.0165, 0]} rot={[-Math.PI / 2, 0, 0]} w={1.35} h={0.2} text="TRANSACTIONS" fg={TRXC.kuningan} bg="#233A5E" />
+      </group>
+
+      {/* cincin kuningan + hijau di sekeliling karpet meja rapat */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[MEETING[0], 0.0125, MEETING[1]]}>
+        <ringGeometry args={[2.5, 2.57, 72]} />
+        <meshLambertMaterial color={TRXC.kuningan} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[MEETING[0], 0.0115, MEETING[1]]}>
+        <ringGeometry args={[2.62, 2.76, 72]} />
+        <meshLambertMaterial color={TRXC.hijau} />
+      </mesh>
+
+      {/* penanda lantai alat pemadam (di bawah APAR dekat sudut timur laut) */}
+      <Box pos={[8.35, 0.013, -5.1]} size={[0.6, 0.004, 0.6]} color="#C94A4A" cast={false} />
+      <Box pos={[8.35, 0.0155, -5.1]} size={[0.5, 0.004, 0.5]} color={TRXC.krem} cast={false} />
+    </group>
+  );
+}
+
 const DESKS: { p: [number, number]; page: PageKey }[] = [
   { p: [-5, -3.6], page: 'sales' },
   { p: [-1.5, -3.6], page: 'purchase' },
@@ -1632,13 +1929,13 @@ type Gaya = 'tinggi' | 'kaca' | 'rendah';
 const TH: Record<'studio' | 'santai' | 'perpus' | 'lorong' | 'ar' | 'ap' | 'aset' | 'plan' | 'mgmt' | 'trx', Theme> = {
   studio: { floor: '#F1EBDD', wall: '#BCD8EA', trim: '#F4F9FC', base: '#A9B7C0' },
   santai: { floor: '#EBD3AE', wall: '#F5D9C6', trim: '#FFF3E8', base: '#C9A57A' },
-  perpus: { floor: '#E4D1B3', wall: '#DDD3EF', trim: '#F6F2FC', base: '#BBA98B' },
+  perpus: { floor: '#E4D1B3', wall: '#4F45B5', trim: '#F6F2FC', base: '#BBA98B' },
   lorong: { floor: '#E6E1D3', wall: '#D5DCDD', trim: '#F4F7F6', base: '#A9B7B2' },
   ar: { floor: '#CFE3DE', wall: '#9ED8D0', trim: '#F2FBFA', base: '#6FB0A8' },
   ap: { floor: '#F9E6E1', wall: '#EFA9A0', trim: '#FFF1EE', base: '#C77F78' },
   trx: { floor: '#E8E2D0', wall: '#B9CFEA', trim: '#F4F8FD', base: '#8FA7C7' }, // [BARU] sisi Transactions dari partisi Transactions | AP: biru langit lembut (sisi AP tetap pink)
   aset: { floor: '#F3E9D6', wall: '#D9B88F', trim: '#FFF6E4', base: '#A98258' },
-  plan: { floor: '#ECE9FA', wall: '#B3A8F0', trim: '#F6F4FF', base: '#8E82C9' }, // [BARU] Planning: violet / indigo
+  plan: { floor: '#ECE9FA', wall: '#4F45B5', trim: '#F6F4FF', base: '#8E82C9' }, // [BARU] Planning: violet / indigo
   mgmt: { floor: '#EFE8DA', wall: '#9DB4D4', trim: '#F3F7FC', base: '#6F89AD' }, // [BARU] Management: biru baja + kayu
 };
 const EMAS = '#F5C84C';
@@ -1665,35 +1962,236 @@ function Lantai({ cx = 0, cz = 0, w, d, color }: { cx?: number; cz?: number; w: 
 // 'tinggi' = tembok penuh (1.6), 'kaca' = tembok 0.7 + kaca sampai 1.45 (partisi kantor, isi ruangan di belakangnya tetap terlihat),
 // 'rendah' = pagar rendah. `pintu` = titik tengah celah pintu (lebar 2); partisi kaca diberi kusen aluminium grafit + daun kaca geser terbuka.
 // [BARU] penuh = badan dinding dibuat setinggi dinding 'tinggi' (tanpa kaca) tetapi kusen pintu gaya 'kaca' tetap digambar.
-function Dinding({ sumbu, di, dari, ke, gaya, theme, pintu = [], modern = false, penuh = false }: {
-  sumbu: 'x' | 'z'; di: number; dari: number; ke: number; gaya: Gaya; theme: Theme; pintu?: number[]; modern?: boolean; penuh?: boolean;
+// [BARU] Sisi luar semua dinding gedung dibuat putih seragam. `luar` = arah sisi luar dinding: +1 = sisi +z (sumbu 'x') / +x (sumbu 'z'), -1 = sebaliknya.
+// Dilapis pelat putih sangat tipis (tetap bisa digabung BatchStatis); sisi dalam ruangan tetap warna tema ruangan.
+const PUTIH_LUAR = '#F3F3EF';
+// ---- [BARU] DETAIL DINDING LUAR & LANTAI LORONG ala kantor modern ---------------------------------------------------------
+// Sisi luar dinding (menghadap lorong / luar gedung) sebelumnya polos putih. Sekarang tiap dinding luar mendapat: plint charcoal + list aluminium,
+// panel bawah (wainscot) abu muda berlis, sambungan panel vertikal & garis reveal (satu tekstur per bentang dinding, murah), LED cove tipis di atas,
+// lukisan abstrak & lampu dinding bergantian, papan nomor ruang di samping pintu, ambang pintu aluminium, dan pita kaca buram (frosted) di partisi kaca.
+// Semua digambar di dalam <Dinding /> sehingga ikut naik bersama dindingnya. Geometri/material/tekstur dipakai bersama (cache) supaya ringan.
+const KT_TEX = new Map<string, THREE.CanvasTexture>();
+function kTex(key: string, w: number, h: number, gambar: (x: CanvasRenderingContext2D) => void, ulang = false): THREE.CanvasTexture {
+  let t = KT_TEX.get(key);
+  if (t) return t;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  if (x) gambar(x);
+  t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  if (ulang) t.wrapS = THREE.RepeatWrapping;
+  KT_TEX.set(key, t);
+  return t;
+}
+const KT_GEO = new Map<string, THREE.BoxGeometry>();
+function kGeo(w: number, h: number, d: number): THREE.BoxGeometry {
+  const k = `${w}|${h}|${d}`;
+  let g = KT_GEO.get(k);
+  if (!g) { g = new THREE.BoxGeometry(w, h, d); KT_GEO.set(k, g); }
+  return g;
+}
+const KT_MAT = new Map<string, THREE.Material>();
+function kMat(jenis: 'lambert' | 'basic' | 'tambah' | 'kaca', warna: string, opacity = 1): THREE.Material {
+  const k = `${jenis}|${warna}|${opacity}`;
+  let m = KT_MAT.get(k);
+  if (!m) {
+    if (jenis === 'lambert') m = new THREE.MeshLambertMaterial({ color: warna });
+    else if (jenis === 'basic') m = new THREE.MeshBasicMaterial({ color: warna, transparent: opacity < 1, opacity });
+    else if (jenis === 'tambah') m = new THREE.MeshBasicMaterial({ color: warna, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+    else m = new THREE.MeshLambertMaterial({ color: warna, transparent: true, opacity, depthWrite: false });
+    KT_MAT.set(k, m);
+  }
+  return m;
+}
+function KBox({ pos, size, color, jenis = 'lambert', opacity = 1 }: { pos: V3; size: V3; color: string; jenis?: 'lambert' | 'basic' | 'tambah' | 'kaca'; opacity?: number }) {
+  return <mesh position={pos} geometry={kGeo(size[0], size[1], size[2])} material={kMat(jenis, color, opacity)} />;
+}
+
+// Tekstur panel dinding (1 panel = 1.5 satuan lebar, tinggi = tinggi dinding). Transparan: hanya detail, warna dasar dari pelat putih.
+const PANEL_W = 1.5;
+function texPanel(hb: number): THREE.CanvasTexture {
+  const PPU = 128;
+  const w = Math.round(PANEL_W * PPU), h = Math.round(hb * PPU);
+  return kTex(`panel${hb}`, w, h, (x) => {
+    const Y = (u: number) => h - u * PPU;
+    if (hb >= 1.5) {
+      x.fillStyle = '#E3E6E2'; x.fillRect(0, Y(0.56), w, (0.56 - 0.1) * PPU); // panel bawah
+      x.fillStyle = '#AEB5BC'; x.fillRect(0, Y(0.56) - 2, w, 3); // list aluminium
+      x.fillStyle = 'rgba(255,255,255,0.9)'; x.fillRect(0, Y(0.56) + 1, w, 1);
+      x.fillStyle = 'rgba(120,126,124,0.26)'; x.fillRect(0, Y(hb - 0.16), w, 2); // garis reveal horizontal atas
+    }
+    const atas = hb >= 1.5 ? hb - 0.16 : hb;
+    x.fillStyle = 'rgba(120,126,124,0.30)'; x.fillRect(0, Y(atas), 2, (atas - 0.1) * PPU); // sambungan panel vertikal
+    x.fillStyle = 'rgba(255,255,255,0.85)'; x.fillRect(2, Y(atas), 1, (atas - 0.1) * PPU);
+    x.fillStyle = '#4A5058'; x.fillRect(0, Y(0.1), w, 0.1 * PPU); // plint charcoal
+    x.fillStyle = '#C5CBD1'; x.fillRect(0, Y(0.1), w, 2); // list atas plint
+  }, true);
+}
+// Lukisan abstrak modern (6 varian).
+const PAL_ART = [
+  ['#1F3B5C', '#2AA79B', '#E8A33D', '#F3EFE6'], ['#2B2F4A', '#E26D5A', '#F2C14E', '#EDE8DD'], ['#17324D', '#5BB5A2', '#F28F5B', '#F6F1E7'],
+  ['#3A2E4F', '#A78BFA', '#F59E0B', '#F4F0E8'], ['#1D3A33', '#7DBE6B', '#E5C07B', '#F2EEE3'], ['#33415C', '#F28482', '#F6BD60', '#F7F3EA'],
+];
+function texArt(i: number): THREE.CanvasTexture {
+  return kTex(`art${i}`, 256, 170, (x) => {
+    const p = PAL_ART[i % PAL_ART.length];
+    const r = mulberry32(i * 31 + 7);
+    x.fillStyle = p[3]; x.fillRect(0, 0, 256, 170);
+    const t = i % 3;
+    if (t === 0) {
+      x.fillStyle = p[1]; x.beginPath(); x.arc(92, 88, 56, 0, Math.PI * 2); x.fill();
+      x.fillStyle = p[0]; x.fillRect(120, 30, 90, 110);
+      x.fillStyle = p[2]; x.beginPath(); x.arc(176, 52, 22, 0, Math.PI * 2); x.fill();
+    } else if (t === 1) {
+      [p[0], p[1], p[2]].forEach((c, k) => { x.fillStyle = c; x.fillRect(0, 20 + k * 46, 256, 34); });
+      x.fillStyle = p[3]; x.beginPath(); x.arc(70 + r() * 110, 85, 34, 0, Math.PI * 2); x.fill();
+    } else {
+      x.fillStyle = p[0]; x.fillRect(24, 24, 120, 90);
+      x.fillStyle = p[1]; x.fillRect(96, 56, 130, 90);
+      x.globalAlpha = 0.85; x.fillStyle = p[2]; x.fillRect(60, 86, 80, 60); x.globalAlpha = 1;
+      x.strokeStyle = p[0]; x.lineWidth = 3; x.beginPath(); x.moveTo(20, 150); x.lineTo(236, 20); x.stroke();
+    }
+  });
+}
+function texGlowDinding(): THREE.CanvasTexture {
+  return kTex('glowD', 64, 64, (x) => {
+    const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  });
+}
+// Papan nomor ruang: "KODE|NAMA RUANG".
+function texPlat(label: string): THREE.CanvasTexture {
+  return kTex(`plat${label}`, 384, 140, (x) => {
+    const [kode, nama] = label.split('|');
+    x.fillStyle = '#262B33'; x.fillRect(0, 0, 384, 140);
+    x.fillStyle = '#59C2B8'; x.fillRect(0, 128, 384, 12);
+    x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.font = 'bold 52px sans-serif'; x.fillText(kode ?? '', 192, 44);
+    const f = Math.max(18, Math.min(30, Math.floor(340 / Math.max(6, (nama ?? '').length) * 1.5)));
+    x.font = `600 ${f}px sans-serif`; x.fillStyle = '#C9D0D6'; x.fillText(nama ?? '', 192, 96);
+  });
+}
+
+// Dinding luar menghadap gedung bagian luar (bukan lorong): hanya panel/plint, tanpa lukisan & lampu.
+function dindingGedungLuar(sumbu: 'x' | 'z', di: number): boolean {
+  if (sumbu === 'z') return Math.abs(di - (-22.3 - GESER_BARAT)) < 0.02 || Math.abs(di - X_TIMUR) < 0.02;
+  return Math.abs(di - gz(-5.6)) < 0.02 || Math.abs(di - gz(30.6)) < 0.02;
+}
+
+// Detail satu bentang dinding. Kerangka lokal: x = sepanjang dinding (pusat bentang), y = naik, z = keluar dari permukaan luar dinding.
+function DetailLuar({ m, l, hb, kaca, koridor, sgn, hindar, pintu, seed }: {
+  m: number; l: number; hb: number; kaca: boolean; koridor: boolean; sgn: 1 | -1; hindar: number[]; pintu: number[]; seed: number;
 }) {
+  const tex = useMemo(() => {
+    const t = texPanel(hb).clone();
+    t.repeat.set(l / PANEL_W, 1);
+    t.needsUpdate = true;
+    return t;
+  }, [hb, l]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  const items: { u: number; jenis: 'art' | 'lampu'; v: number }[] = [];
+  if (koridor && !kaca && l > 2.6) {
+    const n = Math.floor((l - 1.2) / 3.2);
+    for (let k = 0; k < n; k++) {
+      const u = (k - (n - 1) / 2) * 3.2;
+      const along = m + sgn * u;
+      if (pintu.some((g) => Math.abs(along - g) < 1.9)) continue;
+      if (hindar.some((g) => Math.abs(along - g) < 1.3)) continue;
+      items.push({ u, jenis: (k + seed) % 2 === 0 ? 'art' : 'lampu', v: (seed * 3 + k * 5) % 6 });
+    }
+  }
+  return (
+    <group>
+      <mesh position={[0, hb / 2, 0.108]}>
+        <planeGeometry args={[l, hb]} />
+        <meshLambertMaterial map={tex} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
+      </mesh>
+      {kaca && <KBox pos={[0, 1.08, 0]} size={[l, 0.2, 0.07]} color="#FFFFFF" jenis="kaca" opacity={0.55} />}
+      {koridor && !kaca && hb >= 1.5 && l > 1 && <KBox pos={[0, hb - 0.11, 0.112]} size={[l - 0.4, 0.014, 0.006]} color="#8FF3FF" jenis="basic" />}
+      {items.map((it) => it.jenis === 'art' ? (
+        <group key={it.u} position={[it.u, 1.0, 0.108]}>
+          <KBox pos={[0, 0, 0.015]} size={[0.9, 0.62, 0.03]} color="#2B2F36" />
+          <mesh position={[0, 0, 0.032]}>
+            <planeGeometry args={[0.8, 0.53]} />
+            <meshLambertMaterial map={texArt(it.v)} />
+          </mesh>
+        </group>
+      ) : (
+        <group key={it.u} position={[it.u, 1.0, 0.108]}>
+          <mesh position={[0, 0, 0.006]}>
+            <planeGeometry args={[0.8, 1.3]} />
+            <meshBasicMaterial map={texGlowDinding()} color="#FFD9A0" transparent opacity={0.3} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+          <KBox pos={[0, 0, 0.03]} size={[0.1, 0.36, 0.05]} color="#2E343C" />
+          <KBox pos={[0, 0, 0.058]} size={[0.05, 0.28, 0.012]} color="#FFE7B0" jenis="basic" />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function Dinding({ sumbu, di, dari, ke, gaya, theme, pintu = [], modern = false, penuh = false, luar, papan = [], hindar = [] }: {
+  sumbu: 'x' | 'z'; di: number; dari: number; ke: number; gaya: Gaya; theme: Theme; pintu?: number[]; modern?: boolean; penuh?: boolean; luar?: 1 | -1;
+  papan?: string[]; hindar?: number[]; // papan = teks papan nomor ruang di samping tiap pintu (urut sesuai `pintu`, "KODE|NAMA"); hindar = titik (sepanjang dinding) yang sudah berdekorasi
+}) {
+  // [BARU] kerangka lokal sisi luar: z lokal = keluar dari permukaan luar dinding, x lokal = sepanjang dinding (arah dunia = sgn)
+  const sgn: 1 | -1 = sumbu === 'x' ? (luar === 1 ? 1 : -1) : (luar === 1 ? -1 : 1);
+  const frame = (along: number): { position: V3; rotation: V3 } => ({
+    position: sumbu === 'x' ? [along, 0, di] : [di, 0, along],
+    rotation: [0, sumbu === 'x' ? (luar === 1 ? 0 : Math.PI) : (luar === 1 ? Math.PI / 2 : -Math.PI / 2), 0],
+  });
+  const koridor = !dindingGedungLuar(sumbu, di);
   const P = (m: number, y: number): V3 => (sumbu === 'x' ? [m, y, di] : [di, y, m]);
   const S = (l: number, h: number, t: number): V3 => (sumbu === 'x' ? [l, h, t] : [t, h, l]);
   return (
     <group>
       {runs(dari, ke, pintu).map(([m, l]) => {
+        const hb = gaya === 'tinggi' || penuh ? 1.6 : gaya === 'rendah' ? 0.3 : 0.7;
+        const po = luar ? 0.102 * luar : 0;
+        // [DIUBAH] Dinding luar: sisi luar, UJUNG dinding (sudut), dan separuh luar lis atas semuanya putih; sisi dalam tetap warna tema.
+        const st = m - l / 2, en = m + l / 2;
+        const slab = luar ? (
+          <>
+            <Box pos={sumbu === 'x' ? [m, hb / 2, di + po] : [di + po, hb / 2, m]} size={S(l, hb, 0.004)} color={PUTIH_LUAR} cast={false} />
+            {Math.abs(st - dari) < 1e-6 && <Box pos={P(st - 0.002, hb / 2)} size={S(0.004, hb, 0.2)} color={PUTIH_LUAR} cast={false} />}
+            {Math.abs(en - ke) < 1e-6 && <Box pos={P(en + 0.002, hb / 2)} size={S(0.004, hb, 0.2)} color={PUTIH_LUAR} cast={false} />}
+          </>
+        ) : null;
+        // lis atas: tanpa `luar` utuh warna tema; dengan `luar` separuh sisi luar putih, separuh sisi dalam warna tema
+        const Q = (y: number, off: number): V3 => (sumbu === 'x' ? [m, y, di + off] : [di + off, y, m]);
+        const lis = (y: number, h: number, t: number) => luar ? (
+          <>
+            <Box pos={Q(y, (t / 4) * luar)} size={S(l, h, t / 2)} color={PUTIH_LUAR} cast={false} />
+            <Box pos={Q(y, (-t / 4) * luar)} size={S(l, h, t / 2)} color={theme.trim} cast={false} />
+          </>
+        ) : <Box pos={P(m, y)} size={S(l, h, t)} color={theme.trim} cast={false} />;
         if (gaya === 'tinggi' || penuh) {
           return (
             <React.Fragment key={m}>
+              {slab}
               <Box pos={P(m, 0.8)} size={S(l, 1.6, 0.2)} color={theme.wall} />
-              <Box pos={P(m, 1.62)} size={S(l, 0.04, 0.24)} color={theme.trim} cast={false} />
+              {lis(1.62, 0.04, 0.24)}
             </React.Fragment>
           );
         }
         if (gaya === 'rendah') {
           return (
             <React.Fragment key={m}>
+              {slab}
               <Box pos={P(m, 0.15)} size={S(l, 0.3, 0.2)} color={theme.wall} />
-              <Box pos={P(m, 0.31)} size={S(l, 0.03, 0.24)} color={theme.trim} cast={false} />
+              {lis(0.31, 0.03, 0.24)}
             </React.Fragment>
           );
         }
         const n = Math.max(0, Math.floor(l / 2.6));
         return (
           <React.Fragment key={m}>
+            {slab}
             <Box pos={P(m, 0.35)} size={S(l, 0.7, 0.2)} color={theme.wall} />
-            <Box pos={P(m, 0.72)} size={S(l, 0.04, 0.26)} color={theme.trim} cast={false} />
+            {lis(0.72, 0.04, 0.26)}
             <mesh position={P(m, 1.1)}>
               <boxGeometry args={S(l, 0.68, 0.04)} />
               <meshLambertMaterial color="#BFE3F2" transparent opacity={0.2} depthWrite={false} />
@@ -1705,6 +2203,34 @@ function Dinding({ sumbu, di, dari, ke, gaya, theme, pintu = [], modern = false,
           </React.Fragment>
         );
       })}
+      {/* [BARU] detail sisi luar ala kantor modern (hanya dinding ber-`luar`, bukan pagar rendah) */}
+      {luar && gaya !== 'rendah' && runs(dari, ke, pintu).map(([m, l], i) => (
+        <group key={`dl${m}`} {...frame(m)}>
+          <DetailLuar m={m} l={l} hb={gaya === 'tinggi' || penuh ? 1.6 : 0.7} kaca={gaya === 'kaca' && !penuh} koridor={koridor} sgn={sgn}
+            hindar={hindar} pintu={pintu} seed={i + Math.round(Math.abs(di) * 3)} />
+        </group>
+      ))}
+      {luar && gaya !== 'rendah' && pintu.map((g, i) => (
+        <React.Fragment key={`dp${g}`}>
+          {/* ambang pintu aluminium */}
+          <group {...frame(g)}>
+            <KBox pos={[0, 0.008, 0]} size={[2.0, 0.016, 0.34]} color="#B8BFC6" />
+            <KBox pos={[0, 0.0165, 0]} size={[1.9, 0.002, 0.05]} color="#4A5058" />
+          </group>
+          {/* papan nomor ruang di samping pintu */}
+          {papan[i] && (
+            <group {...frame(g + 1.45)}>
+              <group position={[0, gaya === 'kaca' && !penuh ? 0.42 : 1.05, 0.108]}>
+                <KBox pos={[0, 0, 0.012]} size={[0.62, 0.24, 0.024]} color="#1B1F26" />
+                <mesh position={[0, 0, 0.026]}>
+                  <planeGeometry args={[0.58, 0.213]} />
+                  <meshBasicMaterial map={texPlat(papan[i])} />
+                </mesh>
+              </group>
+            </group>
+          )}
+        </React.Fragment>
+      ))}
       {gaya === 'kaca' && pintu.map((g) => (
         modern ? (
           <group key={`k${g}`}>
@@ -1788,7 +2314,7 @@ function PintuGeser({ sumbu, di, g, modern }: { sumbu: 'x' | 'z'; di: number; g:
   return (
     <>
       {[-1, 1].map((sd, i) => (
-        <group key={sd} ref={(r) => { daun.current[i] = r; }} position={tempat(sd, g + sd * 0.48)}>
+        <group key={sd} ref={(r) => { daun.current[i] = r; }} position={tempat(sd, g + sd * 0.48)} userData={{ nopeta: true }}>
           {modern ? (
             <>
               <mesh>
@@ -2374,6 +2900,237 @@ function MenaraLaporan({ pos }: { pos: V3 }) {
   );
 }
 
+// ---- [BARU] Desain lantai & dinding Financial Statements: kantor modern biru-krem-perak (porselen, karpet modular, panel slat, kertas dinding motif grafik) ----
+// Lantai porselen besar krem: ubin 1.5 x 1.5 bervariasi tipis + urat marmer halus + sambungan + sorot tepi (tekstur 3 x 3 unit diulang).
+function LantaiFS({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: number }) {
+  const dasar = useKanvasMg(1024, 1024, (g) => {
+    const r = mulberry32(77);
+    const warna = ['#F3EEE1', '#EFE8D8', '#F1EBDD', '#F4EFE4'];
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+        const x = i * 512, y = j * 512;
+        g.fillStyle = warna[(i * 2 + j + (i ? 1 : 0)) % 4];
+        g.fillRect(x, y, 512, 512);
+        g.save();
+        g.beginPath();
+        g.rect(x, y, 512, 512);
+        g.clip();
+        for (let k = 0; k < 5; k++) {
+          g.strokeStyle = `rgba(185,170,140,${0.12 + r() * 0.12})`;
+          g.lineWidth = 1 + r() * 2.2;
+          g.beginPath();
+          const sx = x + r() * 512, sy = y + r() * 512;
+          g.moveTo(sx, sy);
+          g.bezierCurveTo(sx + (r() - 0.5) * 260, sy + (r() - 0.5) * 260, sx + (r() - 0.5) * 380, sy + (r() - 0.5) * 380, sx + (r() - 0.5) * 460, sy + (r() - 0.5) * 460);
+          g.stroke();
+        }
+        for (let k = 0; k < 40; k++) {
+          g.fillStyle = `rgba(150,135,105,${0.03 + r() * 0.05})`;
+          g.fillRect(x + r() * 512, y + r() * 512, 2 + r() * 3, 2 + r() * 3);
+        }
+        g.restore();
+        g.fillStyle = 'rgba(255,255,255,0.38)';
+        g.fillRect(x + 2, y + 2, 508, 2);
+        g.fillRect(x + 2, y + 2, 2, 508);
+        g.fillStyle = 'rgba(120,105,75,0.14)';
+        g.fillRect(x + 2, y + 508, 508, 2);
+        g.fillRect(x + 508, y + 2, 2, 508);
+      }
+    }
+    g.fillStyle = '#D6CCB6';
+    for (const o of [0, 512, 1022]) {
+      g.fillRect(o - 1, 0, 3, 1024);
+      g.fillRect(0, o - 1, 1024, 3);
+    }
+  }, 'fs-lantai-porselen');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / 3, d / 3);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w, d]);
+  return (
+    <mesh position={[cx, 0.002, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Karpet modular (ubin 0.5 x 0.5 dua nada + serat halus). 1 unit = 2 x 2 ubin.
+function KarpetModular({ pos, w, d, a, b, kunci }: { pos: V3; w: number; d: number; a: string; b: string; kunci: string }) {
+  const dasar = useKanvasMg(256, 256, (g) => {
+    const r = mulberry32(kunci.length * 31 + 5);
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+        g.fillStyle = (i + j) % 2 ? b : a;
+        g.fillRect(i * 128, j * 128, 128, 128);
+      }
+    }
+    for (let k = 0; k < 900; k++) {
+      g.fillStyle = r() < 0.5 ? 'rgba(30,58,95,0.07)' : 'rgba(255,255,255,0.10)';
+      g.fillRect(r() * 256, r() * 256, 1.5, 1.5 + r() * 2);
+    }
+    g.fillStyle = 'rgba(30,58,95,0.16)';
+    for (const o of [0, 128, 255]) {
+      g.fillRect(o - 0.5, 0, 1.2, 256);
+      g.fillRect(0, o - 0.5, 256, 1.2);
+    }
+  }, `fs-karpet-${kunci}`);
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w, d);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w, d]);
+  return (
+    <mesh position={pos} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Kertas dinding Financial Statements: biru muda berpinstripe halus + motif grafik batang / garis tren / donat (tile 2.0 x 0.6).
+function KertasDindingFS({ pos, w, h = 0.6 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(640, 192, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#DCEAF4');
+    gr.addColorStop(1, '#C9DDEC');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.28)';
+    for (let y = 4; y < H; y += 8) g.fillRect(0, y, W, 1);
+    g.strokeStyle = 'rgba(30,58,95,0.07)';
+    g.lineWidth = 1;
+    g.setLineDash([6, 6]);
+    for (const y of [50, 90, 130]) { g.beginPath(); g.moveTo(20, y); g.lineTo(420, y); g.stroke(); }
+    g.setLineDash([]);
+    const tinggi = [30, 46, 38, 62, 54, 80, 70, 96, 88];
+    g.fillStyle = 'rgba(30,58,95,0.10)';
+    tinggi.forEach((t, i) => g.fillRect(40 + i * 40, 160 - t, 22, t));
+    g.strokeStyle = 'rgba(37,99,235,0.26)';
+    g.lineWidth = 2;
+    g.beginPath();
+    tinggi.forEach((t, i) => { const x = 51 + i * 40, y = 160 - t - 12; if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); });
+    g.stroke();
+    g.fillStyle = 'rgba(37,99,235,0.35)';
+    tinggi.forEach((t, i) => { g.beginPath(); g.arc(51 + i * 40, 160 - t - 12, 3, 0, Math.PI * 2); g.fill(); });
+    g.strokeStyle = 'rgba(30,58,95,0.12)';
+    g.beginPath(); g.moveTo(30, 160); g.lineTo(420, 160); g.stroke();
+    // donat
+    const cx = 520, cy = 96;
+    g.lineWidth = 16;
+    const bagi = [[0, 1.9, 'rgba(30,58,95,0.14)'], [1.9, 3.6, 'rgba(37,99,235,0.16)'], [3.6, 6.28, 'rgba(52,211,153,0.20)']] as [number, number, string][];
+    bagi.forEach(([a0, a1, c]) => { g.strokeStyle = c; g.beginPath(); g.arc(cx, cy, 38, a0, a1 - 0.06); g.stroke(); });
+  }, 'fs-kertas-dinding');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w / 2), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Panel slat vertikal (felt akustik biru baja, celah gelap, sorot tepi). Tile 1.0 x 0.78.
+function PanelSlatFS({ pos, w, h = 0.78 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 200, (g, W, H) => {
+    const r = mulberry32(19);
+    g.fillStyle = '#1B3550';
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 8; i++) {
+      const x = i * 32 + 2;
+      const gr = g.createLinearGradient(0, 0, 0, H);
+      gr.addColorStop(0, '#5283AD');
+      gr.addColorStop(1, '#3F6C93');
+      g.fillStyle = gr;
+      g.fillRect(x, 0, 28, H);
+      g.fillStyle = 'rgba(255,255,255,0.16)';
+      g.fillRect(x, 0, 2, H);
+      g.fillStyle = 'rgba(0,0,0,0.16)';
+      g.fillRect(x + 26, 0, 2, H);
+      for (let k = 0; k < 6; k++) {
+        g.fillStyle = 'rgba(255,255,255,0.05)';
+        g.fillRect(x + 4 + r() * 20, r() * H, 1, 10 + r() * 40);
+      }
+    }
+  }, 'fs-slat');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias dinding Financial Statements (menghadap +z lokal, x sepanjang dinding): lis bawah aluminium + navy, panel slat (kecuali di
+// bawah papan dinding), rel aluminium + LED putih-biru, kertas dinding motif grafik, list atas navy + LED tipis.
+function DindingDekorFS({ s, segs, slat }: { s: number; segs: [number, number][]; slat: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        return (
+          <React.Fragment key={`d${a}`}>
+            <Box pos={[cx, 0.45, s + 0.006]} size={[L, 0.8, 0.012]} color="#2A4E73" cast={false} />
+            <Box pos={[cx, 0.045, s + 0.017]} size={[L, 0.09, 0.034]} color={FS_NAVY} cast={false} />
+            <Box pos={[cx, 0.096, s + 0.02]} size={[L, 0.012, 0.04]} color={FS_PERAK} cast={false} />
+            <Box pos={[cx, 0.9, s + 0.022]} size={[L, 0.03, 0.044]} color={FS_PERAK} cast={false} />
+            <Cahaya pos={[cx, 0.878, s + 0.02]} size={[L - 0.02, 0.008, 0.004]} color="#BAE6FD" opacity={0.85} />
+            <KertasDindingFS pos={[cx, 1.215, s + 0.002]} w={L} />
+            <Box pos={[cx, 1.54, s + 0.02]} size={[L, 0.05, 0.04]} color={FS_NAVY} cast={false} />
+            <Cahaya pos={[cx, 1.572, s + 0.012]} size={[L - 0.02, 0.008, 0.008]} color="#E0F2FE" opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+      {slat.map(([a, b]) => (
+        <PanelSlatFS key={`s${a}`} pos={[(a + b) / 2, 0.5, s + 0.015]} w={b - a} />
+      ))}
+    </>
+  );
+}
+
+// Tiang sudut: kolom navy berlis aluminium (tinggi dinding).
+function TiangSudutFS({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.8, 0]} size={[0.22, 1.6, 0.22]} color={FS_NAVY} />
+      <Box pos={[0, 0.8, 0]} size={[0.24, 1.6, 0.03]} color={FS_PERAK} cast={false} />
+      <Box pos={[0, 0.8, 0]} size={[0.03, 1.6, 0.24]} color={FS_PERAK} cast={false} />
+      <Box pos={[0, 0.03, 0]} size={[0.26, 0.06, 0.26]} color="#0F2540" cast={false} />
+      <Cahaya pos={[0, 1.57, 0]} size={[0.2, 0.012, 0.2]} color="#E0F2FE" opacity={0.9} />
+    </group>
+  );
+}
+
+// Kotak colokan lantai (flush, aluminium) di dekat meja kerja.
+function KotakColokanFS({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.006, 0]} size={[0.24, 0.012, 0.24]} color={FS_PERAK} cast={false} />
+      <Box pos={[0, 0.0135, 0]} size={[0.18, 0.004, 0.18]} color="#9FB0BE" cast={false} />
+      <Box pos={[0.05, 0.0165, 0]} size={[0.05, 0.002, 0.025]} color="#38BDF8" cast={false} />
+    </group>
+  );
+}
+
 const STUDIO = { cx: 18.4, cz: 0, w: 13, d: 8 };
 const STUDIO_ISI_CX = 16.4;
 function StudioArea() {
@@ -2389,15 +3146,12 @@ function StudioArea() {
   return (
     <>
       <Lantai cx={cx} cz={cz} w={w} d={d} color={TH.studio.floor} />
-      {/* ubin marmer: garis kisi tipis */}
-      {Array.from({ length: 9 }, (_, i) => (
-        <Box key={`gx${i}`} pos={[12.5 + i * 1.5, 0.003, cz]} size={[0.025, 0.004, d - 0.1]} color="#E4DCCB" cast={false} />
-      ))}
-      {Array.from({ length: 5 }, (_, i) => (
-        <Box key={`gz${i}`} pos={[cx, 0.003, -3 + i * 1.5]} size={[w - 0.1, 0.004, 0.025]} color="#E4DCCB" cast={false} />
-      ))}
+      {/* [DIPERDETAIL] lantai porselen krem bertekstur + karpet modular biru (dua zona) */}
+      <LantaiFS cx={cx} cz={cz} w={w} d={d} />
       <Box pos={[STUDIO_ISI_CX, 0.005, 0.2]} size={[7.4, 0.015, 5.2]} color="#CFE3F1" cast={false} />
       <Box pos={[22.6, 0.005, 0.2]} size={[3.6, 0.015, 5.2]} color="#D8E9F5" cast={false} />
+      <KarpetModular pos={[STUDIO_ISI_CX, 0.0132, 0.2]} w={7.4} d={5.2} a="#BDD7EA" b="#C9DFEF" kunci="zona1" />
+      <KarpetModular pos={[22.6, 0.0132, 0.2]} w={3.6} d={5.2} a="#CADFF0" b="#D6E8F5" kunci="zona2" />
       {/* bingkai inlay karpet: biru + perak */}
       {[-2.5, 2.9].map((z) => (
         <React.Fragment key={z}>
@@ -2405,10 +3159,32 @@ function StudioArea() {
           <Box pos={[22.6, 0.014, z]} size={[3.6, 0.01, 0.05]} color={FS_PERAK} cast={false} />
         </React.Fragment>
       ))}
+      {/* [BARU] bingkai inlay keliling lantai (navy + perak), garis penuntun dari pintu ke medali, ambang aluminium pintu */}
+      {[-3.65, 3.65].map((z) => (
+        <React.Fragment key={`bz${z}`}>
+          <Box pos={[18.48, 0.0035, z]} size={[12.25, 0.004, 0.07]} color={FS_NAVY} cast={false} />
+          <Box pos={[18.48, 0.0038, z + (z < 0 ? 0.07 : -0.07)]} size={[12.25, 0.004, 0.02]} color={FS_PERAK} cast={false} />
+        </React.Fragment>
+      ))}
+      {[12.35, 24.6].map((x) => (
+        <React.Fragment key={`bx${x}`}>
+          <Box pos={[x, 0.0035, 0]} size={[0.07, 0.004, 7.3]} color={FS_NAVY} cast={false} />
+          <Box pos={[x + (x < 18 ? 0.07 : -0.07), 0.0038, 0]} size={[0.02, 0.004, 7.3]} color={FS_PERAK} cast={false} />
+        </React.Fragment>
+      ))}
+      {[18.1, 19.1].map((x) => (
+        <Box key={`gl${x}`} pos={[x, 0.0038, -3.05]} size={[0.025, 0.004, 1.2]} color={FS_PERAK} cast={false} />
+      ))}
+      <Box pos={[18.6, 0.007, -3.93]} size={[2.0, 0.014, 0.12]} color={FS_PERAK} cast={false} />
+      <Box pos={[18.6, 0.0145, -3.93]} size={[1.9, 0.002, 0.03]} color={FS_NAVY} cast={false} />
       {/* medali lantai tengah */}
       <CincinLantai pos={[18.6, 0.02, -1.25]} r={0.95} lebar={0.045} color="#38BDF8" opacity={0.95} />
       <CincinLantai pos={[18.6, 0.02, -1.25]} r={0.72} lebar={0.025} color={FS_NAVY} opacity={0.9} />
       <Tube pos={[18.6, 0.012, -1.25]} r={0.7} h={0.012} color="#EAF3FA" seg={40} cast={false} />
+      <CincinLantai pos={[18.6, 0.02, -1.25]} r={1.2} lebar={0.018} color={FS_PERAK} opacity={0.95} />
+      {[[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].map(([dx, dz]) => (
+        <Box key={`dm${dx}${dz}`} pos={[18.6 + dx, 0.022, -1.25 + dz]} size={[0.12, 0.006, 0.12]} color={FS_NAVY} rot={[0, Math.PI / 4, 0]} cast={false} />
+      ))}
       <Teks pos={[18.6, 0.026, -1.35]} rot={[-Math.PI / 2, 0, 0]} w={1.15} h={0.22} text="FINANCIAL" fg={FS_NAVY} />
       <Teks pos={[18.6, 0.026, -1.12]} rot={[-Math.PI / 2, 0, 0]} w={1.15} h={0.2} text="STATEMENTS" fg="#2B5A87" />
       {/* papan laporan di dinding */}
@@ -2440,6 +3216,17 @@ function StudioArea() {
       <PlantSnake pos={[24.5, 0, -1.2]} scale={0.9} />
       <PlantSnake pos={[12.3, 0, 3.2]} scale={1.0} />
       <DekorDindingKiri pos={[12.04, 0, 0.05]} jenis="fs" />
+      {/* [BARU] lapisan hias dinding utara (kecuali celah pintu x 17.6-19.6) & barat; panel slat dikosongkan di bawah papan laporan */}
+      <DindingDekorFS s={z0} segs={[[12.0, 17.54], [19.66, 24.9]]} slat={[[12.0, 13.6], [15.6, 17.54], [19.66, 24.9]]} />
+      <group rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorFS s={12.0} segs={[[-4, 4]]} slat={[[-4, -2.75], [-1.05, 4]]} />
+      </group>
+      <TiangSudutFS pos={[12.11, 0, z0 + 0.11]} />
+      <TiangSudutFS pos={[24.79, 0, z0 + 0.11]} />
+      <TiangSudutFS pos={[12.11, 0, 3.89]} />
+      {meja.map(({ p: [x, z], h }) => (
+        <KotakColokanFS key={`kc${h.id}`} pos={[x - 0.8, 0, z + 0.5]} />
+      ))}
       <StudioPenghuni />
     </>
   );
@@ -3326,8 +4113,6 @@ function TiangHolo({ pos }: { pos: V3 }) {
 
 // Lantai teknologi: ubin lilac + garis sambungan + LED tepi + jejak sirkuit dengan aliran data + tulisan inlay.
 function LantaiTeknologi() {
-  const xs = useMemo(() => Array.from({ length: 13 }, (_, i) => -18 + i), []);
-  const zs = useMemo(() => Array.from({ length: 8 }, (_, i) => 9 + i), []);
   const J_utara: [number, number][] = useMemo(() => [[-8.9, 11.8], [-8.9, 11.2], [-11.5, 11.2], [-11.5, 9.6]], []);
   const J_rak: [number, number][] = useMemo(() => [[-14.0, 12.4], [-14.0, 11.4], [-16.8, 11.4], [-16.8, 10.7]], []);
   const J_pod: [number, number][] = useMemo(() => [[-8.9, 14.4], [-8.9, 14.85]], []);
@@ -3336,13 +4121,8 @@ function LantaiTeknologi() {
   const ac = HUB.cyan;
   return (
     <>
-      <Lantai cx={PERPUS.cx - 2 - GESER_BARAT / 2} cz={PERPUS.cz} w={PERPUS.w + 4 + GESER_BARAT} d={PERPUS.d} color="#DAD6EC" />
-      {xs.map((x) => (
-        <Box key={`x${x}`} pos={[x, 0.002, 12.9]} size={[0.016, 0.004, 8]} color="#BDB7D6" cast={false} />
-      ))}
-      {zs.map((z) => (
-        <Box key={`z${z}`} pos={[-10.9 - GESER_BARAT / 2, 0.002, z]} size={[11 + GESER_BARAT, 0.004, 0.016]} color="#BDB7D6" cast={false} />
-      ))}
+      <Lantai cx={PERPUS.cx - 2 - GESER_BARAT / 2} cz={PERPUS.cz} w={PERPUS.w + 4 + GESER_BARAT} d={PERPUS.d} color="#12102F" />
+      <LantaiFuturistik cx={PERPUS.cx - 2 - GESER_BARAT / 2} cz={PERPUS.cz} w={PERPUS.w + 4 + GESER_BARAT} d={PERPUS.d} />
       {/* LED tepi ruangan (celah pintu dibiarkan kosong) */}
       <Cahaya pos={[-13.125 - GESER_BARAT / 2, 0.03, 9.03]} size={[6.35 + GESER_BARAT, 0.025, 0.025]} color={HUB.violet} />
       <Cahaya pos={[-6.65, 0.03, 9.03]} size={[2.4, 0.025, 0.025]} color={HUB.violet} />
@@ -3352,7 +4132,7 @@ function LantaiTeknologi() {
       <Cahaya pos={[-6.65, 0.18, 16.87]} size={[2.4, 0.02, 0.02]} color={ac} />
       {/* inlay di bawah meja riset [DITUKAR: kini di posisi lama hologram] */}
       <group position={[-5.1, 0, 0.2]}>
-        <Tube pos={[-8.9, 0.006, 13.0]} r={2.3} h={0.012} color="#2C2766" seg={64} cast={false} />
+        <Tube pos={[-8.9, 0.006, 13.0]} r={2.3} h={0.012} color="#0D0B26" seg={64} cast={false} />
         <CincinLantai pos={[-8.9, 0.015, 13.0]} r={2.25} lebar={0.04} color={HUB.violet} />
         <CincinLantai pos={[-8.9, 0.015, 13.0]} r={1.7} lebar={0.025} color={ac} opacity={0.8} />
         <CincinPutus pos={[-8.9, 0.018, 13.0]} r={2.0} n={26} speed={0.2} color={ac} panjang={0.34} />
@@ -3369,7 +4149,7 @@ function LantaiTeknologi() {
       <LampuJalur titik={[[-9.45, 9.4], [-8.35, 9.4], [-9.45, 9.85], [-8.35, 9.85], [-9.45, 10.3], [-8.35, 10.3]]} />
       <LampuJalur titik={[[-9.45, 16.5], [-8.35, 16.5], [-9.45, 16.1], [-8.35, 16.1], [-9.45, 15.7], [-8.35, 15.7]]} color={HUB.violet} />
       {/* tulisan inlay di lantai dekat dinding selatan */}
-      <Teks pos={[-13.5, 0.014, 16.55]} rot={[-Math.PI / 2, 0, 0]} w={3.6} h={0.26} text="PUSAT INFORMASI  •  RESEARCH HUB" fg="#7C6FD0" />
+      <Teks pos={[-13.5, 0.014, 16.55]} rot={[-Math.PI / 2, 0, 0]} w={3.6} h={0.26} text="PUSAT INFORMASI  •  RESEARCH HUB" fg="#A78BFA" />
     </>
   );
 }
@@ -3592,11 +4372,11 @@ function JendelaFuturistik({ pos, rotY = 0, w = 1.8, h = 0.95 }: { pos: V3; rotY
   );
 }
 
-// [BARU] Papan nama ruangan RESEARCH (futuristik, menempel di dinding utara, di kanan pintu): pelat navy melayang di atas 4 penyangga dengan halo violet,
+// [BARU] Papan nama ruangan RESEARCH (futuristik, kini menempel di dinding timur, di sisi utara etalase hologram): pelat navy melayang di atas 4 penyangga dengan halo violet,
 // muka bergambar kanvas (ikon heksagon + tulisan RESEARCH bercahaya + subjudul PUSAT INFORMASI), LED tepi cyan/violet, siku sudut putih,
 // kaca tipis dengan garis pemindai yang bergerak. Warna & bahasa desain sama dengan JendelaFuturistik (smart glass) di dinding barat.
 // z = 0 adalah permukaan dinding; benda menonjol ke +z (ke dalam ruangan).
-function PapanNamaRiset({ pos }: { pos: V3 }) {
+function PapanNamaRiset({ pos, label = 'RESEARCH', sub = 'PUSAT INFORMASI' }: { pos: V3; label?: string; sub?: string }) {
   const W = 1.3, H = 0.36;
   const pw = W - 0.08, ph = H - 0.08; // ukuran muka papan
   const tex = useMemo(() => {
@@ -3653,7 +4433,6 @@ function PapanNamaRiset({ pos }: { pos: V3 }) {
       g.fillStyle = sep;
       g.fillRect(236, CH * 0.14, 4, CH * 0.72);
       // teks utama (berpendar)
-      const label = 'RESEARCH';
       const x0 = 270, x1 = CW - 46, cx = (x0 + x1) / 2;
       (g as any).letterSpacing = '14px';
       let fs = Math.round(CH * 0.46);
@@ -3677,13 +4456,13 @@ function PapanNamaRiset({ pos }: { pos: V3 }) {
       (g as any).letterSpacing = '9px';
       g.font = `600 ${Math.round(CH * 0.14)}px ${FONT_P}`;
       g.fillStyle = '#A78BFA';
-      g.fillText('PUSAT INFORMASI', cx + 4, CH * 0.82);
+      g.fillText(sub, cx + 4, CH * 0.82);
     }
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
-  }, [pw, ph]);
+  }, [pw, ph, label, sub]);
   const scan = useRef<THREE.Mesh>(null);
   const scanMat = useRef<THREE.MeshBasicMaterial>(null);
   useFrame(({ clock }) => {
@@ -3733,7 +4512,7 @@ function PapanNamaRiset({ pos }: { pos: V3 }) {
   );
 }
 
-// [BARU] AC dinding futuristik untuk Research (sudut barat laut, di samping rak server): bodi lilac-putih membulat, pita kaca gelap
+// [BARU] AC dinding futuristik untuk Research (kini di dinding timur, di sisi selatan etalase hologram): bodi lilac-putih membulat, pita kaca gelap
 // dengan garis LED cyan + lensa sensor, panel suhu digital, kisi intake, sirip hembusan navy yang miring, cahaya bawah violet,
 // dan 5 garis udara tipis yang berdenyut. Menempel di dinding utara (z = 0 = permukaan dinding), menghadap ke dalam ruangan (+z).
 function ACFuturistik({ pos }: { pos: V3 }) {
@@ -3805,6 +4584,15 @@ function PerpusArea() {
     <>
       <LantaiTeknologi />
 
+      {/* [BARU] lapisan hias dinding Research (sama seperti Planning): utara (kecuali celah pintu x -8.9), timur, barat (panel dikosongkan di jendela) */}
+      <DindingDekorPlan s={8.9} segs={[[-18.2, -9.96], [-7.84, -5.4]]} panel={[[-18.2, -9.96], [-7.84, -5.4]]} />
+      <group rotation={[0, -Math.PI / 2, 0]}>
+        <DindingDekorPlan s={5.4} segs={[[8.9, 16.9]]} panel={[[8.9, 16.9]]} />
+      </group>
+      <group rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorPlan s={x0} segs={[[-16.9, -8.9]]} panel={[[-11.9, -8.9], [-16.9, -13.9]]} />
+      </group>
+
       {/* dinding utara: 2 rak arsip + video wall pusat informasi + kiosk pencarian */}
       <RakArsipTech pos={[-15.4, 0, z0 + 0.22]} judul="ARSIP PAJAK" warna={HUB.violet} />
       <RakArsipTech pos={[-13.7, 0, z0 + 0.22]} judul="PANDUAN APLIKASI" warna={HUB.cyan} />
@@ -3816,9 +4604,10 @@ function PerpusArea() {
         <LayarCanvas pos={[0, 1.55, 0.04]} w={2.4} h={0.9} px={1024} draw={gambarInfo} fps={4} />
       </group>
       <KioskCari pos={[-6.4, 0, 9.75]} rotY={Math.atan2(core[0] - -6.4, core[2] - 9.75)} /> {/* [DIUBAH] layar menghadap hologram (inti) */}
-      {/* [BARU] papan nama RESEARCH di bagian tembok utara yang kosong (kanan pintu, di atas kiosk) + AC futuristik di sudut barat laut (samping rak server) */}
-      <PapanNamaRiset pos={[-6.62, 1.33, z0]} />
-      <ACFuturistik pos={[-17.3, 1.36, z0]} />
+      {/* [DIPINDAH] dinding timur Research (permukaan x = -5.4), mengapit etalase hologram (z 13.6) dengan jarak sama (1.2):
+          papan nama RESEARCH di sisi utara etalase (di atas dock drone), AC futuristik di sisi selatan etalase. rotY -PI/2 = menghadap ke dalam ruangan (barat). */}
+      <group position={[-5.4, 0, 12.4]} rotation={[0, -Math.PI / 2, 0]}><PapanNamaRiset pos={[0, 1.33, 0]} /></group>
+      <group position={[-5.4, 0, 14.8]} rotation={[0, -Math.PI / 2, 0]}><ACFuturistik pos={[0, 1.36, 0]} /></group>
 
       {/* dinding barat: rak server, konsol data + jendela pintar, peta jaringan */}
       <RakServer pos={[-15.95 - GESER_BARAT, 0, 9.9]} rotY={Math.PI / 2} />
@@ -3934,38 +4723,51 @@ function Karpet({ pos, w, d, dasar, tepi, emas = true, naik = 0 }: { pos: V3; w:
 // Lantai: ubin 1x1 bertekstur (sorot tepi + urat halus), list lantai teal, garis emas, karpet area, keset pintu, garis antrean.
 // Warna ubin & karpet dibuat lebih redup supaya ruangan tidak terlalu silau.
 function ArLantai() {
+  // [DIPERDETAIL] lantai porselen terrazzo mint-teal: ubin 1x1 bersorot tepi, serpihan krem/teal/emas tipis, urat halus. Kanvas = 2 x 2 ubin.
   const tex = useMemo(() => {
     const c = document.createElement('canvas');
-    c.width = c.height = 256;
+    c.width = c.height = 512;
     const g = c.getContext('2d');
     if (g) {
       const r = mulberry32(11);
+      const dasarWarna = ['#CFE4DF', '#C3DCD6', '#C9E0DA', '#D2E7E2'];
+      const serpih = ['rgba(247,255,252,0.7)', 'rgba(111,184,174,0.5)', 'rgba(42,167,155,0.36)', 'rgba(31,111,104,0.28)', 'rgba(224,184,74,0.45)'];
       for (let i = 0; i < 4; i++) {
-        const x = (i % 2) * 128, y = Math.floor(i / 2) * 128;
-        g.fillStyle = i === 0 || i === 3 ? '#C9DFDA' : '#BCD6D0';
-        g.fillRect(x, y, 128, 128);
-        g.fillStyle = 'rgba(255,255,255,0.28)';
-        g.fillRect(x, y, 128, 3);
-        g.fillRect(x, y, 3, 128);
-        g.fillStyle = 'rgba(60,120,110,0.12)';
-        g.fillRect(x, y + 125, 128, 3);
-        g.fillRect(x + 125, y, 3, 128);
-        g.strokeStyle = 'rgba(100,150,140,0.14)';
-        g.lineWidth = 1;
+        const x = (i % 2) * 256, y = Math.floor(i / 2) * 256;
+        g.fillStyle = dasarWarna[i];
+        g.fillRect(x, y, 256, 256);
+        g.save();
+        g.beginPath();
+        g.rect(x, y, 256, 256);
+        g.clip();
         for (let k = 0; k < 3; k++) {
+          g.strokeStyle = `rgba(100,155,145,${0.1 + r() * 0.1})`;
+          g.lineWidth = 1 + r() * 1.6;
           g.beginPath();
-          g.moveTo(x + r() * 128, y + r() * 128);
-          g.lineTo(x + r() * 128, y + r() * 128);
+          const sx = x + r() * 256, sy = y + r() * 256;
+          g.moveTo(sx, sy);
+          g.bezierCurveTo(sx + (r() - 0.5) * 160, sy + (r() - 0.5) * 160, sx + (r() - 0.5) * 240, sy + (r() - 0.5) * 240, sx + (r() - 0.5) * 300, sy + (r() - 0.5) * 300);
           g.stroke();
         }
+        for (let k = 0; k < 150; k++) {
+          g.fillStyle = serpih[Math.floor(r() * serpih.length)];
+          g.beginPath();
+          g.ellipse(x + r() * 256, y + r() * 256, 1.2 + r() * 4.2, 1 + r() * 2.6, r() * Math.PI, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.restore();
+        g.fillStyle = 'rgba(255,255,255,0.34)';
+        g.fillRect(x + 2, y + 2, 252, 2);
+        g.fillRect(x + 2, y + 2, 2, 252);
+        g.fillStyle = 'rgba(60,120,110,0.16)';
+        g.fillRect(x + 2, y + 252, 252, 2);
+        g.fillRect(x + 252, y + 2, 2, 252);
       }
-      g.strokeStyle = '#A9C9C1';
-      g.lineWidth = 3;
-      g.strokeRect(0, 0, 256, 256);
-      g.beginPath();
-      g.moveTo(128, 0); g.lineTo(128, 256);
-      g.moveTo(0, 128); g.lineTo(256, 128);
-      g.stroke();
+      g.fillStyle = '#A9C9C1';
+      for (const o of [0, 256, 510]) {
+        g.fillRect(o - 1, 0, 3, 512);
+        g.fillRect(0, o - 1, 512, 3);
+      }
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -3998,6 +4800,9 @@ function ArLantai() {
       <Karpet pos={[-0.5, 0, 1.3]} w={3.4} d={2.2} dasar="#E2D2A2" tepi="#A87A0E" /> {/* [DIPINDAH] tepat di bawah meja administrasi, tepat di tengahnya (loket x -0.5, z 1.3), ditimpa loket */}
       <Karpet pos={[-0.5, 0, 3.515]} w={1.2} d={3.67} dasar="#2AA79B" tepi="#1F8F84" naik={0.006} />
       <Karpet pos={[3.3, 0, -0.6]} w={3.6} d={5.8} dasar="#E6D5AE" tepi="#B8860B" /> {/* [DIPINDAH] lounge ke kanan, di depan monumen koin & lemari arsip (dx +9.7) */}
+      {/* [BARU] ambang pintu: pita teal tua + garis emas */}
+      <Box pos={[-0.5, 0.007, 5.44]} size={[2.0, 0.012, 0.12]} color="#154E49" cast={false} />
+      <Box pos={[-0.5, 0.0135, 5.44]} size={[1.9, 0.002, 0.03]} color={EMAS} cast={false} />
       {/* keset pintu */}
       <Karpet pos={[-0.5, 0, 5.0]} w={1.5} d={0.8} dasar="#1F6F68" tepi="#154E49" emas={false} naik={0.012} />
       <Teks pos={[-0.5, 0.03, 5.0]} rot={[-Math.PI / 2, 0, 0]} w={1.1} h={0.26} text="SELAMAT DATANG" fg="#F5C84C" />
@@ -4014,35 +4819,170 @@ function ArLantai() {
   );
 }
 
-// Dinding belakang (z = -5.5) dan kiri (x = AR_X0): plint, panel wainscot beralur, list kursi, pita emas, tiang sudut.
+// ---- [BARU] Dinding Account Receivable: panel alur teal, kertas dinding mint bermotif faktur & panah terima, rel krem, pita emas, list atas + LED ----
+const AR_TEAL_TUA = '#1F6F68';
+const AR_KRIM = '#F1FBF8';
+
+// Panel beralur (fluted) teal: alur vertikal bersorot kiri-gelap kanan. Tile 1.0 x 0.48.
+function PanelAlurAR({ pos, w, h = 0.48 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 128, (g, W, H) => {
+    g.fillStyle = '#5FAFA4';
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 8; i++) {
+      const x = i * 32 + 2;
+      const gr = g.createLinearGradient(x, 0, x + 28, 0);
+      gr.addColorStop(0, '#8FD3CA');
+      gr.addColorStop(0.55, '#7EC5BC');
+      gr.addColorStop(1, '#58A89E');
+      g.fillStyle = gr;
+      g.fillRect(x, 0, 28, H);
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.fillRect(x, 0, 2, H);
+      g.fillStyle = 'rgba(20,70,65,0.22)';
+      g.fillRect(x + 26, 0, 2, H);
+    }
+    g.fillStyle = 'rgba(241,251,248,0.4)';
+    g.fillRect(0, 0, W, 2);
+    g.fillStyle = 'rgba(20,70,65,0.25)';
+    g.fillRect(0, H - 2, W, 2);
+  }, 'ar-panel-alur');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Kertas dinding rose: pinstripe halus + faktur (invoice) dan panah masuk-dalam-lingkaran (penerimaan) bergantian. Tile 2.0 x 0.825.
+function KertasDindingAR({ pos, w, h = 0.825 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(640, 264, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#E9F6F3');
+    gr.addColorStop(1, '#D6ECE7');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let x = 4; x < W; x += 12) g.fillRect(x, 0, 1, H);
+    g.fillStyle = 'rgba(31,143,132,0.07)';
+    for (let y = 22; y < H; y += 44) g.fillRect(0, y, W, 1);
+    const ikon = (cx: number, cy: number, jenis: number) => {
+      g.save();
+      g.translate(cx, cy);
+      g.strokeStyle = 'rgba(31,143,132,0.38)';
+      g.fillStyle = 'rgba(31,143,132,0.14)';
+      g.lineWidth = 2;
+      if (jenis === 0) {
+        // faktur: lembar bersudut lipat + baris teks
+        g.beginPath();
+        g.moveTo(-12, -16); g.lineTo(6, -16); g.lineTo(12, -10); g.lineTo(12, 16); g.lineTo(-12, 16);
+        g.closePath();
+        g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(6, -16); g.lineTo(6, -10); g.lineTo(12, -10); g.stroke();
+        g.lineWidth = 1.6;
+        for (const y of [-3, 3, 9]) { g.beginPath(); g.moveTo(-7, y); g.lineTo(7, y); g.stroke(); }
+      } else {
+        // pembayaran masuk: lingkaran + panah ke kiri-bawah
+        g.beginPath(); g.arc(0, 0, 15, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.lineWidth = 2.4;
+        g.beginPath(); g.moveTo(6, -6); g.lineTo(-6, 6); g.stroke();
+        g.beginPath(); g.moveTo(1, 6); g.lineTo(-6, 6); g.lineTo(-6, -1); g.stroke();
+      }
+      g.restore();
+    };
+    for (let j = 0; j < 3; j++) {
+      for (let i = 0; i < 4; i++) {
+        const x = i * 160 + 80 + (j % 2 ? 80 : 0);
+        const y = 44 + j * 88;
+        const jenis = (i + j) % 2;
+        ikon(x, y, jenis);
+        if (x > W - 30) ikon(x - W, y, jenis);
+        // titik penghubung kecil antar ikon
+        g.fillStyle = 'rgba(184,134,11,0.4)';
+        g.beginPath(); g.arc(x + 40, y + 44, 2.4, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x - 40, y + 44, 2.4, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }, 'ar-kertas-dinding');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w / 2), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias dinding AR (menghadap +z lokal, x sepanjang dinding, z = keluar dari permukaan dinding).
+function DindingDekorAR({ segs }: { segs: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        return (
+          <React.Fragment key={`dp${a}`}>
+            <PanelAlurAR pos={[cx, 0.38, 0.008]} w={L} />
+            <Box pos={[cx, 0.07, 0.025]} size={[L, 0.14, 0.05]} color="#C77F78" cast={false} />
+            <Box pos={[cx, 0.145, 0.03]} size={[L, 0.012, 0.06]} color={AR_KRIM} cast={false} />
+            <Box pos={[cx, 0.645, 0.035]} size={[L, 0.04, 0.07]} color={AR_KRIM} cast={false} />
+            <Box pos={[cx, 0.668, 0.036]} size={[L, 0.008, 0.072]} color={EMAS} cast={false} />
+            <Cahaya pos={[cx, 0.622, 0.02]} size={[L - 0.02, 0.008, 0.004]} color="#FFD0CA" opacity={0.85} />
+            <KertasDindingAR pos={[cx, 1.08, 0.003]} w={L} />
+            <Box pos={[cx, 1.5, 0.02]} size={[L, 0.025, 0.04]} color={EMAS} cast={false} />
+            <Box pos={[cx, 1.545, 0.024]} size={[L, 0.05, 0.048]} color={AR_KRIM} cast={false} />
+            <Cahaya pos={[cx, 1.578, 0.014]} size={[L - 0.02, 0.008, 0.008]} color="#FFE3DE" opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Tiang sudut: kolom teal tua berlis krem (tinggi dinding).
+function TiangSudutAR({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.8, 0]} size={[0.22, 1.6, 0.22]} color={AR_TEAL_TUA} />
+      <Box pos={[0, 0.8, 0]} size={[0.24, 1.6, 0.03]} color={AR_KRIM} cast={false} />
+      <Box pos={[0, 0.8, 0]} size={[0.03, 1.6, 0.24]} color={AR_KRIM} cast={false} />
+      <Box pos={[0, 0.03, 0]} size={[0.27, 0.06, 0.27]} color="#6A1F2D" cast={false} />
+      <Box pos={[0, 1.55, 0]} size={[0.26, 0.05, 0.26]} color="#6A1F2D" cast={false} />
+      <Cahaya pos={[0, 1.58, 0]} size={[0.2, 0.012, 0.2]} color="#FFE3DE" opacity={0.9} />
+    </group>
+  );
+}
+
+// Dinding belakang (z = -5.5), barat (dinding luar), dan timur (sisi AR dari dinding ke Transactions) + tiang sudut.
+// Menggantikan ArDinding lama. Tiang sudut timur-belakang dilewati karena ada APAR di sana.
 function ArDinding() {
-  const alur = (a: number, b: number, step: number) => {
-    const out: number[] = [];
-    for (let v = a; v <= b + 1e-6; v += step) out.push(+v.toFixed(2));
-    return out;
-  };
-  const xw = AR_X0; // dinding barat (luar)
   return (
     <group>
-      {/* belakang */}
-      <Box pos={[AR_CX, 0.07, -5.47]} size={[AR_W, 0.14, 0.05]} color={TH.ar.base} cast={false} />
-      <Box pos={[AR_CX, 0.38, -5.485]} size={[AR_W, 0.48, 0.03]} color="#7EC5BC" cast={false} />
-      {alur(xw + 0.5, AR_X1 - 0.5, 0.9).map((x) => (
-        <Box key={`bg${x}`} pos={[x, 0.38, -5.472]} size={[0.025, 0.46, 0.012]} color="#62AFA5" cast={false} />
-      ))}
-      <Box pos={[AR_CX, 0.645, -5.465]} size={[AR_W, 0.04, 0.07]} color={TH.ar.trim} cast={false} />
-      <Box pos={[AR_CX, 1.5, -5.48]} size={[AR_W, 0.025, 0.04]} color={EMAS} cast={false} />
-      {/* kiri */}
-      <Box pos={[xw + 0.03, 0.07, 0]} size={[0.05, 0.14, 11]} color={TH.ar.base} cast={false} />
-      <Box pos={[xw + 0.015, 0.38, 0]} size={[0.03, 0.48, 11]} color="#7EC5BC" cast={false} />
-      {alur(-4.5, 4.5, 0.9).map((z) => (
-        <Box key={`kg${z}`} pos={[xw + 0.028, 0.38, z]} size={[0.012, 0.46, 0.025]} color="#62AFA5" cast={false} />
-      ))}
-      <Box pos={[xw + 0.035, 0.645, 0]} size={[0.07, 0.04, 11]} color={TH.ar.trim} cast={false} />
-      <Box pos={[xw + 0.02, 1.5, 0]} size={[0.04, 0.025, 11]} color={EMAS} cast={false} />
-      {/* tiang sudut belakang-kiri */}
-      <Box pos={[xw + 0.05, 0.8, -5.45]} size={[0.1, 1.6, 0.1]} color={TH.ar.trim} />
-      <Box pos={[xw + 0.05, 0.03, -5.45]} size={[0.14, 0.06, 0.14]} color={TH.ar.base} cast={false} />
+      <group position={[0, 0, -5.5]}>
+        <DindingDekorAR segs={[[AR_X0, AR_X1]]} />
+      </group>
+      <group position={[AR_X0, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorAR segs={[[-5.5, 5.5]]} />
+      </group>
+      <group position={[AR_X1, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+        <DindingDekorAR segs={[[-5.5, 5.5]]} />
+      </group>
+      <TiangSudutAR pos={[AR_X0 + 0.11, 0, -5.39]} />
+      <TiangSudutAR pos={[AR_X0 + 0.11, 0, 5.39]} />
+      <TiangSudutAR pos={[AR_X1 - 0.11, 0, 5.39]} />
     </group>
   );
 }
@@ -4673,38 +5613,51 @@ const AP_CX = (AP_X0 + AP_X1) / 2;
 const AP_DX = AP_X0 + 5; // dinding barat AP bergeser sebesar ini (benda yang menempel di dinding barat ikut)
 const AP_DXE = AP_X1 - 9; // dinding timur AP bergeser sebesar ini (benda yang menempel di dinding timur ikut)
 function ApLantai() {
+  // [DIPERDETAIL] lantai porselen terrazzo rose: ubin 1x1 bersorot tepi, serpihan krem/koral/rose, urat halus. Kanvas = 2 x 2 ubin.
   const tex = useMemo(() => {
     const c = document.createElement('canvas');
-    c.width = c.height = 256;
+    c.width = c.height = 512;
     const g = c.getContext('2d');
     if (g) {
       const r = mulberry32(23);
+      const dasarWarna = ['#F8E4DF', '#F4DDD7', '#F6E1DB', '#F9E8E3'];
+      const serpih = ['rgba(255,247,244,0.7)', 'rgba(231,168,162,0.5)', 'rgba(216,131,125,0.42)', 'rgba(183,107,107,0.3)', 'rgba(255,255,255,0.55)'];
       for (let i = 0; i < 4; i++) {
-        const x = (i % 2) * 128, y = Math.floor(i / 2) * 128;
-        g.fillStyle = i === 0 || i === 3 ? '#F8E4DF' : '#F3D9D3';
-        g.fillRect(x, y, 128, 128);
-        g.fillStyle = 'rgba(255,255,255,0.3)';
-        g.fillRect(x, y, 128, 3);
-        g.fillRect(x, y, 3, 128);
-        g.fillStyle = 'rgba(190,110,105,0.12)';
-        g.fillRect(x, y + 125, 128, 3);
-        g.fillRect(x + 125, y, 3, 128);
-        g.strokeStyle = 'rgba(200,130,125,0.13)';
-        g.lineWidth = 1;
+        const x = (i % 2) * 256, y = Math.floor(i / 2) * 256;
+        g.fillStyle = dasarWarna[i];
+        g.fillRect(x, y, 256, 256);
+        g.save();
+        g.beginPath();
+        g.rect(x, y, 256, 256);
+        g.clip();
         for (let k = 0; k < 3; k++) {
+          g.strokeStyle = `rgba(200,130,125,${0.1 + r() * 0.1})`;
+          g.lineWidth = 1 + r() * 1.6;
           g.beginPath();
-          g.moveTo(x + r() * 128, y + r() * 128);
-          g.lineTo(x + r() * 128, y + r() * 128);
+          const sx = x + r() * 256, sy = y + r() * 256;
+          g.moveTo(sx, sy);
+          g.bezierCurveTo(sx + (r() - 0.5) * 160, sy + (r() - 0.5) * 160, sx + (r() - 0.5) * 240, sy + (r() - 0.5) * 240, sx + (r() - 0.5) * 300, sy + (r() - 0.5) * 300);
           g.stroke();
         }
+        for (let k = 0; k < 150; k++) {
+          g.fillStyle = serpih[Math.floor(r() * serpih.length)];
+          g.beginPath();
+          g.ellipse(x + r() * 256, y + r() * 256, 1.2 + r() * 4.2, 1 + r() * 2.6, r() * Math.PI, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.restore();
+        g.fillStyle = 'rgba(255,255,255,0.34)';
+        g.fillRect(x + 2, y + 2, 252, 2);
+        g.fillRect(x + 2, y + 2, 2, 252);
+        g.fillStyle = 'rgba(190,110,105,0.16)';
+        g.fillRect(x + 2, y + 252, 252, 2);
+        g.fillRect(x + 252, y + 2, 2, 252);
       }
-      g.strokeStyle = '#E5BDB7';
-      g.lineWidth = 3;
-      g.strokeRect(0, 0, 256, 256);
-      g.beginPath();
-      g.moveTo(128, 0); g.lineTo(128, 256);
-      g.moveTo(0, 128); g.lineTo(256, 128);
-      g.stroke();
+      g.fillStyle = '#E5BDB7';
+      for (const o of [0, 256, 510]) {
+        g.fillRect(o - 1, 0, 3, 512);
+        g.fillRect(0, o - 1, 512, 3);
+      }
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -4741,6 +5694,9 @@ function ApLantai() {
       <Karpet pos={[8.7, 0, 3.75]} w={3.4} d={2.8} dasar="#F6E2D3" tepi="#D9606B" />
       {/* [BARU] karpet area perluasan: meja vendor, pantry */}
       <Karpet pos={[-3.3, 0, -3.0]} w={3.4} d={3.4} dasar="#F3E3DC" tepi="#E0868A" />
+      {/* [BARU] ambang pintu: pita anggur + garis krem */}
+      <Box pos={[-0.4, 0.007, 5.44]} size={[2.0, 0.012, 0.12]} color={AP_ANGGUR} cast={false} />
+      <Box pos={[-0.4, 0.0135, 5.44]} size={[1.9, 0.002, 0.03]} color="#FFF1EE" cast={false} />
       {/* keset pintu */}
       <Karpet pos={[-0.4, 0, 5.0]} w={1.5} d={0.8} dasar="#B83E50" tepi="#8F2E3E" emas={false} naik={0.004} />
       <Teks pos={[-0.4, 0.0215, 5.0]} rot={[-Math.PI / 2, 0, 0]} w={1.3} h={0.2} text="BAYAR TEPAT WAKTU" fg="#F5C84C" />
@@ -4754,19 +5710,166 @@ function ApLantai() {
   );
 }
 
-// Dinding belakang (z = -5.5): plint, panel wainscot beralur, list kursi, pita merah tua. Sisi kiri = partisi kaca ke Transactions.
+// ---- [BARU] Dinding Account Payable: panel alur koral, kertas dinding rose bermotif faktur & panah bayar, rel krem, list atas + LED hangat ----
+const AP_ANGGUR = '#8F2E3E';
+const AP_MERAH = '#C94A5A';
+const AP_KRIM = '#FFF1EE';
+
+// Panel beralur (fluted) koral: alur vertikal bersorot kiri-gelap kanan. Tile 1.0 x 0.48.
+function PanelAlurAP({ pos, w, h = 0.48 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 128, (g, W, H) => {
+    g.fillStyle = '#D8837D';
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 8; i++) {
+      const x = i * 32 + 2;
+      const gr = g.createLinearGradient(x, 0, x + 28, 0);
+      gr.addColorStop(0, '#EDA9A2');
+      gr.addColorStop(0.55, '#E3968F');
+      gr.addColorStop(1, '#D17D77');
+      g.fillStyle = gr;
+      g.fillRect(x, 0, 28, H);
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.fillRect(x, 0, 2, H);
+      g.fillStyle = 'rgba(120,40,45,0.22)';
+      g.fillRect(x + 26, 0, 2, H);
+    }
+    g.fillStyle = 'rgba(255,241,238,0.35)';
+    g.fillRect(0, 0, W, 2);
+    g.fillStyle = 'rgba(120,40,45,0.25)';
+    g.fillRect(0, H - 2, W, 2);
+  }, 'ap-panel-alur');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Kertas dinding rose: pinstripe halus + faktur (invoice) dan panah keluar-dalam-lingkaran (pembayaran) bergantian. Tile 2.0 x 0.825.
+function KertasDindingAP({ pos, w, h = 0.825 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(640, 264, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#FCEAE6');
+    gr.addColorStop(1, '#F6D9D3');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let x = 4; x < W; x += 12) g.fillRect(x, 0, 1, H);
+    g.fillStyle = 'rgba(201,74,90,0.06)';
+    for (let y = 22; y < H; y += 44) g.fillRect(0, y, W, 1);
+    const ikon = (cx: number, cy: number, jenis: number) => {
+      g.save();
+      g.translate(cx, cy);
+      g.strokeStyle = 'rgba(201,74,90,0.34)';
+      g.fillStyle = 'rgba(201,74,90,0.12)';
+      g.lineWidth = 2;
+      if (jenis === 0) {
+        // faktur: lembar bersudut lipat + baris teks
+        g.beginPath();
+        g.moveTo(-12, -16); g.lineTo(6, -16); g.lineTo(12, -10); g.lineTo(12, 16); g.lineTo(-12, 16);
+        g.closePath();
+        g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(6, -16); g.lineTo(6, -10); g.lineTo(12, -10); g.stroke();
+        g.lineWidth = 1.6;
+        for (const y of [-3, 3, 9]) { g.beginPath(); g.moveTo(-7, y); g.lineTo(7, y); g.stroke(); }
+      } else {
+        // pembayaran keluar: lingkaran + panah ke kanan-atas
+        g.beginPath(); g.arc(0, 0, 15, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.lineWidth = 2.4;
+        g.beginPath(); g.moveTo(-6, 6); g.lineTo(6, -6); g.stroke();
+        g.beginPath(); g.moveTo(-1, -6); g.lineTo(6, -6); g.lineTo(6, 1); g.stroke();
+      }
+      g.restore();
+    };
+    for (let j = 0; j < 3; j++) {
+      for (let i = 0; i < 4; i++) {
+        const x = i * 160 + 80 + (j % 2 ? 80 : 0);
+        const y = 44 + j * 88;
+        const jenis = (i + j) % 2;
+        ikon(x, y, jenis);
+        if (x > W - 30) ikon(x - W, y, jenis);
+        // titik penghubung kecil antar ikon
+        g.fillStyle = 'rgba(201,74,90,0.28)';
+        g.beginPath(); g.arc(x + 40, y + 44, 2.4, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x - 40, y + 44, 2.4, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }, 'ap-kertas-dinding');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w / 2), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias dinding AP (menghadap +z lokal, x sepanjang dinding, z = keluar dari permukaan dinding).
+function DindingDekorAP({ segs }: { segs: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        return (
+          <React.Fragment key={`dp${a}`}>
+            <PanelAlurAP pos={[cx, 0.38, 0.008]} w={L} />
+            <Box pos={[cx, 0.07, 0.025]} size={[L, 0.14, 0.05]} color="#C77F78" cast={false} />
+            <Box pos={[cx, 0.145, 0.03]} size={[L, 0.012, 0.06]} color={AP_KRIM} cast={false} />
+            <Box pos={[cx, 0.645, 0.035]} size={[L, 0.04, 0.07]} color={AP_KRIM} cast={false} />
+            <Box pos={[cx, 0.668, 0.036]} size={[L, 0.008, 0.072]} color={AP_MERAH} cast={false} />
+            <Cahaya pos={[cx, 0.622, 0.02]} size={[L - 0.02, 0.008, 0.004]} color="#FFD0CA" opacity={0.85} />
+            <KertasDindingAP pos={[cx, 1.08, 0.003]} w={L} />
+            <Box pos={[cx, 1.5, 0.02]} size={[L, 0.025, 0.04]} color={AP_MERAH} cast={false} />
+            <Box pos={[cx, 1.545, 0.024]} size={[L, 0.05, 0.048]} color={AP_KRIM} cast={false} />
+            <Cahaya pos={[cx, 1.578, 0.014]} size={[L - 0.02, 0.008, 0.008]} color="#FFE3DE" opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Tiang sudut: kolom koral tua berlis krem (tinggi dinding).
+function TiangSudutAP({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.8, 0]} size={[0.22, 1.6, 0.22]} color={AP_ANGGUR} />
+      <Box pos={[0, 0.8, 0]} size={[0.24, 1.6, 0.03]} color={AP_KRIM} cast={false} />
+      <Box pos={[0, 0.8, 0]} size={[0.03, 1.6, 0.24]} color={AP_KRIM} cast={false} />
+      <Box pos={[0, 0.03, 0]} size={[0.27, 0.06, 0.27]} color="#6A1F2D" cast={false} />
+      <Box pos={[0, 1.55, 0]} size={[0.26, 0.05, 0.26]} color="#6A1F2D" cast={false} />
+      <Cahaya pos={[0, 1.58, 0]} size={[0.2, 0.012, 0.2]} color="#FFE3DE" opacity={0.9} />
+    </group>
+  );
+}
+
+// Dinding belakang (z = -5.5) dan barat (partisi ke Transactions) + tiang sudut.
 function ApDinding() {
-  const alur: number[] = [];
-  for (let v = AP_X0 + 0.5; v <= AP_X1 - 0.5 + 1e-6; v += 0.9) alur.push(+v.toFixed(2));
   return (
     <group>
-      <Box pos={[AP_CX, 0.07, -5.47]} size={[AP_W, 0.14, 0.05]} color={TH.ap.base} cast={false} />
-      <Box pos={[AP_CX, 0.38, -5.485]} size={[AP_W, 0.48, 0.03]} color="#E3968F" cast={false} />
-      {alur.map((x) => (
-        <Box key={`apg${x}`} pos={[x, 0.38, -5.472]} size={[0.025, 0.46, 0.012]} color="#D8837D" cast={false} />
-      ))}
-      <Box pos={[AP_CX, 0.645, -5.465]} size={[AP_W, 0.04, 0.07]} color={TH.ap.trim} cast={false} />
-      <Box pos={[AP_CX, 1.5, -5.48]} size={[AP_W, 0.025, 0.04]} color="#C94A5A" cast={false} />
+      <group position={[0, 0, -5.5]}>
+        <DindingDekorAP segs={[[AP_X0, AP_X1]]} />
+      </group>
+      <group position={[AP_X0, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorAP segs={[[-5.5, 5.5]]} />
+      </group>
+      <TiangSudutAP pos={[AP_X1 - 0.11, 0, -5.39]} />
+      <TiangSudutAP pos={[AP_X0 + 0.11, 0, 5.39]} />
     </group>
   );
 }
@@ -6107,6 +7210,355 @@ function AsetDetail() {
   );
 }
 
+// ---- [BARU] Lantai & dinding ruang Asset ---------------------------------------------------------------------------------
+// Tema: brankas + gudang aset. Lantai parket kayu madu (pola anyaman), karpet tenun pasir, inlay keliling walnut + kuningan.
+// Dinding: lis bawah walnut, panel walnut berbingkai, rel kuningan, kertas dinding krem bermotif koin & peti, list atas walnut + LED hangat.
+const AS_WALNUT = '#4A2F18';
+const AS_KUNINGAN = '#C9A24A';
+
+// Lantai parket kayu madu pola anyaman (blok 0.5 x 0.5, tiap blok 4 papan; blok bergantian arah). Tile 2.0 x 2.0.
+function LantaiParketAset({ cx, cz, w, d }: { cx: number; cz: number; w: number; d: number }) {
+  const dasar = useKanvasMg(512, 512, (g) => {
+    const r = mulberry32(4242);
+    const warna = ['#E9D2A6', '#E3C998', '#EBD6AE', '#DFC28F', '#E7CFA0', '#EDD8B0'];
+    for (let bi = 0; bi < 4; bi++) {
+      for (let bj = 0; bj < 4; bj++) {
+        const horiz = (bi + bj) % 2 === 0;
+        for (let k = 0; k < 4; k++) {
+          const x = horiz ? bi * 128 : bi * 128 + k * 32;
+          const y = horiz ? bj * 128 + k * 32 : bj * 128;
+          const pw = horiz ? 128 : 32, ph = horiz ? 32 : 128;
+          g.fillStyle = warna[Math.floor(r() * warna.length)];
+          g.fillRect(x, y, pw, ph);
+          // serat kayu searah papan
+          for (let n = 0; n < 5; n++) {
+            g.strokeStyle = `rgba(140,95,45,${0.07 + r() * 0.1})`;
+            g.lineWidth = 1;
+            g.beginPath();
+            if (horiz) { const yy = y + 4 + r() * 24; g.moveTo(x + 2, yy); g.lineTo(x + pw - 2, yy + (r() - 0.5) * 3); }
+            else { const xx = x + 4 + r() * 24; g.moveTo(xx, y + 2); g.lineTo(xx + (r() - 0.5) * 3, y + ph - 2); }
+            g.stroke();
+          }
+          // sorot tepi atas/kiri + celah gelap bawah/kanan
+          g.fillStyle = 'rgba(255,255,255,0.2)';
+          g.fillRect(x, y, pw, 1.5);
+          g.fillRect(x, y, 1.5, ph);
+          g.fillStyle = 'rgba(95,62,28,0.42)';
+          g.fillRect(x, y + ph - 1.5, pw, 1.5);
+          g.fillRect(x + pw - 1.5, y, 1.5, ph);
+        }
+        // garis batas blok sedikit lebih gelap
+        g.strokeStyle = 'rgba(95,62,28,0.35)';
+        g.lineWidth = 2;
+        g.strokeRect(bi * 128 + 1, bj * 128 + 1, 126, 126);
+      }
+    }
+  }, 'aset-parket');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w / 2, d / 2);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w, d]);
+  return (
+    <mesh position={[cx, 0.003, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Karpet tenun pasir: kisi berlian halus + titik benang emas + serat. Tile 1.0 x 1.0.
+function KarpetTenunAset({ pos, w, d }: { pos: V3; w: number; d: number }) {
+  const dasar = useKanvasMg(256, 256, (g) => {
+    const r = mulberry32(909);
+    g.fillStyle = '#EBDAB8';
+    g.fillRect(0, 0, 256, 256);
+    for (let k = 0; k < 1400; k++) {
+      g.fillStyle = r() < 0.5 ? 'rgba(150,115,60,0.07)' : 'rgba(255,255,255,0.12)';
+      g.fillRect(r() * 256, r() * 256, 1.5, 1.5 + r() * 2.5);
+    }
+    g.strokeStyle = 'rgba(160,118,52,0.22)';
+    g.lineWidth = 1.6;
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+        const x = i * 128, y = j * 128;
+        g.beginPath();
+        g.moveTo(x + 64, y);
+        g.lineTo(x + 128, y + 64);
+        g.lineTo(x + 64, y + 128);
+        g.lineTo(x, y + 64);
+        g.closePath();
+        g.stroke();
+        g.fillStyle = 'rgba(184,134,11,0.34)';
+        g.beginPath(); g.arc(x + 64, y + 64, 3.2, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(184,134,11,0.22)';
+        for (const [ox, oy] of [[64, 0], [128, 64], [64, 128], [0, 64]]) { g.beginPath(); g.arc(x + ox, y + oy, 2, 0, Math.PI * 2); g.fill(); }
+      }
+    }
+  }, 'aset-karpet-tenun');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(w, d);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w, d]);
+  return (
+    <mesh position={pos} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Inlay keliling lantai: pita walnut 0.24 + garis kuningan tipis di sisi dalam. Celah pintu utara (x 15.4 .. 17.4) dilewati; ambang kuningan di pintu.
+function InlayLantaiAset() {
+  const x0 = ASET.cx - 5, x1 = ASET.cx + 5, z0 = ASET.cz - 4, z1 = ASET.cz + 4;
+  const cx = ASET.cx;
+  const WAL = '#5A3A1D';
+  const utara: [number, number][] = [[x0, cx - 1.0], [cx + 1.0, x1]];
+  return (
+    <>
+      {utara.map(([a, b]) => (
+        <React.Fragment key={`u${a}`}>
+          <Box pos={[(a + b) / 2, 0.0035, z0 + 0.12]} size={[b - a, 0.003, 0.24]} color={WAL} cast={false} />
+          <Box pos={[(a + b) / 2, 0.0042, z0 + 0.29]} size={[b - a, 0.002, 0.022]} color={AS_KUNINGAN} cast={false} />
+        </React.Fragment>
+      ))}
+      <Box pos={[cx, 0.0035, z1 - 0.12]} size={[x1 - x0, 0.003, 0.24]} color={WAL} cast={false} />
+      <Box pos={[cx, 0.0042, z1 - 0.29]} size={[x1 - x0 - 0.48, 0.002, 0.022]} color={AS_KUNINGAN} cast={false} />
+      {[x0 + 0.12, x1 - 0.12].map((x, i) => (
+        <React.Fragment key={`s${x}`}>
+          <Box pos={[x, 0.0035, ASET.cz]} size={[0.24, 0.003, z1 - z0]} color={WAL} cast={false} />
+          <Box pos={[x + (i ? -0.17 : 0.17), 0.0042, ASET.cz]} size={[0.022, 0.002, z1 - z0 - 0.48]} color={AS_KUNINGAN} cast={false} />
+        </React.Fragment>
+      ))}
+      {/* ambang kuningan pintu */}
+      <Box pos={[cx, 0.007, z0 + 0.06]} size={[2.0, 0.012, 0.12]} color={AS_KUNINGAN} cast={false} />
+      <Box pos={[cx, 0.0135, z0 + 0.06]} size={[1.9, 0.002, 0.03]} color={AS_WALNUT} cast={false} />
+    </>
+  );
+}
+
+function LantaiAset() {
+  const { cx, cz, w, d } = ASET;
+  return (
+    <>
+      <LantaiParketAset cx={cx} cz={cz} w={w} d={d} />
+      <KarpetTenunAset pos={[cx, 0.005, 24.6]} w={8.6} d={6.0} />
+      {/* pita tepi karpet */}
+      {[21.7, 27.5].map((z) => (
+        <Box key={`kz${z}`} pos={[cx, 0.0058, z]} size={[8.6, 0.002, 0.2]} color="#D6B982" cast={false} />
+      ))}
+      {[cx - 4.2, cx + 4.2].map((x) => (
+        <Box key={`kx${x}`} pos={[x, 0.0058, 24.6]} size={[0.2, 0.002, 5.6]} color="#D6B982" cast={false} />
+      ))}
+      <InlayLantaiAset />
+    </>
+  );
+}
+
+// Kertas dinding krem-emas: kisi berlian + koin (aset tetap) dan peti (persediaan) bergantian. Tile 2.0 x 0.6.
+function KertasDindingAset({ pos, w, h = 0.6 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(640, 192, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#F7ECD3');
+    gr.addColorStop(1, '#EBDBB8');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(184,134,11,0.07)';
+    for (let x = 6; x < W; x += 16) g.fillRect(x, 0, 1.2, H);
+    g.strokeStyle = 'rgba(160,110,40,0.2)';
+    g.lineWidth = 1.2;
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 2; j++) {
+        const cx = i * 128 + 64, cy = j * 96 + 48;
+        g.beginPath();
+        g.moveTo(cx, cy - 48);
+        g.lineTo(cx + 64, cy);
+        g.lineTo(cx, cy + 48);
+        g.lineTo(cx - 64, cy);
+        g.closePath();
+        g.stroke();
+        // simpul sudut
+        g.fillStyle = 'rgba(184,134,11,0.3)';
+        g.beginPath(); g.arc(cx + 64, cy, 2.2, 0, Math.PI * 2); g.fill();
+        if ((i + j) % 2 === 0) {
+          // koin
+          g.strokeStyle = 'rgba(184,134,11,0.5)';
+          g.lineWidth = 2;
+          g.beginPath(); g.arc(cx, cy, 15, 0, Math.PI * 2); g.stroke();
+          g.lineWidth = 1;
+          g.beginPath(); g.arc(cx, cy, 10, 0, Math.PI * 2); g.stroke();
+          g.fillStyle = 'rgba(184,134,11,0.45)';
+          g.fillRect(cx - 1.5, cy - 6, 3, 12);
+        } else {
+          // peti + pita
+          g.fillStyle = 'rgba(143,90,44,0.22)';
+          g.fillRect(cx - 14, cy - 12, 28, 24);
+          g.strokeStyle = 'rgba(143,90,44,0.5)';
+          g.lineWidth = 1.6;
+          g.strokeRect(cx - 14, cy - 12, 28, 24);
+          g.beginPath(); g.moveTo(cx - 14, cy - 2); g.lineTo(cx + 14, cy - 2); g.moveTo(cx, cy - 12); g.lineTo(cx, cy + 12); g.stroke();
+        }
+        g.strokeStyle = 'rgba(160,110,40,0.2)';
+        g.lineWidth = 1.2;
+      }
+    }
+  }, 'aset-kertas-dinding');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(0.5, w / 2), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Panel walnut berbingkai (satu panel timbul per 1.0 lebar). Tile 1.0 x 0.78.
+function PanelWalnutAset({ pos, w, h = 0.78 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 200, (g, W, H) => {
+    const r = mulberry32(31);
+    g.fillStyle = '#5A3A1D';
+    g.fillRect(0, 0, W, H);
+    // serat bingkai
+    for (let k = 0; k < 18; k++) {
+      g.fillStyle = `rgba(30,16,6,${0.06 + r() * 0.08})`;
+      g.fillRect(r() * W, 0, 1, H);
+    }
+    // panel timbul
+    const gr = g.createLinearGradient(0, 18, 0, H - 18);
+    gr.addColorStop(0, '#8A5A2F');
+    gr.addColorStop(1, '#74481F');
+    g.fillStyle = gr;
+    g.fillRect(22, 18, W - 44, H - 36);
+    g.fillStyle = 'rgba(255,225,170,0.3)';
+    g.fillRect(22, 18, W - 44, 3);
+    g.fillRect(22, 18, 3, H - 36);
+    g.fillStyle = 'rgba(0,0,0,0.34)';
+    g.fillRect(22, H - 21, W - 44, 3);
+    g.fillRect(W - 25, 18, 3, H - 36);
+    // bidang dalam (cekung)
+    g.fillStyle = '#7B4B24';
+    g.fillRect(46, 40, W - 92, H - 80);
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    g.fillRect(46, 40, W - 92, 2.5);
+    g.fillRect(46, 40, 2.5, H - 80);
+    g.fillStyle = 'rgba(255,225,170,0.22)';
+    g.fillRect(46, H - 42, W - 92, 2.5);
+    g.fillRect(W - 48, 40, 2.5, H - 80);
+    for (let k = 0; k < 10; k++) {
+      g.strokeStyle = `rgba(50,28,10,${0.08 + r() * 0.1})`;
+      g.lineWidth = 1;
+      const x = 52 + r() * (W - 104);
+      g.beginPath(); g.moveTo(x, 46); g.lineTo(x + (r() - 0.5) * 6, H - 46); g.stroke();
+    }
+    // paku kuningan di sudut panel
+    g.fillStyle = '#D9B45A';
+    for (const [x, y] of [[34, 30], [W - 34, 30], [34, H - 30], [W - 34, H - 30]]) { g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill(); }
+  }, 'aset-panel-walnut');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(1, Math.round(w)), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias dinding Asset (menghadap +z lokal, x sepanjang dinding, z = keluar dari permukaan dinding).
+function DindingDekorAset({ segs }: { segs: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        return (
+          <React.Fragment key={`da${a}`}>
+            <PanelWalnutAset pos={[cx, 0.5, 0.012]} w={L} />
+            <Box pos={[cx, 0.045, 0.017]} size={[L, 0.09, 0.034]} color="#3B2412" cast={false} />
+            <Box pos={[cx, 0.096, 0.02]} size={[L, 0.012, 0.04]} color={AS_KUNINGAN} cast={false} />
+            <Box pos={[cx, 0.9, 0.022]} size={[L, 0.04, 0.044]} color={AS_WALNUT} cast={false} />
+            <Box pos={[cx, 0.924, 0.024]} size={[L, 0.008, 0.048]} color={AS_KUNINGAN} cast={false} />
+            <Cahaya pos={[cx, 0.876, 0.02]} size={[L - 0.02, 0.008, 0.004]} color="#FFE2A0" opacity={0.85} />
+            <KertasDindingAset pos={[cx, 1.218, 0.002]} w={L} />
+            <Box pos={[cx, 1.54, 0.02]} size={[L, 0.05, 0.04]} color={AS_WALNUT} cast={false} />
+            <Box pos={[cx, 1.51, 0.022]} size={[L, 0.008, 0.044]} color={AS_KUNINGAN} cast={false} />
+            <Cahaya pos={[cx, 1.572, 0.012]} size={[L - 0.02, 0.008, 0.008]} color="#FFEFC4" opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Tiang sudut: kolom walnut berlis kuningan (tinggi dinding).
+function TiangSudutAset({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0.8, 0]} size={[0.22, 1.6, 0.22]} color={AS_WALNUT} />
+      <Box pos={[0, 0.8, 0]} size={[0.24, 1.6, 0.03]} color={AS_KUNINGAN} cast={false} />
+      <Box pos={[0, 0.8, 0]} size={[0.03, 1.6, 0.24]} color={AS_KUNINGAN} cast={false} />
+      <Box pos={[0, 0.03, 0]} size={[0.27, 0.06, 0.27]} color="#2E1C0D" cast={false} />
+      <Box pos={[0, 1.55, 0]} size={[0.26, 0.05, 0.26]} color="#2E1C0D" cast={false} />
+      <Cahaya pos={[0, 1.58, 0]} size={[0.2, 0.012, 0.2]} color="#FFEFC4" opacity={0.9} />
+    </group>
+  );
+}
+
+// Lampu dinding kuningan (bar cahaya hangat) untuk dinding timur.
+function LampuDindingAset({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0, 0.018]} size={[0.12, 0.3, 0.03]} color="#8F6A1F" cast={false} />
+      <Box pos={[0, 0.16, 0.05]} size={[0.14, 0.03, 0.09]} color={AS_KUNINGAN} cast={false} />
+      <Box pos={[0, -0.16, 0.05]} size={[0.14, 0.03, 0.09]} color={AS_KUNINGAN} cast={false} />
+      <Cahaya pos={[0, 0, 0.05]} size={[0.05, 0.28, 0.05]} color="#FFE7A8" opacity={0.95} />
+      <Kolam pos={[0, 0, 0.004]} size={[0.9, 1.1]} color="#FFE7A8" opacity={0.1} rot={[0, 0, 0]} />
+    </group>
+  );
+}
+
+// Dinding utara (kecuali celah pintu), barat, dan timur ruang Asset. Dinding selatan = partisi kaca, tidak dilapis.
+function DindingAset() {
+  const x0 = ASET.cx - 5, x1 = ASET.cx + 5, z0 = ASET.cz - 4, z1 = ASET.cz + 4;
+  const cx = ASET.cx;
+  return (
+    <>
+      <group position={[0, 0, z0]}>
+        <DindingDekorAset segs={[[x0, cx - 1.06], [cx + 1.06, x1]]} />
+      </group>
+      <group position={[x0, 0, ASET.cz]} rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorAset segs={[[-4, 4]]} />
+      </group>
+      <group position={[x1, 0, ASET.cz]} rotation={[0, -Math.PI / 2, 0]}>
+        <DindingDekorAset segs={[[-4, 4]]} />
+        {[-2.3, 0.0, 2.3].map((x) => (
+          <LampuDindingAset key={`ld${x}`} pos={[x, 1.2, 0.0]} />
+        ))}
+      </group>
+      <TiangSudutAset pos={[x0 + 0.11, 0, z0 + 0.11]} />
+      <TiangSudutAset pos={[x1 - 0.11, 0, z0 + 0.11]} />
+      <TiangSudutAset pos={[x0 + 0.11, 0, z1 - 0.11]} />
+      <TiangSudutAset pos={[x1 - 0.11, 0, z1 - 0.11]} />
+    </>
+  );
+}
+
 function AsetArea() {
   const { cx } = ASET;
   const x0 = cx - 5, z0 = ASET.cz - 4, x1 = cx + 5;
@@ -6119,11 +7571,8 @@ function AsetArea() {
   return (
     <>
       <Lantai {...ASET} color={TH.aset.floor} />
-      {/* lantai parket kayu: papan memanjang bergantian terang/gelap */}
-      {Array.from({ length: 16 }, (_, i) => (
-        <Box key={i} pos={[cx, 0.003, ASET.cz - 3.75 + i * 0.5]} size={[9.96, 0.004, 0.46]} color={i % 2 ? '#EFE0C2' : '#F6EBD3'} cast={false} />
-      ))}
-      <Box pos={[cx, 0.005, 24.6]} size={[8.6, 0.015, 6.0]} color="#EAD9B8" cast={false} />
+      {/* [DIPERDETAIL] lantai parket kayu madu pola anyaman + karpet tenun pasir + inlay keliling walnut/kuningan */}
+      <LantaiAset />
       {/* bingkai emas karpet + garis dalam */}
       {[22.0, 27.2].map((z) => (
         <Box key={z} pos={[cx, 0.014, z]} size={[8.6, 0.01, 0.06]} color={EMAS} cast={false} />
@@ -6141,6 +7590,8 @@ function AsetArea() {
         <Box key={x} pos={[x, 0.016, 21.7]} size={[0.07, 0.012, 2.8]} color={EMAS} cast={false} />
       ))}
       <DekorDindingKiri pos={[11.44, 0, 24.35]} jenis="aset" />
+      {/* [BARU] lapisan hias dinding utara (kecuali celah pintu), barat, timur + tiang sudut */}
+      <DindingAset />
       {/* brankas + emas batangan + karung uang + timbangan */}
       <BrankasAset pos={[x0 + 1.12, 0, z0 + 0.5]} />
       <BatangEmas pos={[x0 + 0.87, 0, z0 + 1.7]} rotY={0.15} />
@@ -6676,9 +8127,97 @@ function GlobeProyeksi({ pos }: { pos: V3 }) {
 }
 
 // Lantai teknologi ruang Planning: ubin lilac, garis sambungan, LED tepi, karpet cincin, jejak sirkuit ke tiap meja.
+// [BARU] Lantai Planning futuristik modern: ubin grafit-indigo gelap berbevel dengan celah cahaya, ubin aksen heksagon/lingkaran,
+// garis cahaya tiap 2 & 4 ubin, titik simpul di sudut ubin. Dua lapis: tekstur terpengaruh lampu (ubin) + tekstur bercahaya (garis, tanpa lampu).
+function LantaiFuturistik({ cx, cz = 0, w, d }: { cx: number; cz?: number; w: number; d: number }) {
+  const ubin = useKanvasMg(1024, 1024, (g) => {
+    g.fillStyle = '#12102F';
+    g.fillRect(0, 0, 1024, 1024);
+    const shade = ['#262160', '#292466', '#2C276B', '#242058'];
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        const x = i * 256, y = j * 256;
+        g.fillStyle = shade[(i * 3 + j * 5) % 4];
+        g.fillRect(x + 4, y + 4, 248, 248);
+        g.fillStyle = 'rgba(167,139,250,0.20)';
+        g.fillRect(x + 4, y + 4, 248, 3);
+        g.fillRect(x + 4, y + 4, 3, 248);
+        g.fillStyle = 'rgba(0,0,0,0.32)';
+        g.fillRect(x + 4, y + 249, 248, 3);
+        g.fillRect(x + 249, y + 4, 3, 248);
+        g.strokeStyle = 'rgba(103,232,249,0.10)';
+        g.lineWidth = 2;
+        g.strokeRect(x + 24, y + 24, 208, 208);
+      }
+    }
+    // ubin aksen
+    const heks = (cx0: number, cy0: number, r: number, warna: string) => {
+      g.strokeStyle = warna;
+      g.lineWidth = 3;
+      g.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.PI / 6 + (k * Math.PI) / 3;
+        const px = cx0 + r * Math.cos(a), py = cy0 + r * Math.sin(a);
+        if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.closePath();
+      g.stroke();
+    };
+    heks(256 + 128, 256 + 128, 74, 'rgba(167,139,250,0.55)');
+    heks(256 + 128, 256 + 128, 44, 'rgba(103,232,249,0.40)');
+    g.fillStyle = 'rgba(103,232,249,0.7)';
+    g.beginPath(); g.arc(256 + 128, 256 + 128, 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(103,232,249,0.5)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(768 + 128, 512 + 128, 70, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(167,139,250,0.45)';
+    g.beginPath(); g.arc(768 + 128, 512 + 128, 38, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(240,171,252,0.45)'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(40, 768 + 60); g.lineTo(120, 768 + 60); g.lineTo(150, 768 + 130); g.lineTo(220, 768 + 130); g.stroke();
+    g.fillStyle = 'rgba(240,171,252,0.8)';
+    g.beginPath(); g.arc(220, 768 + 130, 6, 0, Math.PI * 2); g.fill();
+  }, 'plan-lantai-fut-ubin');
+  const cahaya = useKanvasMg(1024, 1024, (g) => {
+    g.clearRect(0, 0, 1024, 1024);
+    const garis = (p: number, tebal: number, warna: string) => {
+      g.fillStyle = warna;
+      for (const o of [0, 1024]) {
+        g.fillRect(p - tebal / 2 + o, 0, tebal, 1024);
+        g.fillRect(0, p - tebal / 2 + o, 1024, tebal);
+      }
+    };
+    garis(512, 3, 'rgba(167,139,250,0.40)');
+    garis(0, 5, 'rgba(103,232,249,0.50)');
+    g.fillStyle = 'rgba(103,232,249,0.85)';
+    for (let i = 0; i <= 4; i++) {
+      for (let j = 0; j <= 4; j++) {
+        g.beginPath(); g.arc(i * 256, j * 256, 5, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }, 'plan-lantai-fut-cahaya');
+  const ulang = (t: THREE.Texture) => {
+    const c = t.clone();
+    c.wrapS = c.wrapT = THREE.RepeatWrapping;
+    c.repeat.set(w / 4, d / 4);
+    c.needsUpdate = true;
+    return c;
+  };
+  const t1 = useMemo(() => ulang(ubin), [ubin, w, d]); // eslint-disable-line react-hooks/exhaustive-deps
+  const t2 = useMemo(() => ulang(cahaya), [cahaya, w, d]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      <mesh position={[cx, 0.0015, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[w, d]} />
+        <meshLambertMaterial map={t1} />
+      </mesh>
+      <mesh position={[cx, 0.0024, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[w, d]} />
+        <meshBasicMaterial map={t2} transparent depthWrite={false} toneMapped={false} />
+      </mesh>
+    </>
+  );
+}
+
 function LantaiPlanning() {
-  const xs = useMemo(() => Array.from({ length: 21 + Math.round(PL_DX) }, (_, i) => -13 + i), []);
-  const zs = useMemo(() => Array.from({ length: 11 }, (_, i) => -5 + i), []);
   const G: V3 = [-2.0 + PL_DX / 2, 0, 0.0]; // globe di tengah (ruangan kini x -13.8..13.2, z -5.5..5.5)
   const J_pixel: [number, number][] = useMemo(() => [[-8.0, -3.0], [-6.5, -3.0], [-6.5, -0.9], [-3.6 + PL_DX / 2, -0.9]], []);
   const J_sigma: [number, number][] = useMemo(() => [[-8.0, 0.9], [-6.2, 0.9], [-6.2, 1.4], [-3.7 + PL_DX / 2, 1.4]], []);
@@ -6686,13 +8225,8 @@ function LantaiPlanning() {
   const J_quark: [number, number][] = useMemo(() => [[4.0 + PL_DX, 0.9], [2.9 + PL_DX, 0.9], [2.9 + PL_DX, 1.4], [-0.3 + PL_DX / 2, 1.4]], []);
   return (
     <>
-      <Lantai cx={-2 - GESER_BARAT / 2 + PL_DX / 2} w={20 + GESER_BARAT + PL_DX} d={11} color="#DAD6EC" />
-      {xs.map((x) => (
-        <Box key={`x${x}`} pos={[x, 0.002, 0]} size={[0.016, 0.004, 10.8]} color="#BDB7D6" cast={false} />
-      ))}
-      {zs.map((z) => (
-        <Box key={`z${z}`} pos={[-2 - GESER_BARAT / 2 + PL_DX / 2, 0.002, z]} size={[19.8 + GESER_BARAT + PL_DX, 0.004, 0.016]} color="#BDB7D6" cast={false} />
-      ))}
+      <Lantai cx={-2 - GESER_BARAT / 2 + PL_DX / 2} w={20 + GESER_BARAT + PL_DX} d={11} color="#12102F" />
+      <LantaiFuturistik cx={-2 - GESER_BARAT / 2 + PL_DX / 2} w={20 + GESER_BARAT + PL_DX} d={11} />
       {/* LED tepi (celah pintu utara x 0 dan timur z 3.6 dibiarkan kosong) */}
       <Cahaya pos={[-6.5 - GESER_BARAT / 2, 0.03, -5.47]} size={[11 + GESER_BARAT, 0.025, 0.025]} color={HUB.violet} />
       <Cahaya pos={[4.5 + PL_DX / 2, 0.03, -5.47]} size={[6.6 + PL_DX, 0.025, 0.025]} color={HUB.violet} />
@@ -6701,7 +8235,7 @@ function LantaiPlanning() {
       <Cahaya pos={[7.96 + PL_DX, 0.03, 5.05]} size={[0.025, 0.025, 0.7]} color={HUB.cyan} />
       <Cahaya pos={[-2 - GESER_BARAT / 2 + PL_DX / 2, 0.03, 5.47]} size={[19.8 + GESER_BARAT + PL_DX, 0.025, 0.025]} color={HUB.cyan} />
       {/* karpet cincin di bawah globe */}
-      <Tube pos={[G[0], 0.006, G[2]]} r={3.3} h={0.012} color="#2C2766" seg={72} cast={false} />
+      <Tube pos={[G[0], 0.006, G[2]]} r={3.3} h={0.012} color="#0D0B26" seg={72} cast={false} />
       <CincinLantai pos={[G[0], 0.015, G[2]]} r={3.25} lebar={0.05} color={HUB.violet} />
       <CincinLantai pos={[G[0], 0.015, G[2]]} r={2.6} lebar={0.025} color={HUB.cyan} opacity={0.8} />
       <CincinLantai pos={[G[0], 0.015, G[2]]} r={1.6} lebar={0.03} color={HUB.violet} opacity={0.9} />
@@ -6722,7 +8256,7 @@ function LantaiPlanning() {
       {/* lampu penuntun di lorong pintu utara */}
       <LampuJalur titik={[[-0.55, -5.2], [0.55, -5.2], [-0.55, -4.8], [0.55, -4.8], [-0.55, -4.4], [0.55, -4.4]]} />
       {/* tulisan inlay lantai */}
-      <Teks pos={[-1.5 + PL_DX / 2, 0.014, 5.05]} rot={[-Math.PI / 2, 0, 0]} w={4.4} h={0.26} text="PUSAT PROYEKSI  •  PLANNING HUB" fg="#7C6FD0" />
+      <Teks pos={[-1.5 + PL_DX / 2, 0.014, 5.05]} rot={[-Math.PI / 2, 0, 0]} w={4.4} h={0.26} text="PUSAT PROYEKSI  •  PLANNING HUB" fg="#A78BFA" />
     </>
   );
 }
@@ -6968,6 +8502,351 @@ function SofaModern({ pos, rotY = 0, color = '#4F6FA8' }: { pos: V3; rotY?: numb
   );
 }
 
+// ---- [BARU] Detail tambahan ruang Planning (futuristik modern, gaya Research) ---------------------------------------------------------
+// Layar kiosk simulasi: 3 slider asumsi (harga / biaya / volume) bergerak pelan + kurva hasil proyeksi laba.
+const gambarSimulasi: GambarFn = (g, W, H, t) => {
+  gridLayar(g, W, H, 24);
+  kepalaLayar(g, W, 'SIMULASI SKENARIO', '#6EE7B7', '● SIM');
+  const asumsi: { n: string; v: number; c: string }[] = [
+    { n: 'Harga', v: 0.62, c: '#67E8F9' },
+    { n: 'Biaya', v: 0.38, c: '#F0ABFC' },
+    { n: 'Volume', v: 0.74, c: '#6EE7B7' },
+  ];
+  const x0 = W * 0.06, x1 = W * 0.5;
+  asumsi.forEach((a, i) => {
+    const y = H * (0.36 + i * 0.2);
+    const v = Math.min(0.95, Math.max(0.05, a.v + 0.1 * Math.sin(t * 0.8 + i * 1.7)));
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#EDE9FE';
+    g.font = `600 ${Math.round(W * 0.044)}px ${FONT}`;
+    g.fillText(a.n, x0, y - H * 0.07);
+    g.fillStyle = 'rgba(237,233,254,0.18)';
+    g.fillRect(x0, y, x1 - x0, 5);
+    g.fillStyle = a.c;
+    g.fillRect(x0, y, (x1 - x0) * v, 5);
+    g.beginPath();
+    g.arc(x0 + (x1 - x0) * v, y + 2.5, 8, 0, Math.PI * 2);
+    g.fill();
+  });
+  // kurva hasil
+  const cx0 = W * 0.58, cx1 = W * 0.95, cyT = H * 0.3, cyB = H * 0.86;
+  g.strokeStyle = 'rgba(237,233,254,0.2)';
+  g.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = cyT + ((cyB - cyT) * i) / 3;
+    g.beginPath(); g.moveTo(cx0, y); g.lineTo(cx1, y); g.stroke();
+  }
+  const N = 24;
+  const f = (i: number) => 0.25 + 0.5 * (i / N) + 0.06 * Math.sin(i * 0.8 + t * 1.2);
+  g.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const x = cx0 + ((cx1 - cx0) * i) / N, y = cyB - (cyB - cyT) * f(i);
+    if (i) g.lineTo(x, y); else g.moveTo(x, y);
+  }
+  g.strokeStyle = '#6EE7B7';
+  g.lineWidth = 3;
+  g.stroke();
+  g.lineTo(cx1, cyB);
+  g.lineTo(cx0, cyB);
+  g.closePath();
+  g.fillStyle = 'rgba(110,231,183,0.12)';
+  g.fill();
+  g.fillStyle = '#FDE68A';
+  g.textAlign = 'right';
+  g.font = `800 ${Math.round(W * 0.05)}px ${FONT}`;
+  g.fillText('Laba +' + (8 + 3 * Math.sin(t * 0.8)).toFixed(1) + '%', cx1, H * 0.2);
+};
+
+// Kiosk simulasi: tiang navy + layar miring bercanvas + alas bercincin mint (menghadap +z).
+function KioskSimulasi({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Kolam pos={[0, 0.02, 0.5]} size={[1.8, 1.6]} color={HUB.cyan} opacity={0.2} />
+      <Tube pos={[0, 0.04, 0]} r={0.34} h={0.08} color={HUB.navy} seg={24} />
+      <CincinLantai pos={[0, 0.085, 0]} r={0.3} lebar={0.02} color={HUB.mint} />
+      <Box pos={[0, 0.55, -0.04]} size={[0.12, 0.9, 0.1]} color={HUB.navy2} />
+      <Cahaya pos={[0, 0.55, 0.014]} size={[0.012, 0.8, 0.006]} color={HUB.cyan} />
+      <group position={[0, 1.4, 0.02]} rotation={[-0.14, 0, 0]}>
+        <LayarCanvas pos={[0, 0, 0]} w={1.15} h={0.84} px={448} draw={gambarSimulasi} fps={4} rim={HUB.mint} />
+      </group>
+      <LabelHolo pos={[0, 2.1, 0.1]} teks="SIMULASI" warna={HUB.mint} w={0.8} />
+    </group>
+  );
+}
+
+// Menara proyeksi: alas navy bertingkat + tabung kaca berisi 3 cincin yang berputar dan inti yang berdenyut.
+function MenaraProyeksi({ pos }: { pos: V3 }) {
+  const inti = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame(({ clock }) => {
+    if (inti.current) inti.current.opacity = 0.5 + 0.4 * Math.sin(clock.elapsedTime * 2.0) ** 2;
+  });
+  const cincin: { y: number; r: number; c: string; sp: number }[] = [
+    { y: 0.95, r: 0.34, c: HUB.cyan, sp: 1.1 },
+    { y: 1.25, r: 0.28, c: HUB.violet, sp: -1.5 },
+    { y: 1.55, r: 0.22, c: HUB.mint, sp: 2.0 },
+  ];
+  return (
+    <group position={pos}>
+      <Kolam pos={[0, 0.02, 0]} size={[1.7, 1.7]} color={HUB.violet} opacity={0.22} />
+      <Tube pos={[0, 0.05, 0]} r={0.46} h={0.1} color={HUB.navy} seg={28} />
+      <CincinLantai pos={[0, 0.105, 0]} r={0.42} lebar={0.022} color={HUB.cyan} />
+      <Tube pos={[0, 0.4, 0]} r={0.2} rb={0.3} h={0.6} color={HUB.navy2} seg={20} />
+      <TabungCahaya pos={[0, 0.28, 0]} r={0.265} h={0.018} color={HUB.violet} seg={20} />
+      <Tube pos={[0, 0.72, 0]} r={0.26} h={0.04} color={HUB.putih} seg={20} cast={false} />
+      <TabungCahaya pos={[0, 1.25, 0]} r={0.26} h={1.0} color={HUB.cyan} opacity={0.07} seg={20} />
+      {cincin.map((o) => (
+        <Putar key={o.y} pos={[0, o.y, 0]} speed={o.sp}>
+          <mesh rotation={[Math.PI / 2.2, 0, 0]}>
+            <torusGeometry args={[o.r, 0.012, 6, 40]} />
+            <meshBasicMaterial color={o.c} toneMapped={false} />
+          </mesh>
+          <Ball pos={[o.r, 0, 0]} r={0.03} color={o.c} emissive={1.4} />
+        </Putar>
+      ))}
+      <mesh position={[0, 1.25, 0]}>
+        <sphereGeometry args={[0.09, 16, 12]} />
+        <meshBasicMaterial ref={inti} color={HUB.pink} transparent opacity={0.7} toneMapped={false} />
+      </mesh>
+      <Tube pos={[0, 1.82, 0]} r={0.2} h={0.03} color={HUB.navy2} seg={20} cast={false} />
+      <LabelHolo pos={[0, 2.15, 0]} teks="RISIKO" warna={HUB.pink} w={0.7} />
+    </group>
+  );
+}
+
+// Meja peta hologram bundar: daun putih + inlay navy + LED tepi, medan wireframe berputar pelan dengan penanda data, cincin melayang.
+function MejaHoloPeta({ pos }: { pos: V3 }) {
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(1.45, 1.45, 16, 16);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i);
+      p.setZ(i, 0.12 * Math.sin(x * 4.6) * Math.cos(y * 3.8) + 0.07 * Math.sin((x + y) * 7));
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  const titik = useMemo(() => {
+    const r = mulberry32(2711);
+    const warna = [HUB.cyan, HUB.mint, HUB.pink, HUB.amber];
+    return Array.from({ length: 7 }, (_, i) => ({ x: (r() - 0.5) * 1.1, z: (r() - 0.5) * 1.1, h: 0.18 + r() * 0.2, c: warna[i % 4] }));
+  }, []);
+  return (
+    <group position={pos}>
+      <Kolam pos={[0, 0.02, 0]} size={[2.4, 2.4]} color={HUB.cyan} opacity={0.18} />
+      <Tube pos={[0, 0.36, 0]} r={0.28} rb={0.36} h={0.72} color={HUB.navy2} seg={24} />
+      <Tube pos={[0, 0.03, 0]} r={0.62} h={0.06} color={HUB.navy} seg={32} />
+      <CincinLantai pos={[0, 0.065, 0]} r={0.58} lebar={0.02} color={HUB.violet} />
+      <Tube pos={[0, 0.75, 0]} r={0.95} h={0.07} color={HUB.putih} seg={40} />
+      <TabungCahaya pos={[0, 0.788, 0]} r={0.86} h={0.006} color={HUB.navy} seg={40} />
+      <CincinLantai pos={[0, 0.795, 0]} r={0.9} lebar={0.018} color={HUB.cyan} />
+      <CincinLantai pos={[0, 0.795, 0]} r={0.5} lebar={0.01} color={HUB.violet} opacity={0.7} />
+      <TabungCahaya pos={[0, 0.9, 0]} r={0.75} rb={0.2} h={0.24} color={HUB.cyan} opacity={0.07} seg={24} />
+      <Putar pos={[0, 1.0, 0]} speed={0.18}>
+        <mesh geometry={geo} rotation={[-Math.PI / 2, 0, 0]}>
+          <meshBasicMaterial color={HUB.cyan} wireframe transparent opacity={0.5} toneMapped={false} />
+        </mesh>
+        {titik.map((q, i) => (
+          <group key={i}>
+            <Cahaya pos={[q.x, 0.1 + q.h / 2, q.z]} size={[0.012, q.h, 0.012]} color={q.c} />
+            <Ball pos={[q.x, 0.1 + q.h, q.z]} r={0.03} color={q.c} emissive={1.3} />
+          </group>
+        ))}
+      </Putar>
+      <Putar pos={[0, 1.5, 0]} speed={-0.35}>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.75, 0.008, 6, 56]} />
+          <meshBasicMaterial color={HUB.violet} transparent opacity={0.5} toneMapped={false} />
+        </mesh>
+      </Putar>
+      <LabelHolo pos={[0, 1.85, 0]} teks="PETA RISIKO" warna={HUB.cyan} w={0.9} />
+    </group>
+  );
+}
+
+// Kredensa rendah futuristik (menempel dinding): badan navy + daun putih + LED depan, di atasnya mini hologram, grafik batang mini, dan tablet.
+// Panjang di sumbu x lokal, muka depan di +z.
+function KredensaHolo({ pos, rotY = 0, p = 3.0 }: { pos: V3; rotY?: number; p?: number }) {
+  const bar = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame(({ clock }) => {
+    bar.current.forEach((m, i) => {
+      if (!m) return;
+      const h = 0.06 + (Math.sin(clock.elapsedTime * 1.3 + i * 1.1) * 0.5 + 0.5) * 0.16;
+      m.scale.y = h;
+      m.position.y = 0.36 + h / 2;
+    });
+  });
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Kolam pos={[0, 0.02, 0.2]} size={[p + 0.4, 1.1]} color={HUB.violet} opacity={0.18} />
+      <Box pos={[0, 0.17, 0]} size={[p, 0.3, 0.42]} color={HUB.navy2} />
+      <Box pos={[0, 0.34, 0]} size={[p + 0.04, 0.035, 0.46]} color={HUB.putih} cast={false} />
+      <Cahaya pos={[0, 0.22, 0.213]} size={[p - 0.2, 0.014, 0.008]} color={HUB.cyan} />
+      <Cahaya pos={[0, 0.08, 0.213]} size={[p - 0.2, 0.01, 0.008]} color={HUB.violet} opacity={0.7} />
+      {[-p / 6, p / 6].map((x) => (
+        <Box key={x} pos={[x, 0.17, 0.212]} size={[0.012, 0.26, 0.006]} color={HUB.navy} cast={false} />
+      ))}
+      <MiniHolo pos={[-p / 2 + 0.42, 0.355, 0]} />
+      {[-0.1, 0, 0.1].map((x, i) => (
+        <mesh key={x} position={[x, 0.45, 0.02]} ref={(m) => { bar.current[i] = m; }}>
+          <boxGeometry args={[0.06, 1, 0.06]} />
+          <meshBasicMaterial color={i % 2 ? HUB.violet : HUB.cyan} transparent opacity={0.85} toneMapped={false} />
+        </mesh>
+      ))}
+      <Cahaya pos={[0, 0.357, 0.02]} size={[0.34, 0.004, 0.14]} color={HUB.cyan} opacity={0.35} />
+      <group position={[p / 2 - 0.5, 0.36, 0.02]} rotation={[0, -0.25, 0]}>
+        <Box pos={[0, 0.1, -0.02]} size={[0.34, 0.22, 0.015]} color="#0F0D2B" rot={[-0.35, 0, 0]} cast={false} />
+        <Cahaya pos={[0, 0.1, -0.012]} size={[0.3, 0.18, 0.004]} color="#7DD3FC" opacity={0.85} />
+      </group>
+    </group>
+  );
+}
+
+// Layar dinding timur Planning: 4 kartu KPI + grafik target vs aktual dengan kursor bergerak.
+const gambarKpiBesar: GambarFn = (g, W, H, t) => {
+  gridLayar(g, W, H, 32);
+  kepalaLayar(g, W, 'KINERJA VS TARGET 2027', '#6EE7B7');
+  const kpi: { n: string; v: string; c: string }[] = [
+    { n: 'PENDAPATAN', v: '112%', c: '#6EE7B7' },
+    { n: 'MARGIN', v: '18.4%', c: '#67E8F9' },
+    { n: 'ARUS KAS', v: '+4.2%', c: '#FDE68A' },
+    { n: 'RISIKO', v: 'RENDAH', c: '#F0ABFC' },
+  ];
+  const hd = W * 0.085;
+  const gap = W * 0.02, tw = (W - gap * 5) / 4, ty = hd + H * 0.04, th = H * 0.24;
+  kpi.forEach((k, i) => {
+    const x = gap + i * (tw + gap);
+    g.fillStyle = 'rgba(167,139,250,0.14)';
+    g.fillRect(x, ty, tw, th);
+    g.fillStyle = k.c;
+    g.fillRect(x, ty, 4, th);
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#C4B5FD';
+    g.font = `600 ${Math.round(W * 0.022)}px ${FONT}`;
+    g.fillText(k.n, x + W * 0.014, ty + th * 0.3);
+    g.fillStyle = k.c;
+    g.font = `800 ${Math.round(W * 0.04)}px ${FONT}`;
+    g.fillText(k.v, x + W * 0.014, ty + th * 0.7);
+  });
+  const x0 = W * 0.04, x1 = W * 0.96, yT = ty + th + H * 0.06, yB = H - H * 0.05, N = 30;
+  g.strokeStyle = 'rgba(237,233,254,0.16)';
+  g.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) {
+    const y = yT + ((yB - yT) * i) / 2;
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
+  }
+  const tgt = (i: number) => 0.3 + 0.5 * (i / N);
+  const akt = (i: number) => tgt(i) + 0.05 * Math.sin(i * 0.6) + 0.03 * (i / N);
+  const px = (i: number) => x0 + ((x1 - x0) * i) / N;
+  const py = (v: number) => yB - (yB - yT) * v;
+  g.setLineDash([8, 6]);
+  g.strokeStyle = '#A78BFA';
+  g.lineWidth = 2;
+  g.beginPath();
+  for (let i = 0; i <= N; i++) { if (i) g.lineTo(px(i), py(tgt(i))); else g.moveTo(px(i), py(tgt(i))); }
+  g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle = '#6EE7B7';
+  g.lineWidth = 3;
+  g.beginPath();
+  for (let i = 0; i <= N; i++) { if (i) g.lineTo(px(i), py(akt(i))); else g.moveTo(px(i), py(akt(i))); }
+  g.stroke();
+  const c = (t * 3) % N;
+  g.fillStyle = '#FDE68A';
+  g.beginPath();
+  g.arc(px(c), py(akt(c)), 6, 0, Math.PI * 2);
+  g.fill();
+};
+
+// Dua layar KPI mini untuk dinding utara.
+const gambarMiniA: GambarFn = (g, W, H, t) => {
+  gridLayar(g, W, H, 24);
+  g.textBaseline = 'middle';
+  g.textAlign = 'left';
+  g.fillStyle = '#C4B5FD';
+  g.font = `700 ${Math.round(H * 0.14)}px ${FONT}`;
+  g.fillText('ARUS KAS BULANAN', W * 0.05, H * 0.17);
+  g.fillStyle = '#6EE7B7';
+  g.font = `800 ${Math.round(H * 0.34)}px ${FONT}`;
+  g.fillText('+' + (4.2 + 0.3 * Math.sin(t)).toFixed(1) + '%', W * 0.05, H * 0.58);
+  const N = 20;
+  g.strokeStyle = '#67E8F9';
+  g.lineWidth = 3;
+  g.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const x = W * 0.52 + (W * 0.43 * i) / N, y = H * 0.85 - H * 0.5 * (0.35 + 0.5 * (i / N) + 0.1 * Math.sin(i * 0.9 + t * 1.5));
+    if (i) g.lineTo(x, y); else g.moveTo(x, y);
+  }
+  g.stroke();
+};
+const gambarMiniB: GambarFn = (g, W, H, t) => {
+  gridLayar(g, W, H, 24);
+  g.textBaseline = 'middle';
+  g.textAlign = 'left';
+  g.fillStyle = '#C4B5FD';
+  g.font = `700 ${Math.round(H * 0.14)}px ${FONT}`;
+  g.fillText('REALISASI BUDGET', W * 0.05, H * 0.17);
+  const cols = ['#67E8F9', '#A78BFA', '#6EE7B7', '#F0ABFC'];
+  ['Q1', 'Q2', 'Q3', 'Q4'].forEach((q, i) => {
+    const v = 0.35 + 0.5 * ((Math.sin(t * 0.9 + i * 1.4) + 1) / 2);
+    const bw = W * 0.14, x = W * 0.08 + i * (bw + W * 0.07), hMax = H * 0.5, y = H * 0.9 - hMax;
+    g.fillStyle = 'rgba(237,233,254,0.12)';
+    g.fillRect(x, y, bw, hMax);
+    g.fillStyle = cols[i];
+    g.fillRect(x, y + hMax * (1 - v), bw, hMax * v);
+    g.fillStyle = '#EDE9FE';
+    g.font = `600 ${Math.round(H * 0.11)}px ${FONT}`;
+    g.textAlign = 'center';
+    g.fillText(q, x + bw / 2, H * 0.95);
+  });
+};
+
+// Panel heksagon dinding: pelat navy + sarang lebah mini, sebagian sel menyala berdenyut (seni dinding futuristik). Muka di +z.
+function PanelHeks({ pos, rotY = 0, w = 1.8, h = 0.7, seed = 5 }: { pos: V3; rotY?: number; w?: number; h?: number; seed?: number }) {
+  const mats = useRef<(THREE.MeshBasicMaterial | null)[]>([]);
+  const cell = useMemo(() => {
+    const r = mulberry32(seed * 13 + 1);
+    const pal = [HUB.cyan, HUB.violet, HUB.mint, HUB.pink, HUB.amber];
+    const out: { x: number; y: number; c: string; on: boolean; ph: number }[] = [];
+    const dx = 0.17, dy = 0.147;
+    const nx = Math.floor((w - 0.14) / dx), ny = Math.floor((h - 0.1) / dy) + 1;
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        out.push({
+          x: -((nx - 1) * dx) / 2 + i * dx + (j % 2 ? dx / 4 : -dx / 4),
+          y: ((ny - 1) * dy) / 2 - j * dy,
+          c: pal[Math.floor(r() * pal.length)],
+          on: r() < 0.55,
+          ph: r() * 6.28,
+        });
+      }
+    }
+    return out;
+  }, [w, h, seed]);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    mats.current.forEach((m, i) => {
+      const q = cell[i];
+      if (m && q) m.opacity = q.on ? 0.35 + 0.6 * Math.max(0, Math.sin(t * 1.1 + q.ph)) : 0.1;
+    });
+  });
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Cahaya pos={[0, 0, 0.004]} size={[w + 0.12, h + 0.12, 0.004]} color={HUB.violet} opacity={0.14} />
+      <Box pos={[0, 0, 0.03]} size={[w, h, 0.05]} color={HUB.navy} cast={false} />
+      {cell.map((q, i) => (
+        <mesh key={i} position={[q.x, q.y, 0.06]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.072, 0.072, 0.008, 6]} />
+          <meshBasicMaterial ref={(m) => { mats.current[i] = m; }} color={q.c} transparent opacity={0.3} toneMapped={false} />
+        </mesh>
+      ))}
+      <Cahaya pos={[0, h / 2 - 0.01, 0.058]} size={[w - 0.02, 0.014, 0.012]} color={HUB.cyan} />
+      <Cahaya pos={[0, -h / 2 + 0.01, 0.058]} size={[w - 0.02, 0.014, 0.012]} color={HUB.violet} />
+    </group>
+  );
+}
+
 function RuangPlanning() {
   const { cx, cz } = PLAN;
   const meja: { k: 'budget' | 'tax' | 'analytics' | 'skenario'; p: [number, number]; label?: string; warna: string; seat: string; seed: number }[] = [
@@ -6982,11 +8861,8 @@ function RuangPlanning() {
       <GlobeProyeksi pos={[-2.0 + PL_DX / 2, 0, 0]} />
 
       {/* dinding barat: jendela, roadmap, layar proyeksi, jam */}
-      <Window pos={[-11.86 - GESER_BARAT, 1.0, -4.4]} rotY={Math.PI / 2} w={1.4} />
-      <group position={[-11.86 - GESER_BARAT, 1.0, -4.4]} rotation={[0, Math.PI / 2, 0]}>
-        <Cahaya pos={[0, 0.49, 0.06]} size={[1.5, 0.014, 0.02]} color={HUB.cyan} />
-        <Cahaya pos={[0, -0.49, 0.06]} size={[1.5, 0.014, 0.02]} color={HUB.cyan} />
-      </group>
+      {/* [DIGANTI] jendela barat: smart glass futuristik, sama seperti jendela Research */}
+      <JendelaFuturistik pos={[-11.86 - GESER_BARAT, 1.0, -4.5]} rotY={Math.PI / 2} w={1.8} h={0.95} />
       <PapanRoadmap pos={[-11.84 - GESER_BARAT, 1.05, -1.8]} />
       <LayarCanvas pos={[-11.8 - GESER_BARAT, 1.15, 2.1]} rotY={Math.PI / 2} w={3.4} h={1.3} px={1024} draw={gambarProyeksi} fps={5} rim={HUB.violet} />
       <group position={[-11.86 - GESER_BARAT, 1.15, 4.7]} rotation={[0, Math.PI / 2, 0]}><Clock pos={[0, 0, 0]} /></group>
@@ -7002,6 +8878,8 @@ function RuangPlanning() {
         <group key={m.seat}>
           <MejaPlanning pos={[m.p[0], 0, m.p[1]]} k={m.k} label={m.label} warna={m.warna} seatKey={m.seat} seed={m.seed} />
           <Chair pos={[m.p[0], 0, m.p[1] + 0.85]} color="#8E7CC3" />
+          <Tube pos={[m.p[0], 0.014, m.p[1] + 0.85]} r={0.46} h={0.012} color={HUB.navy} seg={28} cast={false} />
+          <CincinLantai pos={[m.p[0], 0.024, m.p[1] + 0.85]} r={0.44} lebar={0.02} color={HUB.violet} opacity={0.9} />
         </group>
       ))}
       <PlanningPenghuni />
@@ -7020,13 +8898,43 @@ function RuangPlanning() {
       <TiangHolo pos={[-9.8, 0, 4.8]} />
       <TiangHolo pos={[-1.8 + PL_DX / 2, 0, 4.8]} />
       <Teleskop pos={[5.6 + PL_DX, 0, 4.2]} rotY={0.5} />
-      <PlantPalm pos={[-11.3 - GESER_BARAT, 0, 5.0]} scale={1.0} />
-      <TabungCahaya pos={[-11.3 - GESER_BARAT, 0.006, 5.0]} r={0.34} h={0.012} color={HUB.mint} opacity={0.5} />
-      <PlantBush pos={[-11.3 - GESER_BARAT, 0, -5.0]} scale={0.9} />
-      <PlantBush pos={[7.3 + PL_DX, 0, 5.0]} scale={0.9} />
-      <TabungCahaya pos={[7.3 + PL_DX, 0.006, 5.0]} r={0.34} h={0.012} color={HUB.mint} opacity={0.5} />
-      <PlantSnake pos={[7.3 + PL_DX, 0, -5.0]} scale={0.9} />
-      <TabungCahaya pos={[7.3 + PL_DX, 0.006, -5.0]} r={0.3} h={0.012} color={HUB.mint} opacity={0.5} />
+      {/* [DIHAPUS] semua tanaman Planning; diganti komponen futuristik */}
+      {/* 4 sudut ruangan */}
+      <KubusData pos={[-12.5, 0, -4.4]} />
+      <PilarEtalase pos={[-12.7, 0, 4.4]} rotY={Math.atan2(0.6 + 12.7, 0 - 4.4)} />
+      <DockDrone pos={[12.1, 0, -4.75]} />
+      <MenaraProyeksi pos={[12.3, 0, 4.9]} />
+
+      {/* [BARU] detail tambahan */}
+      <KioskSimulasi pos={[3.6, 0, -4.8]} />
+      <MejaHoloPeta pos={[-2.6, 0, 4.1]} />
+      <BangkuModern pos={[8.0, 0, 5.05]} w={1.8} />
+      <KredensaHolo pos={[-13.3, 0, 2.1]} rotY={Math.PI / 2} p={3.0} />
+
+      {/* [BARU] dinding utara (permukaan z = -5.4, bagian yang paling terlihat dari kamera): papan nama PLANNING di kiri pintu, 2 AC futuristik (sama seperti Research),
+          panel heksagon di ujung barat, 2 layar KPI mini, dan garis LED atas (celah pintu dibiarkan kosong) */}
+      <PapanNamaRiset pos={[-1.95, 1.33, -5.4]} label="PLANNING" sub="PUSAT PROYEKSI" />
+      <ACFuturistik pos={[-4.9, 1.36, -5.4]} />
+      <ACFuturistik pos={[11.0, 1.36, -5.4]} />
+      <PanelHeks pos={[-12.2, 1.2, -5.4]} w={1.9} h={0.72} seed={3} />
+      <LayarCanvas pos={[-6.65, 1.15, -5.36]} w={1.2} h={0.46} px={512} draw={gambarMiniA} fps={3} rim={HUB.mint} />
+      <LayarCanvas pos={[9.3, 1.15, -5.36]} w={1.2} h={0.46} px={512} draw={gambarMiniB} fps={3} rim={HUB.violet} />
+      <Cahaya pos={[-7.3, 1.57, -5.395]} size={[12.4, 0.014, 0.01]} color={HUB.violet} opacity={0.85} />
+      <Cahaya pos={[7.05, 1.57, -5.395]} size={[11.9, 0.014, 0.01]} color={HUB.violet} opacity={0.85} />
+
+      {/* [BARU] dinding timur (permukaan x = 13.1): layar KPI besar + panel heksagon + garis LED (pintu Management di z 3.6 dibiarkan kosong) */}
+      <LayarCanvas pos={[13.07, 1.02, -1.4]} rotY={-Math.PI / 2} w={3.2} h={1.0} px={1024} draw={gambarKpiBesar} fps={4} rim={HUB.cyan} />
+      <PanelHeks pos={[13.09, 1.15, -4.3]} rotY={-Math.PI / 2} w={1.7} h={0.62} seed={9} />
+      <Cahaya pos={[13.095, 1.57, -1.4]} size={[0.01, 0.014, 7.8]} color={HUB.violet} opacity={0.85} />
+
+      {/* [BARU] lapisan hias dinding Planning (tidak polos lagi, padanan wainscot Management): utara (kecuali celah pintu), barat, timur (kecuali celah pintu Management) */}
+      <DindingDekorPlan s={-5.4} segs={[[-13.7, -1.06], [1.06, 13.1]]} panel={[[-13.7, -1.06], [1.06, 13.1]]} />
+      <group rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekorPlan s={-13.7} segs={[[-5.4, 5.4]]} panel={[[-5.4, -3.8]]} />
+      </group>
+      <group rotation={[0, -Math.PI / 2, 0]}>
+        <DindingDekorPlan s={-13.1} segs={[[-5.4, 2.6], [4.6, 5.4]]} panel={[[-5.4, -3.1], [0.3, 2.6], [4.6, 5.4]]} />
+      </group>
 
       {/* drone informasi melayang */}
       <DroneInfo pusat={[-2.5 + PL_DX / 2, 0, 0.5]} rx={4.4} rz={3.2} y={2.1} />
@@ -7034,15 +8942,17 @@ function RuangPlanning() {
   );
 }
 
-// ---- [DIDESAIN ULANG] RUANG MANAGEMENT: kantor biasa (tanpa efek futuristik) -------------------------------------------------------
-// Tata letak (koordinat lokal ruangan, pusat = pusat ruangan: x -12.3..12.3, z -5.5..5.5):
-//   - MEJA BUNDAR PUTIH polos tepat di tengah (0, 0), 6 kursi/AI melingkar (reports, clients, coa, documents, settings, payroll).
-//     Kursi dirapatkan ke meja dan laptop ditaruh di pinggir meja supaya tangan AI sampai ke keyboard (mengetik).
-//     Laptop menyala HANYA saat ada AI duduk (SEAT[`mg:i`]), mati saat kursi kosong. Di meja juga ada buku, pulpen, dan mug.
-//   - Karpet polos satu warna (tanpa cincin, LED, atau cahaya bergerak). Hologram, layar canvas, dan podium dihapus.
-//   - Dinding utara: rak buku, papan tulis, pigura, jam dinding, lemari arsip, printer, rak buku, dispenser air.
-//     Dinding barat: papan tulis berdiri, rak buku, pigura. Dinding timur: meja berkas + pigura. Sudut tenggara: sofa + meja kopi.
-//   - Jalur agen yang harus tetap kosong: lingkaran r < 4.6 dari pusat, garis (0,-5.5)->(0,-4.3), dan diagonal (-11.4,3.6)->(-4.2,-1.0).
+// ---- [DIDESAIN ULANG] RUANG MANAGEMENT: kantor biasa (tanpa efek futuristik), ramai & berisi informasi -------------------------------
+// Tata letak (koordinat lokal ruangan, pusat = pusat ruangan: x -13.5..13.5, z -5.5..5.5):
+//   - SATU-SATUNYA MEJA KERJA: MEJA BUNDAR PUTIH di tengah (0, 0), 6 kursi/AI melingkar (reports, clients, coa, documents, settings, payroll);
+//     laptop menyala hanya saat ada AI duduk. Di meja: speakerphone, teko air + gelas, tisu, tanaman kecil, kertas, buku, pulpen, mug.
+//   - Dinding utara: 2 rak buku berjudul, AC, papan agenda, kalender, sertifikat, jam, [pintu], papan nama, 2 lemari arsip berlabel + piala,
+//     printer + denah, rak buku, APAR, dispenser, papan gabus pengumuman.
+//   - Dinding barat: palem, papan organisasi berdiri, rak buku, gantungan jas, AC, jadwal ruang rapat. Timur: kopi, etalase penghargaan, lemari arsip,
+//     bendera, sofa + meja kopi. Timur-tengah: pojok informasi (banner visi-misi, papan direktori, rak brosur), troli dokumen.
+//   - Barat daya: sudut tunggu (sofa + meja kopi + karpet + rak majalah). Selatan: bak tanaman, tanaman & lampu.
+//   - Lantai parket kayu berbingkai + karpet bundar bermotif; dinding: panel kayu, kertas dinding motif, lis atas-bawah.
+//   - Jalur agen yang harus tetap kosong: lingkaran r < 4.6 dari pusat, garis (0,-5.5)->(0,-4.3), dan jalur pintu barat (-12.6,3.6)->(-4.2,1.0).
 
 const MG_R = 3.05; // jarak kursi dari pusat meja (mepet meja supaya tangan AI sampai ke laptop)
 const MG_N = HALAMAN_MG_DUDUK.length; // 6 kursi
@@ -7050,40 +8960,6 @@ const MG_MEJA_R = 2.62; // jari-jari daun meja
 const MG_LAPTOP_Z = 2.3; // laptop di pinggir meja (jarak dari pusat), keyboard ~0.65 di depan AI yang duduk
 const MG_SAMPUL = ['#2F5D8A', '#B45309', '#166534', '#7C2D12', '#4C1D95', '#0F766E']; // warna sampul buku tiap kursi
 const MG_PULPEN = ['#1E3A8A', '#B91C1C', '#111827', '#1E3A8A', '#047857', '#B91C1C'];
-
-// Lantai: ubin biasa + karpet polos satu warna di bawah meja.
-function LantaiMgmt() {
-  const { w, d } = MGMT;
-  const ubin = useMemo(() => {
-    const r = mulberry32(2026);
-    const out: { x: number; z: number; c: string }[] = [];
-    const nx = Math.floor(w / 2);
-    for (let ix = 0; ix < nx; ix++) {
-      for (let iz = 0; iz < 6; iz++) {
-        if (r() < 0.34) out.push({ x: -nx + 1 + ix * 2, z: -4.5 + iz * 1.8, c: r() < 0.5 ? '#E4DCC8' : '#F5F0E4' });
-      }
-    }
-    return out;
-  }, [w]);
-  return (
-    <>
-      <Lantai cx={0} w={w} d={d} color={TH.mgmt.floor} />
-      {ubin.map((u, i) => (
-        <Box key={i} pos={[u.x, 0.002, u.z]} size={[1.94, 0.003, 1.74]} color={u.c} cast={false} />
-      ))}
-      {Array.from({ length: Math.floor(w / 2) + 1 }, (_, i) => (
-        <Box key={`x${i}`} pos={[-Math.floor(w / 2) + i * 2, 0.003, 0]} size={[0.014, 0.004, 10.8]} color="#CFC5AE" cast={false} />
-      ))}
-      {Array.from({ length: 7 }, (_, i) => (
-        <Box key={`z${i}`} pos={[0, 0.003, -5.4 + i * 1.8]} size={[w - 0.4, 0.004, 0.014]} color="#CFC5AE" cast={false} />
-      ))}
-      {/* karpet bundar polos, satu warna */}
-      <Tube pos={[0, 0.006, 0]} r={4.9} h={0.012} color="#97A3B6" seg={72} cast={false} />
-      {/* keset pintu polos */}
-      <Box pos={[0, 0.004, -4.9]} size={[1.6, 0.008, 1.0]} color="#6B7280" cast={false} />
-    </>
-  );
-}
 
 // Meja bundar putih polos: daun putih, sisi bawah abu terang, kolom tengah.
 function MejaBundarPutih() {
@@ -7118,48 +8994,6 @@ function PulpenMeja({ pos, rotY = 0, warna }: { pos: V3; rotY?: number; warna: s
   );
 }
 
-// Meja berkas biasa: daun kayu, laci, tumpukan kertas, papan klip, buku besar, lampu meja.
-function MejaBerkas({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
-  return (
-    <group position={pos} rotation={[0, rotY, 0]}>
-      <Box pos={[0, 0.76, 0]} size={[2.0, 0.06, 0.9]} color="#C99863" />
-      {[-0.92, 0.92].map((x) =>
-        [-0.38, 0.38].map((z) => <Box key={`${x}${z}`} pos={[x, 0.37, z]} size={[0.07, 0.74, 0.07]} color="#8B6B4A" cast={false} />)
-      )}
-      <Box pos={[0.62, 0.38, 0]} size={[0.62, 0.7, 0.8]} color="#B88B5A" />
-      {[0.2, 0.42, 0.64].map((y) => (
-        <React.Fragment key={y}>
-          <Box pos={[0.62, y - 0.02, 0.405]} size={[0.54, 0.18, 0.02]} color="#A87B4A" cast={false} />
-          <Box pos={[0.62, y + 0.03, 0.425]} size={[0.16, 0.025, 0.02]} color="#6B7280" cast={false} />
-        </React.Fragment>
-      ))}
-      <TumpukKertas pos={[-0.7, 0.79, 0.02]} n={7} rotY={0.05} header="#4C5FA8" />
-      <TumpukKertas pos={[-0.4, 0.79, -0.12]} n={4} rotY={-0.12} />
-      <PapanKlip pos={[-0.05, 0.79, 0.1]} rotY={0.15} />
-      <BukuBesar pos={[0.35, 0.79, -0.08]} rotY={-0.1} />
-      <Mug pos={[0.72, 0.79, 0.15]} color="#F3F4F6" />
-      {/* lampu meja */}
-      <Tube pos={[-0.88, 0.8, -0.3]} r={0.09} h={0.03} color="#374151" seg={14} cast={false} />
-      <Tube pos={[-0.88, 1.0, -0.3]} r={0.012} h={0.4} color="#374151" seg={6} cast={false} />
-      <Tube pos={[-0.84, 1.22, -0.24]} r={0.09} rb={0.05} h={0.12} color="#F3F4F6" seg={14} cast={false} />
-    </group>
-  );
-}
-
-function PapanBerdiri({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
-  return (
-    <group position={pos} rotation={[0, rotY, 0]}>
-      <Whiteboard pos={[0, 1.3, 0]} />
-      {[-0.8, 0.8].map((x) => (
-        <React.Fragment key={x}>
-          <Box pos={[x, 0.6, -0.04]} size={[0.05, 1.2, 0.05]} color="#6B7280" />
-          <Box pos={[x, 0.03, 0]} size={[0.08, 0.06, 0.5]} color="#4B5563" cast={false} />
-        </React.Fragment>
-      ))}
-    </group>
-  );
-}
-
 function Piala({ pos }: { pos: V3 }) {
   return (
     <group position={pos}>
@@ -7170,6 +9004,1686 @@ function Piala({ pos }: { pos: V3 }) {
   );
 }
 
+// [BARU] AC dinding Management: persis AC ruang Financial Statements (WallAC + pipa kondensat ke lantai).
+// pos = titik di permukaan dinding (y = 0); +z lokal = menghadap ke dalam ruangan. pipa = 1 / -1 -> pipa di kanan / kiri AC.
+function ACDinding({ pos, rotY = 0, pipa = 1 }: { pos: V3; rotY?: number; pipa?: 1 | -1 }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <WallAC pos={[0, 1.3, 0.05]} />
+      <Box pos={[0.74 * pipa, 0.72, 0.06]} size={[0.04, 0.84, 0.04]} color="#E5E7EB" cast={false} />
+      <Box pos={[0.74 * pipa, 0.3, 0.075]} size={[0.07, 0.03, 0.07]} color="#9CA3AF" cast={false} />
+    </group>
+  );
+}
+
+// [BARU] Papan nama ruangan MANAGEMENT: layar datar menempel di dinding (bezel grafit + muka biru baja, tulisan putih + garis emas),
+// gaya kantor biasa (tanpa efek futuristik) agar serasi dengan ruang Management. z = 0 permukaan dinding; menonjol ke +z.
+function PapanNamaMgmt({ pos, label = 'MANAGEMENT', sub = 'RUANG DIREKSI' }: { pos: V3; label?: string; sub?: string }) {
+  const W = 1.9, H = 0.46;
+  const pw = W - 0.1, ph = H - 0.1;
+  const tex = useMemo(() => {
+    const CW = 1024, CH = Math.round((CW * ph) / pw);
+    const c = document.createElement('canvas');
+    c.width = CW;
+    c.height = CH;
+    const g = c.getContext('2d');
+    if (g) {
+      const F = 'Inter, system-ui, sans-serif';
+      const bg = g.createLinearGradient(0, 0, 0, CH);
+      bg.addColorStop(0, '#34567F');
+      bg.addColorStop(1, '#1E3556');
+      g.fillStyle = bg;
+      g.fillRect(0, 0, CW, CH);
+      // pantulan kaca tipis (diagonal)
+      g.fillStyle = 'rgba(255,255,255,0.07)';
+      g.beginPath();
+      g.moveTo(0, 0); g.lineTo(CW * 0.34, 0); g.lineTo(CW * 0.16, CH); g.lineTo(0, CH);
+      g.closePath();
+      g.fill();
+      // ikon kiri: tiga batang grafik emas di kotak berbingkai
+      const ix = 96, iy = CH / 2, s = Math.min(CH * 0.58, 120);
+      g.strokeStyle = '#F5C84C';
+      g.lineWidth = 7;
+      g.strokeRect(ix - s / 2, iy - s / 2, s, s);
+      g.fillStyle = '#F5C84C';
+      [0.32, 0.58, 0.82].forEach((hh, i) => {
+        const bw = s * 0.16, bx = ix - s * 0.3 + i * s * 0.3 - bw / 2, bh = s * hh * 0.78;
+        g.fillRect(bx, iy + s * 0.36 - bh, bw, bh);
+      });
+      // judul
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      let fs = Math.round(CH * 0.46);
+      g.font = `800 ${fs}px ${F}`;
+      (g as any).letterSpacing = '6px';
+      while (g.measureText(label).width > CW * 0.68 && fs > 20) { fs -= 4; g.font = `800 ${fs}px ${F}`; }
+      g.fillStyle = '#FFFFFF';
+      g.fillText(label, CW * 0.57, CH * 0.43);
+      // garis emas + subjudul
+      g.fillStyle = '#F5C84C';
+      g.fillRect(CW * 0.25, CH * 0.69, CW * 0.64, 5);
+      (g as any).letterSpacing = '8px';
+      g.font = `700 ${Math.round(CH * 0.15)}px ${F}`;
+      g.fillStyle = '#C9D8EE';
+      g.fillText(sub, CW * 0.57, CH * 0.84);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  }, [label, sub, ph, pw]);
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0, 0.012]} size={[W + 0.06, H + 0.06, 0.024]} color="#C9D1D8" cast={false} />
+      <Box pos={[0, 0, 0.034]} size={[W, H, 0.03]} color="#1F2630" cast={false} />
+      <mesh position={[0, 0, 0.0502]}>
+        <planeGeometry args={[pw, ph]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+      {/* lampu standby kecil di pojok bezel */}
+      <mesh position={[W / 2 - 0.05, -H / 2 + 0.03, 0.052]}>
+        <boxGeometry args={[0.02, 0.012, 0.004]} />
+        <meshStandardMaterial color="#4ADE80" emissive="#4ADE80" emissiveIntensity={1.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// [BARU] Bendera berdiri kantor direksi: merah-putih + bendera perusahaan (biru baja, garis emas), tiang emas di alas bulat.
+function BenderaMgmt({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Tube pos={[0, 0.02, 0]} r={0.22} h={0.04} color="#2B3340" seg={20} cast={false} />
+      {[-0.16, 0.16].map((x) => (
+        <React.Fragment key={x}>
+          <Tube pos={[x, 0.95, 0]} r={0.014} h={1.9} color="#B8962E" seg={8} cast={false} />
+          <Ball pos={[x, 1.92, 0]} r={0.035} color={EMAS} flat={false} />
+        </React.Fragment>
+      ))}
+      {/* merah putih (kiri) */}
+      <Box pos={[-0.16 - 0.31, 1.72, 0]} size={[0.6, 0.2, 0.012]} color="#D62828" cast={false} />
+      <Box pos={[-0.16 - 0.31, 1.52, 0]} size={[0.6, 0.2, 0.012]} color="#FFFFFF" cast={false} />
+      {/* bendera perusahaan (kanan) */}
+      <Box pos={[0.16 + 0.31, 1.62, 0]} size={[0.6, 0.4, 0.012]} color="#1E3556" cast={false} />
+      <Box pos={[0.16 + 0.31, 1.62, 0.008]} size={[0.6, 0.03, 0.004]} color={EMAS} cast={false} />
+      <Box pos={[0.16 + 0.31, 1.7, 0.008]} size={[0.1, 0.1, 0.004]} color="#F8F9FB" cast={false} />
+    </group>
+  );
+}
+
+// [BARU] Globe meja di dudukan emas (untuk meja direksi).
+function GlobeMeja({ pos }: { pos: V3 }) {
+  return (
+    <group position={pos}>
+      <Tube pos={[0, 0.012, 0]} r={0.07} h={0.024} color="#5B4630" seg={16} cast={false} />
+      <Tube pos={[0, 0.07, 0]} r={0.008} h={0.1} color={EMAS} seg={6} cast={false} />
+      <Ball pos={[0, 0.17, 0]} r={0.1} color="#4C8FB5" flat={false} />
+      <Box pos={[0.02, 0.19, 0.06]} size={[0.07, 0.05, 0.05]} color="#6BAA75" cast={false} />
+      <Tube pos={[0, 0.17, 0]} r={0.108} h={0.006} color={EMAS} rot={[0.4, 0, 0.35]} seg={24} cast={false} />
+    </group>
+  );
+}
+
+// [BARU] Perlengkapan di atas meja bundar (permukaan meja = y 0.815): speakerphone konferensi di pusat, teko air + gelas,
+// tisu, tanaman kecil, dan tumpukan kertas di sela kursi. Semua kecil dan di pusat meja (tidak menyentuh laptop di pinggir meja).
+function DekorMejaBundar() {
+  const Y = 0.815;
+  const D = 1.42;
+  return (
+    <group>
+      <Tube pos={[0, Y + 0.02, 0]} r={0.2} h={0.04} color="#2B3340" seg={24} cast={false} />
+      <Tube pos={[0, Y + 0.043, 0]} r={0.15} h={0.008} color="#4B5563" seg={24} cast={false} />
+      {[0, 1, 2].map((i) => {
+        const a = (i * 2 * Math.PI) / 3;
+        return <Box key={i} pos={[Math.sin(a) * 0.09, Y + 0.049, Math.cos(a) * 0.09]} size={[0.05, 0.004, 0.02]} color="#9CA3AF" rot={[0, a, 0]} cast={false} />;
+      })}
+      <mesh position={[0, Y + 0.05, 0]}>
+        <boxGeometry args={[0.03, 0.006, 0.03]} />
+        <meshStandardMaterial color="#4ADE80" emissive="#4ADE80" emissiveIntensity={1.1} />
+      </mesh>
+      {Array.from({ length: MG_N }, (_, i) => {
+        const b = ((i + 0.5) * 2 * Math.PI) / MG_N;
+        const x = Math.sin(b) * D, z = Math.cos(b) * D;
+        return (
+          <group key={i} position={[x, Y, z]} rotation={[0, b, 0]}>
+            {i % 2 === 0 ? (
+              <>
+                <Tube pos={[0, 0.1, 0]} r={0.055} h={0.2} color="#CFEAF5" seg={14} cast={false} />
+                <Tube pos={[0, 0.205, 0]} r={0.06} h={0.02} color="#9CA3AF" seg={14} cast={false} />
+                <Box pos={[0.075, 0.12, 0]} size={[0.02, 0.1, 0.03]} color="#CFEAF5" cast={false} />
+                <Tube pos={[0.2, 0.04, 0.08]} r={0.03} h={0.08} color="#DDF1F8" seg={12} cast={false} />
+                <Tube pos={[-0.2, 0.04, 0.08]} r={0.03} h={0.08} color="#DDF1F8" seg={12} cast={false} />
+              </>
+            ) : (
+              <>
+                <Succulent pos={[0, 0, 0]} scale={0.9} />
+                <Box pos={[0.28, 0.045, 0.02]} size={[0.2, 0.09, 0.11]} color="#F3F4F6" cast={false} />
+                <Box pos={[0.28, 0.093, 0.02]} size={[0.1, 0.012, 0.03]} color="#CBD5E1" cast={false} />
+                <TumpukKertas pos={[-0.3, 0, 0.02]} n={3} rotY={0.3} header="#4C5FA8" />
+              </>
+            )}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+// ======================= [BARU] RUANG MANAGEMENT — perabot, papan & lantai/dinding berisi INFORMASI nyata (tekstur kanvas) =======================
+// Semua papan, rak, lemari, pigura dan poster di ruang ini menampilkan tulisan / data sungguhan (bukan garis polos).
+// Hanya ada SATU meja kerja di ruang ini: meja bundar di tengah. Dua meja kerja coklat + kursinya sudah dihapus dan diganti
+// etalase penghargaan + pojok informasi (banner visi-misi, papan direktori, rak brosur).
+const MGF = 'Inter, system-ui, sans-serif';
+const MGF_TULIS = '"Segoe Print", "Bradley Hand", "Comic Sans MS", "Marker Felt", cursive';
+const MGF_SERIF = 'Georgia, "Times New Roman", serif';
+
+function useKanvasMg(w: number, h: number, gambar: (g: CanvasRenderingContext2D, w: number, h: number) => void, kunci: string) {
+  return useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    if (g) gambar(g, w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kunci, w, h]);
+}
+
+function rrMg(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+// Kecilkan font sampai teks muat dalam maxW. Mengembalikan ukuran font akhir.
+function fitMg(g: CanvasRenderingContext2D, t: string, maxW: number, fs: number, weight = '700', fam = MGF) {
+  let s = fs;
+  g.font = `${weight} ${s}px ${fam}`;
+  while (g.measureText(t).width > maxW && s > 8) {
+    s -= 2;
+    g.font = `${weight} ${s}px ${fam}`;
+  }
+  return s;
+}
+
+// Tulis teks berbaris (word-wrap). Mengembalikan y baris berikutnya.
+function bungkusMg(g: CanvasRenderingContext2D, teks: string, x: number, y: number, maxW: number, lh: number, maks = 99) {
+  const kata = teks.split(' ');
+  let baris = '';
+  let yy = y;
+  let n = 0;
+  for (const k of kata) {
+    const uji = baris ? `${baris} ${k}` : k;
+    if (g.measureText(uji).width > maxW && baris) {
+      g.fillText(baris, x, yy);
+      yy += lh;
+      baris = k;
+      n++;
+      if (n >= maks) return yy;
+    } else baris = uji;
+  }
+  if (baris) g.fillText(baris, x, yy);
+  return yy + lh;
+}
+
+// Bidang datar bertekstur (tulisan di dinding / papan).
+function BidangMg({ pos, w, h, tex, rotY = 0, alpha = false }: { pos: V3; w: number; h: number; tex: THREE.Texture; rotY?: number; alpha?: boolean }) {
+  return (
+    <mesh position={pos} rotation={[0, rotY, 0]}>
+      <planeGeometry args={[w, h]} />
+      <meshBasicMaterial map={tex} transparent={alpha} alphaTest={alpha ? 0.05 : 0} toneMapped={false} />
+    </mesh>
+  );
+}
+
+// ---------------------------------------------------------------- LANTAI ----------------------------------------------------------------
+
+// [DIDESAIN ULANG] Karpet bundar Management: nada senada (biru baja redup + krem hangat), kontras rendah supaya tidak mencolok di atas lantai parket kayu.
+// Tepi biru baja pekat + garis krem tipis, pita anyaman halus, medan biru-abu dengan cincin tipis & jari-jari samar, rosetta kecil bernada sama di tengah (tertutup meja).
+function KarpetBundarMotif({ r }: { r: number }) {
+  const tex = useKanvasMg(1024, 1024, (g, W) => {
+    const R = W / 2;
+    const lingkar = (rad: number, col: string) => {
+      g.fillStyle = col;
+      g.beginPath();
+      g.arc(R, R, rad, 0, Math.PI * 2);
+      g.fill();
+    };
+    const cincin = (rad: number, col: string, lw: number) => {
+      g.strokeStyle = col;
+      g.lineWidth = lw;
+      g.beginPath();
+      g.arc(R, R, rad, 0, Math.PI * 2);
+      g.stroke();
+    };
+    lingkar(R, '#3A4C68'); // tepi luar biru baja redup
+    cincin(R * 0.955, '#A99B7C', 3); // garis krem-kayu tipis (menyatu dengan parket)
+    lingkar(R * 0.93, '#46597A'); // pita luar
+    // anyaman halus: belah ketupat kecil bernada sama (kontras rendah)
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2;
+      g.save();
+      g.translate(R + Math.cos(a) * R * 0.86, R + Math.sin(a) * R * 0.86);
+      g.rotate(a + Math.PI / 4);
+      g.fillStyle = i % 2 ? '#52668A' : '#3F5273';
+      g.fillRect(-7, -7, 14, 14);
+      g.restore();
+    }
+    cincin(R * 0.79, '#A99B7C', 3);
+    lingkar(R * 0.775, '#33445F'); // pita dalam lebih gelap
+    for (let i = 0; i < 96; i++) {
+      const a = (i / 96) * Math.PI * 2;
+      g.fillStyle = '#6F7F9C';
+      g.beginPath();
+      g.arc(R + Math.cos(a) * R * 0.72, R + Math.sin(a) * R * 0.72, 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    lingkar(R * 0.66, '#586C8F'); // medan tengah biru-abu
+    g.strokeStyle = 'rgba(255,255,255,0.07)';
+    g.lineWidth = 2;
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(R + Math.cos(a) * R * 0.3, R + Math.sin(a) * R * 0.3);
+      g.lineTo(R + Math.cos(a) * R * 0.65, R + Math.sin(a) * R * 0.65);
+      g.stroke();
+    }
+    [0.5, 0.4].forEach((k) => cincin(R * k, 'rgba(255,255,255,0.09)', 2));
+    lingkar(R * 0.28, '#4C6084');
+    g.fillStyle = '#6A7E9E'; // rosetta samar, nada senada
+    g.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const rad = i % 2 ? R * 0.11 : R * 0.23;
+      g.lineTo(R + Math.cos(a) * rad, R + Math.sin(a) * rad);
+    }
+    g.closePath();
+    g.fill();
+  }, 'mg-karpet-bundar-v2');
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.007, 0]} receiveShadow>
+      <circleGeometry args={[r, 72]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Karpet persegi bermotif (keset pintu, sudut tunggu, area sofa): bingkai dua garis + medan belah ketupat + rumbai; opsional tulisan.
+function KarpetMotif({ pos, w, d, a, b, c = '#EFE6D0', teks }: { pos: V3; w: number; d: number; a: string; b: string; c?: string; teks?: string }) {
+  const tw = 1024;
+  const th = Math.max(256, Math.round((1024 * d) / w));
+  const tex = useKanvasMg(tw, th, (g, W, H) => {
+    g.fillStyle = a;
+    g.fillRect(0, 0, W, H);
+    const m = Math.min(W, H) * 0.05;
+    g.strokeStyle = c;
+    g.lineWidth = m * 0.35;
+    g.strokeRect(m, m, W - 2 * m, H - 2 * m);
+    g.strokeStyle = b;
+    g.lineWidth = m * 0.25;
+    g.strokeRect(m * 1.7, m * 1.7, W - 3.4 * m, H - 3.4 * m);
+    const x0 = m * 2.4, y0 = m * 2.4, x1 = W - m * 2.4, y1 = H - m * 2.4;
+    g.fillStyle = b;
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    const s = Math.min(W, H) * 0.13;
+    g.save();
+    g.beginPath();
+    g.rect(x0, y0, x1 - x0, y1 - y0);
+    g.clip();
+    for (let yy = y0, row = 0; yy < y1 + s; yy += s, row++) {
+      for (let xx = x0; xx < x1 + s; xx += s) {
+        const ox = (row % 2) * (s / 2);
+        g.fillStyle = 'rgba(255,255,255,0.15)';
+        g.beginPath();
+        g.moveTo(xx + ox, yy - s * 0.4);
+        g.lineTo(xx + ox + s * 0.4, yy);
+        g.lineTo(xx + ox, yy + s * 0.4);
+        g.lineTo(xx + ox - s * 0.4, yy);
+        g.closePath();
+        g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.14)';
+        g.fillRect(xx + ox - 3, yy - 3, 6, 6);
+      }
+    }
+    g.restore();
+    if (teks) {
+      g.fillStyle = 'rgba(15,23,42,0.55)';
+      g.fillRect(x0, H / 2 - H * 0.16, x1 - x0, H * 0.32);
+      g.fillStyle = '#F8FAFC';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      fitMg(g, teks, (x1 - x0) * 0.86, H * 0.22, '800');
+      g.fillText(teks, W / 2, H / 2 + 2);
+    }
+  }, `mg-karpet-${a}-${b}-${c}-${w}-${d}-${teks ?? ''}`);
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={pos} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lantai parket kayu (papan acak + bingkai kayu gelap di tepi) + kotak colokan lantai kuningan.
+function LantaiMgmt() {
+  const { w, d } = MGMT;
+  const kayu = useKanvasMg(2048, 836, (g, W, H) => {
+    const r = mulberry32(2711);
+    const pxm = W / w;
+    const rowH = 0.16 * pxm;
+    const pal = ['#C79A63', '#BB8C57', '#D1A774', '#B4854F', '#C2955E', '#CCA06B'];
+    for (let ry = 0; ry < Math.ceil(H / rowH); ry++) {
+      let x = -r() * 1.4 * pxm;
+      while (x < W) {
+        const len = (0.9 + r() * 0.9) * pxm;
+        g.fillStyle = pal[Math.floor(r() * pal.length)];
+        g.fillRect(x, ry * rowH, len, rowH);
+        g.strokeStyle = 'rgba(90,58,28,0.18)';
+        g.lineWidth = 1;
+        for (let k = 0; k < 3; k++) {
+          const yy = ry * rowH + (0.2 + r() * 0.6) * rowH;
+          g.beginPath();
+          g.moveTo(x + 4, yy);
+          g.lineTo(x + len - 4, yy + (r() - 0.5) * 3);
+          g.stroke();
+        }
+        g.fillStyle = 'rgba(70,44,20,0.38)';
+        g.fillRect(x, ry * rowH, 1.6, rowH);
+        x += len;
+      }
+      g.fillStyle = 'rgba(70,44,20,0.38)';
+      g.fillRect(0, ry * rowH, W, 1.6);
+    }
+    // bingkai kayu gelap mengelilingi ruangan (inlay) + garis tipis krem di dalamnya
+    g.strokeStyle = 'rgba(52,30,12,0.55)';
+    g.lineWidth = 0.22 * pxm;
+    g.strokeRect(0.42 * pxm, 0.42 * pxm, W - 0.84 * pxm, H - 0.84 * pxm);
+    g.strokeStyle = 'rgba(245,230,196,0.7)';
+    g.lineWidth = 0.025 * pxm;
+    g.strokeRect(0.7 * pxm, 0.7 * pxm, W - 1.4 * pxm, H - 1.4 * pxm);
+  }, `mg-kayu-${w}`);
+  const colokan: [number, number][] = [[-6.2, 1.9], [6.2, 1.6], [-6.4, -2.6], [6.4, -1.8], [0, 5.0]];
+  return (
+    <>
+      <Lantai cx={0} w={w} d={d} color={TH.mgmt.floor} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} receiveShadow>
+        <planeGeometry args={[w - 0.04, d - 0.04]} />
+        <meshLambertMaterial map={kayu} />
+      </mesh>
+      <KarpetBundarMotif r={4.9} />
+      {/* keset pintu utara + keset pintu barat (ke Planning) */}
+      <KarpetMotif pos={[0, 0.009, -4.85]} w={2.2} d={1.1} a="#22365A" b="#2F4B7A" teks="MANAGEMENT" />
+      <KarpetMotif pos={[-12.55, 0.009, 3.6]} w={1.2} d={2.0} a="#22365A" b="#2F4B7A" />
+      {/* karpet sudut tunggu & area sofa timur */}
+      <KarpetMotif pos={[-7.8, 0.008, 4.05]} w={3.2} d={2.2} a="#7C2A3A" b="#34507F" />
+      <KarpetMotif pos={[11.8, 0.008, 3.6]} w={3.0} d={2.6} a="#2F5D4F" b="#3E6F5E" />
+      {/* karpet pojok informasi */}
+      <KarpetMotif pos={[9.4, 0.008, -3.0]} w={3.6} d={1.9} a="#33445F" b="#415A82" />
+      {/* kotak colokan lantai kuningan */}
+      {colokan.map(([x, z], i) => (
+        <group key={i} position={[x, 0.006, z]}>
+          <Box pos={[0, 0, 0]} size={[0.16, 0.012, 0.16]} color="#B8962E" cast={false} />
+          <Box pos={[0, 0.007, 0]} size={[0.12, 0.004, 0.12]} color="#D4B04C" cast={false} />
+          <Box pos={[-0.03, 0.01, 0]} size={[0.025, 0.004, 0.04]} color="#2B3340" cast={false} />
+          <Box pos={[0.03, 0.01, 0]} size={[0.025, 0.004, 0.04]} color="#2B3340" cast={false} />
+        </group>
+      ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- DINDING ----------------------------------------------------------------
+
+// Kertas dinding bermotif (garis + belah ketupat emas) yang diulang sepanjang w.
+function KertasDinding({ pos, w, h = 0.72 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 192, (g, W, H) => {
+    g.fillStyle = '#A7BCDA';
+    g.fillRect(0, 0, W, H);
+    for (let x = 0; x < W; x += 32) {
+      g.fillStyle = 'rgba(255,255,255,0.15)';
+      g.fillRect(x, 0, 16, H);
+    }
+    for (let ix = 0; ix < 4; ix++) {
+      for (let iy = 0; iy < 3; iy++) {
+        const cx = 32 + ix * 64, cy = 32 + iy * 64 + (ix % 2) * 0;
+        g.fillStyle = '#C9A44A';
+        g.beginPath();
+        g.moveTo(cx, cy - 12);
+        g.lineTo(cx + 9, cy);
+        g.lineTo(cx, cy + 12);
+        g.lineTo(cx - 9, cy);
+        g.closePath();
+        g.fill();
+        g.fillStyle = '#E9D79A';
+        g.beginPath();
+        g.arc(cx, cy, 3, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+  }, 'mg-kertas-dinding');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(1, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// Lapisan hias dinding: lis bawah, panel kayu (wainscot) + rel, kertas dinding motif, lis atas. s = z permukaan dinding (menghadap +z lokal).
+function DindingDekor({ s, segs }: { s: number; segs: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        const n = Math.max(1, Math.round(L / 0.9));
+        return (
+          <React.Fragment key={a}>
+            <Box pos={[cx, 0.4, s + 0.015]} size={[L, 0.8, 0.03]} color="#8E6E4C" cast={false} />
+            {Array.from({ length: n }, (_, i) => (
+              <Box key={i} pos={[a + ((i + 0.5) * L) / n, 0.4, s + 0.034]} size={[L / n - 0.16, 0.54, 0.012]} color="#A07E58" cast={false} />
+            ))}
+            <Box pos={[cx, 0.06, s + 0.027]} size={[L, 0.12, 0.054]} color="#4A3826" cast={false} />
+            <Box pos={[cx, 0.82, s + 0.03]} size={[L, 0.045, 0.06]} color="#F3EDE0" cast={false} />
+            <KertasDinding pos={[cx, 1.19, s + 0.006]} w={L} />
+            <Box pos={[cx, 1.575, s + 0.035]} size={[L, 0.05, 0.07]} color="#F3F7FC" cast={false} />
+            <Box pos={[cx, 1.535, s + 0.022]} size={[L, 0.03, 0.044]} color="#D9B25B" cast={false} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// [BARU] Kertas dinding Planning: lavender dengan kisi heksagon halus + simpul cahaya (padanan KertasDinding Management, bertema futuristik).
+function KertasDindingPlan({ pos, w, h = 0.64 }: { pos: V3; w: number; h?: number }) {
+  const dasar = useKanvasMg(256, 166, (g, W, H) => {
+    const gr = g.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, '#171347');
+    gr.addColorStop(1, '#241E63');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, W, H);
+    const dx = W / 8, dy = H / 6, r = dy / 1.5;
+    const pusat: [number, number, number, number][] = [];
+    for (let j = -1; j <= 7; j++) {
+      for (let i = -1; i <= 9; i++) {
+        pusat.push([i, j, i * dx + (((j % 2) + 2) % 2 ? dx / 2 : 0), j * dy]);
+      }
+    }
+    const heks = (cx: number, cy: number) => {
+      g.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.PI / 6 + (k * Math.PI) / 3;
+        const px = cx + r * Math.cos(a), py = cy + r * Math.sin(a);
+        if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.closePath();
+    };
+    // sel berisi (tipis) + garis kisi
+    for (const [i, j, cx, cy] of pusat) {
+      const h3 = ((i + 9) * 7 + (j + 9) * 3) % 11;
+      if (h3 === 2 || h3 === 7) { g.fillStyle = 'rgba(167,139,250,0.16)'; heks(cx, cy); g.fill(); }
+      if (h3 === 4) { g.fillStyle = 'rgba(103,232,249,0.12)'; heks(cx, cy); g.fill(); }
+    }
+    g.strokeStyle = 'rgba(103,232,249,0.30)';
+    g.lineWidth = 1.5;
+    for (const [, , cx, cy] of pusat) { heks(cx, cy); g.stroke(); }
+    // simpul cahaya
+    for (const [i, j, cx, cy] of pusat) {
+      if (((i + 9) * 7 + (j + 9) * 3) % 11 === 0) {
+        g.fillStyle = '#67E8F9'; g.beginPath(); g.arc(cx, cy, 2.8, 0, Math.PI * 2); g.fill();
+      } else if (((i + 9) * 5 + (j + 9) * 2) % 13 === 0) {
+        g.fillStyle = '#F0ABFC'; g.beginPath(); g.arc(cx, cy, 2.4, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // jejak sirkuit tipis
+    g.strokeStyle = 'rgba(167,139,250,0.55)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, 40); g.lineTo(60, 40); g.lineTo(80, 60); g.lineTo(150, 60); g.stroke();
+    g.beginPath(); g.moveTo(150, 60); g.lineTo(170, 40); g.lineTo(256, 40); g.stroke();
+    g.beginPath(); g.moveTo(0, 126); g.lineTo(90, 126); g.lineTo(110, 106); g.lineTo(256, 106); g.stroke();
+  }, 'plan-kertas-dinding-gelap');
+  const tex = useMemo(() => {
+    const t = dasar.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(Math.max(1, w), 1);
+    t.needsUpdate = true;
+    return t;
+  }, [dasar, w]);
+  return (
+    <mesh position={pos}>
+      <planeGeometry args={[w, h]} />
+      <meshLambertMaterial map={tex} />
+    </mesh>
+  );
+}
+
+// [BARU] Lapisan hias dinding Planning (padanan DindingDekor Management): plint gelap + LED, wainscot navy berpanel dengan celah cahaya,
+// rel atas bercahaya, kertas dinding heksagon, list atas navy + garis cyan. s = z permukaan dinding (menghadap +z lokal).
+// segs = rentang yang diberi plint/dasar/kertas/list; panel = rentang (bagian dari segs) yang juga diberi panel alur + rel
+// (dikosongkan di tempat papan/layar dinding menutupi wainscot).
+function DindingDekorPlan({ s, segs, panel }: { s: number; segs: [number, number][]; panel: [number, number][] }) {
+  return (
+    <>
+      {segs.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        return (
+          <React.Fragment key={`d${a}`}>
+            <Box pos={[cx, 0.4, s + 0.01]} size={[L, 0.8, 0.02]} color={HUB.navy2} cast={false} />
+            <Box pos={[cx, 0.06, s + 0.027]} size={[L, 0.12, 0.054]} color={HUB.navy} cast={false} />
+            <Cahaya pos={[cx, 0.126, s + 0.056]} size={[L - 0.04, 0.012, 0.006]} color={HUB.cyan} opacity={0.9} />
+            <KertasDindingPlan pos={[cx, 1.175, s + 0.002]} w={L} />
+            <Box pos={[cx, 1.52, s + 0.02]} size={[L, 0.03, 0.04]} color={HUB.navy} cast={false} />
+            <Cahaya pos={[cx, 1.545, s + 0.03]} size={[L - 0.04, 0.01, 0.012]} color={HUB.cyan} opacity={0.9} />
+          </React.Fragment>
+        );
+      })}
+      {panel.map(([a, b]) => {
+        const L = b - a;
+        const cx = (a + b) / 2;
+        const n = Math.max(1, Math.round(L / 0.9));
+        return (
+          <React.Fragment key={`p${a}`}>
+            {Array.from({ length: n }, (_, i) => {
+              const x = a + ((i + 0.5) * L) / n;
+              return (
+                <React.Fragment key={i}>
+                  <Box pos={[x, 0.42, s + 0.03]} size={[L / n - 0.16, 0.54, 0.012]} color="#3B3485" cast={false} />
+                  <Cahaya pos={[x, 0.42, s + 0.039]} size={[0.012, 0.4, 0.004]} color={HUB.violet} opacity={0.9} />
+                  <Cahaya pos={[x, 0.66, s + 0.039]} size={[0.07, 0.012, 0.004]} color={HUB.cyan} opacity={0.8} />
+                  <Cahaya pos={[x, 0.18, s + 0.039]} size={[0.07, 0.012, 0.004]} color={HUB.cyan} opacity={0.8} />
+                </React.Fragment>
+              );
+            })}
+            <Box pos={[cx, 0.82, s + 0.03]} size={[L, 0.045, 0.06]} color={HUB.putih} cast={false} />
+            <Cahaya pos={[cx, 0.792, s + 0.058]} size={[L, 0.01, 0.004]} color={HUB.violet} opacity={0.95} />
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Bak tanaman kayu panjang berisi semak (dipasang di sisi dinding rendah selatan).
+function BakTanaman({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.2, 0]} size={[1.0, 0.4, 0.38]} color="#7A5B3A" />
+      <Box pos={[0, 0.41, 0]} size={[1.06, 0.03, 0.44]} color="#5B4630" cast={false} />
+      <Box pos={[0, 0.39, 0]} size={[0.92, 0.02, 0.3]} color="#4A3728" cast={false} />
+      {[-0.32, 0, 0.32].map((x, i) => (
+        <React.Fragment key={x}>
+          <Ball pos={[x, 0.62, 0]} r={0.2} color={i === 1 ? '#4BAA6B' : '#3F9A5F'} flat={false} />
+          <Ball pos={[x + 0.07, 0.8, 0.02]} r={0.13} color="#58B678" flat={false} />
+        </React.Fragment>
+      ))}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------- RAK BUKU BERISI ----------------------------------------------------------------
+
+type BukuRak = { x: number; w: number; h: number; c: string; judul: string; map: boolean };
+
+function susunBuku(judul: string[], seed: number, map: boolean, maxW: number, tipis = false): BukuRak[] {
+  const r = mulberry32(seed);
+  const pal = map
+    ? ['#2F5D8A', '#7A2E3B', '#2F6B4F', '#8A5A1F', '#3E4A66', '#4C3A7A', '#1F6F78']
+    : ['#E0713F', '#4C5FA8', '#2F7D5B', '#B8862B', '#B05A7A', '#3E4A66', '#C9453B', '#5F8F4B', '#8A5A3C', '#1F6F78'];
+  const out: BukuRak[] = [];
+  let x = 0;
+  for (const t of judul) {
+    const w = tipis ? 0.046 + r() * 0.004 : map ? 0.07 + r() * 0.018 : Math.min(0.105, 0.05 + t.length * 0.0027 + r() * 0.012);
+    if (x + w > maxW) break;
+    const h = map ? 0.33 + r() * 0.05 : 0.27 + r() * 0.12;
+    out.push({ x: x + w / 2, w, h, c: pal[Math.floor(r() * pal.length)], judul: t, map });
+    x += w + 0.004;
+  }
+  return out;
+}
+
+// [map, judul[]] per tingkat rak (0 = bawah ... 3 = atas); 3 tema: akuntansi & pajak, manajemen & hukum, SDM & data.
+const RAK_ISI: { map: boolean; tipis?: boolean; judul: string[] }[][] = [
+  [
+    { map: true, judul: ['ARSIP 2023', 'ARSIP 2024', 'ARSIP 2025', 'LAP. TAHUNAN', 'NOTULEN', 'SPT BADAN', 'AUDIT 2025', 'NERACA', 'PAJAK'] },
+    { map: false, judul: ['PSAK 2026', 'Akuntansi Keuangan', 'Akuntansi Biaya', 'Audit Internal', 'Perpajakan', 'Analisis Lap. Keuangan', 'Sistem Info Akuntansi', 'IFRS Dasar', 'Pengantar Akuntansi'] },
+    { map: false, judul: ['UU Pajak', 'PPh Badan', 'PPN & PPnBM', 'Bea Meterai', 'Transfer Pricing', 'Tax Planning', 'Pajak Daerah', 'Akuntansi Pajak', 'KUP'] },
+    { map: true, tipis: true, judul: ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES'] },
+  ],
+  [
+    { map: true, judul: ['KONTRAK A-M', 'KONTRAK N-Z', 'NDA', 'MoU', 'AKTA', 'NIB / OSS', 'SIUP', 'TDP', 'LEGAL'] },
+    { map: false, judul: ['Manajemen Strategis', 'Good Corp. Governance', 'Manajemen Risiko', 'Kepemimpinan', 'Hukum Bisnis', 'Etika Bisnis', 'Balanced Scorecard', 'OKR & KPI', 'Manajemen Keuangan'] },
+    { map: false, judul: ['Hukum Perseroan', 'UU PT', 'UU Ketenagakerjaan', 'Hukum Kontrak', 'Kepatuhan', 'Anti Fraud', 'Whistleblowing', 'Tata Kelola', 'Compliance'] },
+    { map: true, tipis: true, judul: ['SOP 01', 'SOP 02', 'SOP 03', 'SOP 04', 'SOP 05', 'SOP 06', 'SOP 07', 'SOP 08', 'KEBIJAKAN', 'PERATURAN'] },
+  ],
+  [
+    { map: true, judul: ['KLIEN 01', 'KLIEN 02', 'KLIEN 03', 'KLIEN 04', 'KLIEN 05', 'KLIEN 06', 'ONBOARD', 'ADDENDUM'] },
+    { map: false, judul: ['Manajemen SDM', 'PPh 21 Praktis', 'Penggajian', 'BPJS & Jamsos', 'Rekrutmen', 'Penilaian Kinerja', 'Budaya Kerja', 'Pelatihan', 'Motivasi'] },
+    { map: false, judul: ['Excel Keuangan', 'Dashboard & BI', 'Data Analytics', 'Python Dasar', 'SQL Praktis', 'Otomasi Kerja', 'AI untuk Bisnis', 'Machine Learning', 'Big Data'] },
+    { map: true, tipis: true, judul: ['GAJI JAN', 'GAJI FEB', 'GAJI MAR', 'GAJI APR', 'GAJI MEI', 'GAJI JUN', 'GAJI JUL', 'GAJI AGU', 'GAJI SEP', 'GAJI OKT'] },
+  ],
+];
+
+const RAK_S = 640; // piksel per meter pada tekstur judul buku
+
+// Satu tingkat rak: buku bervolume (kotak) + tulisan punggung buku (tekstur transparan di depannya).
+function TingkatBuku({ isi, level, seed, maxW, y0 }: { isi: number; level: number; seed: number; maxW: number; y0: number }) {
+  const spec = RAK_ISI[isi % RAK_ISI.length][level];
+  const buku = useMemo(() => susunBuku(spec.judul, seed, spec.map, maxW, spec.tipis), [spec, seed, maxW]);
+  const cw = Math.round(maxW * RAK_S);
+  const ch = Math.round(0.42 * RAK_S);
+  const tex = useKanvasMg(cw, ch, (g, W, H) => {
+    g.clearRect(0, 0, W, H);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    buku.forEach((b) => {
+      const px = (b.x - b.w / 2) * RAK_S, bw = b.w * RAK_S, bh = b.h * RAK_S;
+      const top = H - bh;
+      g.fillStyle = 'rgba(0,0,0,0.22)';
+      g.fillRect(px, top, bw, 4);
+      g.fillRect(px, H - 5, bw, 5);
+      g.fillStyle = 'rgba(255,255,255,0.14)';
+      g.fillRect(px + 2, top + 4, 2, bh - 9);
+      const col = new THREE.Color(b.c);
+      const terang = 0.299 * col.r + 0.587 * col.g + 0.114 * col.b > 0.45;
+      if (b.map) {
+        // map arsip: label putih di punggung
+        g.fillStyle = '#F8FAFC';
+        const lh = bh * 0.62;
+        g.fillRect(px + bw * 0.12, top + bh * 0.18, bw * 0.76, lh);
+        g.save();
+        g.translate(px + bw / 2, top + bh * 0.18 + lh / 2);
+        g.rotate(-Math.PI / 2);
+        g.fillStyle = '#111827';
+        fitMg(g, b.judul, lh * 0.9, Math.min(bw * 0.5, 22), '800');
+        g.fillText(b.judul, 0, 0);
+        g.restore();
+        g.fillStyle = 'rgba(255,255,255,0.7)';
+        g.beginPath();
+        g.arc(px + bw / 2, top + bh * 0.1, 3.5, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        g.fillStyle = 'rgba(232,201,90,0.9)';
+        g.fillRect(px, top + 12, bw, 3);
+        g.fillRect(px, H - 18, bw, 3);
+        g.save();
+        g.translate(px + bw / 2, top + bh / 2);
+        g.rotate(-Math.PI / 2);
+        g.fillStyle = terang ? '#111827' : '#FFFFFF';
+        fitMg(g, b.judul, bh * 0.78, Math.min(bw * 0.46, 21), '700');
+        g.fillText(b.judul, 0, 0);
+        g.restore();
+      }
+    });
+  }, `mg-rak-${isi}-${level}-${seed}-${maxW}`);
+  return (
+    <group position={[-0.72, y0, 0]}>
+      {buku.map((b, i) => (
+        <Box key={i} pos={[b.x, b.h / 2, 0]} size={[b.w, b.h, 0.26]} color={b.c} cast={false} />
+      ))}
+      <BidangMg pos={[maxW / 2, 0.21, 0.1315]} w={maxW} h={0.42} tex={tex} alpha />
+    </group>
+  );
+}
+
+function BingkaiFoto({ pos, rotY = 0, w = 0.2, h = 0.26, warna = '#A7F3D0' }: { pos: V3; rotY?: number; w?: number; h?: number; warna?: string }) {
+  return (
+    <group position={pos} rotation={[-0.12, rotY, 0]}>
+      <Box pos={[0, h / 2, 0]} size={[w, h, 0.025]} color="#5B4630" cast={false} />
+      <Box pos={[0, h / 2, 0.014]} size={[w - 0.04, h - 0.04, 0.006]} color={warna} cast={false} />
+      <Box pos={[-w * 0.12, h * 0.4, 0.019]} size={[w * 0.28, h * 0.28, 0.004]} color="#2F7D5B" cast={false} />
+      <Box pos={[w * 0.15, h * 0.58, 0.019]} size={[w * 0.2, h * 0.2, 0.004]} color="#F59E0B" cast={false} />
+    </group>
+  );
+}
+
+function BoxFile({ pos, warna, judul, rotY = 0 }: { pos: V3; warna: string; judul: string; rotY?: number }) {
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.15, 0]} size={[0.12, 0.3, 0.26]} color={warna} cast={false} />
+      <Box pos={[0.061, 0.15, 0]} size={[0.004, 0.3, 0.25]} color="#F8FAFC" cast={false} />
+      <Box pos={[0, 0.2, 0.131]} size={[0.09, 0.14, 0.004]} color="#F8FAFC" cast={false} />
+      <Teks pos={[0, 0.2, 0.1335]} w={0.085} h={0.045} text={judul} fg="#111827" />
+    </group>
+  );
+}
+
+// Rak buku putih: isi buku BERJUDUL (akuntansi, pajak, hukum, SDM, data) + map arsip berlabel + pajangan.
+function RakBukuDetail({ pos, isi = 0, seed = 0 }: { pos: V3; isi?: number; seed?: number }) {
+  const sd = isi * 11 + seed;
+  const dasar = [0.06, 0.52, 0.98, 1.44];
+  return (
+    <group position={pos}>
+      <Box pos={[-0.77, 0.94, 0]} size={[0.06, 1.88, 0.4]} color="#F8F9FB" />
+      <Box pos={[0.77, 0.94, 0]} size={[0.06, 1.88, 0.4]} color="#F8F9FB" />
+      <Box pos={[0, 0.94, -0.18]} size={[1.6, 1.88, 0.03]} color="#DCE3E8" />
+      <Box pos={[0, 0.02, 0.0]} size={[1.64, 0.04, 0.42]} color="#C5CDD6" cast={false} />
+      {[0.04, 0.5, 0.96, 1.42, 1.86].map((y) => (
+        <React.Fragment key={y}>
+          <Box pos={[0, y, 0]} size={[1.6, 0.04, 0.4]} color="#FFFFFF" />
+          {y > 0.05 && <Box pos={[0, y - 0.005, 0.2]} size={[1.6, 0.025, 0.006]} color="#4C8FBF" cast={false} />}
+        </React.Fragment>
+      ))}
+      <TingkatBuku isi={isi} level={0} seed={sd + 1} maxW={1.44} y0={dasar[0]} />
+      <TingkatBuku isi={isi} level={1} seed={sd + 2} maxW={0.9} y0={dasar[1]} />
+      <TingkatBuku isi={isi} level={2} seed={sd + 3} maxW={0.9} y0={dasar[2]} />
+      <TingkatBuku isi={isi} level={3} seed={sd + 4} maxW={1.44} y0={dasar[3]} />
+      {/* pajangan rak 2 */}
+      {isi % 3 === 0 && (
+        <>
+          <GlobeMeja pos={[0.35, dasar[1], 0]} />
+          <BingkaiFoto pos={[0.6, dasar[1], 0.02]} rotY={-0.2} />
+        </>
+      )}
+      {isi % 3 === 1 && (
+        <>
+          <Piala pos={[0.3, dasar[1], 0]} />
+          <BingkaiFoto pos={[0.58, dasar[1], 0.02]} rotY={-0.15} warna="#BFDBFE" />
+        </>
+      )}
+      {isi % 3 === 2 && (
+        <>
+          <Succulent pos={[0.3, dasar[1], 0]} scale={0.9} />
+          <BingkaiFoto pos={[0.58, dasar[1], 0.02]} rotY={-0.2} warna="#FDE68A" />
+        </>
+      )}
+      {/* pajangan rak 3 */}
+      <Piala pos={[0.32, dasar[2], 0]} />
+      <Piala pos={[0.55, dasar[2], 0.02]} />
+      <Box pos={[0.12, dasar[2] + 0.03, 0.02]} size={[0.14, 0.06, 0.12]} color="#F3F4F6" cast={false} />
+      {/* atas rak */}
+      <Succulent pos={[-0.5, 1.88, 0]} scale={0.8} />
+      <BoxFile pos={[-0.12, 1.88, 0]} warna="#3E4A66" judul="ARSIP" />
+      <BoxFile pos={[0.04, 1.88, 0]} warna="#C9453B" judul="URGENT" />
+      <BoxFile pos={[0.2, 1.88, 0]} warna="#2F7D5B" judul="LUNAS" />
+      <Box pos={[0.55, 1.93, 0]} size={[0.3, 0.1, 0.25]} color="#3E4A66" cast={false} />
+      <Box pos={[0.55, 2.02, 0]} size={[0.26, 0.08, 0.22]} color="#E0713F" cast={false} />
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------- LEMARI ----------------------------------------------------------------
+
+const ARSIP_LABEL: [string, string][][] = [
+  [['KONTRAK KLIEN', 'A – M'], ['LAPORAN KEUANGAN', '2023 – 2025'], ['PAJAK & NPWP', 'SPT · PPN · PPh'], ['LEGAL & PERIZINAN', 'NIB · SIUP · AKTA']],
+  [['PAYROLL & SDM', 'SLIP GAJI 2026'], ['AUDIT', 'INTERNAL · EKSTERNAL'], ['ASET & INVENTARIS', 'DAFTAR ASET TETAP'], ['NOTULEN RAPAT', 'DIREKSI 2026']],
+  [['BANK & KAS', 'REKENING KORAN'], ['FAKTUR PENJUALAN', 'JAN – DES 2026'], ['FAKTUR PEMBELIAN', 'JAN – DES 2026'], ['ARSIP LAMA', 'SEBELUM 2023']],
+];
+
+// Lemari arsip baja 4 laci: tiap laci punya kartu label berisi judul + keterangan, gagang, lubang kunci; di atasnya box file / piala.
+function LemariArsipMg({ pos, rotY = 0, isi = 0, warna = '#B7C3D2', atas = 'berkas' }: { pos: V3; rotY?: number; isi?: number; warna?: string; atas?: 'berkas' | 'piala' }) {
+  const lab = ARSIP_LABEL[isi % ARSIP_LABEL.length];
+  const tex = useKanvasMg(440, 520, (g, W, H) => {
+    g.fillStyle = warna;
+    g.fillRect(0, 0, W, H);
+    const dh = H / 4;
+    lab.forEach(([t, sub], i) => {
+      const y = i * dh;
+      g.fillStyle = lighten(warna, -0.04);
+      rrMg(g, 10, y + 8, W - 20, dh - 16, 8);
+      g.fill();
+      g.strokeStyle = 'rgba(0,0,0,0.28)';
+      g.lineWidth = 3;
+      g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.35)';
+      g.fillRect(16, y + 11, W - 32, 3);
+      g.fillStyle = '#FFFFFF';
+      rrMg(g, W / 2 - 150, y + 20, 300, 64, 6);
+      g.fill();
+      g.strokeStyle = '#8FA3B3';
+      g.lineWidth = 3;
+      g.stroke();
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#1F2937';
+      fitMg(g, t, 270, 27, '800');
+      g.fillText(t, W / 2, y + 43);
+      g.fillStyle = '#475569';
+      fitMg(g, sub, 270, 18, '600');
+      g.fillText(sub, W / 2, y + 68);
+      g.fillStyle = '#6B7280';
+      g.beginPath();
+      g.arc(W - 40, y + dh / 2 + 10, 8, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#374151';
+      g.fillRect(W - 42, y + dh / 2 + 10, 4, 12);
+      g.fillStyle = '#6B7280';
+      g.font = `700 16px ${MGF}`;
+      g.textAlign = 'left';
+      g.fillText(`${i + 1}`, 28, y + dh / 2 + 10);
+    });
+  }, `mg-arsip-${isi}-${warna}`);
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.7, 0]} size={[1.2, 1.4, 0.5]} color={warna} />
+      <BidangMg pos={[0, 0.7, 0.2515]} w={1.1} h={1.3} tex={tex} />
+      {[0, 1, 2, 3].map((i) => (
+        <Box key={i} pos={[0, 1.35 - (i + 0.5) * 0.325 - 0.1, 0.268]} size={[0.34, 0.028, 0.03]} color="#7B8794" cast={false} />
+      ))}
+      <Box pos={[0, 0.03, 0.01]} size={[1.2, 0.06, 0.52]} color="#6B7280" cast={false} />
+      <Box pos={[0, 1.415, 0]} size={[1.24, 0.03, 0.54]} color="#9AA8B8" />
+      {atas === 'piala' ? (
+        <>
+          <Piala pos={[-0.35, 1.43, 0]} />
+          <Piala pos={[0.0, 1.43, 0]} />
+          <Succulent pos={[0.38, 1.43, 0]} scale={0.9} />
+        </>
+      ) : (
+        <>
+          <BoxFile pos={[-0.4, 1.43, 0]} warna="#3E4A66" judul="PAJAK" />
+          <BoxFile pos={[-0.24, 1.43, 0]} warna="#2F5D8A" judul="BANK" />
+          <BoxFile pos={[-0.08, 1.43, 0]} warna="#C9453B" judul="URGENT" />
+          <Box pos={[0.3, 1.5, 0]} size={[0.3, 0.14, 0.26]} color="#E0E7EE" cast={false} />
+          <Box pos={[0.3, 1.58, 0]} size={[0.28, 0.02, 0.24]} color="#FDE68A" cast={false} />
+        </>
+      )}
+    </group>
+  );
+}
+
+function TrofiBesar({ pos, s = 1 }: { pos: V3; s?: number }) {
+  return (
+    <group position={pos} scale={s}>
+      <Box pos={[0, 0.025, 0]} size={[0.16, 0.05, 0.16]} color="#3B2A18" cast={false} />
+      <Box pos={[0, 0.06, 0]} size={[0.12, 0.02, 0.12]} color="#5B4630" cast={false} />
+      <Tube pos={[0, 0.12, 0]} r={0.014} h={0.1} color={EMAS} seg={8} cast={false} />
+      <Tube pos={[0, 0.16, 0]} r={0.035} rb={0.02} h={0.04} color={EMAS} seg={14} cast={false} />
+      <Tube pos={[0, 0.235, 0]} r={0.085} rb={0.04} h={0.12} color={EMAS} seg={16} cast={false} />
+      {[-1, 1].map((sd) => (
+        <Tube key={sd} pos={[sd * 0.1, 0.24, 0]} r={0.022} h={0.02} color={EMAS} rot={[0, 0, Math.PI / 2]} seg={10} cast={false} />
+      ))}
+      <Box pos={[0, 0.04, 0.082]} size={[0.08, 0.025, 0.004]} color="#F8F2D0" cast={false} />
+    </group>
+  );
+}
+
+function Plakat({ pos, judul, sub }: { pos: V3; judul: string; sub: string }) {
+  return (
+    <group position={pos} rotation={[-0.18, 0, 0]}>
+      <Box pos={[0, 0.11, 0]} size={[0.3, 0.22, 0.03]} color="#4A3320" cast={false} />
+      <Box pos={[0, 0.11, 0.017]} size={[0.26, 0.18, 0.006]} color="#7A5A38" cast={false} />
+      <Box pos={[0, 0.14, 0.022]} size={[0.22, 0.07, 0.004]} color="#D9B25B" cast={false} />
+      <Teks pos={[0, 0.14, 0.0245]} w={0.21} h={0.06} text={judul} fg="#3B2A12" />
+      <Teks pos={[0, 0.07, 0.0245]} w={0.12} h={0.035} text={sub} fg="#F8E7B0" />
+    </group>
+  );
+}
+
+function SertifikatKecil({ pos, judul }: { pos: V3; judul: string }) {
+  return (
+    <group position={pos} rotation={[-0.2, 0, 0]}>
+      <Box pos={[0, 0.12, 0]} size={[0.32, 0.24, 0.02]} color="#D9B25B" cast={false} />
+      <Box pos={[0, 0.12, 0.012]} size={[0.29, 0.21, 0.004]} color="#FBF4E1" cast={false} />
+      <Teks pos={[0, 0.17, 0.0145]} w={0.24} h={0.04} text="SERTIFIKAT" fg="#6B4A12" />
+      <Teks pos={[0, 0.115, 0.0145]} w={0.26} h={0.04} text={judul} fg="#111827" />
+      <Box pos={[0, 0.07, 0.0145]} size={[0.16, 0.004, 0.002]} color="#B8962E" cast={false} />
+      <Ball pos={[0.1, 0.05, 0.016]} r={0.025} color="#C9453B" flat={false} />
+    </group>
+  );
+}
+
+// Etalase kaca penghargaan (menggantikan meja direksi di dinding timur): trofi, plakat, sertifikat, globe, buku.
+function EtalaseKaca({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const kayu = '#6B4A2F';
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.95, -0.2]} size={[1.6, 1.9, 0.04]} color={kayu} />
+      {[-0.775, 0.775].map((x) => (
+        <Box key={x} pos={[x, 0.95, 0]} size={[0.05, 1.9, 0.45]} color={kayu} />
+      ))}
+      <Box pos={[0, 1.93, 0]} size={[1.7, 0.06, 0.52]} color="#5B3F28" />
+      <Box pos={[0, 0.38, 0.0]} size={[1.5, 0.76, 0.44]} color="#7D5A3A" />
+      {[-0.375, 0.375].map((x) => (
+        <React.Fragment key={x}>
+          <Box pos={[x, 0.38, 0.225]} size={[0.7, 0.66, 0.02]} color="#8A6544" cast={false} />
+          <Box pos={[x, 0.38, 0.237]} size={[0.58, 0.54, 0.008]} color="#7D5A3A" cast={false} />
+          <Box pos={[x + (x < 0 ? 0.3 : -0.3), 0.45, 0.255]} size={[0.025, 0.16, 0.03]} color="#D9B25B" cast={false} />
+        </React.Fragment>
+      ))}
+      <mesh position={[0, 1.33, 0.2]}>
+        <boxGeometry args={[1.5, 1.15, 0.015]} />
+        <meshLambertMaterial color="#CDE8F2" transparent opacity={0.16} depthWrite={false} />
+      </mesh>
+      <Box pos={[0, 1.33, 0.205]} size={[0.03, 1.15, 0.04]} color="#5B3F28" cast={false} />
+      <Box pos={[0.02, 1.2, 0.228]} size={[0.012, 0.04, 0.012]} color="#D9B25B" cast={false} />
+      {[0.77, 1.1, 1.4, 1.68].map((y) => (
+        <Box key={y} pos={[0, y, 0]} size={[1.5, 0.018, 0.4]} color="#BFD9E2" cast={false} />
+      ))}
+      {/* rak 1: trofi */}
+      <TrofiBesar pos={[-0.55, 0.779, 0]} s={1.0} />
+      <TrofiBesar pos={[-0.15, 0.779, 0]} s={1.1} />
+      <Plakat pos={[0.35, 0.779, 0.05]} judul="CLIENT CHOICE" sub="AWARD 2026" />
+      <TrofiBesar pos={[0.62, 0.779, 0]} s={0.9} />
+      {/* rak 2: plakat */}
+      <Plakat pos={[-0.5, 1.109, 0.05]} judul="BEST FINANCE TEAM" sub="2026" />
+      <Plakat pos={[0, 1.109, 0.05]} judul="EXCELLENCE REPORTING" sub="2025" />
+      <Plakat pos={[0.5, 1.109, 0.05]} judul="ZERO AUDIT FINDING" sub="2025" />
+      {/* rak 3: sertifikat + globe */}
+      <SertifikatKecil pos={[-0.5, 1.409, 0.05]} judul="ISO 9001:2015" />
+      <SertifikatKecil pos={[-0.1, 1.409, 0.05]} judul="ISO 27001" />
+      <GlobeMeja pos={[0.4, 1.409, 0]} />
+      <BingkaiFoto pos={[0.65, 1.409, 0.02]} rotY={-0.2} warna="#FDE68A" />
+      {/* rak 4: buku & trofi kecil */}
+      <BoxFile pos={[-0.62, 1.689, 0]} warna="#2F5D8A" judul="LAP 25" />
+      <BoxFile pos={[-0.47, 1.689, 0]} warna="#7A2E3B" judul="LAP 24" />
+      <TrofiBesar pos={[0.0, 1.689, 0]} s={0.7} />
+      <TrofiBesar pos={[0.3, 1.689, 0]} s={0.7} />
+      <Succulent pos={[0.62, 1.689, 0]} scale={0.7} />
+      {/* papan nama atas */}
+      <Box pos={[0, 2.03, 0.27]} size={[1.5, 0.12, 0.02]} color="#2B2118" cast={false} />
+      <Teks pos={[0, 2.03, 0.282]} w={1.36} h={0.08} text="PENGHARGAAN & SERTIFIKASI" fg="#F5C84C" />
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------- PAPAN & PIGURA BERISI ----------------------------------------------------------------
+
+const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+// Papan tulis putih dinding: AGENDA RAPAT DIREKSI (tanggal hari ini), daftar tugas berceklis, grafik pendapatan vs target, jadwal closing, sticky note.
+function PapanAgenda({ pos }: { pos: V3 }) {
+  const now = new Date();
+  const kunci = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const tex = useKanvasMg(1520, 718, (g, W, H) => {
+    g.fillStyle = '#FBFCFB';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(0,0,0,0.025)';
+    for (let i = 0; i < 6; i++) g.fillRect(40 + i * 230, 30 + (i % 3) * 60, 180, 90);
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    // judul
+    g.fillStyle = '#1D4ED8';
+    g.font = `800 56px ${MGF_TULIS}`;
+    g.fillText('AGENDA RAPAT DIREKSI', 40, 52);
+    g.strokeStyle = '#DC2626';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(40, 92);
+    for (let x = 40; x < 760; x += 24) g.lineTo(x + 12, 92 + (((x / 24) | 0) % 2 ? 6 : -4));
+    g.stroke();
+    g.fillStyle = '#374151';
+    g.font = `600 30px ${MGF_TULIS}`;
+    g.fillText(`${HARI_ID[now.getDay()]}, ${now.getDate()} ${BULAN_ID[now.getMonth()]} ${now.getFullYear()}  ·  09.00 WIB`, 40, 128);
+    // daftar tugas
+    const tugas = ['Review laporan keuangan Oktober', 'Rekonsiliasi bank & kas', 'Persetujuan payroll + PPh 21', 'Tutup buku & Year-End Closing', 'Evaluasi kinerja 6 agen AI'];
+    g.font = `600 34px ${MGF_TULIS}`;
+    tugas.forEach((t, i) => {
+      const y = 190 + i * 64;
+      g.strokeStyle = '#111827';
+      g.lineWidth = 3.5;
+      g.strokeRect(44, y - 17, 34, 34);
+      g.fillStyle = '#1F2937';
+      g.fillText(`${i + 1}. ${t}`, 96, y);
+      if (i < 2) {
+        g.strokeStyle = '#15803D';
+        g.lineWidth = 6;
+        g.beginPath();
+        g.moveTo(50, y);
+        g.lineTo(60, y + 12);
+        g.lineTo(84, y - 20);
+        g.stroke();
+      }
+    });
+    // grafik pendapatan vs target
+    const gx = 800, gy = 170, gw = 330, gh = 260;
+    g.fillStyle = '#111827';
+    g.font = `700 26px ${MGF_TULIS}`;
+    g.fillText('Pendapatan vs Target (Rp juta)', gx - 10, gy - 22);
+    g.strokeStyle = '#111827';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(gx, gy);
+    g.lineTo(gx, gy + gh);
+    g.lineTo(gx + gw, gy + gh);
+    g.stroke();
+    const data: [string, number, number][] = [['Q1', 820, 900], ['Q2', 940, 950], ['Q3', 1010, 1000], ['Q4*', 1100, 1150]];
+    data.forEach(([q, real, tar], i) => {
+      const bx = gx + 24 + i * 78;
+      const hr = (real / 1200) * gh, ht = (tar / 1200) * gh;
+      g.fillStyle = '#3B82F6';
+      g.fillRect(bx, gy + gh - hr, 28, hr);
+      g.fillStyle = '#F59E0B';
+      g.fillRect(bx + 30, gy + gh - ht, 22, ht);
+      g.fillStyle = '#111827';
+      g.font = `700 20px ${MGF}`;
+      g.textAlign = 'center';
+      g.fillText(q, bx + 28, gy + gh + 22);
+      g.font = `700 16px ${MGF}`;
+      g.fillText(String(real), bx + 14, gy + gh - hr - 11);
+    });
+    g.textAlign = 'left';
+    g.fillStyle = '#3B82F6';
+    g.fillRect(gx + 20, gy + gh + 44, 18, 14);
+    g.fillStyle = '#111827';
+    g.font = `600 20px ${MGF}`;
+    g.fillText('Realisasi', gx + 44, gy + gh + 52);
+    g.fillStyle = '#F59E0B';
+    g.fillRect(gx + 150, gy + gh + 44, 18, 14);
+    g.fillStyle = '#111827';
+    g.fillText('Target   (*proyeksi)', gx + 174, gy + gh + 52);
+    // jadwal closing (gantt)
+    const jx = 1180, jy = 170;
+    g.fillStyle = '#111827';
+    g.font = `700 26px ${MGF_TULIS}`;
+    g.fillText('Jadwal Closing', jx, jy - 22);
+    ['Nov', 'Des'].forEach((b, i) => {
+      g.fillStyle = '#6B7280';
+      g.font = `700 20px ${MGF}`;
+      g.fillText(b, jx + 80 + i * 130, jy + 6);
+    });
+    const gantt: [string, number, number, string][] = [['Rekon', 0, 80, '#3B82F6'], ['Audit', 60, 130, '#10B981'], ['Pajak', 120, 90, '#F59E0B'], ['Closing', 180, 80, '#EF4444']];
+    gantt.forEach(([n, x0, ww, c], i) => {
+      const y = jy + 44 + i * 58;
+      g.fillStyle = '#111827';
+      g.font = `600 20px ${MGF}`;
+      g.fillText(n, jx, y);
+      g.fillStyle = c;
+      rrMg(g, jx + 80 + x0, y - 14, ww, 28, 6);
+      g.fill();
+    });
+    // sticky notes
+    const notes: [number, number, string, string, number][] = [
+      [780, 520, '#FDE68A', 'Cek faktur jatuh tempo!', -0.05],
+      [1000, 535, '#FBCFE8', 'Kirim laporan ke klien Jumat', 0.04],
+      [1220, 520, '#A7F3D0', 'Backup database sebelum closing', -0.03],
+    ];
+    notes.forEach(([x, y, c, t, rot]) => {
+      g.save();
+      g.translate(x + 85, y + 80);
+      g.rotate(rot);
+      g.fillStyle = 'rgba(0,0,0,0.12)';
+      g.fillRect(-84, -76, 176, 164);
+      g.fillStyle = c;
+      g.fillRect(-88, -80, 176, 160);
+      g.fillStyle = '#1F2937';
+      g.font = `600 26px ${MGF_TULIS}`;
+      g.textAlign = 'center';
+      bungkusMg(g, t, 0, -36, 150, 32);
+      g.restore();
+    });
+    // lingkaran deadline
+    g.strokeStyle = '#DC2626';
+    g.lineWidth = 6;
+    g.beginPath();
+    g.ellipse(250, 596, 200, 60, -0.04, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#DC2626';
+    g.font = `800 44px ${MGF_TULIS}`;
+    g.textAlign = 'center';
+    g.fillText('DEADLINE 30 NOV!', 250, 598);
+    g.textAlign = 'left';
+  }, `mg-agenda-${kunci}`);
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0, 0]} size={[1.9, 0.95, 0.05]} color="#B8C4BE" cast={false} />
+      <BidangMg pos={[0, 0.005, 0.0265]} w={1.8} h={0.85} tex={tex} />
+      <Box pos={[0, -0.5, 0.06]} size={[1.2, 0.03, 0.09]} color="#B8C4BE" cast={false} />
+      {[['#DC2626', -0.3], ['#2563EB', -0.15], ['#15803D', 0.0], ['#111827', 0.15]].map(([c, x]) => (
+        <Box key={String(x)} pos={[x as number, -0.47, 0.07]} size={[0.12, 0.02, 0.02]} color={c as string} cast={false} />
+      ))}
+      <Box pos={[0.38, -0.475, 0.07]} size={[0.14, 0.03, 0.05]} color="#4B5563" cast={false} />
+    </group>
+  );
+}
+
+// Papan berdiri roda/kaki: STRUKTUR TIM MANAGEMENT — 6 agen AI beserta halaman yang ditangani (dari daftar halaman Management).
+function PapanOrganisasi({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const tim = HALAMAN_MG_DUDUK.map((h, i) => ({ ai: MG_PET[i] ?? '-', nama: h.nama, href: h.href, warna: h.warna }));
+  const tex = useKanvasMg(1360, 680, (g, W, H) => {
+    g.fillStyle = '#FBFCFB';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#1E3556';
+    g.fillRect(0, 0, W, 96);
+    g.fillStyle = '#F5C84C';
+    g.fillRect(0, 96, W, 6);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#FFFFFF';
+    g.font = `800 52px ${MGF}`;
+    g.fillText('STRUKTUR TIM MANAGEMENT', W / 2, 50);
+    // kotak direksi
+    g.fillStyle = '#1E3556';
+    rrMg(g, W / 2 - 230, 140, 460, 90, 14);
+    g.fill();
+    g.fillStyle = '#F5C84C';
+    g.font = `800 38px ${MGF}`;
+    g.fillText('DIREKSI', W / 2, 172);
+    g.fillStyle = '#C9D8EE';
+    g.font = `600 24px ${MGF}`;
+    g.fillText('Rapat setiap Senin · 09.00', W / 2, 206);
+    // garis penghubung
+    g.strokeStyle = '#475569';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(W / 2, 230);
+    g.lineTo(W / 2, 280);
+    g.moveTo(130, 280);
+    g.lineTo(W - 130, 280);
+    g.stroke();
+    const bw = 196, gap = 12;
+    const x0 = (W - (6 * bw + 5 * gap)) / 2;
+    tim.forEach((t, i) => {
+      const x = x0 + i * (bw + gap);
+      g.strokeStyle = '#475569';
+      g.beginPath();
+      g.moveTo(x + bw / 2, 280);
+      g.lineTo(x + bw / 2, 320);
+      g.stroke();
+      g.fillStyle = '#FFFFFF';
+      rrMg(g, x, 320, bw, 250, 12);
+      g.fill();
+      g.strokeStyle = t.warna;
+      g.lineWidth = 5;
+      g.stroke();
+      g.fillStyle = t.warna;
+      g.fillRect(x + 4, 324, bw - 8, 54);
+      g.fillStyle = '#FFFFFF';
+      fitMg(g, t.ai, bw - 24, 36, '800');
+      g.fillText(t.ai, x + bw / 2, 352);
+      g.fillStyle = '#111827';
+      fitMg(g, t.nama, bw - 20, 28, '800');
+      g.fillText(t.nama, x + bw / 2, 420);
+      g.fillStyle = '#64748B';
+      fitMg(g, t.href, bw - 24, 24, '600');
+      g.fillText(t.href, x + bw / 2, 462);
+      g.fillStyle = '#16A34A';
+      g.beginPath();
+      g.arc(x + 34, 524, 9, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#334155';
+      g.textAlign = 'left';
+      g.font = `600 22px ${MGF}`;
+      g.fillText('Aktif', x + 52, 524);
+      g.textAlign = 'center';
+    });
+    g.fillStyle = '#64748B';
+    g.font = `600 24px ${MGF}`;
+    g.fillText('Jam kerja 08.00 – 17.00 WIB   ·   Eskalasi ke Direksi bila ada selisih > Rp 10 juta', W / 2, 618);
+  }, 'mg-organisasi');
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 1.3, 0]} size={[1.8, 0.95, 0.05]} color="#B8C4BE" cast={false} />
+      <BidangMg pos={[0, 1.3, 0.0265]} w={1.7} h={0.85} tex={tex} />
+      <Box pos={[0, 0.82, 0.06]} size={[1.2, 0.03, 0.09]} color="#B8C4BE" cast={false} />
+      {[-0.8, 0.8].map((x) => (
+        <React.Fragment key={x}>
+          <Box pos={[x, 0.6, -0.04]} size={[0.05, 1.2, 0.05]} color="#6B7280" />
+          <Box pos={[x, 0.03, 0]} size={[0.08, 0.06, 0.5]} color="#4B5563" cast={false} />
+        </React.Fragment>
+      ))}
+    </group>
+  );
+}
+
+// Papan gabus pengumuman dengan kertas berisi tulisan (menempel di dinding; +z lokal = ke dalam ruangan).
+function PapanGabusMg({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const tex = useKanvasMg(800, 560, (g, W, H) => {
+    const r = mulberry32(99);
+    g.fillStyle = '#C9A26B';
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 1400; i++) {
+      g.fillStyle = r() < 0.5 ? 'rgba(120,80,40,0.22)' : 'rgba(255,230,180,0.25)';
+      g.fillRect(r() * W, r() * H, 2 + r() * 4, 2 + r() * 3);
+    }
+    const lembar: { x: number; y: number; w: number; h: number; c: string; rot: number; judul: string; isi: string }[] = [
+      { x: 30, y: 28, w: 270, h: 230, c: '#FFFFFF', rot: -0.03, judul: 'PENGUMUMAN', isi: 'Tutup buku bulanan paling lambat tanggal 5 setiap bulan. Mohon semua bukti kas dilampirkan.' },
+      { x: 330, y: 40, w: 220, h: 190, c: '#FDE68A', rot: 0.04, judul: 'REMINDER', isi: 'PPN & PPh disetor sebelum tanggal 10. Lapor SPT Masa sebelum tanggal 20.' },
+      { x: 580, y: 24, w: 190, h: 250, c: '#BFDBFE', rot: -0.02, judul: 'JADWAL PIKET', isi: 'Sen: Tensor · Sel: Vector · Rab: Orion · Kam: Theta · Jum: Kappa · Sab: Omega' },
+      { x: 40, y: 300, w: 230, h: 220, c: '#FBCFE8', rot: 0.03, judul: 'LIBUR NASIONAL', isi: '25 Des — Natal. 31 Des cuti bersama. Kantor buka kembali 2 Jan.' },
+      { x: 310, y: 280, w: 240, h: 240, c: '#A7F3D0', rot: -0.04, judul: 'TARGET BULAN INI', isi: 'Piutang tertagih 95%. Rekonsiliasi bank selesai H+3. Zero selisih kas.' },
+      { x: 590, y: 310, w: 180, h: 200, c: '#FFFFFF', rot: 0.05, judul: 'MEMO', isi: 'Rapat direksi pindah ke ruang Management. Bawa laporan.' },
+    ];
+    lembar.forEach((l) => {
+      g.save();
+      g.translate(l.x + l.w / 2, l.y + l.h / 2);
+      g.rotate(l.rot);
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      g.fillRect(-l.w / 2 + 5, -l.h / 2 + 6, l.w, l.h);
+      g.fillStyle = l.c;
+      g.fillRect(-l.w / 2, -l.h / 2, l.w, l.h);
+      g.fillStyle = '#B91C1C';
+      g.beginPath();
+      g.arc(0, -l.h / 2 + 14, 8, 0, Math.PI * 2);
+      g.fill();
+      g.textAlign = 'center';
+      g.textBaseline = 'top';
+      g.fillStyle = '#111827';
+      fitMg(g, l.judul, l.w - 24, 24, '800');
+      g.fillText(l.judul, 0, -l.h / 2 + 32);
+      g.fillStyle = '#374151';
+      g.font = `500 19px ${MGF}`;
+      bungkusMg(g, l.isi, 0, -l.h / 2 + 66, l.w - 30, 25);
+      g.restore();
+    });
+  }, 'mg-gabus');
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0, 0]} size={[1.1, 0.8, 0.05]} color="#8B6B47" cast={false} />
+      <BidangMg pos={[0, 0, 0.0265]} w={1.0} h={0.7} tex={tex} />
+    </group>
+  );
+}
+
+// Kalender dinding bulan berjalan (tanggal hari ini dilingkari merah; hari Minggu merah).
+function KalenderDinding({ pos }: { pos: V3 }) {
+  const now = new Date();
+  const kunci = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const tex = useKanvasMg(400, 560, (g, W, H) => {
+    g.fillStyle = '#FFFFFF';
+    g.fillRect(0, 0, W, H);
+    // gambar atas: langit + gunung
+    const sk = g.createLinearGradient(0, 0, 0, 200);
+    sk.addColorStop(0, '#7DD3FC');
+    sk.addColorStop(1, '#E0F2FE');
+    g.fillStyle = sk;
+    g.fillRect(0, 0, W, 200);
+    g.fillStyle = '#64748B';
+    g.beginPath();
+    g.moveTo(0, 200);
+    g.lineTo(110, 70);
+    g.lineTo(200, 160);
+    g.lineTo(290, 50);
+    g.lineTo(W, 190);
+    g.lineTo(W, 200);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#F8FAFC';
+    g.beginPath();
+    g.moveTo(290, 50);
+    g.lineTo(262, 88);
+    g.lineTo(290, 80);
+    g.lineTo(312, 92);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#16A34A';
+    g.fillRect(0, 176, W, 24);
+    // judul bulan
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#1E3556';
+    g.font = `800 40px ${MGF}`;
+    g.fillText(`${BULAN_ID[now.getMonth()].toUpperCase()} ${now.getFullYear()}`, W / 2, 238);
+    const hari = ['SEN', 'SEL', 'RAB', 'KAM', 'JUM', 'SAB', 'MIN'];
+    const cw = W / 7;
+    hari.forEach((h, i) => {
+      g.fillStyle = i === 6 ? '#DC2626' : '#475569';
+      g.font = `800 20px ${MGF}`;
+      g.fillText(h, cw * i + cw / 2, 282);
+    });
+    const awal = (new Date(now.getFullYear(), now.getMonth(), 1).getDay() + 6) % 7;
+    const jml = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    for (let d = 1; d <= jml; d++) {
+      const idx = awal + d - 1;
+      const cx = cw * (idx % 7) + cw / 2;
+      const cy = 322 + Math.floor(idx / 7) * 42;
+      if (d === now.getDate()) {
+        g.strokeStyle = '#DC2626';
+        g.lineWidth = 4;
+        g.beginPath();
+        g.arc(cx, cy, 18, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.fillStyle = idx % 7 === 6 ? '#DC2626' : '#111827';
+      g.font = `700 22px ${MGF}`;
+      g.fillText(String(d), cx, cy);
+    }
+  }, `mg-kalender-${kunci}`);
+  return (
+    <group position={pos}>
+      <Box pos={[0, 0, 0]} size={[0.5, 0.7, 0.025]} color="#E5E7EB" cast={false} />
+      <BidangMg pos={[0, -0.005, 0.0135]} w={0.48} h={0.672} tex={tex} />
+      <Box pos={[0, 0.355, 0.02]} size={[0.5, 0.025, 0.02]} color="#374151" cast={false} />
+      {[-0.18, -0.09, 0, 0.09, 0.18].map((x) => (
+        <Box key={x} pos={[x, 0.345, 0.025]} size={[0.012, 0.04, 0.012]} color="#9CA3AF" cast={false} />
+      ))}
+    </group>
+  );
+}
+
+type JenisPigura = 'sertifikat' | 'nilai' | 'piagam' | 'denah';
+
+// Pigura berisi dokumen bertulisan: sertifikat ISO, poster nilai perusahaan, piagam penghargaan, atau denah ruangan.
+function PigiuraTeks({ pos, w, h, jenis, rotY = 0 }: { pos: V3; w: number; h: number; jenis: JenisPigura; rotY?: number }) {
+  const px = 1024;
+  const py = Math.round((px * (h - 0.1)) / (w - 0.1));
+  const tex = useKanvasMg(px, py, (g, W, H) => {
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    if (jenis === 'sertifikat' || jenis === 'piagam') {
+      g.fillStyle = '#FBF4E1';
+      g.fillRect(0, 0, W, H);
+      g.strokeStyle = '#B8962E';
+      g.lineWidth = 14;
+      g.strokeRect(22, 22, W - 44, H - 44);
+      g.lineWidth = 4;
+      g.strokeRect(46, 46, W - 92, H - 92);
+      g.fillStyle = '#6B4A12';
+      const sert = jenis === 'sertifikat';
+      g.font = `700 ${H * 0.13}px ${MGF_SERIF}`;
+      g.fillText(sert ? 'SERTIFIKAT' : 'PIAGAM PENGHARGAAN', W / 2, H * 0.2);
+      g.fillStyle = '#B8962E';
+      g.fillRect(W * 0.3, H * 0.29, W * 0.4, 5);
+      g.fillStyle = '#374151';
+      g.font = `italic 400 ${H * 0.065}px ${MGF_SERIF}`;
+      g.fillText(sert ? 'Sistem Manajemen Mutu' : 'diberikan kepada', W / 2, H * 0.38);
+      g.fillStyle = '#111827';
+      g.font = `800 ${H * 0.13}px ${MGF_SERIF}`;
+      g.fillText(sert ? 'ISO 9001:2015' : 'TIM KEUANGAN TERBAIK', W / 2, H * 0.52);
+      g.fillStyle = '#374151';
+      g.font = `400 ${H * 0.055}px ${MGF_SERIF}`;
+      g.fillText(sert ? 'Penerapan standar mutu layanan akuntansi' : 'atas ketepatan laporan & nol temuan audit 2025', W / 2, H * 0.63);
+      g.fillText(sert ? 'dan pelaporan keuangan klien' : 'Jakarta, 12 Desember 2025', W / 2, H * 0.7);
+      g.fillStyle = '#C9453B';
+      g.beginPath();
+      g.arc(W * 0.18, H * 0.82, H * 0.07, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#FDE68A';
+      g.font = `800 ${H * 0.05}px ${MGF}`;
+      g.fillText('ASLI', W * 0.18, H * 0.82);
+      g.strokeStyle = '#111827';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(W * 0.6, H * 0.84);
+      g.lineTo(W * 0.85, H * 0.84);
+      g.stroke();
+      g.fillStyle = '#374151';
+      g.font = `600 ${H * 0.045}px ${MGF}`;
+      g.fillText('Direktur Utama', W * 0.725, H * 0.89);
+    } else if (jenis === 'nilai') {
+      g.fillStyle = '#1E3556';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#F5C84C';
+      g.font = `800 ${H * 0.12}px ${MGF}`;
+      g.fillText('NILAI KAMI', W / 2, H * 0.12);
+      g.fillRect(W * 0.3, H * 0.2, W * 0.4, 5);
+      const nilai: [string, string][] = [['INTEGRITAS', 'Jujur pada angka, terbuka pada klien'], ['AKURASI', 'Setiap rupiah tercatat & dapat ditelusuri'], ['KOLABORASI', 'Manusia & AI bekerja sebagai satu tim'], ['INOVASI', 'Otomasi untuk waktu yang lebih berharga']];
+      nilai.forEach(([n, t], i) => {
+        const y = H * (0.34 + i * 0.2);
+        g.fillStyle = '#F5C84C';
+        g.beginPath();
+        g.arc(W * 0.12, y, H * 0.055, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#1E3556';
+        g.font = `800 ${H * 0.06}px ${MGF}`;
+        g.fillText(String(i + 1), W * 0.12, y + 2);
+        g.textAlign = 'left';
+        g.fillStyle = '#FFFFFF';
+        g.font = `800 ${H * 0.06}px ${MGF}`;
+        g.fillText(n, W * 0.2, y - H * 0.032);
+        g.fillStyle = '#C9D8EE';
+        fitMg(g, t, W * 0.74, H * 0.042, '500');
+        g.fillText(t, W * 0.2, y + H * 0.035);
+        g.textAlign = 'center';
+      });
+    } else {
+      // denah ruangan
+      g.fillStyle = '#F3F4F6';
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = '#1E3556';
+      g.font = `800 ${H * 0.085}px ${MGF}`;
+      g.fillText('DENAH RUANG MANAGEMENT', W / 2, H * 0.08);
+      const rx = W * 0.06, ry = H * 0.17, rw = W * 0.88, rh = H * 0.68;
+      g.fillStyle = '#E9F2EC';
+      g.fillRect(rx, ry, rw, rh);
+      g.strokeStyle = '#475569';
+      g.lineWidth = 8;
+      g.strokeRect(rx, ry, rw, rh);
+      g.fillStyle = '#FFFFFF';
+      g.beginPath();
+      g.arc(rx + rw / 2, ry + rh / 2, rh * 0.28, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#94A3B8';
+      g.lineWidth = 4;
+      g.stroke();
+      g.fillStyle = '#1E3556';
+      g.font = `700 ${H * 0.05}px ${MGF}`;
+      g.fillText('MEJA RAPAT', rx + rw / 2, ry + rh / 2 - H * 0.02);
+      g.fillStyle = '#64748B';
+      g.font = `600 ${H * 0.04}px ${MGF}`;
+      g.fillText('6 kursi', rx + rw / 2, ry + rh / 2 + H * 0.04);
+      const tag = (t: string, x: number, y: number, c: string) => {
+        g.fillStyle = c;
+        g.fillRect(x - W * 0.07, y - H * 0.04, W * 0.14, H * 0.08);
+        g.fillStyle = '#FFFFFF';
+        g.font = `700 ${H * 0.036}px ${MGF}`;
+        g.fillText(t, x, y);
+      };
+      tag('Sudut Tunggu', rx + rw * 0.14, ry + rh * 0.85, '#7C2A3A');
+      tag('Sofa & Kopi', rx + rw * 0.86, ry + rh * 0.8, '#2F5D4F');
+      tag('Arsip & Rak', rx + rw * 0.5, ry + rh * 0.09, '#475569');
+      tag('Etalase', rx + rw * 0.92, ry + rh * 0.4, '#6B4A2F');
+      g.fillStyle = '#DC2626';
+      g.beginPath();
+      g.arc(rx + rw / 2, ry + rh - 4, H * 0.025, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#DC2626';
+      g.font = `800 ${H * 0.04}px ${MGF}`;
+      g.fillText('ANDA DI SINI', rx + rw / 2, ry + rh + H * 0.07);
+    }
+  }, `mg-pigura-${jenis}-${w}-${h}`);
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0, 0]} size={[w, h, 0.05]} color="#5B4630" cast={false} />
+      <Box pos={[0, 0, 0.026]} size={[w - 0.06, h - 0.06, 0.004]} color="#F3EDE0" cast={false} />
+      <BidangMg pos={[0, 0, 0.0295]} w={w - 0.1} h={h - 0.1} tex={tex} />
+    </group>
+  );
+}
+
+// Papan jadwal ruang rapat kecil di dekat pintu barat.
+function JadwalRuang({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const tex = useKanvasMg(440, 330, (g, W, H) => {
+    g.fillStyle = '#FFFFFF';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#1E3556';
+    g.fillRect(0, 0, W, 64);
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    g.fillStyle = '#FFFFFF';
+    g.font = `800 28px ${MGF}`;
+    g.fillText('RUANG RAPAT DIREKSI', 18, 34);
+    g.fillStyle = '#DC2626';
+    rrMg(g, W - 120, 78, 102, 34, 17);
+    g.fill();
+    g.fillStyle = '#FFFFFF';
+    g.font = `800 20px ${MGF}`;
+    g.textAlign = 'center';
+    g.fillText('TERPAKAI', W - 69, 96);
+    g.textAlign = 'left';
+    g.fillStyle = '#334155';
+    g.font = `700 21px ${MGF}`;
+    g.fillText('Jadwal hari ini', 18, 96);
+    const jd: [string, string][] = [['09.00', 'Rapat Direksi'], ['13.00', 'Review Laporan'], ['15.30', 'Evaluasi Agen AI']];
+    jd.forEach(([j, t], i) => {
+      const y = 150 + i * 56;
+      g.fillStyle = '#EFF6FF';
+      g.fillRect(14, y - 22, W - 28, 46);
+      g.fillStyle = '#1D4ED8';
+      g.font = `800 24px ${MGF}`;
+      g.fillText(j, 24, y);
+      g.fillStyle = '#111827';
+      g.font = `600 24px ${MGF}`;
+      g.fillText(t, 120, y);
+    });
+  }, 'mg-jadwal-ruang');
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0, 0]} size={[0.6, 0.46, 0.03]} color="#2E3238" cast={false} />
+      <BidangMg pos={[0, 0, 0.0165]} w={0.56} h={0.42} tex={tex} />
+    </group>
+  );
+}
+
+// Roll-up banner VISI & MISI (berdiri di lantai).
+function RollUpBanner({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const tex = useKanvasMg(380, 900, (g, W, H) => {
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#1E3556');
+    bg.addColorStop(1, '#2F5D8A');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#F5C84C';
+    g.fillRect(0, 150, W, 6);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#FFFFFF';
+    g.font = `800 56px ${MGF}`;
+    g.fillText('VISI & MISI', W / 2, 90);
+    g.fillStyle = '#F5C84C';
+    g.font = `800 36px ${MGF}`;
+    g.fillText('VISI', W / 2, 208);
+    g.fillStyle = '#E2E8F0';
+    g.font = `500 26px ${MGF}`;
+    bungkusMg(g, 'Menjadi mitra keuangan paling tepercaya yang memadukan keahlian manusia dan kecerdasan buatan.', W / 2, 252, W - 60, 34);
+    g.fillStyle = '#F5C84C';
+    g.font = `800 36px ${MGF}`;
+    g.fillText('MISI', W / 2, 482);
+    g.fillStyle = '#E2E8F0';
+    g.font = `500 25px ${MGF}`;
+    ['1. Laporan akurat & tepat waktu', '2. Otomasi proses akuntansi', '3. Kepatuhan pajak terjaga', '4. Layanan yang transparan'].forEach((t, i) => {
+      g.fillText(t, W / 2, 536 + i * 52);
+    });
+    g.fillStyle = '#F5C84C';
+    g.fillRect(40, 800, W - 80, 4);
+    g.fillStyle = '#FFFFFF';
+    g.font = `700 24px ${MGF}`;
+    g.fillText('Integritas · Akurasi', W / 2, 836);
+    g.fillText('Kolaborasi · Inovasi', W / 2, 868);
+  }, 'mg-rollup');
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.035, 0]} size={[0.8, 0.07, 0.14]} color="#9CA3AF" />
+      <Box pos={[0, 0.075, 0.04]} size={[0.8, 0.02, 0.05]} color="#6B7280" cast={false} />
+      <BidangMg pos={[0, 1.0, 0.0]} w={0.76} h={1.8} tex={tex} />
+      <Box pos={[0, 1.91, 0]} size={[0.8, 0.035, 0.03]} color="#9CA3AF" cast={false} />
+      <Box pos={[0, 0.1, 0]} size={[0.012, 0.06, 0.012]} color="#6B7280" cast={false} />
+    </group>
+  );
+}
+
+// Papan direktori ruangan (rambu berdiri bertiang) — menunjukkan seluruh ruangan di gedung & posisi "Anda di sini".
+function PapanDirektori({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const tex = useKanvasMg(520, 640, (g, W, H) => {
+    g.fillStyle = '#F8FAFC';
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#1E3556';
+    g.fillRect(0, 0, W, 86);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#FFFFFF';
+    g.font = `800 40px ${MGF}`;
+    g.fillText('DIREKTORI GEDUNG', W / 2, 44);
+    const daftar = ['Transactions', 'Account Receivable', 'Account Payable', 'Perpustakaan', 'Santai', 'Asset', 'Financial Statements', 'Planning', 'Management'];
+    daftar.forEach((t, i) => {
+      const y = 126 + i * 56;
+      const ini = t === 'Management';
+      if (ini) {
+        g.fillStyle = '#FEE2E2';
+        g.fillRect(8, y - 26, W - 16, 52);
+      }
+      g.fillStyle = ini ? '#DC2626' : '#1E3556';
+      g.beginPath();
+      g.arc(40, y, 17, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#FFFFFF';
+      g.font = `800 20px ${MGF}`;
+      g.fillText(String(i + 1), 40, y + 1);
+      g.textAlign = 'left';
+      g.fillStyle = ini ? '#B91C1C' : '#111827';
+      g.font = `${ini ? 800 : 600} 27px ${MGF}`;
+      g.fillText(t, 74, y);
+      if (ini) {
+        g.font = `800 17px ${MGF}`;
+        g.textAlign = 'right';
+        g.fillText('ANDA DI SINI', W - 16, y + 1);
+      }
+      g.textAlign = 'center';
+    });
+  }, 'mg-direktori');
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.03, 0]} size={[0.5, 0.06, 0.3]} color="#4B5563" cast={false} />
+      <Box pos={[0, 0.55, -0.03]} size={[0.06, 1.0, 0.06]} color="#6B7280" />
+      <Box pos={[0, 1.2, 0]} size={[0.84, 1.02, 0.04]} color="#2E3238" cast={false} />
+      <BidangMg pos={[0, 1.2, 0.0215]} w={0.8} h={0.98} tex={tex} />
+    </group>
+  );
+}
+
+// Rak brosur lantai: 3 baris saku berisi brosur berjudul.
+function RakBrosur({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const isi: [string, string][][] = [
+    [['PROFIL', '#2F5D8A'], ['LAYANAN', '#2F7D5B'], ['TARIF', '#B8862B']],
+    [['PAJAK', '#7A2E3B'], ['PAYROLL', '#4C3A7A'], ['AUDIT', '#1F6F78']],
+    [['FAQ', '#C9453B'], ['KARIER', '#3E4A66'], ['KONTAK', '#5F8F4B']],
+  ];
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.03, 0]} size={[0.62, 0.06, 0.34]} color="#4B5563" cast={false} />
+      <Box pos={[0, 0.72, -0.12]} size={[0.6, 1.3, 0.03]} color="#E5E7EB" />
+      {[-0.29, 0.29].map((x) => (
+        <Box key={x} pos={[x, 0.72, -0.02]} size={[0.025, 1.3, 0.22]} color="#CBD5E1" cast={false} />
+      ))}
+      {isi.map((baris, ri) => (
+        <group key={ri} position={[0, 0.36 + ri * 0.4, 0]}>
+          <Box pos={[0, 0, 0.0]} size={[0.58, 0.025, 0.2]} color="#CBD5E1" cast={false} />
+          <Box pos={[0, 0.06, 0.1]} size={[0.58, 0.12, 0.012]} color="#D1D5DB" cast={false} />
+          {baris.map(([t, c], ci) => (
+            <group key={t} position={[-0.19 + ci * 0.19, 0.04, 0.0]} rotation={[-0.1, 0, 0]}>
+              <Box pos={[0, 0.16, 0.0]} size={[0.16, 0.3, 0.01]} color={c} cast={false} />
+              <Box pos={[0, 0.2, 0.007]} size={[0.13, 0.1, 0.003]} color="#F8FAFC" cast={false} />
+              <Teks pos={[0, 0.2, 0.0095]} w={0.12} h={0.05} text={t} fg="#111827" />
+              <Box pos={[0, 0.1, 0.007]} size={[0.12, 0.012, 0.003]} color="#F8FAFC" cast={false} />
+              <Box pos={[0, 0.07, 0.007]} size={[0.09, 0.012, 0.003]} color="#F8FAFC" cast={false} />
+            </group>
+          ))}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// Rak majalah/koran dinding kecil di sudut tunggu: majalah berjudul.
+function RakMajalah({ pos, rotY = 0 }: { pos: V3; rotY?: number }) {
+  const mj: [string, string][] = [['BISNIS INDONESIA', '#2F5D8A'], ['AKUNTAN', '#7A2E3B'], ['PAJAK KITA', '#2F7D5B'], ['EKONOMI', '#B8862B']];
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Box pos={[0, 0.03, 0]} size={[0.8, 0.06, 0.34]} color="#5B4630" cast={false} />
+      <Box pos={[0, 0.4, -0.15]} size={[0.8, 0.7, 0.03]} color="#7A5B3A" />
+      {[-0.39, 0.39].map((x) => (
+        <Box key={x} pos={[x, 0.4, -0.02]} size={[0.03, 0.7, 0.3]} color="#7A5B3A" cast={false} />
+      ))}
+      <Box pos={[0, 0.2, 0.0]} size={[0.76, 0.02, 0.28]} color="#8A6544" cast={false} />
+      <Box pos={[0, 0.5, 0.0]} size={[0.76, 0.02, 0.28]} color="#8A6544" cast={false} />
+      {mj.map(([t, c], i) => (
+        <group key={t} position={[-0.285 + i * 0.19, i % 2 ? 0.52 : 0.22, 0.02]} rotation={[-0.25, 0, 0]}>
+          <Box pos={[0, 0.14, 0]} size={[0.17, 0.26, 0.012]} color={c} cast={false} />
+          <Box pos={[0, 0.2, 0.008]} size={[0.15, 0.08, 0.003]} color="#F8FAFC" cast={false} />
+          <Teks pos={[0, 0.2, 0.0105]} w={0.14} h={0.045} text={t} fg="#111827" />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------- RUANGAN ----------------------------------------------------------------
+
 function RuangManagement() {
   const { cz } = MGMT;
   const R = MG_R;
@@ -7177,8 +10691,10 @@ function RuangManagement() {
     <group position={[MG_OX, 0, cz]}>
       <LantaiMgmt />
       <MejaBundarPutih />
+      <DekorMejaBundar />
 
-      {/* 1 kursi per halaman, memutari meja (menghadap pusat); laptop di pinggir meja, menyala hanya saat ada AI duduk */}
+      {/* 1 kursi per halaman, memutari meja (menghadap pusat); laptop di pinggir meja, menyala hanya saat ada AI duduk.
+          INI SATU-SATUNYA MEJA KERJA di ruangan ini. */}
       {HALAMAN_MG_DUDUK.map((h, i) => {
         const a = (i * 2 * Math.PI) / MG_N;
         const seat = `mg:${i}`;
@@ -7194,76 +10710,179 @@ function RuangManagement() {
       })}
       <ManagementPenghuni />
 
-      {/* ===== dinding utara (kiri -> kanan): 2 rak buku, papan tulis, pigura, [pintu x = 0], jam, 2 lemari arsip, printer, rak buku, dispenser ===== */}
-      <Bookshelf pos={[-10.2, 0, -5.28]} />
-      <Bookshelf pos={[-8.5, 0, -5.28]} />
-      <Whiteboard pos={[-5.2, 1.0, -5.35]} />
-      <Art pos={[-2.9, 1.05, -5.35]} />
-      <Clock pos={[2.6, 1.15, -5.35]} />
-      <Cabinet pos={[4.4, 0, -4.9]} color="#B7C3D2" />
-      <Cabinet pos={[5.7, 0, -4.9]} color="#B7C3D2" />
-      <Piala pos={[4.1, 1.4, -4.9]} />
-      <Piala pos={[4.6, 1.4, -4.9]} />
-      <Piala pos={[5.6, 1.4, -4.9]} />
-      <TrashBin pos={[6.55, 0, -4.95]} />
-      <PrinterStation pos={[7.5, 0, -4.9]} rotY={0} />
-      <Art pos={[7.5, 1.05, -5.35]} />
-      <Bookshelf pos={[9.5, 0, -5.28]} />
-      <WaterCooler pos={[11.6, 0, -4.8]} rotY={0} />
-
-      {/* ===== dinding barat: papan tulis berdiri, rak buku, pigura, jam ===== */}
-      <PapanBerdiri pos={[-11.7 - MG_EXT, 0, -3.4]} rotY={Math.PI / 2} />
-      <group position={[-12.0 - MG_EXT, 0, -0.9]} rotation={[0, Math.PI / 2, 0]}>
-        <Bookshelf pos={[0, 0, 0]} />
+      {/* ===== lapisan hias dinding: utara (kecuali celah pintu) & barat (kecuali celah pintu ke Planning) ===== */}
+      <DindingDekor s={-5.4} segs={[[-13.4, -1.06], [1.06, 13.4]]} />
+      <group rotation={[0, Math.PI / 2, 0]}>
+        <DindingDekor s={-13.4} segs={[[-5.4, -4.65], [-2.55, 5.4]]} />
       </group>
-      <Art pos={[-12.2 - MG_EXT, 1.05, 1.6]} rotY={Math.PI / 2} />
 
-      {/* ===== dinding timur: meja berkas + pigura ===== */}
-      <MejaBerkas pos={[11.3 + MG_EXT, 0, -1.9]} rotY={Math.PI / 2} />
-      <Art pos={[12.2 + MG_EXT, 1.7, -1.9]} rotY={-Math.PI / 2} />
+      {/* ===== dinding utara (permukaan z = -5.4), kiri -> kanan: 2 rak buku berjudul, AC, PAPAN AGENDA, kalender, sertifikat, jam, [pintu x = 0],
+          papan nama, 2 lemari arsip berlabel + piala, tempat sampah, printer + denah, rak buku, APAR, dispenser, papan gabus pengumuman ===== */}
+      <RakBukuDetail pos={[-10.2, 0, -5.28]} isi={0} seed={1} />
+      <RakBukuDetail pos={[-8.5, 0, -5.28]} isi={1} seed={2} />
+      <ACDinding pos={[-7.0, 0, -5.4]} />
+      <PapanAgenda pos={[-5.0, 1.0, -5.35]} />
+      <KalenderDinding pos={[-3.72, 1.0, -5.37]} />
+      <PigiuraTeks pos={[-2.72, 1.05, -5.35]} w={1.1} h={0.78} jenis="sertifikat" />
+      <Clock pos={[-1.75, 1.2, -5.35]} />
+      <PlantBush pos={[-1.95, 0, -5.0]} scale={0.6} />
+      <PapanNamaMgmt pos={[2.4, 1.12, -5.4]} />
+      <PlantSnake pos={[3.2, 0, -5.0]} scale={0.7} />
+      <LemariArsipMg pos={[4.4, 0, -5.1]} isi={0} atas="piala" />
+      <LemariArsipMg pos={[5.7, 0, -5.1]} isi={1} atas="berkas" />
+      <TrashBin pos={[6.55, 0, -5.1]} />
+      <PrinterStation pos={[7.5, 0, -5.1]} rotY={0} />
+      <PigiuraTeks pos={[7.5, 1.28, -5.35]} w={0.78} h={0.56} jenis="denah" />
+      <RakBukuDetail pos={[9.5, 0, -5.28]} isi={2} seed={3} />
+      <Extinguisher pos={[10.85, 0.28, -5.2]} />
+      <Box pos={[10.85, 0.78, -5.386]} size={[0.28, 0.2, 0.024]} color="#C9453B" cast={false} />
+      <Teks pos={[10.85, 0.78, -5.372]} w={0.24} h={0.1} text="APAR" fg="#FFFFFF" />
+      <WaterCooler pos={[11.6, 0, -5.1]} rotY={0} />
+      <PapanGabusMg pos={[12.78, 1.0, -5.37]} />
 
-      {/* ===== sudut tenggara: sofa + meja kopi ===== */}
+      {/* ===== dinding barat (permukaan x = -13.4): palem, papan organisasi berdiri, rak buku, gantungan jas, AC, jadwal ruang rapat ===== */}
+      <PlantPalm pos={[-11.7 - MG_EXT, 0, -5.0]} scale={1.0} />
+      <PapanOrganisasi pos={[-11.7 - MG_EXT, 0, -3.4]} rotY={Math.PI / 2} />
+      <group position={[-12.0 - MG_EXT, 0, -0.9]} rotation={[0, Math.PI / 2, 0]}>
+        <RakBukuDetail pos={[0, 0, 0]} isi={0} seed={5} />
+      </group>
+      <CoatRack pos={[-11.8 - MG_EXT, 0, 0.62]} />
+      <ACDinding pos={[-12.2 - MG_EXT, 0, 1.7]} rotY={Math.PI / 2} pipa={-1} />
+      <JadwalRuang pos={[-13.37, 1.15, 5.0]} rotY={Math.PI / 2} />
+
+      {/* ===== dinding timur (dinding rendah): kopi, ETALASE PENGHARGAAN (ganti meja direksi), lemari arsip, bendera, sofa + meja kopi ===== */}
+      <CoffeeStation pos={[13.1, 0, -4.2]} rotY={-Math.PI / 2} />
+      <EtalaseKaca pos={[13.1, 0, -1.9]} rotY={-Math.PI / 2} />
+      <PlantPalm pos={[11.7, 0, -3.1]} scale={0.75} />
+      <LemariArsipMg pos={[13.12, 0, 0.1]} rotY={-Math.PI / 2} isi={2} atas="berkas" />
+      <BenderaMgmt pos={[12.9, 0, 1.75]} rotY={-Math.PI / 2} />
       <Sofa pos={[11.3 + MG_EXT, 0, 3.6]} rotY={Math.PI / 2} color="#4F6FA8" />
       <group position={[9.9 + MG_EXT, 0, 3.6]} rotation={[0, Math.PI / 2, 0]}><CoffeeTable pos={[0, 0, 0]} /></group>
 
-      {/* ===== tanaman & lampu ===== */}
+      {/* ===== sisi timur-tengah: POJOK INFORMASI (ganti meja sekretaris): banner visi-misi, papan direktori, rak brosur; troli dokumen ===== */}
+      <RollUpBanner pos={[8.1, 0, -3.3]} rotY={0.1} />
+      <PapanDirektori pos={[9.3, 0, -3.2]} rotY={-0.05} />
+      <RakBrosur pos={[10.4, 0, -3.45]} rotY={-0.1} />
+      <PlantBush pos={[7.2, 0, -3.5]} scale={0.6} />
+      <TroliDokumen pos={[6.2, 0, -3.3]} />
+      <PlantPalm pos={[10.95, 0, -4.4]} scale={0.7} />
+
+      {/* ===== pojok barat daya: sudut tunggu (sofa + meja kopi + karpet), rak majalah, lampu, tanaman ===== */}
+      <Sofa pos={[-7.8, 0, 4.7]} rotY={0} color="#4F6FA8" />
+      <CoffeeTable pos={[-7.8, 0, 3.55]} />
+      <RakMajalah pos={[-9.9, 0, 3.7]} rotY={0.2} />
+      <FloorLamp pos={[-10.9, 0, 4.85]} />
+      <PlantSnake pos={[-5.7, 0, 4.9]} scale={0.8} />
       <PlantBush pos={[-11.5 - MG_EXT, 0, 5.0]} scale={0.8} />
-      <PlantPalm pos={[-11.7 - MG_EXT, 0, -5.0]} scale={1.0} />
-      <PlantPalm pos={[11.8 + MG_EXT, 0, 1.4]} scale={0.9} />
+
+      {/* ===== sisi selatan (dinding rendah): bak tanaman, tanaman & lampu ===== */}
+      <BakTanaman pos={[-4.4, 0, 5.2]} />
+      <BakTanaman pos={[0.0, 0, 5.2]} />
+      <BakTanaman pos={[5.0, 0, 5.2]} />
+      <BakTanaman pos={[9.6, 0, 5.2]} />
+      <PlantBush pos={[2.9, 0, 5.0]} scale={0.75} />
+      <PlantBush pos={[-2.9, 0, 5.0]} scale={0.75} />
       <PlantSnake pos={[7.0, 0, 5.0]} scale={0.9} />
-      <FloorLamp pos={[11.8 + MG_EXT, 0, 5.1]} />
       <FloorLamp pos={[6.6, 0, 1.8]} />
+      <FloorLamp pos={[11.8 + MG_EXT, 0, 5.1]} />
     </group>
   );
 }
 
 // ---- [BARU] Detail lorong ala kantor biasa (tanpa lampu, tanpa karpet/garis memanjang) ---------------------------------------
 
-// Lantai lorong: ubin porselen krem dua warna yang sangat berdekatan + bintik halus (tanpa garis nat abu-abu, tanpa karpet memanjang).
+// Lantai lorong: porselen 60x60 abu-krem hangat. Tiap ubin punya nada sendiri, kilap diagonal halus, awan warna, urat tipis,
+// bintik ala terrazzo, dan bevel tipis; nat (grout) berbayang di antara ubin. Satu tekstur 1536px = 6x6 ubin, dipakai bersama
+// oleh semua lorong (di-clone per lantai), dan garis nat disejajarkan ke grid dunia supaya menyambung antar lorong.
+// Tidak ada karpet, garis, atau medali: hanya lantai biasa.
+const UBIN_LORONG = 0.6; // sisi satu ubin (satuan scene)
+const UBIN_N = 6; // jumlah ubin per sisi dalam satu tekstur (6x6 supaya pola ulang tidak mencolok)
+const UBIN_ULANG = UBIN_LORONG * UBIN_N; // satu pengulangan tekstur = 6x6 ubin
+let LANTAI_LORONG_TEX: THREE.CanvasTexture | null = null;
+function teksturLantaiLorong(): THREE.CanvasTexture {
+  if (LANTAI_LORONG_TEX) return LANTAI_LORONG_TEX;
+  const N = UBIN_N, T = 256, S = T * N; // 256px per ubin
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d');
+  if (x) {
+    const rnd = mulberry32(77);
+    const nada = ['#E9E6DD', '#E4E1D6', '#DFDCD0', '#E6E3D9', '#E1DED3'];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const x0 = i * T, y0 = j * T;
+      x.save();
+      x.beginPath(); x.rect(x0, y0, T, T); x.clip();
+      // dasar + kilap diagonal (arah acak per ubin)
+      x.fillStyle = nada[Math.floor(rnd() * nada.length)];
+      x.fillRect(x0, y0, T, T);
+      const g = x.createLinearGradient(x0, y0, x0 + T, y0 + T);
+      const terang = rnd() < 0.5;
+      g.addColorStop(0, terang ? 'rgba(255,255,255,0.22)' : 'rgba(120,110,90,0.09)');
+      g.addColorStop(1, terang ? 'rgba(120,110,90,0.09)' : 'rgba(255,255,255,0.22)');
+      x.fillStyle = g; x.fillRect(x0, y0, T, T);
+      // awan warna lembut (variasi nada di dalam satu ubin)
+      for (let k = 0; k < 3; k++) {
+        const px = x0 + rnd() * T, py = y0 + rnd() * T, r = 60 + rnd() * 90;
+        const rg = x.createRadialGradient(px, py, 0, px, py, r);
+        rg.addColorStop(0, rnd() < 0.5 ? 'rgba(170,150,115,0.11)' : 'rgba(255,255,255,0.18)');
+        rg.addColorStop(1, 'rgba(255,255,255,0)');
+        x.fillStyle = rg; x.fillRect(x0, y0, T, T);
+      }
+      // urat tipis (gelap + sorot terang di sebelahnya)
+      x.lineCap = 'round';
+      const nUrat = 1 + Math.floor(rnd() * 3);
+      for (let v = 0; v < nUrat; v++) {
+        const a = x0 + rnd() * T, b = x0 + rnd() * T, m1 = x0 + rnd() * T, m2 = x0 + rnd() * T;
+        x.strokeStyle = 'rgba(150,140,118,0.14)'; x.lineWidth = 1 + rnd() * 1.2;
+        x.beginPath(); x.moveTo(a, y0 - 4); x.bezierCurveTo(m1, y0 + T * 0.33, m2, y0 + T * 0.66, b, y0 + T + 4); x.stroke();
+        x.strokeStyle = 'rgba(255,255,255,0.26)'; x.lineWidth = 0.8;
+        x.beginPath(); x.moveTo(a + 2, y0 - 4); x.bezierCurveTo(m1 + 2, y0 + T * 0.33, m2 + 2, y0 + T * 0.66, b + 2, y0 + T + 4); x.stroke();
+      }
+      // bintik ala terrazzo (gelap, terang, hangat)
+      for (let n = 0; n < 150; n++) {
+        const r = rnd();
+        x.fillStyle = r < 0.4 ? 'rgba(120,105,80,0.20)' : r < 0.75 ? 'rgba(255,255,255,0.55)' : 'rgba(190,160,110,0.20)';
+        const u = 1 + rnd() * 2.2;
+        x.fillRect(x0 + rnd() * T, y0 + rnd() * T, u, u);
+      }
+      x.restore();
+      // bevel tipis: sorot atas-kiri, bayangan bawah-kanan
+      x.fillStyle = 'rgba(255,255,255,0.5)';
+      x.fillRect(x0 + 4, y0 + 4, T - 8, 1.5); x.fillRect(x0 + 4, y0 + 4, 1.5, T - 8);
+      x.fillStyle = 'rgba(110,100,82,0.24)';
+      x.fillRect(x0 + 4, y0 + T - 5.5, T - 8, 1.5); x.fillRect(x0 + T - 5.5, y0 + 4, 1.5, T - 8);
+    }
+    // nat: dasar lebar 5px + garis gelap tipis di tengah (kesan cekung); digambar di batas ubin, menyambung saat diulang
+    for (let k = 0; k <= N; k++) {
+      const q = k * T;
+      x.fillStyle = '#BDB8A6';
+      x.fillRect(q - 2.5, 0, 5, S); x.fillRect(0, q - 2.5, S, 5);
+      x.fillStyle = 'rgba(112,106,88,0.6)';
+      x.fillRect(q - 0.8, 0, 1.6, S); x.fillRect(0, q - 0.8, S, 1.6);
+    }
+    for (let n = 0; n < 500; n++) { // butir halus di nat
+      const q = Math.floor(rnd() * (N + 1)) * T + (rnd() - 0.5) * 4;
+      x.fillStyle = rnd() < 0.5 ? 'rgba(90,84,68,0.25)' : 'rgba(240,236,224,0.35)';
+      if (rnd() < 0.5) x.fillRect(q, rnd() * S, 1.2, 1.2); else x.fillRect(rnd() * S, q, 1.2, 1.2);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  LANTAI_LORONG_TEX = t;
+  return t;
+}
 function LantaiLorong({ cx = 0, cz, w = 44.4, d }: { cx?: number; cz: number; w?: number; d: number }) {
   const tex = useMemo(() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const x = c.getContext('2d');
-    if (x) {
-      const rnd = mulberry32(77);
-      const warna = ['#EBE6D9', '#E2DCCB'];
-      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-        x.fillStyle = warna[(i + j) % 2];
-        x.fillRect(i * 128, j * 128, 128, 128);
-      }
-      for (let n = 0; n < 1100; n++) {
-        x.fillStyle = rnd() < 0.5 ? 'rgba(140,122,88,0.10)' : 'rgba(255,255,255,0.25)';
-        x.fillRect(rnd() * 256, rnd() * 256, 1.5 + rnd() * 2.5, 1.5 + rnd() * 2.5);
-      }
-    }
-    const t = new THREE.CanvasTexture(c);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(w / 2.4, d / 2.4);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 8;
+    const t = teksturLantaiLorong().clone();
+    t.repeat.set(w / UBIN_ULANG, d / UBIN_ULANG);
+    // sejajarkan garis nat ke grid dunia (kelipatan UBIN_LORONG) supaya menyambung antar lantai lorong
+    t.offset.set((cx - w / 2) / UBIN_ULANG, -(cz + d / 2) / UBIN_ULANG);
+    t.needsUpdate = true;
     return t;
-  }, [w, d]);
+  }, [cx, cz, w, d]);
+  useEffect(() => () => tex.dispose(), [tex]);
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[cx, 0.004, cz]} receiveShadow>
       <planeGeometry args={[w, d]} />
@@ -7389,9 +11008,6 @@ function BarisTiga() {
     <group>
       {/* lantai lorong bawah: ubin digambar oleh <LorongLantaiDekor /> (di luar batch, karena bertekstur) */}
       <Lantai cx={LORONG_LANTAI_CX} cz={gz(19.6) - LORONG_LEBAR / 2} w={LORONG_LANTAI_W} d={LORONG_LEBAR - 0.2} color={TH.lorong.floor} />
-      {[-10.3, MG_OX].map((x) => (
-        <Box key={x} pos={[x, 0.01, gz(19.6) - 0.6]} size={[1.5, 0.012, 0.7]} color="#6B8F7F" cast={false} />
-      ))}
       <Bench pos={[-4.8, 0, gz(19.6) - 0.7]} rotY={Math.PI} />
       <Bench pos={[19.6, 0, gz(19.6) - 0.7]} rotY={Math.PI} />
       <Bench pos={[26.4, 0, gz(19.6) - 0.7]} rotY={Math.PI} />
@@ -7411,8 +11027,8 @@ function BarisTiga() {
       <StandLicin pos={[3.6, 0, 20.7]} />
       {/* [DIUBAH] Dinding & papan nama Planning / Management kini digambar oleh <DindingBaris3 /> (ikut naik bersama ruangan). */}
       {/* Sisa di sini: dinding luar sisi lorong saja (tidak ikut naik). */}
-      <Dinding sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(17.1)} ke={gz(19.6)} gaya="tinggi" theme={TH.lorong} />
-      <Dinding sumbu="z" di={X_TIMUR} dari={gz(17.1)} ke={gz(19.6)} gaya="rendah" theme={TH.lorong} />
+      <Dinding sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(17.1)} ke={gz(19.6)} gaya="tinggi" theme={TH.lorong} luar={-1} />
+      <Dinding sumbu="z" di={X_TIMUR} dari={gz(17.1)} ke={gz(19.6)} gaya="rendah" theme={TH.lorong} luar={1} />
     </group>
   );
 }
@@ -7460,15 +11076,6 @@ function Gedung() {
       {/* [BARU] dua lorong samping (A: Research | Santai, B: Asset | Financial Statements): lantai dasar + perabot ala lorong 2 */}
       <LorongSamping cx={LS_A_CX} varian="a" />
       <LorongSamping cx={LS_B_CX} varian="b" />
-      {[PINTU_AR, TRX_OX, PINTU_AP].map((x) => (
-        <Box key={x} pos={[x, 0.01, 6.15]} size={[1.5, 0.012, 0.7]} color="#6B8F7F" cast={false} />
-      ))}
-      {/* keset di depan pintu ruang baris tengah (sisi selatan lorong) */}
-      {[-14.7, -6.0 + GESER_SANTAI, 4.2 + GESER_SANTAI, 16.0 + GESER_STUDIO].map((x) => (
-        <Box key={`ks${x}`} pos={[x, 0.01, gz(8.8) - 0.5]} size={[1.5, 0.012, 0.7]} color="#6B8F7F" cast={false} />
-      ))}
-      {/* pintu utama (kanan lorong) */}
-      <Box pos={[21.6 + TAMBAH_TIMUR, 0.01, gz(7.2)]} size={[1.2, 0.012, 1.9]} color="#2F7D5B" cast={false} />
       {/* dekorasi lorong */}
       <PlantPalm pos={[-21.3 - GESER_BARAT, 0, 6.2]} scale={1.0} />
       <PlantPalm pos={[21.1 + TAMBAH_TIMUR, 0, 6.2]} scale={1.0} />
@@ -7493,8 +11100,8 @@ function Gedung() {
 
       {/* [DIUBAH] Dinding yang berbatasan dengan ruangan kini digambar oleh <DindingRuang /> (ikut naik bersama ruangan). */}
       {/* Sisa di sini: potongan dinding di sisi lorong saja (tidak ikut naik). */}
-      <Dinding sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(5.6)} ke={gz(8.8)} gaya="tinggi" theme={TH.lorong} />
-      <Dinding sumbu="z" di={X_TIMUR} dari={gz(5.6)} ke={gz(8.8)} gaya="rendah" theme={TH.lorong} pintu={[gz(7.2)]} />
+      <Dinding sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(5.6)} ke={gz(8.8)} gaya="tinggi" theme={TH.lorong} luar={-1} />
+      <Dinding sumbu="z" di={X_TIMUR} dari={gz(5.6)} ke={gz(8.8)} gaya="rendah" theme={TH.lorong} pintu={[gz(7.2)]} luar={1} />
 
       {/* [DIUBAH] Papan nama ruang kerja kini di <DindingRuang /> (ikut naik bersama dindingnya). */}
     </group>
@@ -7576,7 +11183,7 @@ function naikDi(x: number, z: number): number {
   }
   return 0;
 }
-const WARNA_REDUP = new THREE.Color('#0A1A14');
+const WARNA_REDUP = new THREE.Color('#000000');
 
 // ---- [PERFORMA] Penggabung mesh statis ---------------------------------------------------------------------------
 // Masalah: ribuan <Box>/<Tube>/<Ball> = ribuan draw call; saat zoom out semuanya masuk layar -> berat.
@@ -7594,6 +11201,36 @@ const BATCH_AKTIF = _qs?.get('batch') === '1';
 const BAYANGAN_AKTIF = _qs?.get('bayangan') === '1';
 // [PERFORMA] ?lod=0 mematikan LOD ukuran-piksel (untuk membandingkan), ?lod=15 mengunci ambang 15 piksel (tanpa adaptif).
 const LOD_PARAM = _qs?.get('lod') ?? null;
+
+// ---- [PERFORMA] MUAT ISI RUANGAN BERTAHAP (lazy) ---------------------------------------------------------------------------
+// Masalah: saat halaman dibuka, isi SEMUA ruangan (ribuan mesh: meja, rak, dekor, lantai bertekstur) dibuat sekaligus, padahal
+// peta awal tampil zoom-out dan semua detail itu hanya berukuran beberapa piksel. Akibatnya loading bisa belasan detik.
+// Sekarang: saat dibuka hanya komponen DASAR yang dibuat (gedung, dinding, papan nama, lantai polos per ruangan, 3 agen, area klik).
+// Isi sebuah ruangan baru dibuat (sekali, lalu tetap) saat:
+//   1) ruangan itu DIKLIK / difokuskan, atau
+//   2) kamera di-ZOOM IN sampai >= ZOOM_DETAIL x zoom peta utuh DAN ruangan itu terlihat di layar, atau
+//   3) ada yang membutuhkannya (agen sedang rapat / bertugas / berkunjung ke sana, atau AI penghuni ruangan itu diberi tugas).
+// Setelah dibuat, isinya sama persis seperti sebelumnya (LOD piksel, klip dinding, redup, peta AI penghuni ikut menyesuaikan).
+// Saklar: ?detail=semua memuat semua ruangan langsung (perilaku lama, untuk membandingkan).
+const DETAIL_SEMUA = _qs?.get('detail') === 'semua';
+const ZOOM_DETAIL = 1.45; // kelipatan zoom peta utuh (FitCamera) mulai saat isi ruangan yang terlihat dimuat
+const EVENT_DETAIL = 'agentic:detail-dimuat'; // dikirim setelah isi sebuah ruangan selesai dibuat (LOD & peta AI penghuni memindai ulang)
+const DETAIL: { ada: Record<string, boolean>; jumlah: number; paksa: Set<string>; paksaAI: Set<string> } = { ada: {}, jumlah: 0, paksa: new Set(), paksaAI: new Set() };
+const _vRuang = new THREE.Vector3();
+// Apakah persegi lantai ruangan (empat sudutnya) beririsan dengan layar? (kamera ortografis)
+function ruangTerlihat(b: { cx: number; cz: number; w: number; d: number }, camera: THREE.Camera): boolean {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      _vRuang.set(b.cx + (sx * b.w) / 2, 0, b.cz + (sz * b.d) / 2).project(camera);
+      if (_vRuang.x < x0) x0 = _vRuang.x;
+      if (_vRuang.x > x1) x1 = _vRuang.x;
+      if (_vRuang.y < y0) y0 = _vRuang.y;
+      if (_vRuang.y > y1) y1 = _vRuang.y;
+    }
+  }
+  return x1 > -1 && x0 < 1 && y1 > -1 && y0 < 1;
+}
 const BATCH_EPS = 3e-5;
 let batchSeq = 0;
 const _tmpM = new THREE.Matrix4();
@@ -7775,13 +11412,120 @@ function BatchStatis({ nama, children }: { nama: string; children?: React.ReactN
 
   return <group ref={ref}>{children}</group>;
 }
-function RuangFokus({ id, children }: { id: RuangId; children: React.ReactNode }) {
+// ---- [BARU] DINDING = PENGHALANG: isi ruangan tidak bisa tembus keluar dinding ------------------------------------------------
+// Semua benda di dalam <RuangFokus /> dipotong (clipping plane lokal) di sisi LUAR dinding ruangannya. Benda yang tata letaknya terlalu
+// pinggir dan menembus dinding tidak tampak di seberang dinding (sama seperti ekor yang "tidak menembus" sandaran kursi).
+// RUANG_BOX = sisi dalam dinding untuk sebagian besar ruangan, tapi = garis tengah dinding untuk sisi timur/barat Financial Statements dan
+// semua sisi Planning & Management. KLIP_MARGIN = [x, z] jarak dari tepi RUANG_BOX ke sisi luar dinding (tebal dinding 0.2).
+const KLIP_MARGIN: Record<RuangId, [number, number]> = {
+  transaksi: [0.2, 0.2], ar: [0.2, 0.2], ap: [0.2, 0.2], perpus: [0.2, 0.2], santai: [0.2, 0.2], aset: [0.2, 0.2],
+  studio: [0.1, 0.2], planning: [0.1, 0.1], management: [0.1, 0.1],
+};
+const KLIP_TOLERANSI = 0.03; // supaya permukaan luar dinding itu sendiri (dan pelat putihnya) tidak ikut terpotong
+function bidangKlip(id: RuangId): THREE.Plane[] {
+  const b = RUANG_BOX[id];
+  const [mx, mz] = KLIP_MARGIN[id];
+  const x0 = b.cx - b.w / 2 - mx - KLIP_TOLERANSI, x1 = b.cx + b.w / 2 + mx + KLIP_TOLERANSI;
+  const z0 = b.cz - b.d / 2 - mz - KLIP_TOLERANSI, z1 = b.cz + b.d / 2 + mz + KLIP_TOLERANSI;
+  return [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), -x0),
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), x1),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), -z0),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1), z1),
+  ];
+}
+// Satu material hanya boleh punya satu set bidang: kalau dipakai bersama ruangan lain, mesh ini diberi salinan material.
+const KLIP_PEMILIK = new WeakMap<THREE.Material, RuangId>();
+
+// Lantai polos pengganti isi ruangan selama isinya belum dimuat (hanya warna lantai tema ruangan itu).
+const TEMA_RUANG: Record<RuangId, keyof typeof TH> = { transaksi: 'trx', ar: 'ar', ap: 'ap', perpus: 'perpus', santai: 'santai', aset: 'aset', studio: 'studio', planning: 'plan', management: 'mgmt' };
+function LantaiDasar({ id }: { id: RuangId }) {
+  const b = RUANG_BOX[id];
+  return (
+    <mesh position={[b.cx, 0.012, b.cz]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
+      <planeGeometry args={[b.w - 0.1, b.d - 0.1]} />
+      <meshLambertMaterial color={TH[TEMA_RUANG[id]].floor} />
+    </mesh>
+  );
+}
+
+// dasar = komponen dasar yang SELALU tampil (opsional; kalau kosong dipakai lantai polos). children = isi ruangan yang dimuat bertahap.
+function RuangFokus({ id, dasar, children }: { id: RuangId; dasar?: React.ReactNode; children: React.ReactNode }) {
   const b = RUANG_BOX[id];
   const g = useRef<THREE.Group>(null);
   const mats = useRef<{ m: any; c: THREE.Color; e: THREE.Color | null }[] | null>(null);
   const redup = useRef(0);
   const terapan = useRef(0);
-  useEffect(() => () => { delete FOKUS.naik[id]; }, [id]);
+  const gl = useThree((st) => st.gl);
+  const kamera = useThree((st) => st.camera);
+  const ukuran = useThree((st) => st.size);
+  const [detail, setDetail] = React.useState(DETAIL_SEMUA); // isi ruangan sudah dimuat? (sekali true, tetap)
+  const nFrame = useRef(0);
+  const sedangMuat = useRef(false);
+  useEffect(() => () => { delete FOKUS.naik[id]; delete DETAIL.ada[id]; DETAIL.jumlah = Object.keys(DETAIL.ada).length; }, [id]);
+  // [BARU] Putuskan kapan isi ruangan dimuat (dicek tiap 12 frame; murah). Tidak memuat saat ruangan ini sedang redup (fokus ruangan lain)
+  // supaya daftar material redup tidak kacau; setelah fokus dilepas dan redup selesai, baru dimuat bila perlu.
+  useFrame(() => {
+    if (detail || sedangMuat.current) return;
+    if (++nFrame.current % 12 !== 0) return;
+    const fokusIni = FOKUS.id === id;
+    const tenang = FOKUS.id === null && redup.current < 0.002 && terapan.current === 0;
+    let mau = fokusIni;
+    if (!mau && tenang) {
+      if (DETAIL.paksa.has(id) || DETAIL.paksaAI.has(id)) mau = true;
+      else {
+        const zDasar = Math.max(10, Math.min(ukuran.width / (52 + TAMBAH_TIMUR), ukuran.height / 27));
+        if ((kamera as THREE.OrthographicCamera).zoom >= zDasar * ZOOM_DETAIL) mau = ruangTerlihat(b, kamera);
+      }
+    }
+    if (!mau) return;
+    sedangMuat.current = true;
+    setTimeout(() => setDetail(true), fokusIni ? 80 : 0); // fokus: beri waktu animasi naik mulai dulu
+  });
+  useEffect(() => {
+    if (!detail) return;
+    DETAIL.ada[id] = true;
+    DETAIL.jumlah = Object.keys(DETAIL.ada).length;
+    mats.current = null; // daftar material redup dibangun ulang (isi baru ikut meredup)
+    const t = [setTimeout(() => window.dispatchEvent(new Event(EVENT_DETAIL)), 700), setTimeout(() => window.dispatchEvent(new Event(EVENT_DETAIL)), 2500)];
+    return () => t.forEach(clearTimeout);
+  }, [detail, id]);
+  // [BARU] Pasang bidang potong di sisi luar dinding pada semua mesh ruangan ini. Dijalankan beberapa kali setelah mount karena
+  // sebagian isi ruangan baru muncul belakangan; mesh yang sudah diproses ditandai (userData.klip).
+  useEffect(() => {
+    gl.localClippingEnabled = true;
+    const bidang = bidangKlip(id);
+    const pasang = () => {
+      const grp = g.current;
+      if (!grp) return;
+      let salin = false;
+      grp.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh || mesh.userData.nodim || mesh.userData.klip) return;
+        const daftar = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as THREE.Material[];
+        if (daftar.some((m) => m && KLIP_PEMILIK.get(m) !== undefined && KLIP_PEMILIK.get(m) !== id)) {
+          // material dipakai ruangan lain -> perlu salinan; tunda kalau ruangan sedang meredup (daftar material redup sudah terpakai)
+          if (redup.current > 0.002 || terapan.current > 0) return;
+          salin = true;
+        }
+        const baru = daftar.map((m) => {
+          if (!m || (m as THREE.ShaderMaterial).isShaderMaterial) return m;
+          const pemilik = KLIP_PEMILIK.get(m);
+          const target = pemilik !== undefined && pemilik !== id ? m.clone() : m;
+          target.clippingPlanes = bidang;
+          target.clipShadows = true;
+          target.needsUpdate = true;
+          KLIP_PEMILIK.set(target, id);
+          return target;
+        });
+        mesh.material = Array.isArray(mesh.material) ? baru : baru[0];
+        mesh.userData.klip = true;
+      });
+      if (salin) mats.current = null; // daftar material redup dibangun ulang (hanya saat ruangan tidak sedang meredup)
+    };
+    const t = [setTimeout(pasang, 500), setTimeout(pasang, 2500), setTimeout(pasang, 7000)];
+    return () => t.forEach(clearTimeout);
+  }, [gl, id, detail]); // [DIUBAH] ikut dijalankan ulang setelah isi ruangan dimuat (mesh baru perlu bidang potong)
   useFrame((_, dtRaw) => {
     const grp = g.current;
     if (!grp) return;
@@ -7820,9 +11564,9 @@ function RuangFokus({ id, children }: { id: RuangId; children: React.ReactNode }
   });
   return (
     <group ref={g} userData={{ ruang: id }}>
-      {/* tebal ruangan: terlihat di sisinya saat ruangan naik */}
-      <Box pos={[b.cx, -0.5, b.cz]} size={[b.w - 0.1, 0.6, b.d - 0.1]} color="#10221B" cast={false} />
-      <BatchStatis nama={id}>{children}</BatchStatis>
+      {/* tebal ruangan: terlihat di sisinya saat ruangan naik. [DIUBAH] putih (PUTIH_LUAR) supaya semua sisi luar ruangan (termasuk Transactions yang dindingnya di <Room />) seragam putih */}
+      <Box pos={[b.cx, -0.5, b.cz]} size={[b.w - 0.1, 0.6, b.d - 0.1]} color={PUTIH_LUAR} cast={false} />
+      <BatchStatis nama={id}>{dasar}{detail ? children : dasar ? null : <LantaiDasar id={id} />}</BatchStatis>
       {/* area klik (tak terlihat) seluas lantai ruangan; geseran peta (drag) tidak dihitung sebagai klik */}
       <mesh
         position={[b.cx, 0.03, b.cz]}
@@ -7871,23 +11615,47 @@ function IkutNaik({ rooms, children }: { rooms: RuangId[]; children: React.React
   return <group ref={g}>{children}</group>;
 }
 
-function DindingNaik({ rooms, ...p }: React.ComponentProps<typeof Dinding> & { rooms: RuangId[] }) {
+// [BARU] `sisi` = ruangan di tiap sisi tembok partisi (plus = sisi +x / +z, minus = sisi -x / -z). Saat tembok naik lebih tinggi daripada ruangan
+// di salah satu sisinya (mis. Planning naik, Management tidak), tambahan tinggi di sisi ruangan tetangga itu: bagian bawah (kaki) dan bagian
+// ATAS (di atas tinggi dinding tetangga) dicat putih. Sisi ruangan yang naik sendiri tidak berubah (desain lama).
+function DindingNaik({ rooms, sisi, ...p }: React.ComponentProps<typeof Dinding> & { rooms: RuangId[]; sisi?: { plus?: RuangId; minus?: RuangId } }) {
   const g = useRef<THREE.Group>(null);
   const kaki = useRef<THREE.Group>(null);
+  const bandPlus = useRef<THREE.Group>(null);
+  const bandMinus = useRef<THREE.Group>(null);
   const last = useRef(0);
+  const lastBand = useRef<[number, number]>([0, 0]);
   useFrame(() => {
     const y = naikRuang(rooms);
-    if (Math.abs(y - last.current) < 1e-4) return;
-    last.current = y;
-    if (g.current) g.current.position.y = y;
-    if (kaki.current) {
-      kaki.current.visible = y > 0.003;
-      kaki.current.scale.y = Math.max(y, 1e-3);
+    if (Math.abs(y - last.current) >= 1e-4) {
+      last.current = y;
+      if (g.current) g.current.position.y = y;
+      if (kaki.current) {
+        kaki.current.visible = y > 0.003;
+        kaki.current.scale.y = Math.max(y, 1e-3);
+      }
+    }
+    if (!sisi) return;
+    // tinggi pita putih di atas dinding tetangga = selisih angkatan tembok dan angkatan ruangan di sisi itu (maks. tinggi tembok 1.6)
+    const hP = sisi.plus ? Math.min(1.6, Math.max(0, y - (FOKUS.naik[sisi.plus] ?? 0))) : 0;
+    const hM = sisi.minus ? Math.min(1.6, Math.max(0, y - (FOKUS.naik[sisi.minus] ?? 0))) : 0;
+    if (Math.abs(hP - lastBand.current[0]) < 1e-4 && Math.abs(hM - lastBand.current[1]) < 1e-4) return;
+    lastBand.current = [hP, hM];
+    for (const [ref, h] of [[bandPlus, hP], [bandMinus, hM]] as const) {
+      const bg = ref.current;
+      if (!bg) continue;
+      bg.visible = h > 0.003;
+      bg.scale.y = Math.max(h, 1e-3);
+      bg.position.y = 1.6 - h; // bawah pita; atasnya selalu di puncak dinding (1.6)
     }
   });
-  const { sumbu, di, dari, ke, pintu = [], theme } = p;
+  const { sumbu, di, dari, ke, pintu = [] } = p;
   const P = (m: number, y: number): V3 => (sumbu === 'x' ? [m, y, di] : [di, y, m]);
   const S = (l: number): V3 => (sumbu === 'x' ? [l, 1, 0.2] : [0.2, 1, l]);
+  const PB = (m: number, off: number): V3 => (sumbu === 'x' ? [m, 0.5, di + off] : [di + off, 0.5, m]); // pita: tinggi 1 satuan, diskalakan
+  const SB = (l: number): V3 => (sumbu === 'x' ? [l, 1, 0.004] : [0.004, 1, l]);
+  // [DIUBAH] Kaki dinding (bagian tambahan yang muncul saat ruangan naik) putih di SEMUA sisinya: sisi luar gedung, ujung (sudut),
+  // dan sisi yang menempel ruangan tetangga. Sisi dalam ruangan yang naik tertutup lantainya sendiri.
   return (
     <group ref={g}>
       {/* kaki: tinggi 1 satuan lalu diskalakan = angkatan; sisi atas di dasar dinding, sisi bawah di tanah */}
@@ -7895,10 +11663,23 @@ function DindingNaik({ rooms, ...p }: React.ComponentProps<typeof Dinding> & { r
         {runs(dari, ke, pintu).map(([m, l]) => (
           <mesh key={m} position={P(m, -0.5)}>
             <boxGeometry args={S(l)} />
-            <meshLambertMaterial color={theme.wall} />
+            <meshLambertMaterial color={PUTIH_LUAR} />
           </mesh>
         ))}
       </group>
+      {/* pita putih di sisi tetangga: bagian atas tembok yang lebih tinggi daripada dinding ruangan tetangga */}
+      {sisi && ([['plus', bandPlus, 1], ['minus', bandMinus, -1]] as const).map(([k, ref, arah]) => (
+        sisi[k] ? (
+          <group key={k} ref={ref} visible={false}>
+            {runs(dari, ke, pintu).map(([m, l]) => (
+              <mesh key={m} position={PB(m, 0.102 * arah)}>
+                <boxGeometry args={SB(l)} />
+                <meshLambertMaterial color={PUTIH_LUAR} />
+              </mesh>
+            ))}
+          </group>
+        ) : null
+      ))}
       <Dinding {...p} />
     </group>
   );
@@ -7910,40 +11691,40 @@ function DindingRuang() {
   return (
     <group>
       {/* dinding luar belakang (tinggi) — bagian Transactions digambar oleh <Room /> */}
-      <DindingNaik rooms={['ar']} sumbu="x" di={gz(-5.6)} dari={XW} ke={ATAS_B1 - 0.1} gaya="tinggi" theme={TH.ar} />
-      <DindingNaik rooms={['ap']} sumbu="x" di={gz(-5.6)} dari={ATAS_B2 + 0.1} ke={XE} gaya="tinggi" theme={TH.ap} />
+      <DindingNaik rooms={['ar']} sumbu="x" di={gz(-5.6)} dari={XW} ke={ATAS_B1 - 0.1} gaya="tinggi" theme={TH.ar} luar={-1} />
+      <DindingNaik rooms={['ap']} sumbu="x" di={gz(-5.6)} dari={ATAS_B2 + 0.1} ke={XE} gaya="tinggi" theme={TH.ap} luar={-1} />
       {/* dinding luar kiri (tinggi) */}
-      <DindingNaik rooms={['ar']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(-5.7)} ke={gz(5.6)} gaya="tinggi" theme={TH.ar} />
-      <DindingNaik rooms={['perpus']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.perpus} />
+      <DindingNaik rooms={['ar']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(-5.7)} ke={gz(5.6)} gaya="tinggi" theme={TH.ar} luar={-1} />
+      <DindingNaik rooms={['perpus']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.perpus} luar={-1} />
       {/* dinding luar kanan (rendah) */}
-      <DindingNaik rooms={['ap']} sumbu="z" di={X_TIMUR} dari={gz(-5.7)} ke={gz(5.6)} gaya="rendah" theme={TH.ap} />
-      <DindingNaik rooms={['studio']} sumbu="z" di={X_TIMUR} dari={gz(8.8)} ke={gz(17.1)} gaya="rendah" theme={TH.studio} />
+      <DindingNaik rooms={['ap']} sumbu="z" di={X_TIMUR} dari={gz(-5.7)} ke={gz(5.6)} gaya="rendah" theme={TH.ap} luar={1} />
+      <DindingNaik rooms={['studio']} sumbu="z" di={X_TIMUR} dari={gz(8.8)} ke={gz(17.1)} gaya="rendah" theme={TH.studio} luar={1} />
       {/* dinding belakang baris 2 (menghadap lorong 2): setengah tembok + kaca. [DIUBAH] Research & Financial Statements TIDAK lagi punya pintu belakang;
           jalan antar lorong 1 dan 2 kini lewat lorong samping A dan B (celah di antara ruangan dibiarkan terbuka). */}
-      <DindingNaik rooms={['perpus']} sumbu="x" di={gz(17.0)} dari={XW} ke={LS_A_X0} gaya="kaca" theme={TH.perpus} />
-      <DindingNaik rooms={['santai']} sumbu="x" di={gz(17.0)} dari={LS_A_X1} ke={SANTAI_X1} gaya="kaca" theme={TH.santai} />
-      <DindingNaik rooms={['aset']} sumbu="x" di={gz(17.0)} dari={SANTAI_X1} ke={LS_B_X0} gaya="kaca" theme={TH.aset} />
-      <DindingNaik rooms={['studio']} sumbu="x" di={gz(17.0)} dari={LS_B_X1} ke={XE} gaya="kaca" theme={TH.studio} />
+      <DindingNaik rooms={['perpus']} sumbu="x" di={gz(17.0)} dari={XW} ke={LS_A_X0} gaya="kaca" theme={TH.perpus} luar={1} />
+      <DindingNaik rooms={['santai']} sumbu="x" di={gz(17.0)} dari={LS_A_X1} ke={SANTAI_X1} gaya="kaca" theme={TH.santai} luar={1} />
+      <DindingNaik rooms={['aset']} sumbu="x" di={gz(17.0)} dari={SANTAI_X1} ke={LS_B_X0} gaya="kaca" theme={TH.aset} luar={1} />
+      <DindingNaik rooms={['studio']} sumbu="x" di={gz(17.0)} dari={LS_B_X1} ke={XE} gaya="kaca" theme={TH.studio} luar={1} />
       {/* partisi baris atas | lorong (pintu ke AR, Transactions, AP): dipecah per ruangan */}
-      <DindingNaik rooms={['ar']} sumbu="x" di={gz(5.6)} dari={XW} ke={ATAS_B1} gaya="kaca" theme={TH.lorong} pintu={[PINTU_AR]} />
-      <DindingNaik rooms={['transaksi']} sumbu="x" di={gz(5.6)} dari={ATAS_B1} ke={ATAS_B2} gaya="kaca" theme={TH.lorong} pintu={[TRX_OX]} />
-      <DindingNaik rooms={['ap']} sumbu="x" di={gz(5.6)} dari={ATAS_B2} ke={XE} gaya="kaca" theme={TH.lorong} pintu={[PINTU_AP]} />
+      <DindingNaik rooms={['ar']} sumbu="x" di={gz(5.6)} dari={XW} ke={ATAS_B1} gaya="kaca" theme={TH.lorong} pintu={[PINTU_AR]} papan={['R-01|ACCOUNT RECEIVABLE']} luar={1} />
+      <DindingNaik rooms={['transaksi']} sumbu="x" di={gz(5.6)} dari={ATAS_B1} ke={ATAS_B2} gaya="kaca" theme={TH.lorong} pintu={[TRX_OX]} papan={['R-02|TRANSACTIONS']} luar={1} />
+      <DindingNaik rooms={['ap']} sumbu="x" di={gz(5.6)} dari={ATAS_B2} ke={XE} gaya="kaca" theme={TH.lorong} pintu={[PINTU_AP]} papan={['R-03|ACCOUNT PAYABLE']} luar={1} />
       {/* partisi Transactions | AP */}
       {/* [DIUBAH] Dulu satu tembok pink untuk dua ruangan. Sekarang sisi AP tetap pink, sisi Transactions punya lapisan dinding sendiri (biru langit) */}
-      <DindingNaik rooms={['ap']} sumbu="z" di={ATAS_B2} dari={gz(-5.7)} ke={gz(5.7)} gaya="tinggi" theme={TH.ap} />
-      <DindingNaik rooms={['transaksi']} sumbu="z" di={ATAS_B2 - 0.2} dari={gz(-5.6)} ke={gz(5.6)} gaya="tinggi" theme={TH.trx} />
+      <DindingNaik rooms={['ap']} sisi={{ minus: 'transaksi', plus: 'ap' }} sumbu="z" di={ATAS_B2} dari={gz(-5.7)} ke={gz(5.7)} gaya="tinggi" theme={TH.ap} />
+      <DindingNaik rooms={['transaksi']} sisi={{ minus: 'transaksi', plus: 'ap' }} sumbu="z" di={ATAS_B2 - 0.2} dari={gz(-5.6)} ke={gz(5.6)} gaya="tinggi" theme={TH.trx} />
       {/* partisi lorong 1 | baris tengah (pintu ke tiap ruangan): tembok penuh. Di mulut lorong samping A & B dindingnya terbuka. */}
-      <DindingNaik rooms={['perpus']} sumbu="x" di={gz(8.8)} dari={XW} ke={LS_A_X0} gaya="kaca" theme={TH.perpus} pintu={[-14.7]} modern penuh />
-      <DindingNaik rooms={['santai']} sumbu="x" di={gz(8.8)} dari={LS_A_X1} ke={SANTAI_X1} gaya="kaca" theme={TH.santai} pintu={[-6.0 + GESER_SANTAI]} penuh />
-      <DindingNaik rooms={['aset']} sumbu="x" di={gz(8.8)} dari={SANTAI_X1} ke={LS_B_X0} gaya="kaca" theme={TH.aset} pintu={[4.2 + GESER_SANTAI]} penuh />
-      <DindingNaik rooms={['studio']} sumbu="x" di={gz(8.8)} dari={LS_B_X1} ke={XE} gaya="kaca" theme={TH.studio} pintu={[16.0 + GESER_STUDIO]} penuh />
+      <DindingNaik rooms={['perpus']} sumbu="x" di={gz(8.8)} dari={XW} ke={LS_A_X0} gaya="kaca" theme={TH.perpus} pintu={[-14.7]} papan={['R-04|RESEARCH']} hindar={[-19.0, -12.3]} modern penuh luar={-1} />
+      <DindingNaik rooms={['santai']} sumbu="x" di={gz(8.8)} dari={LS_A_X1} ke={SANTAI_X1} gaya="kaca" theme={TH.santai} pintu={[-6.0 + GESER_SANTAI]} papan={['R-05|SANTAI']} hindar={[-9.0 + GESER_SANTAI, -2.8 + GESER_SANTAI]} penuh luar={-1} />
+      <DindingNaik rooms={['aset']} sumbu="x" di={gz(8.8)} dari={SANTAI_X1} ke={LS_B_X0} gaya="kaca" theme={TH.aset} pintu={[4.2 + GESER_SANTAI]} papan={['R-06|ASSET']} hindar={[1.2 + GESER_SANTAI, 7.2 + GESER_SANTAI]} penuh luar={-1} />
+      <DindingNaik rooms={['studio']} sumbu="x" di={gz(8.8)} dari={LS_B_X1} ke={XE} gaya="kaca" theme={TH.studio} pintu={[16.0 + GESER_STUDIO]} papan={['R-07|FINANCIAL STATEMENTS']} hindar={[12.2 + GESER_STUDIO, 19.8 + GESER_STUDIO]} penuh luar={-1} />
       {/* [BARU] dinding samping lorong A (Research | Santai) dan lorong B (Asset | Financial Statements): tiap ruangan punya dindingnya sendiri */}
-      <DindingNaik rooms={['perpus']} sumbu="z" di={LS_A_X0} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.perpus} />
-      <DindingNaik rooms={['santai']} sumbu="z" di={LS_A_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.santai} />
-      <DindingNaik rooms={['aset']} sumbu="z" di={LS_B_X0} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.aset} />
-      <DindingNaik rooms={['studio']} sumbu="z" di={LS_B_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.studio} />
+      <DindingNaik rooms={['perpus']} sumbu="z" di={LS_A_X0} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.perpus} luar={1} />
+      <DindingNaik rooms={['santai']} sumbu="z" di={LS_A_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.santai} luar={-1} />
+      <DindingNaik rooms={['aset']} sumbu="z" di={LS_B_X0} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.aset} luar={1} />
+      <DindingNaik rooms={['studio']} sumbu="z" di={LS_B_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.studio} luar={-1} />
       {/* partisi antar ruang baris tengah: Santai | Asset */}
-      <DindingNaik rooms={['santai', 'aset']} sumbu="z" di={SANTAI_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.aset} />
+      <DindingNaik rooms={['santai', 'aset']} sisi={{ minus: 'santai', plus: 'aset' }} sumbu="z" di={SANTAI_X1} dari={gz(8.8)} ke={gz(17.1)} gaya="tinggi" theme={TH.aset} />
 
       {/* papan nama ruang kerja: menempel di dinding, ikut naik */}
       <IkutNaik rooms={['ar']}><BuildingSign pos={[(ATAS_XL + ATAS_B1) / 2 - 0.05, 1.85, -5.7]} text="ACCOUNT RECEIVABLE" accent="#2DD4BF" /></IkutNaik>
@@ -7959,14 +11740,14 @@ function DindingRuang() {
 function DindingBaris3() {
   return (
     <group>
-      <DindingNaik rooms={['planning']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(19.6)} ke={gz(30.7)} gaya="tinggi" theme={TH.plan} />
-      <DindingNaik rooms={['management']} sumbu="z" di={X_TIMUR} dari={gz(19.6)} ke={gz(30.7)} gaya="rendah" theme={TH.mgmt} />
-      <DindingNaik rooms={['planning']} sumbu="x" di={gz(30.6)} dari={-22.4 - GESER_BARAT} ke={SEKAT_B3} gaya="rendah" theme={TH.plan} />
-      <DindingNaik rooms={['management']} sumbu="x" di={gz(30.6)} dari={SEKAT_B3} ke={X_TIMUR + 0.1} gaya="rendah" theme={TH.mgmt} />
+      <DindingNaik rooms={['planning']} sumbu="z" di={-22.3 - GESER_BARAT} dari={gz(19.6)} ke={gz(30.7)} gaya="tinggi" theme={TH.plan} luar={-1} />
+      <DindingNaik rooms={['management']} sumbu="z" di={X_TIMUR} dari={gz(19.6)} ke={gz(30.7)} gaya="rendah" theme={TH.mgmt} luar={1} />
+      <DindingNaik rooms={['planning']} sumbu="x" di={gz(30.6)} dari={-22.4 - GESER_BARAT} ke={SEKAT_B3} gaya="rendah" theme={TH.plan} luar={1} />
+      <DindingNaik rooms={['management']} sumbu="x" di={gz(30.6)} dari={SEKAT_B3} ke={X_TIMUR + 0.1} gaya="rendah" theme={TH.mgmt} luar={1} />
       {/* partisi kaca: lorong bawah | ruang (pintu ke tiap ruang), dan Planning | Management */}
-      <DindingNaik rooms={['planning']} sumbu="x" di={gz(19.6)} dari={-22.4 - GESER_BARAT} ke={SEKAT_B3} gaya="kaca" theme={TH.plan} pintu={[-10.3]} modern penuh />
-      <DindingNaik rooms={['management']} sumbu="x" di={gz(19.6)} dari={SEKAT_B3} ke={X_TIMUR + 0.1} gaya="kaca" theme={TH.mgmt} pintu={[MG_OX]} modern penuh />
-      <DindingNaik rooms={['planning', 'management']} sumbu="z" di={SEKAT_B3} dari={gz(19.7)} ke={gz(30.7)} gaya="kaca" theme={TH.plan} pintu={[gz(28.7)]} modern penuh />
+      <DindingNaik rooms={['planning']} sumbu="x" di={gz(19.6)} dari={-22.4 - GESER_BARAT} ke={SEKAT_B3} gaya="kaca" theme={TH.plan} pintu={[-10.3]} papan={['R-08|PLANNING']} modern penuh luar={-1} />
+      <DindingNaik rooms={['management']} sumbu="x" di={gz(19.6)} dari={SEKAT_B3} ke={X_TIMUR + 0.1} gaya="kaca" theme={TH.mgmt} pintu={[MG_OX]} papan={['R-09|MANAGEMENT']} modern penuh luar={-1} />
+      <DindingNaik rooms={['planning', 'management']} sisi={{ minus: 'planning', plus: 'management' }} sumbu="z" di={SEKAT_B3} dari={gz(19.7)} ke={gz(30.7)} gaya="kaca" theme={TH.plan} pintu={[gz(28.7)]} modern penuh />
       <IkutNaik rooms={['planning']}><BuildingSign pos={[-10.3, 1.9, gz(19.6)]} text="PLANNING" accent="#A78BFA" /></IkutNaik>
       <IkutNaik rooms={['management']}><BuildingSign pos={[MG_OX, 1.9, gz(19.6)]} text="MANAGEMENT" accent="#60A5FA" /></IkutNaik>
     </group>
@@ -8324,6 +12105,57 @@ function rencanaJalur(dari: [number, number], tujuan: string): [number, number][
   }
   const out: [number, number][] = [];
   for (let n: string | undefined = tujuan; n; n = prev[n]) out.unshift(NAV[n]);
+  return out;
+}
+
+// [BARU] Jalur khusus AI penghuni (agen Neo / Atlas / Zeno tetap memakai rencanaJalur di atas). Dua hal ditambahkan supaya rutenya banyak & tidak seragam:
+//  1. Biaya tiap ruas diacak (+0..40%) tiap perjalanan, jadi AI memakai rute yang berbeda-beda bila ada lebih dari satu jalan
+//     (mis. Planning <-> Management lewat pintu sekat di dalam ATAU lewat lorong 2; lorong samping A atau B).
+//  2. Simpul lorong digeser ke kiri / kanan lebar lorong ("lajur" acak per perjalanan), jadi AI tidak semuanya berbaris di satu garis
+//     dan bisa berpapasan di lorong 1 dan lorong 2 (depan Planning & Management). Geseran dibuat kecil agar tetap di lantai kosong
+//     (perabot lorong 2 menempel di dinding: sisi utara z ~ 18.0, sisi selatan z ~ 20.7; jalan bebas ~ 18.3 .. 20.4).
+function rencanaJalurPet(dari: [number, number], tujuan: string): [number, number][] {
+  const names = Object.keys(NAV);
+  const jarak = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  let ruas: [string, string] = NAV_EDGES[0];
+  let terdekat = Infinity;
+  for (const [a, b] of NAV_EDGES) {
+    const A = NAV[a], B = NAV[b];
+    const vx = B[0] - A[0], vz = B[1] - A[1];
+    const t = Math.max(0, Math.min(1, ((dari[0] - A[0]) * vx + (dari[1] - A[1]) * vz) / (vx * vx + vz * vz || 1)));
+    const d = jarak(dari, [A[0] + vx * t, A[1] + vz * t]);
+    if (d < terdekat) { terdekat = d; ruas = [a, b]; }
+  }
+  const faktor: Record<string, number> = {};
+  const bobot = (u: string, v: string) => {
+    const k = u < v ? `${u}|${v}` : `${v}|${u}`;
+    if (faktor[k] === undefined) faktor[k] = 1 + Math.random() * 0.4;
+    return jarak(NAV[u], NAV[v]) * faktor[k];
+  };
+  const dist: Record<string, number> = {};
+  const prev: Record<string, string | undefined> = {};
+  names.forEach((n) => (dist[n] = Infinity));
+  ruas.forEach((n) => (dist[n] = jarak(dari, NAV[n])));
+  const todo = new Set(names);
+  while (todo.size) {
+    let u = '';
+    todo.forEach((n) => { if (!u || dist[n] < dist[u]) u = n; });
+    todo.delete(u);
+    if (u === tujuan || dist[u] === Infinity) break;
+    for (const [a, b] of NAV_EDGES) {
+      const v = a === u ? b : b === u ? a : null;
+      if (v && todo.has(v)) { const w = dist[u] + bobot(u, v); if (w < dist[v]) { dist[v] = w; prev[v] = u; } }
+    }
+  }
+  const lajur = Math.random() * 2 - 1; // -1 .. 1, sama untuk seluruh perjalanan supaya jalurnya tetap mulus
+  const out: [number, number][] = [];
+  for (let n: string | undefined = tujuan; n; n = prev[n]) {
+    const p = NAV[n];
+    if (n.startsWith('c2_')) out.unshift([p[0], p[1] + lajur * 0.45]);
+    else if (n.startsWith('c1_')) out.unshift([p[0], p[1] + lajur * 0.3]);
+    else if (n === 'cA_t' || n === 'cB_t') out.unshift([p[0] + lajur * 0.5, p[1]]);
+    else out.unshift(p);
+  }
   return out;
 }
 
@@ -8860,6 +12692,8 @@ function Agent({
     const posisi = (): [number, number] => [g.position.x, g.position.z];
 
     // Prioritas tujuan: tugas halaman (meja kerja) > rapat (meja rapat) > kunjungan ke ruangan lain > santai (sofa / rak buku / area joget).
+    // [PENGECUALIAN RAPAT] Selama meeting, agen tetap di kursi rapat KECUALI ia punya tugas: ia berdiri, berjalan ke meja halaman,
+    // bekerja, lalu otomatis kembali ke kursi rapatnya begitu tugas selesai (tugas null -> want = 'r' lagi).
     if (!still) {
       const mau = tugasRef.current;
       const want = mau !== null && mau !== undefined ? `k${mau}` : meetingRef.current ? 'r' : kunjunganRef.current ? `j:${kunjunganRef.current}` : `s:${aktivitasSaatIni(name, actMs)}`;
@@ -9111,7 +12945,11 @@ const EAR_BASE: Record<PetKind, number> = {
 };
 const EAR_TWITCH = new Set<PetKind>(['kucing', 'kelinci', 'hantu', 'shiba', 'babi', 'gajah', 'kuda', 'tupai', 'rusa', 'alpaka']);
 
-type PetRig = { chest: GRef; armL: GRef; armR: GRef; head: GRef; eyeL: GRef; eyeR: GRef; earL: GRef; earR: GRef; tail: GRef };
+type PetRig = {
+  chest: GRef; armL: GRef; armR: GRef; head: GRef; eyeL: GRef; eyeR: GRef; earL: GRef; earR: GRef; tail: GRef;
+  // [BARU] AI penghuni yang bisa berdiri / berjalan: paha, betis, dan bola-bola ekor (ekor dilebarkan saat berdiri)
+  legL?: GRef; legR?: GRef; shinL?: GRef; shinR?: GRef; tailParts?: React.MutableRefObject<(THREE.Group | null)[]>;
+};
 
 // Mata bulat berkilau (ikut berkedip lewat rig) + pipi merah muda.
 function PetEyes({ rig, x, y, z, r = 0.036, color = '#14161A' }: { rig: PetRig; x: number; y: number; z: number; r?: number; color?: string }) {
@@ -9147,17 +12985,19 @@ function PetBody({ look, rig }: { look: PetLook; rig: PetRig }) {
       {/* ekor diselipkan di antara badan & sandaran kursi: tertutup kursi, tidak menembus sandaran */}
       <group ref={rig.tail} position={[0, 0.36, -0.1]}>
         {tailPts.map(([y, z, r], i) => (
-          <Sph key={i} pos={[0, y, z * 0.12]} r={r} cast
-            color={kind === 'kucing' ? (i === tailPts.length - 1 ? '#F3EFEA' : fur) : kind === 'kelinci' || kind === 'panda' ? belly : fur} />
+          <group key={i} ref={(g) => { if (rig.tailParts) rig.tailParts.current[i] = g; }} position={[0, y, z * 0.12]}>
+            <Sph pos={[0, 0, 0]} r={r} cast
+              color={kind === 'kucing' ? (i === tailPts.length - 1 ? '#F3EFEA' : fur) : kind === 'kelinci' || kind === 'panda' ? belly : fur} />
+          </group>
         ))}
       </group>
 
       <group position={[0, 0.05, 0.09]}>
         {/* kaki */}
         {[-1, 1].map((side) => (
-          <group key={side} position={[side * 0.16, 0.42, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <group key={side} ref={side < 0 ? rig.legL : rig.legR} position={[side * 0.16, 0.42, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <Cap pos={[0, -0.08, 0]} r={0.105} len={0.05} color={look.legs} />
-            <group position={[0, -0.17, 0]} rotation={[SIT, 0, 0]}>
+            <group ref={side < 0 ? rig.shinL : rig.shinR} position={[0, -0.17, 0]} rotation={[SIT, 0, 0]}>
               <Cap pos={[0, -0.04, 0]} r={0.088} len={0.06} color={look.paws} />
               <Sph pos={[0, -0.19, 0.035]} r={0.088} scale={[1, 0.62, 1.35]} color={look.paws} cast />
               {[-1, 0, 1].map((j) => (
@@ -9883,9 +13723,245 @@ function PetBody({ look, rig }: { look: PetLook; rig: PetRig }) {
   );
 }
 
-function SeatedPet({ name, look, pos, rotY, mode, seatKey }: {
-  name: string; look: PetLook; pos: V3; rotY: number; mode: 'ketik' | 'baca'; seatKey?: string;
-}) {
+// ---- [BARU] AI PENGHUNI HIDUP -------------------------------------------------------------------------------------------------
+// 27 AI penghuni (Nova, Aria, Echo, ...) TIDAK lagi duduk terus di kursinya:
+//  - mereka duduk di meja HANYA saat ada tugas (src/lib/tugasAi.ts: berikanTugasAI('Nova'); uji cepat: ?kerja=Nova,Aria),
+//  - tanpa tugas mereka berdiri di dekat meja dan sesekali keluar ruangan (acak, siapa saja, ke ruangan mana saja) untuk
+//    berkunjung & berpura-pura mengobrol, dengan syarat ruangan asalnya tidak pernah kosong (src/lib/penghuniOtak.ts).
+// Tiap ruangan hanya memasang PENANDA KURSI (KursiPenghuni) supaya posisi kursi di koordinat dunia diketahui apa adanya (ikut
+// semua geseran ruangan). Tubuh 3D-nya digambar <PenghuniKantor /> di luar ruangan supaya bisa berjalan keluar-masuk pintu.
+// Peta lantai untuk pencari jalur diisi otomatis dari mesh yang sudah ada (perabot & dinding), jadi memindahkan perabot
+// tidak perlu mengubah apa pun. Uji: ?petadebug=1 menggambar peta lantai (merah = terhalang) di atas lantai.
+
+const KURSI_DUNIA: Record<string, KursiDunia> = {};
+const _kursiP = new THREE.Vector3();
+const _kursiD = new THREE.Vector3();
+const RUANG_KE_ID: Record<string, RuangId> = {
+  transactions: 'transaksi', ar: 'ar', ap: 'ap', perpus: 'perpus', santai: 'santai', aset: 'aset', studio: 'studio', planning: 'planning', management: 'management',
+};
+
+// Penanda kursi (tidak terlihat): mendaftarkan posisi & arah hadap duduk di koordinat dunia.
+function KursiPenghuni({ name, ruang, pos, rotY }: { name: string; ruang: string; pos: V3; rotY: number }) {
+  const g = useRef<THREE.Group>(null);
+  const n = useRef(0);
+  useEffect(() => () => { delete KURSI_DUNIA[name]; }, [name]);
+  useFrame(() => {
+    const o = g.current;
+    if (!o || n.current >= 2) return;
+    n.current += 1;
+    o.updateWorldMatrix(true, false);
+    o.getWorldPosition(_kursiP);
+    o.getWorldDirection(_kursiD);
+    KURSI_DUNIA[name] = { ruang, x: _kursiP.x, z: _kursiP.z, rot: Math.atan2(_kursiD.x, _kursiD.z) };
+  });
+  return (
+    <group position={pos}>
+      <group ref={g} rotation={[0, rotY + Math.PI, 0]} />
+    </group>
+  );
+}
+
+// 3 kursi di meja baca Perpustakaan (koordinat lokal PerpusArea, sama seperti 3 kursi yang sudah ada).
+function PerpusPenghuni() {
+  return (
+    <>
+      <Laptop pos={[-7.9, 0.8, 13.48]} rotY={0} seatKey="p:Nova" seed={21} />
+      <Laptop pos={[-8.9, 0.8, 12.72]} rotY={Math.PI} seatKey="p:Aria" seed={34} />
+      <KursiPenghuni name="Nova" ruang="perpus" pos={[-7.9, 0, 14.0]} rotY={0} />
+      <KursiPenghuni name="Aria" ruang="perpus" pos={[-8.9, 0, 12.2]} rotY={Math.PI} />
+      <KursiPenghuni name="Echo" ruang="perpus" pos={[-9.9, 0, 14.0]} rotY={0} />
+    </>
+  );
+}
+
+function PlanningPenghuni() {
+  return (
+    <>
+      <KursiPenghuni name="Pixel" ruang="planning" pos={[-9.2, 0, -3.4 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Quark" ruang="planning" pos={[5.2 + PL_DX, 0, 0.4 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Radian" ruang="planning" pos={[5.2 + PL_DX, 0, -3.4 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Sigma" ruang="planning" pos={[-9.2, 0, 0.4 + 0.85]} rotY={0} />
+    </>
+  );
+}
+
+// 6 kursi melingkar rata di meja bundar Management (koordinat lokal RuangManagement).
+const MG_PET: (PetName | null)[] = ['Tensor', 'Vector', 'Orion', 'Theta', 'Kappa', 'Omega'];
+function ManagementPenghuni() {
+  const N = HALAMAN_MG_DUDUK.length;
+  const R = MG_R;
+  return (
+    <>
+      {MG_PET.map((nm, i) =>
+        nm ? (
+          <group key={nm} rotation={[0, (i * 2 * Math.PI) / N, 0]}>
+            <KursiPenghuni name={nm} ruang="management" pos={[0, 0, R]} rotY={0} />
+          </group>
+        ) : null
+      )}
+    </>
+  );
+}
+
+function ArPenghuni() {
+  return (
+    <>
+      <KursiPenghuni name="Kilo" ruang="ar" pos={[-8.0, 0, -3.4 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Lumen" ruang="ar" pos={[-4.4, 0, -3.4 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Matrix" ruang="ar" pos={[-8.0, 0, -0.5 + 0.85]} rotY={0} />
+    </>
+  );
+}
+
+function ApPenghuni() {
+  return (
+    <>
+      <KursiPenghuni name="Nexus" ruang="ap" pos={[0 - AP_GS, 0, -3.1 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Omni" ruang="ap" pos={[AP_OMNI_X, 0, 0.6 + 0.85]} rotY={0} />
+    </>
+  );
+}
+
+function AsetPenghuni() {
+  const { cx } = ASET;
+  return (
+    <>
+      <KursiPenghuni name="Axiom" ruang="aset" pos={[cx + 3.0, 0, 22.6 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Byte" ruang="aset" pos={[cx + 3.0, 0, 24.7 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Cipher" ruang="aset" pos={[cx - 3.0, 0, 26.6 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Delta" ruang="aset" pos={[cx + 3.0, 0, 27.0 + 0.85]} rotY={0} />
+    </>
+  );
+}
+
+function StudioPenghuni() {
+  return (
+    <>
+      <KursiPenghuni name="Flux" ruang="studio" pos={[13.0, 0, -2.6 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Gamma" ruang="studio" pos={[16.0, 0, -2.6 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Helix" ruang="studio" pos={[13.4, 0, 0.8 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Ion" ruang="studio" pos={[16.4, 0, 0.8 + 0.85]} rotY={0} />
+      <KursiPenghuni name="Juno" ruang="studio" pos={[19.7, 0, 0.8 + 0.85]} rotY={0} />
+    </>
+  );
+}
+
+// ---- peta lantai otomatis dari mesh scene -------------------------------------------------------------------------------------
+const _bxRintang = new THREE.Box3();
+// Menandai perabot & dinding setinggi badan (0.28 .. 1.05 m dari lantai) sebagai kotak terhalang. Dilewati: karpet / ubin (terlalu rendah),
+// benda gantung (terlalu tinggi), karakter (userData.nolod), daun pintu geser (userData.nopeta), area klik transparan, hasil gabungan BatchStatis.
+function tandaiRintangan(scene: THREE.Scene, peta: PetaLantai): number {
+  let n = 0;
+  scene.updateMatrixWorld(true);
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m as any).isInstancedMesh || m.userData.batchHasil || m.userData.nodim) return;
+    for (let a: THREE.Object3D | null = m; a; a = a.parent) if (a.userData && (a.userData.nolod || a.userData.nopeta)) return;
+    const geo = m.geometry as THREE.BufferGeometry | undefined;
+    if (!geo) return;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    if (!geo.boundingBox) return;
+    _bxRintang.copy(geo.boundingBox).applyMatrix4(m.matrixWorld);
+    const lo = _bxRintang.min.y, hi = _bxRintang.max.y;
+    if (hi < 0.28 || lo > 1.05) return;
+    const w = _bxRintang.max.x - _bxRintang.min.x, d = _bxRintang.max.z - _bxRintang.min.z;
+    if (w > 30 || d > 30) return;
+    const mat = (Array.isArray(m.material) ? m.material[0] : m.material) as any;
+    if (mat && (mat.visible === false || (mat.transparent && mat.opacity < 0.5))) {
+      // cahaya / halo / kaca tipis tidak menghalangi; kecuali sekat kaca (tinggi, tipis, memanjang)
+      const partisi = hi - lo >= 1.0 && Math.min(w, d) <= 0.3 && Math.max(w, d) >= 0.8 && mat.opacity >= 0.05;
+      if (!partisi) return;
+    }
+    peta.tandaiKotak(_bxRintang.min.x, _bxRintang.min.z, _bxRintang.max.x, _bxRintang.max.z);
+    n += 1;
+  });
+  return n;
+}
+
+function petaKosong(): PetaLantai {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+  for (const id of Object.keys(RUANG_BOX) as RuangId[]) {
+    const b = RUANG_BOX[id];
+    x0 = Math.min(x0, b.cx - b.w / 2); x1 = Math.max(x1, b.cx + b.w / 2);
+    z0 = Math.min(z0, b.cz - b.d / 2); z1 = Math.max(z1, b.cz + b.d / 2);
+  }
+  return new PetaLantai(x0 - 2, z0 - 2, x1 + 2, z1 + 2, 0.2, 0.36);
+}
+
+// Membangun "dunia" AI penghuni. null = belum siap (kursi belum lengkap / perabot belum dimuat). aman = tanpa peta (AI hanya berdiri, tidak berkeliling).
+function bangunDuniaPenghuni(scene: THREE.Scene, jumlahKursi: number, aman: boolean): { dunia: DuniaPenghuni; peta: PetaLantai; rintangan: number } | null {
+  const kursi: Record<string, KursiDunia> = { ...KURSI_DUNIA };
+  // [DIUBAH] isi ruangan dimuat bertahap: kursi & perabot hanya ada untuk ruangan yang sudah dimuat. AI tanpa kursi tetap tersembunyi (fase 'init')
+  // dan baru muncul setelah ruangannya dimuat (peta dibangun ulang lewat EVENT_DETAIL). Kalau SEMUA ruangan dimuat, syarat lama (semua kursi) berlaku.
+  const semuaDimuat = DETAIL_SEMUA || DETAIL.jumlah >= Object.keys(RUANG_BOX).length;
+  if (Object.keys(kursi).length < (semuaDimuat ? jumlahKursi : 1) && !aman) return null;
+  const peta = petaKosong();
+  let n = 0;
+  if (!aman) {
+    n = tandaiRintangan(scene, peta);
+    if (n < (semuaDimuat ? 150 : 20)) return null;
+  }
+  peta.selesai();
+  const ruang: Record<string, KonfigRuang> = {};
+  for (const [kunci, id] of Object.entries(RUANG_KE_ID)) {
+    const b = RUANG_BOX[id];
+    const simpul = NAV[RUANG_TUJUAN[kunci]];
+    if (simpul) ruang[kunci] = { box: { cx: b.cx, cz: b.cz, w: b.w, d: b.d }, simpul };
+  }
+  const dunia = buatDunia(peta, ruang, kursi, (dari, tujuan) => rencanaJalurPet(dari, RUANG_TUJUAN[tujuan]));
+  return { dunia: aman ? { ...dunia, bisaKeluar: () => false } : dunia, peta, rintangan: n };
+}
+
+function PetaDebug({ peta }: { peta: PetaLantai }) {
+  const tex = useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = peta.w;
+    c.height = peta.h;
+    const g = c.getContext('2d')!;
+    const img = g.createImageData(peta.w, peta.h);
+    const b = peta.salinBlok();
+    for (let i = 0; i < b.length; i++) {
+      const o = i * 4;
+      if (b[i]) { img.data[o] = 235; img.data[o + 1] = 60; img.data[o + 2] = 60; img.data[o + 3] = 120; }
+      else { img.data[o] = 60; img.data[o + 1] = 220; img.data[o + 2] = 120; img.data[o + 3] = 28; }
+    }
+    g.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    return t;
+  }, [peta]);
+  const W = peta.w * peta.sel, H = peta.h * peta.sel;
+  return (
+    <mesh position={[peta.x0 + W / 2, 0.07, peta.z0 + H / 2]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[W, H]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} />
+    </mesh>
+  );
+}
+
+// Mode debug (?petadebug=1): garis biru muda = semua ruas jalur gedung (graf NAV) yang dipakai AI antar ruangan.
+function JalurDebug() {
+  const geo = useMemo(() => {
+    const pts: number[] = [];
+    for (const [a, b] of NAV_EDGES) { pts.push(NAV[a][0], 0.12, NAV[a][1], NAV[b][0], 0.12, NAV[b][1]); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    return g;
+  }, []);
+  return (
+    <lineSegments geometry={geo}>
+      <lineBasicMaterial color="#38BDF8" transparent opacity={0.9} depthTest={false} />
+    </lineSegments>
+  );
+}
+
+export type PenghuniInfo = { status: AgentStatus; teks: string; lokasi: string | null }; // teks & status dari pet-Direktur.ts (teksStatus)
+
+// Tubuh 3D satu AI penghuni: membaca keadaan dari otak (duduk / berdiri / berjalan / mengobrol) lalu menganimasikannya.
+function PetHidup({ pet, look, otak }: { pet: Penghuni; look: PetLook; otak: OtakPenghuni }) {
+  const root = useRef<THREE.Group>(null);
+  const drop = useRef<THREE.Group>(null);
+  const bubble = useRef<THREE.Group>(null);
   const chest = useRef<THREE.Group>(null);
   const armL = useRef<THREE.Group>(null);
   const armR = useRef<THREE.Group>(null);
@@ -9896,170 +13972,324 @@ function SeatedPet({ name, look, pos, rotY, mode, seatKey }: {
   const earR = useRef<THREE.Group>(null);
   const tail = useRef<THREE.Group>(null);
   const book = useRef<THREE.Group>(null);
-  const rig: PetRig = { chest, armL, armR, head, eyeL, eyeR, earL, earR, tail };
-  const seed = useMemo(() => Array.from(name).reduce((a, ch) => a + ch.charCodeAt(0), 0) * 0.37, [name]);
-  const baca = mode === 'baca';
+  const legL = useRef<THREE.Group>(null);
+  const legR = useRef<THREE.Group>(null);
+  const shinL = useRef<THREE.Group>(null);
+  const shinR = useRef<THREE.Group>(null);
+  const tailParts = useRef<(THREE.Group | null)[]>([]);
+  const rig: PetRig = { chest, armL, armR, head, eyeL, eyeR, earL, earR, tail, legL, legR, shinL, shinR, tailParts };
+  const seed = useMemo(() => Array.from(pet.nama).reduce((a, ch) => a + ch.charCodeAt(0), 0) * 0.37, [pet.nama]);
+  const baca = pet.mode === 'baca';
   const earBase = EAR_BASE[look.kind];
+  const tailPts = TAIL_PTS[look.kind];
+  const S = useRef({ sit: 0, walk: 0, talk: 0, awal: true, label: 'santai' as AgentStatus });
+  const [label, setLabel] = React.useState<AgentStatus>('santai');
 
-  useEffect(() => () => { if (seatKey) SEAT[seatKey] = 0; }, [seatKey]);
+  useEffect(() => () => {
+    if (pet.seatKey) SEAT[pet.seatKey] = 0;
+    delete POS_AGEN[pet.nama];
+  }, [pet]);
 
-  useFrame((state) => {
+  useFrame((state, dtRaw) => {
+    const g = root.current;
+    if (!g) return;
+    const vis = pet.fase !== 'init';
+    g.visible = vis;
+    if (!vis) return;
+    const dt = Math.min(dtRaw, 0.05);
     const t = state.clock.elapsedTime;
-    if (seatKey) SEAT[seatKey] = 1; // layar laptop menyala selama AI duduk
+    const s = S.current;
+    const duduk = pet.fase === 'duduk';
+    if (s.awal) { s.awal = false; s.sit = duduk ? 1 : 0; g.rotation.y = pet.rot; }
+    const k = (v: number) => Math.min(1, dt * v);
+    const bicara = !pet.gerak && (pet.fase === 'ngobrol' || (pet.fase === 'tamu' && !!pet.lawan));
+    s.sit += ((duduk && !pet.gerak ? 1 : 0) - s.sit) * k(7);
+    s.walk += ((pet.gerak ? 1 : 0) - s.walk) * k(9);
+    s.talk += ((bicara ? 1 : 0) - s.talk) * k(5);
+    const { sit, walk, talk } = s;
+    const mix = (a: number, b: number, w: number) => a + (b - a) * w;
 
+    // posisi & arah (ikut naik bila ruangannya sedang difokuskan, seperti agen)
+    g.position.set(pet.x, naikDi(pet.x, pet.z), pet.z);
+    g.rotation.y += angleDiff(g.rotation.y, pet.rot) * k(pet.gerak ? 10 : 5);
+    POS_AGEN[pet.nama] = [pet.x, pet.z]; // pintu otomatis ikut terbuka untuk AI penghuni
+    if (pet.seatKey) SEAT[pet.seatKey] = duduk && sit > 0.8 ? 1 : 0; // layar menyala hanya saat benar-benar duduk bekerja
+
+    const lab: AgentStatus = otak.tampilan(pet).status;
+    if (s.label !== lab) { s.label = lab; setLabel(lab); }
+
+    // badan: berdiri lebih rendah 5.5 cm dari pose duduk (kaki menapak lantai), naik-turun & goyang saat berjalan
+    const ph = t * 8.5 + seed;
+    if (drop.current) {
+      drop.current.position.y = -0.055 * (1 - sit) + Math.abs(Math.sin(ph)) * 0.03 * walk;
+      drop.current.rotation.z = Math.sin(ph) * 0.07 * walk;
+    }
     if (chest.current) chest.current.scale.y = 1 + Math.sin(t * 1.8 + seed) * 0.012;
 
-    // lengan: mengetik (bergantian cepat/pelan) atau memegang buku + sesekali membalik halaman
+    // kaki: duduk = paha ke depan & betis turun; berdiri / berjalan = lurus, berayun bergantian
+    const swing = Math.sin(ph) * 0.6 * walk;
+    const SITR = Math.PI / 2 - 0.45;
+    if (legL.current) legL.current.rotation.x = -(Math.PI / 2) * sit + swing * (1 - sit);
+    if (legR.current) legR.current.rotation.x = -(Math.PI / 2) * sit - swing * (1 - sit);
+    if (shinL.current) shinL.current.rotation.x = SITR * sit + Math.max(0, swing) * 0.8 * (1 - sit);
+    if (shinR.current) shinR.current.rotation.x = SITR * sit + Math.max(0, -swing) * 0.8 * (1 - sit);
+
+    // lengan: duduk = mengetik / memegang buku; berdiri = menggantung, berayun saat jalan, melambai saat mengobrol
+    let sxL: number, sxR: number, szL: number, szR: number;
     if (!baca) {
       const aktif = 0.5 + 0.5 * Math.sin(t * 0.7 + seed * 3);
       const amp = 0.02 + 0.09 * aktif * aktif;
-      if (armL.current) { armL.current.rotation.x = -1.3 + Math.sin(t * 15 + seed) * amp; armL.current.rotation.z = 0.35; }
-      if (armR.current) { armR.current.rotation.x = -1.3 + Math.sin(t * 15 + 2 + seed) * amp; armR.current.rotation.z = -0.35; }
+      sxL = -1.3 + Math.sin(t * 15 + seed) * amp; sxR = -1.3 + Math.sin(t * 15 + 2 + seed) * amp; szL = 0.35; szR = -0.35;
     } else {
       const f = (t + seed) % 7;
       const flip = f < 0.6 ? Math.sin((f / 0.6) * Math.PI) * 0.25 : 0;
-      const base = -1.15 + Math.sin(t * 0.7 + seed) * 0.03;
-      if (armL.current) { armL.current.rotation.x = base; armL.current.rotation.z = 0.95; }
-      if (armR.current) { armR.current.rotation.x = base - flip; armR.current.rotation.z = -0.95; }
+      const bs = -1.15 + Math.sin(t * 0.7 + seed) * 0.03;
+      sxL = bs; sxR = bs - flip; szL = 0.95; szR = -0.95;
     }
+    const sw = Math.sin(ph) * 0.55 * walk;
+    const gest = Math.sin(t * 4.2 + seed);
+    const nxL = mix(sw, -0.25 + Math.sin(t * 3 + seed) * 0.1, talk);
+    const nxR = mix(-sw, -0.95 + gest * 0.35, talk);
+    const nzL = -0.1;
+    const nzR = mix(0.1, 0.35, talk);
+    if (armL.current) { armL.current.rotation.x = mix(nxL, sxL, sit); armL.current.rotation.z = mix(nzL, szL, sit); }
+    if (armR.current) { armR.current.rotation.x = mix(nxR, sxR, sit); armR.current.rotation.z = mix(nzR, szR, sit); }
     if (book.current) {
-      book.current.visible = baca;
+      book.current.visible = baca && sit > 0.6;
       book.current.position.set(0, 0.9, 0.38);
       book.current.rotation.set(Math.PI / 2 - 0.3, 0, 0);
     }
 
-    // kepala: menunduk ke layar/buku, sesekali menoleh
+    // kepala: duduk menunduk ke layar / buku; berdiri menoleh pelan ke sekeliling; mengobrol mengangguk
     const c = (t + seed * 2.1) % 10;
     const lk = c < 1.4 ? Math.sin((c / 1.4) * Math.PI) : 0;
     const dir = Math.sin(seed * 5) > 0 ? 1 : -1;
     if (head.current) {
-      head.current.rotation.x = (baca ? 0.3 : 0.12) + Math.sin(t * 0.9 + seed) * 0.03;
-      head.current.rotation.y = Math.sin(t * 0.4 + seed) * 0.07 + lk * 0.45 * dir;
+      const hxSit = (baca ? 0.3 : 0.12) + Math.sin(t * 0.9 + seed) * 0.03;
+      const hxStand = 0.03 + Math.sin(t * 0.9 + seed) * 0.02 + talk * Math.sin(t * 3.5 + seed) * 0.06;
+      const hySit = Math.sin(t * 0.4 + seed) * 0.07 + lk * 0.45 * dir;
+      const hyStand = (1 - talk) * Math.sin(t * 0.45 + seed * 2) * 0.4 + talk * Math.sin(t * 2.2 + seed) * 0.12;
+      head.current.rotation.x = mix(hxStand, hxSit, sit);
+      head.current.rotation.y = mix(hyStand, hySit, sit);
     }
 
-    // kedip
     const blink = (t + seed) % 4.3 < 0.13 ? 0.1 : 1;
     if (eyeL.current) eyeL.current.scale.y = blink;
     if (eyeR.current) eyeR.current.scale.y = blink;
-
-    // telinga: goyang halus + sesekali berkedut
     const w = (t * 0.9 + seed) % 6;
     const tw = w < 0.3 ? Math.sin((w / 0.3) * Math.PI * 3) * 0.2 : 0;
     if (earL.current) earL.current.rotation.z = earBase + Math.sin(t * 1.1 + seed) * 0.02;
     if (earR.current) earR.current.rotation.z = -earBase + (EAR_TWITCH.has(look.kind) ? tw : 0);
 
-    // ekor: kucing mengibas pelan, kelinci/panda bergoyang kecil
+    // ekor: duduk = diselipkan di balik sandaran kursi (dipipihkan); berdiri = dilebarkan penuh & mengibas (cepat saat jalan / mengobrol)
     if (tail.current) {
       const kibas = look.kind === 'kucing' || look.kind === 'shiba';
-      tail.current.rotation.y = Math.sin(t * (kibas ? 1.6 : 0.8) + seed) * (kibas ? 0.35 : 0.15);
+      tail.current.rotation.y = Math.sin(t * ((kibas ? 1.6 : 0.8) + 3 * walk + 2 * talk) + seed) * ((kibas ? 0.35 : 0.15) + 0.1 * walk);
+    }
+    const lebar = 0.12 + 0.88 * (1 - sit);
+    for (let i = 0; i < tailPts.length; i++) {
+      const tp = tailParts.current[i];
+      if (tp) tp.position.z = tailPts[i][1] * lebar;
+    }
+
+    // gelembung obrolan "..." di samping kepala
+    if (bubble.current) {
+      bubble.current.visible = talk > 0.5;
+      if (bubble.current.visible) {
+        bubble.current.children.forEach((ch, i) => {
+          ch.position.y = Math.sin(t * 6 - i * 0.9) * 0.025;
+          ch.scale.setScalar(0.8 + 0.4 * Math.max(0, Math.sin(t * 6 - i * 0.9)));
+        });
+      }
     }
   });
 
-  const dot = dotColor('bekerja'); // duduk di meja = bekerja (juga saat membaca)
+  const dot = dotColor(label);
   return (
-    <group position={pos} userData={{ nolod: true }}>
-      <group rotation={[0, rotY + Math.PI, 0]}>
+    <group ref={root} userData={{ nolod: true }} visible={false}>
+      <group ref={drop}>
         <PetBody look={look} rig={rig} />
-        <ReadingBook gref={book} color={look.accent} />
-        <group position={[0, look.kind === 'kelinci' ? 0 : -0.2, 0]}>
-          <NameTag name={name} dot={dot} />
-        </group>
+      </group>
+      <ReadingBook gref={book} color={look.accent} />
+      <group ref={bubble} position={[0.42, 1.45, 0.05]} visible={false}>
+        {[-0.09, 0, 0.09].map((x, i) => (
+          <mesh key={i} position={[x, 0, 0]}>
+            <sphereGeometry args={[0.035, 10, 8]} />
+            <meshBasicMaterial color="#FFFFFF" toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+      <group position={[0, look.kind === 'kelinci' ? 0 : -0.2, 0]}>
+        <NameTag name={pet.nama} dot={dot} />
       </group>
     </group>
   );
 }
 
-// 3 AI di meja baca Perpustakaan (koordinat lokal PerpusArea, sama seperti 3 kursi yang sudah ada).
-function PerpusPenghuni() {
-  return (
-    <>
-      <Laptop pos={[-7.9, 0.8, 13.48]} rotY={0} seatKey="p:Nova" seed={21} />
-      <Laptop pos={[-8.9, 0.8, 12.72]} rotY={Math.PI} seatKey="p:Aria" seed={34} />
-      <SeatedPet name="Nova" look={PET_LOOK.Nova} pos={[-7.9, 0, 14.0]} rotY={0} mode="ketik" seatKey="p:Nova" />
-      <SeatedPet name="Aria" look={PET_LOOK.Aria} pos={[-8.9, 0, 12.2]} rotY={Math.PI} mode="ketik" seatKey="p:Aria" />
-      <SeatedPet name="Echo" look={PET_LOOK.Echo} pos={[-9.9, 0, 14.0]} rotY={0} mode="baca" />
-    </>
-  );
-}
+// Menjalankan otak 27 AI penghuni dan menggambar tubuhnya. Dipasang di luar ruangan (koordinat dunia), seperti agen Neo / Atlas / Zeno.
+function PenghuniKantor({ onPenghuni }: { onPenghuni?: (info: Record<string, PenghuniInfo>) => void }) {
+  const scene = useThree((st) => st.scene);
+  const otak = useMemo(() => new OtakPenghuni(), []);
+  const dunia = useRef<DuniaPenghuni | null>(null);
+  const tugas = useRef<Set<string>>(new Set());
+  const [petaDebug, setPetaDebug] = React.useState<PetaLantai | null>(null);
+  const debug = useMemo(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('petadebug') === '1', []);
+  const S = useRef({ t: 0, next: 2.5, dibangun: 0, darurat: false, acc: 0, last: '' });
 
-// [BARU] 4 AI di ruang Planning (koordinat lokal RuangPlanning): 3 kursi ungu yang sudah ada + 1 meja baru di kiri.
-function PlanningPenghuni() {
-  return (
-    <>
-      <SeatedPet name="Pixel" look={PET_LOOK.Pixel} pos={[-9.2, 0, -3.4 + 0.85]} rotY={0} mode="ketik" seatKey="pl:Pixel" />
-      <SeatedPet name="Quark" look={PET_LOOK.Quark} pos={[5.2 + PL_DX, 0, 0.4 + 0.85]} rotY={0} mode="ketik" seatKey="pl:Quark" />
-      <SeatedPet name="Radian" look={PET_LOOK.Radian} pos={[5.2 + PL_DX, 0, -3.4 + 0.85]} rotY={0} mode="baca" seatKey="pl:Radian" />
-      <SeatedPet name="Sigma" look={PET_LOOK.Sigma} pos={[-9.2, 0, 0.4 + 0.85]} rotY={0} mode="ketik" seatKey="pl:Sigma" />
-    </>
-  );
-}
+  useEffect(() => {
+    const baca = () => {
+      const baru = new Set<string>();
+      for (const n of tugasAISaatIni()) baru.add(n);
+      for (const n of tugasAIDariUrl()) baru.add(n);
+      tugas.current = baru;
+    };
+    baca();
+    window.addEventListener(EVENT_TUGAS_AI, baca);
+    // [BARU] AI penghuni yang diberi tugas -> isi ruangannya dimuat (mejanya harus ada)
+    const paksaAI = () => {
+      const p = new Set<string>();
+      for (const pet of otak.pets) { if (tugas.current.has(pet.nama)) { const id = RUANG_KE_ID[pet.ruang]; if (id) p.add(id); } }
+      DETAIL.paksaAI = p;
+    };
+    paksaAI();
+    const iv2 = setInterval(paksaAI, 2000);
+    // [BARU] isi ruangan baru dimuat -> bangun ulang peta lantai & kursi AI penghuni (AI di ruangan itu baru muncul sekarang)
+    const ulang = () => { const s = S.current; s.next = Math.min(s.next, s.t + 0.4); if (s.dibangun >= 2) s.dibangun = 1; };
+    window.addEventListener(EVENT_DETAIL, ulang);
+    const iv = setInterval(baca, 2000);
+    return () => { window.removeEventListener(EVENT_TUGAS_AI, baca); window.removeEventListener(EVENT_DETAIL, ulang); clearInterval(iv); clearInterval(iv2); DETAIL.paksaAI = new Set(); };
+  }, [otak]);
 
-// [BARU] 6 AI di meja bundar Management (koordinat lokal RuangManagement), 6 kursi melingkar rata.
-const MG_PET: (PetName | null)[] = ['Tensor', 'Vector', 'Orion', 'Theta', 'Kappa', 'Omega'];
-function ManagementPenghuni() {
-  const N = HALAMAN_MG_DUDUK.length;
-  const R = MG_R;
-  return (
-    <>
-      {MG_PET.map((nm, i) =>
-        nm ? (
-          <group key={nm} rotation={[0, (i * 2 * Math.PI) / N, 0]}>
-            <SeatedPet name={nm} look={PET_LOOK[nm]} pos={[0, 0, R]} rotY={0} mode="ketik" seatKey={`mg:${i}`} />
-          </group>
-        ) : null
-      )}
-    </>
-  );
-}
+  useFrame((_, dtRaw) => {
+    const s = S.current;
+    s.t += Math.min(dtRaw, 0.1);
+    if (s.t >= s.next) {
+      // percobaan 1 setelah ~2.5 dtk (kursi lengkap & perabot termuat), diulang di ~10 dtk untuk perabot yang muncul belakangan
+      const hasil = DETAIL.jumlah === 0 ? null : bangunDuniaPenghuni(scene, otak.pets.length, false); // [BARU] belum ada isi ruangan dimuat -> belum ada yang bisa dipetakan
+      if (hasil) {
+        dunia.current = hasil.dunia;
+        s.darurat = false;
+        s.dibangun += 1;
+        s.next = s.dibangun === 1 ? s.t + 7.5 : Infinity;
+        if (debug) setPetaDebug(hasil.peta);
+        const dg = hasil.dunia.diagnosa();
+        console.info(`[Penghuni] peta lantai siap: ${hasil.rintangan} rintangan, ${dg.bisaKeluar.length} AI bisa berkeliling, terkurung: ${dg.terkurung.join(', ') || '-'}, spot darurat: ${dg.spotDarurat.join(', ') || '-'}, titik pintu bergeser: ${dg.simpulBergeser.join(', ') || '-'}`);
+      } else {
+        s.next = s.t + 1.5;
+        if (s.t > 14 && !dunia.current && DETAIL.jumlah > 0) {
+          // peta tidak berhasil dibuat: AI tetap berdiri di dekat meja dan duduk saat ada tugas, tapi tidak berkeliling
+          const aman = bangunDuniaPenghuni(scene, otak.pets.length, true);
+          if (aman) { dunia.current = aman.dunia; s.darurat = true; console.warn('[Penghuni] peta lantai gagal dibuat; AI tidak berkeliling'); }
+        }
+      }
+    }
+    if (dunia.current) otak.tick(dtRaw, dunia.current, (n) => tugas.current.has(n));
 
-// [BARU] 3 AI di 3 meja ruang Account Receivable (koordinat lokal RuangAR; posisi sama dengan 3 kursi teal yang sudah ada).
-function ArPenghuni() {
-  return (
-    <>
-      <SeatedPet name="Kilo" look={PET_LOOK.Kilo} pos={[-8.0, 0, -3.4 + 0.85]} rotY={0} mode="ketik" seatKey="ar:0" />
-      <SeatedPet name="Lumen" look={PET_LOOK.Lumen} pos={[-4.4, 0, -3.4 + 0.85]} rotY={0} mode="baca" seatKey="ar:1" />
-      <SeatedPet name="Matrix" look={PET_LOOK.Matrix} pos={[-8.0, 0, -0.5 + 0.85]} rotY={0} mode="ketik" seatKey="ar:2" />
-    </>
-  );
-}
+    // laporan ke bar profil: AI yang sedang berada di ruangan terfokus (tiap 0.3 dtk, hanya saat berubah)
+    s.acc += dtRaw;
+    if (s.acc < 0.3) return;
+    s.acc = 0;
+    const id = FOKUS.id;
+    const info: Record<string, PenghuniInfo> = {};
+    let key = id ?? '';
+    if (id) {
+      for (const p of otak.pets) {
+        if (p.fase === 'init' || ruangDi(p.x, p.z) !== id) continue;
+        const tp = otak.tampilan(p);
+        info[p.nama] = { status: tp.status, teks: tp.teks, lokasi: RUANG_BOX[id].nama };
+        key += `|${p.nama}:${tp.teks}`;
+      }
+    }
+    if (key === s.last) return;
+    s.last = key;
+    onPenghuni?.(info);
+  });
 
-// [BARU] 2 AI di meja ruang Account Payable (koordinat lokal RuangAP; kursi merah yang sudah ada).
-function ApPenghuni() {
-  return (
-    <>
-      <SeatedPet name="Nexus" look={PET_LOOK.Nexus} pos={[0 - AP_GS, 0, -3.1 + 0.85]} rotY={0} mode="ketik" seatKey="ap:1" />
-      <SeatedPet name="Omni" look={PET_LOOK.Omni} pos={[AP_OMNI_X, 0, 0.6 + 0.85]} rotY={0} mode="baca" seatKey="ap:3" />
-    </>
-  );
-}
+  useEffect(() => () => {
+    for (const p of otak.pets) { if (p.seatKey) SEAT[p.seatKey] = 0; delete POS_AGEN[p.nama]; }
+  }, [otak]);
 
-// [BARU] 4 AI di meja ruang Asset (koordinat lokal AsetArea; posisi sama dengan 4 kursi cokelat yang sudah ada, menghadap meja).
-function AsetPenghuni() {
-  const { cx } = ASET;
   return (
     <>
-      <SeatedPet name="Axiom" look={PET_LOOK.Axiom} pos={[cx + 3.0, 0, 22.6 + 0.85]} rotY={0} mode="baca" seatKey="as:0" />
-      <SeatedPet name="Byte" look={PET_LOOK.Byte} pos={[cx + 3.0, 0, 24.7 + 0.85]} rotY={0} mode="ketik" seatKey="as:1" />
-      <SeatedPet name="Cipher" look={PET_LOOK.Cipher} pos={[cx - 3.0, 0, 26.6 + 0.85]} rotY={0} mode="ketik" seatKey="as:2" />
-      <SeatedPet name="Delta" look={PET_LOOK.Delta} pos={[cx + 3.0, 0, 27.0 + 0.85]} rotY={0} mode="baca" seatKey="as:3" />
-    </>
-  );
-}
-
-// [BARU] 5 AI di 5 meja ruang biru (Studio), koordinat lokal StudioArea; posisi sama dengan 5 kursi biru yang sudah ada.
-function StudioPenghuni() {
-  return (
-    <>
-      <SeatedPet name="Flux" look={PET_LOOK.Flux} pos={[13.0, 0, -2.6 + 0.85]} rotY={0} mode="baca" seatKey="fs:0" />
-      <SeatedPet name="Gamma" look={PET_LOOK.Gamma} pos={[16.0, 0, -2.6 + 0.85]} rotY={0} mode="ketik" seatKey="fs:1" />
-      <SeatedPet name="Helix" look={PET_LOOK.Helix} pos={[13.4, 0, 0.8 + 0.85]} rotY={0} mode="ketik" seatKey="fs:2" />
-      <SeatedPet name="Ion" look={PET_LOOK.Ion} pos={[16.4, 0, 0.8 + 0.85]} rotY={0} mode="ketik" seatKey="fs:3" />
-      <SeatedPet name="Juno" look={PET_LOOK.Juno} pos={[19.7, 0, 0.8 + 0.85]} rotY={0} mode="ketik" seatKey="fs:4" />
+      {otak.pets.map((p) => {
+        const look = PET_LOOK[p.nama as PetName];
+        return look ? <PetHidup key={p.nama} pet={p} look={look} otak={otak} /> : null;
+      })}
+      {debug && petaDebug && <PetaDebug peta={petaDebug} />}
+      {debug && <JalurDebug />}
     </>
   );
 }
 
 // ---- Kamera & scene ----------------------------------------------------
+
+// [DIUBAH] Lantai blueprint di bawah & sekeliling gedung: kisi tipis hijau-teal (garis kecil tiap 2 unit, garis besar tiap 10 unit) yang memudar ke tepi,
+// plus garis tapak (outline) putus-putus mengelilingi denah. Tanpa slab hitam / halo. Bidang transparan, jadi gradasi latar di container tetap tembus.
+const GRID_UKURAN = 170; // sisi bidang kisi (unit dunia)
+function LantaiBlueprint() {
+  const x0 = -22.4 - GESER_BARAT, x1 = X_TIMUR + 0.1;
+  const z0 = -5.8, z1 = gz(30.7);
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const tex = React.useMemo(() => {
+    const N = 2048;
+    const c = document.createElement('canvas');
+    c.width = N;
+    c.height = N;
+    const g = c.getContext('2d')!;
+    const px = N / GRID_UKURAN;
+    const wx0 = cx - GRID_UKURAN / 2, wz0 = cz - GRID_UKURAN / 2; // sudut bidang di koordinat dunia
+    const garis = (langkah: number, warna: string, lw: number) => {
+      g.strokeStyle = warna;
+      g.lineWidth = lw;
+      g.beginPath();
+      for (let X = Math.ceil(wx0 / langkah) * langkah; X <= wx0 + GRID_UKURAN; X += langkah) {
+        g.moveTo((X - wx0) * px, 0);
+        g.lineTo((X - wx0) * px, N);
+      }
+      for (let Z = Math.ceil(wz0 / langkah) * langkah; Z <= wz0 + GRID_UKURAN; Z += langkah) {
+        g.moveTo(0, (Z - wz0) * px);
+        g.lineTo(N, (Z - wz0) * px);
+      }
+      g.stroke();
+    };
+    garis(2, 'rgba(94,234,212,0.16)', 1);
+    garis(10, 'rgba(94,234,212,0.34)', 1.6);
+    // garis tapak gedung (putus-putus) + siku di empat sudut
+    const m = 1.6; // jarak outline dari dinding luar
+    const rx = (x0 - m - wx0) * px, rz = (z0 - m - wz0) * px, rw = (x1 - x0 + 2 * m) * px, rd = (z1 - z0 + 2 * m) * px;
+    g.strokeStyle = 'rgba(110,231,183,0.75)';
+    g.lineWidth = 2.5;
+    g.setLineDash([18, 12]);
+    g.strokeRect(rx, rz, rw, rd);
+    g.setLineDash([]);
+    g.lineWidth = 4;
+    const L = 3.2 * px;
+    ([[rx, rz, 1, 1], [rx + rw, rz, -1, 1], [rx, rz + rd, 1, -1], [rx + rw, rz + rd, -1, -1]] as [number, number, number, number][]).forEach(([x, y, sx, sy]) => {
+      g.beginPath();
+      g.moveTo(x + sx * L, y);
+      g.lineTo(x, y);
+      g.lineTo(x, y + sy * L);
+      g.stroke();
+    });
+    // memudar ke tepi bidang: penuh di sekitar gedung, hilang di ujung
+    g.globalCompositeOperation = 'destination-in';
+    const f = g.createRadialGradient(N / 2, N / 2, N * 0.16, N / 2, N / 2, N / 2);
+    f.addColorStop(0, 'rgba(0,0,0,1)');
+    f.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = f;
+    g.fillRect(0, 0, N, N);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  }, [cx, cz, x0, x1, z0, z1]);
+  return (
+    <mesh position={[cx, -0.04, cz]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null} frustumCulled={false} renderOrder={-2}>
+      <planeGeometry args={[GRID_UKURAN, GRID_UKURAN]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
+    </mesh>
+  );
+}
 
 function FitCamera() {
   const camera = useThree((s) => s.camera);
@@ -10152,6 +14382,13 @@ function LodManager() {
     return { zPenuh: Math.max(fitMin, dasar * 1.15) * 0.92, zDasar: dasar };
   }, [size.width, size.height]);
   const nonaktif = LOD_PARAM === '0';
+  const pindaiRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    // [BARU] isi ruangan yang dimuat belakangan juga diatur LOD
+    const f = () => { setTimeout(() => pindaiRef.current(), 150); };
+    window.addEventListener(EVENT_DETAIL, f);
+    return () => window.removeEventListener(EVENT_DETAIL, f);
+  }, []);
   const terkunci = LOD_PARAM !== null && Number(LOD_PARAM) > 0 ? Number(LOD_PARAM) : null;
 
   useEffect(() => () => {
@@ -10192,6 +14429,7 @@ function LodManager() {
     LOD_INFO.total = items.current.length;
     st.current.zoomT = -1; // paksa terapkan ulang
   };
+  pindaiRef.current = pindai;
 
   useFrame((state, dt) => {
     if (nonaktif) return;
@@ -10297,6 +14535,7 @@ export default function OfficeScene({
   kunjungan,
   onFokusRuang,
   onAgenDiRuang,
+  onPenghuni,
 }: {
   onAgentStatus?: (name: string, s: AgentStatus) => void;
   rapat?: boolean; // true = semua agen duduk di meja rapat; false = kembali santai
@@ -10304,6 +14543,7 @@ export default function OfficeScene({
   kunjungan?: Partial<Record<'Neo' | 'Atlas' | 'Zeno', string | null>>; // [BARU] ruangan yang sedang dikunjungi tiap agen (kunci RUANG_TUJUAN)
   onAgenDiRuang?: (nama: string[]) => void; // [BARU] agen (Neo/Atlas/Zeno) yang sedang berada di ruangan terfokus
   onFokusRuang?: (nama: string | null) => void; // [BARU] dipanggil saat pengguna memfokuskan / melepas fokus ruangan
+  onPenghuni?: (info: Record<string, PenghuniInfo>) => void; // [BARU] AI penghuni yang sedang berada di ruangan terfokus (status + lokasi)
 }) {
   // Meja rapat hanya dipakai saat pengguna meminta meeting; meja kerja hanya saat agen diberi tugas.
   // Selain itu agen santai (sofa / rak buku / joget), bergilir tiap 20 menit. Untuk uji cepat: buka halaman dengan ?santai=15 (detik).
@@ -10354,6 +14594,25 @@ export default function OfficeScene({
     };
   }, [still]);
 
+  // [BARU] Isi ruangan yang dibutuhkan agen dimuat walau kamera masih zoom-out: rapat / tugas halaman = meja & kursi di Transactions;
+  // kunjungan = ruangan tujuan (nama atau alias, lihat simpulRuang / ALIAS_RUANG).
+  const kunjNeo = kunjungan?.Neo ?? (kunjunganUrl[0] || null);
+  const kunjAtlas = kunjungan?.Atlas ?? (kunjunganUrl[1] || null);
+  const kunjZeno = kunjungan?.Zeno ?? (kunjunganUrl[2] || null);
+  const tugasNeo = tugas?.Neo ?? null, tugasAtlas = tugas?.Atlas ?? null, tugasZeno = tugas?.Zeno ?? null;
+  useEffect(() => {
+    const p = new Set<string>();
+    if (rapat || tugasNeo !== null || tugasAtlas !== null || tugasZeno !== null) p.add('transaksi');
+    for (const v of [kunjNeo, kunjAtlas, kunjZeno]) {
+      if (!v) continue;
+      const k = String(v).trim().toLowerCase();
+      const id = RUANG_KE_ID[ALIAS_RUANG[k] ?? k];
+      if (id) p.add(id);
+    }
+    DETAIL.paksa = p;
+    return () => { DETAIL.paksa = new Set(); };
+  }, [rapat, tugasNeo, tugasAtlas, tugasZeno, kunjNeo, kunjAtlas, kunjZeno]);
+
   const controlsRef = useRef<any>(null);
   const clampPan = React.useCallback(() => {
     if (controlsRef.current) clampPanTarget(controlsRef.current);
@@ -10369,19 +14628,19 @@ export default function OfficeScene({
       className="!absolute inset-0"
       onPointerMissed={() => FOKUS.pilih(null)}
     >
-      <color attach="background" args={['#0A1A14']} />
+      {/* [DIUBAH] Latar kanvas transparan: gradasi hijau-hitam digambar di container (AgenticAIView.tsx), jadi gedung tidak tampak melayang di hitam polos. */}
       <FitCamera />
       <LodManager />
       <ambientLight intensity={0.85} />
       <hemisphereLight args={['#FFFFFF', '#9DB8A8', 0.35]} />
       <SunLight />
-      <RuangFokus id="transaksi">
+      <RuangFokus id="transaksi" dasar={<group position={[TRX_OX, 0, 0]}><RoomM /></group>}>
         <group position={[TRX_OX, 0, 0]}>
-          <RoomM />
           <FurnitureM />
         </group>
       </RuangFokus>
       <IkutNaik rooms={['transaksi']}><BuildingSign pos={[TRX_OX, 1.85, -5.6]} text="TRANSACTIONS" /></IkutNaik>
+      <LantaiBlueprint />
       <PetaBesarM />
       {perf && <PerfHud />}
       <Agent name="Neo" look={LOOK_NEO} route={NEO_ROUTE} onStatus={onAgentStatus} still={still} meeting={rapat} tugas={tugas?.Neo ?? null} kunjungan={kunjungan?.Neo ?? (kunjunganUrl[0] || null)} actMs={actMs} />
@@ -10409,6 +14668,7 @@ export default function OfficeScene({
         onChange={clampPan}
       />
       <FokusKamera />
+      <PenghuniKantor onPenghuni={onPenghuni} />
       <PantauAgen onAgen={onAgenDiRuang} />
     </Canvas>
   );

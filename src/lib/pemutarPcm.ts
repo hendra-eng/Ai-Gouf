@@ -123,6 +123,10 @@ export interface OpsiPemutarPcm {
   laju: () => number;
   /** Dipanggil sekali, saat suara PERTAMA kalimat ini benar-benar akan terdengar. */
   saatMulai?: () => void;
+  /** [BARU] Posisi kiri-kanan -1..1 (0 = tengah). Dipakai saat beberapa AI bicara serempak supaya suaranya terpisah dan tetap jelas. */
+  pan?: number;
+  /** [BARU] Volume 0..1 (default 1). Serempak: diturunkan sedikit supaya tiga suara tidak memecah (clipping). */
+  gain?: number;
 }
 
 export class PemutarPcm {
@@ -194,7 +198,27 @@ export class PemutarPcm {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.playbackRate.value = laju;
-      src.connect(ctx.destination);
+      // [BARU] pan / volume per pemutar (hanya dipasang bila diminta; pemutar biasa tetap tersambung langsung seperti dulu)
+      const pan = this.opsi.pan;
+      const gain = this.opsi.gain;
+      if ((pan !== undefined && pan !== 0) || (gain !== undefined && gain !== 1)) {
+        let simpul: AudioNode = src;
+        if (gain !== undefined && gain !== 1) {
+          const g = ctx.createGain();
+          g.gain.value = Math.max(0, Math.min(1, gain));
+          simpul.connect(g);
+          simpul = g;
+        }
+        if (pan !== undefined && pan !== 0 && typeof ctx.createStereoPanner === 'function') {
+          const sp = ctx.createStereoPanner();
+          sp.pan.value = Math.max(-1, Math.min(1, pan));
+          simpul.connect(sp);
+          simpul = sp;
+        }
+        simpul.connect(ctx.destination);
+      } else {
+        src.connect(ctx.destination);
+      }
       const mulaiDi = Math.max(jadwalSampai, ctx.currentTime + JEDA_MULAI_DETIK);
       src.onended = () => {
         this.sumber.delete(src);

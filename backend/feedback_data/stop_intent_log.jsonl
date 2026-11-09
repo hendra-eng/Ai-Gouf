@@ -8,3 +8,12 @@
 {"waktu": 1792771781, "ucapan": "let go stop", "maksud": "berhenti", "yakin": 0.95, "sumber": "claude"}
 {"waktu": 1792773783, "ucapan": "atlas coba kamu cek halaman cash and bank", "maksud": "berhenti_lalu_minta", "yakin": 0.95, "sumber": "groq"}
 {"waktu": 1792814845, "ucapan": "matikan sistem", "maksud": "berhenti_lalu_minta", "yakin": 0.95, "sumber": "groq"}
+{"waktu": 1793931696, "ucapan": "oke sudah cukup cukup", "maksud": "berhenti", "yakin": 0.95, "sumber": "claude"}
+{"waktu": 1793935350, "ucapan": "oke udah cukup cukup", "maksud": "berhenti", "yakin": 0.92, "sumber": "claude"}
+{"waktu": 1793936289, "ucapan": "ya udah cukup cukup", "maksud": "berhenti", "yakin": 0.92, "sumber": "claude"}
+{"waktu": 1793947254, "ucapan": "eh nonstop juga", "maksud": "berhenti", "yakin": 0.95, "sumber": "groq"}
+{"waktu": 1793971844, "ucapan": "kalau buka laporan keuangan itu dengan sel statement ke abis itu", "maksud": "berhenti_lalu_minta", "yakin": 0.85, "sumber": "groq"}
+{"waktu": 1794022405, "ucapan": "stop stop", "maksud": "berhenti", "yakin": 0.95, "sumber": "claude"}
+{"waktu": 1794027267, "ucapan": "oke sudah cukup pengenalannya", "maksud": "berhenti", "yakin": 0.92, "sumber": "claude"}
+{"waktu": 1794028414, "ucapan": "halo kenalkan oke sudah cukup perkenalannya", "maksud": "berhenti", "yakin": 0.9, "sumber": "claude"}
+{"waktu": 1794131301, "ucapan": "kayaknya agak ribet sedikit ribet", "maksud": "berhenti", "yakin": 0.95, "sumber": "groq"}

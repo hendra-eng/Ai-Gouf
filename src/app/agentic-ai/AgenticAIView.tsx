@@ -1,17 +1,20 @@
 'use client';
 
 // Agentic AI: kantor 3D dengan tiga agen (Neo, Atlas, Zeno).
-// Tidak ada kontrol suara/ketik di halaman ini. Pengguna bicara ke Neo lewat asisten suara global (robot Neo),
-// persis seperti di halaman lain. Neo adalah manager: saat pengguna bilang "ayo kita meeting", Neo (bersuara) mengajak
+// Tidak ada kontrol suara/ketik di halaman ini. Pengguna bicara lewat asisten suara global (robot Neo), persis seperti di halaman lain.
+// [BARU] Ketiga AI di ruangan Transaction bisa diajak bicara LANGSUNG dengan menyebut namanya di awal ucapan ("Atlas, apa kamu
+// mendengarku?", "Zeno, tolong cek halaman purchase"): yang dipanggil menjawab dengan suara dan otaknya sendiri (satu API Gemini,
+// tiga model suara), dan tahu tugas/bagiannya dari database (lihat VoiceAssistant.tsx::penuturRef dan backend/profil_agen_db.py).
+// Neo adalah manager: saat pengguna bilang "ayo kita meeting", Neo (bersuara) mengajak
 // Atlas dan Zeno, lalu keduanya duduk di meja rapat sampai pengguna bilang "meeting selesai" (lihat src/lib/rapatKantor.ts
 // dan VoiceAssistant.tsx::jalankanRapat). Halaman ini hanya mendengarkan event rapat dan menggerakkan agen di scene.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
-import type { AgentStatus } from './components/OfficeScene';
+import type { AgentStatus, PenghuniInfo } from './components/OfficeScene';
 import { AI_PENGHUNI } from './ai-roster';
 import AiFace from './AiFace';
-import { EVENT_RAPAT, rapatSedangBerlangsung } from '@/lib/rapatKantor';
+import { EVENT_RAPAT, muatRapatDariServer, rapatSedangBerlangsung } from '@/lib/rapatKantor';
 import { EVENT_TUGAS, tugasSaatIni, sinkronTugasServer } from '@/lib/tugasKantor';
 
 // Three.js butuh browser (WebGL), jadi scene dimuat hanya di sisi client.
@@ -82,6 +85,7 @@ export default function AgenticAIView() {
   // Ruangan yang sedang difokuskan (klik ruangan di scene; Esc / klik area kosong = lepas).
   const [fokus, setFokus] = useState<string | null>(null);
   const [agenDi, setAgenDi] = useState<string[]>([]); // Neo / Atlas / Zeno yang sedang ada di ruangan terfokus
+  const [penghuni, setPenghuni] = useState<Record<string, PenghuniInfo>>({}); // AI penghuni yang sedang ada di ruangan terfokus (termasuk tamu)
   useEffect(() => {
     // [PERFORMA] Hanya ubah state kalau isinya benar-benar berubah. Sebelumnya setTugas(objek baru) dipanggil tiap 5 detik,
     // sehingga seluruh scene 3D dirender ulang (patah-patah berkala) walaupun tugasnya sama.
@@ -94,15 +98,17 @@ export default function AgenticAIView() {
     window.addEventListener(EVENT_TUGAS, saatTugas);
     // [PERBAIKAN] Sumber kebenaran = tabel ai_tugas_kantor di database. Scene baru dirender SETELAH sinkron pertama
     // selesai (berhasil / gagal -> pakai cadangan localStorage), jadi agen langsung muncul di posisi yang benar.
-    void sinkronTugasServer().finally(() => { if (hidup) { saatTugas(); setSiap(true); } });
+    // [ATURAN MUTLAK] Status rapat juga dari server: scene baru dirender SETELAH tugas DAN rapat tersinkron, jadi kalau meeting
+    // masih berlangsung, semua agen langsung duduk di meja rapat (tidak jalan dari posisi awal, tidak pernah beranjak sendiri).
+    void Promise.all([sinkronTugasServer(), muatRapatDariServer()]).finally(() => { if (hidup) { saatTugas(); setRapat(rapatSedangBerlangsung()); setSiap(true); } });
     // tab yang tertidur bisa melewatkan timer; sinkron berkala supaya tugas kadaluarsa / dari perangkat lain ikut terbarui
-    const cek = setInterval(() => { saatTugas(); void sinkronTugasServer(); }, 5000);
+    const cek = setInterval(() => { saatTugas(); void sinkronTugasServer(); void muatRapatDariServer(); }, 5000);
     return () => { hidup = false; window.removeEventListener(EVENT_TUGAS, saatTugas); clearInterval(cek); };
   }, []);
 
   return (
-    <div className="-mx-4 lg:-mx-6 xl:-mx-8 2xl:-mx-10 -my-6 h-[calc(100vh-4rem)] overflow-hidden relative isolate bg-[#0A1A14] shadow-[0_0_0_100vmax_#0A1A14]">
-      {siap && <OfficeScene onAgentStatus={onAgentStatus} rapat={rapat} tugas={tugas} onFokusRuang={(n) => { setFokus(n); if (!n) setAgenDi([]); }} onAgenDiRuang={setAgenDi} />}
+    <div className="w-full h-[calc(100vh-4rem)] overflow-hidden relative isolate bg-[radial-gradient(ellipse_at_50%_45%,#12332A_0%,#0A1A14_45%,#020605_100%)]">
+      {siap && <OfficeScene onAgentStatus={onAgentStatus} rapat={rapat} tugas={tugas} onFokusRuang={(n) => { setFokus(n); if (!n) { setAgenDi([]); setPenghuni({}); } }} onAgenDiRuang={setAgenDi} onPenghuni={setPenghuni} />}
 
       {fokus && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
@@ -142,21 +148,24 @@ export default function AgenticAIView() {
             </div>
           );
         })}
-        {/* AI penghuni: duduk di meja = bekerja (semua AI penghuni duduk di mejanya) */}
-        {AI_PENGHUNI.filter((a) => a.room === fokus).map((a) => (
-          <div
-            key={a.name}
-            className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-black/40 py-1.5 pl-2 pr-3.5 text-sm text-white backdrop-blur"
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: a.accent }}>
-              <AiFace ai={a} />
-            </span>
-            <span className="font-semibold">{a.name}</span>
-            <span className={`h-2 w-2 rounded-full ${STATUS_DOT.bekerja}`} />
-            <span className="text-white/70">{STATUS_LABEL.bekerja}</span>
-          </div>
-        ))}
-        {agenDi.length === 0 && !AI_PENGHUNI.some((a) => a.room === fokus) && (
+        {/* AI penghuni yang sedang ada di ruangan ini (penghuni maupun tamu yang berkunjung), dengan status sebenarnya */}
+        {AI_PENGHUNI.filter((a) => penghuni[a.name]).map((a) => {
+          const { status: st, teks } = penghuni[a.name]; // teks & status dari pet-Direktur.ts
+          return (
+            <div
+              key={a.name}
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-black/40 py-1.5 pl-2 pr-3.5 text-sm text-white backdrop-blur"
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: a.accent }}>
+                <AiFace ai={a} />
+              </span>
+              <span className="font-semibold">{a.name}</span>
+              <span className={`h-2 w-2 rounded-full ${STATUS_DOT[st]}`} />
+              <span className="text-white/70">{teks}</span>
+            </div>
+          );
+        })}
+        {agenDi.length === 0 && Object.keys(penghuni).length === 0 && (
           <div className="shrink-0 whitespace-nowrap rounded-full bg-black/40 px-3.5 py-1.5 text-sm text-white/70 backdrop-blur">
             Tidak ada karyawan di ruangan ini
           </div>

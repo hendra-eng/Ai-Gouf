@@ -3786,155 +3786,6 @@ JENIS_DOKUMEN_BANK_CASH_VALID = {"cash_payment", "cash_receipt"}
 STATUS_BANK_FEED_VALID = {"unmatched", "matched"}
 
 
-# ============================================================
-# [BARU] BANK & CASH > SOURCE DATA: TEMPLATE EKSTRAKSI + MAPPING BANK
-# (migrations/36-create_bank_cash_import_templates_and_bank_mappings.py).
-# Pola sama dengan SalesImportTemplate / JournalEntryImportTemplate:
-# client_id reference ke management_clients, audit columns lengkap.
-# Seed: migrations/bank_cash/seed_template_<kode>_multi_format_bank_cash.sql.
-# ============================================================
-
-class BankCashImportTemplate(Base):
-    """Pola ekstraksi rekening koran / laporan kas (PDF/Excel/CSV) milik 1
-    klien. file_type 'Multi' = SATU baris yang membawa array
-    mapping_rules->'variants' (1 varian per bank/format), dipilih backend
-    berdasarkan tipe file + signature/deteksi nomor rekening."""
-    __tablename__ = "financial_transaction_bank_cash_import_templates"
-    __table_args__ = (
-        UniqueConstraint("client_id", "file_type", "column_signature_hash", name="uq_bank_cash_import_templates_signature"),
-        Index("idx_bank_cash_import_templates_client", "client_id"),
-        Index("idx_bank_cash_import_templates_client_code", "client_code"),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    client_code = Column(String(50), nullable=False)
-    template_name = Column(String(255), nullable=True)
-    file_type = Column(String(20), nullable=False)
-    sheet_name = Column(String(255), nullable=True)
-    header_row_index = Column(Integer, nullable=False, default=1)
-    data_start_row_index = Column(Integer, nullable=False, default=2)
-    column_signature_hash = Column(String(64), nullable=False)
-    header_columns = Column(JSONB, nullable=False)
-    mapping_rules = Column(JSONB, nullable=False)
-    detected_by = Column(String(20), nullable=False, default="ai")
-    ai_model_version = Column(String(50), nullable=True)
-    ai_confidence = Column(Numeric(5, 2), nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-    usage_count = Column(Integer, nullable=False, default=0)
-    last_used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    edited_at = Column(DateTime(timezone=True), nullable=True)
-    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-class BankCashBankMapping(Base):
-    """Mapping bank / rekening -> akun kas-bank COA klien. File dicocokkan
-    lewat account_number, lalu match_keyword (judul dokumen), lalu
-    template_id, lalu bank_name (hanya kalau cuma 1 mapping untuk bank itu)."""
-    __tablename__ = "financial_transaction_bank_cash_bank_mappings"
-    __table_args__ = (
-        Index("idx_bank_cash_bank_mappings_client", "client_id"),
-        Index("idx_bank_cash_bank_mappings_coa", "bank_coa_id"),
-        Index("idx_bank_cash_bank_mappings_template", "template_id"),
-        Index(
-            "uq_bank_cash_bank_mappings_account_aktif", "client_id", "account_number", unique=True,
-            postgresql_where=text("account_number IS NOT NULL AND deleted_at IS NULL"),
-        ),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    client_code = Column(String(50), nullable=False)
-    bank_name = Column(String(100), nullable=False)
-    account_number = Column(String(50), nullable=True)
-    match_keyword = Column(String(255), nullable=True)
-    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
-    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id"), nullable=True)
-    notes = Column(Text, nullable=True)
-    is_active = Column(Boolean, nullable=False, default=True)
-    usage_count = Column(Integer, nullable=False, default=0)
-    last_used_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    edited_at = Column(DateTime(timezone=True), nullable=True)
-    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-class BankCashStatement(Base):
-    """1 baris = 1 file rekening koran yang diimport (Cash & Bank > Source Data).
-    Kolom sama dengan DDL di modules/transactions/bank_cash_v1.py (pastikan_tabel)."""
-    __tablename__ = "financial_transaction_bank_cash_statements"
-    __table_args__ = (
-        Index("idx_bc_stmt_client", "client_id", postgresql_where=text("deleted_at IS NULL")),
-        Index("idx_bc_stmt_hash", "client_id", "bank_coa_id", "file_hash"),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
-    file_name = Column(String(255), nullable=False)
-    file_type = Column(String(20), nullable=True)
-    file_hash = Column(String(64), nullable=True)
-    period_start = Column(Date, nullable=True)
-    period_end = Column(Date, nullable=True)
-    opening_balance = Column(Numeric(20, 2), nullable=True)
-    closing_balance = Column(Numeric(20, 2), nullable=True)
-    total_debit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
-    total_credit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
-    line_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
-    duplicate_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
-    warnings = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
-    extraction_method = Column(String(20), nullable=True)
-    template_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_import_templates.id"), nullable=True)
-    validation = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    created_by_name = Column(String(255), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-class BankCashMutation(Base):
-    """1 baris = 1 mutasi / baris rekening koran. Kolom sama dengan DDL di
-    modules/transactions/bank_cash_v1.py (pastikan_tabel)."""
-    __tablename__ = "financial_transaction_bank_cash_mutations"
-    __table_args__ = (
-        Index("idx_bc_mut_client", "client_id", "bank_coa_id", "mutation_date", postgresql_where=text("deleted_at IS NULL")),
-        Index("idx_bc_mut_stmt", "statement_id"),
-        Index("idx_bc_mut_hash", "client_id", "bank_coa_id", "row_hash"),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    statement_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_statements.id"), nullable=False)
-    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
-    line_no = Column(Integer, nullable=False)
-    mutation_date = Column(Date, nullable=False)
-    description = Column(Text, nullable=True)
-    debit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
-    credit = Column(Numeric(20, 2), nullable=False, default=0, server_default=text("0"))
-    balance_after = Column(Numeric(20, 2), nullable=True)
-    status = Column(String(20), nullable=False, default="unmatched", server_default=text("'unmatched'"))
-    ignore_reason = Column(Text, nullable=True)
-    matched_tx_id = Column(PG_UUID(as_uuid=False), nullable=True)
-    row_hash = Column(String(64), nullable=True)
-    confidence = Column(String(10), nullable=True)
-    confidence_notes = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
-    page_no = Column(Integer, nullable=True)
-    reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    reviewed_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    reviewed_by_name = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
 def _pesan_dari_trigger(e: Exception, penanda: tuple) -> Optional[str]:
     """Ambil teks pesan dari error trigger/fungsi PostgreSQL yang diawali penanda
     (mis. 'MAPPING_LOCKED: ...'). None kalau error ini bukan error kunci."""
@@ -5642,6 +5493,91 @@ def validasi_posting_sales(invoice_id: str) -> List[str]:
     if tidak_ada:
         return [f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}."]
     return []
+
+
+def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[str], user_id: Optional[str] = None,
+                            chunk: int = 500) -> Dict[str, int]:
+    """[BARU] Versi MASSAL dari loop promote-to-invoices (tombol "Buat Invoice"): naikkan baris valid satu file jadi
+    invoice Draft + mapping akun default klien. Aturan SAMA dengan loop lama (baris tidak valid / tanpa no. invoice
+    dilewati; baris yang sudah pernah naik dilewati; no. invoice yang sudah dipakai klien -- juga yang dobel di
+    dalam file ini -- dilewati sebagai 'bentrok'), tapi memakai 3 query baca + INSERT multi-baris per potongan,
+    bukan ~8 query per baris. Return {total_baris, invoice_dibuat, dilewati_*}."""
+    import uuid as _uuid
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
+    session = SessionLocal()
+    try:
+        rows = session.query(
+            SalesSourceRow.id, SalesSourceRow.is_valid, SalesSourceRow.no_invoice, SalesSourceRow.tanggal,
+            SalesSourceRow.nama_customer, SalesSourceRow.cabang, SalesSourceRow.dpp, SalesSourceRow.ppn, SalesSourceRow.total,
+        ).filter(SalesSourceRow.source_file_id == source_file_id, SalesSourceRow.deleted_at.is_(None)).all()
+        sudah_row = {str(r[0]) for r in session.query(SalesInvoice.source_row_id).filter(
+            SalesInvoice.source_row_id.in_(session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id)),
+            SalesInvoice.deleted_at.is_(None)).all()}
+        dipakai_no = {r[0] for r in session.query(SalesInvoice.invoice_no).filter(
+            SalesInvoice.client_id == management_client_id, SalesInvoice.deleted_at.is_(None)).all()}
+    finally:
+        session.close()
+
+    tidak_valid = sudah_pernah = bentrok = 0
+    kandidat = []
+    for (rid, valid, no, tgl, cust, cab, dpp, ppn, total) in rows:
+        if not valid:
+            tidak_valid += 1; continue
+        if str(rid) in sudah_row:
+            sudah_pernah += 1; continue
+        if not no or tgl is None:  # invoice_date NOT NULL: baris tanpa tanggal tidak bisa jadi invoice
+            tidak_valid += 1; continue
+        if no in dipakai_no:
+            bentrok += 1; continue
+        dipakai_no.add(no)
+        kandidat.append({
+            "id": str(_uuid.uuid4()), "client_id": management_client_id, "management_client_id": management_client_id,
+            "invoice_no": no, "invoice_date": tgl, "customer_name": cust or "-", "cabang": cab,
+            "dpp": dpp or 0, "ppn": ppn or 0, "pph": 0, "gross_amount": total or 0, "paid_amount": 0,
+            "tax_invoice_status": "Belum Terbit Faktur", "posting_status": "Draft", "reconcile_status": "Unreconciled",
+            "journal_sync_status": "Pending", "is_opening_balance": False, "source_row_id": str(rid), "created_by": user_id,
+        })
+
+    dibuat = 0
+    akun_cache: Dict[tuple, Any] = {}
+    for k in range(0, len(kandidat), chunk):
+        potong = kandidat[k:k + chunk]
+        session = SessionLocal()
+        try:
+            hasil = session.execute(
+                _pg_insert(SalesInvoice.__table__).values(potong).on_conflict_do_nothing().returning(SalesInvoice.__table__.c.id)
+            ).all()
+            masuk = {str(r[0]) for r in hasil}
+            peta = []
+            for inv in potong:
+                if inv["id"] not in masuk:
+                    continue
+                kunci = (management_client_id, inv["cabang"] or "")
+                if kunci not in akun_cache:
+                    akun_cache[kunci] = akun_default_sales(management_client_id, inv["cabang"], session=session)
+                a = akun_cache[kunci]
+                if not a:
+                    continue
+                peta.append({
+                    "client_id": management_client_id, "invoice_id": inv["id"],
+                    "piutang_account_code": a["piutang"][0], "piutang_account_name": a["piutang"][1],
+                    "pendapatan_account_code": a["pendapatan"][0], "pendapatan_account_name": a["pendapatan"][1],
+                    "ppn_account_code": a["ppn"][0] if a["ppn"] else None, "ppn_account_name": a["ppn"][1] if a["ppn"] else None,
+                    "is_ai_suggested": False, "mapped_by": user_id, "created_by": user_id,
+                })
+            if peta:
+                session.execute(_pg_insert(SalesAccountMapping.__table__).values(peta).on_conflict_do_nothing())
+            session.commit()
+            dibuat += len(masuk)
+            bentrok += len(potong) - len(masuk)
+        except Exception as e:
+            session.rollback()
+            print(f"Error promote_sales_rows_bulk: {e}")
+            bentrok += len(potong)
+        finally:
+            session.close()
+    return {"total_baris": len(rows), "invoice_dibuat": dibuat, "dilewati_tidak_valid": tidak_valid,
+            "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok}
 
 
 # --- 5) financial_transaction_sales_exceptions ---
@@ -8334,132 +8270,3 @@ class ManagementPayrollRun(Base):
     created_by = Column(PG_UUID(as_uuid=False), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-# --- Ditambahkan dari playground-willi (model Cash & Bank transaksi) ---
-
-class BankCashTransaction(Base):
-    """Header transaksi Cash & Bank: Cash Receipt (uang masuk ke akun kas/bank)
-    atau Cash Payment (uang keluar). Lahir dari pencocokan mutasi Bank Feed
-    (source 'bank_feed', mutation_id terisi), input manual ('manual'), atau
-    Record Receipt / Record Payment di Accounts Receivable / Payable ('ar' /
-    'ap', modules/finance/receivables_payables_v1.py).
-
-    Alur status: draft -> approved -> posted -> reversed. Jurnalnya TIDAK
-    disalin ke Journal Entry -- GL/FS membaca langsung transaksi posted
-    (db_client.ambil_baris_jurnal_posted_transaksi, sumber "cash_bank"):
-        receipt: Dr akun kas/bank amount ; Cr/Dr baris lawan
-        payment: Cr akun kas/bank amount ; Dr/Cr baris lawan
-    reversed = jurnal asal tetap di tx_date + jurnal pembalik (RV-<tx_number>)
-    di reversal_date. Pelunasan invoice (Sales.paid_amount, Purchase.
-    payment_status) diterapkan saat posted & dikembalikan saat reversed."""
-    __tablename__ = "financial_transaction_bank_cash_transactions"
-    __table_args__ = (
-        UniqueConstraint("client_id", "tx_number", name="uq_bank_cash_transaction_number"),
-        Index("idx_bank_cash_transaction_client_status", "client_id", "status"),
-        Index("idx_bank_cash_transaction_client_date", "client_id", "tx_date"),
-        # 1 mutasi = 1 transaksi aktif; transaksi yang dibalik melepas mutasinya (boleh dicocokkan ulang).
-        Index("uq_bank_cash_transaction_mutation_aktif", "mutation_id",
-              unique=True, postgresql_where=text("deleted_at IS NULL AND mutation_id IS NOT NULL AND status <> 'reversed'")),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
-    tx_number = Column(String(50), nullable=False)               # CR-2610-0001 / CP-2610-0001
-    direction = Column(String(10), nullable=False)               # receipt / payment
-    tx_date = Column(Date, nullable=False)
-    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
-    bank_account_code = Column(String(50), nullable=False)       # snapshot akun kas/bank saat dibuat
-    bank_account_name = Column(String(255), nullable=False)
-    amount = Column(Numeric(24, 2), nullable=False)
-    kind = Column(String(20), nullable=False)                    # invoice / non_invoice
-    category = Column(String(100), nullable=True)                # Customer Payment, Vendor Payment, Bank Charges, ...
-    counterparty = Column(String(255), nullable=True)
-    description = Column(Text, nullable=True)
-    reference = Column(String(255), nullable=True)
-    # [migration 37] Diisi form Record Receipt (Accounts Receivable) / Record
-    # Payment (Accounts Payable); transaksi Bank Feed/manual boleh kosong.
-    payment_method = Column(String(30), nullable=True)           # bank_transfer / cash / cheque / giro / ...
-    reference_date = Column(Date, nullable=True)
-    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
-    source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual / ar / ap
-    mutation_id = Column(PG_UUID(as_uuid=False), nullable=True)
-    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
-    approved_at = Column(DateTime(timezone=True), nullable=True)
-    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    approved_by_name = Column(String(255), nullable=True)
-    posted_at = Column(DateTime(timezone=True), nullable=True)
-    posted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    posted_by_name = Column(String(255), nullable=True)
-    reversal_date = Column(Date, nullable=True)
-    reversal_reason = Column(Text, nullable=True)
-    reversed_at = Column(DateTime(timezone=True), nullable=True)
-    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    reversed_by_name = Column(String(255), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    created_by_name = Column(String(255), nullable=True)
-    edited_at = Column(DateTime(timezone=True), nullable=True)
-    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
-
-
-class BankCashTransactionLine(Base):
-    """Baris lawan 1 transaksi Cash & Bank (sisi selain akun kas/bank).
-    line_type: sales_invoice (pelunasan piutang -- akun = piutang invoice),
-    purchase (pelunasan hutang -- akun = hutang invoice), account (akun bebas:
-    biaya admin, bunga, transfer antar rekening, setoran modal, ...).
-    debit/credit = sisi jurnal baris ini; total (credit - debit) baris =
-    amount header untuk receipt, (debit - credit) = amount untuk payment."""
-    __tablename__ = "financial_transaction_bank_cash_transaction_lines"
-    __table_args__ = (
-        Index("idx_bank_cash_line_transaction", "transaction_id"),
-        Index("idx_bank_cash_line_sales_invoice", "sales_invoice_id"),
-        Index("idx_bank_cash_line_purchase", "purchase_transaction_id"),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_transactions.id", ondelete="CASCADE"), nullable=False)
-    line_no = Column(Integer, nullable=False)
-    line_type = Column(String(20), nullable=False)               # sales_invoice / purchase / account
-    sales_invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id"), nullable=True)
-    purchase_transaction_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_purchase_transactions.id"), nullable=True)
-    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)
-    account_code = Column(String(50), nullable=False)
-    account_name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-
-
-# --- Ditambahkan dari playground-willi (model Cash & Bank transaksi) ---
-
-class SalesInvoiceLine(Base):
-    """Item invoice (produk/jasa). dpp = nilai setelah diskon tanpa pajak,
-    tax_amount = pajak baris, line_total = qty x harga - diskon (kolom
-    Amount di form). Jumlah dpp/tax_amount = Sales.dpp/ppn header."""
-    __tablename__ = "financial_transaction_sales_invoice_lines"
-    __table_args__ = (
-        Index("idx_sales_invoice_lines_invoice", "invoice_id"),
-    )
-
-    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    invoice_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_invoices.id", ondelete="CASCADE"), nullable=False)
-    line_no = Column(Integer, nullable=False)
-    product_name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    quantity = Column(Numeric(18, 4), nullable=False, default=1, server_default=text("1"))
-    unit = Column(String(30), nullable=True)
-    unit_price = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    discount_type = Column(String(10), nullable=False, default="percent", server_default=text("'percent'"))  # percent / amount
-    discount_value = Column(Numeric(24, 4), nullable=False, default=0, server_default=text("0"))
-    discount_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    tax_code = Column(String(20), nullable=False, default="ppn_11", server_default=text("'ppn_11'"))     # ppn_11 / ppn_12 / non_ppn
-    tax_rate = Column(Numeric(6, 3), nullable=False, default=0, server_default=text("0"))
-    dpp = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    tax_amount = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    line_total = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
-    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
-

@@ -7,3 +7,5 @@
 {"waktu": 1792773754, "ucapan": "deno coba kamu cek halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.92, "sumber": "groq"}
 {"waktu": 1792773758, "ucapan": "stop zeno coba kamu cek halaman other", "maksud": "buka", "tujuan": "/transactions/other", "yakin": 0.92, "sumber": "groq"}
 {"waktu": 1792941532, "ucapan": "minta zona untuk cek halaman purchase", "maksud": "buka", "tujuan": "/transactions/purchase", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1793928929, "ucapan": "mah report item detail", "maksud": "buka", "tujuan": "/reports", "yakin": 0.9, "sumber": "groq"}
+{"waktu": 1794022593, "ucapan": "stop stop minta atlas untuk upload file baru itu di halaman sales untuk klient brw", "maksud": "batal", "tujuan": "", "yakin": 0.9, "sumber": "groq"}

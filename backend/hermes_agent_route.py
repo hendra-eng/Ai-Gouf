@@ -233,19 +233,26 @@ def buat_router_hermes(auth) -> APIRouter:  # noqa: ARG001  (auth tidak dipakai:
         persona = (PERSONA_AGEN.get(agen.lower()) or "") + _ingatan_agen(agen)  # [DIUBAH] + ingatan pribadi dari Supabase
 
         def kerja() -> str:
-            konteks = mem.siapkan_konteks(pemilik, ucapan, riwayat)
+            # [BARU -- KESADARAN TERPISAH] ingatan obrolan dibaca & ditulis per agen (Neo / Zeno / dst.), bukan gabungan
+            agen_mem = (agen or "neo").strip().lower()[:20] or "neo"
+            # [BARU] Riwayat dari bot Telegram TIDAK dipercaya (satu bot bisa melayani beberapa agen dengan satu daftar riwayat).
+            # Riwayat jangka pendek dimuat dari database per agen; riwayat kiriman bot hanya dipakai bila memori AI mati.
+            riwayat_agen = riwayat
+            if mem.aktif():
+                riwayat_agen = mem.riwayat_dari_giliran(mem.ambil_giliran_terakhir(pemilik, 0, 0, agen_mem))
+            konteks = mem.siapkan_konteks(pemilik, ucapan, riwayat_agen, agen=agen_mem)
             system = (ak.buat_system_prompt_suara(dengan_data=True) + persona + CATATAN_KANAL
                       + konteks["tambahan_prompt"] + neo.blok_daftar_klien(user, body.client_id))
             # Alat tulis ikut disaring: _stream_claude memakai neo.TOOLS, jadi larang lewat `tanpa_alat`.
             larang = frozenset() if _tulis_aktif() else frozenset(ALAT_TULIS)
             # Claude SAJA (tanpa cadangan Groq/DeepSeek) supaya data klien tidak keluar ke pihak ketiga.
             potongan = list(vc._stream_claude(  # noqa: SLF001
-                _NeoPantau(neo, pemilik, agen), ucapan, system, riwayat, user, body.client_id, MAKS_TOKEN, True,
+                _NeoPantau(neo, pemilik, agen), ucapan, system, riwayat_agen, user, body.client_id, MAKS_TOKEN, True,
                 gambar_b64=None, prefix_stabil="", data_prefetch="", tanpa_alat=larang,
             ))
             teks = "".join(potongan).strip()
             if teks:
-                mem.setelah_jawaban(pemilik, "hermes", body.sesi_id, ucapan, teks, konteks["fakta_ids"])
+                mem.setelah_jawaban(pemilik, "hermes", body.sesi_id, ucapan, teks, konteks["fakta_ids"], agen=agen_mem)
             return teks
 
         try:

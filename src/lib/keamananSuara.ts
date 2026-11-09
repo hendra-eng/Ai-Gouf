@@ -138,7 +138,7 @@ export const PESAN_TERLARANG = {
 
 // ---------- Pengaturan yang bisa diubah ----------
 export const KONFIRMASI_GANTI_CLIENT = false; // tidak dipakai lagi: ganti client langsung tanpa konfirmasi
-export const KONFIRMASI_TIMEOUT_MS = 20000; // tak dijawab dalam waktu ini -> otomatis dibatalkan
+export const KONFIRMASI_TIMEOUT_MS = 90000; // [DIUBAH dari 20000] tak dijawab dalam waktu ini -> otomatis dibatalkan. Dihitung sejak pertanyaan DIMULAI: kalimat konfirmasi Neo saja 8-12 dtk, jadi 20 dtk membuat "Lanjut?" gugur sebelum sempat dijawab
 export const UNDO_KEDALUWARSA_MS = 60000; // "batalkan" hanya berlaku untuk aksi dalam 1 menit terakhir
 export const IDLE_MIC_MATI_MS = 10 * 60 * 1000; // mic dimatikan otomatis bila tak ada aktivitas selama ini
 export const PTT_MAKS_TUNGGU_MS = 10000; // mode tekan-untuk-bicara: mic menutup bila tak ada suara selama ini

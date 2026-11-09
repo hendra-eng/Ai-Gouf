@@ -89,6 +89,7 @@ from chat_stream_route import buat_router_chat  # [BARU] route POST /api/chat/st
 from tts_route import buat_router_tts  # [BARU] route POST /api/tts (suara neural Gemini TTS -> Edge TTS untuk VoiceAssistant)
 from client_intent_route import buat_router_client_intent  # [BARU] route POST /api/voice/client-intent (fallback LLM ganti client lewat suara)
 from stop_intent_route import buat_router_stop_intent  # [BARU] route POST /api/voice/stop-intent (AI memahami maksud 'berhenti menjelaskan')
+from sapaan_intent_route import buat_router_sapaan_intent  # [BARU] route POST /api/voice/sapaan-intent (AI memahami sapaan ke Neo/Atlas/Zeno)
 from nav_intent_route import buat_router_nav_intent  # [BARU] route POST /api/voice/nav-intent (AI memahami maksud 'pindah halaman/tab')
 from wajah_profil_route import buat_router_wajah_profil  # [BARU] profil wajah (nama + embedding terenkripsi) di database: /api/wajah/...
 from kantor_tugas_route import buat_router_kantor_tugas  # [BARU] tugas agen Agentic AI 3D di database: /api/kantor-tugas
@@ -373,6 +374,7 @@ app.include_router(buat_router_chat(auth))  # [BARU] /api/chat/stream (SSE chat 
 app.include_router(buat_router_tts(auth))  # [BARU] /api/tts (Gemini TTS -> Edge TTS)
 app.include_router(buat_router_client_intent(auth))  # [BARU] /api/voice/client-intent (fallback LLM ganti client)
 app.include_router(buat_router_stop_intent(auth))  # [BARU] /api/voice/stop-intent
+app.include_router(buat_router_sapaan_intent(auth))  # [BARU] /api/voice/sapaan-intent
 app.include_router(buat_router_nav_intent(auth))  # [BARU] /api/voice/nav-intent
 app.include_router(buat_router_wajah(auth))  # [BARU] /api/voice/analisa-wajah
 app.include_router(buat_router_wajah_profil(auth))  # [BARU] /api/wajah/status|profil|cocokkan

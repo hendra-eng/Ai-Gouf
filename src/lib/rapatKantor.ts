@@ -1,12 +1,69 @@
 // Rapat di halaman Agentic AI. Neo (asisten suara global) menangkap perintah suaranya; halaman Agentic AI hanya mendengar
-// event-nya dan menggerakkan agen (Atlas, Zeno) ke meja rapat. Status disimpan di modul ini supaya tetap ada
-// walau pengguna pindah halaman lalu kembali (sampai pengguna bilang "meeting selesai").
+// event-nya dan menggerakkan agen (Atlas, Zeno) ke meja rapat.
+//
+// [ATURAN MUTLAK] Status rapat disimpan di DATABASE (tabel ai_rapat_kantor, lewat /api/kantor-rapat), bukan hanya di modul ini.
+// Begitu pengguna mengadakan meeting, semua karakter 3D tetap di meja rapat -- walau aplikasi ditutup, tab dihapus, halaman
+// di-reload, atau dibuka dari perangkat lain -- SAMPAI pengguna membubarkannya ("Neo, meeting selesai"). Tidak ada batas waktu.
+// Variabel di modul ini hanya salinan kerja; localStorage hanya cadangan kalau server tidak terjangkau saat aplikasi dibuka.
+
+import { kantorRapatAtur, kantorRapatBaca } from '@/app/zafeb-ai/lib/api';
 
 export const EVENT_RAPAT = 'kantor-rapat';
+const KUNCI_CADANGAN = 'kantor-rapat-aktif-v1';
+// Sesudah pengguna mengubah status dari sini, pembacaan server diabaikan sebentar supaya tidak menimpa perubahan yang baru dibuat.
+const JEDA_ABAIKAN_SERVER_MS = 4000;
 
 let rapatAktif = false;
+let terakhirLokalMs = 0; // kapan status terakhir diubah dari sini
+let tertunda = false; // perubahan lokal belum sampai ke server -> dikirim ulang, JANGAN ditimpa data server yang lama
+let sedangMenulis = 0;
+let urutanTulis = 0;
+let sudahMuat = false;
+
+function simpanCadangan(aktif: boolean): void {
+  try { window.localStorage.setItem(KUNCI_CADANGAN, aktif ? '1' : '0'); } catch { /* abaikan */ }
+}
+function bacaCadangan(): boolean | null {
+  try {
+    const v = window.localStorage.getItem(KUNCI_CADANGAN);
+    return v === null ? null : v === '1';
+  } catch { return null; }
+}
+function kirimKeServer(aktif: boolean): void {
+  const nomor = ++urutanTulis;
+  sedangMenulis++;
+  void kantorRapatAtur(aktif)
+    .then((ok) => { if (nomor === urutanTulis) tertunda = !ok; })
+    .catch(() => { if (nomor === urutanTulis) tertunda = true; })
+    .finally(() => { sedangMenulis--; });
+}
+const barusanDiubahLokal = () => sedangMenulis > 0 || Date.now() - terakhirLokalMs < JEDA_ABAIKAN_SERVER_MS;
 
 export function rapatSedangBerlangsung(): boolean {
+  return rapatAktif;
+}
+
+// Ambil status rapat dari server (sumber kebenaran) dan samakan modul ini. Dipanggil saat aplikasi dibuka dan berkala,
+// jadi reload / tab baru / perangkat lain langsung melihat status yang sama. Kalau berubah, event dikirim ke halaman Agentic AI.
+// Server tidak terjangkau: pembukaan pertama memakai cadangan localStorage, sesudahnya status dibiarkan apa adanya.
+export async function muatRapatDariServer(): Promise<boolean> {
+  if (typeof window === 'undefined') return rapatAktif;
+  if (barusanDiubahLokal()) return rapatAktif;
+  if (tertunda) { kirimKeServer(rapatAktif); return rapatAktif; }
+  const server = await kantorRapatBaca();
+  if (barusanDiubahLokal()) return rapatAktif; // pengguna mengubahnya selagi menunggu jawaban server
+  let nilai = server;
+  if (nilai === null) {
+    const cadangan = bacaCadangan();
+    if (sudahMuat || cadangan === null) return rapatAktif;
+    nilai = cadangan;
+  }
+  sudahMuat = true;
+  simpanCadangan(nilai);
+  if (nilai !== rapatAktif) {
+    rapatAktif = nilai;
+    umumkanRapat();
+  }
   return rapatAktif;
 }
 
@@ -14,6 +71,11 @@ export function rapatSedangBerlangsung(): boolean {
 // atau tidak dikirim sama sekali (tanpaEvent) lalu dikirim belakangan lewat umumkanRapat(), mis. setelah Neo selesai bicara.
 export function aturRapat(aksi: 'mulai' | 'selesai', opsi: { tundaMs?: number; tanpaEvent?: boolean } = {}): void {
   rapatAktif = aksi === 'mulai';
+  terakhirLokalMs = Date.now();
+  sudahMuat = true;
+  simpanCadangan(rapatAktif);
+  tertunda = true; // dianggap belum sampai sampai server menjawab OK
+  kirimKeServer(rapatAktif);
   if (opsi.tanpaEvent) return;
   if (opsi.tundaMs && opsi.tundaMs > 0) setTimeout(umumkanRapat, opsi.tundaMs);
   else umumkanRapat();

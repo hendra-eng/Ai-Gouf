@@ -45,6 +45,10 @@ class MulaiRequest(BaseModel):
     deskripsi: Optional[str] = None
 
 
+class RapatRequest(BaseModel):
+    aktif: bool
+
+
 class ProsesFileRequest(BaseModel):
     halaman: str                       # id meja: sales | purchase | journal-entry | bank-cash | other
     klien: str                         # kode / nama klien, WAJIB (Neo tidak menebak klien)
@@ -118,6 +122,46 @@ def _selesai(pemilik: str, agen: str) -> None:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+# [ATURAN MUTLAK] RAPAT (meeting) disimpan di DATABASE, bukan di browser. Begitu pengguna mengadakan meeting, semua karakter 3D
+# tetap duduk di meja rapat -- walau aplikasi ditutup, tab dihapus, di-reload, atau dibuka dari perangkat lain -- SAMPAI
+# pengguna membubarkannya ("Neo, meeting selesai"). Tidak ada batas waktu. Tabel dibuat otomatis (idempotent) saat pertama dipakai.
+# ---------------------------------------------------------------------------------------------------------------------
+_TABEL_RAPAT_SIAP = False
+
+
+def _pastikan_tabel_rapat(conn) -> None:
+    global _TABEL_RAPAT_SIAP
+    if _TABEL_RAPAT_SIAP:
+        return
+    conn.execute(text("""
+        create table if not exists ai_rapat_kantor (
+            pemilik   text primary key,
+            aktif     boolean not null default false,
+            diubah_at timestamptz not null default now()
+        )
+    """))
+    # Supabase: tabel baru di schema public tanpa RLS terbuka lewat REST publik. Backend (pemilik tabel) tetap bisa baca/tulis.
+    conn.execute(text("alter table ai_rapat_kantor enable row level security"))
+    _TABEL_RAPAT_SIAP = True
+
+
+def _baca_rapat(pemilik: str) -> bool:
+    with dbc.engine.begin() as conn:
+        _pastikan_tabel_rapat(conn)
+        r = conn.execute(text("select aktif from ai_rapat_kantor where pemilik = :p"), {"p": pemilik}).first()
+    return bool(r[0]) if r else False
+
+
+def _atur_rapat(pemilik: str, aktif: bool) -> None:
+    with dbc.engine.begin() as conn:
+        _pastikan_tabel_rapat(conn)
+        conn.execute(text("""
+            insert into ai_rapat_kantor (pemilik, aktif, diubah_at) values (:p, :a, now())
+            on conflict (pemilik) do update set aktif = excluded.aktif, diubah_at = now()
+        """), {"p": pemilik, "a": bool(aktif)})
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # Tugas dari pipeline file WhatsApp (neo_wa_pipeline.py): agen berjalan ke meja halaman, bekerja sampai file diposting,
 # lalu kembali ke meja rapat. Hasilnya dititipkan di kolom `deskripsi` baris tugas (tanpa migrasi database):
 #   berjalan : "[WA] ..."          selesai : "[WA:ok|sebagian|gagal:KODE] <ringkasan satu-dua kalimat>"
@@ -152,6 +196,17 @@ def batalkan_tugas_wa(pemilik: str, tugas_id: str) -> None:
             update ai_tugas_kantor set status = 'dibatalkan', selesai_at = now(), deskripsi = null
              where id::text = :i and pemilik = :p and status = 'berjalan'
         """), {"i": str(tugas_id), "p": pemilik})
+
+
+def perpanjang_tugas_wa(pemilik: str, tugas_id: str, detik: int = 300) -> None:
+    """[ATURAN MUTLAK] Selama pipeline MASIH berjalan, agen tetap duduk di meja kerja sampai selesai (berapa lama pun):
+    dipanggil berkala oleh neo_wa_pipeline selagi thread hidup. Kalau server mati, pemanggilan berhenti dan meja lepas sendiri
+    dalam beberapa menit (bukan menunggu batas lama)."""
+    with dbc.engine.begin() as conn:
+        conn.execute(text("""
+            update ai_tugas_kantor set berakhir_at = now() + make_interval(secs => :d), heartbeat_at = now()
+             where id::text = :i and pemilik = :p and status = 'berjalan'
+        """), {"i": str(tugas_id), "p": pemilik, "d": int(detik)})
 
 
 def akhiri_tugas_wa(pemilik: str, tugas_id: str, kode: str, klien: Optional[str], ringkasan: str) -> None:
@@ -240,6 +295,17 @@ def buat_router_kantor_tugas(auth) -> APIRouter:
             raise HTTPException(status_code=400, detail="Agen tidak dikenal.")
         return agen
 
+    @router.get("/api/kantor-rapat")
+    async def baca_rapat(user: dict = Depends(_user_atau_agen)):
+        """Status rapat (meeting) milik pengguna ini. Sumber kebenaran untuk semua perangkat / tab / reload."""
+        return {"aktif": await run_in_threadpool(_baca_rapat, mem.pemilik_dari_user(user))}
+
+    @router.put("/api/kantor-rapat")
+    async def atur_rapat(body: RapatRequest, user: dict = Depends(_user_atau_agen)):
+        """Mulai (aktif=true) atau bubarkan (aktif=false) rapat. Tersimpan sampai diubah lagi."""
+        await run_in_threadpool(_atur_rapat, mem.pemilik_dari_user(user), body.aktif)
+        return {"aktif": body.aktif}
+
     @router.get("/api/kantor-tugas")
     async def daftar(user: dict = Depends(_user_atau_agen)):
         return await run_in_threadpool(_daftar, mem.pemilik_dari_user(user))
@@ -271,7 +337,7 @@ def buat_router_kantor_tugas(auth) -> APIRouter:
         """[BARU] File WhatsApp yang tersimpan tapi belum berhasil diupload/diposting (dengan nama), untuk dibacakan Neo."""
         from whatsapp_masuk_route import daftar_file_belum_upload
         file = await run_in_threadpool(daftar_file_belum_upload, mem.pemilik_dari_user(user), 20)
-        return {"file": [{"nama": f["nama_file"], "lisan": f["lisan"], "menit_lalu": int(f.get("menit_lalu") or 0), "status": f["status"]} for f in file]}
+        return {"file": [{"id": f.get("id"), "nama": f["nama_file"], "lisan": f["lisan"], "menit_lalu": int(f.get("menit_lalu") or 0), "status": f["status"]} for f in file]}
 
     @router.get("/api/kantor-tugas/laporan")
     async def laporan(menit: int = 30, user: dict = Depends(auth.get_current_user)):

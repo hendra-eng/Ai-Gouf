@@ -28,6 +28,7 @@ import os
 import re
 import socket
 import threading
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -42,6 +43,11 @@ logger = logging.getLogger("neo_wa_pipeline")
 EKSTENSI_BOLEH = ("csv", "xlsx", "xls", "pdf")
 MAKS_BYTE = 50 * 1024 * 1024
 MENIT_BASI = 30          # status 'diproses' lebih lama dari ini dianggap macet (server restart) dan boleh diulang
+DETAK_AGEN_DETIK = 60    # selama pipeline berjalan, agen dijaga tetap duduk di meja kerja: masa tugas diperpanjang tiap sekian detik
+# [BARU] Tugas yang gagal/selesai sangat cepat (mis. 3 detik karena template belum ada) tetap harus TERLIHAT di scene 3D:
+# agen berdiri dari meja meeting, berjalan ke meja halaman, duduk sebentar, baru pulang. Karena itu baris tugas ditahan
+# 'berjalan' minimal sekian detik sejak dimulai (perjalanan ~10 dtk + polling frontend 5 dtk + duduk sebentar).
+MIN_TAMPIL_AGEN_DETIK = 22
 LEVEL_MINIMAL = 3        # Supervisor, sama seperti upload/Buat Invoice/Approve/Post di layar (Sales)
 # Purchase & Journal Entry: Approve boleh Supervisor, tapi POST di layar harus Manager ke atas -> Neo ikut aturan yang sama.
 LEVEL_HALAMAN = {"sales": 3, "purchase": 4, "journal_entry": 4, "cash_bank": 4, "other": 4}
@@ -49,6 +55,7 @@ NAMA_HALAMAN = {"sales": "Sales", "purchase": "Purchase", "journal_entry": "Jour
                 "cash_bank": "Cash dan Bank", "other": "Other"}
 HALAMAN_DIDUKUNG = tuple(LEVEL_HALAMAN)
 BATCH_POST = 25
+AGEN_UPLOAD_SALES = "Atlas"   # [ATURAN MUTLAK] di halaman Sales SEMUA upload dikerjakan Atlas (master expert accounting); Neo/Zeno menyerahkan ke Atlas, bukan menolak
 
 
 def aktif() -> bool:
@@ -88,6 +95,16 @@ def _host_publik(host: str) -> bool:
 _ALASAN_UNDUH: Dict[int, str] = {}  # alasan gagal unduh terakhir per id file (untuk pesan error yang jujur)
 
 
+def _konteks_ssl():
+    """Konteks SSL dengan bundel sertifikat certifi. Python di Windows sering tidak punya sertifikat root lengkap -> CERTIFICATE_VERIFY_FAILED."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001  (certifi tidak ada -> pakai bawaan sistem)
+        return ssl.create_default_context()
+
+
 def simpan_isi_dari_url(wa_id: int, url: Optional[str], nama: Optional[str]) -> Optional[str]:
     """Unduh file dari link Fonnte ke server, catat path-nya. Gagal -> None; alasan asli disimpan di _ALASAN_UNDUH[wa_id]
     dan dicatat di log (dulu gagal diam-diam). Dicoba sampai 3x karena link Fonnte kadang lambat/putus sesaat."""
@@ -110,7 +127,7 @@ def simpan_isi_dari_url(wa_id: int, url: Optional[str], nama: Optional[str]) -> 
     for percobaan in range(1, 4):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Neo-WA)"})
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=60, context=_konteks_ssl()) as r:  # [DIUBAH] pakai sertifikat certifi (Windows sering gagal CERTIFICATE_VERIFY_FAILED)
                 data = r.read(MAKS_BYTE + 1)
             if not data:
                 alasan = "link terbuka tapi isinya kosong"
@@ -182,10 +199,40 @@ MEJA_DARI_HALAMAN = {"sales": "sales", "purchase": "purchase", "journal_entry": 
 AGEN_KANTOR = ("Neo", "Atlas", "Zeno")
 
 
+def _user_valid(user: Dict[str, Any], pemilik: str) -> Dict[str, Any]:
+    """[BARU] User tanpa login (mode dev, ALLOW_ANONYMOUS_DEV=true) punya id=0 (angka), padahal kolom uploaded_by/created_by
+    di database bertipe UUID -> INSERT ditolak ("cannot cast type integer to uuid") dan Neo bilang "Gagal menyimpan source file".
+    Kalau id user bukan UUID, pakai akun pemilik WhatsApp yang asli (username = WA_PEMILIK) dari management_users."""
+    import uuid
+    try:
+        uuid.UUID(str(user.get("id")))
+        return user  # sudah UUID asli (user login biasa): tidak diubah
+    except (ValueError, TypeError, AttributeError):
+        pass
+    try:
+        with dbc.engine.begin() as conn:
+            r = conn.execute(text(
+                "select id, username, nama_user, role from management_users "
+                "where username = :u and deleted_at is null and coalesce(is_active, true)"), {"u": pemilik}).mappings().first()
+    except Exception:  # noqa: BLE001
+        logger.exception("neo_wa_pipeline _user_valid gagal mencari pemilik=%r", pemilik)
+        return user
+    if not r:
+        logger.warning("neo_wa_pipeline user id=%r bukan UUID dan pemilik %r tidak ada di management_users", user.get("id"), pemilik)
+        return user
+    return {**user, "id": str(r["id"]), "username": r["username"], "nama": r["nama_user"] or r["username"], "role": r["role"]}
+
+
 def mulai(user: Dict[str, Any], klien: Dict[str, Any], pemilik: str, nama_mengandung: Optional[str] = None,
           halaman: str = "sales", agen: Optional[str] = None) -> Dict[str, Any]:
     """Tanpa `agen`: perilaku lama (alat Neo di chat). Dengan `agen` (Neo/Atlas/Zeno): agen itu berjalan ke meja halaman,
     memegangnya selama proses, lalu pulang ke meja rapat dan hasilnya dilaporkan Neo (lihat kantor_tugas_route.py)."""
+    if halaman == "sales":
+        # [ATURAN MUTLAK] Upload file Sales SELALU dikerjakan Atlas, siapa pun yang diminta pengguna (Neo, Zeno, atau tanpa nama).
+        # Agen lain TIDAK ditolak: pekerjaannya diserahkan ke Atlas, supaya selalu lewat pemeriksaan Atlas sebelum Approve/Post.
+        if agen and agen != AGEN_UPLOAD_SALES:
+            logger.info("upload Sales diminta ke %s; diserahkan ke %s", agen, AGEN_UPLOAD_SALES)
+        agen = AGEN_UPLOAD_SALES
     if not agen:
         return _mulai_inti(user, klien, pemilik, nama_mengandung, halaman)
     if agen not in AGEN_KANTOR:
@@ -233,6 +280,7 @@ def _mulai_inti(user: Dict[str, Any], klien: Dict[str, Any], pemilik: str, nama_
     if auth.role_level(user.get("role")) < butuh:
         nama_level = "Supervisor" if butuh <= 3 else "Manager"
         return {"error": f"Akun ini di bawah level {nama_level}, jadi tidak boleh memposting transaksi {NAMA_HALAMAN[halaman]} (aturannya sama seperti tombol di layar). Katakan itu apa adanya."}
+    user = _user_valid(user, pemilik)  # [BARU] id user dev (0) bukan UUID -> pakai akun pemilik WhatsApp asli
 
     with dbc.engine.begin() as conn:
         kandidat = conn.execute(text("""
@@ -344,6 +392,23 @@ def _alasan_utama(rinci: Dict[str, Any]) -> str:
         return ""
 
 
+def _kalimat_atlas(rinci: Dict[str, Any], bersih_jika_kosong: bool) -> str:
+    """[BARU] Kalimat laporan Atlas untuk Neo. Tidak pernah melempar error (laporan suara tidak boleh gagal gara-gara ini), dan
+    "tidak menemukan kejanggalan" hanya diucapkan kalau pemeriksaan Atlas benar-benar berjalan dan tidak error."""
+    try:
+        from atlas_audit_sales import kalimat_laporan
+        k = kalimat_laporan(rinci)
+    except Exception:  # noqa: BLE001
+        logger.exception("kalimat laporan Atlas gagal")
+        return ""
+    if k:
+        return " " + k
+    a = rinci.get("atlas")
+    if bersih_jika_kosong and isinstance(a, dict) and not a.get("error"):
+        return " Atlas sudah memeriksa dan tidak menemukan kejanggalan."
+    return ""
+
+
 def _ringkas_hasil(status: Optional[str], rinci: Dict[str, Any], halaman: str, kode_klien: Optional[str]) -> tuple:
     """(kode, kalimat) untuk diucapkan Neo. kode: ok | sebagian | gagal. Angka diambil apa adanya dari hasil_proses."""
     nama = NAMA_HALAMAN.get(halaman, halaman)
@@ -352,9 +417,16 @@ def _ringkas_hasil(status: Optional[str], rinci: Dict[str, Any], halaman: str, k
     if status == "selesai":
         if halaman == "cash_bank":
             return "ok", f"Rekening koran {untuk} selesai: {_n(rinci, 'mutasi_diimpor')} mutasi diimpor, {_n(rinci, 'dicocokkan_otomatis')} dicocokkan, {dipost} diposting."
-        return "ok", f"Selesai untuk {untuk}: {dipost} transaksi sudah diposting."
+        kalimat = f"Selesai untuk {untuk}: {dipost} transaksi sudah diposting."
+        if halaman == "sales":
+            kalimat += _kalimat_atlas(rinci, bersih_jika_kosong=True)
+        return "ok", kalimat
     if status == "selesai_sebagian":
         kalimat = f"{untuk}: {dipost} diposting, {tidak} belum diposting." + _alasan_utama(rinci)
+        if halaman == "sales":
+            tambah = _kalimat_atlas(rinci, bersih_jika_kosong=False).strip()
+            if tambah:   # alasan Atlas sudah memuat semua jenis masalah; jangan dobel dengan alasan terbanyak
+                kalimat = f"{untuk}: {dipost} diposting. " + tambah
         if halaman == "cash_bank" and _n(rinci, "mutasi_belum_cocok"):
             kalimat += f" {_n(rinci, 'mutasi_belum_cocok')} mutasi butuh akun lawan di tab Reconciliation."
         if halaman == "other" and _n(rinci, "baris_gagal_impor"):
@@ -370,10 +442,26 @@ def _jalankan_terpantau(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any],
     """Menjalankan _jalankan() apa adanya; setelah selesai (apa pun hasilnya) agen dipulangkan ke meja rapat
     dan ringkasan hasil dititipkan untuk diumumkan Neo."""
     kode, kalimat = "gagal", "Proses selesai tetapi hasilnya tidak terbaca. Cek tab Posted halaman itu."
+    # [ATURAN MUTLAK] Agen duduk di meja kerja SELAMA pipeline berjalan, berapa lama pun, walau aplikasi di-reload/ditutup:
+    # detak jantung memperpanjang masa tugas tiap 60 detik selagi thread hidup. Berhenti begitu pipeline selesai.
+    selesai = threading.Event()
+    mulai_mono = time.monotonic()
+
+    def _detak() -> None:
+        import kantor_tugas_route as kt_
+        while not selesai.wait(DETAK_AGEN_DETIK):
+            try:
+                kt_.perpanjang_tugas_wa(pemilik_kantor, tugas_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("neo_wa_pipeline detak agen gagal id=%s", wa_id)
+
+    threading.Thread(target=_detak, daemon=True, name=f"neo-wa-detak-{wa_id}").start()
     try:
         _jalankan(wa_id, user, klien, halaman)
     except BaseException:  # noqa: BLE001  (thread: jangan sampai agen tersangkut di meja)
         logger.exception("neo_wa_pipeline terpantau id=%s halaman=%s", wa_id, halaman)
+    finally:
+        selesai.set()
     try:
         with dbc.engine.begin() as conn:
             r = conn.execute(text("select status_proses, hasil_proses from wa_file_masuk where id = :i"), {"i": wa_id}).mappings().first()
@@ -384,6 +472,13 @@ def _jalankan_terpantau(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any],
         kode, kalimat = _ringkas_hasil(status, rinci, halaman, klien.get("client_code"))
     except Exception:  # noqa: BLE001
         logger.exception("neo_wa_pipeline ringkasan id=%s", wa_id)
+    # [BARU] Tahan agen di meja kerja sampai cukup lama supaya perjalanan dari meja meeting terlihat; setelah itu baru pulang.
+    sisa = MIN_TAMPIL_AGEN_DETIK - (time.monotonic() - mulai_mono)
+    if sisa > 0:
+        try:
+            time.sleep(sisa)
+        except Exception:  # noqa: BLE001
+            pass
     try:
         import kantor_tugas_route as kt
         awal = {"ok": f"{agen} sudah selesai.", "sebagian": f"{agen} selesai, tapi tidak semuanya terposting.",
@@ -454,9 +549,116 @@ def _jalankan(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any], halaman: 
         _catat(wa_id, "gagal", hasil, selesai=True)
 
 
+def _posting_cepat(user: Dict[str, Any], klien: Dict[str, Any], daftar: List[Dict[str, Any]],
+                   hasil: Dict[str, Any], wa_id: int) -> tuple:
+    """[BARU] Approve + Post MASSAL ("select all"): satu query per tahap, bukan ~10 query per invoice.
+    Aturannya sama dengan pastikan_mapping_sales + validasi_posting_sales (dihitung di memori), lalu satu UPDATE per
+    potongan invoice. Return (diposting, gagal, alasan_hitung, sisa) -- `sisa` = invoice yang tidak bisa diproses
+    massal (mis. potongan error) dan harus diulang oleh jalur lama per invoice."""
+    uid = user.get("id")
+    pelaku = f"{AGEN_UPLOAD_SALES} ({user.get('nama') or user.get('username') or 'pengguna'})"
+    ids = [x["id"] for x in daftar]
+    diposting, gagal, alasan_hitung, sisa = 0, 0, {}, []
+    if not ids:
+        return diposting, gagal, alasan_hitung, sisa
+
+    def _alasan(k: str, n: int = 1) -> None:
+        k = k[:120]
+        alasan_hitung[k] = alasan_hitung.get(k, 0) + n
+
+    with dbc.engine.begin() as conn:
+        inv = {r["id"]: dict(r) for r in conn.execute(text("""
+            select CAST(id AS text) as id, CAST(management_client_id AS text) as mc, cabang,
+                   coalesce(dpp,0) as dpp, coalesce(ppn,0) as ppn
+              from financial_transaction_sales_invoices where CAST(id AS text) = ANY(:ids)"""), {"ids": ids}).mappings().all()}
+        mapping = {r["invoice_id"]: dict(r) for r in conn.execute(text("""
+            select CAST(invoice_id AS text) as invoice_id, piutang_account_code, pendapatan_account_code,
+                   ppn_account_code, pph_account_code
+              from financial_transaction_sales_account_mappings
+             where CAST(invoice_id AS text) = ANY(:ids) and deleted_at is null"""), {"ids": ids}).mappings().all()}
+        coa_per_klien: Dict[str, set] = {}
+        for mc in {v["mc"] for v in inv.values() if v["mc"]}:
+            coa_per_klien[mc] = {r[0] for r in conn.execute(text(
+                "select acc_no from management_client_coa where CAST(client_id AS text) = :c and deleted_at is null"), {"c": mc}).all()}
+
+    # mapping yang belum ada: dibuat sekali per (klien, cabang), lalu di-insert massal
+    akun_cache: Dict[tuple, Any] = {}
+    baru = []
+    for i in ids:
+        v = inv.get(i)
+        if not v or i in mapping:
+            continue
+        kunci = (v["mc"], (v["cabang"] or ""))
+        if kunci not in akun_cache:
+            akun_cache[kunci] = dbc.akun_default_sales(v["mc"], v["cabang"])
+        a = akun_cache[kunci]
+        if not a:
+            continue
+        baru.append({"c": klien["id"], "i": i, "pc": a["piutang"][0], "pn": a["piutang"][1],
+                     "rc": a["pendapatan"][0], "rn": a["pendapatan"][1],
+                     "xc": a["ppn"][0] if a["ppn"] else None, "xn": a["ppn"][1] if a["ppn"] else None, "u": uid})
+        mapping[i] = {"invoice_id": i, "piutang_account_code": a["piutang"][0], "pendapatan_account_code": a["pendapatan"][0],
+                      "ppn_account_code": a["ppn"][0] if a["ppn"] else None, "pph_account_code": None}
+    for k in range(0, len(baru), 500):
+        with dbc.engine.begin() as conn:
+            conn.execute(text("""
+                insert into financial_transaction_sales_account_mappings
+                  (client_id, invoice_id, piutang_account_code, piutang_account_name, pendapatan_account_code,
+                   pendapatan_account_name, ppn_account_code, ppn_account_name, is_ai_suggested, mapped_by, created_by)
+                values (CAST(:c AS uuid), CAST(:i AS uuid), :pc, :pn, :rc, :rn, :xc, :xn, false, CAST(:u AS uuid), CAST(:u AS uuid))
+                on conflict (invoice_id) do nothing"""), baru[k:k + 500])
+
+    # validasi di memori (sama dengan validasi_posting_sales)
+    lolos = []
+    ppn_default = dbc._AKUN_DEFAULT_SALES["ppn"][0]
+    for i in ids:
+        v = inv.get(i)
+        if not v:
+            gagal += 1; _alasan("invoice tidak ditemukan"); continue
+        coa = coa_per_klien.get(v["mc"] or "", set())
+        if coa:
+            m = mapping.get(i)
+            if not m:
+                gagal += 1; _alasan("Accounts are not mapped yet -- set the accounts in Journal Preview first."); continue
+            dipakai = {m["piutang_account_code"], m["pendapatan_account_code"]}
+            if float(v["ppn"]) > 0 or not float(v["dpp"]):
+                dipakai.add(m.get("ppn_account_code") or ppn_default)
+            if m.get("pph_account_code"):
+                dipakai.add(m["pph_account_code"])
+            hilang = sorted(k for k in dipakai if k and k not in coa)
+            if hilang:
+                gagal += 1; _alasan(f"Account(s) not found in the client's chart of accounts: {', '.join(hilang)}."); continue
+        lolos.append(i)
+
+    # Approved + Posted + activity log: satu UPDATE & satu INSERT per potongan
+    nomor = {x["id"]: x["invoice_no"] for x in daftar}
+    for k in range(0, len(lolos), 500):
+        potong = lolos[k:k + 500]
+        try:
+            with dbc.engine.begin() as conn:
+                conn.execute(text("""
+                    update financial_transaction_sales_invoices
+                       set posting_status = 'Posted', journal_sync_status = 'Synced', posted_at = now(),
+                           posted_by = CAST(:u AS uuid), edited_at = now(), edited_by = CAST(:u AS uuid)
+                     where CAST(id AS text) = ANY(:ids) and deleted_at is null"""), {"ids": potong, "u": uid})
+                conn.execute(text("""
+                    insert into financial_transaction_sales_activity_log
+                      (client_id, invoice_id, event_type, description, reference_no, performed_by, created_by)
+                    values (CAST(:c AS uuid), CAST(:i AS uuid), 'JOURNAL_SYNC',
+                            'Jurnal disinkronkan ke General Ledger otomatis oleh Atlas (dari file WhatsApp, sudah diperiksa Atlas)', :n, :p, CAST(:u AS uuid))"""),
+                    [{"c": klien["id"], "i": i, "n": nomor.get(i), "p": pelaku, "u": uid} for i in potong])
+            diposting += len(potong)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("posting massal sales gagal (potongan %s): %s -- diulang per invoice", k, e)
+            sisa += [x for x in daftar if x["id"] in set(potong)]
+        hasil.update({"diposting": diposting, "tidak_diposting": gagal})
+        _catat(wa_id, "diproses", hasil)
+    return diposting, gagal, alasan_hitung, sisa
+
+
 def _posting(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any], sf_id: str, hasil: Dict[str, Any]) -> None:
     uid = user.get("id")
-    pelaku = f"Neo ({user.get('nama') or user.get('username') or 'pengguna'})"
+    pelaku = f"{AGEN_UPLOAD_SALES} ({user.get('nama') or user.get('username') or 'pengguna'})"
     with dbc.engine.begin() as conn:
         daftar = conn.execute(text("""
             select CAST(i.id AS text) as id, i.invoice_no, i.posting_status
@@ -471,6 +673,54 @@ def _posting(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any], sf_id: str
     alasan_hitung: Dict[str, int] = {}
     hasil.update({"menunggu_posting": total, "diposting": 0, "tidak_diposting": 0})
 
+    # [BARU] ATLAS MEMERIKSA dulu sebelum Approve/Post (lihat atlas_audit_sales.py): invoice janggal ditahan di Draft,
+    # yang bersih lanjut. FAIL-CLOSED: kalau pemeriksaan Atlas sendiri error, TIDAK ADA invoice yang diposting (semua tetap di
+    # Draft) dan Neo melaporkannya. Memposting tanpa pemeriksaan lebih berbahaya daripada menunda.
+    ids_semua = [x["id"] for x in daftar]
+    try:
+        import atlas_audit_sales as atlas
+        hasil["tahap"] = "pemeriksaan_atlas"; _catat(wa_id, "diproses", hasil)
+        paket = atlas.analisa(klien, ids_semua, sf_id, hasil.get("buat_transaksi"), hasil.get("baris_terbaca"))
+        tahan = paket["tahan"]
+        log_ok = atlas.catat_penahanan(klien, user, paket["temuan"], paket["putusan"]["tahan_semua"], ids_semua)
+        for t in paket["temuan"]:
+            if t["tingkat"] in ("blokir", "tinjau"):
+                k = ("Atlas: " + t["pesan"])[:120]
+                alasan_hitung[k] = alasan_hitung.get(k, 0) + 1
+        if paket["putusan"]["tahan_semua"]:
+            alasan_hitung["Atlas: seluruh file ditahan (terlalu banyak invoice janggal)"] = len(ids_semua)
+        daftar = [x for x in daftar if x["id"] not in tahan]
+        gagal += len(tahan)
+        hasil["atlas"] = paket["hasil_atlas"]
+        if log_ok is False:
+            hasil["atlas"]["log_gagal"] = True      # invoice tetap ditahan; hanya catatan di activity log yang gagal tertulis
+        hasil.update({"tidak_diposting": gagal})
+        _catat(wa_id, "diproses", hasil)
+    except Exception:  # noqa: BLE001
+        logger.exception("pemeriksaan Atlas gagal id=%s; SEMUA invoice ditahan di Draft (tidak diposting)", wa_id)
+        gagal += len(daftar)
+        if daftar:
+            alasan_hitung["Atlas gagal memeriksa file ini; invoice ditahan di Draft"] = len(daftar)
+        hasil["atlas"] = {"error": "pemeriksaan Atlas gagal dijalankan", "total": len(ids_semua), "ditahan": len(daftar),
+                          "tahan_semua": False, "gagal_periksa": True, "ringkas": [], "catatan_file": [], "catatan_kode": []}
+        daftar = []
+        hasil.update({"tidak_diposting": gagal})
+        try:
+            _catat(wa_id, "diproses", hasil)
+        except Exception:  # noqa: BLE001
+            logger.exception("gagal mencatat status setelah Atlas error id=%s", wa_id)
+
+    # [BARU] jalur cepat (massal); jalur lama per invoice di bawah hanya untuk sisa yang gagal massal
+    try:
+        _gagal_atlas = gagal
+        diposting, gagal, alasan_hitung_cepat, daftar = _posting_cepat(user, klien, daftar, hasil, wa_id)
+        gagal += _gagal_atlas
+        for k_, n_ in alasan_hitung_cepat.items():
+            alasan_hitung[k_] = alasan_hitung.get(k_, 0) + n_
+        hasil.update({"tidak_diposting": gagal})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("jalur cepat posting sales gagal total, pakai jalur per invoice: %s", e)
+
     for n, inv in enumerate(daftar, 1):
         alasan: List[str] = []
         try:
@@ -483,14 +733,14 @@ def _posting(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any], sf_id: str
             if not alasan:
                 ok = dbc.update_sales_invoice(inv["id"], {
                     "posting_status": "Posted", "journal_sync_status": "Synced",
-                    "posted_at": datetime.now(), "posted_by": klien["id"],
+                    "posted_at": datetime.now(), "posted_by": uid,
                 }, updated_by=uid)
                 if ok is None:
                     alasan = ["gagal menyimpan status Posted"]
                 else:
                     dbc.create_sales_activity_log({
                         "client_id": klien["id"], "invoice_id": inv["id"], "event_type": "JOURNAL_SYNC",
-                        "description": "Jurnal disinkronkan ke General Ledger otomatis oleh Neo (dari file WhatsApp)",
+                        "description": "Jurnal disinkronkan ke General Ledger otomatis oleh Atlas (dari file WhatsApp, sudah diperiksa Atlas)",
                         "reference_no": inv["invoice_no"], "performed_by": pelaku,
                     }, created_by=uid)
         except Exception as e:  # noqa: BLE001
@@ -506,6 +756,11 @@ def _posting(wa_id: int, user: Dict[str, Any], klien: Dict[str, Any], sf_id: str
             hasil.update({"diposting": diposting, "tidak_diposting": gagal})
             _catat(wa_id, "diproses", hasil)
 
+    try:   # [BARU] Atlas menguraikan jurnal yang terbentuk & memastikan Debit = Kredit
+        import atlas_audit_sales as atlas
+        atlas.tambah_jurnal(hasil, klien, ids_semua)
+    except Exception:  # noqa: BLE001
+        logger.exception("atlas uraian jurnal gagal id=%s", wa_id)
     hasil.update({"tahap": "selesai", "diposting": diposting, "tidak_diposting": gagal,
                   "alasan_tidak_diposting": sorted(alasan_hitung.items(), key=lambda x: -x[1])[:3]})
     _catat(wa_id, "selesai_sebagian" if gagal else "selesai", hasil, selesai=True)
