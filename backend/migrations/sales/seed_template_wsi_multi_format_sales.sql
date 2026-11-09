@@ -101,7 +101,15 @@
 --   3. Properti dipetakan ke "cabang" (nama baku HURUF BESAR) supaya bisa dipetakan ke akun
 --      pendapatan per properti.
 --
--- AKUN JURNAL: BELUM DIISI. COA WSI belum ada di repo (tidak ada seed_coa_wsi.sql) dan akun
+-- UPDATE 2026-11-09 (willi): parser daily_channel_recap di-port ke playground-willi (bagian 3g;
+-- sebelumnya upload WSI selalu "template tidak cocok"). Diuji ke 12 file dataset/Sales/WSI/
+-- {Juni,Juli,Agustus} (4 properti x 3 bulan): semua cocok, 0 invalid, dpp & pajak per sheet sama
+-- dengan baris total file. Total dpp: Juni 88.580.778, Juli 236.887.800, Agustus 250.970.394.
+-- Akun sekarang dipilih dari COA klien bila ada (COA template industri Accommodation & Food
+-- Service): 130001 Trade Receivables / 430001 Room Revenue (semua properti) / 220009 Other Tax
+-- Payables (pajak hotel 10% = PB1, bukan PPN). Nama klien ganda -> kode 'WSI' diutamakan.
+--
+-- AKUN JURNAL (catatan awal): BELUM DIISI. COA WSI belum ada di repo (tidak ada seed_coa_wsi.sql) dan akun
 -- tidak boleh ditebak karena posting ditolak kalau kode tidak ada di COA klien. Selama kosong:
 -- db_client.akun_default_sales() memakai Settings > Account Mapping klien (account_receivable /
 -- sales_revenue / sales_tax_payable); kalau itu juga kosong, mapping akun invoice dilewati
@@ -173,6 +181,11 @@ DECLARE
     -- Hash baris seed ini = SHA-256("<hash_excel>"). Belum ada versi lama.
     v_hash_baru   CONSTANT TEXT := 'c957e961a69df28e68885e130b8c42f6f7160de2dc4f113e727bc24bf413fa92';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
+    v_akun        TEXT;
+    v_akun_json   JSONB;
+    v_cabang      TEXT;
     v_rules       JSONB := $json$
 {
   "format_type": "multi_format",
@@ -272,13 +285,15 @@ DECLARE
   "catatan_akun": "Akun jurnal (piutang_account, pendapatan_account, pendapatan_account_by_cabang, ppn_account) SENGAJA belum diisi: COA klien WSI belum ada di repo (belum ada seed_coa_wsi.sql) dan kode akun tidak boleh ditebak. Selama kosong, Journal Preview memakai Settings > Account Mapping klien; kalau itu juga kosong, mapping akun invoice dilewati diam-diam saat Buat Invoice. Lihat bagian AKUN JURNAL di kepala seed_template_wsi_multi_format_sales.sql."
 }$json$::jsonb;
 BEGIN
+    -- Nama ganda (DB lokal willi 2026-11-09: WSI & WSI2) -> klien berkode persis 'WSI' diutamakan;
+    -- tanpa kode itu, nama ganda tetap ditolak.
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
       AND upper(trim(nama_client)) = 'PT WELL STAR INDONESIA'
-    ORDER BY created_at
+    ORDER BY (upper(trim(client_code)) = 'WSI') DESC, created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
+    IF upper(trim(v_client_code)) IS DISTINCT FROM 'WSI' AND (SELECT count(*) FROM management_clients
         WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT WELL STAR INDONESIA') > 1 THEN
         RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT WELL STAR INDONESIA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
     END IF;
@@ -286,6 +301,39 @@ BEGIN
     IF v_client_id IS NULL THEN
         RAISE EXCEPTION 'Klien WSI belum ada di management_clients (dicari nama_client = ''PT WELL STAR INDONESIA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
+
+    -- Akun default dipilih dari COA klien yang ADA (pola seed NPI/AADL/ABE). COA WSI asli belum
+    -- ada di repo; kandidat = COA template industri Accommodation & Food Service. Tidak ada ->
+    -- akun dibiarkan kosong (Settings > Account Mapping klien yang dipakai) + NOTICE.
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('piutang_account',    ARRAY['130001']),
+            ('pendapatan_account', ARRAY['430001']),
+            ('ppn_account',        ARRAY['220009'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien WSI -- isi Settings > Account Mapping atau tambahkan di halaman COA sebelum posting.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        v_rules := jsonb_set(v_rules, ARRAY[v_peran], v_akun_json);
+        IF v_peran = 'pendapatan_account' THEN
+            v_rules := jsonb_set(v_rules, '{pendapatan_account_by_cabang}', '{}'::jsonb);
+            FOREACH v_cabang IN ARRAY ARRAY['LIME VILLA', 'TREELAND', 'PURNAMA', 'BOUGAINVILLA'] LOOP
+                v_rules := jsonb_set(v_rules, ARRAY['pendapatan_account_by_cabang', v_cabang], v_akun_json);
+            END LOOP;
+        END IF;
+        RAISE NOTICE 'Akun % WSI = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
     SELECT t.id INTO v_id

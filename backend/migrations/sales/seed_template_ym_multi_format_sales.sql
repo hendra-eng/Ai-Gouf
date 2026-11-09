@@ -1,7 +1,7 @@
 -- seed_template_ym_multi_format_sales.sql
 -- =============================================================
 -- Template pola kolom (financial_transaction_sales_import_templates) untuk
--- klien YM (PT Yoniso Manasikara -- North Bali Beach Cottages & Spa dan North
+-- klien YM (PT YONISO MASIKARA -- North Bali Beach Cottages & Spa dan North
 -- Bali Divecenter). SATU baris setting ("Multi") untuk halaman Transactions >
 -- Sales > Source Data, berisi 2 varian Excel dengan parser yang sama
 -- (format_type "monthly_income_list", sales_import_v1.py bagian 3f).
@@ -96,6 +96,16 @@
 --   memuat "Date of invoice"/"Name" (atau padanannya), 1 sheet berisi banyak bulan, atau tamu
 --   dipecah per komponen (diving/room/extra) jadi invoice terpisah.
 --
+-- UPDATE 2026-11-09 (willi): parser monthly_income_list + konversi .xls di-port ke playground-willi
+-- (sebelumnya upload YM selalu "template tidak cocok"). Ditambah "hanya_bulan_terakhir": true di kedua
+-- varian -- file YM KUMULATIF (Pemasukan Juni = Jan..Jun, Juli = Jan..Jul, INCOME LIST Agustus = Jan..Agu),
+-- jadi tiap upload hanya mengimpor sheet bulan TERAKHIR di file (dataset/Sales/YM/{Juni,Juli,Agustus}):
+--   Juni  xls  -> Juni 26        : 4 valid (42.127.684), 3 invalid (cash EUR tanpa kurs)
+--   Juli  xls  -> Juli 26        : 1 valid (1.500.000),  4 invalid (cash EUR tanpa kurs)
+--   Agust xlsx -> 0826 YANG DI PAKAI : 5 valid (118.554.348), 0 invalid
+-- Mau impor ulang semua bulan dari 1 file (backfill)? Set "hanya_bulan_terakhir": false lalu jalankan
+-- ulang seed (atau batasi dengan periode_mulai / periode_akhir).
+--
 -- ASUMSI AKUNTANSI -- MOHON DIKONFIRMASI (ubah di resep, lalu jalankan ulang seed):
 --   1. Nilai = kolom Total (pendapatan NETTO yang dilaporkan PT YM: part diving + part room,
 --      restaurant & spa + extra), BUKAN total uang yang dibayar tamu. ppn = 0 karena PHR 10%
@@ -133,7 +143,10 @@
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
 -- kolom NOT NULL untuk template Multi; pencocokan memakai label kolom di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client = 'PT YONISO MANASIKARA' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- UPDATE 2026-11-09 (willi): akun default kini dipilih dari COA klien yang ada (COA YM asli
+-- 10003/40002/20003, kalau tidak ada 130001/430001/220009 dari COA template industri lokal);
+-- nama klien juga diterima dengan ejaan 'PT YONISO MANASIKARA'.
+-- KLIEN: dicari lewat nama_client = 'PT YONISO MASIKARA' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
@@ -168,12 +181,16 @@ DECLARE
     v_client_code VARCHAR(50);
     v_id          UUID;
     v_bentrok     INTEGER;
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
+    v_akun        TEXT;
+    v_akun_json   JSONB;
     -- Hash baris seed ini = SHA-256("<hash_xlsx>:<hash_xls>"). Belum ada versi lama.
     v_hash_baru   CONSTANT TEXT := '4737cb0554436b58285dc04198664036f8eb578847c80c7c8ccad4868f4932f9';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
     v_rules       JSONB := $json${
   "format_type": "multi_format",
-  "description": "1 setting klien YM (PT Yoniso Manasikara) untuk laporan penjualan. Varian Excel #1: file xlsx 'INCOME LIST' (kolom Total dalam Rupiah). Varian Excel #2: file xls 'Pemasukan' (kolom Total Rp + total EUR untuk pembayaran cash). Keduanya 1 sheet per bulan, 1 baris = 1 tamu = 1 invoice (nomor invoice dibentuk dari tanggal + nama tamu). Tiap varian membawa resep parsing sendiri; backend memilih varian lewat LABEL kolom header (lihat _cocokkan_template_excel_income_list di sales_import_v1.py).",
+  "description": "1 setting klien YM (PT YONISO MASIKARA) untuk laporan penjualan. Varian Excel #1: file xlsx 'INCOME LIST' (kolom Total dalam Rupiah). Varian Excel #2: file xls 'Pemasukan' (kolom Total Rp + total EUR untuk pembayaran cash). Keduanya 1 sheet per bulan, 1 baris = 1 tamu = 1 invoice (nomor invoice dibentuk dari tanggal + nama tamu). Tiap varian membawa resep parsing sendiri; backend memilih varian lewat LABEL kolom header (lihat _cocokkan_template_excel_income_list di sales_import_v1.py).",
   "variants": [
     {
       "file_type": "Excel",
@@ -201,7 +218,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
-        "description": "Varian xlsx 'INCOME LIST' PT Yoniso Manasikara (North Bali Beach Cottages & Spa + North Bali Divecenter): 1 sheet per bulan (0126, 0826, '0826 YANG DI PAKAI'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom Total (Part Diving + Part R&B&S + Extra income) dalam Rupiah.",
+        "description": "Varian xlsx 'INCOME LIST' PT YONISO MASIKARA (North Bali Beach Cottages & Spa + North Bali Divecenter): 1 sheet per bulan (0126, 0826, '0826 YANG DI PAKAI'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom Total (Part Diving + Part R&B&S + Extra income) dalam Rupiah.",
         "prefix_invoice": "YM",
         "kolom_wajib": [
           "tanggal",
@@ -223,6 +240,7 @@ DECLARE
           "Summary"
         ],
         "sheet_tersembunyi": "abaikan",
+        "hanya_bulan_terakhir": true,
         "sheet_prioritas_kata": [
           "yang dipakai",
           "pembetulan"
@@ -268,7 +286,7 @@ DECLARE
       ],
       "mapping_rules": {
         "format_type": "monthly_income_list",
-        "description": "Varian xls 'Pemasukan' PT Yoniso Manasikara (daftar dari pihak hotel): 1 sheet per bulan ('Jan 26', 'Maret 26'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom 'Total Rp'; pembayaran cash hanya berisi 'total €' -- tanpa kurs di template baris itu INVALID (tidak ditebak).",
+        "description": "Varian xls 'Pemasukan' PT YONISO MASIKARA (daftar dari pihak hotel): 1 sheet per bulan ('Jan 26', 'Maret 26'), 1 baris = 1 tamu = 1 invoice. Nilai = kolom 'Total Rp'; pembayaran cash hanya berisi 'total €' -- tanpa kurs di template baris itu INVALID (tidak ditebak).",
         "prefix_invoice": "YM",
         "kolom_wajib": [
           "tanggal",
@@ -290,6 +308,7 @@ DECLARE
           "Summary"
         ],
         "sheet_tersembunyi": "abaikan",
+        "hanya_bulan_terakhir": true,
         "lewati_nol": true,
         "toleransi_selisih": 1,
         "number_format": {
@@ -327,17 +346,44 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT YONISO MANASIKARA'
+      AND upper(trim(nama_client)) IN ('PT YONISO MASIKARA', 'PT YONISO MANASIKARA')
     ORDER BY created_at
     LIMIT 1;
     IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT YONISO MANASIKARA') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT YONISO MANASIKARA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
+        WHERE deleted_at IS NULL AND upper(trim(nama_client)) IN ('PT YONISO MASIKARA', 'PT YONISO MANASIKARA')) > 1 THEN
+        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT YONISO MASIKARA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
     END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = ''PT YONISO MANASIKARA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = ''PT YONISO MASIKARA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
+
+    -- Akun default dipilih dari COA klien yang ADA (pola seed NPI/AADL/ABE/WSI): kode COA YM asli
+    -- (10003/40002/20003) diutamakan, kalau tidak ada pakai COA template industri Accommodation &
+    -- Food Service (130001/430001/220009). Tidak ada keduanya -> akun dibiarkan + NOTICE.
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('piutang_account',    ARRAY['10003', '130001']),
+            ('pendapatan_account', ARRAY['40002', '430001']),
+            ('ppn_account',        ARRAY['20003', '220009'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien YM -- isi Settings > Account Mapping atau tambahkan di halaman COA sebelum posting.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        v_rules := jsonb_set(v_rules, ARRAY[v_peran], v_akun_json);
+        RAISE NOTICE 'Akun % YM = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
 
     -- Baris yang di-upgrade: hash baris seed ini diutamakan, lalu versi lamanya.
     SELECT t.id INTO v_id
@@ -418,4 +464,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT YONISO MANASIKARA';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT YONISO MASIKARA';

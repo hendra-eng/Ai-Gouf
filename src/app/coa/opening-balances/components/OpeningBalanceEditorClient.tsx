@@ -15,7 +15,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   AlertTriangle, ArrowLeft, Calculator, CheckCircle2, ChevronDown, ChevronRight, Download, FileText, GitBranch, Inbox, ListTree, Loader2,
-  Lock, LockOpen, RotateCcw, Save, Search, Send, Table2, Trash2, Upload, X,
+  Lock, LockOpen, RotateCcw, Save, Search, Table2, Trash2, Upload, X,
 } from 'lucide-react';
 import { ACCOUNT_CLASSIFICATIONS, useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import {
@@ -254,24 +254,24 @@ export default function OpeningBalanceEditorClient() {
       penampungRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       throw new OpeningBalanceError(`Out of balance by ${formatAmount(Math.abs(selisih))}. Choose a suspense account first.`, 'SUSPENSE_REQUIRED_LOCAL');
     }
-    if (totals.count === 0) throw new OpeningBalanceError('Fill in at least one balance before posting.');
+    if (totals.count === 0) throw new OpeningBalanceError('Fill in at least one balance before approving.');
     // Posting tetap boleh walau detail subledger belum diimpor (keputusan bisnis 2026-10-31) -- cukup diingatkan.
     const pending = (await muatKontrol()).filter(k => k.status === 'pending');
     const catatanDetail = pending.length
       ? `
 
 Provisional balances — subledger detail still required for: ${pending.map(k => `${k.label} (${formatAmount(k.opening_balance)})`).join(', ')}. `
-        + 'You can post now; to import the detail later, use Revise, approve the import, then post again.'
+        + 'You can approve now; to import the detail later, use Revise, approve the import, then approve again.'
       : '';
     const pesan = (seimbang
-      ? `Post opening balance FY ${ob!.fiscal_year} (${branchLabel(ob!.branch)})? An opening journal will be created.`
-      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Post anyway?`)
+      ? `Approve opening balance FY ${ob!.fiscal_year} (${branchLabel(ob!.branch)})? An opening journal will be created.`
+      : `Debit and credit differ by ${formatAmount(Math.abs(selisih))}. The difference will be parked in ${kodeAkun(penampung?.acc_no)} ${penampung?.account_name}. Approve anyway?`)
       + catatanDetail;
     if (!window.confirm(pesan)) return;
     if (adaPerubahan) await simpan(true);
     const d = await postOpeningBalance(ob!.id);
     terapkan(d);
-    toast.success('Opening balance posted', { description: d.journal ? `Journal ${d.journal.je_number}` : undefined });
+    toast.success('Opening balance approved', { description: d.journal ? `Journal ${d.journal.je_number}` : undefined });
   });
 
   const onRevise = () => jalankan('revise', async () => {
@@ -666,7 +666,7 @@ Provisional balances — subledger detail still required for: ${pending.map(k =>
                 disabled={!!aksi}
                 className="flex h-9 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-sm shadow-blue-600/25 transition-colors hover:bg-blue-800 disabled:opacity-50"
               >
-                {aksi === 'post' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Post
+                {aksi === 'post' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Approve
               </button>
             </div>
           )}

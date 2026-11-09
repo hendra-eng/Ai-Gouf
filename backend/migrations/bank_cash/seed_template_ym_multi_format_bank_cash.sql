@@ -2,7 +2,7 @@
 -- =============================================================
 -- Template ekstraksi rekening koran (financial_transaction_bank_cash_import_templates)
 -- + mapping bank -> akun COA (financial_transaction_bank_cash_bank_mappings) untuk klien YM
--- (PT Yoniso Manasikara), format MULTI seperti seed NBM/Birawa:
+-- (PT YONISO MASIKARA), format MULTI seperti seed NBM/Birawa:
 -- SATU baris template file_type 'Multi' yang membawa array "variants".
 --
 -- VARIAN (urutan = urutan hash di bawah):
@@ -41,9 +41,9 @@
 --
 -- AKUN COA: 10002 'Bank BNI' dan 10012 'Bank Mandiri' (sheet 'COA YM' di dataset/COA/COA_Clients_GOUF.xlsx).
 -- PERLU: seed COA YM belum ada di migrations/coa/ (baru ada nbm, npi, sau). Tambahkan YM ke KLIEN di
--- migrations/generate_seed_coa.py (mis. "YM": ["YM", "PT YONISO MANASIKARA", "PT. YONISO MANASIKARA"]) lalu jalankan,
+-- migrations/generate_seed_coa.py (mis. "YM": ["YM", "PT YONISO MASIKARA", "PT. YONISO MANASIKARA"]) lalu jalankan,
 -- dan jalankan seed COA-nya SEBELUM seed ini.
--- Klien dicari lewat nama_client = 'PT YONISO MANASIKARA' (sesuai data klien di VPS);
+-- Klien dicari lewat nama_client = 'PT YONISO MASIKARA' (sesuai data klien di VPS);
 -- GAGAL jelas kalau klien atau akun COA belum ada. client_id / coa id TIDAK di-hardcode.
 --
 -- Cara pakai:
@@ -53,9 +53,9 @@
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan. Untuk menjalankan ulang:
 --   DELETE FROM financial_transaction_bank_cash_bank_mappings m USING management_clients c
---    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) = 'PT YONISO MANASIKARA';
+--    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) = 'PT YONISO MASIKARA';
 --   DELETE FROM financial_transaction_bank_cash_import_templates t USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'PT YONISO MANASIKARA';
+--    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'PT YONISO MASIKARA';
 
 DO $do$
 DECLARE
@@ -68,16 +68,16 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT YONISO MANASIKARA'
+      AND upper(trim(nama_client)) = 'PT YONISO MASIKARA'
     ORDER BY created_at
     LIMIT 1;
     IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT YONISO MANASIKARA') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT YONISO MANASIKARA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
+        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT YONISO MASIKARA') > 1 THEN
+        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT YONISO MASIKARA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
     END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = ''PT YONISO MANASIKARA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien YM belum ada di management_clients (dicari nama_client = ''PT YONISO MASIKARA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     SELECT id INTO v_coa_bni     FROM management_client_coa WHERE client_id = v_client_id AND acc_no = '10002' AND deleted_at IS NULL LIMIT 1;
@@ -315,9 +315,9 @@ $do$;
 -- SELECT t.template_name, t.file_type, jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian
 -- FROM financial_transaction_bank_cash_import_templates t
 -- JOIN management_clients c ON c.id = t.client_id
--- WHERE upper(trim(c.nama_client)) = 'PT YONISO MANASIKARA' AND t.deleted_at IS NULL;
+-- WHERE upper(trim(c.nama_client)) = 'PT YONISO MASIKARA' AND t.deleted_at IS NULL;
 -- SELECT m.bank_name, m.account_number, a.acc_no, a.account_name
 -- FROM financial_transaction_bank_cash_bank_mappings m
 -- JOIN management_client_coa a ON a.id = m.bank_coa_id
 -- JOIN management_clients c ON c.id = m.client_id
--- WHERE upper(trim(c.nama_client)) = 'PT YONISO MANASIKARA' AND m.deleted_at IS NULL;
+-- WHERE upper(trim(c.nama_client)) = 'PT YONISO MASIKARA' AND m.deleted_at IS NULL;

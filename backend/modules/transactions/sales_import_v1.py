@@ -42,6 +42,7 @@ import hashlib
 import io
 import re
 from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -102,6 +103,53 @@ def _baca_csv_baris(content: bytes, encoding: str, delimiter: str, quoted_fields
         return [list(r) for r in csv.reader(io.StringIO(teks), delimiter=delimiter)]
     baris_mentah = teks.splitlines()  # otomatis handle \r\n maupun \n
     return [baris.split(delimiter) for baris in baris_mentah]
+
+
+_OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+
+def _pastikan_xlsx(content: bytes) -> bytes:
+    """Di-port dari playground-hendra (d2ed6fa). File Excel lama (.xls / BIFF, ditandai header
+    OLE2) dikonversi ke .xlsx di memory supaya seluruh pembaca di bawah (openpyxl) bisa
+    memakainya. Yang dibawa: semua sheet (nama, status tersembunyi) dan NILAI sel (sel tanggal
+    jadi datetime). Format sel, rumus dan sel gabungan tidak dibawa -- parser hanya membaca
+    nilai. File .xlsx dikembalikan apa adanya. Kalau paket xlrd belum terpasang / file rusak,
+    isi asli dikembalikan (pencocokan template lalu gagal -> 'Butuh Review', bukan error)."""
+    if not content or not content.startswith(_OLE2_MAGIC):
+        return content
+    try:
+        import openpyxl
+        import xlrd
+
+        buku = xlrd.open_workbook(file_contents=content)
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)
+        for sh in buku.sheets():
+            ws = wb.create_sheet(title=sh.name[:31] or "Sheet")
+            ws.sheet_state = "visible" if sh.visibility == 0 else "hidden"
+            for r in range(sh.nrows):
+                for c in range(sh.ncols):
+                    tipe, v = sh.cell_type(r, c), sh.cell_value(r, c)
+                    if tipe in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK, xlrd.XL_CELL_ERROR):
+                        continue
+                    if tipe == xlrd.XL_CELL_DATE:
+                        try:
+                            v = xlrd.xldate.xldate_as_datetime(v, buku.datemode)
+                        except Exception:
+                            pass
+                    elif tipe == xlrd.XL_CELL_BOOLEAN:
+                        v = bool(v)
+                    elif tipe == xlrd.XL_CELL_TEXT and not str(v).strip():
+                        continue
+                    ws.cell(row=r + 1, column=c + 1, value=v)
+        if not wb.sheetnames:
+            wb.create_sheet("Sheet1")
+        keluar = BytesIO()
+        wb.save(keluar)
+        return keluar.getvalue()
+    except Exception as e:
+        logger.warning(f"Gagal mengonversi file .xls ke .xlsx: {e}")
+        return content
 
 
 def _norm_nama_sheet(nama: str) -> str:
@@ -238,6 +286,32 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
     match (file ini polanya belum pernah dipelajari)."""
     kandidat = _kandidat_template(management_client_id, file_type)
     if file_type == "Excel":
+        # .xls (Excel lama) -> .xlsx dulu; semua pembaca di bawah (dan sumber yang dikembalikan) memakai hasilnya.
+        content = _pastikan_xlsx(content)
+        # Varian daftar income bulanan (YM) dicocokkan lewat LABEL kolom header -- bagian 3f.
+        income = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_INCOME_LIST]
+        if income:
+            cocok_income = _cocokkan_template_excel_income_list(content, income)
+            if cocok_income is not None:
+                return cocok_income
+            id_income = {id(t) for t in income}
+            kandidat = [t for t in kandidat if id(t) not in id_income]
+        # Varian multi-sheet (ABE) dicocokkan lewat header tiap sheet terdaftar -- bagian 3c.
+        multi_sheet = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_MULTI_SHEET]
+        if multi_sheet:
+            cocok_multi = _cocokkan_template_excel_multi_sheet(content, multi_sheet)
+            if cocok_multi is not None:
+                return cocok_multi
+            id_multi = {id(t) for t in multi_sheet}
+            kandidat = [t for t in kandidat if id(t) not in id_multi]
+        # Varian rekap harian per channel OTA (WSI) dicocokkan lewat LABEL kolom header di sheet mana pun -- bagian 3g.
+        rekap = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_REKAP_CHANNEL]
+        if rekap:
+            cocok_rekap = _cocokkan_template_excel_rekap_channel(content, rekap)
+            if cocok_rekap is not None:
+                return cocok_rekap
+            id_rekap = {id(t) for t in rekap}
+            kandidat = [t for t in kandidat if id(t) not in id_rekap]
         # Varian register invoice berblok bulanan (Birawa) dicocokkan lewat header 1 sheet
         # bernama -- bagian 3d (kolom A kosong / lebar sheet tidak ikut di-hash).
         register = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_REGISTER_BLOK]
@@ -1374,6 +1448,877 @@ def _parse_monthly_rent_roll(sumber: "_ExcelBulananSumber", template: Dict[str, 
     return hasil
 
 
+# ============================================================
+# 3c) Excel MULTI-SHEET catatan penjualan manual (klien ABE)
+# ============================================================
+# Di-port dari playground-hendra commit d2ed6fa (2026-11-09).
+# Bentuk file: 1 workbook = beberapa sheet (Supermarket, cash, Permonth, COCO,
+# Retur, ...), tiap sheet = 1 jalur penjualan/pelanggan dengan kolom berbeda-beda.
+# TIDAK ada nomor invoice: 1 baris = 1 ITEM, tanggal hanya diisi di baris pertama
+# tiap kelompok (baris di bawahnya kosong = ikut tanggal di atasnya), dan sel
+# tanggal tercampur: sel bertipe tanggal yang SUDAH TERTUKAR hari<->bulan (Excel
+# membaca "02/07/2026" sbg 7 Februari padahal 2 Juli) dan teks "22/7/2026" /
+# "07/31/2026". Resepnya (mapping_rules.sheets) mendaftar tiap sheet sendiri-sendiri.
+# 1 baris source_rows = 1 invoice = 1 (sheet, tanggal, pelanggan).
+
+FORMAT_EXCEL_MULTI_SHEET = "multi_sheet_line_items"
+
+
+def _sel_header_terpangkas(baris: Any, jumlah_kolom: Optional[int] = None) -> List[str]:
+    sel = ["" if v is None else str(v) for v in (baris or [])]
+    if jumlah_kolom:
+        sel = sel[:jumlah_kolom]
+    while sel and not sel[-1].strip():
+        sel.pop()
+    return sel
+
+
+def _posisi_header_multi(baris_ke: "Any", spec: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    """(header_row_index, data_start_row_index) 1-based kalau header sheet cocok dengan
+    `signature` spec, atau dengan salah satu `header_alternatif` spec ([{header_row_index,
+    data_start_row_index, signature}] -- layout lain sheet yang sama, mis. file Juni ABE
+    tanpa baris subtotal di atas header / label kolom beda). None kalau tidak ada yang cocok.
+    `baris_ke(idx_1based)` mengembalikan isi baris itu (atau None)."""
+    pilihan = [spec] + list(spec.get("header_alternatif") or [])
+    for p in pilihan:
+        idx = p.get("header_row_index", 1)
+        sel = _sel_header_terpangkas(baris_ke(idx), p.get("signature_kolom", spec.get("signature_kolom")))
+        if sel and _hash_baris(sel) == p.get("signature"):
+            return idx, p.get("data_start_row_index", idx + 1)
+    return None
+
+
+def _cocokkan_template_excel_multi_sheet(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
+    """Cocok kalau SALAH SATU sheet yang terdaftar di mapping_rules.sheets ada di
+    workbook DAN hash baris header-nya (header_row_index sheet itu, dipotong
+    `signature_kolom` kolom pertama, sel kosong di ujung dibuang) sama dengan
+    `signature` sheet tersebut atau salah satu `header_alternatif`-nya. Sheet lain yang hilang/berubah tidak membatalkan
+    kecocokan -- ia dilaporkan oleh parser (bukan hilang diam-diam)."""
+    try:
+        wb = _buka_workbook_bulanan(content)
+    except Exception as e:
+        logger.warning(f"Gagal membuka workbook untuk pencocokan template multi-sheet: {e}")
+        return None
+    try:
+        for template in kandidat:
+            for spec in (template.get("mapping_rules") or {}).get("sheets", []):
+                nama = _cari_sheet_nama(list(wb.sheetnames), spec.get("sheet_name", ""))
+                if nama is None:
+                    continue
+                ws = wb[nama]
+
+                def baris_ke(idx, ws=ws):
+                    return next(ws.iter_rows(min_row=idx, max_row=idx, values_only=True), None)
+
+                if _posisi_header_multi(baris_ke, spec) is not None:
+                    return template, _ExcelBulananSumber(content)
+    except Exception as e:
+        logger.warning(f"Gagal mencocokkan template Excel multi-sheet: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+
+def _parse_multi_sheet_line_items(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parser format_type='multi_sheet_line_items' (ABE). Per sheet terdaftar di
+    mapping_rules.sheets: header diverifikasi (signature), tanggal dibawa ke baris
+    di bawahnya yang kosong, baris tersembunyi (hasil filter) dan baris bernilai 0
+    dilewati, lalu baris dijumlah per (tanggal, pelanggan) -> 1 invoice.
+    Nomor invoice = <prefix_invoice>-YYYYMMDD[-<PELANGGAN>]. Sheet di luar daftar
+    (mis. sheet pelanggan baru) dilaporkan sbg baris invalid, bukan hilang diam-diam."""
+    import openpyxl
+
+    recipe = template["mapping_rules"]
+    number_format = recipe.get("number_format", {"thousands_separator": ",", "decimal_separator": "."})
+    hasil: List[Dict[str, Any]] = []
+    # BUKAN read_only: status baris tersembunyi (row_dimensions.hidden) tidak terbaca di mode itu.
+    wb = openpyxl.load_workbook(BytesIO(sumber.content), data_only=True)
+    try:
+        terdaftar = {_norm_label(sp.get("sheet_name", "")) for sp in recipe.get("sheets", [])}
+        abaikan_nama = {_norm_label(n) for n in recipe.get("sheet_abaikan", [])}
+        if recipe.get("peringatan_sheet_tak_dikenal", True):
+            for nama in wb.sheetnames:
+                k = _norm_label(nama)
+                if k not in terdaftar and k not in abaikan_nama:
+                    _baris_peringatan(hasil, None, f"Sheet '{nama.strip()}' is not known to the template -- NOT imported. Add this sheet to the template (or to sheet_abaikan) if needed.")
+        seen_invoice = set()
+        for spec in recipe.get("sheets", []):
+            if spec.get("abaikan"):
+                continue
+            nama = _cari_sheet_nama(list(wb.sheetnames), spec.get("sheet_name", ""))
+            if nama is None:
+                continue  # file bulan ini memang tidak memuat sheet ini
+            ws = wb[nama]
+            cols = spec["columns"]
+            baris_semua = list(ws.iter_rows(values_only=True))
+            posisi = _posisi_header_multi(
+                lambda idx: baris_semua[idx - 1] if 0 < idx <= len(baris_semua) else None, spec)
+            if posisi is None:
+                _baris_peringatan(hasil, spec.get("cabang_tetap"), f"Sheet '{nama.strip()}': header differs from the template -- this sheet is NOT imported.")
+                continue
+            tukar = spec.get("tanggal_tukar_hari_bulan", recipe.get("tanggal_tukar_hari_bulan", False))
+            lewati_tersembunyi = spec.get("lewati_baris_tersembunyi", recipe.get("lewati_baris_tersembunyi", True))
+            tanda = -1 if spec.get("tanda") == "negatif" else 1
+            prefix = spec["prefix_invoice"]
+            cabang = spec.get("cabang_tetap")
+            customer_tetap = spec.get("customer_tetap")
+            customer_prefix = spec.get("customer_prefix")
+
+            agregat: Dict[Tuple[Any, str], Dict[str, Any]] = {}
+            tgl_kini: Optional[date] = None
+            tgl_catatan: Optional[str] = None
+            for i in range(posisi[1] - 1, len(baris_semua)):
+                row = list(baris_semua[i])
+                mentah_tgl = row[cols["tanggal"] - 1] if cols["tanggal"] - 1 < len(row) else None
+                if mentah_tgl is not None and str(mentah_tgl).strip() != "":
+                    tgl_kini, tgl_catatan = _tanggal_sel_multi(mentah_tgl, tukar)
+                # tanggal dibawa dulu, BARU baris tersembunyi dilewati (baris tersembunyi pertama bisa memuat tanggal)
+                if lewati_tersembunyi and ws.row_dimensions[i + 1].hidden:
+                    continue
+                qty = _angka_sel(row[cols["qty"] - 1], number_format) if cols.get("qty") and cols["qty"] - 1 < len(row) else None
+                harga = _angka_sel(row[cols["harga"] - 1], number_format) if cols.get("harga") and cols["harga"] - 1 < len(row) else None
+                jumlah = _angka_sel(row[cols["jumlah"] - 1], number_format) if cols["jumlah"] - 1 < len(row) else None
+                if jumlah is None and qty is not None and harga is not None:
+                    jumlah = qty * harga  # sel total berumus belum terhitung (file disimpan tanpa Excel)
+                if not jumlah:
+                    continue  # baris kosong / total 0 (mis. harga belum diisi) -- tidak jadi invoice 0
+                client = str(row[cols["client"] - 1]).strip() if cols.get("client") and cols["client"] - 1 < len(row) and row[cols["client"] - 1] is not None else ""
+                if customer_tetap:
+                    nama_customer, slug = customer_tetap, ""
+                else:
+                    nama_customer = (f"{customer_prefix} {client}".strip() if customer_prefix and client else client)
+                    slug = _slug_invoice(client)
+                kunci = (tgl_kini, _norm_label(nama_customer))
+                a = agregat.get(kunci)
+                if a is None:
+                    a = agregat[kunci] = {"customer": nama_customer, "slug": slug, "dpp": 0.0, "catatan": []}
+                    if tgl_kini is None:
+                        a["catatan"].append(tgl_catatan or "Unreadable date")
+                    if not nama_customer:
+                        a["catatan"].append("Empty customer name")
+                a["dpp"] += tanda * jumlah
+            for (tgl, _), a in agregat.items():
+                no_invoice = None
+                if tgl is not None and (a["slug"] or customer_tetap):
+                    no_invoice = f"{prefix}-{tgl:%Y%m%d}" + (f"-{a['slug']}" if a["slug"] else "")
+                catatan = list(a["catatan"])
+                if no_invoice is None and not catatan:
+                    catatan.append("Empty invoice number")
+                dpp = round(a["dpp"], 2)
+                hasil.append({
+                    "row_no": len(hasil) + 1,
+                    "tanggal": tgl,
+                    "no_invoice": no_invoice,
+                    "nama_customer": a["customer"] or None,
+                    "cabang": cabang,
+                    "dpp": dpp,
+                    "ppn": 0.0,
+                    "total": dpp,
+                    "is_valid": not catatan,
+                    "validation_notes": "; ".join(catatan) or None,
+                    "is_duplicate_candidate": bool(no_invoice) and no_invoice in seen_invoice,
+                })
+                if no_invoice:
+                    seen_invoice.add(no_invoice)
+    finally:
+        wb.close()
+    return hasil
+
+
+# ============================================================
+# 3f) Excel DAFTAR INCOME BULANAN (klien YM -- PT YONISO MASIKARA)
+# ============================================================
+# Di-port dari playground-hendra commit d2ed6fa (2026-11-09) + opsi hanya_bulan_terakhir.
+# Bentuk file: 1 workbook = beberapa sheet, tiap sheet = 1 BULAN (nama sheet "0826",
+# "0226 YANG DI PAKAI", "Jan 26", "Maret 26"), 1 baris = 1 tamu = 1 invoice. TIDAK ada nomor
+# invoice (dibentuk dari prefix + tanggal + nama tamu). Header dicari lewat LABEL kolom
+# ("Date of invoice", "Name", ...), baris total ada di bawah data, dan satu bulan bisa punya
+# 2 sheet (mis. "0826" dan "0826 YANG DI PAKAI" -- yang dipakai adalah versi akhirnya).
+# Dua varian resep memakai parser yang sama: INCOME LIST (xlsx, kolom "Total" dalam Rp) dan
+# "Pemasukan" (xls, kolom "Total Rp" + "total EUR" untuk pembayaran cash). File .xls dikonversi
+# dulu ke .xlsx oleh _pastikan_xlsx().
+
+FORMAT_EXCEL_INCOME_LIST = "monthly_income_list"
+
+
+# Helper di-port bersama (di hendra milik bagian 3c ABE / 3e WSI).
+def _baris_sheet(ws, maks_baris: Optional[int] = None) -> List[List[Any]]:
+    """Baris sheet sebagai list. reset_dimensions(): sebagian software penulis Excel menulis
+    dimensi sheet salah (mis. A1:A1) sehingga mode read_only hanya membaca sebagian kolom."""
+    try:
+        ws.reset_dimensions()
+    except Exception:
+        pass
+    return [list(r) for r in ws.iter_rows(min_row=1, max_row=maks_baris, values_only=True)]
+
+
+
+def _tanggal_sel_multi(v: Any, tukar_hari_bulan: bool) -> Tuple[Optional[date], Optional[str]]:
+    """(tanggal, catatan_error) dari 1 sel tanggal. Sel bertipe tanggal: kalau
+    tukar_hari_bulan, hari dan bulan DITUKAR (hanya bila hasilnya valid -- tanggal
+    asli seperti 22 Juli tidak mungkin hasil salah-baca, jadi dibiarkan). Teks:
+    bagian pertama > 12 -> DD/MM/YYYY, bagian kedua > 12 -> MM/DD/YYYY, keduanya
+    <= 12 dan berbeda -> AMBIGU (invalid, tidak ditebak)."""
+    if isinstance(v, (datetime, date)):
+        d = v.date() if isinstance(v, datetime) else v
+        if tukar_hari_bulan:
+            try:
+                return date(d.year, d.day, d.month), None
+            except ValueError:
+                return d, None
+        return d, None
+    teks = str(v).strip()
+    m = re.fullmatch(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", teks)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if a > 12 and b <= 12:
+            hari, bulan = a, b
+        elif b > 12 and a <= 12:
+            hari, bulan = b, a
+        elif a == b:
+            hari, bulan = a, b
+        elif a <= 12 and b <= 12:
+            return None, f"Ambiguous date (DD/MM or MM/DD): '{teks}'"
+        else:
+            return None, f"Unreadable date: '{teks}'"
+        try:
+            return date(y, bulan, hari), None
+        except ValueError:
+            return None, f"Unreadable date: '{teks}'"
+    d = _parse_tanggal(teks, "YYYY-MM-DD")
+    if d is not None:
+        return d, None
+    return None, f"Unreadable date: '{teks}'"
+
+
+def _slug_invoice(teks: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "-", (teks or "").upper()).strip("-")[:40]
+
+_INCOME_LIST_ALIAS = {
+    "tanggal": ["date of invoice", "invoice date", "tanggal invoice", "tgl invoice", "tanggal", "date"],
+    "nama": ["name", "nama", "nama tamu", "guest", "guest name", "customer", "pelanggan"],
+    "total": ["total"],
+    "total_rp": ["total rp", "total idr", "total (rp)", "jumlah rp"],
+    "total_eur": ["total €", "total eur", "total euro", "total (€)"],
+    "part_diving": ["part diving", "diving"],
+    "part_room": ["part r&b&s", "part rbs", "part room", "part r b s"],
+    "extra": ["extra income", "income extra", "extra"],
+}
+
+
+def _label_income(v: Any) -> str:
+    return _norm_label(v).rstrip(" .:")
+
+
+def _alias_income(recipe: Dict[str, Any]) -> Dict[str, List[str]]:
+    alias = {k: [_label_income(a) for a in v] for k, v in _INCOME_LIST_ALIAS.items()}
+    for k, v in (recipe.get("kolom_alias") or {}).items():
+        alias[k] = [_label_income(a) for a in v]
+    return alias
+
+
+def _cari_header_income(rows: List[List[Any]], recipe: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, int]]]:
+    """(index_baris_header, {kunci: index_kolom}) -- baris header = baris pertama (dalam
+    `maks_baris_header` baris teratas, default 15) yang memuat semua kolom `kolom_wajib` (default
+    tanggal + nama). Label dicocokkan PERSIS (huruf besar/kecil, spasi ganda dan titik di ujung
+    diabaikan) supaya \"Total\" tidak tertukar dengan \"Total Rp\"/\"Total EUR\". Urutan kolom
+    bebas, kolom tambahan boleh ada, kop di atas header boleh bertambah/berkurang."""
+    alias = _alias_income(recipe)
+    wajib = recipe.get("kolom_wajib") or ["tanggal", "nama"]
+    maks = int(recipe.get("maks_baris_header") or 15)
+    for i, row in enumerate(rows[:maks]):
+        peta: Dict[str, int] = {}
+        dipakai = set()
+        for kunci, daftar in alias.items():
+            for j, v in enumerate(row):
+                if j in dipakai or not isinstance(v, str):
+                    continue
+                if _label_income(v) in daftar:
+                    peta[kunci] = j
+                    dipakai.add(j)
+                    break
+        if all(k in peta for k in wajib):
+            return i, peta
+    return None
+
+
+def _cocokkan_template_excel_income_list(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
+    """Cocok kalau SALAH SATU sheet (selain sheet_abaikan) punya baris header yang memuat
+    `kolom_wajib` resep. Kandidat dicoba berurutan (urutan array variants): varian yang
+    kolom_wajibnya lebih ketat harus ditaruh lebih dulu. column_signature_hash hanya dokumentasi."""
+    try:
+        wb = _buka_workbook_bulanan(content)
+    except Exception as e:
+        logger.warning(f"Gagal membuka workbook untuk pencocokan template income list: {e}")
+        return None
+    try:
+        for template in kandidat:
+            recipe = template.get("mapping_rules") or {}
+            abaikan = {_norm_label(n) for n in recipe.get("sheet_abaikan", [])}
+            maks = int(recipe.get("maks_baris_header") or 15)
+            for nama in wb.sheetnames:
+                if _norm_label(nama) in abaikan:
+                    continue
+                if _cari_header_income(_baris_sheet(wb[nama], maks), recipe) is not None:
+                    return template, _ExcelBulananSumber(content)
+    except Exception as e:
+        logger.warning(f"Gagal mencocokkan template Excel income list: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+def _periode_sheet_income(nama: str) -> Optional[Tuple[int, int]]:
+    """(tahun, bulan) dari nama sheet: \"0826\" / \"0226 YANG DI PAKAI\" (BBTT di depan) atau
+    \"Jan 26\" / \"Maret 26\" / \"Agustus 2026\". Tidak dikenali -> None (sheet dianggap grup sendiri)."""
+    m = re.match(r"^\s*(\d{2})(\d{2})(?!\d)", nama or "")
+    if m and 1 <= int(m.group(1)) <= 12:
+        return 2000 + int(m.group(2)), int(m.group(1))
+    bulan, tahun = _bulan_dari_nama_sheet(nama)
+    if bulan is not None and tahun is not None:
+        return tahun, bulan
+    return None
+
+
+def _skor_sheet_income(nama: str, recipe: Dict[str, Any]) -> int:
+    """Skor pilihan antar sheet dari bulan yang sama. recipe.sheet_prioritas_kata (kata di nama
+    sheet, spasi diabaikan, yang paling awal = paling diutamakan; default \"yang dipakai\",
+    \"pembetulan\") -> skor positif; recipe.sheet_prioritas_rendah_kata (default \"sesuai klien\")
+    -> -1; sisanya 0. Skor sama -> sheet yang lebih dulu di workbook."""
+    kunci = re.sub(r"\s+", "", (nama or "").lower())
+    tinggi = [re.sub(r"\s+", "", k.lower()) for k in recipe.get("sheet_prioritas_kata", ["yang dipakai", "pembetulan"])]
+    for i, k in enumerate(tinggi):
+        if k and k in kunci:
+            return len(tinggi) - i
+    rendah = [re.sub(r"\s+", "", k.lower()) for k in recipe.get("sheet_prioritas_rendah_kata", ["sesuai klien"])]
+    if any(k and k in kunci for k in rendah):
+        return -1
+    return 0
+
+
+def _tanggal_income_list(v: Any, tukar: bool) -> Tuple[Optional[date], Optional[str]]:
+    """Tanggal dari 1 sel: sel tanggal; teks ISO (2026-08-05); teks DD/MM/YYYY dengan pemisah
+    campur/berlebih (\"12./02/2026\", \"27-03-2026\"). Teks yang ambigu (05/02/2026) dibaca
+    DD/MM -- konvensi Indonesia -- bukan ditolak seperti _tanggal_sel_multi."""
+    if isinstance(v, (datetime, date)):
+        return _tanggal_sel_multi(v, tukar)
+    teks = str(v).strip()
+    m = re.fullmatch(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T].*)?", teks)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3))), None
+        except ValueError:
+            return None, f"Unreadable date: '{teks}'"
+    rapi = re.sub(r"[\s./\-]+", "/", teks).strip("/")
+    d, cat = _tanggal_sel_multi(rapi, False)
+    if d is not None:
+        return d, None
+    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})", rapi)
+    if m:
+        tahun = int(m.group(3)) + (2000 if len(m.group(3)) == 2 else 0)
+        try:
+            return date(tahun, int(m.group(2)), int(m.group(1))), None
+        except ValueError:
+            pass
+    return None, cat or f"Unreadable date: '{teks}'"
+
+
+def _parse_monthly_income_list(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parser format_type='monthly_income_list' (YM). 1 baris bernama tamu + bernilai = 1 invoice:
+      invoice  = <prefix_invoice>-YYYYMMDD-<NAMA TAMU>   (-2, -3 bila tamu & tanggal sama tapi nilai beda)
+      customer = nama tamu (spasi dirapikan), cabang = recipe.cabang_tetap (default kosong)
+      dpp      = kolom nilai.kolom_total; kosong -> jumlah nilai.kolom_komponen; ppn = 0; total = dpp
+    Opsi resep (semua opsional kecuali prefix_invoice):
+      nilai                    {\"kolom_total\": \"total\", \"kolom_komponen\": [\"part_diving\", \"part_room\", \"extra\"]}
+      valuta_asing             {\"kolom\": \"total_eur\", \"kurs\": null} -- baris yang memuat nilai valuta asing:
+                               kurs diisi -> nilai += asing x kurs; kurs kosong -> baris INVALID (tidak ditebak)
+      kolom_alias / kolom_wajib / maks_baris_header   lihat _cari_header_income
+      sheet_abaikan            sheet yang dilewati diam-diam (default: Sheet1, Rekap, Summary)
+      sheet_tersembunyi        \"abaikan\" (default, diam-diam) | \"peringatan\" | \"impor\"
+      sheet_prioritas_kata / sheet_prioritas_rendah_kata   lihat _skor_sheet_income
+      periode_mulai / periode_akhir   \"YYYY-MM\", sheet di luar rentang dilewati
+      hanya_bulan_terakhir     true -> hanya sheet bulan terakhir di file (file kumulatif Jan..bulan upload)
+      lewati_nol (true), toleransi_selisih (1.0), tanggal_tukar_hari_bulan (false), cabang_tetap
+    Yang TIDAK diam-diam (baris invalid, status 'Butuh Review'): sheet tanpa header dikenal, tanggal
+    tidak terbaca, nilai negatif / bukan angka, nilai valuta asing tanpa kurs, rumus yang belum
+    dihitung (file belum dibuka di Excel), baris tanpa nama yang bukan total, total file != jumlah
+    baris. Hanya catatan: tanggal di luar bulan sheet, baris identik (nomor invoice sama)."""
+    import openpyxl
+
+    recipe = template["mapping_rules"]
+    nf = recipe.get("number_format", {"thousands_separator": ",", "decimal_separator": "."})
+    prefix = recipe["prefix_invoice"]
+    cabang = recipe.get("cabang_tetap")
+    nilai_cfg = recipe.get("nilai") or {"kolom_total": "total", "kolom_komponen": ["part_diving", "part_room", "extra"]}
+    kunci_total = nilai_cfg.get("kolom_total")
+    kunci_komponen = list(nilai_cfg.get("kolom_komponen") or [])
+    asing = recipe.get("valuta_asing") or {}
+    kunci_asing, kurs = asing.get("kolom"), asing.get("kurs")
+    lewati_nol = recipe.get("lewati_nol", True)
+    toleransi = float(recipe.get("toleransi_selisih", 1.0))
+    tukar = bool(recipe.get("tanggal_tukar_hari_bulan", False))
+    mode_tersembunyi = recipe.get("sheet_tersembunyi", "abaikan")
+    abaikan = {_norm_label(n) for n in recipe.get("sheet_abaikan", ["Sheet1", "Rekap", "Summary"])}
+
+    hasil: List[Dict[str, Any]] = []
+
+    def baris_invalid(tgl, no_invoice, customer, dpp, pesan):
+        hasil.append({
+            "row_no": len(hasil) + 1, "tanggal": tgl, "no_invoice": no_invoice, "nama_customer": customer,
+            "cabang": cabang, "dpp": round(dpp, 2), "ppn": 0.0, "total": round(dpp, 2),
+            "is_valid": False, "validation_notes": pesan, "is_duplicate_candidate": False,
+        })
+
+    wb = _buka_workbook_bulanan(sumber.content)
+    rumus_wb = None  # workbook TANPA data_only -- dibuka hanya kalau ada sel nilai kosong yang perlu dicek rumusnya
+    try:
+        # --- 1) sheet yang dibaca: header dikenal, tidak tersembunyi, 1 sheet terbaik per bulan ---
+        kandidat: List[Dict[str, Any]] = []
+        tersembunyi_cocok = 0
+        for urut, nama in enumerate(wb.sheetnames):
+            if _norm_label(nama) in abaikan:
+                continue
+            ws = wb[nama]
+            rows = _baris_sheet(ws)
+            if not any(str(v).strip() for r in rows for v in r if v is not None):
+                continue  # sheet kosong
+            sembunyi = getattr(ws, "sheet_state", "visible") != "visible"
+            if sembunyi and mode_tersembunyi == "abaikan":
+                if _cari_header_income(rows, recipe) is not None:
+                    tersembunyi_cocok += 1
+                continue
+            header = _cari_header_income(rows, recipe)
+            if header is None:
+                baris_invalid(None, None, None, 0.0, f"Sheet '{nama.strip()}': header (invoice date & guest name columns) not found -- this sheet is NOT imported. Add the sheet name to sheet_abaikan in the template if it is not sales data.")
+                continue
+            if sembunyi and mode_tersembunyi == "peringatan":
+                baris_invalid(None, None, None, 0.0, f"Sheet '{nama.strip()}' is hidden -- NOT imported. Unhide the sheet if its data must be imported.")
+                continue
+            periode = _periode_sheet_income(nama)
+            if periode is not None and not _periode_diizinkan(periode[0], periode[1], recipe):
+                continue
+            kandidat.append({"nama": nama, "urut": urut, "rows": rows, "header": header, "periode": periode, "skor": _skor_sheet_income(nama, recipe)})
+
+        terbaik: Dict[Any, Dict[str, Any]] = {}
+        for k in kandidat:
+            kunci = k["periode"] or ("nama", _norm_label(k["nama"]))
+            if kunci not in terbaik or k["skor"] > terbaik[kunci]["skor"]:
+                terbaik[kunci] = k
+        dibaca = sorted(terbaik.values(), key=lambda k: (k["periode"] or (9999, 99), k["urut"]))
+        # Opsi hanya_bulan_terakhir (file kumulatif: upload bulan Juni memuat Jan..Jun) -> hanya
+        # sheet bulan TERAKHIR yang dibaca; bulan sebelumnya dianggap sudah diimpor dari upload lalu.
+        # Sheet yang bulannya tidak dikenali dari nama tetap ikut dibaca.
+        if recipe.get("hanya_bulan_terakhir"):
+            periode_ada = [k["periode"] for k in dibaca if k["periode"] is not None]
+            if periode_ada:
+                terakhir = max(periode_ada)
+                dibaca = [k for k in dibaca if k["periode"] is None or k["periode"] == terakhir]
+        if not dibaca and tersembunyi_cocok:
+            baris_invalid(None, None, None, 0.0, f"All data sheets ({tersembunyi_cocok}) are hidden -- nothing imported. Unhide the month sheet to import, then upload again.")
+
+        # --- 2) baca tiap sheet terpilih ---
+        nomor_per_dasar: Dict[str, List[float]] = {}
+        for k in dibaca:
+            nama, rows, (idx_h, peta), periode = k["nama"], k["rows"], k["header"], k["periode"]
+            c_tgl, c_nama = peta["tanggal"], peta["nama"]
+            c_total = peta.get(kunci_total) if kunci_total else None
+            c_komp = [peta[x] for x in kunci_komponen if x in peta]
+            c_asing = peta.get(kunci_asing) if kunci_asing else None
+            if c_total is None and not c_komp:
+                baris_invalid(None, None, None, 0.0, f"Sheet '{nama.strip()}': amount column ('{kunci_total}' or its components) not found in the header -- this sheet is NOT imported.")
+                continue
+
+            def sel(row, c):
+                return row[c] if c is not None and c < len(row) else None
+
+            def nilai_baris(row):
+                v = _angka_sel(sel(row, c_total), nf)
+                if v is None and c_komp:
+                    bagian = [_angka_sel(sel(row, c), nf) for c in c_komp]
+                    if any(b is not None for b in bagian):
+                        v = sum(b or 0.0 for b in bagian)
+                return v
+
+            def rumus_belum_dihitung(i_baris):
+                """True kalau salah satu sel nilai baris ini kosong di data_only TAPI berisi rumus."""
+                nonlocal rumus_wb
+                if rumus_wb is None:
+                    rumus_wb = openpyxl.load_workbook(BytesIO(sumber.content), data_only=False, read_only=True)
+                cache = k.setdefault("rumus_rows", None)
+                if cache is None:
+                    cache = k["rumus_rows"] = _baris_sheet(rumus_wb[nama])
+                if i_baris >= len(cache):
+                    return False
+                return any(isinstance(sel(cache[i_baris], c), str) and sel(cache[i_baris], c).lstrip().startswith("=")
+                           for c in ([c_total] if c_total is not None else []) + c_komp)
+
+            jumlah_utama = 0.0
+            for i in range(idx_h + 1, len(rows)):
+                row = rows[i]
+                mentah_tgl = sel(row, c_tgl)
+                teks_tgl = str(mentah_tgl).strip() if mentah_tgl is not None else ""
+                nama_tamu = " ".join(str(sel(row, c_nama)).split()) if sel(row, c_nama) is not None else ""
+                nilai = nilai_baris(row)
+                sedang = f"Sheet '{nama.strip()}' row {i + 1}"
+                label_total = bool(teks_tgl) and not isinstance(mentah_tgl, (datetime, date)) and bool(
+                    re.match(r"^(grand\s+)?(total|jumlah|sum)\b", teks_tgl, re.IGNORECASE))
+
+                # --- baris total / baris tanpa nama ---
+                # Baris total = akhir data sheet: blok ringkasan/pajak di bawahnya (label di kolom A, angka di
+                # kolom B) TIDAK dibaca -- kalau tidak, angkanya terbaca sebagai tamu.
+                if label_total or not nama_tamu:
+                    if not nilai:
+                        if label_total:
+                            break
+                        continue  # baris kosong / rumus bernilai 0
+                    if abs(nilai - jumlah_utama) <= toleransi:
+                        break  # = jumlah baris di atasnya -> baris total, data selesai
+                    if label_total:
+                        baris_invalid(None, None, None, 0.0, f"{sedang}: file total {nilai:,.2f} does not match the sum of rows {jumlah_utama:,.2f} -- missing/broken rows? This row is NOT imported.")
+                        break
+                    else:
+                        baris_invalid(None, None, None, nilai, f"{sedang}: row without a guest name worth {nilai:,.2f} that is not a total (sum of rows above {jumlah_utama:,.2f}) -- fill in the guest name. This row is NOT imported.")
+                    continue
+
+                # --- baris tamu ---
+                asing_v = _angka_sel(sel(row, c_asing), nf) if c_asing is not None else None
+                if nilai is not None:
+                    jumlah_utama += nilai
+                if not teks_tgl and not nilai and not asing_v:
+                    continue  # hanya nama, tanpa tanggal & nilai
+                tgl, cat_tgl = _tanggal_income_list(mentah_tgl, tukar) if teks_tgl else (None, "Empty date")
+                catatan: List[str] = []
+                total_v = nilai or 0.0
+                if asing_v:
+                    if kurs:
+                        total_v += asing_v * float(kurs)
+                        catatan.append(f"amount {asing_v:,.2f} ({kunci_asing}) converted at rate {float(kurs):,.2f}")
+                    else:
+                        baris_invalid(tgl, None, nama_tamu, total_v, f"{sedang} ({nama_tamu}): contains a foreign-currency amount {asing_v:,.2f} with no exchange rate in the template -- NOT imported (amount is not guessed). Set 'kurs' in the 'valuta_asing' recipe or upload the Income List file in Rupiah.")
+                        continue
+                if nilai is None and not asing_v:
+                    if rumus_belum_dihitung(i):
+                        baris_invalid(tgl, None, nama_tamu, 0.0, f"{sedang} ({nama_tamu}): amount is an uncalculated formula (file not opened & saved in Excel) -- open it in Excel, save, then upload again.")
+                        continue
+                    if lewati_nol:
+                        continue
+                if tgl is None:
+                    baris_invalid(None, None, nama_tamu, total_v, f"{sedang} ({nama_tamu}): {cat_tgl or 'Unreadable date'}")
+                    continue
+                if total_v < 0:
+                    baris_invalid(tgl, None, nama_tamu, total_v, f"{sedang} ({nama_tamu}): negative amount {total_v:,.2f} (cancellation/refund?) -- please check.")
+                    continue
+                if total_v == 0 and lewati_nol:
+                    continue
+                if periode is not None and (tgl.year, tgl.month) != periode:
+                    catatan.append(f"Date {tgl:%d-%m-%Y} is outside the sheet month ({periode[1]:02d}/{periode[0]}) -- please check")
+                dpp = round(total_v, 2)
+                dasar = f"{prefix}-{tgl:%Y%m%d}-{_slug_invoice(nama_tamu)}"
+                terlihat = nomor_per_dasar.setdefault(dasar, [])
+                ganda = dpp in terlihat
+                if not ganda:
+                    terlihat.append(dpp)
+                urut_no = terlihat.index(dpp) + 1
+                no_invoice = dasar if urut_no == 1 else f"{dasar}-{urut_no}"
+                if ganda:
+                    catatan.append(f"Identical row (date, name, amount) to a previous row -- duplicate invoice number '{no_invoice}'")
+                hasil.append({
+                    "row_no": len(hasil) + 1, "tanggal": tgl, "no_invoice": no_invoice, "nama_customer": nama_tamu,
+                    "cabang": cabang, "dpp": dpp, "ppn": 0.0, "total": dpp,
+                    "is_valid": True, "validation_notes": "; ".join(catatan) or None, "is_duplicate_candidate": ganda,
+                })
+    finally:
+        wb.close()
+        if rumus_wb is not None:
+            rumus_wb.close()
+    return hasil
+
+
+# ============================================================
+# 3g) Excel REKAP HARIAN PER CHANNEL OTA (klien WSI)
+# ============================================================
+# Di-port dari playground-hendra commit d2ed6fa (bagian 3e di sana; 3e di file ini = AADL) -- 2026-11-09.
+# Bentuk file: 1 workbook = 1 PROPERTI (nama properti HANYA ada di NAMA FILE, mis.
+# "HOTEL SALES RECAP - August Lime villa.xlsx"; isi sheet hanya memuat nama PT). 1 sheet
+# = 1 channel/OTA (AIRBNB, BOOKING.COM, ...). Tiap sheet: kop beberapa baris, header
+# (MONTH | INCOME BEFORE TAX | SERVICE FEE (INC VAT) | TOTAL RECEIVING | HOTEL TAX 10% |
+# NET INCOME AFTER TAX), lalu 1 baris per HARI (tanggal bertipe tanggal, hari tanpa
+# transaksi berisi 0/kosong), lalu baris total (posisinya beda tiap sheet/file).
+# Kolom TOTAL RECEIVING, HOTEL TAX dan NET INCOME berisi RUMUS -- file yang disimpan
+# tanpa Excel bisa tidak punya nilai hasil rumus, jadi pajak dihitung ulang dari
+# INCOME BEFORE TAX bila selnya kosong. 1 baris source_rows = 1 HARI x 1 CHANNEL x 1
+# PROPERTI yang nilainya tidak 0. Tidak ada nomor invoice -> dibentuk
+# <prefix_invoice>-<PROPERTI>-<CHANNEL>-YYYYMMDD. Kolom dicari lewat NAMA header (bukan
+# posisi), header dicari di N baris teratas, dan sheet channel baru (mis. AGODA) otomatis
+# ikut terbaca selama headernya sama -- lihat docstring _parse_daily_channel_recap.
+
+FORMAT_EXCEL_REKAP_CHANNEL = "daily_channel_recap"
+
+# Alias nama kolom (dibandingkan sebagai AWALAN setelah huruf kecil & spasi dirapikan).
+# Bisa ditambah/diganti per klien lewat mapping_rules.kolom_alias.
+_REKAP_KOLOM_ALIAS = {
+    "tanggal": ["month", "date", "tanggal", "tgl"],
+    "dpp": ["income before tax", "income before", "revenue before tax"],
+    "fee": ["service fee", "ota fee", "commission", "komisi"],
+    "pajak": ["hotel tax", "pb1", "tax"],
+}
+
+
+
+def _cari_header_rekap(rows: List[List[Any]], recipe: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, int]]]:
+    """(index_baris_header, {kunci: index_kolom}) -- baris header = baris pertama (dalam
+    `maks_baris_header` baris teratas) yang memuat semua kolom wajib (default: tanggal + dpp).
+    Satu kolom hanya dipakai satu kunci. Kop/baris kosong di atas header boleh bertambah/berkurang,
+    urutan kolom boleh berubah, kolom tambahan boleh ada."""
+    alias = {k: [_norm_label(a) for a in v] for k, v in _REKAP_KOLOM_ALIAS.items()}
+    for k, v in (recipe.get("kolom_alias") or {}).items():
+        alias[k] = [_norm_label(a) for a in v]
+    wajib = recipe.get("kolom_wajib") or ["tanggal", "dpp"]
+    maks = int(recipe.get("maks_baris_header") or 15)
+    for i, row in enumerate(rows[:maks]):
+        peta: Dict[str, int] = {}
+        dipakai = set()
+        for kunci in ("tanggal", "dpp", "fee", "pajak"):
+            for j, v in enumerate(row):
+                if j in dipakai or not isinstance(v, str):
+                    continue
+                label = _norm_label(v)
+                if label and any(label.startswith(a) for a in alias.get(kunci, []) if a):
+                    peta[kunci] = j
+                    dipakai.add(j)
+                    break
+        if all(k in peta for k in wajib):
+            return i, peta
+    return None
+
+
+def _cocokkan_template_excel_rekap_channel(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
+    """Cocok kalau SALAH SATU sheet di workbook (selain sheet_abaikan) punya baris header yang
+    memuat kolom wajib resep (lihat _cari_header_rekap). column_signature_hash varian tetap
+    diisi di seed (NOT NULL + dokumentasi header contoh), tetapi pencocokan memakai LABEL kolom,
+    bukan hash persis, supaya perubahan kecil (urutan kolom, 'HOTEL TAX 11%', kolom tambahan,
+    kop bertambah) tidak membuat file jatuh ke 'Butuh Review'."""
+    try:
+        wb = _buka_workbook_bulanan(content)
+    except Exception as e:
+        logger.warning(f"Gagal membuka workbook untuk pencocokan template rekap channel: {e}")
+        return None
+    try:
+        for template in kandidat:
+            recipe = template.get("mapping_rules") or {}
+            abaikan = {_norm_label(n) for n in recipe.get("sheet_abaikan", [])}
+            maks = int(recipe.get("maks_baris_header") or 15)
+            for nama in wb.sheetnames:
+                if _norm_label(nama) in abaikan:
+                    continue
+                if _cari_header_rekap(_baris_sheet(wb[nama], maks), recipe) is not None:
+                    return template, _ExcelBulananSumber(content)
+    except Exception as e:
+        logger.warning(f"Gagal mencocokkan template Excel rekap channel: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+def _properti_dari_nama_file(recipe: Dict[str, Any], file_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """(nama_properti, catatan) dari NAMA FILE. 1) daftar recipe.properti [{nama, cocok:[kata,...]}]
+    -- nama kanonis (HURUF BESAR, dipakai sbg cabang & kunci pendapatan_account_by_cabang) dipilih
+    kalau salah satu kata ada di nama file; 2) cadangan recipe.properti_dari_nama_file {pattern,
+    group}: properti yang belum terdaftar tetap terbaca (diberi catatan peringatan). Tidak ketemu
+    -> (None, None)."""
+    if not file_name:
+        return None, None
+    stem = file_name.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[0].strip()
+    norm = re.sub(r"[\s_\-]+", " ", stem.lower())
+    for p in recipe.get("properti", []):
+        if any(k and k.lower() in norm for k in p.get("cocok", [])):
+            return str(p["nama"]).strip().upper(), None
+    aturan = recipe.get("properti_dari_nama_file")
+    if aturan:
+        m = re.search(aturan["pattern"], stem, re.IGNORECASE)
+        nama = " ".join((m.group(aturan.get("group", 1)) or "").replace("_", " ").split()).upper() if m else ""
+        if nama:
+            return nama[:100], f"Property '{nama}' is not registered in the template (read from the file name) -- revenue uses the default account; register it under 'properti' if needed"
+    return None, None
+
+
+def _channel_dari_sheet(nama: str, rows: List[List[Any]], recipe: Dict[str, Any]) -> str:
+    """Nama channel/OTA dari nama sheet (recipe.channel bisa memetakan alias -> nama baku).
+    Sheet bernama generik (Sheet1, Data) -> dari judul di baris atas ('AIRBNB SALES RECAPITULATION')."""
+    # "AIRBNB (2)" / "AIRBNB - Copy" (sheet salinan) -> channel yang sama, supaya nomor invoice-nya bentrok & terdeteksi ganda
+    nama = re.sub(r"\s*(\(\s*(?:\d+|copy)\s*\)|[-_ ]\s*copy(?:\s*\d+)?)\s*$", "", nama or "", flags=re.IGNORECASE)
+    peta = {_norm_label(k): v for k, v in (recipe.get("channel") or {}).items()}
+    k = _norm_label(nama)
+    if k in peta:
+        return str(peta[k]).strip().upper()
+    if re.fullmatch(r"(sheet|worksheet|lembar|data)\s*\d*", k):
+        for row in rows[:5]:
+            for v in row[:1]:
+                judul = re.sub(r"\s*sales\s+recapitulation\s*$", "", _norm_label(v))
+                if judul and not re.search(r"\d", judul):
+                    return judul.upper()
+    return (nama or "").strip().upper()
+
+
+def _bulatkan_pajak(dpp: float, tarif: Decimal) -> Decimal:
+    """Pembulatan seperti ROUND() Excel (setengah ke atas): 4.662.625 x 10% = 466.262,5 -> 466.263.
+    round() Python membulatkan ke genap (466.262) -- selisih 1 rupiah per hari."""
+    return (Decimal(str(dpp)) * tarif).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _parse_daily_channel_recap(sumber: "_ExcelBulananSumber", template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Parser format_type='daily_channel_recap' (WSI -- rekap penjualan hotel per channel OTA).
+    Per sheet: header dicari lewat nama kolom; tiap baris bertanggal dengan INCOME BEFORE TAX
+    != 0 jadi 1 invoice. dpp = INCOME BEFORE TAX, ppn = HOTEL TAX (nilai di file; kosong ->
+    tarif_pajak x dpp, dibulatkan setengah-ke-atas), total = dpp + ppn. Opsi resep:
+      prefix_invoice               awalan nomor invoice (wajib)
+      properti / properti_dari_nama_file   properti dari nama file (lihat _properti_dari_nama_file)
+      channel                      {alias sheet: nama baku} -> nama customer
+      sheet_abaikan                sheet yang dilewati tanpa peringatan (mis. SUMMARY)
+      tarif_pajak                  default 0.10
+      fee_mengurangi_dpp           true -> dpp = INCOME - SERVICE FEE (OTA netto); default false
+      pajak_termasuk_dalam_income  true -> dpp = INCOME - pajak, total = INCOME; default false
+      lewati_nol                   hari bernilai 0 dilewati (default true)
+      toleransi_selisih            batas selisih rupiah utk cek total/pajak (default 1)
+      kolom_alias / kolom_wajib / maks_baris_header   lihat _cari_header_rekap
+    Yang TIDAK diam-diam: sheet tanpa header dikenal, sheet tersembunyi, baris tanpa tanggal bernilai,
+    tanggal tidak terbaca, isi sel bukan angka, income negatif, total file != jumlah harian
+    muncul sbg baris invalid (status 'Butuh Review'); pajak di file != tarif x income dan nomor
+    invoice ganda hanya diberi catatan."""
+    recipe = template["mapping_rules"]
+    nf = recipe.get("number_format", {"thousands_separator": ",", "decimal_separator": "."})
+    prefix = recipe["prefix_invoice"]
+    tarif = Decimal(str(recipe.get("tarif_pajak", 0.10)))
+    fee_kurang = bool(recipe.get("fee_mengurangi_dpp", False))
+    pajak_termasuk = bool(recipe.get("pajak_termasuk_dalam_income", False))
+    lewati_nol = recipe.get("lewati_nol", True)
+    toleransi = float(recipe.get("toleransi_selisih", 1.0))
+    tukar = bool(recipe.get("tanggal_tukar_hari_bulan", False))
+    abaikan = {_norm_label(n) for n in recipe.get("sheet_abaikan", [])}
+
+    hasil: List[Dict[str, Any]] = []
+    cabang, catatan_properti = _properti_dari_nama_file(recipe, file_name)
+    if cabang is None:
+        _baris_peringatan(hasil, None, "Property name could not be read from the FILE NAME (e.g. 'HOTEL SALES RECAP - August Lime villa.xlsx') -- file NOT imported so invoice numbers of different properties do not collide. Fix the file name and upload again, or register the property in the template.")
+        return hasil
+    slug_properti = _slug_invoice(cabang)
+
+    def baris_invalid(tanggal, no_invoice, customer, dpp, ppn, pesan):
+        hasil.append({
+            "row_no": len(hasil) + 1, "tanggal": tanggal, "no_invoice": no_invoice, "nama_customer": customer,
+            "cabang": cabang, "dpp": round(dpp, 2), "ppn": round(ppn, 2), "total": round(dpp + ppn, 2),
+            "is_valid": False, "validation_notes": pesan, "is_duplicate_candidate": False,
+        })
+
+    sudah_ada = set()
+    wb = _buka_workbook_bulanan(sumber.content)
+    try:
+        for nama in wb.sheetnames:
+            if _norm_label(nama) in abaikan:
+                continue
+            ws = wb[nama]
+            rows = _baris_sheet(ws)
+            if not any(str(v).strip() for r in rows for v in r if v is not None):
+                continue  # sheet kosong (mis. Sheet1 bawaan) -- bukan masalah
+            header = _cari_header_rekap(rows, recipe)
+            if header is None:
+                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': recap header (date & 'Income Before Tax' columns) not found -- this sheet is NOT imported. Add the sheet name to sheet_abaikan in the template if it is not sales data.")
+                continue
+            if getattr(ws, "sheet_state", "visible") != "visible":
+                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}' is hidden -- NOT imported. Unhide the sheet if its data must be imported.")
+                continue
+            idx_h, peta = header
+            channel = _channel_dari_sheet(nama, rows, recipe)
+            slug_channel = _slug_invoice(channel)
+            c_tgl, c_dpp, c_fee, c_pajak = peta["tanggal"], peta["dpp"], peta.get("fee"), peta.get("pajak")
+            jumlah_harian = 0.0
+            ada_baris = False
+
+            def sel(row, c):
+                return row[c] if c is not None and c < len(row) else None
+
+            for i in range(idx_h + 1, len(rows)):
+                row = rows[i]
+                mentah_tgl, mentah_dpp = sel(row, c_tgl), sel(row, c_dpp)
+                teks_tgl = str(mentah_tgl).strip() if mentah_tgl is not None else ""
+                dpp_v = _angka_sel(mentah_dpp, nf)
+                sedang = f"Sheet '{nama.strip()}' row {i + 1}"
+                label_total = bool(teks_tgl) and not isinstance(mentah_tgl, (datetime, date)) and bool(
+                    re.match(r"^(grand\s+)?(total|jumlah|sum)\b", teks_tgl, re.IGNORECASE))
+
+                # --- baris tanpa tanggal / baris total ---
+                if not teks_tgl or label_total:
+                    if dpp_v is None or dpp_v == 0:
+                        continue  # baris kosong / rumus bernilai 0 di bawah data
+                    if abs(dpp_v - jumlah_harian) > toleransi:
+                        baris_invalid(None, None, channel, 0.0, 0.0,
+                                      f"{sedang}: row without a date worth {dpp_v:,.2f} does not match the sum of daily rows {jumlah_harian:,.2f} -- if this is the total, some days are missing/broken; if not, fill in the date. This row is NOT imported.")
+                    continue  # sama dengan jumlah harian = baris total
+
+                # --- baris harian ---
+                tgl, cat_tgl = _tanggal_sel_multi(mentah_tgl, tukar)
+                fee_v = _angka_sel(sel(row, c_fee), nf)
+                pajak_v = _angka_sel(sel(row, c_pajak), nf)
+                bukan_angka = [lbl for lbl, mentah, v in (("Income Before Tax", mentah_dpp, dpp_v), ("Service Fee", sel(row, c_fee), fee_v), ("Hotel Tax", sel(row, c_pajak), pajak_v))
+                               if v is None and isinstance(mentah, str) and re.search(r"\d", mentah)]
+                if bukan_angka:
+                    baris_invalid(tgl, None, channel, 0.0, 0.0, f"{sedang}: column {', '.join(bukan_angka)} is not a valid number -- this day is NOT imported.")
+                    continue
+                dpp_v = dpp_v or 0.0
+                fee_v = fee_v or 0.0
+                if dpp_v == 0 and fee_v == 0 and not pajak_v:
+                    if lewati_nol:
+                        continue
+                if tgl is None:
+                    baris_invalid(None, None, channel, dpp_v, 0.0, f"{sedang}: {cat_tgl or 'Unreadable date'}")
+                    continue
+                if dpp_v == 0:
+                    baris_invalid(tgl, None, channel, 0.0, 0.0, f"{sedang}: Income Before Tax is 0/empty but Service Fee/Hotel Tax is filled -- please check this row.")
+                    continue
+                jumlah_harian += dpp_v
+
+                catatan: List[str] = []
+                pajak_hitung = _bulatkan_pajak(dpp_v, tarif)
+                if pajak_v is None:
+                    pajak_d = pajak_hitung  # sel rumus tanpa nilai tersimpan / kolom tidak ada
+                else:
+                    pajak_d = Decimal(str(pajak_v))
+                    if abs(float(pajak_d - pajak_hitung)) > toleransi:
+                        catatan.append(f"Hotel Tax in file {pajak_v:,.2f} differs from {tarif * 100:.0f}% x Income ({pajak_hitung:,.2f}) -- please check")
+                if dpp_v > 0 and (fee_v < 0 or fee_v > dpp_v):
+                    catatan.append(f"Service Fee {fee_v:,.2f} looks unreasonable (negative or above Income)")
+                dpp_d = Decimal(str(dpp_v))
+                if fee_kurang:
+                    dpp_d -= Decimal(str(fee_v))
+                if pajak_termasuk:
+                    dpp_d -= pajak_d
+                dpp = round(float(dpp_d), 2)
+                ppn = round(float(pajak_d), 2)
+                no_invoice = f"{prefix}-{slug_properti}-{slug_channel}-{tgl:%Y%m%d}"
+                valid = True
+                if dpp < 0:
+                    valid = False
+                    catatan.append("Negative income (check cancellation/refund)")
+                if catatan_properti:
+                    catatan.append(catatan_properti)
+                ganda = no_invoice in sudah_ada
+                if ganda:
+                    catatan.append(f"Invoice no. '{no_invoice}' appears more than once in this file (duplicate channel sheet?)")
+                hasil.append({
+                    "row_no": len(hasil) + 1, "tanggal": tgl, "no_invoice": no_invoice, "nama_customer": channel,
+                    "cabang": cabang, "dpp": dpp, "ppn": ppn, "total": round(dpp + ppn, 2),
+                    "is_valid": valid, "validation_notes": "; ".join(catatan) or None, "is_duplicate_candidate": ganda,
+                })
+                sudah_ada.add(no_invoice)
+                ada_baris = True
+            if not ada_baris:
+                continue  # channel tanpa transaksi bulan ini (mis. BOOKING.COM semua 0) -- wajar
+    finally:
+        wb.close()
+    return hasil
+
+
 def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     mapping_rules = template.get("mapping_rules") or {}
     format_type = mapping_rules.get("format_type")
@@ -1385,6 +2330,12 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
         hasil = _parse_monthly_daily_matrix(rows, template)  # rows = _ExcelBulananSumber
     elif format_type == "monthly_rent_roll":
         hasil = _parse_monthly_rent_roll(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_MULTI_SHEET:
+        hasil = _parse_multi_sheet_line_items(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_REKAP_CHANNEL:
+        hasil = _parse_daily_channel_recap(rows, template, file_name)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_INCOME_LIST:
+        hasil = _parse_monthly_income_list(rows, template)  # rows = _ExcelBulananSumber
     elif format_type == "flat_grouped_by_key":
         hasil = _parse_flat_grouped_by_key(rows, template)
     elif format_type == "sectioned_by_customer_header":
