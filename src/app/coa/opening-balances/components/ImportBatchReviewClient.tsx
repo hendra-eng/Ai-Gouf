@@ -643,24 +643,37 @@ function TabelAset({ rows, p }: { rows: ImportRow[]; p: Pilih }) {
   );
 }
 
+// Opening AR memuat invoice lunas + belum lunas: badge ini menunjukkan kondisi tiap invoice per cut-off.
+function StatusBayar({ d }: { d: Record<string, unknown> }) {
+  if (typeof d.original !== 'number') return null;
+  const sisa = Number(d.outstanding ?? 0);
+  const bayar = Number(d.paid ?? 0);
+  const [label, kelas] = sisa <= 0
+    ? ['Fully settled', 'bg-emerald-50 text-emerald-700']
+    : bayar > 0 ? ['Partly paid', 'bg-amber-50 text-amber-800'] : ['Unpaid', 'bg-sky-50 text-sky-700'];
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${kelas}`}>{label}</span>;
+}
+
 function TabelDokumen({ rows, ar, p }: { rows: ImportRow[]; ar: boolean; p: Pilih }) {
   return (
-    <table className="w-full min-w-[1100px] text-sm">
+    <table className={`w-full text-sm ${ar ? 'min-w-[1300px]' : 'min-w-[1100px]'}`}>
       <thead className="bg-slate-50">
         <tr className="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <ThPilih p={p} rows={rows} />
           <th className="w-14 px-4 py-3">Row</th>
           <th className="px-4 py-3">{ar ? 'Customer' : 'Vendor'}</th>
-          <th className="px-4 py-3">{ar ? 'Invoice' : 'Bill'}</th>
-          <th className="px-4 py-3 text-right">Original</th>
+          <th className="px-4 py-3">{ar ? 'Reference' : 'Bill'}</th>
+          <th className="px-4 py-3 text-right">{ar ? 'Debit (invoice)' : 'Original'}</th>
+          {ar && <th className="px-4 py-3 text-right">Credit (paid)</th>}
           <th className="px-4 py-3 text-right">Outstanding</th>
+          {ar && <th className="px-4 py-3">Settlement</th>}
           <th className="px-4 py-3">Control account</th>
           <th className="px-4 py-3">Status</th>
           <th className="w-80 px-4 py-3">Messages</th>
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? KOSONG(8, p) : rows.map(r => {
+        {rows.length === 0 ? KOSONG(ar ? 10 : 8, p) : rows.map(r => {
           const d = r.data;
           return (
             <tr key={r.id} className={kelasBaris(r)}>
@@ -673,10 +686,15 @@ function TabelDokumen({ rows, ar, p }: { rows: ImportRow[]; ar: boolean; p: Pili
               </td>
               <td className="px-4 py-2.5">
                 <p className="font-mono text-xs text-foreground">{teks(d.doc_no)}</p>
-                <p className="text-[11px] text-muted-foreground">{teks(d.doc_date)}{d.due_date ? ` · due ${teks(d.due_date)}` : ''}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {teks(d.doc_date)}{d.due_date ? ` · due ${teks(d.due_date)}` : ''}
+                  {ar && Number(d.source_row_count) > 1 ? ` · ${Number(d.source_row_count)} rows` : ''}
+                </p>
               </td>
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{typeof d.original === 'number' ? formatAmount(d.original) : ''}</td>
+              {ar && <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{formatAmount(Number(d.paid ?? 0))}</td>}
               <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{formatAmount(r.debit || r.credit)}</td>
+              {ar && <td className="px-4 py-2.5"><StatusBayar d={d} /></td>}
               <td className="px-4 py-2.5"><Akun label="" a={d.account} /></td>
               <td className="px-4 py-2.5"><StatusBaris r={r} /></td>
               <td className="px-4 py-2.5"><Pesan r={r} /></td>
