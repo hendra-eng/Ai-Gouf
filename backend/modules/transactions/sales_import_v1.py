@@ -1080,33 +1080,6 @@ def _sel_dari_kolom(baris: Any, kolom_awal: int) -> List[str]:
     return _sel_header_terpangkas(sel[max(kolom_awal, 1) - 1:])
 
 
-def _cocokkan_template_excel_register_blok(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
-    """Cocok kalau sheet bernama template.sheet_name ada di workbook DAN hash baris
-    header-nya (header_row_index, mulai mapping_rules.kolom_awal) sama dengan
-    column_signature_hash template/varian."""
-    try:
-        wb = _buka_workbook_bulanan(content)
-    except Exception as e:
-        logger.warning(f"Gagal membuka workbook untuk pencocokan template register blok: {e}")
-        return None
-    try:
-        for template in kandidat:
-            recipe = template.get("mapping_rules") or {}
-            nama = _cari_sheet_multi(list(wb.sheetnames), template.get("sheet_name") or "")
-            if nama is None:
-                continue
-            idx = template["header_row_index"]
-            baris = next(wb[nama].iter_rows(min_row=idx, max_row=idx, values_only=True), None)
-            if baris is None:
-                continue
-            sel = _sel_dari_kolom(baris, recipe.get("kolom_awal", 1))
-            if sel and _hash_baris(sel) == template["column_signature_hash"]:
-                return template, _ExcelBulananSumber(content)
-    except Exception as e:
-        logger.warning(f"Gagal mencocokkan template Excel register blok: {e}")
-    finally:
-        wb.close()
-    return None
 
 
 def _parse_monthly_block_invoice_register(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -2760,6 +2733,137 @@ def _cabang_dari_nama_file(recipe: Dict[str, Any], file_name: Optional[str]) -> 
     return (m.group(aturan.get("group", 1)) or "").strip()[:100] or None
 
 
+# ============================================================
+# 3d) Excel REGISTER INVOICE BERBLOK BULANAN (klien Birawa / BRW)
+# ============================================================
+# Di-port dari playground-hendra commit d2ed6fa (+ pencocokan header yang lebih longgar).
+# Bentuk file: 1 sheet (mis. "Sheet1") = register tagihan manual 1 tahun. Tiap bulan =
+# 1 BLOK: baris header (diulang di tiap blok), lalu 1 baris per invoice, lalu baris
+# kosong. Kolom BULAN (tanggal 1 bulan itu) bisa hanya terisi di baris PERTAMA blok (sel
+# gabungan) -> dibawa ke baris-baris di bawahnya. Nomor invoice ADA di file (kolom NO
+# INVOICE), tapi tanggal invoice TIDAK ada -- hanya bulan -> tanggal = BULAN blok.
+# Blok bulan depan sudah berisi nomor invoice urut tanpa nilai (placeholder) -> baris
+# tanpa nilai dilewati diam-diam. Sheet lain di workbook (pivot/rekap) tidak dibaca.
+# 1 baris source_rows = 1 baris register = 1 invoice.
+
+FORMAT_EXCEL_REGISTER_BLOK = "monthly_block_invoice_register"
+
+
+
+
+
+
+def _cari_sheet_nama(nama_sheet: List[str], target: str) -> Optional[str]:
+    kunci = _norm_label(target)
+    return next((n for n in nama_sheet if _norm_label(n) == kunci), None)
+
+
+
+
+def _cocokkan_template_excel_register_blok(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
+    """Cocok kalau sheet bernama template.sheet_name ada di workbook DAN baris header-nya
+    (header_row_index, mulai mapping_rules.kolom_awal) cocok:
+      1. hash sama dengan column_signature_hash varian, atau
+      2. (cadangan, opsional) semua kolom di mapping_rules.cocok_jika_kolom_ada ada di baris itu --
+         kolom bantu/rekonsiliasi boleh dikosongkan/ditambah tanpa membuat file "Butuh Review".
+    mapping_rules.header_cari_dalam_baris N: header juga dicari di N baris teratas (baris judul
+    di atasnya boleh bertambah/berkurang); posisi header & data digeser mengikuti."""
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    except Exception as e:
+        logger.warning(f"Failed to open workbook for register-block template matching: {e}")
+        return None
+    try:
+        for template in kandidat:
+            recipe = template.get("mapping_rules") or {}
+            nama = _cari_sheet_nama(list(wb.sheetnames), template.get("sheet_name") or "")
+            if nama is None:
+                continue
+            kolom_awal = recipe.get("kolom_awal", 1)
+            resmi = template["header_row_index"]
+            scan = int(recipe.get("header_cari_dalam_baris") or 0)
+            batas = max(resmi, scan)
+            baris_atas = list(wb[nama].iter_rows(min_row=1, max_row=batas, values_only=True))
+            urutan = [resmi] + [i for i in range(1, scan + 1) if i != resmi]
+            wajib = {_norm_label(k) for k in recipe.get("cocok_jika_kolom_ada", []) if k}
+
+            def geser(no_baris: int) -> Dict[str, Any]:
+                if no_baris == resmi:
+                    return template
+                selisih = no_baris - resmi
+                return {**template, "header_row_index": no_baris, "data_start_row_index": template["data_start_row_index"] + selisih}
+
+            for cara in ("hash", "kolom"):
+                if cara == "kolom" and not wajib:
+                    break
+                for no_baris in urutan:
+                    if no_baris > len(baris_atas):
+                        continue
+                    sel = _sel_dari_kolom(baris_atas[no_baris - 1], kolom_awal)
+                    if not sel:
+                        continue
+                    if cara == "hash" and _hash_baris(sel) == template["column_signature_hash"]:
+                        return geser(no_baris), _ExcelBulananSumber(content)
+                    if cara == "kolom" and wajib <= {_norm_label(c) for c in sel}:
+                        return geser(no_baris), _ExcelBulananSumber(content)
+    except Exception as e:
+        logger.warning(f"Failed to match register-block Excel template: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+
+
+# ============================================================
+# 3e) Excel REKAP BULANAN -- 1 sheet per bulan (klien AADL)
+# ============================================================
+# Di-port dari playground-hendra commit d2ed6fa. Bentuk file: 1 workbook = 1 usaha
+# (cabang) = 1 tahun, 1 sheet per bulan ("Januari 2026", "Jan 2026", "JANUARI'26",
+# "Des'25"), ditambah sheet RESUME/Sheet1 yang bukan data. Pencocokan template TIDAK
+# memakai 1 sheet tertentu: signature = hash baris JUDUL (mis. baris 2 = nama usaha)
+# dari sheet-sheet bulanan; ekstraksi membaca SEMUA sheet bulanan.
+#   monthly_daily_matrix  matriks hari (kolom 1..31) x komponen pendapatan -> 1 baris = 1 hari
+#   monthly_rent_roll     daftar kamar + Uang Kamar per bulan               -> 1 baris = 1 bulan
+
+FORMAT_EXCEL_BULANAN = ("monthly_daily_matrix", "monthly_rent_roll")
+
+_BULAN_NAMA_SHEET = {
+    "januari": 1, "january": 1, "jan": 1, "february": 2, "februari": 2, "pebruari": 2, "feb": 2,
+    "maret": 3, "march": 3, "mar": 3, "april": 4, "apr": 4, "mei": 5, "may": 5,
+    "juni": 6, "june": 6, "jun": 6, "juli": 7, "july": 7, "jul": 7,
+    "agustus": 8, "august": 8, "agu": 8, "agt": 8, "aug": 8, "agust": 8,
+    "september": 9, "sept": 9, "sep": 9, "oktober": 10, "october": 10, "okt": 10, "oct": 10,
+    "november": 11, "nov": 11, "nop": 11, "desember": 12, "december": 12, "des": 12, "dec": 12,
+}
+
+_SHEET_ABAIKAN = {"resume", "sheet1", "meta", "cek upload"}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     mapping_rules = template.get("mapping_rules") or {}
     format_type = mapping_rules.get("format_type")
@@ -2980,7 +3084,7 @@ def promote_source_file_to_invoices(
     rows = [None] * hasil_promote["total_baris"]  # hanya untuk len(rows) di ringkasan di bawah
 
     if dibuat > 0:
-        dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=client_id)
+        dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=user_id)
 
     ringkasan = {
         "total_baris": len(rows),

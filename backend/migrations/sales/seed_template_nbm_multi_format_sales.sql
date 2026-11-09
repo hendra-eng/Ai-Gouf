@@ -4,10 +4,36 @@
 -- klien NBM (PT Nawasanga Bertatap Muka). SATU baris setting ("Multi") untuk
 -- halaman Transactions > Sales > Source Data.
 --
--- STATUS: varian CSV (export POS "Report Item Details", 2 outlet FAS A FAS) dan
--- varian Excel (laporan "Penjualan per Pelanggan", wholesale), keduanya di
--- array "variants" pada SATU baris template Multi. Varian lain nanti cukup
--- ditambahkan ke array itu (lihat bagian "Menambah varian lagi" di bawah).
+-- STATUS: 3 varian di array "variants" pada SATU baris template Multi:
+--   1. CSV   export POS "Report Item Details" (per item, 2 outlet FAS A FAS)
+--   2. Excel laporan "Penjualan per Pelanggan" (wholesale)
+--   3. CSV   export POS "Report Transaction" (per struk) -- ditambahkan 2026-11-07,
+--            lihat bagian "VARIAN CSV 2" di bawah.
+-- Varian lain nanti cukup ditambahkan ke array itu (lihat bagian "Menambah
+-- varian lagi" di bawah).
+--
+-- HASIL UJI DATASET dataset/Sales/NBM/<Bulan>/ (parser asli, template dari DB, 2026-11-07):
+--   Juni    Report Item Details   2.025 struk  TOTAL 298.327.548,25
+--   Juni    sales_by_customer       678 inv    TOTAL 135.713.400,00
+--   Juli    Report Transaction    2.173 struk  TOTAL 328.697.605,14 (varian 3)
+--   Juli    sales_by_customer       866 inv    TOTAL 181.624.800,00
+--   Agustus Report Item Details   2.315 struk  TOTAL 362.128.422,66
+--   Agustus sales_by_customer       851 inv    TOTAL 204.221.225,00
+--   Semua valid, tanpa nomor ganda.
+--
+-- =============================================================
+-- VARIAN CSV 2 -- export POS "Report Transaction" (per struk)
+-- =============================================================
+-- SUMBER: Juli/Report Transaction - 01-07-2026 - 31-07-2026 - All_Outlet - 865077 - 6aa7451c.csv
+--   21 kolom, header baris 1, data mulai baris 2, format angka/tanggal sama
+--   dengan Report Item Details. 1 baris = 1 struk (bukan per item).
+--   2.177 baris = 2.173 struk Payment + 4 baris Refund (Receipt Number struk
+--   asalnya, nilai negatif, tanggal sama) -> dijumlah per Receipt Number.
+-- RUMUS = varian Report Item Details: dpp = Net Sales + Gratuity, ppn = Tax.
+--   Total Collected TIDAK dipakai: nilainya dibulatkan kasir ke ratusan (maks
+--   50 per struk). Akibatnya total Juli lebih besar 9.650,14 daripada SUM(Total
+--   Collected) = 328.687.955 (uang yang benar-benar diterima) -- selisih
+--   pembulatan, bukan galat.
 --
 -- SUMBER CSV (dataset/template_laporan/NBM/):
 --   Report Item Details - 01-08-2026 - 31-08-2026 - All_Outlet - 865077 - 6aade518.csv
@@ -166,6 +192,11 @@
 --   hash_excel = 201e5e46c2908cdc9ef5782c4cf4e1ee6aa7b7337adf9ffc4212202c8668e118
 --   -> 5cf5abf76b2309c94a3127c2e8456eb3504425bc66b6da889716596966cb41db
 -- (versi CSV-saja dulu: SHA-256(hash_csv) = 0fc8e6add3bd3665f3b38b0f75ea5c7763606abbb63a1f0f8cb634a66848238f.)
+-- VERSI SEKARANG (3 varian, 2026-11-07):
+--   SHA-256("<hash_csv>:<hash_excel>:<hash_csv_rt>")
+--   hash_csv_rt = 3b25ab3c4a968e2398545b142f283b27b4d2cfa2e95da080d3a0bd821e650ecd
+--   -> c8e08bad4a154a8b1582570a02295a84d9a8813008dd8f67c9012b7feb43f7cd
+--   (5cf5abf7... dan 0fc8e6ad... sekarang ada di v_hash_lama -> di-upgrade di tempat.)
 -- Hash baris ini SAMA dengan hash baris seed lama seed_template_nbm_multi_format.sql
 -- (CSV+Excel), artinya header CSV dan Excel-nya identik -- lihat "SEED LAMA".
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns)
@@ -231,8 +262,11 @@ DECLARE
     -- Hash baris seed ini = SHA-256("<hash_csv>:<hash_excel>"), dan hash baris
     -- versi-versi LAMA seed yang sama (CSV-saja). Baris lama ditemukan lewat daftar
     -- ini lalu di-UPDATE di tempat -- lihat "Idempotensi" di kepala file.
-    v_hash_baru   CONSTANT TEXT := '5cf5abf76b2309c94a3127c2e8456eb3504425bc66b6da889716596966cb41db';
-    v_hash_lama   TEXT[] := ARRAY['0fc8e6add3bd3665f3b38b0f75ea5c7763606abbb63a1f0f8cb634a66848238f'];
+    -- 2026-11-07: + varian CSV 'Report Transaction' -> hash baris =
+    -- SHA-256("<hash_csv>:<hash_excel>:<hash_csv_rt>"); hash CSV+Excel dipindah ke v_hash_lama.
+    v_hash_baru   CONSTANT TEXT := 'c8e08bad4a154a8b1582570a02295a84d9a8813008dd8f67c9012b7feb43f7cd';
+    v_hash_lama   TEXT[] := ARRAY['5cf5abf76b2309c94a3127c2e8456eb3504425bc66b6da889716596966cb41db',
+                                  '0fc8e6add3bd3665f3b38b0f75ea5c7763606abbb63a1f0f8cb634a66848238f'];
     v_rules       JSONB := $json${
   "format_type": "multi_format",
   "description": "1 setting klien NBM (PT Nawasanga Bertatap Muka) untuk laporan penjualan. Varian CSV: export POS 'Report Item Details' (2 outlet FAS A FAS), 1 struk = 1 invoice. Varian Excel: laporan 'Penjualan per Pelanggan' (wholesale, berseksi per pelanggan), 1 nomor invoice = 1 invoice. Tiap varian membawa file_type, sheet, posisi header, signature & resep parsing sendiri; backend memilih varian yang tipe file dan signature header-nya cocok (lihat _template_dari_varian di sales_import_v1.py).",
@@ -357,6 +391,70 @@ DECLARE
         "row_granularity": "per_invoice",
         "catatan_analisis": "Dianalisis dari 1 file contoh (01/08/2026-31/08/2026): sheet 'Sales by Customer' A1:J2183, header baris 6, data baris 7-2182, 'Grand Total' baris 2183 (204.221.225). 1.990 line = 851 invoice unik (semua INV/WS), 93 pelanggan; tiap nomor invoice hanya di 1 pelanggan dan 1 tanggal. Kolom J = total berjalan per pelanggan (cocok di semua line). Line 'Diskon': 140 line di 46 invoice, total -2.222.725, kuantitas teks kosong. Kolom Keterangan kosong semua; kolom Transaksi hanya 'Sales Invoice'. Hasil uji dengan kode parser asli: 851 invoice valid, tanpa duplikat, total = Grand Total = jumlah 'Total Penjualan' semua seksi."
       }
+    },
+    {
+      "file_type": "CSV",
+      "sheet_name": null,
+      "header_row_index": 1,
+      "data_start_row_index": 2,
+      "column_signature_hash": "3b25ab3c4a968e2398545b142f283b27b4d2cfa2e95da080d3a0bd821e650ecd",
+      "header_columns": [
+        "Outlet",
+        "Date",
+        "Time",
+        "Gross Sales",
+        "Discounts",
+        "Refunds",
+        "Net Sales",
+        "Gratuity",
+        "Tax",
+        "Total Collected",
+        "Total Amount",
+        "Other Note (Optional)",
+        "Receipt Number",
+        "Collected By",
+        "Served By",
+        "Customer",
+        "Customer Phone",
+        "Items",
+        "Payment Method",
+        "Event Type",
+        "Reason of Refund"
+      ],
+      "mapping_rules": {
+        "format_type": "flat_grouped_by_key",
+        "description": "Export POS 'Report Transaction' (semua outlet NBM) -- ringkasan PER STRUK: 1 baris CSV = 1 struk (Event Type = Payment), plus baris Event Type = Refund yang memakai Receipt Number struk asalnya dengan nilai NEGATIF. Dijumlah per Receipt Number -> 1 baris kanonis (source_rows) = 1 struk, refund otomatis mengurangi struk asalnya. Rumus SAMA dengan varian 'Report Item Details' (dpp = Net Sales + Gratuity, ppn = Tax) supaya angka antar bulan konsisten apa pun jenis export-nya. Kolom dicari lewat NAMA di baris header; urutan+isi header harus sama persis dengan file contoh agar signature cocok.",
+        "encoding": "utf-8-sig",
+        "delimiter": ",",
+        "quoted_fields": true,
+        "date_format": "DD-MM-YYYY",
+        "number_format": {
+          "thousands_separator": ",",
+          "decimal_separator": "."
+        },
+        "invoice_key": "Receipt Number",
+        "tanggal": "Date",
+        "customer": "Customer",
+        "customer_fallback": "Penjualan POS - {Outlet}",
+        "dpp_columns": [
+          "Net Sales",
+          "Gratuity"
+        ],
+        "ppn_columns": [
+          "Tax"
+        ],
+        "field_mapping": {
+          "tanggal": "Date (DD-MM-YYYY)",
+          "invoice": "Receipt Number",
+          "customer": "Customer (kosong -> 'Penjualan POS - <Outlet>')",
+          "cabang": "kosong (NBM tidak memakai cabang)",
+          "dpp": "SUM(Net Sales + Gratuity) per struk",
+          "ppn": "SUM(Tax) per struk",
+          "total": "dpp + ppn (BUKAN Total Collected yang sudah dibulatkan kasir)"
+        },
+        "row_granularity": "per_receipt",
+        "catatan_analisis": "Dianalisis dari 1 file contoh (01-07-2026 s/d 31-07-2026, All Outlet): 2.177 baris = 2.173 struk Payment + 4 baris Refund (1O5EYC, 4Z7L84, 4Z7L6Y, 1O5EMI; tanggal sama dengan struk asalnya, nilai negatif). Outlet: FAS A FAS CAFE AND BAKERY 1.374 baris, FAS A FAS TO-GO 803. Customer kosong semua. Net Sales = Gross - Discounts - Refunds di semua baris; Tax = 10 persen x (Net Sales + Gratuity) (selisih maks 0,05). Total Collected = Total Amount, tetapi DIBULATKAN ke ratusan oleh kasir (selisih maks 50 per struk, total -9.650,14 terhadap Net + Gratuity + Tax), jadi tidak dipakai sebagai total."
+      }
     }
   ],
   "piutang_account": {
@@ -408,6 +506,7 @@ BEGIN
           FROM jsonb_array_elements(COALESCE(t.mapping_rules->'variants', '[]'::jsonb)) AS v
           WHERE (v->>'file_type' = 'CSV'   AND v->>'column_signature_hash' = 'c74ca792bb1ec18556aaf3ce8a1f5e200043c756090c7761e2f6973be7922bc0')
              OR (v->>'file_type' = 'Excel' AND v->>'column_signature_hash' = '201e5e46c2908cdc9ef5782c4cf4e1ee6aa7b7337adf9ffc4212202c8668e118')
+             OR (v->>'file_type' = 'CSV'   AND v->>'column_signature_hash' = '3b25ab3c4a968e2398545b142f283b27b4d2cfa2e95da080d3a0bd821e650ecd')
       );
 
     IF v_bentrok > 0 THEN

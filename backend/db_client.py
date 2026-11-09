@@ -5204,6 +5204,29 @@ def get_sales_invoice_by_client_and_no(client_id: Optional[str], invoice_no: str
         session.close()
 
 
+def get_sales_invoice_by_management_client_and_no(management_client_id: Optional[str], invoice_no: str) -> Optional[Dict[str, Any]]:
+    """Seperti get_sales_invoice_by_client_and_no, tapi per PERUSAHAAN
+    (management_clients) -- bukan per user pembuat (invoices.client_id ->
+    management_users). Dipakai promote-to-invoices supaya nomor yang sudah
+    dipakai invoice perusahaan ini dilewati walau dibuat user lain (mis. file
+    UBD tahun berjalan yang di-upload ulang tiap bulan)."""
+    if not management_client_id:
+        return None
+    session = SessionLocal()
+    try:
+        obj = session.query(SalesInvoice).filter(
+            SalesInvoice.management_client_id == management_client_id,
+            SalesInvoice.invoice_no == invoice_no,
+            SalesInvoice.deleted_at.is_(None),
+        ).first()
+        return _sales_invoice_ke_dict(obj) if obj else None
+    except Exception:
+        session.rollback()
+        return None
+    finally:
+        session.close()
+
+
 def list_sales_invoices(client_id: Optional[str] = None, posting_status: Optional[str] = None, termasuk_nonaktif: bool = False,
                         management_client_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """client_id = id_user (management_users, akun yang login); management_client_id =
