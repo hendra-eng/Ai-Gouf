@@ -63,6 +63,14 @@
 --   * TUKAR GULING dinonaktifkan ("abaikan": true) karena 5 dari 6 barisnya sudah
 --     ada di sheet Retur; hitung ulang kalau ternyata berbeda makna.
 --
+-- UPDATE 2026-11-09 (willi): parser multi_sheet_line_items di-port ke playground-willi (sebelumnya
+-- upload ABE selalu "template tidak cocok"). Ditambah "header_alternatif" per sheet untuk layout
+-- dataset/Sales/ABE/Juni/SELLING JUNI.xlsx: Supermarket & COCO tanpa baris subtotal (header baris 1),
+-- Retur supermarket kolom B 'VARIAN'. Signature varian/baris TIDAK berubah (alternatif tidak ikut hash),
+-- jadi seed meng-UPDATE baris lama di tempat. Hasil uji:
+--   SELLING JUNI.xlsx : 48 invoice valid, tanggal 01-06..06-06-2026, DPP 34.138.020 (retur -364.878)
+--   SELLING JULI.xlsx : 225 invoice valid, DPP 191.781.510 (sama dengan hasil uji awal di bawah)
+--
 -- HASIL UJI (kode parser ASLI sales_import_v1.py dijalankan ke SELLING_JULI.xlsx):
 --   225 invoice, semuanya valid, tanpa nomor ganda, tanggal 01-07-2026 s/d
 --   31-07-2026; DPP = TOTAL = 191.781.510,00 (PPN 0). Cocok dengan hitungan
@@ -91,6 +99,11 @@
 --                   4-001 Sales - Restaurant (cabang ALFAJORES CAFE, lewat
 --                   pendapatan_account_by_cabang; kunci HURUF BESAR semua)
 --   Cr Pajak        2-400 Tax Payable (pengisi; ppn selalu 0)
+-- UPDATE 2026-11-09: seed memilih akun dari COA klien yang ada -- kalau kode di atas tidak ada
+-- (klien dibuat lewat halaman Clients dengan COA template industri 6 digit), dipakai
+-- 130001 Trade Receivables / 410001 Sales Revenue (pabrik & kafe) / 220009 Other Tax Payables.
+-- COA template punya 430006 Sales Returns, tapi resep belum bisa memilih akun per sheet --
+-- invoice retur negatif ikut 410001 (ubah di Journal Preview bila perlu).
 -- Settings > Account Mapping klien, kalau diisi, tetap didahulukan untuk piutang
 -- dan pajak. Tanpa akun di COA klien, posting ditolak. Invoice retur negatif
 -- menghasilkan jurnal berbalik tanda -- periksa di Journal Preview.
@@ -104,7 +117,8 @@
 -- level varian hanya pengisi kolom NOT NULL; yang dipakai pencocokan adalah
 -- signature per sheet di dalam mapping_rules.sheets.
 --
--- KLIEN: dicari lewat nama_client = 'PT ALFAJORES BALI ENAK' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat nama_client = 'PT ALFAJORES BALI ENAK' (sesuai data klien di VPS) ATAU
+-- 'PT ALAFAJORES BALI ENAK' (ejaan di DB lokal willi) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
@@ -137,6 +151,10 @@ DECLARE
     v_bentrok     INTEGER;
     v_hash_baru   CONSTANT TEXT := '77435830b5c7cb3b7d7146f355716a002db5b6ea9af04b24ab5dc066cb850d45';
     v_hash_lama   TEXT[] := ARRAY[]::TEXT[];
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
+    v_akun        TEXT;
+    v_akun_json   JSONB;
     v_rules       JSONB := $json${
   "format_type": "multi_format",
   "description": "1 setting klien ABE untuk catatan penjualan manual (SELLING_<BULAN>.xlsx). SATU varian Excel membaca SEMUA sheet terdaftar dalam satu upload: tiap sheet punya posisi header, kolom, prefix nomor invoice, dan aturan sendiri (lihat variants[0].mapping_rules.sheets). 1 baris source_rows = 1 invoice = 1 (sheet, tanggal, pelanggan).",
@@ -210,6 +228,14 @@ DECLARE
             "data_start_row_index": 3,
             "signature_kolom": 7,
             "signature": "24a0ee58c2c6648e09c1443ec5ba1a7c982d1e8e5590907c8069619f3ed8e840",
+            "header_alternatif": [
+              {
+                "header_row_index": 1,
+                "data_start_row_index": 2,
+                "signature": "f8cfaf3e6dc5c513dba61442f3247c0b12f2c827ed5b5ced9b45ab98048fd7cc",
+                "catatan": "Layout SELLING JUNI: tanpa baris subtotal, header baris 1 huruf besar (NO, DATE, CLIENT, ...)."
+              }
+            ],
             "prefix_invoice": "ABE-SMK",
             "columns": {
               "tanggal": 2,
@@ -291,6 +317,14 @@ DECLARE
             "data_start_row_index": 3,
             "signature_kolom": 6,
             "signature": "5c170c33252277751a81919dcb60cad5e277bdb73c708314631fa1d997433247",
+            "header_alternatif": [
+              {
+                "header_row_index": 1,
+                "data_start_row_index": 2,
+                "signature": "5c170c33252277751a81919dcb60cad5e277bdb73c708314631fa1d997433247",
+                "catatan": "Layout SELLING JUNI: tanpa baris subtotal, header langsung di baris 1."
+              }
+            ],
             "prefix_invoice": "ABE-COCO",
             "columns": {
               "tanggal": 1,
@@ -308,6 +342,14 @@ DECLARE
             "data_start_row_index": 2,
             "signature_kolom": 6,
             "signature": "2a84ce4275719d0d30cdc53d38cfda2c9a802d02a85f6263c15d60ac20c02970",
+            "header_alternatif": [
+              {
+                "header_row_index": 1,
+                "data_start_row_index": 2,
+                "signature": "271c25b48f15457123a12a353f63cb7e755c2d0adc61ab0bff3384d51c57326b",
+                "catatan": "Layout SELLING JUNI: kolom B bernama 'VARIAN' (bukan 'Nama produk'), posisi kolom sama."
+              }
+            ],
             "prefix_invoice": "ABE-RTR",
             "columns": {
               "tanggal": 6,
@@ -364,17 +406,47 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT ALFAJORES BALI ENAK'
+      AND upper(trim(nama_client)) IN ('PT ALFAJORES BALI ENAK', 'PT ALAFAJORES BALI ENAK')
     ORDER BY created_at
     LIMIT 1;
     IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT ALFAJORES BALI ENAK') > 1 THEN
+        WHERE deleted_at IS NULL AND upper(trim(nama_client)) IN ('PT ALFAJORES BALI ENAK', 'PT ALAFAJORES BALI ENAK')) > 1 THEN
         RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT ALFAJORES BALI ENAK di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
     END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien ABE belum ada di management_clients (dicari nama_client = ''PT ALFAJORES BALI ENAK''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien ABE belum ada di management_clients (dicari nama_client = ''PT ALFAJORES BALI ENAK'' / ''PT ALAFAJORES BALI ENAK''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
+
+    -- Akun default dipilih dari COA klien yang SEBENARNYA (pola seed NPI/AADL): untuk tiap
+    -- peran, kandidat pertama yang ada (acc_no, belum dihapus) dipakai, nama dari COA.
+    -- Kandidat 1 = COA ABE asli (sheet 'COA ABE'), kandidat 2 = COA template industri
+    -- (klien dibuat lewat halaman Clients -- kasus DB lokal willi 2026-11-09). Tidak ada
+    -- satu pun -> kandidat 1 dipertahankan + NOTICE (posting ditolak sampai akun ada).
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('piutang_account',                    ARRAY['1-201', '130001']),
+            ('pendapatan_account',                 ARRAY['4-000', '410001']),
+            ('pendapatan_account_by_cabang/ALFAJORES CAFE', ARRAY['4-001', '410001']),
+            ('ppn_account',                        ARRAY['2-400', '220009'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien ABE -- tambahkan di halaman COA atau isi Settings > Account Mapping sebelum posting.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        v_rules := jsonb_set(v_rules, string_to_array(v_peran, '/'), v_akun_json);
+        RAISE NOTICE 'Akun % ABE = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
 
     SELECT t.id INTO v_id
     FROM financial_transaction_sales_import_templates t
@@ -433,4 +505,4 @@ $do$;
 --        jsonb_array_length(t.mapping_rules->'variants'->0->'mapping_rules'->'sheets') AS jumlah_sheet
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT ALFAJORES BALI ENAK';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) IN ('PT ALFAJORES BALI ENAK', 'PT ALAFAJORES BALI ENAK');
