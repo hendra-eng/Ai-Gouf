@@ -2484,14 +2484,18 @@ class SisiDok:
     nama_file: str
 
 
+# Template AR format ledger ("AR Transactions"): 1 baris = 1 invoice outstanding.
+#   Reference = nomor invoice (doc_no) | Debit = nilai invoice (original)
+#   Credit = bagian yang sudah dibayar/dilunasi per cut-off (opsional) -> Outstanding = Debit - Credit
+# Kolom No Akun, Akun, Source, D/C, Reklas hanya informasi; Aging = rumus (diabaikan saat upload).
+# Dibuat/divalidasi oleh buat_template_ar() & _validasi_ar() (bukan buat_template_dok/_validasi_dok, khusus AP).
 SISI_AR = SisiDok(
     "ar", "OPENING_AR", "IMPORT OPENING ACCOUNTS RECEIVABLE (AR)", "Customer", "Invoice",
-    (("party_code", "Customer Code"), ("party_name", "Customer Name"), ("tax_id", "Customer Tax ID"),
-     ("doc_no", "Invoice Number"), ("doc_date", "Invoice Date"), ("due_date", "Due Date"),
-     ("original", "Original Invoice Amount"), ("outstanding", "Outstanding Amount"), ("currency", "Currency"),
-     ("account", "AR Control Account"), ("branch", "Branch"), ("department", "Department"), ("project", "Project"),
-     ("salesperson", "Salesperson"), ("reference", "Reference"), ("notes", "Notes")),
-    (16, 30, 22, 20, 14, 14, 20, 20, 10, 18, 14, 16, 16, 16, 16, 30, 4, 20, 18),
+    (("doc_date", "Date"), ("acc_no", "No Akun"), ("acc_name", "Akun"), ("source", "Source"),
+     ("notes", "Description"), ("doc_no", "Reference"), ("currency", "Currency"), ("debit", "Debit"),
+     ("credit", "Credit"), ("dc", "D/C"), ("reklas", "Reklas"), ("aging", "Aging"),
+     ("party_name", "Nama Customer"), ("account", "AR Control Account")),
+    (14, 12, 24, 14, 30, 20, 10, 18, 18, 8, 14, 18, 30, 18, 4, 22, 18),
     "02_Template_Import_Opening_AR",
 )
 SISI_AP = SisiDok(
@@ -2506,7 +2510,8 @@ SISI_AP = SisiDok(
     "03_Template_Import_Opening_AP",
 )
 SISI_DOK = {"ar": SISI_AR, "ap": SISI_AP}
-KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "account")
+KOLOM_WAJIB_DOK = ("party_name", "doc_no", "doc_date", "original", "outstanding", "account")   # AP
+KOLOM_WAJIB_AR = ("doc_date", "doc_no", "debit", "party_name", "account")
 SHEET_REFERENSI_DOK = "ZAFEB_REF"
 
 
@@ -2843,6 +2848,272 @@ def _validasi_dok(session, ob: Any, header: List[str], data: List[Tuple[int, Lis
     return hasil
 
 
+def _panduan_ar(nama_klien: str, ob: Any) -> Dict[str, Any]:
+    cut = ob.as_of_date.strftime("%d-%b-%Y")
+    return {
+        "judul": SISI_AR.judul.replace("IMPORT ", ""), "sheet": SISI_AR.sheet,
+        "info": _info_panduan(nama_klien, ob, "ar"),
+        "langkah": [
+            "Enter one row per customer invoice that is still unpaid (fully or partly) on the cut-off date.",
+            "Pick the customer from the Nama Customer dropdown, or type a new name (it is added to the customer master on approval).",
+            "Enter the invoice number in Reference and the invoice amount in Debit.",
+            "If the invoice is partly paid on the cut-off date, enter the paid part in Credit. Outstanding = Debit − Credit.",
+            "Keep the AR Control Account from the dropdown (default from Account Mapping).",
+            "Check the CONTROL SUMMARY on the right against the legacy aging report. The Aging column is calculated "
+            "automatically from the Date and the \"Aging As Of\" date in the summary.",
+            *_LANGKAH_UMUM_AKHIR,
+        ],
+        "kolom": [
+            ("Date", "Yes", "Date", f"Invoice date, on or before the cut-off date {cut}."),
+            ("No Akun", "No", "Text", "Information only (account number in the legacy ledger). The AR Control Account decides the posting."),
+            ("Akun", "No", "Text", "Information only (account name in the legacy ledger)."),
+            ("Source", "No", "Text", "Information only (e.g. document type). Copied to the invoice description."),
+            ("Description", "No", "Text", "Copied to the invoice description."),
+            ("Reference", "Yes", "Text (max 90)", "Invoice number. Unique in the file and not yet recorded in Sales / AR."),
+            ("Currency", "No", "ISO code", "Always IDR — any other value is ignored."),
+            ("Debit", "Yes", "Number > 0", "Invoice amount (the original amount)."),
+            ("Credit", "No", "Number ≥ 0", "Part already paid / settled on the cut-off date — not more than the Debit. Leave empty if nothing is paid."),
+            ("D/C", "No", "D or C", "Information only."),
+            ("Reklas", "No", "Text", "Information only. Copied to the invoice description."),
+            ("Aging", "Auto", "Formula", "Calculated from Date and the \"Aging As Of\" date. Ignored on upload."),
+            ("Nama Customer", "Yes", "Text (max 255)", "Existing customer (dropdown) or a new name."),
+            ("AR Control Account", "Yes", "Dropdown", "Prefilled with the default from Settings > Account Mapping. Must be an AR control account."),
+        ],
+        "error": [
+            "Nama Customer or Reference empty; Reference duplicated in the file or already recorded.",
+            f"Date empty, invalid or after {cut}.",
+            "Debit empty or not greater than 0; Credit not a number, negative or more than the Debit; Outstanding (Debit − Credit) not greater than 0.",
+            "AR Control Account empty, not found, inactive or not an AR control account.",
+        ],
+        "warning": [
+            "New customer (added to the customer master).",
+            "AR Control Account different from the default.",
+            "D/C is not D or C.",
+        ],
+        "setelah": [
+            "The invoices appear in Accounts Receivable (aging, statements) and can be settled through Cash & Bank. They are "
+            "marked as opening balance documents: not shown in Sales and not posted to the General Ledger again.",
+            "The opening balance of the AR control account(s) is recalculated from the outstanding amounts of all approved AR batches.",
+        ],
+    }
+
+
+def buat_template_ar(nama_klien: str, pelanggan: List[Tuple[str, str, str]], akun_kontrol: List[Any],
+                     akun_default: Optional[Any], ob: Any) -> bytes:
+    """Template Opening AR format ledger (kolom Date .. AR Control Account): 1 baris = 1 invoice outstanding."""
+    sisi = SISI_AR
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sisi.sheet
+    font = Font(name=_FONT, size=11)
+    akhir = BARIS_DATA_AWAL + JUMLAH_BARIS_TEMPLATE - 1
+    kolom = sisi.kolom
+    n_kolom = len(kolom)
+    huruf = {k: get_column_letter(i) for i, (k, _) in enumerate(kolom, 1)}
+    cut = ob.as_of_date
+    kol_ringkas = n_kolom + 2                       # kolom label ringkasan (P)
+    sel_aging = f"${get_column_letter(kol_ringkas + 1)}${BARIS_HEADER + 6}"   # tanggal "Aging As Of" ($Q$10)
+
+    _judul_template(ws, n_kolom, f"ZAFEB – {sisi.judul} · {nama_klien} · FY {ob.fiscal_year}", (
+        f"Import every customer invoice that is still OUTSTANDING on the cut-off date {cut.strftime('%d-%b-%Y')} — one row "
+        "per invoice. Required: Date (on or before the cut-off date), Reference (invoice number, unique), Debit (invoice "
+        "amount, > 0), Nama Customer and the AR Control Account (prefilled with the default from Account Mapping). If the "
+        "invoice is partly paid on the cut-off date, enter the paid part in Credit — Outstanding = Debit − Credit must be "
+        "more than 0. Aging is calculated automatically. After approval the invoices appear in Accounts Receivable and the "
+        "opening balance of the control account(s) is recalculated from them."
+    ))
+    _header_template(ws, kolom)
+
+    for r in range(BARIS_DATA_AWAL, akhir + 1):
+        for i in range(1, n_kolom + 1):
+            c = ws.cell(r, i)
+            c.font, c.alignment = font, Alignment(vertical="top", wrap_text=True)
+        tgl = f"{huruf['doc_date']}{r}"
+        ws[tgl].number_format = _FMT_TANGGAL
+        for k in ("debit", "credit"):
+            ws[f"{huruf[k]}{r}"].number_format = _FMT_ANGKA
+        ws[f"{huruf['currency']}{r}"].value = MATA_UANG_OPENING
+        if akun_default is not None:
+            ws[f"{huruf['account']}{r}"].value = str(akun_default.acc_no)
+        ag = ws[f"{huruf['aging']}{r}"]
+        ag.value = (f'=IF({tgl}="","",IF({sel_aging}-{tgl}<=0,"Belum Jatuh Tempo",IF({sel_aging}-{tgl}<=30,"0-30 Hari",'
+                    f'IF({sel_aging}-{tgl}<=60,"31-60 Hari",IF({sel_aging}-{tgl}<=90,"61-90 Hari",">90 Hari")))))')
+        ag.fill = _FILL_LINK
+
+    rng = lambda k: f"{huruf[k]}{BARIS_DATA_AWAL}:{huruf[k]}{akhir}"
+    _ringkasan_template(ws, kol_ringkas, [
+        ("CONTROL SUMMARY", None),
+        ("Total Customers", f'=SUMPRODUCT(({rng("party_name")}<>"")/COUNTIF({rng("party_name")},{rng("party_name")}&""))'),
+        ("Total Invoices", f'=COUNTA({rng("doc_no")})'),
+        ("Total Debit", f'=SUM({rng("debit")})'),
+        ("Total Credit", f'=SUM({rng("credit")})'),
+        ("Outstanding Amount", f'=SUM({rng("debit")})-SUM({rng("credit")})'),
+    ])
+    # Tanggal acuan kolom Aging (default = cut-off date; boleh diubah).
+    r_ag = BARIS_HEADER + 6
+    c = ws.cell(r_ag, kol_ringkas, "Aging As Of")
+    c.font, c.fill = Font(name=_FONT, size=11, bold=True, color="FF134E4A"), _FILL_RINGKAS
+    q = ws.cell(r_ag, kol_ringkas + 1, cut)
+    q.font, q.number_format = Font(name=_FONT, size=11), _FMT_TANGGAL
+    for i, lebar in enumerate(sisi.lebar, 1):
+        ws.column_dimensions[get_column_letter(i)].width = lebar
+    ws.freeze_panes = f"A{BARIS_DATA_AWAL}"
+
+    ref = wb.create_sheet(SHEET_REFERENSI_DOK)
+    ref.append(["Customer Code", "Customer Name", "Tax ID", "", "Control Account", "Name"])
+    for i, (k, n, npwp) in enumerate(pelanggan, 2):
+        ref.cell(i, 1, k); ref.cell(i, 2, n); ref.cell(i, 3, npwp)
+    for i, a in enumerate(akun_kontrol, 2):
+        ref.cell(i, 5, str(a.acc_no)); ref.cell(i, 6, a.account_name)
+    for i, lebar in enumerate([16, 36, 22, 2, 18, 36], 1):
+        ref.column_dimensions[get_column_letter(i)].width = lebar
+    ref.sheet_state = "hidden"
+    n_p = max(len(pelanggan), 1) + 1
+    for nama, rg in {
+        "ZREF_PARTY_CODE": f"$A$2:$A${n_p}", "ZREF_PARTY_NAME": f"$B$2:$B${n_p}", "ZREF_PARTY_TAX": f"$C$2:$C${n_p}",
+        "ZREF_ACCOUNT": f"$E$2:$E${max(len(akun_kontrol), 1) + 1}",
+    }.items():
+        wb.defined_names[nama] = DefinedName(nama, attr_text=f"'{SHEET_REFERENSI_DOK}'!{rg}")
+
+    _dropdown(ws, "ZREF_PARTY_NAME", rng("party_name"), "customer (or type a new one)", strict=False)
+    _dropdown(ws, "ZREF_ACCOUNT", rng("account"), "ar control account")
+    _dropdown(ws, '"' + ",".join(MATA_UANG) + '"', rng("currency"), "currency", strict=False)
+    _dropdown(ws, '"D,C"', rng("dc"), "D/C", strict=False)
+    _tambah_cara_penggunaan(wb, _panduan_ar(nama_klien, ob))
+
+    wb.calculation.fullCalcOnLoad = True
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _validasi_ar(session, ob: Any, header: List[str], data: List[Tuple[int, List[Any]]]) -> List[Dict[str, Any]]:
+    """Validasi file Opening AR format ledger. Keluaran (key data & debit/credit baris) sama dengan _validasi_dok,
+    jadi tabel review & _terapkan_dok tidak berubah: Reference -> doc_no, Debit -> original, Debit - Credit -> outstanding."""
+    sisi = SISI_AR
+    posisi = _posisi_kolom(header, sisi.kolom, KOLOM_WAJIB_AR)
+    per_nama = {n.strip().upper(): (k, n, t) for k, n, t in _pihak_master(session, ob.client_id, "ar")}
+    kontrol = {a.id: a for a in _akun_kontrol(session, ob.client_id, "ar")}
+    per_kode_akun = {str(a.acc_no).strip().lower(): a for a in _akun_klien(session, ob.client_id)}
+    default = _akun_default_dok(session, ob.client_id, "ar")
+    terdaftar = _dokumen_terdaftar(session, ob.client_id, "ar")
+    cut = ob.as_of_date
+
+    hasil, no_dipakai = [], {}
+    for no_baris, r in data:
+        nilai = {k: (r[p] if p < len(r) else None) for k, p in posisi.items()}
+        d = {k: _teks(v) for k, v in nilai.items()}
+        if not any(d.get(k) for k in ("party_name", "doc_no", "debit", "credit", "doc_date")):
+            continue   # baris template kosong (hanya default IDR / akun / rumus Aging)
+        pesan: List[Dict[str, str]] = []
+
+        def err(m): pesan.append({"level": "error", "message": m})
+        def warn(m): pesan.append({"level": "warning", "message": m})
+
+        nama = d.get("party_name") or ""
+        master = per_nama.get(nama.upper()) if nama else None
+        if master is not None:
+            nama = master[1]
+        elif nama:
+            warn(f"New customer — {nama} will be added to the customer master.")
+        if not nama:
+            err("Nama Customer is required.")
+        elif len(nama) > 255:
+            err("Nama Customer is longer than 255 characters.")
+
+        no = (d.get("doc_no") or "").strip()
+        kunci = no.upper()
+        if not no:
+            err("Reference (invoice number) is required.")
+        elif len(no) > 90:
+            err("Reference is longer than 90 characters.")
+        elif kunci in no_dipakai:
+            err(f"Duplicate Reference (also on row {no_dipakai[kunci]}).")
+        elif kunci in terdaftar:
+            err(f"Invoice {no} already exists in Sales / Accounts Receivable.")
+        if no and kunci not in no_dipakai:
+            no_dipakai[kunci] = no_baris
+
+        tgl = None
+        if not d.get("doc_date"):
+            err("Date is required.")
+        else:
+            tgl = _tanggal(nilai.get("doc_date"))
+            if tgl is None:
+                err("Date is not a valid date.")
+            elif tgl > cut:
+                err(f"Date is after the cut-off date {cut.strftime('%d-%b-%Y')} — record it as a normal transaction instead.")
+
+        debit = kredit = None
+        if not d.get("debit"):
+            err("Debit (invoice amount) is required.")
+        else:
+            debit = _angka(nilai.get("debit"))
+            if debit is None:
+                err("Debit must be a number.")
+            elif debit <= 0:
+                err("Debit must be greater than 0.")
+                debit = None
+        if d.get("credit"):
+            kredit = _angka(nilai.get("credit"))
+            if kredit is None:
+                err("Credit must be a number.")
+            elif kredit < 0:
+                err("Credit must be 0 or more.")
+                kredit = None
+        sisa = NOL
+        if debit is not None:
+            bayar = kredit if kredit is not None else NOL
+            if bayar > debit:
+                err("Credit (paid part) cannot be more than the Debit.")
+            elif debit - bayar <= 0:
+                err("Outstanding Amount (Debit − Credit) must be greater than 0 — fully settled invoices are not imported.")
+            else:
+                sisa = debit - bayar
+
+        mata_uang = _cek_mata_uang(d, err)
+
+        akun = None
+        if not d.get("account"):
+            err("AR Control Account is required.")
+        else:
+            akun = per_kode_akun.get(d["account"].lower())
+            if akun is None:
+                err(f'AR Control Account "{d["account"]}" is not in this client\'s COA.')
+            elif akun.id not in kontrol:
+                err(f"{akun.acc_no} {akun.account_name} is not an AR control account "
+                    "(set it in Settings > Account Mapping or use the dropdown).")
+                akun = None
+            elif not akun.is_active:
+                err(f"AR Control Account {akun.acc_no} {akun.account_name} is inactive.")
+            elif default is not None and akun.id != default.id:
+                warn(f"AR Control Account {akun.acc_no} differs from the default ({default.acc_no}).")
+
+        if d.get("dc") and d["dc"].strip().upper() not in ("D", "C"):
+            warn("D/C is not D or C (information only).")
+
+        status = "error" if any(p["level"] == "error" for p in pesan) else "warning" if pesan else "valid"
+        hasil.append({
+            "row_no": no_baris,
+            "coa_id": akun.id if akun is not None else None,
+            "debit": sisa, "credit": NOL,
+            "status": status, "messages": pesan,
+            "data": {
+                "party_code": (master[0] if master is not None and master[0] else None),
+                "party_name": nama or None, "party_exists": master is not None,
+                "tax_id": (master[2] if master is not None else None) or None,
+                "doc_no": no or None,
+                "doc_date": tgl.isoformat() if tgl else None, "due_date": None,
+                "original": float(debit) if debit is not None else None,
+                "outstanding": float(sisa), "currency": mata_uang,
+                "account": _akun_dict(akun),
+                **{k: d.get(k) or None for k in ("notes", "source", "reklas", "dc")},
+                "source_account_no": d.get("acc_no") or None, "source_account_name": d.get("acc_name") or None,
+            },
+        })
+    return hasil
+
+
 def _ganti_saldo_kontrol(session, ob: Any, modul: str, saldo: Dict[str, Decimal], uid: Any, catatan: str) -> int:
     """Ganti baris saldo awal SEMUA akun kontrol 1 modul dengan `saldo` (coa_id -> debit(+)/kredit(-))."""
     OBL = dbc.ManagementClientCoaOpeningBalanceLine
@@ -2902,6 +3173,8 @@ def _terapkan_dok(session, b: Any, user: Dict[str, Any], sisi: SisiDok) -> str:
         ket = " · ".join(t for t in (
             x.get("notes"), f"Ref: {x['reference']}" if x.get("reference") else None,
             f"Dept: {x['department']}" if x.get("department") else None,
+            f"Source: {x['source']}" if x.get("source") else None,
+            f"Reklas: {x['reklas']}" if x.get("reklas") else None,
             f"WHT {x.get('wht_type') or ''}: {x['wht_outstanding']:,.2f}".replace(" :", ":") if x.get("wht_outstanding") else None,
         ) if t) or None
         if sisi.modul == "ar":
@@ -3359,6 +3632,10 @@ def download_template(ob_id: str, module: str, _current_user: Dict[str, Any] = D
                 session.query(IT).filter(IT.client_id == ob.client_id, IT.deleted_at.is_(None), IT.status == "active").order_by(IT.code).all(),
                 session.query(WH).filter(WH.client_id == ob.client_id, WH.deleted_at.is_(None), WH.is_active.is_(True)).order_by(WH.code).all(),
                 ob)
+        elif m == "ar":
+            isi = buat_template_ar(nama_klien, _pihak_master(session, ob.client_id, m),
+                                   [a for a in _akun_kontrol(session, ob.client_id, m) if a.is_active],
+                                   _akun_default_dok(session, ob.client_id, m), ob)
         else:
             isi = buat_template_dok(SISI_DOK[m], nama_klien, _pihak_master(session, ob.client_id, m),
                                     [a for a in _akun_kontrol(session, ob.client_id, m) if a.is_active],
@@ -3418,6 +3695,8 @@ async def upload_import(
             baris = _validasi_aset(session, ob, header, data)
         elif m == "inventory":
             baris = _validasi_inv(session, ob, header, data)
+        elif m == "ar":
+            baris = _validasi_ar(session, ob, header, data)
         else:
             baris = _validasi_dok(session, ob, header, data, SISI_DOK[m])
         if not baris:
