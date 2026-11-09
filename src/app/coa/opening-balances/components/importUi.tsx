@@ -33,7 +33,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     key: 'ar',
     no: 2,
     title: 'Import Opening AR',
-    desc: 'Upload outstanding customer invoices as opening Accounts Receivable.',
+    desc: 'Upload all customer invoices and their payments up to the cut-off date (settled and unpaid). Rows are grouped per Reference.',
     icon: Users,
     iconCls: 'bg-emerald-50 text-emerald-600',
     amounts: [{ label: 'Outstanding', field: 'total_debit' }],
