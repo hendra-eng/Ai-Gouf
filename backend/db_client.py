@@ -6776,6 +6776,7 @@ def create_purchase_transaction_with_lines(
     transaction_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
     created_by: Optional[str] = None,
+    error_out: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Buat 1 Purchase Transaction + SELURUH baris item/jasa-nya dalam SATU
     transaksi (atomik) -- pola sama persis alasannya dengan
@@ -6838,6 +6839,11 @@ def create_purchase_transaction_with_lines(
     except Exception as e:
         session.rollback()
         print(f"Error create transaction+lines financial_transaction_purchase_transactions: {e}")
+        if error_out is not None:
+            # pesan asli DB (baris pertama, tanpa SQL/parameter) -- dipakai pemanggil
+            # untuk menampilkan penyebab gagal yang jelas ke user.
+            asli = getattr(e, "orig", None) or e
+            error_out.append(str(asli).strip().splitlines()[0] if str(asli).strip() else type(e).__name__)
         return None
     finally:
         session.close()
