@@ -57,10 +57,12 @@ File TIDAK disimpan ke disk -- diproses di memory saja.
 
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 import db_client as dbc
 from ..api_response import gagal, sukses
@@ -68,14 +70,21 @@ from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from .purchase_v1 import _require_level_v1  # dependency level-3 yang sama, hindari duplikasi
 from .sales_import_v1 import (  # algoritma baca-file & signature SAMA PERSIS, tidak ada alasan duplikasi
+    FILE_TYPE_MULTI,
     MAX_UPLOAD_BYTES,
     _ambil_kolom,
     _baca_file_jadi_baris,
+    _baris_sheet,
+    _bulan_dari_nama_sheet,
+    _buka_workbook_bulanan,
     _cabang_dari_nama_file,
     _detect_file_type,
     _hash_baris,
+    _norm_label,
     _parse_angka,
     _parse_tanggal,
+    _pilih_sheet_bulanan,
+    _template_dari_varian,
     ringkas_import_template,
 )
 
@@ -96,14 +105,33 @@ _TOLERANSI_TOTAL = 1.0
 # ============================================================
 
 def _kandidat_template(management_client_id: str, file_type: str) -> List[Dict[str, Any]]:
-    return [
-        t for t in dbc.list_purchase_import_templates(client_id=management_client_id, hanya_aktif=True)
-        if t.get("file_type") == file_type
-    ]
+    """Template AKTIF klien untuk file_type upload: baris ber-file_type sama apa
+    adanya + varian ber-file_type sama dari baris 'Multi' (dipecah jadi template
+    virtual lewat _template_dari_varian; id tetap milik baris aslinya supaya
+    usage_count menunjuk ke 1 setting yang sama). Port dari branch hendra."""
+    kandidat: List[Dict[str, Any]] = []
+    for template in dbc.list_purchase_import_templates(client_id=management_client_id, hanya_aktif=True):
+        if template.get("file_type") == file_type:
+            kandidat.append(template)
+        elif template.get("file_type") == FILE_TYPE_MULTI:
+            for varian in (template.get("mapping_rules") or {}).get("variants", []):
+                if varian.get("file_type") == file_type:
+                    kandidat.append(_template_dari_varian(template, varian))
+    return kandidat
 
 
-def _cocokkan_template(content: bytes, file_type: str, management_client_id: str) -> Optional[Tuple[Dict[str, Any], List[List[str]]]]:
-    for template in _kandidat_template(management_client_id, file_type):
+def _cocokkan_template(content: bytes, file_type: str, management_client_id: str) -> Optional[Tuple[Dict[str, Any], Any]]:
+    kandidat = _kandidat_template(management_client_id, file_type)
+    if file_type == "Excel":
+        # Varian buku kas kecil bulanan (AADL): dicocokkan lewat baris JUDUL semua sheet bulanan.
+        ledger = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_LEDGER]
+        if ledger:
+            cocok_ledger = _cocokkan_template_excel_ledger(content, ledger)
+            if cocok_ledger is not None:
+                return cocok_ledger
+            id_ledger = {id(t) for t in ledger}
+            kandidat = [t for t in kandidat if id(t) not in id_ledger]
+    for template in kandidat:
         mapping_rules = template.get("mapping_rules") or {}
         encoding = mapping_rules.get("encoding", "utf-8")
         delimiter = mapping_rules.get("delimiter", ",")
@@ -115,7 +143,16 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
         idx = template["header_row_index"] - 1
         if idx < 0 or idx >= len(rows):
             continue
-        if _hash_baris(rows[idx]) == template["column_signature_hash"]:
+        # Opsional (recipe "header_kolom": [awal, akhir], 1-based): hash hanya pada jendela kolom tabel.
+        jendela = mapping_rules.get("header_kolom")
+        if jendela and len(jendela) == 2:
+            if _hash_baris(rows[idx][max(int(jendela[0]) - 1, 0):int(jendela[1])]) == template["column_signature_hash"]:
+                return template, rows
+            continue
+        # Excel: lebar sheet (sel kosong di ujung baris header) bisa berubah antar penyimpanan
+        # file, jadi hash dicoba juga setelah sel kosong di ujung dipangkas (NBM: 221 kolom).
+        sig = template["column_signature_hash"]
+        if _hash_baris(rows[idx]) == sig or _hash_baris(_pangkas_kosong_ujung(rows[idx])) == sig:
             return template, rows
     return None
 
@@ -128,6 +165,18 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
 
 def _kosong(row: List[str]) -> bool:
     return all((c or "").strip() == "" for c in row)
+
+
+def _pangkas_kosong_ujung(row: List[str]) -> List[str]:
+    """Buang sel kosong di ujung kanan baris (hash header Excel tidak boleh bergantung pada lebar sheet)."""
+    hasil = list(row)
+    while hasil and not (hasil[-1] or "").strip():
+        hasil.pop()
+    return hasil
+
+
+def _norm_teks(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
 
 
 def _alokasi(jumlah: float, basis: List[float]) -> List[float]:
@@ -209,6 +258,94 @@ def _susun_baris(items: List[Dict[str, Any]], subtotal_cetak: float, potongan: f
     for l in lines:
         l["total"] = round(l["subtotal"] - l["discount"] + l["tax_amount"], 2)
     return lines, catatan
+
+
+def _selesaikan_blok(
+    *,
+    purchase_no: str,
+    tanggal: Optional[date],
+    dept: str,
+    vendor_code: str,
+    vendor_name: str,
+    items: List[Dict[str, Any]],
+    subtotal_cetak: float,
+    potongan: float,
+    pajak: float,
+    biaya: float,
+    total_akhir: float,
+    recipe: Dict[str, Any],
+    errors: Optional[List[str]] = None,
+    ketat: bool = False,
+) -> Dict[str, Any]:
+    """Susun 1 blok transaksi hasil ekstraksi (dipakai parser CSV dan PDF).
+
+    errors  = masalah yang sudah ditemukan parser sebelum sini (blok jadi tidak valid).
+    ketat   = pengecekan tambahan untuk PDF: jumlah total item harus = subtotal cetak
+              (selain itu selisih diserap baris terakhir dan salah baca/duplikat item
+              tidak ketahuan) dan qty x harga yang jauh meleset dari total item jadi
+              peringatan (tanda salah baca kolom Jml/Harga).
+    Peringatan (warnings) TIDAK membuat blok tidak valid.
+    """
+    errors = list(errors or [])
+    warnings: List[str] = []
+    if not purchase_no:
+        errors.append("Transaction number is empty.")
+    if tanggal is None and recipe.get("tanggal_wajib", True):
+        errors.append("Date could not be read.")
+    if not items:
+        errors.append("Block has no item lines.")
+
+    if ketat and items:
+        jumlah_item = round(sum(it["total"] for it in items), 2)
+        if abs(jumlah_item - subtotal_cetak) > _TOLERANSI_TOTAL + 0.5:
+            errors.append(
+                f"Sum of item totals {jumlah_item:,.2f} != printed subtotal {subtotal_cetak:,.2f} "
+                "(an item line may be missing or duplicated)."
+            )
+        for it in items:
+            harapan = it["jumlah"] * it["harga"] * (1 - (it["potongan_persen"] or 0) / 100.0)
+            batas = max(2.0, it["jumlah"] * 0.5 + 1.0)  # harga cetak boleh sudah dibulatkan
+            if abs(harapan - it["total"]) > batas:
+                warnings.append(
+                    f"Item {it.get('no', '?')}: quantity x price ({harapan:,.0f}) differs from printed total "
+                    f"({it['total']:,.0f}) -- check quantity/price columns."
+                )
+
+    lines, catatan = _susun_baris(items, subtotal_cetak, potongan, pajak, biaya, recipe)
+    total_baris = round(sum(l["total"] for l in lines), 2)
+
+    if abs(total_baris - total_akhir) > _TOLERANSI_TOTAL:
+        # POS mencetak "Biaya" tetapi tidak menjumlahkannya ke Total Akhir (SAU: OL BL-000001890-26).
+        kebijakan = recipe.get("biaya_tidak_ikut_total", "warn")
+        if kebijakan == "warn" and biaya and items:
+            lines_tanpa_biaya, catatan_tanpa_biaya = _susun_baris(items, subtotal_cetak, potongan, pajak, 0.0, recipe)
+            total_tanpa_biaya = round(sum(l["total"] for l in lines_tanpa_biaya), 2)
+            if abs(total_tanpa_biaya - total_akhir) <= _TOLERANSI_TOTAL:
+                warnings.append(
+                    f"Printed Biaya {biaya:,.0f} is not included in the printed Total Akhir {total_akhir:,.0f}; "
+                    "no 'Other Costs' line was created so the payable matches the printed total. "
+                    "Verify against the original document."
+                )
+                lines, catatan, biaya, total_baris = lines_tanpa_biaya, catatan_tanpa_biaya, 0.0, total_tanpa_biaya
+        if abs(total_baris - total_akhir) > _TOLERANSI_TOTAL:
+            errors.append(f"Line total {total_baris:,.2f} != printed grand total {total_akhir:,.2f}.")
+
+    return {
+        "purchase_no": purchase_no,
+        "purchase_date": tanggal,
+        "dept": dept,
+        "vendor_code": vendor_code,
+        "vendor_name": vendor_name,
+        "subtotal": subtotal_cetak,
+        "potongan": potongan,
+        "pajak": pajak,
+        "biaya": biaya,
+        "total_akhir": total_akhir,
+        "lines": lines,
+        "notes": [*catatan, *warnings],
+        "warnings": warnings,
+        "errors": errors,
+    }
 
 
 def _parse_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -312,12 +449,382 @@ def _parse_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str, Any]
     return hasil
 
 
-def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
+# ============================================================
+# 2c) Ekstraksi Excel flat: format_type 'flat_grouped_purchase_report' --
+#     tabel 1 baris = 1 item, baris ber-kunci (No ref) sama = 1 transaksi.
+#     Contoh: NBM, sheet DETAIL workbook AP_FAF.
+# ============================================================
+
+def _parse_flat_grouped_purchase_report(rows: List[List[str]], recipe: Dict[str, Any]) -> List[Dict[str, Any]]:
+    number_format = recipe.get("number_format", {})
+    date_format = recipe.get("date_format", "YYYY-MM-DD")
+    cols = recipe["columns"]
+    validasi = recipe.get("validation") or {}
+    tol_nota = float(validasi.get("total_nota_toleransi", _TOLERANSI_TOTAL))
+    pengganti_desc = validasi.get("deskripsi_kosong_pengganti", "(no description)")
+    pengganti_supplier = validasi.get("supplier_kosong_pengganti", "Unknown Supplier")
+    peta_akun = {
+        _norm_teks(k): v for k, v in (recipe.get("line_account_by_cost") or {}).items()
+        if isinstance(v, dict) and v.get("account_code")
+    }
+    perlu_review = {_norm_teks(k) for k in (recipe.get("kategori_perlu_review") or [])}
+    akun_default = recipe.get("line_account") or {}
+    mulai = max(int(recipe.get("data_start_row_index", 2)) - 1, 0)
+
+    def teks(row: List[str], kunci: str) -> str:
+        return _ambil_kolom(row, cols[kunci]) if kunci in cols else ""
+
+    def angka(row: List[str], kunci: str) -> float:
+        return _parse_angka(teks(row, kunci), number_format) if kunci in cols else 0.0
+
+    # 1) kelompokkan baris per kunci transaksi (urutan kemunculan pertama dipertahankan)
+    grup: Dict[str, List[List[str]]] = {}
+    for row in rows[mulai:]:
+        if _kosong(row):
+            continue
+        kunci = re.sub(r"\s+", "", teks(row, "purchase_no")).upper()
+        if not kunci:
+            continue  # baris tanpa nomor transaksi tidak bisa dikelompokkan
+        if not teks(row, "deskripsi") and not angka(row, "total"):
+            continue  # baris template kosong
+        grup.setdefault(kunci, []).append(row)
+
+    hasil: List[Dict[str, Any]] = []
+    for kunci, baris in grup.items():
+        total_blok = round(sum(angka(r, "total") for r in baris), 2)
+        if total_blok <= 0:
+            continue  # transaksi bertotal 0 (baris template/batal) tidak dibuat
+        peringatan: List[str] = []
+
+        # tanggal: nilai terisi pertama; boleh kosong (tanggal_wajib=false)
+        teks_tanggal = [teks(r, "tanggal") for r in baris if teks(r, "tanggal")]
+        tanggal = _parse_tanggal(teks_tanggal[0], date_format) if teks_tanggal else None
+        if teks_tanggal and tanggal is None:
+            peringatan.append(f"Date '{teks_tanggal[0]}' could not be read; left empty.")
+        tanggal_lain = {t for t in (_parse_tanggal(x, date_format) for x in teks_tanggal) if t}
+        if len(tanggal_lain) > 1:
+            peringatan.append(
+                "Rows of this transaction have different dates (" + ", ".join(sorted(d.isoformat() for d in tanggal_lain)) + "); the first one was used."
+            )
+
+        # supplier: nilai terisi pertama
+        nama_supplier = [teks(r, "supplier") for r in baris if teks(r, "supplier")]
+        supplier = nama_supplier[0] if nama_supplier else ""
+        if not supplier:
+            supplier = pengganti_supplier
+            peringatan.append(f"Supplier is empty; '{pengganti_supplier}' was used.")
+        elif len({_norm_teks(x) for x in nama_supplier}) > 1:
+            peringatan.append("Rows of this transaction have different suppliers (" + ", ".join(sorted({x for x in nama_supplier})) + "); the first one was used.")
+
+        # item + akun per kategori Cost
+        items: List[Dict[str, Any]] = []
+        akun_item: List[Optional[Dict[str, Any]]] = []
+        tanpa_peta = 0
+        perlu_cek = 0
+        for no, r in enumerate(baris, start=1):
+            jumlah, harga, total = angka(r, "jumlah"), angka(r, "harga"), angka(r, "total")
+            if jumlah <= 0 and total > 0:
+                jumlah, harga = 1.0, total  # qty kosong: anggap 1 unit senilai total
+            elif harga <= 0 and total > 0:
+                harga = round(total / jumlah, 2)
+            items.append({
+                "no": str(no),
+                "kode_item": "",
+                "nama_item": teks(r, "deskripsi") or pengganti_desc,
+                "jumlah": jumlah,
+                "satuan": "",
+                "harga": harga,
+                "potongan_persen": 0.0,
+                "total": total,
+            })
+            kategori = _norm_teks(teks(r, "kategori_cost"))
+            akun = peta_akun.get(kategori)
+            akun_item.append(akun)
+            if akun is None:
+                tanpa_peta += 1
+            if kategori in perlu_review:
+                perlu_cek += 1
+        if tanpa_peta:
+            peringatan.append(
+                f"{tanpa_peta} line(s) have a blank/unknown Cost category; default account "
+                f"{akun_default.get('account_code', '-')} was used."
+            )
+        if perlu_cek:
+            peringatan.append(f"{perlu_cek} line(s) are in a category that may be a fixed asset or special item; review the account.")
+
+        # Total Inv (total nota fisik) hanya pembanding
+        total_nota = round(sum(angka(r, "total_nota") for r in baris), 2)
+        if total_nota > 0 and abs(total_nota - total_blok) > tol_nota:
+            peringatan.append(f"Sum of printed invoice totals {total_nota:,.0f} differs from the sum of item totals {total_blok:,.0f}.")
+
+        # info pembayaran (hanya catatan, tidak mengubah status bayar)
+        info: List[str] = []
+        tgl_bayar = sorted({d.isoformat() for d in (_parse_tanggal(teks(r, "payment_date"), date_format) for r in baris if teks(r, "payment_date")) if d})
+        if tgl_bayar:
+            info.append("Payment date: " + ", ".join(tgl_bayar))
+        bayar_oleh = sorted({teks(r, "payment_by") for r in baris if teks(r, "payment_by")})
+        if bayar_oleh:
+            info.append("Payment by: " + ", ".join(bayar_oleh))
+        catatan_sumber = list(dict.fromkeys(teks(r, "note") for r in baris if teks(r, "note")))
+        if catatan_sumber:
+            info.append("Note: " + " | ".join(catatan_sumber))
+
+        blok = _selesaikan_blok(
+            purchase_no=kunci,
+            tanggal=tanggal,
+            dept="",
+            vendor_code="",
+            vendor_name=supplier,
+            items=items,
+            subtotal_cetak=total_blok,
+            potongan=0.0,
+            pajak=0.0,
+            biaya=0.0,
+            total_akhir=total_blok,
+            recipe=recipe,
+        )
+        for baris_item, akun in zip(blok["lines"], akun_item):
+            if akun:
+                baris_item["account_code"] = akun["account_code"]
+                baris_item["account_name"] = akun.get("account_name")
+        blok["warnings"].extend(peringatan)
+        blok["notes"].extend([*peringatan, *info])
+        hasil.append(blok)
+    return hasil
+
+
+# ============================================================
+# 2d) Excel BUKU KAS KECIL bulanan: format_type 'monthly_petty_cash_ledger'
+#     1 workbook = 1 cabang, 1 sheet per bulan (klien AADL). Lihat docstring modul.
+# ============================================================
+
+FORMAT_EXCEL_LEDGER = "monthly_petty_cash_ledger"
+
+_LEDGER_KOLOM_DEFAULT = {"no": 1, "tanggal": 2, "keterangan": 3, "debet": 4, "kredit": 5, "saldo": 6}
+_SHEET_BUKAN_DATA = re.compile(r"^\s*(sheet\s*\d*(\s*\(\d+\))?|resume|meta|cek upload)\s*$", re.IGNORECASE)
+
+
+class _LedgerSumber:
+    """Pembungkus bytes workbook (pengganti "rows" untuk varian buku kas kecil, pola _PdfSumber):
+    semua sheet bulanan dibaca oleh _parse_monthly_petty_cash_ledger."""
+
+    def __init__(self, content: bytes):
+        self.content = content
+
+
+def _cocokkan_template_excel_ledger(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_LedgerSumber"]]:
+    """Cocok kalau hash baris JUDUL (recipe.judul_row_index, default header_row_index) SALAH SATU
+    sheet bulanan = column_signature_hash varian atau salah satu recipe.signature_alternatif.
+    Judul dipakai (bukan baris header NO/TANGGAL/...) karena header-nya sama di beberapa cabang.
+    Sel kosong di ujung baris dibuang dulu (lebar sheet beda-beda tiap bulan)."""
+    try:
+        wb = _buka_workbook_bulanan(content)
+    except Exception as e:
+        logger.warning(f"Gagal membuka workbook untuk pencocokan template buku kas kecil: {e}")
+        return None
+    try:
+        hash_per_baris: Dict[int, set] = {}
+        for template in kandidat:
+            recipe = template.get("mapping_rules") or {}
+            idx = int(recipe.get("judul_row_index") or template["header_row_index"])
+            if idx not in hash_per_baris:
+                hashes = set()
+                for nama in wb.sheetnames:
+                    if _bulan_dari_nama_sheet(nama)[0] is None:
+                        continue
+                    baris = next(wb[nama].iter_rows(min_row=idx, max_row=idx, values_only=True), None)
+                    if baris is None:
+                        continue
+                    sel = _pangkas_kosong_ujung(["" if v is None else str(v) for v in baris])
+                    if sel:
+                        hashes.add(_hash_baris(sel))
+                hash_per_baris[idx] = hashes
+            diterima = {template["column_signature_hash"], *(recipe.get("signature_alternatif") or [])}
+            if hash_per_baris[idx] & diterima:
+                return template, _LedgerSumber(content)
+    except Exception as e:
+        logger.warning(f"Gagal mencocokkan template Excel buku kas kecil: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+def _nilai_angka_sel(v: Any, number_format: Dict[str, str]) -> float:
+    if v is None or isinstance(v, bool):
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    teks = str(v).strip()
+    return _parse_angka(teks, number_format) if teks else 0.0
+
+
+def _nilai_tanggal_sel(v: Any, date_format: str) -> Optional[date]:
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    teks = str(v).strip() if v is not None else ""
+    return _parse_tanggal(teks, date_format) if teks else None
+
+
+def _cari_header_ledger(rows: List[List[Any]], header_row_index: int) -> Optional[int]:
+    """Index (0-based) baris header (kolom A = 'NO'): di header_row_index kalau cocok, kalau tidak
+    dicari di 15 baris teratas (kop sheet kadang bergeser satu baris)."""
+    def cocok(i: int) -> bool:
+        return 0 <= i < len(rows) and bool(rows[i]) and str(rows[i][0] or "").strip().lower() == "no"
+    if cocok(header_row_index - 1):
+        return header_row_index - 1
+    return next((i for i in range(min(15, len(rows))) if cocok(i)), None)
+
+
+def _blok_ditandai(cabang: str, pesan: str) -> Dict[str, Any]:
+    """Baris TIDAK VALID berisi pesan (angka 0, tanpa nomor/tanggal) supaya hal yang perlu ditinjau
+    terlihat di Source Data (status 'Butuh Review') dan tidak jadi transaksi -- bukan hilang diam-diam."""
+    return {
+        "purchase_no": "", "purchase_date": None, "dept": cabang, "vendor_code": "", "vendor_name": "",
+        "subtotal": 0.0, "potongan": 0.0, "pajak": 0.0, "biaya": 0.0, "total_akhir": 0.0,
+        "lines": [], "notes": [], "warnings": [], "errors": [pesan],
+    }
+
+
+def _parse_monthly_petty_cash_ledger(sumber: "_LedgerSumber", recipe: Dict[str, Any]) -> List[Dict[str, Any]]:
+    kol = {**_LEDGER_KOLOM_DEFAULT, **(recipe.get("columns") or {})}
+    number_format = recipe.get("number_format", {})
+    date_format = recipe.get("date_format", "YYYY-MM-DD")
+    cabang = (recipe.get("cabang_tetap") or "").strip()
+    prefix = recipe.get("nomor_prefix") or "PC"
+    vendor = recipe.get("vendor_default") or (f"Petty Cash {cabang}" if cabang else "Petty Cash")
+    pengganti_desc = recipe.get("deskripsi_kosong_pengganti", "(no description)")
+    header_row_index = int(recipe.get("header_row_index", 5))
+    rx_baris_saldo = re.compile(recipe.get("abaikan_baris_jika_keterangan", r"^saldo"), re.IGNORECASE)
+    rx_debet_masuk = re.compile(recipe.get("abaikan_debet_jika_keterangan", r"^terima"), re.IGNORECASE)
+    aturan_kategori = [(a["kategori"], re.compile(a["pattern"], re.IGNORECASE), a.get("purchase_category")) for a in (recipe.get("kategori_rules") or [])]
+    kategori_default = recipe.get("kategori_default", "Lainnya")
+    kategori_pc_default = recipe.get("purchase_category_default")  # kategori Purchase (Utilities, Maintenance, ...)
+    tanggal_kosong = recipe.get("tanggal_kosong", "kosong")  # "kosong" | "ikut_baris_sebelumnya"
+    akun_kategori = {
+        _norm_label(k): v for k, v in (recipe.get("line_account_by_kategori") or {}).items()
+        if isinstance(v, dict) and v.get("account_code")
+    }
+
+    def sel(row: List[Any], kunci: str) -> Any:
+        return row[kol[kunci] - 1] if len(row) >= kol[kunci] else None
+
+    hasil: List[Dict[str, Any]] = []
+    wb = _buka_workbook_bulanan(sumber.content)
+    try:
+        sheets, _ = _pilih_sheet_bulanan(wb, recipe)
+        dipilih = {n for n, _, _ in sheets}
+        for n in wb.sheetnames:
+            if n not in dipilih and _bulan_dari_nama_sheet(n)[0] is None and not _SHEET_BUKAN_DATA.match(n):
+                hasil.append(_blok_ditandai(cabang, f"Sheet '{n.strip()}' is not recognised as a monthly sheet (name pattern 'Agustus 2026') -- ignored, this month was NOT imported."))
+
+        for nama, tahun, bulan in sheets:
+            rows = _baris_sheet(wb[nama])
+            hi = _cari_header_ledger(rows, header_row_index)
+            if hi is None:
+                hasil.append(_blok_ditandai(cabang, f"Sheet '{nama}': header row (NO / TANGGAL / KETERANGAN / DEBET / CREDIT) not found -- sheet skipped."))
+                continue
+            urut = 0
+            tanggal_terakhir: Optional[date] = None  # untuk tanggal_kosong = ikut_baris_sebelumnya (per sheet)
+            for i in range(hi + 1, len(rows)):
+                r = rows[i]
+                if all(v is None or str(v).strip() == "" for v in r):
+                    continue
+                ket = " ".join(str(sel(r, "keterangan") or "").split())
+                if ket and rx_baris_saldo.match(ket):
+                    continue  # Saldo Awal / Saldo Per ...
+                debet = _nilai_angka_sel(sel(r, "debet"), number_format)
+                kredit = _nilai_angka_sel(sel(r, "kredit"), number_format)
+                posisi = f"sheet '{nama}', row {i + 1}"
+
+                if kredit > 0 and debet > 0:
+                    hasil.append(_blok_ditandai(cabang, f"{posisi}: '{ket}' has both Debit {debet:,.0f} and Credit {kredit:,.0f} -- not imported, review."))
+                    continue
+                if kredit <= 0:
+                    if debet > 0 and not (ket and rx_debet_masuk.match(ket)):
+                        pesan = f"'{ket}'" if ket else "an entry without description"
+                        hasil.append(_blok_ditandai(cabang, f"{posisi}: Debit {debet:,.0f} ({pesan}) is not a purchase and was not imported (cash-in/correction) -- review."))
+                    elif kredit < 0 and ket:
+                        hasil.append(_blok_ditandai(cabang, f"{posisi}: negative Credit {kredit:,.0f} ('{ket}') -- not imported, review."))
+                    continue  # pencairan dana, baris total/kosong, teks tanpa nominal
+
+                if not ket and sel(r, "no") in (None, "") and sel(r, "tanggal") in (None, ""):
+                    hasil.append(_blok_ditandai(cabang, f"{posisi}: Credit {kredit:,.0f} has no description, number or date (looks like a stray total) -- not imported, review."))
+                    continue
+
+                urut += 1
+                nomor = f"{prefix}-{tahun}{bulan:02d}-{urut:03d}"
+                peringatan: List[str] = []
+                info: List[str] = []
+
+                mentah = sel(r, "tanggal")
+                tanggal = _nilai_tanggal_sel(mentah, date_format)
+                if tanggal is not None:
+                    if tanggal.year != tahun and tanggal.month == bulan:
+                        try:
+                            asli, tanggal = tanggal, tanggal.replace(year=tahun)
+                            peringatan.append(f"Date {asli.isoformat()} has a different year than the sheet; corrected to {tanggal.isoformat()}.")
+                        except ValueError:
+                            pass
+                    selisih = (tanggal.year - tahun) * 12 + tanggal.month - bulan
+                    if selisih not in (0, -1):
+                        peringatan.append(f"Date {tanggal.isoformat()} is outside the sheet period {tahun}-{bulan:02d}; verify.")
+                    else:
+                        tanggal_terakhir = tanggal
+                elif mentah not in (None, ""):
+                    peringatan.append(f"Date '{mentah}' could not be read; left empty.")
+                elif tanggal_kosong == "ikut_baris_sebelumnya" and tanggal_terakhir is not None:
+                    # Buku kas ditulis berurutan: baris tanpa tanggal ikut tanggal baris bertanggal di atasnya (sheet yang sama).
+                    tanggal = tanggal_terakhir
+                    info.append(f"Date not in the source; taken from the previous dated row ({tanggal.isoformat()}).")
+                if not ket:
+                    peringatan.append("Description is empty in the source.")
+
+                kategori, kategori_pc = next(((nm, pc) for nm, rx, pc in aturan_kategori if rx.search(ket)), (kategori_default, kategori_pc_default))
+                akun = akun_kategori.get(_norm_label(kategori))
+                blok = _selesaikan_blok(
+                    purchase_no=nomor,
+                    tanggal=tanggal,
+                    dept=cabang,
+                    vendor_code="",
+                    vendor_name=vendor,
+                    items=[{
+                        "no": str(urut), "kode_item": "", "nama_item": ket or pengganti_desc, "jumlah": 1.0,
+                        "satuan": "", "harga": kredit, "potongan_persen": 0.0, "total": kredit,
+                    }],
+                    subtotal_cetak=kredit,
+                    potongan=0.0,
+                    pajak=0.0,
+                    biaya=0.0,
+                    total_akhir=kredit,
+                    recipe=recipe,
+                )
+                if akun:
+                    for baris_item in blok["lines"]:
+                        baris_item["account_code"] = akun["account_code"]
+                        baris_item["account_name"] = akun.get("account_name")
+                if kategori_pc:
+                    blok["category"] = kategori_pc
+                blok["warnings"].extend(peringatan)
+                blok["notes"].extend([*peringatan, *info, f"Category: {kategori}", f"Source: {posisi}"])
+                hasil.append(blok)
+    finally:
+        wb.close()
+    return hasil
+
+
+def _ekstrak_dengan_template(rows: Any, template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
     mapping_rules = template.get("mapping_rules") or {}
     format_type = mapping_rules.get("format_type")
-    if format_type != "grouped_purchase_report":
+    if format_type == "grouped_purchase_report":
+        hasil = _parse_grouped_purchase_report(rows, mapping_rules)
+    elif format_type == "flat_grouped_purchase_report":
+        hasil = _parse_flat_grouped_purchase_report(rows, mapping_rules)
+    elif format_type == FORMAT_EXCEL_LEDGER:
+        hasil = _parse_monthly_petty_cash_ledger(rows, mapping_rules)
+    else:
         raise ValueError(f"format_type '{format_type}' is not supported by the Purchase Import parser yet.")
-    hasil = _parse_grouped_purchase_report(rows, mapping_rules)
     cabang_file = _cabang_dari_nama_file(mapping_rules, file_name)
     for t in hasil:
         if not t["dept"] and cabang_file:  # Dept. di isi file menang atas nama file
@@ -341,8 +848,9 @@ def _terapkan_akun_dept(lines: List[Dict[str, Any]], dept: str, recipe: Dict[str
             l["account_name"] = akun_dept.get("account_name", l.get("account_name"))
 
 
-def _period_label(d: date) -> str:
-    return f"{_BULAN_EN[d.month - 1]} {d.year}"
+def _period_label(d: Optional[date]) -> str:
+    # purchase_date boleh NULL (tanggal_wajib=false, migration purchase/34) -> label "No Date".
+    return f"{_BULAN_EN[d.month - 1]} {d.year}" if d else "No Date"  # kolom period_label NOT NULL
 
 
 # ============================================================
@@ -378,7 +886,8 @@ async def upload_purchase_import(
 
     cocok = None
     try:
-        cocok = _cocokkan_template(content, file_type, management_client_id)
+        # dijalankan di threadpool: workbook besar (NBM DETAIL 221 kolom) butuh puluhan detik
+        cocok = await run_in_threadpool(_cocokkan_template, content, file_type, management_client_id)
     except Exception as e:
         logger.warning(f"Gagal mencocokkan template Purchase Import untuk file {file.filename}: {e}")
 
@@ -395,7 +904,7 @@ async def upload_purchase_import(
 
     template, rows = cocok
     try:
-        blok = _ekstrak_dengan_template(rows, template, file.filename)
+        blok = await run_in_threadpool(_ekstrak_dengan_template, rows, template, file.filename)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
         return sukses(
@@ -418,6 +927,7 @@ async def upload_purchase_import(
     created = 0
     skipped_invalid = 0
     skipped_duplicate = 0
+    with_warnings = 0
 
     for t in blok:
         if t["errors"]:
@@ -447,7 +957,7 @@ async def upload_purchase_import(
             "source_doc_type": "Import",
             "source_ref": (file.filename or "")[:100] or None,
             "description": f"Purchase{cabang} - {t['vendor_name']}",
-            "category": category,
+            "category": t.get("category") or category,  # kategori per baris (buku kas kecil AADL) menang
             "currency": currency,
             "payment_status": "unpaid",
             "status": "draft",
@@ -464,7 +974,15 @@ async def upload_purchase_import(
             hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
             continue
         created += 1
-        hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."})
+        peringatan = t.get("warnings") or []
+        if peringatan:
+            with_warnings += 1
+        pesan = f"Successfully imported ({len(t['lines'])} lines, total {t['total_akhir']:,.0f})."
+        if t["purchase_date"] is None:
+            pesan += " Date is empty -- fill it in before posting."
+        if peringatan:
+            pesan += " Warning: " + " ".join(peringatan)
+        hasil_tx.append({"purchase_no": t["purchase_no"], "ok": True, "message": pesan})
 
     dbc.touch_purchase_import_template_usage(template["id"])
 
@@ -475,6 +993,7 @@ async def upload_purchase_import(
             "created": created,
             "skipped_invalid": skipped_invalid,
             "skipped_duplicate": skipped_duplicate,
+            "with_warnings": with_warnings,
             "transactions": hasil_tx,
         },
         message=f"{created} of {len(blok)} purchase transactions imported successfully using a previously learned template.",

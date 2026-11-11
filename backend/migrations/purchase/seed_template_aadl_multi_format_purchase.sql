@@ -94,7 +94,9 @@
 --   * Struktur HARUS tetap: baris judul sheet sama (judul berubah -> file "Butuh Review";
 --     tambahkan hash judul baru ke recipe.signature_alternatif varian itu) dan kolom A header = "NO".
 --
--- AKUN JURNAL: BELUM DIISI (sama dengan seed sales AADL). COA AADL belum ada di repo
+-- AKUN JURNAL (REVISI 2026-11-10): sekarang DIISI OTOMATIS dari COA klien oleh blok DO di bawah
+-- (lihat komentar "AKUN" di sana); catatan lama di bawah ini tinggal sebagai latar belakang.
+-- AKUN JURNAL (versi awal): BELUM DIISI (sama dengan seed sales AADL). COA AADL belum ada di repo
 -- (tidak ada seed_coa_aadl.sql) dan akun tidak boleh ditebak (posting ditolak bila kode tidak
 -- ada di COA klien). Selama kosong, akun baris/hutang ikut Settings > Account Mapping klien.
 -- Setelah COA AADL ada, ubah resep (UPDATE / hapus lalu jalankan ulang seed ini):
@@ -126,8 +128,8 @@
 --   cd backend
 --   venv\Scripts\python migrations\run_seed.py migrations\purchase\seed_template_aadl_multi_format_purchase.sql
 --
--- Idempotensi: tanpa ON CONFLICT (run-2x gagal di uq_purchase_import_templates_signature).
--- Kalau resep direvisi, hapus baris lama lalu jalankan ulang:
+-- Idempotensi (REVISI 2026-11-10): jalan ulang aman -- baris yang sudah ada di-UPDATE resepnya.
+-- Kalau mau benar-benar membuang baris lama:
 --   DELETE FROM financial_transaction_purchase_import_templates t
 --    USING management_clients c
 --    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI'
@@ -138,6 +140,14 @@ DO $do$
 DECLARE
     v_client_id   UUID;
     v_client_code VARCHAR(50);
+    v_rules       JSONB;
+    v_peran       TEXT;
+    v_kandidat    TEXT[];
+    v_akun        TEXT;
+    v_akun_json   JSONB;
+    v_i           INT;
+    v_n           INT;
+    v_path        TEXT[];
 BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
@@ -154,27 +164,7 @@ BEGIN
         RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari nama_client = ''PT AKSHAYA ANANDA DYLAN LESTARI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
-    INSERT INTO financial_transaction_purchase_import_templates (
-        client_id,
-        client_code,
-        file_type,
-        header_row_index,
-        data_start_row_index,
-        column_signature_hash,
-        header_columns,
-        mapping_rules,
-        detected_by,
-        is_active,
-        usage_count
-    ) VALUES (
-        v_client_id,
-        v_client_code,
-        'Multi',
-        1,
-        2,
-        '2179d0165ee1e40c7b3b774d00ae35fcb2db715381d7b82adf47d1a5fb8db7e0',
-        '[]'::jsonb,
-        $json${
+    v_rules := $json${
   "format_type": "multi_format",
   "description": "1 setting klien AADL untuk file pembelian: buku kas kecil (rekap pembayaran patty cash) per cabang. 5 varian Excel, 1 per cabang; varian dikenali lewat baris JUDUL sheet bulanan (column_signature_hash = hash judul). Varian CSV/PDF ditambahkan kemudian ke array variants.",
   "variants": [
@@ -825,7 +815,92 @@ BEGIN
     }
   ]
 }
-$json$::jsonb,
+$json$::jsonb;
+
+    -- AKUN (REVISI 2026-11-10): dipilih OTOMATIS dari COA klien AADL -- kandidat pertama
+    -- yang ada di management_client_coa dipakai (nama akun dari COA) dan ditulis ke SEMUA
+    -- varian. Tidak ada satu pun -> NOTICE, peran itu tidak diisi (jatuh ke Settings >
+    -- Account Mapping). Kandidat = COA industry template (6 digit) yang dipakai AADL lokal.
+    --   ap_account   110002 Petty Cash (buku kas kecil: Dr beban / Cr Kas Kecil), cadangan 210001
+    --   line_account 620024 Other Operating Expense (kategori Lainnya / tidak dikenal)
+    --   line_account_by_kategori: lihat VALUES di bawah.
+    v_n := jsonb_array_length(v_rules->'variants');
+    FOR v_peran, v_kandidat IN
+        SELECT * FROM (VALUES
+            ('ap_account',                                         ARRAY['110002', '210001']),
+            ('line_account',                                       ARRAY['620024']),
+            ('line_account_by_kategori/Listrik',                   ARRAY['620006']),
+            ('line_account_by_kategori/Gas',                       ARRAY['620006']),
+            ('line_account_by_kategori/Internet & Telekomunikasi', ARRAY['620013', '620006']),
+            ('line_account_by_kategori/Langganan & Digital',       ARRAY['620013', '620024']),
+            ('line_account_by_kategori/Upacara & Canang',          ARRAY['620022', '620024']),
+            ('line_account_by_kategori/Sumbangan & Sosial',        ARRAY['620022', '620024']),
+            ('line_account_by_kategori/Pajak, Iuran & Retribusi',  ARRAY['620017']),
+            ('line_account_by_kategori/Tenaga Kerja Harian',       ARRAY['620001']),
+            ('line_account_by_kategori/BBM & Transportasi',        ARRAY['610003']),
+            ('line_account_by_kategori/Laundry',                   ARRAY['620020', '620010']),
+            ('line_account_by_kategori/Perbaikan & Pemeliharaan',  ARRAY['620007']),
+            ('line_account_by_kategori/Kebersihan & Perlengkapan Kamar', ARRAY['620010', '620012']),
+            ('line_account_by_kategori/ATK & Kantor',              ARRAY['620009']),
+            ('line_account_by_kategori/Peralatan & Perlengkapan',  ARRAY['620010']),
+            ('line_account_by_kategori/Bahan Makanan & Minuman',   ARRAY['510004', '510001'])
+        ) AS x(peran, kandidat)
+    LOOP
+        v_akun_json := NULL;
+        FOREACH v_akun IN ARRAY v_kandidat LOOP
+            SELECT jsonb_build_object('account_code', c.acc_no, 'account_name', c.account_name)
+              INTO v_akun_json
+              FROM management_client_coa c
+             WHERE c.client_id = v_client_id AND c.deleted_at IS NULL AND c.acc_no = v_akun
+             LIMIT 1;
+            EXIT WHEN v_akun_json IS NOT NULL;
+        END LOOP;
+        IF v_akun_json IS NULL THEN
+            RAISE NOTICE 'Tidak ada akun % (%) di COA klien AADL -- isi Settings > Account Mapping atau tambahkan akunnya di COA, lalu jalankan ulang seed ini.', v_peran, array_to_string(v_kandidat, ' / ');
+            CONTINUE;
+        END IF;
+        FOR v_i IN 0 .. v_n - 1 LOOP
+            IF position('/' IN v_peran) > 0 THEN
+                v_path := ARRAY['variants', v_i::text, 'mapping_rules', split_part(v_peran, '/', 1), split_part(v_peran, '/', 2)];
+            ELSE
+                v_path := ARRAY['variants', v_i::text, 'mapping_rules', v_peran];
+            END IF;
+            v_rules := jsonb_set(v_rules, v_path, v_akun_json, true);
+        END LOOP;
+        RAISE NOTICE 'Akun % AADL = % %', v_peran, v_akun_json->>'account_code', v_akun_json->>'account_name';
+    END LOOP;
+
+    -- Jalan ulang aman: baris yang sudah ada (klien + hash sama) di-UPDATE resepnya.
+    UPDATE financial_transaction_purchase_import_templates
+       SET mapping_rules = v_rules, client_code = v_client_code, is_active = true
+     WHERE client_id = v_client_id AND file_type = 'Multi'
+       AND column_signature_hash = '2179d0165ee1e40c7b3b774d00ae35fcb2db715381d7b82adf47d1a5fb8db7e0';
+    IF FOUND THEN
+        RAISE NOTICE 'Template purchase AADL sudah ada -- resep diperbarui.';
+        RETURN;
+    END IF;
+
+    INSERT INTO financial_transaction_purchase_import_templates (
+        client_id,
+        client_code,
+        file_type,
+        header_row_index,
+        data_start_row_index,
+        column_signature_hash,
+        header_columns,
+        mapping_rules,
+        detected_by,
+        is_active,
+        usage_count
+    ) VALUES (
+        v_client_id,
+        v_client_code,
+        'Multi',
+        1,
+        2,
+        '2179d0165ee1e40c7b3b774d00ae35fcb2db715381d7b82adf47d1a5fb8db7e0',
+        '[]'::jsonb,
+        v_rules,
         'manual',
         true,
         0

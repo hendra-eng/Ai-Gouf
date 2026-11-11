@@ -6492,6 +6492,9 @@ def ubah_status_purchase_transactions(
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
                     continue
                 alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
+                if not (posting_date or tx.purchase_date):
+                    # Import tanpa tanggal (tanggal_wajib=false: NBM/AADL) -- jurnal GL wajib bertanggal.
+                    alasan = [*(alasan or []), "Purchase date is empty -- fill in the date before posting."]
                 if alasan:
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": " ".join(alasan)})
                     continue
@@ -6746,6 +6749,9 @@ def ubah_status_purchase_transactions(
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
                     continue
                 alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
+                if not (posting_date or tx.purchase_date):
+                    # Import tanpa tanggal (tanggal_wajib=false: NBM/AADL) -- jurnal GL wajib bertanggal.
+                    alasan = [*(alasan or []), "Purchase date is empty -- fill in the date before posting."]
                 if alasan:
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": " ".join(alasan)})
                     continue
