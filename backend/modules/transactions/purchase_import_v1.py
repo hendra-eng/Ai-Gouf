@@ -848,6 +848,25 @@ def _terapkan_akun_dept(lines: List[Dict[str, Any]], dept: str, recipe: Dict[str
             l["account_name"] = akun_dept.get("account_name", l.get("account_name"))
 
 
+def _pesan_gagal_simpan(error_db: str, t: Dict[str, Any]) -> str:
+    """Terjemahkan error DB saat simpan transaksi jadi pesan yang bisa ditindaklanjuti user
+    (sebelumnya selalu 'database error' generik sehingga penyebab di server tidak kelihatan)."""
+    e = error_db or ""
+    if "PERIOD_LOCKED" in e:
+        return "Failed to save: " + e.split("PERIOD_LOCKED:", 1)[-1].strip()
+    if "purchase_date" in e and ("null value" in e or "not-null" in e.lower()):
+        return ("Failed to save: the invoice date is empty in the file and this server's database does not allow "
+                "an empty purchase date yet (run migration backend/migrations/purchase/34-allow_null_purchase_date.py), "
+                "or fill in the date in the file and upload again.")
+    if "value too long" in e:
+        return f"Failed to save: a text value is longer than the database column allows ({e})."
+    if "duplicate key" in e:
+        return "Failed to save: this purchase number already exists in the database."
+    if "column" in e and "does not exist" in e:
+        return f"Failed to save: the server database schema is out of date ({e}) -- run the latest migrations."
+    return f"Failed to save transaction (database error: {e})." if e else "Failed to save transaction (database error)."
+
+
 def _period_label(d: Optional[date]) -> str:
     # purchase_date boleh NULL (tanggal_wajib=false, migration purchase/34) -> label "No Date".
     return f"{_BULAN_EN[d.month - 1]} {d.year}" if d else "No Date"  # kolom period_label NOT NULL
@@ -969,9 +988,11 @@ async def upload_purchase_import(
             "tax_account_code": akun_pajak.get("account_code") or None,
             "tax_account_name": akun_pajak.get("account_name") or None,
         }
-        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id)
+        error_db: List[str] = []
+        dibuat = dbc.create_purchase_transaction_with_lines(transaction_data, t["lines"], created_by=client_id, error_out=error_db)
         if dibuat is None:
-            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": "Failed to save transaction (database error)."})
+            skipped_invalid += 1
+            hasil_tx.append({"purchase_no": t["purchase_no"], "ok": False, "message": _pesan_gagal_simpan(error_db[0] if error_db else "", t)})
             continue
         created += 1
         peringatan = t.get("warnings") or []
