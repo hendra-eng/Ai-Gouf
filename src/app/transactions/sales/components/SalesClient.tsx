@@ -54,7 +54,7 @@ export default function SalesClient() {
             {activeTab === 'overview' && t('Ringkasan performa penjualan dan metrik utama.')}
             {activeTab === 'source-data' && t('Kelola dan proses data sumber penjualan sebelum dilakukan penjurnalan.')}
             {activeTab === 'sales-transaction' && t('Workspace transaksi penjualan yang detail dan terintegrasi dengan jurnal akuntansi.')}
-            {activeTab === 'journal-preview' && t('Kelola dan pantau seluruh transaksi penjualan perusahaan.')}
+            {activeTab === 'journal-preview' && t('Tinjau jurnal otomatis, setujui klasifikasi akun, lalu posting ke buku besar.')}
             {activeTab === 'exceptions' && t('Kelola dan tindak lanjuti transaksi penjualan yang memerlukan review.')}
             {activeTab === 'posted' && t('Daftar transaksi penjualan yang telah diposting ke dalam sistem akuntansi.')}
           </p>
