@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, ChevronDown, Check, Search,
   X, Edit, CheckCircle, MoreHorizontal, Eye, Calendar,
+  FileText, AlertTriangle, Receipt, Gauge, Copy,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
@@ -17,8 +18,6 @@ import {
 type Priority = 'High' | 'Medium' | 'Low';
 type ExceptionStatus = 'Open' | 'In Review' | 'Resolved';
 
-const PAGE_SIZE = 10;
-
 const PRIORITY_STYLE: Record<Priority, string> = {
   High: 'bg-red-100 text-red-700',
   Medium: 'bg-amber-100 text-amber-700',
@@ -30,6 +29,151 @@ const STATUS_STYLE: Record<ExceptionStatus, string> = {
   'In Review': 'bg-amber-100 text-amber-700',
   Resolved: 'bg-emerald-100 text-emerald-700',
 };
+
+// ---------------------------------------------------------------------------
+// Komponen tampilan -- disamakan dengan tab Sales Transaction & Source Data:
+// kartu KPI, dropdown filter kustom, nomor halaman ringkas.
+// ---------------------------------------------------------------------------
+type KpiTone = 'slate' | 'amber' | 'green' | 'sky' | 'forest';
+const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
+  // Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
+  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
+  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]' },
+  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
+  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
+  forest: { strip: 'bg-[#064E3B]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#064E3B]', bar: 'bg-[#064E3B]', glow: 'bg-[#064E3B]' },
+};
+
+function ExceptionKpiTile({ label, count, detail, detailUnit, pct, pctLabel, tone, icon: Icon }: {
+  label: string;
+  count: number;
+  detail: string;
+  detailUnit: string;
+  pct: number;
+  pctLabel: string;
+  tone: KpiTone;
+  icon: React.ElementType;
+}) {
+  const c = KPI_TONE[tone];
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
+      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
+          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
+        </div>
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white ${c.iconBg}`}>
+          <Icon size={24} className={c.iconText} />
+        </span>
+      </div>
+      <p className="relative mt-3 truncate text-lg font-bold text-slate-900">
+        {detail} <span className="text-xs font-semibold text-slate-500">{detailUnit}</span>
+      </p>
+      <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      </div>
+      <p className="relative mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+    </div>
+  );
+}
+
+// Dropdown filter kustom: selalu terbuka ke BAWAH, daftar bisa di-scroll, ada
+// kolom cari bila opsinya banyak, hover/terpilih memakai hijau brand.
+interface FilterOption { value: string; label: string }
+
+function FilterSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: FilterOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = options.find(o => o.value === value) ?? options[0];
+  const searchable = options.length > 10;
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setQ(''); }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+      >
+        <span className="truncate max-w-[170px]">{current?.label}</span>
+        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+          {searchable && (
+            <div className="border-b border-border p-2">
+              <input
+                autoFocus
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Cari..."
+                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          )}
+          <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.map(o => {
+              const selected = o.value === value;
+              return (
+                <li key={o.value} role="option" aria-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.value); setOpen(false); }}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                  >
+                    <span className="truncate">{o.label}</span>
+                    {selected && <Check size={14} className="shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Nomor halaman ringkas: 1 … 4 5 6 … 28 (tidak menampilkan seluruh halaman).
+function buildPageItems(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (current >= total - 2) { pages.add(total - 1); pages.add(total - 2); pages.add(total - 3); }
+  const sorted = Array.from(pages).filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+  const items: (number | '…')[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) items.push('…');
+    items.push(n);
+  });
+  return items;
+}
 
 export default function SalesExceptions() {
   const { t } = useLanguage();
@@ -99,10 +243,11 @@ export default function SalesExceptions() {
     });
   }, [exceptions, search, severity, typeFilter, customerFilter, assignedFilter, dateStart, dateEnd, userId]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
   const selected = exceptions.find(e => e.id === selectedId) || null;
 
   const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
@@ -204,111 +349,116 @@ export default function SalesExceptions() {
         </div>
       )}
 
-      {/* KPI Cards -- pakai div biasa (bukan KpiCard) supaya konsisten dgn revisi sebelumnya */}
+      {/* KPI Cards -- desain sama dengan tab Sales Transaction */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {[
-          { label: 'Total Exceptions', value: String(exceptions.length) },
-          { label: 'High Risk', value: String(exceptions.filter(e => e.priority === 'High').length) },
-          { label: 'Missing Tax Info', value: String(exceptions.filter(e => e.exception_type === 'Tax status unclear').length) },
-          { label: 'Low Confidence', value: String(exceptions.filter(e => (e.ai_confidence ?? 0) < 40).length) },
-          { label: 'Duplicate Invoice', value: String(exceptions.filter(e => e.exception_type === 'Duplicate invoice').length) },
-        ].map(k => (
-          <div key={k.label} className="card p-4">
-            <p className="text-xs text-muted-foreground">{t(k.label)}</p>
-            <p className="text-xl font-bold text-foreground mt-1">{k.value}</p>
-          </div>
-        ))}
+        {(() => {
+          const total = exceptions.length;
+          const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+          const unresolved = (rows: typeof exceptions) => rows.filter(e => e.status !== 'Resolved').length;
+          const high = exceptions.filter(e => e.priority === 'High');
+          const tax = exceptions.filter(e => e.exception_type === 'Tax status unclear');
+          const lowConf = exceptions.filter(e => (e.ai_confidence ?? 0) < 40);
+          const dup = exceptions.filter(e => e.exception_type === 'Duplicate invoice');
+          const pctLabel = t('dari total exception');
+          const tiles: { label: string; rows: typeof exceptions; tone: KpiTone; icon: React.ElementType }[] = [
+            { label: 'Total Exceptions', rows: exceptions, tone: 'slate', icon: FileText },
+            { label: 'High Risk', rows: high, tone: 'amber', icon: AlertTriangle },
+            { label: 'Missing Tax Info', rows: tax, tone: 'green', icon: Receipt },
+            { label: 'Low Confidence', rows: lowConf, tone: 'sky', icon: Gauge },
+            { label: 'Duplicate Invoice', rows: dup, tone: 'forest', icon: Copy },
+          ];
+          return tiles.map(k => (
+            <ExceptionKpiTile
+              key={k.label}
+              label={t(k.label)}
+              count={k.rows.length}
+              detail={unresolved(k.rows).toLocaleString('id-ID')}
+              detailUnit={t('belum selesai')}
+              pct={pctOf(k.rows.length)}
+              pctLabel={pctLabel}
+              tone={k.tone}
+              icon={k.icon}
+            />
+          ));
+        })()}
       </div>
 
-      {/* Filters */}
+      {/* Filters -- gaya sama dengan tab Sales Transaction */}
       <div className="card p-3 relative">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[180px]">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">🔍</span>
-            <input
-              type="text"
-              value={search}
-              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-              placeholder={t('Cari ID, nama pelanggan, atau masalah...')}
-              className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-1.5 bg-card text-foreground"
-            />
-          </div>
-
-          <select
-            value={severity}
-            onChange={ev => { setSeverity(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
-          >
-            <option value="all">{t('Semua (Severity)')}</option>
-            <option value="High">{t('High')}</option>
-            <option value="Medium">{t('Medium')}</option>
-            <option value="Low">{t('Low')}</option>
-          </select>
-
-          <select
-            value={typeFilter}
-            onChange={ev => { setTypeFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
-          >
-            <option value="all">{t('Semua (Exception Type)')}</option>
-            {EXCEPTION_TYPES.map(type => (
-              <option key={type} value={type}>{t(type)}</option>
-            ))}
-          </select>
-
-          <select
-            value={customerFilter}
-            onChange={ev => { setCustomerFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
-          >
-            <option value="all">{t('Semua Customer')}</option>
-            {CUSTOMERS.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-
           <div className="relative">
-            <button
-              onClick={() => setShowDatePicker(v => !v)}
-              className="flex items-center gap-1.5 text-xs border border-border rounded-lg px-3 py-1.5 bg-card hover:bg-muted transition-colors"
-            >
+            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}>
               <Calendar size={12} className="text-muted-foreground" />
-              <span className="text-foreground">
+              <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
+              <span className="font-medium text-foreground">
                 {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
-              <div className="absolute z-20 top-full mt-1 right-0 card p-3 w-64 space-y-2 shadow-card">
+              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] font-medium text-muted-foreground">{t('Dari')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] font-medium text-muted-foreground">{t('Sampai')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                 </div>
-                <button
-                  onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
-                  className="w-full text-xs py-1.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90"
-                >
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-2 bg-primary text-primary-foreground rounded-[6px] font-semibold hover:opacity-90">
                   {t('Terapkan')}
                 </button>
               </div>
             )}
           </div>
 
-          <select
-            value={assignedFilter}
-            onChange={ev => { setAssignedFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
-          >
-            <option value="all">{t('Semua (Assigned To)')}</option>
-            <option value="unassigned">{t('Belum Ditugaskan')}</option>
-            <option value="me">{t('Ditugaskan ke Saya')}</option>
-          </select>
+          <FilterSelect
+            value={severity}
+            onChange={v => { setSeverity(v); setCurrentPage(1); }}
+            options={[
+              { value: 'all', label: t('Semua (Severity)') },
+              { value: 'High', label: t('High') },
+              { value: 'Medium', label: t('Medium') },
+              { value: 'Low', label: t('Low') },
+            ]}
+          />
 
-          <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
+          <FilterSelect
+            value={typeFilter}
+            onChange={v => { setTypeFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua (Exception Type)') }, ...EXCEPTION_TYPES.map(type => ({ value: type, label: t(type) }))]}
+          />
+
+          <FilterSelect
+            value={customerFilter}
+            onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua Customer') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
+          />
+
+          <FilterSelect
+            value={assignedFilter}
+            onChange={v => { setAssignedFilter(v); setCurrentPage(1); }}
+            options={[
+              { value: 'all', label: t('Semua (Assigned To)') },
+              { value: 'unassigned', label: t('Belum Ditugaskan') },
+              { value: 'me', label: t('Ditugaskan ke Saya') },
+            ]}
+          />
+
+          <div className="relative ml-auto w-full sm:w-[400px]">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+            <input
+              type="text"
+              value={search}
+              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+              placeholder={t('Cari ID, nama pelanggan, atau masalah...')}
+              className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          <div className="flex w-full items-center justify-end gap-2">
+            <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
+          </div>
         </div>
       </div>
 
@@ -316,18 +466,27 @@ export default function SalesExceptions() {
       <div className="flex gap-4">
         {/* Table */}
         <div className="card overflow-hidden flex-1 min-w-0">
-          <div className="p-3 border-b border-border">
-            <h3 className="text-sm font-semibold text-foreground">{t('Daftar Exception')} ({filtered.length})</h3>
+          <div className="px-0 py-3 border-b border-border flex items-center justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-foreground">{t('Daftar Exception')}</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {loading
+                  ? t('Memuat...')
+                  : filtered.length === 0
+                  ? t('Menampilkan 0 dari 0 exception')
+                  : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('exception')}`}
+              </p>
+            </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full min-w-[800px]">
               <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="py-2.5 px-3 w-8">
+                <tr className="bg-[#8FE3B5]">
+                  <th className="py-3 px-3 w-8 border-t-2 border-b border-[#0A4A32]">
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
                   {['Priority', 'Tanggal', 'Transaction/File ID', 'Customer', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
-                    <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
+                    <th key={h} className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">{t(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -341,28 +500,28 @@ export default function SalesExceptions() {
                   <tr
                     key={e.id}
                     onClick={() => openDetail(e)}
-                    className={`border-b border-border/50 cursor-pointer transition-colors text-xs ${selected?.id === e.id ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                    className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selected?.id === e.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                   >
-                    <td className="py-2.5 px-3" onClick={ev => { ev.stopPropagation(); toggleRow(e.id); }}>
+                    <td className="py-2 px-3" onClick={ev => { ev.stopPropagation(); toggleRow(e.id); }}>
                       <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-border" />
                     </td>
-                    <td className="py-2.5 px-2">
+                    <td className="py-2 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(e.priority)}</span>
                     </td>
-                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
-                    <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
-                    <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
-                    <td className="py-2.5 px-2 text-muted-foreground">{t(e.exception_type)}</td>
-                    <td className="py-2.5 px-2">
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
+                    <td className="py-2 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
+                    <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
+                    <td className="py-2 px-2 text-muted-foreground">{t(e.exception_type)}</td>
+                    <td className="py-2 px-2">
                       <div className="flex items-center gap-1.5">
                         <span className={`font-semibold ${(e.ai_confidence ?? 0) < 40 ? 'text-red-600' : (e.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence ?? 0}%</span>
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
-                    <td className="py-2.5 px-2">
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2 px-2">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
                     </td>
-                    <td className="py-2.5 px-2 relative" onClick={ev => ev.stopPropagation()}>
+                    <td className="py-2 px-2 relative" onClick={ev => ev.stopPropagation()}>
                       <button
                         onClick={() => setOpenMenuId(prev => (prev === e.id ? null : e.id))}
                         className="p-1 hover:bg-muted rounded"
@@ -388,28 +547,34 @@ export default function SalesExceptions() {
               </tbody>
             </table>
           </div>
-          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              {filtered.length === 0
-                ? t('Menampilkan 0 dari 0 exception')
-                : `${t('Menampilkan')} ${(pageSafe - 1) * PAGE_SIZE + 1} - ${Math.min(pageSafe * PAGE_SIZE, filtered.length)} ${t('dari')} ${filtered.length} ${t('exception')}`}
-            </span>
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <span>{t('Baris per halaman')}</span>
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <span className="hidden sm:inline text-slate-300">|</span>
+              <span>
+                <span className="font-semibold text-foreground">
+                  {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
+                </span>{' '}
+                {t('dari')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('exception')}
+              </span>
+            </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed">
-                <ChevronLeft size={14} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  onClick={() => goToPage(p)}
-                  className={`w-6 h-6 rounded text-xs ${p === pageSafe ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed">
-                <ChevronRight size={14} />
-              </button>
+              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label={t('Halaman sebelumnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronLeft size={16} /></button>
+              {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+                p === '…' ? (
+                  <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+                ) : (
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                )
+              )}
+              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
             </div>
           </div>
         </div>

@@ -1,17 +1,16 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport } from '@/lib/printExport';
 import {
   Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
-  Calendar, CheckCircle, Send, Trash2,
+  Calendar, CheckCircle, Send, Trash2, ChevronDown, Check, Search, FileText, Clock, Banknote,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
-import KpiCard from '@/components/shared/KpiCard';
 import {
   useSalesInvoices, updateSalesInvoice, deleteSalesInvoice,
   createSalesActivityLog, formatTanggalSingkat, type BackendSalesInvoice,
@@ -168,6 +167,145 @@ function buildSalesDetailReport(r: TrxItem, companyName?: string, printedBy?: st
 }
 
 const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 'Partial', 'Paid'];
+
+// Dropdown filter kustom: selalu terbuka ke BAWAH (select bawaan browser bisa
+// membuka ke atas), daftar bisa di-scroll, ada kolom cari bila opsinya banyak,
+// dan warna hover/terpilih memakai hijau brand (select bawaan memakai biru OS).
+interface FilterOption { value: string; label: string }
+
+function FilterSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: FilterOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = options.find(o => o.value === value) ?? options[0];
+  const searchable = options.length > 10;
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setQ(''); }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+      >
+        <span className="truncate max-w-[170px]">{current?.label}</span>
+        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+          {searchable && (
+            <div className="border-b border-border p-2">
+              <input
+                autoFocus
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Cari..."
+                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          )}
+          <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.map(o => {
+              const selected = o.value === value;
+              return (
+                <li key={o.value} role="option" aria-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.value); setOpen(false); }}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                  >
+                    <span className="truncate">{o.label}</span>
+                    {selected && <Check size={14} className="shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Kartu KPI untuk ringkasan status transaksi: garis tepi hijau tipis, aksen warna
+// di sisi atas sesuai jenis, angka besar, nominal, dan bar proporsi terhadap total.
+type KpiTone = 'slate' | 'amber' | 'green' | 'sky';
+const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string }> = {
+  // Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
+  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]' },
+  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]' },
+  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]' },
+  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]' },
+};
+
+function SalesKpiTile({ label, count, amount, pct, pctLabel, tone, icon: Icon }: {
+  label: string;
+  count: number;
+  amount: string;
+  pct: number;
+  pctLabel: string;
+  tone: KpiTone;
+  icon: React.ElementType;
+}) {
+  const c = KPI_TONE[tone];
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-white p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
+          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
+        </div>
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${c.iconBg}`}>
+          <Icon size={24} className={c.iconText} />
+        </span>
+      </div>
+      <p className="mt-3 truncate text-lg font-bold text-slate-900">{amount}</p>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      </div>
+      <p className="mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+    </div>
+  );
+}
+
+// Nomor halaman ringkas: 1 … 4 5 6 … 28 (tidak menampilkan seluruh halaman).
+function buildPageItems(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (current >= total - 2) { pages.add(total - 1); pages.add(total - 2); pages.add(total - 3); }
+  const sorted = Array.from(pages).filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+  const items: (number | '…')[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) items.push('…');
+    items.push(n);
+  });
+  return items;
+}
 
 export default function SalesTransaction() {
   const { t } = useLanguage();
@@ -374,29 +512,42 @@ export default function SalesTransaction() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Draft', value: String(transactions.filter(r => r.status === 'Draft').length), sub: formatIDR(transactions.filter(r => r.status === 'Draft').reduce((s, r) => s + r.gross, 0)), icon: 'DocumentIcon', iconColor: 'text-gray-600', iconBg: 'bg-gray-100' },
-          { label: 'Ready for Approval', value: String(transactions.filter(r => r.status === 'Review').length), sub: formatIDR(transactions.filter(r => r.status === 'Review').reduce((s, r) => s + r.gross, 0)), icon: 'ClockIcon', iconColor: 'text-amber-600', iconBg: 'bg-amber-50' },
-          { label: 'Posted', value: String(transactions.filter(r => r.status === 'Posted' || r.status === 'Paid' || r.status === 'Partial').length), sub: formatIDR(transactions.filter(r => r.status === 'Posted' || r.status === 'Paid' || r.status === 'Partial').reduce((s, r) => s + r.gross, 0)), icon: 'CheckCircleIcon', iconColor: 'text-emerald-600', iconBg: 'bg-emerald-50' },
-          { label: 'Outstanding AR', value: String(transactions.filter(r => r.outstanding > 0).length), sub: formatIDR(transactions.reduce((s, r) => s + r.outstanding, 0)), icon: 'BanknotesIcon', iconColor: 'text-blue-600', iconBg: 'bg-blue-50' },
-        ].map(k => (
-          <KpiCard
-            key={k.label}
-            title={t(k.label)}
-            value={k.value}
-            subLabel={k.sub}
-            icon={k.icon}
-            iconColor={k.iconColor}
-            iconBg={k.iconBg}
-          />
-        ))}
+        {(() => {
+          const total = transactions.length;
+          const sumGross = (rows: typeof transactions) => rows.reduce((acc, r) => acc + r.gross, 0);
+          const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+          const draft = transactions.filter(r => r.status === 'Draft');
+          const review = transactions.filter(r => r.status === 'Review');
+          const posted = transactions.filter(r => r.status === 'Posted' || r.status === 'Paid' || r.status === 'Partial');
+          const owing = transactions.filter(r => r.outstanding > 0);
+          const owingTotal = transactions.reduce((acc, r) => acc + r.outstanding, 0);
+          const pctLabel = t('dari total transaksi');
+          const tiles: { label: string; rows: typeof transactions; amount: number; tone: KpiTone; icon: React.ElementType }[] = [
+            { label: 'Draft', rows: draft, amount: sumGross(draft), tone: 'slate', icon: FileText },
+            { label: 'Ready for Approval', rows: review, amount: sumGross(review), tone: 'amber', icon: Clock },
+            { label: 'Posted', rows: posted, amount: sumGross(posted), tone: 'green', icon: CheckCircle },
+            { label: 'Outstanding AR', rows: owing, amount: owingTotal, tone: 'sky', icon: Banknote },
+          ];
+          return tiles.map(k => (
+            <SalesKpiTile
+              key={k.label}
+              label={t(k.label)}
+              count={k.rows.length}
+              amount={formatIDR(k.amount)}
+              pct={pctOf(k.rows.length)}
+              pctLabel={pctLabel}
+              tone={k.tone}
+              icon={k.icon}
+            />
+          ));
+        })()}
       </div>
 
       {/* Filters */}
       <div className="card p-3 relative">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <button onClick={() => setShowDatePicker(v => !v)} className="flex items-center gap-1.5 text-xs border border-border rounded-lg px-3 py-1.5 bg-card hover:bg-muted transition-colors">
+            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}>
               <Calendar size={12} className="text-muted-foreground" />
               <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
               <span className="font-medium text-foreground">
@@ -405,64 +556,74 @@ export default function SalesTransaction() {
               </span>
             </button>
             {showDatePicker && (
-              <div className="absolute z-20 top-full mt-1 left-0 card p-3 w-64 space-y-2 shadow-card">
+              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] font-medium text-muted-foreground">{t('Dari')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] font-medium text-muted-foreground">{t('Sampai')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                 </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-1.5 bg-primary text-primary-foreground rounded-lg font-medium hover:opacity-90">
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-2 bg-primary text-primary-foreground rounded-[6px] font-semibold hover:opacity-90">
                   {t('Terapkan')}
                 </button>
               </div>
             )}
           </div>
 
-          <select value={customerFilter} onChange={ev => { setCustomerFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
-            <option value="all">{t('Semua Customer')}</option>
-            {CUSTOMERS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-
-          <select value={branchFilter} onChange={ev => { setBranchFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
-            <option value="all">{t('All Branches')}</option>
-            {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-
-          <select value={taxStatusFilter} onChange={ev => { setTaxStatusFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
-            <option value="all">{t('Semua Status (Pajak)')}</option>
-            {TAX_STATUSES.map(s => <option key={s} value={s}>{t(s)}</option>)}
-          </select>
-
-          <select value={postingStatusFilter} onChange={ev => { setPostingStatusFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
-            <option value="all">{t('Semua Status (Posting)')}</option>
-            {POSTING_STATUSES.map(s => <option key={s} value={s}>{t(s)}</option>)}
-          </select>
-
-          <select value={projectFilter} onChange={ev => { setProjectFilter(ev.target.value); setCurrentPage(1); }} className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground">
-            <option value="all">{t('Semua Project')}</option>
-            {PROJECTS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-
-          <input
-            type="text"
-            value={search}
-            onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-            placeholder={t('Cari no. invoice, customer, deskripsi...')}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground flex-1 min-w-[200px]"
+          <FilterSelect
+            value={customerFilter}
+            onChange={v => { setCustomerFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua Customer') }, ...CUSTOMERS.map(c => ({ value: c, label: c }))]}
           />
 
+          <FilterSelect
+            value={branchFilter}
+            onChange={v => { setBranchFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('All Branches') }, ...BRANCHES.map(b => ({ value: b, label: b }))]}
+          />
+
+          <FilterSelect
+            value={taxStatusFilter}
+            onChange={v => { setTaxStatusFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua Status (Pajak)') }, ...TAX_STATUSES.map(s => ({ value: s, label: t(s) }))]}
+          />
+
+          <FilterSelect
+            value={postingStatusFilter}
+            onChange={v => { setPostingStatusFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua Status (Posting)') }, ...POSTING_STATUSES.map(s => ({ value: s, label: t(s) }))]}
+          />
+
+          <FilterSelect
+            value={projectFilter}
+            onChange={v => { setProjectFilter(v); setCurrentPage(1); }}
+            options={[{ value: 'all', label: t('Semua Project') }, ...PROJECTS.map(p => ({ value: p, label: p }))]}
+          />
+
+          <div className="relative ml-auto w-full sm:w-[400px]">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+            <input
+              type="text"
+              value={search}
+              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+              placeholder="Search Invoice..."
+              className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          {/* Baris kedua: aksi Reset, Print All, Settings (rata kanan) */}
+          <div className="flex w-full items-center justify-end gap-2">
           <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
 
-          <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} className="ml-auto" />
+          <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} />
           <div className="relative">
-            <button onClick={() => setShowSettings(v => !v)} className="p-1.5 border border-border rounded-lg hover:bg-muted transition-colors">
+            <button onClick={() => setShowSettings(v => !v)} className="p-1.5 border border-border rounded-[6px] hover:bg-muted transition-colors">
               <Settings size={14} className="text-muted-foreground" />
             </button>
             {showSettings && (
-              <div className="absolute z-20 top-full mt-1 right-0 card p-3 w-48 space-y-1.5 shadow-card">
+              <div className="absolute z-30 top-full mt-1 right-0 w-48 space-y-1.5 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
                 <p className="text-[11px] font-semibold text-foreground mb-1">{t('Tampilkan Kolom')}</p>
                 {([['pph', 'PPh'], ['dueDate', 'Due Date'], ['journal', 'Jurnal']] as const).map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 text-xs text-foreground">
@@ -473,16 +634,17 @@ export default function SalesTransaction() {
               </div>
             )}
           </div>
+          </div>
         </div>
       </div>
 
       {/* Table + Drawer */}
       <div className="flex gap-4">
         <div className={`card overflow-hidden flex-1 min-w-0 transition-all ${selectedTrx ? 'xl:w-auto' : 'w-full'}`}>
-          <div className="p-3 border-b border-border flex items-center justify-between">
+          <div className="px-0 py-3 border-b border-border flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-foreground">{t('Daftar Transaksi Penjualan')}</h3>
-              <p className="text-xs text-muted-foreground">
+              <h3 className="text-2xl font-bold text-foreground">{t('Daftar Transaksi Penjualan')}</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 {loading
                   ? t('Memuat...')
                   : filtered.length === 0
@@ -494,8 +656,8 @@ export default function SalesTransaction() {
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full min-w-[1100px]">
               <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="py-2.5 px-3 w-8">
+                <tr className="bg-[#8FE3B5]">
+                  <th className="py-2.5 px-3 w-8 border-t-2 border-b border-[#0A4A32]">
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
                   {[
@@ -507,7 +669,7 @@ export default function SalesTransaction() {
                     ...(visibleCols.journal ? ['Jurnal'] : []),
                     'Status', 'Aksi',
                   ].map(h => (
-                    <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
+                    <th key={h} className={`text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]`}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -519,7 +681,7 @@ export default function SalesTransaction() {
                   <tr
                     key={row.uuid}
                     onClick={() => openDetail(row)}
-                    className={`border-b border-border/50 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                    className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                   >
                     <td className="py-2 px-3">
                       <input type="checkbox" checked={selectedRows.has(row.uuid)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.uuid)} className="rounded border-border" />
@@ -574,22 +736,34 @@ export default function SalesTransaction() {
               </tbody>
             </table>
           </div>
-          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <span>{t('Tampilkan')}</span>
-              <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded px-2 py-1 text-xs bg-card">
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
-              <span>{t('dari')} {filtered.length} {t('transaksi')}</span>
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <span>{t('Baris per halaman')}</span>
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <span className="hidden sm:inline text-slate-300">|</span>
+              <span>
+                <span className="font-semibold text-foreground">
+                  {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
+                </span>{' '}
+                {t('dari')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('transaksi')}
+              </span>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"><ChevronLeft size={14} /></button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button key={p} onClick={() => goToPage(p)} className={`w-6 h-6 rounded text-xs ${p === pageSafe ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{p}</button>
-              ))}
-              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} className="p-1 hover:bg-muted rounded disabled:opacity-40 disabled:cursor-not-allowed"><ChevronRight size={14} /></button>
+              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label={t('Halaman sebelumnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronLeft size={16} /></button>
+              {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+                p === '…' ? (
+                  <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+                ) : (
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                )
+              )}
+              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
             </div>
           </div>
         </div>
