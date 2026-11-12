@@ -243,6 +243,7 @@ def _muat_dokumen(session, kid: str, sisi: Sisi, kecuali_tx: Optional[str] = Non
             PT.management_client_id == kid, PT.deleted_at.is_(None), func.lower(PT.status) == "posted",
         ).all()
         status_bayar = {}
+        bayar_awal: Dict[str, Decimal] = {}     # dokumen saldo awal: bagian bill yang sudah dibayar sebelum cut-off
         for r in rows:
             tgl = r.invoice_date or r.purchase_date
             tempo, kira = _jatuh_tempo(tgl, r.due_date, r.payment_terms)
@@ -254,11 +255,21 @@ def _muat_dokumen(session, kid: str, sisi: Sisi, kecuali_tx: Optional[str] = Non
                 akun_kode=kode, akun_nama=nama or "", keterangan=r.description,
             )
             status_bayar[str(r.id)] = (r.payment_status or "").lower()
+            # Bill saldo awal (COA > Opening Balance > Import Opening AP): accounts_payable = SISA per cut-off, total = nilai
+            # bill awal. Tampilkan seperti invoice AR: total = nilai awal, selisihnya = sudah dibayar (lunas di luar
+            # Cash & Bank, di tanggal dokumen) -- bill lunas tetap terlihat sebagai riwayat, saldo/aging tidak berubah.
+            if getattr(r, "is_opening_balance", False) and r.total is not None and r.accounts_payable is not None:
+                awal = bc._dec(r.total) - bc._dec(r.accounts_payable)
+                if awal > TOL:
+                    hasil[str(r.id)].total = bc._dec(r.total)
+                    bayar_awal[str(r.id)] = awal
         _muat_pelunasan(session, kid, sisi, hasil, kecuali_tx)
         for d in hasil.values():
             via_kas = sum((p.nilai for p in d.pelunasan if p.status == "posted"), NOL)
             if status_bayar[d.id] == "paid" and via_kas < d.total - TOL:
                 d.lain = d.total - via_kas
+            if bayar_awal.get(d.id, NOL) > d.lain:
+                d.lain = min(bayar_awal[d.id], d.total)
     return sorted(hasil.values(), key=lambda d: (d.tanggal, d.no))
 
 
