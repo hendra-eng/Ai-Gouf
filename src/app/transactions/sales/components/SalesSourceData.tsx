@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
-import { Upload, Download, Settings, CheckCircle, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
-import KpiCard from '@/components/shared/KpiCard';
 import { downloadBlob } from '../../components/exportTemplates/exportExcelShared';
 import {
   useSalesSourceFiles, uploadSalesSourceFile, updateSalesSourceFile, deleteSalesSourceFile,
@@ -57,7 +57,94 @@ const statusBadge = (s: string) => {
   return map[s] || 'bg-muted text-muted-foreground';
 };
 
-export default function SalesSourceData() {
+// Kartu KPI Source Data -- ukuran & penempatan sama dengan SalesKpiTile di tab
+// Sales Transaction (garis aksen atas, angka besar, bar proporsi), ditambah
+// latar gradasi hijau lembut & kilau warna di sudut supaya lebih hidup.
+// Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
+type KpiTone = 'slate' | 'amber' | 'green' | 'sky';
+const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
+  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
+  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]' },
+  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
+  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
+};
+
+function SourceKpiTile({ label, count, detail, detailUnit, pct, pctLabel, tone, icon: Icon }: {
+  label: string;
+  count: number;
+  detail: string;
+  detailUnit: string;
+  pct: number;
+  pctLabel: string;
+  tone: KpiTone;
+  icon: React.ElementType;
+}) {
+  const c = KPI_TONE[tone];
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
+      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
+          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
+        </div>
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white ${c.iconBg}`}>
+          <Icon size={24} className={c.iconText} />
+        </span>
+      </div>
+      <p className="relative mt-3 truncate text-lg font-bold text-slate-900">
+        {detail} <span className="text-xs font-semibold text-slate-500">{detailUnit}</span>
+      </p>
+      <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      </div>
+      <p className="relative mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+    </div>
+  );
+}
+
+// Panel bawah Source Data (File Preview / AI Extraction Summary / Data Quality
+// Check) -- kartu putih bersih dengan header terpisah garis. Sengaja BEDA dari
+// kartu KPI (tanpa garis aksen & gradasi) supaya tidak terlihat sama persis.
+function SourcePanel({ title, leading, action, children }: {
+  title: string;
+  leading?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {leading}
+          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+        </div>
+        {action}
+      </div>
+      <div className="flex flex-1 flex-col p-4">{children}</div>
+    </div>
+  );
+}
+
+function buildPageItems(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (current >= total - 2) { pages.add(total - 1); pages.add(total - 2); pages.add(total - 3); }
+  const sorted = Array.from(pages).filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+  const items: (number | '…')[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) items.push('…');
+    items.push(n);
+  });
+  return items;
+}
+
+// actionSlot: elemen di baris tab (SalesClient) tempat tombol aksi dirender
+// lewat portal, supaya sejajar dengan nama tab. undefined = render di tempat
+// (perilaku lama), null = slot belum siap (tunggu), element = portal ke slot.
+export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLElement | null } = {}) {
   const { t } = useLanguage();
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -84,6 +171,15 @@ export default function SalesSourceData() {
     if (!selectedFileId && sourceFiles.length > 0) setSelectedFileId(sourceFiles[0].id);
     if (selectedFileId && !sourceFiles.some(f => f.id === selectedFileId)) setSelectedFileId(sourceFiles[0]?.id ?? null);
   }, [sourceFiles, selectedFileId]);
+
+  // Pagination tabel Daftar File Sumber (sama seperti tabel Sales Transaction).
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => { setCurrentPage(1); }, [clientId]);
+  const totalPages = Math.max(1, Math.ceil(sourceFiles.length / pageSize));
+  const pageSafe = Math.min(currentPage, totalPages);
+  const paginated = sourceFiles.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const goToPage = (p: number) => setCurrentPage(Math.min(Math.max(1, p), totalPages));
 
   const { rows: previewRows, loading: loadingRows } = useSalesSourceRows(selectedFile?.id);
 
@@ -305,10 +401,23 @@ export default function SalesSourceData() {
     }
   };
 
-  const totalUpload = sourceFiles.length;
-  const menungguProses = sourceFiles.filter(f => f.status_ekstraksi === 'Diproses').length;
-  const berhasilDiproses = sourceFiles.filter(f => f.status_ekstraksi === 'Berhasil').length;
-  const butuhReview = sourceFiles.filter(f => f.status_ekstraksi === 'Butuh Review').length;
+
+  const actionBar = (
+    <div className="flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0">
+      <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Upload size={13} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
+      </button>
+      <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Download size={13} /> {t('Template Excel')}
+      </button>
+      <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Download size={13} /> {t('Export')}
+      </button>
+      <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
+        <Settings size={13} /> {t('Mapping Rules')}
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
@@ -321,44 +430,62 @@ export default function SalesSourceData() {
         </div>
       )}
 
-      {/* Action Bar */}
-      <div className="flex flex-wrap items-center gap-2 justify-end">
-        <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className="btn-secondary text-xs py-1.5 gap-1.5">
-          <Upload size={13} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
-        </button>
-        <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5">
-          <Download size={13} /> {t('Template Excel')}
-        </button>
-        <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5">
-          <Download size={13} /> {t('Export')}
-        </button>
-        <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
-          <Settings size={13} /> {t('Mapping Rules')}
-        </button>
-      </div>
+      {/* Action Bar -- dipindah ke baris yang sama dengan nama tab (via portal ke
+          slot di SalesClient). Fungsi tombol tidak berubah. */}
+      {actionSlot === undefined ? actionBar : actionSlot ? createPortal(actionBar, actionSlot) : null}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard title={t('Total File Upload')} value={String(totalUpload)} icon="ArrowUpTrayIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title={t('Menunggu Diproses')} value={String(menungguProses)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
-        <KpiCard title={t('Berhasil Diproses')} value={String(berhasilDiproses)} icon="CheckCircleIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
-        <KpiCard title={t('Butuh Review')} value={String(butuhReview)} icon="ExclamationTriangleIcon" iconColor="text-red-600" iconBg="bg-red-50" alert={butuhReview > 0} />
+      {/* KPI Cards -- ukuran & posisi sama dengan tab Sales Transaction */}
+      <div className="!mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {(() => {
+          const total = sourceFiles.length;
+          const sumRows = (rows: typeof sourceFiles) => rows.reduce((acc, r) => acc + (r.rows_detected || 0), 0);
+          const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+          const menunggu = sourceFiles.filter(f => f.status_ekstraksi === 'Diproses');
+          const berhasil = sourceFiles.filter(f => f.status_ekstraksi === 'Berhasil');
+          const review = sourceFiles.filter(f => f.status_ekstraksi === 'Butuh Review');
+          const pctLabel = t('dari total file');
+          const tiles: { label: string; rows: typeof sourceFiles; tone: KpiTone; icon: React.ElementType }[] = [
+            { label: 'Total File Upload', rows: sourceFiles, tone: 'slate', icon: Upload },
+            { label: 'Menunggu Diproses', rows: menunggu, tone: 'amber', icon: Clock },
+            { label: 'Berhasil Diproses', rows: berhasil, tone: 'green', icon: CheckCircle },
+            { label: 'Butuh Review', rows: review, tone: 'sky', icon: AlertTriangle },
+          ];
+          return tiles.map(k => (
+            <SourceKpiTile
+              key={k.label}
+              label={t(k.label)}
+              count={k.rows.length}
+              detail={sumRows(k.rows).toLocaleString('id-ID')}
+              detailUnit={t('baris terdeteksi')}
+              pct={pctOf(k.rows.length)}
+              pctLabel={pctLabel}
+              tone={k.tone}
+              icon={k.icon}
+            />
+          ));
+        })()}
       </div>
 
       {/* File Table */}
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+        <div className="px-0 py-3 border-b border-border flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">{t('Daftar File Sumber Penjualan')}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{t('Kelola file yang diunggah dan pantau status pemrosesan data.')}</p>
+            <h3 className="text-2xl font-bold text-foreground">{t('Daftar File Sumber Penjualan')}</h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {loading
+                ? t('Memuat...')
+                : sourceFiles.length === 0
+                ? t('Menampilkan 0 dari 0 file')
+                : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, sourceFiles.length)} ${t('dari')} ${sourceFiles.length} ${t('file')}`}
+            </p>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full min-w-[900px]">
             <thead>
-              <tr className="border-b border-border bg-muted/30">
+              <tr className="bg-[#8FE3B5]">
                 {['Upload Date', 'Source File', 'Source Type', 'Customer / Entity', 'Period', 'Rows Detected', 'Status Ekstraksi', 'Status Mapping', 'Confidence', 'Processed By', 'Actions'].map(h => (
-                  <th key={h} className="text-left py-2.5 px-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
+                  <th key={h} className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">{t(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -366,26 +493,26 @@ export default function SalesSourceData() {
               {!loading && sourceFiles.length === 0 && (
                 <tr><td colSpan={11} className="py-8 text-center text-xs text-muted-foreground">{t('Belum ada file yang diunggah.')}</td></tr>
               )}
-              {sourceFiles.map((f) => (
+              {paginated.map((f) => (
                 <tr
                   key={f.id}
                   onClick={() => setSelectedFileId(f.id)}
-                  className={`border-b border-border/50 cursor-pointer transition-colors ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-muted/30'}`}
+                  className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                 >
-                  <td className="py-2.5 px-3 text-xs text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
-                  <td className="py-2.5 px-3">
+                  <td className="py-2 px-2 text-xs text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
+                  <td className="py-2 px-2">
                     <div className="flex items-center gap-2">
                       <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${f.file_type === 'Excel' ? 'bg-emerald-100 text-emerald-700' : f.file_type === 'CSV' ? 'bg-blue-100 text-blue-700' : f.file_type === 'PDF' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>{(f.file_type || '?').slice(0, 3)}</div>
                       <span className="text-xs text-foreground font-medium">{f.file_name}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3 text-xs text-muted-foreground">{f.file_type || '-'}</td>
-                  <td className="py-2.5 px-3 text-xs text-foreground">{f.customer_hint || '—'}</td>
-                  <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">{f.period_label || '-'}</td>
-                  <td className="py-2.5 px-3 text-xs text-foreground">{f.rows_detected.toLocaleString('id-ID')}</td>
-                  <td className="py-2.5 px-3"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_ekstraksi)}`}>{t(f.status_ekstraksi)}</span></td>
-                  <td className="py-2.5 px-3"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_mapping)}`}>{t(f.status_mapping)}</span></td>
-                  <td className="py-2.5 px-3">
+                  <td className="py-2 px-2 text-xs text-muted-foreground">{f.file_type || '-'}</td>
+                  <td className="py-2 px-2 text-xs text-foreground">{f.customer_hint || '—'}</td>
+                  <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">{f.period_label || '-'}</td>
+                  <td className="py-2 px-2 text-xs text-foreground">{f.rows_detected.toLocaleString('id-ID')}</td>
+                  <td className="py-2 px-2"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_ekstraksi)}`}>{t(f.status_ekstraksi)}</span></td>
+                  <td className="py-2 px-2"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_mapping)}`}>{t(f.status_mapping)}</span></td>
+                  <td className="py-2 px-2">
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                         <div className={`h-full rounded-full ${(f.confidence_score ?? 0) >= 90 ? 'bg-emerald-500' : (f.confidence_score ?? 0) >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${f.confidence_score ?? 0}%` }} />
@@ -393,8 +520,8 @@ export default function SalesSourceData() {
                       <span className="text-xs text-muted-foreground">{f.confidence_score ?? 0}%</span>
                     </div>
                   </td>
-                  <td className="py-2.5 px-3 text-xs text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
-                  <td className="py-2.5 px-3">
+                  <td className="py-2 px-2 text-xs text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
+                  <td className="py-2 px-2">
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
@@ -424,12 +551,34 @@ export default function SalesSourceData() {
             </tbody>
           </table>
         </div>
-        <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-          <span>{t('Menampilkan')} {sourceFiles.length === 0 ? 0 : 1} - {sourceFiles.length} {t('dari')} {sourceFiles.length} {t('file')}</span>
+        <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2">
+              <span>{t('Baris per halaman')}</span>
+              <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <span className="hidden sm:inline text-slate-300">|</span>
+            <span>
+              <span className="font-semibold text-foreground">
+                {sourceFiles.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, sourceFiles.length)}
+              </span>{' '}
+              {t('dari')} <span className="font-semibold text-foreground">{sourceFiles.length}</span> {t('file')}
+            </span>
+          </div>
           <div className="flex items-center gap-1">
-            <button className="p-1 hover:bg-muted rounded" disabled><ChevronLeft size={14} /></button>
-            <button className="w-6 h-6 rounded text-xs bg-primary text-primary-foreground">1</button>
-            <button className="p-1 hover:bg-muted rounded" disabled><ChevronRight size={14} /></button>
+            <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label={t('Halaman sebelumnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronLeft size={16} /></button>
+            {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+              p === '…' ? (
+                <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+              ) : (
+                <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+              )
+            )}
+            <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
           </div>
         </div>
       </div>
@@ -438,171 +587,219 @@ export default function SalesSourceData() {
           source row-nya), tidak ada lagi angka contoh. */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* File Preview */}
-        <div className="xl:col-span-1 card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">{t('File Preview')}</h3>
-            {selectedFile && previewRows.length > 0 && (
-              <button
-                onClick={handlePromoteToInvoices}
-                disabled={isPromoting}
-                className="btn-primary text-[11px] py-1 px-2 gap-1 disabled:opacity-50"
-                title={t('Naikkan baris valid jadi invoice resmi di tab Sales Transaction')}
-              >
-                {isPromoting ? t('Memproses...') : t('Buat Invoice')}
-              </button>
-            )}
-          </div>
+        <SourcePanel
+          title={t('File Preview')}
+          leading={
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><FileText size={17} /></span>
+          }
+          action={selectedFile && previewRows.length > 0 ? (
+            <button
+              onClick={handlePromoteToInvoices}
+              disabled={isPromoting}
+              className="btn-primary shrink-0 rounded-xl px-3 py-1.5 text-xs gap-1 disabled:opacity-50"
+              title={t('Naikkan baris valid jadi invoice resmi di tab Sales Transaction')}
+            >
+              {isPromoting ? t('Memproses...') : t('Buat Invoice')}
+            </button>
+          ) : undefined}
+        >
           {selectedFile ? (
-            <div className="flex items-center gap-2 mb-3 p-2 bg-emerald-50 rounded-lg">
-              <div className="w-8 h-8 bg-emerald-100 rounded flex items-center justify-center text-[10px] font-bold text-emerald-700">{(selectedFile.file_type || '?').slice(0, 3).toUpperCase()}</div>
-              <div>
-                <p className="text-xs font-semibold text-foreground">{selectedFile.file_name}</p>
-                <p className="text-[11px] text-muted-foreground">{selectedFile.rows_detected} {t('baris')} · {t('Diunggah')} {formatTanggalWaktu(selectedFile.uploaded_at)}</p>
+            <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D1FAE5] text-[11px] font-extrabold text-[#065F46] shadow-sm ring-1 ring-white">{(selectedFile.file_type || '?').slice(0, 3).toUpperCase()}</div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-foreground">{selectedFile.file_name}</p>
+                <p className="text-xs font-medium text-slate-600">{selectedFile.rows_detected} {t('baris')} · {t('Diunggah')} {formatTanggalWaktu(selectedFile.uploaded_at)}</p>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground mb-3">{t('Belum ada file yang dipilih.')}</p>
+            <p className="mb-3 text-xs text-muted-foreground">{t('Belum ada file yang dipilih.')}</p>
           )}
           {selectedFile && !loadingRows && previewRows.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">{t('Belum ada baris data untuk file ini (ekstraksi otomatis belum tersambung).')}</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada baris data untuk file ini (ekstraksi otomatis belum tersambung).')}</p>
           )}
           {selectedFile && previewRows.length > 0 && (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto scrollbar-thin">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-border">
+                    <tr className="bg-[#8FE3B5]">
                       {['No', 'Tanggal', 'No. Invoice', 'Nama Customer', 'Cabang', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].map(h => (
-                        <th key={h} className="text-left py-1.5 px-1.5 text-[10px] font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
+                        <th key={h} className="whitespace-nowrap border-b border-t-2 border-[#0A4A32] px-2 py-2.5 text-left text-[11px] font-bold text-[#065F46]">{t(h)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {pagedPreviewRows.map(r => (
-                      <tr key={r.id} className="border-b border-border/50">
-                        <td className="py-1.5 px-1.5 text-muted-foreground">{r.row_no}</td>
-                        <td className="py-1.5 px-1.5 whitespace-nowrap">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
-                        <td className="py-1.5 px-1.5 whitespace-nowrap">{r.no_invoice || '-'}</td>
-                        <td className="py-1.5 px-1.5 whitespace-nowrap">{r.nama_customer || '-'}</td>
-                        <td className="py-1.5 px-1.5 whitespace-nowrap">{r.cabang || '-'}</td>
-                        <td className="py-1.5 px-1.5 text-right">{(r.dpp / 1000).toFixed(0)}</td>
-                        <td className="py-1.5 px-1.5 text-right">{(r.ppn / 1000).toFixed(0)}</td>
-                        <td className="py-1.5 px-1.5 text-right">{(r.total / 1000).toFixed(0)}</td>
+                      <tr key={r.id} className="border-b border-slate-300/70 transition-colors hover:bg-slate-200/70">
+                        <td className="px-2 py-2 text-muted-foreground">{r.row_no}</td>
+                        <td className="whitespace-nowrap px-2 py-2">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 font-medium text-primary">{r.no_invoice || '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 font-medium text-foreground">{r.nama_customer || '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">{r.cabang || '-'}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{(r.dpp / 1000).toFixed(0)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{(r.ppn / 1000).toFixed(0)}</td>
+                        <td className="px-2 py-2 text-right font-semibold tabular-nums">{(r.total / 1000).toFixed(0)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-border text-[11px] text-muted-foreground">
+              <div className="mt-auto flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
                 <span>
-                  {(previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1}–{Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, previewRows.length)} {t('dari')} {previewRows.length}
+                  <span className="font-semibold text-foreground">{(previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1}–{Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, previewRows.length)}</span> {t('dari')} <span className="font-semibold text-foreground">{previewRows.length}</span>
                 </span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
                     disabled={previewPageSafe <= 1}
-                    className="p-0.5 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card"
                   >
-                    <ChevronLeft size={13} />
+                    <ChevronLeft size={14} />
                   </button>
-                  <span className="px-1">{previewPageSafe} / {previewTotalPages}</span>
+                  <span className="min-w-[3.5rem] text-center font-semibold text-foreground">{previewPageSafe} / {previewTotalPages}</span>
                   <button
                     onClick={() => setPreviewPage(p => Math.min(previewTotalPages, p + 1))}
                     disabled={previewPageSafe >= previewTotalPages}
-                    className="p-0.5 hover:bg-muted rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-card"
                   >
-                    <ChevronRight size={13} />
+                    <ChevronRight size={14} />
                   </button>
                 </div>
               </div>
             </>
           )}
-        </div>
+        </SourcePanel>
 
         {/* AI Extraction Summary -- langsung dari kolom rows_valid/rows_invalid/
             duplicate_count/dpp_total/ppn_total/grand_total milik file
             terpilih (GET /source-files), bukan lagi angka ilustrasi. */}
-        <div className="card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
-              <span className="text-[10px] font-bold text-purple-600">AI</span>
-            </div>
-            <h3 className="text-sm font-semibold text-foreground">{t('AI Extraction Summary')}</h3>
-          </div>
+        <SourcePanel
+          title={t('AI Extraction Summary')}
+          leading={
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-xs font-extrabold text-[#065F46]">AI</span>
+          }
+        >
           {!selectedFile ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">{t('Pilih atau unggah file untuk melihat ringkasan.')}</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">{t('Pilih atau unggah file untuk melihat ringkasan.')}</p>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground mb-3">
-                {selectedFile.ai_model_version
-                  ? `${t('Model')}: ${selectedFile.ai_model_version}`
-                  : t('Belum ada hasil ekstraksi otomatis untuk file ini.')}
-              </p>
-              <div className="space-y-2 text-xs">
-                {[
-                  ['Total Baris Terdeteksi', String(selectedFile.rows_detected)],
-                  ['Baris Valid', String(selectedFile.rows_valid)],
-                  ['Baris Tidak Valid', String(selectedFile.rows_invalid)],
+              {selectedFile.ai_model_version ? (
+                <p className="mb-3 text-xs text-slate-600">
+                  {t('Model')}: <span className="ml-1 rounded-full border border-[#6EE7B7]/60 bg-[#ECFDF5] px-2 py-0.5 font-semibold text-[#047857]">{selectedFile.ai_model_version}</span>
+                </p>
+              ) : (
+                <p className="mb-3 text-xs text-muted-foreground">{t('Belum ada hasil ekstraksi otomatis untuk file ini.')}</p>
+              )}
+              {(() => {
+                const totalRows = selectedFile.rows_detected || 0;
+                const validPct = totalRows > 0 ? Math.round((selectedFile.rows_valid / totalRows) * 100) : 0;
+                const stats: { label: string; value: number; cls: string }[] = [
+                  { label: 'Total Baris Terdeteksi', value: selectedFile.rows_detected, cls: 'text-[#064E3B]' },
+                  { label: 'Baris Valid', value: selectedFile.rows_valid, cls: 'text-[#0F7D4E]' },
+                  { label: 'Baris Tidak Valid', value: selectedFile.rows_invalid, cls: selectedFile.rows_invalid > 0 ? 'text-red-600' : 'text-[#064E3B]' },
+                ];
+                const rows: [string, string][] = [
                   ['Duplikat Potensial', String(selectedFile.duplicate_count)],
                   ['Nilai Transaksi (DPP)', formatIDR(selectedFile.dpp_total)],
                   ['Nilai PPN', formatIDR(selectedFile.ppn_total)],
                   ['Nilai Total', formatIDR(selectedFile.grand_total)],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between">
-                    <span className="text-muted-foreground">{t(k)}</span>
-                    <span className="font-medium text-foreground">{v}</span>
-                  </div>
-                ))}
-              </div>
+                ];
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-2">
+                      {stats.map(st => (
+                        <div key={st.label} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                          <p className="truncate text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-500" title={t(st.label)}>{t(st.label)}</p>
+                          <p className={`mt-1.5 text-2xl font-extrabold leading-none tabular-nums ${st.cls}`}>{st.value.toLocaleString('id-ID')}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-[#0F7D4E]" style={{ width: `${selectedFile.rows_valid > 0 ? Math.max(validPct, 3) : 0}%` }} />
+                      </div>
+                      <p className="mt-1.5 text-xs font-semibold text-slate-600">{validPct}% {t('baris valid')}</p>
+                    </div>
+                    <div className="mt-3 divide-y divide-slate-200 text-xs">
+                      {rows.map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between py-2">
+                          <span className="text-muted-foreground">{t(k)}</span>
+                          <span className="text-sm font-bold tabular-nums text-slate-900">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
               {selectedFile.extraction_duration_ms != null && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <p className="text-[11px] text-muted-foreground">ℹ {t('Ekstraksi selesai dalam')} {(selectedFile.extraction_duration_ms / 1000).toFixed(1)} {t('detik')}</p>
+                <div className="mt-auto border-t border-border pt-3">
+                  <p className="text-[11px] font-medium text-muted-foreground">ℹ {t('Ekstraksi selesai dalam')} {(selectedFile.extraction_duration_ms / 1000).toFixed(1)} {t('detik')}</p>
                 </div>
               )}
             </>
           )}
-        </div>
+        </SourcePanel>
 
         {/* Data Quality Check -- dihitung dari baris source row asli milik
             file terpilih (kalau ada), "Detected Fields" dari mapping_rules
             yang sudah disimpan lewat modal Mapping Rules. */}
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-foreground">{t('Data Quality Check')}</h3>
-          </div>
+        <SourcePanel
+          title={t('Data Quality Check')}
+          leading={
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><ShieldCheck size={17} /></span>
+          }
+        >
           {!selectedFile || previewRows.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada baris data untuk dicek.')}</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada baris data untuk dicek.')}</p>
           ) : (
-            <div className="space-y-2 text-xs">
-              {(() => {
-                const total = previewRows.length;
-                const withDate = previewRows.filter(r => !!r.tanggal).length;
-                const withInvoice = previewRows.filter(r => !!r.no_invoice).length;
-                const withCustomer = previewRows.filter(r => !!r.nama_customer).length;
-                const validTotal = previewRows.filter(r => r.total > 0).length;
-                const duplicates = previewRows.filter(r => r.is_duplicate_candidate).length;
-                const invalid = previewRows.filter(r => !r.is_valid).length;
-                return [
-                  { label: 'Format tanggal valid', val: `${withDate} / ${total}`, ok: withDate === total },
-                  { label: 'No. invoice ditemukan', val: `${withInvoice} / ${total}`, ok: withInvoice === total },
-                  { label: 'Nama customer valid', val: `${withCustomer} / ${total}`, ok: withCustomer === total },
-                  { label: 'Nilai transaksi valid', val: `${validTotal} / ${total}`, ok: validTotal === total },
-                  { label: 'Duplikat data', val: String(duplicates), ok: duplicates === 0 },
-                  { label: 'Baris tidak valid', val: String(invalid), ok: invalid === 0 },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-full flex-shrink-0 ${item.ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                      <span className="text-muted-foreground">{t(item.label)}</span>
+            (() => {
+              const total = previewRows.length;
+              const withDate = previewRows.filter(r => !!r.tanggal).length;
+              const withInvoice = previewRows.filter(r => !!r.no_invoice).length;
+              const withCustomer = previewRows.filter(r => !!r.nama_customer).length;
+              const validTotal = previewRows.filter(r => r.total > 0).length;
+              const duplicates = previewRows.filter(r => r.is_duplicate_candidate).length;
+              const invalid = previewRows.filter(r => !r.is_valid).length;
+              const checks = [
+                { label: 'Format tanggal valid', val: `${withDate} / ${total}`, ok: withDate === total },
+                { label: 'No. invoice ditemukan', val: `${withInvoice} / ${total}`, ok: withInvoice === total },
+                { label: 'Nama customer valid', val: `${withCustomer} / ${total}`, ok: withCustomer === total },
+                { label: 'Nilai transaksi valid', val: `${validTotal} / ${total}`, ok: validTotal === total },
+                { label: 'Duplikat data', val: String(duplicates), ok: duplicates === 0 },
+                { label: 'Baris tidak valid', val: String(invalid), ok: invalid === 0 },
+              ];
+              const okCount = checks.filter(c => c.ok).length;
+              const okPct = Math.round((okCount / checks.length) * 100);
+              return (
+                <>
+                  <div className="mb-3">
+                    <div className="flex items-end justify-between">
+                      <p className="text-xs font-semibold text-slate-600">{t('Pemeriksaan lolos')}</p>
+                      <p className="text-2xl font-extrabold leading-none tabular-nums text-[#064E3B]">{okCount}<span className="text-sm font-bold text-slate-500"> / {checks.length}</span></p>
                     </div>
-                    <span className={`font-medium ${item.ok ? 'text-foreground' : 'text-red-600'}`}>{item.val}</span>
+                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${okCount === checks.length ? 'bg-[#0F7D4E]' : 'bg-red-500'}`} style={{ width: `${okCount > 0 ? Math.max(okPct, 3) : 0}%` }} />
+                    </div>
                   </div>
-                ));
-              })()}
-            </div>
+                  <div className="divide-y divide-slate-200 text-xs">
+                    {checks.map(item => (
+                      <div key={item.label} className={`flex items-center justify-between py-2 ${item.ok ? '' : 'rounded-lg bg-red-50 px-2'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${item.ok ? 'bg-[#D1FAE5] text-[#047857]' : 'bg-red-100 text-red-600'}`}>
+                            {item.ok ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+                          </span>
+                          <span className="text-muted-foreground">{t(item.label)}</span>
+                        </div>
+                        <span className={`text-sm font-bold tabular-nums ${item.ok ? 'text-slate-900' : 'text-red-600'}`}>{item.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()
           )}
-          <div className="mt-3 pt-3 border-t border-border">
-            <p className="text-xs font-semibold text-foreground mb-1.5">{t('Detected Fields')}</p>
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="mb-2 text-sm font-bold text-foreground">{t('Detected Fields')}</p>
             {(() => {
               const rules = selectedFile?.mapping_rules;
               if (!rules) {
@@ -622,15 +819,15 @@ export default function SalesSourceData() {
               return (
                 <div className="flex flex-wrap gap-1.5">
                   {terdeteksi.map(f => (
-                    <span key={f.key} className="flex items-center gap-1 text-[11px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">
-                      <CheckCircle size={9} /> {t(f.label)}
+                    <span key={f.key} className="flex items-center gap-1 rounded-full border border-[#6EE7B7]/60 bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-semibold text-[#047857]">
+                      <CheckCircle size={10} /> {t(f.label)}
                     </span>
                   ))}
                 </div>
               );
             })()}
           </div>
-        </div>
+        </SourcePanel>
       </div>
 
       {/* Modal Mapping Rules */}

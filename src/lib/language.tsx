@@ -1475,6 +1475,7 @@ const translations: Dict = {
   'Journal': { en: 'Journal', id: 'Jurnal', zh: '分录' },
   'Loading...': { en: 'Loading...', id: 'Memuat...', zh: '加载中...' },
   'No sales invoices to display yet.': { en: 'No sales invoices to display yet.', id: 'Belum ada invoice penjualan untuk ditampilkan.', zh: '暂无可显示的销售发票。' },
+  'No sales invoices in this period — try a longer period.': { en: 'No sales invoices in this period — try a longer period.', id: 'Tidak ada invoice penjualan pada periode ini — coba periode yang lebih panjang.', zh: '此期间没有销售发票 — 请尝试更长的期间。' },
   'No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.': { en: 'No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.', id: 'Belum ada invoice penjualan. Unggah file di Source Data lalu buat invoice, atau tambahkan di Sales Transaction.', zh: '暂无销售发票。请在 Source Data 上传文件并创建发票，或在 Sales Transaction 中添加。' },
   'Not Posted': { en: 'Not Posted', id: 'Belum Diposting', zh: '未过账' },
   'Outstanding': { en: 'Outstanding', id: 'Sisa Tagihan', zh: '未结金额' },
@@ -1608,6 +1609,18 @@ const translations: Dict = {
   'Belum ada aktivitas posting.': { en: 'No posting activity yet.', id: 'Belum ada aktivitas posting.', zh: '暂无过账活动。' },
   'Pilih transaksi': { en: 'Select a transaction', id: 'Pilih transaksi', zh: '选择交易' },
   'Klik \'Lihat\' pada salah satu baris transaksi untuk melihat detail jurnalnya.': { en: 'Click \'View\' on a transaction row to see its journal details.', id: 'Klik \'Lihat\' pada salah satu baris transaksi untuk melihat detail jurnalnya.', zh: '点击某笔交易行的“查看”即可查看其分录详情。' },
+  'Antrian Jurnal': { en: 'Journal Queue', id: 'Antrian Jurnal', zh: '队列分录' },
+  'invoice belum final': { en: 'invoices not yet final', id: 'invoice belum final', zh: '发票未最终确认' },
+  'Menunggu Approval': { en: 'Awaiting Approval', id: 'Menunggu Approval', zh: '待批准' },
+  'dari antrian': { en: 'of queue', id: 'dari antrian', zh: '占队列' },
+  'Nilai Belum Diposting': { en: 'Unposted Value', id: 'Nilai Belum Diposting', zh: '未过账金额' },
+  'dari total nilai antrian': { en: 'of total queue value', id: 'dari total nilai antrian', zh: '占队列总额' },
+  'Seimbang': { en: 'Balanced', id: 'Seimbang', zh: '平衡' },
+  'Tidak seimbang': { en: 'Unbalanced', id: 'Tidak seimbang', zh: '不平衡' },
+  'Tidak ada PPN Keluaran': { en: 'No Output VAT', id: 'Tidak ada PPN Keluaran', zh: '无销项增值税' },
+  'Transaksi ini tidak menghasilkan PPN keluaran.': { en: 'This transaction does not generate output VAT.', id: 'Transaksi ini tidak menghasilkan PPN keluaran.', zh: '此交易不产生销项增值税。' },
+  'Tutup': { en: 'Close', id: 'Tutup', zh: '关闭' },
+  'Tinjau jurnal otomatis, setujui klasifikasi akun, lalu posting ke buku besar.': { en: 'Review the auto-generated journal, approve the account classification, then post it to the general ledger.', id: 'Tinjau jurnal otomatis, setujui klasifikasi akun, lalu posting ke buku besar.', zh: '查看自动生成的分录，批准科目分类，然后过账至总账。' },
 };
 
 export function translate(text: string, lang: LanguageCode): string {
