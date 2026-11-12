@@ -1475,6 +1475,7 @@ const translations: Dict = {
   'Journal': { en: 'Journal', id: 'Jurnal', zh: '分录' },
   'Loading...': { en: 'Loading...', id: 'Memuat...', zh: '加载中...' },
   'No sales invoices to display yet.': { en: 'No sales invoices to display yet.', id: 'Belum ada invoice penjualan untuk ditampilkan.', zh: '暂无可显示的销售发票。' },
+  'No sales invoices in this period — try a longer period.': { en: 'No sales invoices in this period — try a longer period.', id: 'Tidak ada invoice penjualan pada periode ini — coba periode yang lebih panjang.', zh: '此期间没有销售发票 — 请尝试更长的期间。' },
   'No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.': { en: 'No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.', id: 'Belum ada invoice penjualan. Unggah file di Source Data lalu buat invoice, atau tambahkan di Sales Transaction.', zh: '暂无销售发票。请在 Source Data 上传文件并创建发票，或在 Sales Transaction 中添加。' },
   'Not Posted': { en: 'Not Posted', id: 'Belum Diposting', zh: '未过账' },
   'Outstanding': { en: 'Outstanding', id: 'Sisa Tagihan', zh: '未结金额' },

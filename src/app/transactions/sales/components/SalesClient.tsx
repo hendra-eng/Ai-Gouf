@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus } from 'lucide-react';
-import { tabBadgeCls, tabCls, tabNavCls } from '@/components/shared/moduleUi';
+import { tabBadgeCls, tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';
@@ -29,6 +29,8 @@ export default function SalesClient() {
   const { user } = useAuth();
   const { activeClientId } = useActiveClient();
   const [activeTab, setActiveTab] = useState('overview');
+  // Slot di baris tab untuk tombol aksi milik tab Source Data & Posted (dirender via portal).
+  const [actionSlot, setActionSlot] = useState<HTMLDivElement | null>(null);
 
   // Deep link ?tab=journal-preview (mis. dari AR > Create Invoice setelah Submit for Approval).
   useEffect(() => {
@@ -48,7 +50,7 @@ export default function SalesClient() {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">{t('Sales')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-xs font-bold text-muted-foreground mt-0.5">
             {activeTab === 'overview' && t('Ringkasan performa penjualan dan metrik utama.')}
             {activeTab === 'source-data' && t('Kelola dan proses data sumber penjualan sebelum dilakukan penjurnalan.')}
             {activeTab === 'sales-transaction' && t('Workspace transaksi penjualan yang detail dan terintegrasi dengan jurnal akuntansi.')}
@@ -65,36 +67,39 @@ export default function SalesClient() {
           )}
           <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
             <CalendarDays size={14} className="text-muted-foreground" />
-            <span className="text-foreground font-medium">01 Jan 2024 – 31 Dec 2024</span>
+            <span className="text-foreground font-medium">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
             <ChevronDown size={14} className="text-muted-foreground" />
           </button>
         </div>
       </div>
 
       {/* Tabs — gaya underline bersama (tabCls, acuan Transactions > Other). */}
-      <nav className={tabNavCls}>
-        {TABS?.map(tab => (
-          <button
-            key={tab?.key}
-            onClick={() => setActiveTab(tab?.key)}
-            className={tabCls(activeTab === tab?.key)}
-          >
-            <tab.icon size={16} /> {t(tab?.label)}
-            {tab?.key === 'exceptions' && openExceptionCount > 0 && (
-              <span className={tabBadgeCls}>{openExceptionCount}</span>
-            )}
-          </button>
-        ))}
-      </nav>
+      <div className={tabBarCls}>
+        <nav className={tabListCls}>
+          {TABS?.map(tab => (
+            <button
+              key={tab?.key}
+              onClick={() => setActiveTab(tab?.key)}
+              className={tabCls(activeTab === tab?.key)}
+            >
+              <tab.icon size={16} /> {t(tab?.label)}
+              {tab?.key === 'exceptions' && openExceptionCount > 0 && (
+                <span className={tabBadgeCls}>{openExceptionCount}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        {(activeTab === 'source-data' || activeTab === 'posted') && <div ref={setActionSlot} className="flex items-center" />}
+      </div>
 
       {/* Tab Content */}
       <div className="pt-5">
         {activeTab === 'overview' && <SalesOverview />}
-        {activeTab === 'source-data' && <SalesSourceData />}
+        {activeTab === 'source-data' && <SalesSourceData actionSlot={actionSlot} />}
         {activeTab === 'sales-transaction' && <SalesTransaction />}
         {activeTab === 'journal-preview' && <SalesJournalPreview />}
         {activeTab === 'exceptions' && <SalesExceptions />}
-        {activeTab === 'posted' && <SalesPosted />}
+        {activeTab === 'posted' && <SalesPosted actionSlot={actionSlot} />}
       </div>
     </div>
   );
