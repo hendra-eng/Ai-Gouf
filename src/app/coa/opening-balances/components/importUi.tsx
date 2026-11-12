@@ -42,7 +42,7 @@ export const IMPORT_MODULE_META: ImportModuleMeta[] = [
     key: 'ap',
     no: 3,
     title: 'Import Opening AP',
-    desc: 'Upload outstanding vendor bills as opening Accounts Payable.',
+    desc: 'Upload all vendor bills and their payments up to the cut-off date (settled and unpaid). Rows are grouped per Reference.',
     icon: Users,
     iconCls: 'bg-orange-50 text-orange-600',
     amounts: [{ label: 'Outstanding', field: 'total_credit' }],
