@@ -6,7 +6,7 @@
 // Bill Items + ringkasan; panel kanan Accounting Impact, Validation, Approval
 // Flow. Backend: modules/transactions/purchase_bill_v1.py (Bill = Purchase
 // Transaction + baris item). Save Draft -> draft; Submit for Approval ->
-// pending_review, lalu Approve & Post di Purchase Preview.
+// pending_review, lalu Approve & Post di Journal Preview.
 // Mode edit: ?id=<purchase transaction>.
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -501,9 +501,9 @@ function CreateBillInner() {
 
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
           <span>
-            Save Draft keeps the bill as <b>Draft</b>; Submit marks it <b>Pending Review</b>. Approve and post it in <b>Purchase Preview</b> — once posted it appears in Posted, Financial Statements and Accounts Payable.
+            Save Draft keeps the bill as <b>Draft</b>; Submit marks it <b>Pending Review</b>. Approve and post it in <b>Journal Preview</b> — once posted it appears in Posted, Financial Statements and Accounts Payable.
           </span>
-          <Link href="/transactions/purchase/preview" className="font-semibold text-[#0B5E5C] underline">Open Purchase Preview</Link>
+          <Link href="/transactions/purchase/preview" className="font-semibold text-[#0B5E5C] underline">Open Journal Preview</Link>
         </div>
         {!bolehInput && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Your role can view but not create bills (Supervisor or above).</div>

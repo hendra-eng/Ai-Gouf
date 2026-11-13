@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
-import { formatIDR, CHART_COLORS } from '../../lib/groupAnalytics';
+import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, Store, Trophy, TrendingUp, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
+import { formatIDR } from '../../lib/groupAnalytics';
 import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import { useLanguage } from '@/lib/language';
@@ -196,22 +196,254 @@ function SalesTrendTooltip({
 }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
-      <p className="font-semibold text-slate-800 mb-1.5">{label}</p>
+    <div className="min-w-[170px] rounded-lg border border-primary/20 bg-white p-3 text-xs shadow-lg">
+      <p className="mb-1.5 border-b border-slate-100 pb-1.5 text-[11px] font-extrabold uppercase tracking-wide text-[#064E3B]">{label}</p>
       {payload.map((p, i) => {
         const isDragged = !!dragPreview && dragPreview.key === p.dataKey;
         const value = isDragged ? dragPreview!.value : p.value;
         return (
           <div key={`sales-tt-${i}`} className="flex items-center gap-2 py-0.5">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
-            <span className="text-slate-500">{p.name}:</span>
-            <span className="font-semibold text-slate-800">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color || p.stroke }} />
+            <span className="text-slate-500">{p.name}</span>
+            <span className="ml-auto pl-3 font-bold tabular-nums text-slate-800">
               {isDragged ? 'Estimated · ' : ''}
               {formatIDR(value)}
             </span>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Kontrol segmented (pil abu-abu, tombol aktif putih) -- dipakai untuk mode & periode chart.
+function SalesSegmented<T extends string>({ value, options, onChange, render }: {
+  value: T;
+  options: readonly T[];
+  onChange: (v: T) => void;
+  render?: (v: T) => string;
+}) {
+  return (
+    <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+      {options.map((o) => (
+        <button
+          key={`seg-${o}`}
+          type="button"
+          onClick={() => onChange(o)}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+            value === o ? 'bg-white text-[#064E3B] shadow-sm' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {render ? render(o) : o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Ringkasan mini di atas chart (gaya kartu KPI, versi kecil).
+function SalesChartStat({ label, value, sub, tone = 'default' }: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'default' | 'up' | 'down';
+}) {
+  const valueColor = tone === 'up' ? 'text-[#15803D]' : tone === 'down' ? 'text-[#DC2626]' : 'text-[#064E3B]';
+  return (
+    <div className="min-w-0 rounded-lg border border-primary/20 bg-gradient-to-br from-white to-[#F0FDF7] px-3 py-2">
+      <p className="truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-0.5 truncate text-base font-extrabold tabular-nums ${valueColor}`} title={value}>{value}</p>
+      <p className="h-4 truncate text-[11px] font-semibold text-slate-500">{sub ?? '\u00A0'}</p>
+    </div>
+  );
+}
+
+// ── Kartu Sales per Branch (donut) & Top Customer (leaderboard) ──
+// Desain mengikuti kartu KPI di atas: palet hijau brand, strip aksen, glow
+// mint lembut, ikon dalam chip, angka tabular.
+const BRANCH_COLORS = ['#0F7D4E', '#14B8A6', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4'];
+const BRANCH_OTHERS_COLOR = '#CBD5E1';
+
+const fmtPct = (p: number) => `${p > 0 && p < 10 ? p.toFixed(1) : p.toFixed(0)}%`;
+const initialsOf = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+
+function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white">
+          <Icon size={17} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-bold text-foreground">{title}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function BranchDonutCard({ branches, total }: { branches: { name: string; value: number }[]; total: number }) {
+  const { t } = useLanguage();
+  const [hover, setHover] = useState<number | null>(null);
+
+  const segs = useMemo(() => {
+    const list = branches.map((b, i) => ({
+      name: b.name === 'Unassigned' ? t('Unassigned') : b.name,
+      value: b.value,
+      color: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    }));
+    const rest = total - branches.reduce((s2, b) => s2 + b.value, 0);
+    if (total > 0 && rest > total * 0.005) list.push({ name: t('Others'), value: rest, color: BRANCH_OTHERS_COLOR });
+    return list;
+  }, [branches, total, t]);
+
+  const R = 52;
+  const C = 2 * Math.PI * R;
+  const GAP = segs.length > 1 ? 2.5 : 0;
+  let acc = 0;
+  const arcs = segs.map((sg) => {
+    const frac = total > 0 ? sg.value / total : 0;
+    const arc = { ...sg, frac, len: Math.max(0, frac * C - GAP), off: acc };
+    acc += frac * C;
+    return arc;
+  });
+  const active = hover != null ? arcs[hover] : null;
+
+  return (
+    <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
+      <SalesCardHeader icon={Store} title={t('Sales per Branch')} subtitle={t('Gross sales by branch')} />
+      {segs.length === 0 || total <= 0 ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+      ) : (
+        <>
+          <div className="relative mx-auto h-[176px] w-[176px] shrink-0">
+            <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90" onMouseLeave={() => setHover(null)}>
+              <circle cx="70" cy="70" r={R} fill="none" stroke="#F1F5F9" strokeWidth="16" />
+              {arcs.map((a, i) => (
+                <circle
+                  key={`donut-${a.name}-${i}`}
+                  cx="70"
+                  cy="70"
+                  r={R}
+                  fill="none"
+                  stroke={a.color}
+                  strokeWidth={hover === i ? 20 : 16}
+                  strokeDasharray={`${a.len} ${C - a.len}`}
+                  strokeDashoffset={-a.off}
+                  opacity={hover == null || hover === i ? 1 : 0.35}
+                  style={{ transition: 'stroke-width 150ms, opacity 150ms', cursor: 'pointer' }}
+                  onMouseEnter={() => setHover(i)}
+                />
+              ))}
+            </svg>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-9 text-center">
+              <span className="max-w-full truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
+                {active ? active.name : t('Total Sales')}
+              </span>
+              <span className="mt-0.5 text-base font-extrabold tabular-nums text-[#064E3B]">
+                {formatIDR(active ? active.value : total, true)}
+              </span>
+              {active && <span className="text-[11px] font-semibold text-slate-500">{fmtPct(active.frac * 100)}</span>}
+            </div>
+          </div>
+
+          <ul className="mt-4 space-y-1">
+            {arcs.map((a, i) => (
+              <li
+                key={`legend-${a.name}-${i}`}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${hover === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={a.name}>{a.name}</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatIDR(a.value, true)}</span>
+                <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
+                  {fmtPct(a.frac * 100)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TopCustomerCard({ customers, total }: { customers: { name: string; amount: number; count: number }[]; total: number }) {
+  const { t } = useLanguage();
+  const max = customers[0]?.amount || 1;
+  const topShare = total > 0 ? (customers.reduce((s2, c) => s2 + c.amount, 0) / total) * 100 : 0;
+
+  return (
+    <div className="card-elevated-md rounded-xl p-5">
+      <SalesCardHeader
+        icon={Trophy}
+        title={t('Top Customer')}
+        subtitle={t('Berdasarkan kontribusi nominal')}
+        right={customers.length > 0 ? (
+          <span className="shrink-0 rounded-full bg-[#ECFDF5] px-3 py-1 text-[11px] font-bold text-[#047857] ring-1 ring-[#A7F3D0]">
+            Top {customers.length} · {fmtPct(topShare)} {t('of total sales')}
+          </span>
+        ) : undefined}
+      />
+      {customers.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {customers.map((c, i) => {
+            const first = i === 0;
+            const share = total > 0 ? (c.amount / total) * 100 : 0;
+            const badge = i === 0 ? 'bg-white/20 text-white' : i === 1 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 2 ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-slate-100 text-slate-600';
+            return (
+              <div
+                key={`top-customer-${c.name}`}
+                className={`relative overflow-hidden rounded-[10px] border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+                  first
+                    ? 'border-transparent bg-gradient-to-br from-[#0F7D4E] to-[#0B5E5C] text-white shadow-md'
+                    : 'border-primary/30 bg-gradient-to-br from-white via-white to-[#F0FDF7]'
+                }`}
+              >
+                <span className={`pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full blur-xl ${first ? 'bg-white opacity-10' : 'bg-[#6EE7B7] opacity-[0.15]'}`} />
+                <div className="relative flex items-center justify-between">
+                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-extrabold ${badge}`}>
+                    {first ? <Trophy size={12} /> : null}#{i + 1}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${first ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {fmtPct(share)}
+                  </span>
+                </div>
+                <div className="relative mt-3 flex items-center gap-2.5">
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ring-1 ${first ? 'bg-white/20 text-white ring-white/30' : 'bg-[#ECFDF5] text-[#047857] ring-white'}`}>
+                    {initialsOf(c.name)}
+                  </span>
+                  <p className={`min-w-0 truncate text-sm font-bold ${first ? 'text-white' : 'text-foreground'}`} title={c.name}>{c.name}</p>
+                </div>
+                <p className={`relative mt-3 truncate text-lg font-extrabold tabular-nums ${first ? 'text-white' : 'text-[#064E3B]'}`} title={formatIDR(c.amount)}>
+                  {formatIDR(c.amount)}
+                </p>
+                <p className={`relative text-[11px] font-semibold ${first ? 'text-white/75' : 'text-slate-500'}`}>
+                  {c.count} {t('invoices')}
+                </p>
+                <div className={`relative mt-2 h-1.5 w-full overflow-hidden rounded-full ${first ? 'bg-white/20' : 'bg-slate-100'}`}>
+                  <div
+                    className={`h-full rounded-full ${first ? 'bg-white' : 'bg-[#0F7D4E]'}`}
+                    style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -347,6 +579,24 @@ export default function SalesOverview() {
     ? yoyTrend.some((d) => d.thisYear > 0 || d.lastYear > 0)
     : trend.some((d) => d.total > 0);
 
+  // Ringkasan di atas chart (dihitung dari data asli, bukan preview drag).
+  const chartStats = useMemo(() => {
+    if (viewMode === 'Previous Year') {
+      const cur = yoyTrend.reduce((acc, d) => acc + d.thisYear, 0);
+      const prev = yoyTrend.reduce((acc, d) => acc + d.lastYear, 0);
+      return { kind: 'yoy' as const, cur, prev, growth: prev > 0 ? ((cur - prev) / prev) * 100 : null };
+    }
+    const total = trend.reduce((acc, d) => acc + d.total, 0);
+    const count = trend.reduce((acc, d) => acc + d.count, 0);
+    const firstIdx = trend.findIndex((d) => d.total > 0);
+    const activeMonths = firstIdx < 0 ? 0 : trend.length - firstIdx;
+    const peak = trend.reduce<{ month: string; total: number } | null>(
+      (best, d) => (d.total > 0 && (!best || d.total > best.total) ? { month: d.month, total: d.total } : best),
+      null
+    );
+    return { kind: 'actual' as const, total, count, avg: activeMonths > 0 ? total / activeMonths : 0, peak };
+  }, [viewMode, trend, yoyTrend]);
+
   // ── Sales per cabang & top customer ──
   const byBranch = useMemo(() => {
     const map = new Map<string, number>();
@@ -358,12 +608,15 @@ export default function SalesOverview() {
   }, [invoices]);
 
   const topCustomers = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { amount: number; count: number }>();
     invoices.forEach((i) => {
       const key = (i.customer_name || '').trim() || '-';
-      map.set(key, (map.get(key) || 0) + num(i.gross_amount));
+      const cur = map.get(key) ?? { amount: 0, count: 0 };
+      cur.amount += num(i.gross_amount);
+      cur.count += 1;
+      map.set(key, cur);
     });
-    return Array.from(map, ([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+    return Array.from(map, ([name, v]) => ({ name, amount: v.amount, count: v.count })).sort((a, b) => b.amount - a.amount).slice(0, 5);
   }, [invoices]);
 
   // ── Tabel invoice (cari + filter cabang + paging) ──
@@ -670,61 +923,68 @@ export default function SalesOverview() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {[
-                  activeClientName,
-                  viewMode === 'Previous Year'
-                    ? `${anchorYear - 1} vs ${anchorYear}`
-                    : trend.length > 1 ? `${trend[0].month} – ${trend[trend.length - 1].month}` : trend[0]?.month,
-                  t('Based on invoice date, gross amount'),
-                ].filter(Boolean).join(' · ')}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex gap-1">
-                {SALES_VIEW_MODES.map((m) => (
-                  <button
-                    key={`sales-mode-${m}`}
-                    onClick={() => setViewMode(m)}
-                    className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      viewMode === m ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'
-                    }`}
-                  >
-                    {t(m)}
-                  </button>
-                ))}
+          <SalesCardHeader
+            icon={TrendingUp}
+            title={t('Tren Sales Bulanan')}
+            subtitle={[
+              activeClientName,
+              viewMode === 'Previous Year'
+                ? `${anchorYear - 1} vs ${anchorYear}`
+                : trend.length > 1 ? `${trend[0].month} – ${trend[trend.length - 1].month}` : trend[0]?.month,
+              t('Based on invoice date, gross amount'),
+            ].filter(Boolean).join(' · ')}
+            right={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <SalesSegmented value={viewMode} options={SALES_VIEW_MODES} onChange={setViewMode} render={(m) => t(m)} />
+                {viewMode === 'Actual' && <SalesSegmented value={period} options={SALES_PERIODS} onChange={setPeriod} />}
               </div>
-              {viewMode === 'Actual' && (
-                <div className="flex gap-1">
-                  {SALES_PERIODS.map((p) => (
-                    <button
-                      key={`sales-period-${p}`}
-                      onClick={() => setPeriod(p)}
-                      className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                        period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+            }
+          />
+
+          {hasChartData && (
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {chartStats.kind === 'yoy' ? (
+                <>
+                  <SalesChartStat label={t('Tahun Ini')} value={formatIDR(chartStats.cur)} sub={String(anchorYear)} />
+                  <SalesChartStat label={t('Tahun Lalu')} value={formatIDR(chartStats.prev)} sub={String(anchorYear - 1)} />
+                  <SalesChartStat
+                    label={t('Growth')}
+                    value={chartStats.growth == null ? '—' : `${chartStats.growth >= 0 ? '+' : ''}${chartStats.growth.toFixed(1)}%`}
+                    tone={chartStats.growth == null ? 'default' : chartStats.growth >= 0 ? 'up' : 'down'}
+                    sub={`${t('Tahun Ini')} vs ${t('Tahun Lalu')}`}
+                  />
+                </>
+              ) : (
+                <>
+                  <SalesChartStat label={t('Total Sales')} value={formatIDR(chartStats.total)} sub={`${chartStats.count} ${t('invoices')}`} />
+                  <SalesChartStat label={t('Average / Month')} value={formatIDR(chartStats.avg)} />
+                  <SalesChartStat
+                    label={t('Peak Month')}
+                    value={chartStats.peak ? chartStats.peak.month : '—'}
+                    sub={chartStats.peak ? formatIDR(chartStats.peak.total, true) : undefined}
+                  />
+                </>
               )}
             </div>
-          </div>
+          )}
+
           {!hasChartData ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">
-              {loading ? t('Loading...') : invoices.length > 0 ? t('No sales invoices in this period — try a longer period.') : t('No sales invoices to display yet.')}
-            </p>
+            <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ECFDF5] text-[#047857]">
+                <TrendingUp size={18} />
+              </span>
+              <p className="text-xs text-muted-foreground">
+                {loading ? t('Loading...') : invoices.length > 0 ? t('No sales invoices in this period — try a longer period.') : t('No sales invoices to display yet.')}
+              </p>
+            </div>
           ) : (
+            <>
             <div className="relative">
-              <ResponsiveContainer width="100%" height={340}>
+              <ResponsiveContainer width="100%" height={300}>
                 {viewMode === 'Previous Year' ? (
                   <ComposedChart data={salesDisplayYoy} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
                     <YAxis
                       tickFormatter={v => formatIDR(v, true)}
                       tick={{ fontSize: 10, fill: '#94a3b8' }}
@@ -735,8 +995,8 @@ export default function SalesOverview() {
                       domain={salesYDomain}
                       allowDataOverflow
                     />
-                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={false} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
+                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={{ stroke: '#0F7D4E', strokeOpacity: 0.25, strokeDasharray: '3 3' }} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 6 }} formatter={(v) => t(v as string)} />
                     <Line
                       type="monotone"
                       dataKey="thisYear"
@@ -763,12 +1023,12 @@ export default function SalesOverview() {
                   <AreaChart data={salesDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gradSalesMain" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0F7D4E" stopOpacity={0.2} />
+                        <stop offset="5%" stopColor="#0F7D4E" stopOpacity={0.28} />
                         <stop offset="95%" stopColor="#0F7D4E" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={false} tickLine={false} />
                     <YAxis
                       tickFormatter={v => formatIDR(v, true)}
                       tick={{ fontSize: 10, fill: '#94a3b8' }}
@@ -779,7 +1039,7 @@ export default function SalesOverview() {
                       domain={salesYDomain}
                       allowDataOverflow
                     />
-                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={false} />
+                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={{ stroke: '#0F7D4E', strokeOpacity: 0.25, strokeDasharray: '3 3' }} />
                     <Area
                       type="monotone"
                       dataKey="total"
@@ -803,66 +1063,18 @@ export default function SalesOverview() {
                 style={{ width: SALES_AXIS_OVERLAY_WIDTH }}
               />
             </div>
+            <p className="mt-1 text-center text-[11px] text-slate-400">
+              {t('Tarik titik data untuk preview · tarik sumbu Y untuk zoom')}
+            </p>
+            </>
           )}
         </div>
 
-        <div className="space-y-4">
-        <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">{t('Sales per Branch')}</h2>
-          <p className="text-xs text-muted-foreground mb-3">{t('Gross sales by branch')}</p>
-          {byBranch.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada data.')}</p>
-          ) : (
-            <div className="space-y-2.5">
-              {byBranch.map((cat, i) => {
-                const total = byBranch.reduce((s, c) => s + c.value, 0);
-                const pct = total > 0 ? (cat.value / total) * 100 : 0;
-                return (
-                  <div key={cat.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name === 'Unassigned' ? t('Unassigned') : cat.name}</span>
-                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Top Customers */}
-        <div className="card-elevated-md rounded-xl p-5">
-        <h2 className="text-sm font-bold text-foreground mb-1">{t('Top Customer')}</h2>
-        <p className="text-xs text-muted-foreground mb-4">{t('Berdasarkan kontribusi nominal')}</p>
-        {topCustomers.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada data.')}</p>
-        ) : (
-          <div className="space-y-3">
-            {topCustomers.map((c, i) => {
-              const max = topCustomers[0].amount || 1;
-              return (
-                <div key={c.name} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-muted-foreground w-4">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
-                      <span className="text-xs font-semibold font-mono text-primary ml-2">{formatIDR(c.amount, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${(c.amount / max) * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        </div>
-        </div>
+        <BranchDonutCard branches={byBranch} total={grossSales} />
       </div>
+
+      {/* Top Customer -- leaderboard lebar penuh */}
+      <TopCustomerCard customers={topCustomers} total={grossSales} />
 
       {/* Tabel invoice Sales (read-only ringkasan -- edit/approve/posting ada di tab Sales Transaction) */}
       {invoices.length === 0 ? (
@@ -919,7 +1131,7 @@ export default function SalesOverview() {
                     <td className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${num(v) < 0 ? 'text-red-600' : ''} ${extra}`}>{formatIDR(num(v))}</td>
                   );
                   return (
-                    <tr key={r.id} className="border-b border-slate-300/70 hover:bg-slate-200/70 transition-colors text-xs">
+                    <tr key={r.id} className="border-b border-slate-400/80 hover:bg-slate-200/70 transition-colors text-xs">
                       <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalSingkat(r.invoice_date)}</td>
                       <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{r.invoice_no}</td>
                       <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{r.customer_name}</td>

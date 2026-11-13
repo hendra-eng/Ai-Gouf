@@ -500,7 +500,7 @@ export default function SalesExceptions() {
                   <tr
                     key={e.id}
                     onClick={() => openDetail(e)}
-                    className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selected?.id === e.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selected?.id === e.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                   >
                     <td className="py-2 px-3" onClick={ev => { ev.stopPropagation(); toggleRow(e.id); }}>
                       <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-border" />

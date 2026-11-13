@@ -775,7 +775,7 @@ export default function SalesJournalPreview() {
                 </thead>
                 <tbody>
                   {journalLines.map(l => (
-                    <tr key={l.no} className="border-b border-slate-300/70 text-xs transition-colors hover:bg-slate-200/70">
+                    <tr key={l.no} className="border-b border-slate-400/80 text-xs transition-colors hover:bg-slate-200/70">
                       <td className="px-4 py-2.5 text-muted-foreground">{l.no}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono font-semibold text-primary">{l.code ? kodeAkun(l.code) : '—'}</td>
                       <td className="px-4 py-2.5 font-medium text-foreground">{l.name ? t(l.name) : '—'}</td>

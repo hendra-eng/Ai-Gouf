@@ -1,16 +1,17 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
-import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
+import SourceKpiTile, { type KpiTone } from '@/components/shared/ProgressKpiTile';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseSourceRecords, mapSourceRecordToUi, listPurchaseImportTemplates } from '@/lib/purchaseStore';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ArrowTopRightOnSquareIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { ArrowsUpDownIcon } from '@heroicons/react/24/outline';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, MoreHorizontal, Eye, ChevronLeft, ChevronRight, ChevronDown, Check, Search, X } from 'lucide-react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -31,28 +32,132 @@ const sourceTypeColors: Record<string, string> = {
   Manual: 'bg-slate-100 text-slate-700',
 };
 
+// Badge status -- bentuk pil, ukuran & warna sama dengan tabel Source Data Sales.
+const BADGE_BASE = 'text-[11px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap';
+const SOURCE_STATUS_CLS: Record<SourceStatus, string> = {
+  Mapped: 'bg-emerald-100 text-emerald-700',
+  'Pending Mapping': 'bg-amber-100 text-amber-700',
+  'Validation Error': 'bg-red-100 text-red-700',
+  Imported: 'bg-blue-100 text-blue-700',
+};
+const VALIDATION_CLS: Record<ValidationStatus, string> = {
+  Valid: 'bg-emerald-100 text-emerald-700',
+  'Pending Validation': 'bg-amber-100 text-amber-700',
+  Invalid: 'bg-red-100 text-red-700',
+};
+
 function SourceStatusBadge({ status }: { status: SourceStatus }) {
-  const map: Record<SourceStatus, { cls: string; icon: React.ReactNode }> = {
-    Mapped: { cls: 'bg-green-50 text-green-700 border border-green-200', icon: <CheckCircleIcon className="w-3 h-3" /> },
-    'Pending Mapping': { cls: 'bg-amber-50 text-amber-700 border border-amber-200', icon: <ClockIcon className="w-3 h-3" /> },
-    'Validation Error': { cls: 'bg-red-50 text-red-700 border border-red-200', icon: <XCircleIcon className="w-3 h-3" /> },
-    Imported: { cls: 'bg-blue-50 text-blue-700 border border-blue-200', icon: <ClockIcon className="w-3 h-3" /> },
-  };
-  const { cls, icon } = map[status];
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-      {icon}{status}
-    </span>
-  );
+  return <span className={`${BADGE_BASE} ${SOURCE_STATUS_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
 }
 
 function ValidationBadge({ status }: { status: ValidationStatus }) {
-  const map: Record<ValidationStatus, string> = {
-    Valid: 'bg-green-50 text-green-700',
-    'Pending Validation': 'bg-amber-50 text-amber-700',
-    Invalid: 'bg-red-50 text-red-700',
-  };
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${map[status]}`}>{status}</span>;
+  return <span className={`${BADGE_BASE} ${VALIDATION_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
+}
+
+// Panel putih dengan header terpisah garis -- sama dengan SourcePanel di Sales.
+function SourcePanel({ title, leading, action, children }: {
+  title: string; leading?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {leading}
+          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+        </div>
+        {action}
+      </div>
+      <div className="flex flex-1 flex-col p-4">{children}</div>
+    </div>
+  );
+}
+
+function buildPageItems(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (current >= total - 2) { pages.add(total - 1); pages.add(total - 2); pages.add(total - 3); }
+  const sorted = Array.from(pages).filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  sorted.forEach((n, idx) => {
+    if (idx > 0 && n - sorted[idx - 1] > 1) out.push('…');
+    out.push(n);
+  });
+  return out;
+}
+
+// Dropdown filter -- sama dengan FilterSelect di tab Sales Transaction: tombol berborder hijau,
+// selalu terbuka ke bawah, kolom cari bila opsi banyak, hover/terpilih hijau brand.
+interface FilterOption { value: string; label: string }
+
+function FilterSelect({ value, onChange, options }: {
+  value: string; onChange: (v: string) => void; options: FilterOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+
+  const current = options.find(o => o.value === value) ?? options[0];
+  const searchable = options.length > 10;
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setQ(''); }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+      >
+        <span className="truncate max-w-[170px]">{current?.label}</span>
+        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+          {searchable && (
+            <div className="border-b border-border p-2">
+              <input
+                autoFocus
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search..."
+                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+          )}
+          <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Not found</li>}
+            {shown.map(o => {
+              const selected = o.value === value;
+              return (
+                <li key={o.value} role="option" aria-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(o.value); setOpen(false); }}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                  >
+                    <span className="truncate">{o.label}</span>
+                    {selected && <Check size={14} className="shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function PurchaseSourceDataPage() {
@@ -95,12 +200,15 @@ export default function PurchaseSourceDataPage() {
     });
     return data;
   }, [purchaseSourceRecords, search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
-  // Paging 20 baris (sama dengan tabel Journal Entry). Kembali ke hal. 1 tiap filter/sort berubah.
+  // Paging gaya tab Source Data Sales (pilih baris per halaman 10/25/50). Kembali ke hal. 1 tiap filter/sort berubah.
+  const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [menuRowId, setMenuRowId] = useState<string | number | null>(null);
   useEffect(() => { setCurrentPage(1); }, [search, typeFilter, statusFilter, vendorFilter, sortField, sortDir]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const goToPage = (n: number) => setCurrentPage(Math.min(Math.max(1, n), totalPages));
 
 
   // ── Action bar (pola sama dengan tab Source Data Sales) ──
@@ -142,6 +250,10 @@ export default function PurchaseSourceDataPage() {
 
   // Export = semua baris hasil filter/sort saat ini, bukan cuma 1 halaman.
   const handleExport = async () => {
+    if (filtered.length === 0) {
+      toast.info('No source records to export.');
+      return;
+    }
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Source Data');
     sheet.columns = [
@@ -192,165 +304,246 @@ export default function PurchaseSourceDataPage() {
     else { setSortField(field); setSortDir('desc'); }
   };
 
-  const summary = useMemo(() => ({
-    total: purchaseSourceRecords.length,
-    mapped: purchaseSourceRecords.filter(r => r.status === 'Mapped').length,
-    pending: purchaseSourceRecords.filter(r => r.status === 'Pending Mapping').length,
-    errors: purchaseSourceRecords.filter(r => r.status === 'Validation Error').length,
-    totalAmount: purchaseSourceRecords.reduce((s, r) => s + r.totalAmount, 0),
-  }), [purchaseSourceRecords]);
+  const kpi = useMemo(() => {
+    const total = purchaseSourceRecords.length;
+    const group = (st?: string) => {
+      const rows = st ? purchaseSourceRecords.filter(r => r.status === st) : purchaseSourceRecords;
+      return { count: rows.length, value: rows.reduce((s, r) => s + r.totalAmount, 0) };
+    };
+    const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+    return { total: group(), pending: group('Pending Mapping'), mapped: group('Mapped'), errors: group('Validation Error'), pctOf };
+  }, [purchaseSourceRecords]);
+
+  // Tombol aksi -- ditaruh di baris yang sama dengan tab (sama dengan Source Data Sales).
+  const actionBar = (
+    <div className="flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>button]:whitespace-nowrap">
+      <button onClick={handleUploadClick} disabled={!activeClientId} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary disabled:opacity-50">
+        <Upload size={13} /> Upload File
+      </button>
+      <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Download size={13} /> Template Excel
+      </button>
+      <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Download size={13} /> Export
+      </button>
+      <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
+        <Settings size={13} /> Mapping Rules
+      </button>
+    </div>
+  );
+
+  const kpiTiles: { label: string; g: { count: number; value: number }; tone: KpiTone; icon: React.ElementType; pctLabel: string }[] = [
+    { label: 'Total Sources', g: kpi.total, tone: 'slate', icon: Upload, pctLabel: 'of all sources' },
+    { label: 'Pending Mapping', g: kpi.pending, tone: 'amber', icon: Clock, pctLabel: 'of all sources' },
+    { label: 'Mapped', g: kpi.mapped, tone: 'green', icon: CheckCircle, pctLabel: 'of all sources' },
+    { label: 'Validation Errors', g: kpi.errors, tone: 'sky', icon: AlertTriangle, pctLabel: 'of all sources' },
+  ];
+
+  const columns = [
+    { label: 'Source ID', field: 'sourceId', align: 'left' },
+    { label: 'Type', field: 'sourceType', align: 'left' },
+    { label: 'Vendor', field: 'vendor', align: 'left' },
+    { label: 'Date', field: 'sourceDate', align: 'left' },
+    { label: 'Invoice No.', field: 'invoiceNumber', align: 'left' },
+    { label: 'PO Number', field: 'poNumber', align: 'left' },
+    { label: 'Amount', field: 'amount', align: 'right' },
+    { label: 'Tax', field: 'taxAmount', align: 'right' },
+    { label: 'Total', field: 'totalAmount', align: 'right' },
+    { label: 'Purchase Ref', field: 'relatedPurchaseId', align: 'left' },
+    { label: 'Validation', field: 'validationStatus', align: 'left' },
+    { label: 'Status', field: 'status', align: 'left' },
+  ];
 
   return (
-      <div className="space-y-6 fade-in">
-        <PurchaseTabs />
-        {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
+    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0 fade-in">
+      <PurchaseTabs actions={actionBar} />
+      {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
-        {/* Action Bar */}
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <button onClick={handleUploadClick} disabled={!activeClientId} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
-            <ArrowUpTrayIcon className="w-3.5 h-3.5" /> Upload File
-          </button>
-          <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5">
-            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Excel Template
-          </button>
-          <button onClick={handleExport} disabled={filtered.length === 0} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
-            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Export
-          </button>
-          <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
-            <Cog6ToothIcon className="w-3.5 h-3.5" /> Mapping Rules
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total Sources', value: summary.total, sub: 'All source documents', color: 'text-slate-700', bg: 'bg-slate-50' },
-            { label: 'Mapped', value: summary.mapped, sub: `${Math.round(summary.mapped / summary.total * 100)}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
-            { label: 'Pending Mapping', value: summary.pending, sub: 'Awaiting transaction', color: 'text-amber-700', bg: 'bg-amber-50' },
-            { label: 'Validation Errors', value: summary.errors, sub: 'Require correction', color: 'text-red-700', bg: 'bg-red-50' },
-            { label: 'Total Source Value', value: fmt(summary.totalAmount), sub: 'Gross incl. tax', color: 'text-blue-700', bg: 'bg-blue-50' },
-          ].map(card => (
-            <div key={card.label} className="je-card p-4">
-              <p className={`text-xl font-bold tabular-nums ${card.color}`}>{card.value}</p>
-              <p className="text-xs font-semibold text-foreground mt-0.5">{card.label}</p>
-              <p className="text-xs text-muted-foreground">{card.sub}</p>
-            </div>
+      <div className="pt-5 space-y-5">
+        {/* KPI Cards -- 4 kartu, ukuran & posisi sama dengan Source Data Sales */}
+        <div className="!mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpiTiles.map(k => (
+            <SourceKpiTile
+              key={k.label}
+              label={k.label}
+              value={k.g.count}
+              detail={fmt(k.g.value)}
+              detailUnit="gross incl. tax"
+              pct={kpi.pctOf(k.g.count)}
+              pctLabel={k.pctLabel}
+              tone={k.tone}
+              icon={k.icon}
+            />
           ))}
         </div>
 
-        {/* Filters */}
-        <div className="je-card p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                className="je-input pl-9"
-                placeholder="Search by source ID, invoice number, PO number, vendor, or description…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+        {/* Source Record Table */}
+        <div className="card overflow-hidden">
+          <div className="px-0 py-3 border-b border-border flex flex-col gap-3">
+            <div>
+              <h3 className="text-2xl font-bold text-foreground">Purchase Source Record List</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {filtered.length === 0
+                  ? `Showing 0 of ${purchaseSourceRecords.length} records`
+                  : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} records`}
+              </p>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-                  {sourceTypes.map(t => <option key={t}>{t}</option>)}
-                </select>
+            {/* Filter bar -- gaya sama dengan tab Sales Transaction: dropdown di kiri, kolom cari di kanan */}
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                value={typeFilter}
+                onChange={setTypeFilter}
+                options={sourceTypes.map(t => ({ value: t, label: t === 'All' ? 'All Types' : t }))}
+              />
+              <FilterSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={statuses.map(st => ({ value: st, label: st === 'All' ? 'All Statuses' : st }))}
+              />
+              <FilterSelect
+                value={vendorFilter}
+                onChange={setVendorFilter}
+                options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
+              />
+              <div className="relative ml-auto w-full sm:w-[400px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search source, invoice, PO, vendor..."
+                  className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
               </div>
-              <select className="je-select text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                {statuses.map(s => <option key={s}>{s}</option>)}
-              </select>
-              <select className="je-select text-sm" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}>
-                {uniqueVendors.map(v => <option key={v}>{v}</option>)}
-              </select>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">{filtered.length} of {purchaseSourceRecords.length} source records</p>
-        </div>
 
-        {/* Table */}
-        <div className="je-card overflow-hidden">
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1100px]">
               <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  {[
-                    { label: 'Source ID', field: 'sourceId' },
-                    { label: 'Type', field: 'sourceType' },
-                    { label: 'Vendor', field: 'vendor' },
-                    { label: 'Date', field: 'sourceDate' },
-                    { label: 'Invoice No.', field: 'invoiceNumber' },
-                    { label: 'PO Number', field: 'poNumber' },
-                    { label: 'Amount', field: 'amount' },
-                    { label: 'Tax', field: 'taxAmount' },
-                    { label: 'Total', field: 'totalAmount' },
-                    { label: 'Purchase Ref', field: 'relatedPurchaseId' },
-                    { label: 'Validation', field: 'validationStatus' },
-                    { label: 'Status', field: 'status' },
-                  ].map(col => (
+                <tr className="bg-[#8FE3B5]">
+                  {columns.map(col => (
                     <th
                       key={col.field}
-                      className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer hover:text-foreground select-none whitespace-nowrap"
                       onClick={() => handleSort(col.field)}
+                      className={`py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32] cursor-pointer select-none hover:text-[#064E3B] ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                     >
-                      <span className="flex items-center gap-1">{col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-50" /></span>
+                      <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'flex-row-reverse' : ''}`}>
+                        {col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-60" />
+                      </span>
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Actions</th>
+                  <th className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={13} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
+                  <tr><td colSpan={13} className="py-8 text-center text-xs text-muted-foreground">No source records match your filters.</td></tr>
                 ) : paginated.map(row => (
-                  <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.sourceId}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceTypeColors[row.sourceType] || 'bg-gray-100 text-gray-700'}`}>{row.sourceType}</span>
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedRow(row)}
+                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedRow?.id === row.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                  >
+                    <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      <span className={`${BADGE_BASE} ${sourceTypeColors[row.sourceType] || 'bg-gray-100 text-gray-700'}`}>{row.sourceType}</span>
                     </td>
-                    <td className="px-4 py-3 text-xs font-medium text-foreground whitespace-nowrap max-w-[140px] truncate">{row.vendor}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.sourceDate}</td>
-                    <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{row.invoiceNumber || <span className="text-muted-foreground italic">—</span>}</td>
-                    <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{row.poNumber}</td>
-                    <td className="px-4 py-3 text-xs font-semibold tabular-nums text-right whitespace-nowrap">{fmt(row.amount)}</td>
-                    <td className="px-4 py-3 text-xs tabular-nums text-right whitespace-nowrap text-muted-foreground">{fmt(row.taxAmount)}</td>
-                    <td className="px-4 py-3 text-xs font-bold tabular-nums text-right whitespace-nowrap">{fmt(row.totalAmount)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {row.relatedPurchaseId ? (
-                        <span className="font-mono text-xs text-primary font-medium">{row.relatedPurchaseId}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">Not mapped</span>
-                      )}
+                    <td className="py-2 px-2 text-foreground font-medium whitespace-nowrap max-w-[160px] truncate">{row.vendor}</td>
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{row.sourceDate}</td>
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.invoiceNumber || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.poNumber || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{fmt(row.amount)}</td>
+                    <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap text-muted-foreground">{fmt(row.taxAmount)}</td>
+                    <td className="py-2 px-2 text-right font-semibold tabular-nums whitespace-nowrap">{fmt(row.totalAmount)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      {row.relatedPurchaseId
+                        ? <span className="font-medium text-primary">{row.relatedPurchaseId}</span>
+                        : <span className="text-muted-foreground">Not mapped</span>}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap"><ValidationBadge status={row.validationStatus} /></td>
-                    <td className="px-4 py-3 whitespace-nowrap"><SourceStatusBadge status={row.status} /></td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
-                        View <ArrowTopRightOnSquareIcon className="w-3 h-3" />
-                      </button>
+                    <td className="py-2 px-2 whitespace-nowrap"><ValidationBadge status={row.validationStatus} /></td>
+                    <td className="py-2 px-2 whitespace-nowrap"><SourceStatusBadge status={row.status} /></td>
+                    <td className="py-2 px-2">
+                      <div className="relative" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setMenuRowId(menuRowId === row.id ? null : row.id)}
+                          className="p-1 hover:bg-muted rounded transition-colors"
+                          aria-label="Actions"
+                        >
+                          <MoreHorizontal size={14} className="text-muted-foreground" />
+                        </button>
+                        {menuRowId === row.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuRowId(null)} />
+                            <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-border bg-card shadow-lg py-1">
+                              <button
+                                onClick={() => { setSelectedRow(row); setMenuRowId(null); }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left"
+                              >
+                                <Eye size={12} /> View detail
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
+
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <span>Rows per page</span>
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <span className="hidden sm:inline text-slate-300">|</span>
+              <span>
+                <span className="font-semibold text-foreground">
+                  {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
+                </span>{' '}
+                of <span className="font-semibold text-foreground">{filtered.length}</span> records
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label="Previous page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronLeft size={16} /></button>
+              {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+                p === '…' ? (
+                  <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+                ) : (
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                )
+              )}
+              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
+            </div>
+          </div>
         </div>
 
-        {/* Detail Panel */}
+        {/* Detail Panel -- gaya SourcePanel Sales */}
         {selectedRow && (
-          <div className="je-card p-6">
-            <div className="flex items-start justify-between mb-5">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceTypeColors[selectedRow.sourceType] || 'bg-gray-100 text-gray-700'}`}>{selectedRow.sourceType}</span>
-                  <SourceStatusBadge status={selectedRow.status} />
-                </div>
-                <h3 className="text-base font-bold text-foreground">{selectedRow.sourceId}</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">{selectedRow.description}</p>
-              </div>
-              <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+          <SourcePanel
+            title={selectedRow.sourceId}
+            leading={
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><FileText size={17} /></span>
+            }
+            action={
+              <button onClick={() => setSelectedRow(null)} className="flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs text-slate-600 hover:bg-slate-100">
+                <X size={13} /> Close
+              </button>
+            }
+          >
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className={`${BADGE_BASE} ${sourceTypeColors[selectedRow.sourceType] || 'bg-gray-100 text-gray-700'}`}>{selectedRow.sourceType}</span>
+              <SourceStatusBadge status={selectedRow.status} />
+              <ValidationBadge status={selectedRow.validationStatus} />
             </div>
+            <p className="mb-4 text-sm text-muted-foreground">{selectedRow.description}</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               {[
                 { label: 'Vendor', value: selectedRow.vendor },
@@ -369,35 +562,35 @@ export default function PurchaseSourceDataPage() {
               ))}
             </div>
             <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-4">
-              <div className="bg-muted/40 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">Net Amount</p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-600">Net Amount</p>
                 <p className="text-base font-bold text-foreground tabular-nums">{fmt(selectedRow.amount)}</p>
               </div>
-              <div className="bg-muted/40 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">Tax Amount</p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-medium text-slate-600">Tax Amount</p>
                 <p className="text-base font-bold text-foreground tabular-nums">{fmt(selectedRow.taxAmount)}</p>
               </div>
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs text-blue-600">Total Amount</p>
-                <p className="text-base font-bold text-blue-700 tabular-nums">{fmt(selectedRow.totalAmount)}</p>
+              <div className="rounded-xl border border-[#6EE7B7]/60 bg-[#ECFDF5] p-3">
+                <p className="text-xs font-medium text-[#047857]">Total Amount</p>
+                <p className="text-base font-bold text-[#064E3B] tabular-nums">{fmt(selectedRow.totalAmount)}</p>
               </div>
             </div>
-            {selectedRow.relatedPurchaseId && (
-              <div className="mt-3 flex items-center gap-2 bg-green-50 rounded-lg px-4 py-2.5">
-                <CheckCircleIcon className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <p className="text-xs text-green-700">Mapped to purchase transaction: <span className="font-bold font-mono">{selectedRow.relatedPurchaseId}</span></p>
+            {selectedRow.relatedPurchaseId ? (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-[#6EE7B7]/60 bg-[#ECFDF5] px-4 py-2.5">
+                <CheckCircle size={16} className="text-[#047857] shrink-0" />
+                <p className="text-xs text-[#065F46]">Mapped to purchase transaction: <span className="font-bold">{selectedRow.relatedPurchaseId}</span></p>
               </div>
-            )}
-            {!selectedRow.relatedPurchaseId && (
-              <div className="mt-3 flex items-center gap-2 bg-amber-50 rounded-lg px-4 py-2.5">
-                <ClockIcon className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            ) : (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
+                <Clock size={16} className="text-amber-600 shrink-0" />
                 <p className="text-xs text-amber-700">This source document has not yet been mapped to a purchase transaction.</p>
               </div>
             )}
-          </div>
+          </SourcePanel>
         )}
-
-        {showMapping && <MappingRulesModal onClose={() => setShowMapping(false)} loadTemplates={loadTemplates} />}
       </div>
+
+      {showMapping && <MappingRulesModal onClose={() => setShowMapping(false)} loadTemplates={loadTemplates} />}
+    </div>
   );
 }

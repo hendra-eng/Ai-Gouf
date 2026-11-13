@@ -497,7 +497,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                 <tr
                   key={f.id}
                   onClick={() => setSelectedFileId(f.id)}
-                  className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                  className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                 >
                   <td className="py-2 px-2 text-xs text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
                   <td className="py-2 px-2">
@@ -630,7 +630,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                   </thead>
                   <tbody>
                     {pagedPreviewRows.map(r => (
-                      <tr key={r.id} className="border-b border-slate-300/70 transition-colors hover:bg-slate-200/70">
+                      <tr key={r.id} className="border-b border-slate-400/80 transition-colors hover:bg-slate-200/70">
                         <td className="px-2 py-2 text-muted-foreground">{r.row_no}</td>
                         <td className="whitespace-nowrap px-2 py-2">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
                         <td className="whitespace-nowrap px-2 py-2 font-medium text-primary">{r.no_invoice || '-'}</td>

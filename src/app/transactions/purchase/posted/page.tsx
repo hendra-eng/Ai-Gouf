@@ -119,7 +119,7 @@ export default function PurchasePostedPage() {
   }), [postedPurchases]);
 
   return (
-      <div className="space-y-6 fade-in">
+      <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-6 fade-in">
         <PurchaseTabs />
 
         {/* Summary Cards */}
