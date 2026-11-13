@@ -57,7 +57,8 @@ backend/logs/*.log*
 backend/encryption.key
 
 Gouf Task Documents.xlsx
-dataset/picture/*backend/logs/
+dataset/picture/*
+backend/logs/
 backend/logs/
 backend/logs/
 
