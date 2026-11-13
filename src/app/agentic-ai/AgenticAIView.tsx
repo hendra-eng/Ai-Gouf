@@ -1,21 +1,16 @@
 'use client';
 
-// Agentic AI: kantor 3D dengan tiga agen (Neo, Atlas, Zeno).
-// Tidak ada kontrol suara/ketik di halaman ini. Pengguna bicara lewat asisten suara global (robot Neo), persis seperti di halaman lain.
-// [BARU] Ketiga AI di ruangan Transaction bisa diajak bicara LANGSUNG dengan menyebut namanya di awal ucapan ("Atlas, apa kamu
-// mendengarku?", "Zeno, tolong cek halaman purchase"): yang dipanggil menjawab dengan suara dan otaknya sendiri (satu API Gemini,
-// tiga model suara), dan tahu tugas/bagiannya dari database (lihat VoiceAssistant.tsx::penuturRef dan backend/profil_agen_db.py).
-// Neo adalah manager: saat pengguna bilang "ayo kita meeting", Neo (bersuara) mengajak
-// Atlas dan Zeno, lalu keduanya duduk di meja rapat sampai pengguna bilang "meeting selesai" (lihat src/lib/rapatKantor.ts
-// dan VoiceAssistant.tsx::jalankanRapat). Halaman ini hanya mendengarkan event rapat dan menggerakkan agen di scene.
+// Agentic AI: kantor 3D dengan tiga agen (Neo, Atlas, Zeno) -- VERSI TAMPILAN SAJA.
+// [DITAHAN SEMENTARA] Fungsi AI belum ikut: tidak ada kontrol suara, rapat, maupun tugas dari server/database.
+// Halaman ini hanya menampilkan scene 3D: agen santai di ruangannya, klik ruangan untuk fokus, Esc untuk lepas.
+// Saat fungsinya diaktifkan lagi, kembalikan pemakaian rapatKantor.ts & tugasKantor.ts (lihat versi playground-hendra):
+// status `rapat` dan `tugas` di bawah akan datang dari event suara + sinkron server (/api/kantor-rapat, /api/kantor-tugas).
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { AgentStatus, PenghuniInfo } from './components/OfficeScene';
 import { AI_PENGHUNI } from './ai-roster';
 import AiFace from './AiFace';
-import { EVENT_RAPAT, muatRapatDariServer, rapatSedangBerlangsung } from '@/lib/rapatKantor';
-import { EVENT_TUGAS, tugasSaatIni, sinkronTugasServer } from '@/lib/tugasKantor';
 
 // Three.js butuh browser (WebGL), jadi scene dimuat hanya di sisi client.
 const OfficeScene = dynamic(() => import('./components/OfficeScene'), {
@@ -63,52 +58,26 @@ const AGENTS: { name: 'Neo' | 'Atlas' | 'Zeno'; color: string; icon?: string; fa
   { name: 'Zeno', color: '#E8741E', icon: '🦊' },
 ];
 
+const TUGAS_KOSONG: Record<'Neo' | 'Atlas' | 'Zeno', number | null> = { Neo: null, Atlas: null, Zeno: null };
+
 // AppLayout memberi padding & max-width; div ini membatalkannya (pola sama dengan ZafebAIView)
 // supaya kantor mengisi seluruh area di bawah Topbar.
 export default function AgenticAIView() {
   const [status, setStatus] = useState<Record<string, AgentStatus>>({});
   const onAgentStatus = useCallback((name: string, s: AgentStatus) => setStatus((p) => ({ ...p, [name]: s })), []);
 
-  // Status rapat dikendalikan Neo global lewat event; nilai awal dari modul (kalau rapat sedang berlangsung saat halaman dibuka).
-  const [rapat, setRapat] = useState<boolean>(() => rapatSedangBerlangsung());
-  useEffect(() => {
-    const saatRapat = (e: Event) => setRapat(!!(e as CustomEvent<{ aktif: boolean }>).detail?.aktif);
-    window.addEventListener(EVENT_RAPAT, saatRapat);
-    return () => window.removeEventListener(EVENT_RAPAT, saatRapat);
-  }, []);
-
-  // Tugas halaman (Sales / Purchase / ...): meja yang sedang dikerjakan tiap agen, dari perintah suara ke Neo (src/lib/tugasKantor.ts).
-  // [PERBAIKAN] Tugas dibaca dari penyimpanan (localStorage) SETELAH mount; scene baru dirender sesudahnya (siap = true),
-  // jadi agen langsung muncul di posisi yang benar (di meja tugasnya / di meja rapat), bukan di posisi awal lalu pindah.
-  const [tugas, setTugas] = useState<ReturnType<typeof tugasSaatIni>>({ Neo: null, Atlas: null, Zeno: null });
-  const [siap, setSiap] = useState(false);
+  // [DITAHAN] Rapat & tugas agen (dari suara Neo + database) dimatikan: kantor selalu dalam keadaan santai.
+  // Konstanta di luar komponen supaya referensinya stabil (scene 3D tidak dirender ulang tanpa perlu).
+  const rapat = false;
+  const tugas = TUGAS_KOSONG;
   // Ruangan yang sedang difokuskan (klik ruangan di scene; Esc / klik area kosong = lepas).
   const [fokus, setFokus] = useState<string | null>(null);
   const [agenDi, setAgenDi] = useState<string[]>([]); // Neo / Atlas / Zeno yang sedang ada di ruangan terfokus
   const [penghuni, setPenghuni] = useState<Record<string, PenghuniInfo>>({}); // AI penghuni yang sedang ada di ruangan terfokus (termasuk tamu)
-  useEffect(() => {
-    // [PERFORMA] Hanya ubah state kalau isinya benar-benar berubah. Sebelumnya setTugas(objek baru) dipanggil tiap 5 detik,
-    // sehingga seluruh scene 3D dirender ulang (patah-patah berkala) walaupun tugasnya sama.
-    const saatTugas = () => {
-      const baru = tugasSaatIni(); // dipanggil di luar updater (punya efek samping)
-      setTugas((lama) => (lama.Neo === baru.Neo && lama.Atlas === baru.Atlas && lama.Zeno === baru.Zeno ? lama : baru));
-    };
-    let hidup = true;
-    saatTugas();
-    window.addEventListener(EVENT_TUGAS, saatTugas);
-    // [PERBAIKAN] Sumber kebenaran = tabel ai_tugas_kantor di database. Scene baru dirender SETELAH sinkron pertama
-    // selesai (berhasil / gagal -> pakai cadangan localStorage), jadi agen langsung muncul di posisi yang benar.
-    // [ATURAN MUTLAK] Status rapat juga dari server: scene baru dirender SETELAH tugas DAN rapat tersinkron, jadi kalau meeting
-    // masih berlangsung, semua agen langsung duduk di meja rapat (tidak jalan dari posisi awal, tidak pernah beranjak sendiri).
-    void Promise.all([sinkronTugasServer(), muatRapatDariServer()]).finally(() => { if (hidup) { saatTugas(); setRapat(rapatSedangBerlangsung()); setSiap(true); } });
-    // tab yang tertidur bisa melewatkan timer; sinkron berkala supaya tugas kadaluarsa / dari perangkat lain ikut terbarui
-    const cek = setInterval(() => { saatTugas(); void sinkronTugasServer(); void muatRapatDariServer(); }, 5000);
-    return () => { hidup = false; window.removeEventListener(EVENT_TUGAS, saatTugas); clearInterval(cek); };
-  }, []);
 
   return (
     <div className="w-full h-[calc(100vh-4rem)] overflow-hidden relative isolate bg-[radial-gradient(ellipse_at_50%_45%,#12332A_0%,#0A1A14_45%,#020605_100%)]">
-      {siap && <OfficeScene onAgentStatus={onAgentStatus} rapat={rapat} tugas={tugas} onFokusRuang={(n) => { setFokus(n); if (!n) { setAgenDi([]); setPenghuni({}); } }} onAgenDiRuang={setAgenDi} onPenghuni={setPenghuni} />}
+      <OfficeScene onAgentStatus={onAgentStatus} rapat={rapat} tugas={tugas} onFokusRuang={(n) => { setFokus(n); if (!n) { setAgenDi([]); setPenghuni({}); } }} onAgenDiRuang={setAgenDi} onPenghuni={setPenghuni} />
 
       {fokus && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
