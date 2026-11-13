@@ -166,7 +166,7 @@ class PurchaseTransactionCreateRequest(BaseModel):
     approved_by_name: Optional[str] = Field(None, max_length=255)
     posted_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[str] = None
     posting_date: Optional[date] = None
     posted_at: Optional[datetime] = None
     ap_account_code: Optional[str] = Field(None, max_length=50)   # Cr Hutang Usaha -- kosong = akun default
@@ -205,7 +205,7 @@ class PurchaseTransactionUpdateRequest(BaseModel):
     approved_by_name: Optional[str] = Field(None, max_length=255)
     posted_by_name: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[str] = None
     posting_date: Optional[date] = None
     posted_at: Optional[datetime] = None
     ap_account_code: Optional[str] = Field(None, max_length=50)   # Cr Hutang Usaha -- kosong = akun default

@@ -51,7 +51,7 @@
 -- level baris = SHA-256("<hash_ocbc>:<hash_mandiri>")
 --   = a9a18ef122f7e8e7c9ec081d6df20748c724cd5bba4777d5d7f91848551e339f
 --
--- Klien dicari lewat nama_client = 'PT WELL STAR INDONESIA' (sesuai data klien di VPS); GAGAL jelas kalau klien atau akun COA
+-- Klien dicari lewat client_code = 'WSI' (bukan nama klien); GAGAL jelas kalau klien atau akun COA
 -- belum ada. client_id / coa id TIDAK di-hardcode.
 --
 -- Cara pakai:
@@ -61,9 +61,9 @@
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan. Untuk menjalankan ulang:
 --   DELETE FROM financial_transaction_bank_cash_bank_mappings m USING management_clients c
---    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) = 'PT WELL STAR INDONESIA';
+--    WHERE m.client_id = c.id AND upper(trim(c.client_code)) = 'WSI';
 --   DELETE FROM financial_transaction_bank_cash_import_templates t USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'PT WELL STAR INDONESIA';
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'WSI';
 
 DO $do$
 DECLARE
@@ -84,16 +84,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT WELL STAR INDONESIA'
+      AND upper(trim(client_code)) = 'WSI'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT WELL STAR INDONESIA') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT WELL STAR INDONESIA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien WSI belum ada di management_clients (dicari nama_client = ''PT WELL STAR INDONESIA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien WSI belum ada di management_clients (dicari client_code = ''WSI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     SELECT id INTO v_coa_ocbc_idr FROM management_client_coa WHERE client_id = v_client_id AND acc_no = v_acc_ocbc_idr AND deleted_at IS NULL LIMIT 1;
@@ -327,9 +323,9 @@ $do$;
 -- SELECT t.template_name, t.file_type, jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian
 -- FROM financial_transaction_bank_cash_import_templates t
 -- JOIN management_clients c ON c.id = t.client_id
--- WHERE upper(trim(c.nama_client)) = 'PT WELL STAR INDONESIA' AND t.deleted_at IS NULL;
+-- WHERE upper(c.client_code) = 'WSI' AND t.deleted_at IS NULL;
 -- SELECT m.bank_name, m.account_number, m.match_keyword, a.acc_no, a.account_name
 -- FROM financial_transaction_bank_cash_bank_mappings m
 -- JOIN management_client_coa a ON a.id = m.bank_coa_id
 -- JOIN management_clients c ON c.id = m.client_id
--- WHERE upper(trim(c.nama_client)) = 'PT WELL STAR INDONESIA' AND m.deleted_at IS NULL;
+-- WHERE upper(c.client_code) = 'WSI' AND m.deleted_at IS NULL;

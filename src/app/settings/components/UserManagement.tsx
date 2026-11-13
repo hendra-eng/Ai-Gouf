@@ -74,7 +74,7 @@ export default function UserManagement() {
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={18} /></span>
             <div>
               <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-              <p className="text-xl font-bold tabular-nums text-foreground">{n}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none">{n}</p>
             </div>
           </div>
         ))}

@@ -1,4 +1,5 @@
-import OtherPage from './components/OtherWorkspace';
+import React from 'react';
+import OtherWorkspace from './components/OtherWorkspace';
 
 export const metadata = {
   title: 'Other Transactions — zafeb',
@@ -6,5 +7,5 @@ export const metadata = {
 };
 
 export default function OtherTransactionsPage() {
-  return <OtherPage />;
+  return <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}><OtherWorkspace /></React.Suspense>;
 }

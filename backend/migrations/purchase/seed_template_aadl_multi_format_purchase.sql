@@ -117,7 +117,7 @@
 --  seed sales AADL untuk cabang yang berjudul sama.) header_row_index/data_start_row_index
 -- level baris hanya pengisi kolom NOT NULL untuk template Multi.
 --
--- KLIEN: dicari lewat nama_client = 'PT AKSHAYA ANANDA DYLAN LESTARI' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'AADL' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- PRASYARAT KODE: purchase_import_v1.py versi yang memuat format_type monthly_petty_cash_ledger
@@ -132,7 +132,7 @@
 -- Kalau mau benar-benar membuang baris lama:
 --   DELETE FROM financial_transaction_purchase_import_templates t
 --    USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI'
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'AADL'
 --      AND t.file_type = 'Multi'
 --      AND t.column_signature_hash = '2179d0165ee1e40c7b3b774d00ae35fcb2db715381d7b82adf47d1a5fb8db7e0';
 
@@ -152,16 +152,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI'
+      AND upper(trim(client_code)) = 'AADL'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT AKSHAYA ANANDA DYLAN LESTARI di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari nama_client = ''PT AKSHAYA ANANDA DYLAN LESTARI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari client_code = ''AADL''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     v_rules := $json${
@@ -914,4 +910,4 @@ $do$;
 --        (SELECT string_agg(v->'mapping_rules'->>'cabang_tetap', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS cabang
 -- FROM financial_transaction_purchase_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'AADL';

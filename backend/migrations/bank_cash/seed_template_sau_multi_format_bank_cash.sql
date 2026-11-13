@@ -34,7 +34,7 @@
 -- = cb986d899150d6496fd674ac4d14a4be353a0e29c08cfa68f5162b792cddcab6
 --
 -- AKUN COA (seed_coa_sau.sql): BCA 11200001, Mandiri 11200002, BRI 11200003, Kas Kasir 11100002.
--- Klien dicari lewat nama_client = 'CV SUMBER ALODIE UTAMA' (sesuai data klien di VPS); GAGAL jelas
+-- Klien dicari lewat client_code = 'SAU' (bukan nama klien); GAGAL jelas
 -- kalau klien atau akun COA belum ada. client_id / coa id TIDAK di-hardcode.
 --
 -- Cara pakai:
@@ -43,9 +43,9 @@
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan. Untuk menjalankan ulang:
 --   DELETE FROM financial_transaction_bank_cash_bank_mappings m USING management_clients c
---    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) = 'CV SUMBER ALODIE UTAMA';
+--    WHERE m.client_id = c.id AND upper(trim(c.client_code)) = 'SAU';
 --   DELETE FROM financial_transaction_bank_cash_import_templates t USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'CV SUMBER ALODIE UTAMA'
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'SAU'
 --      AND t.file_type = 'Multi' AND t.column_signature_hash = 'cb986d899150d6496fd674ac4d14a4be353a0e29c08cfa68f5162b792cddcab6';
 -- Kalau seed lama (seed_template_sau_bank_cash.sql, 4 baris terpisah) sudah pernah
 -- dijalankan, hapus dulu baris & mapping-nya -- jangan jalankan keduanya.
@@ -63,16 +63,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'CV SUMBER ALODIE UTAMA'
+      AND upper(trim(client_code)) = 'SAU'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'CV SUMBER ALODIE UTAMA') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama CV SUMBER ALODIE UTAMA di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari nama_client = ''CV SUMBER ALODIE UTAMA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien SAU belum ada di management_clients (dicari client_code = ''SAU''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     SELECT id INTO v_coa_bca     FROM management_client_coa WHERE client_id = v_client_id AND acc_no = '11200001' AND deleted_at IS NULL LIMIT 1;
@@ -400,4 +396,4 @@ $do$;
 -- SELECT t.template_name, t.file_type, jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian
 -- FROM financial_transaction_bank_cash_import_templates t
 -- JOIN management_clients c ON c.id = t.client_id
--- WHERE c.nama_client = 'CV SUMBER ALODIE UTAMA' AND t.deleted_at IS NULL;
+-- WHERE c.client_code = 'SAU' AND t.deleted_at IS NULL;

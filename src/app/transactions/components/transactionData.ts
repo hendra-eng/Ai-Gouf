@@ -33,6 +33,11 @@ export interface Transaction {
   // arsip sama sekali, jadi field ini murni state sesi, tidak pernah
   // dikirim ke server. undefined/false = tampil normal di tabel.
   archived?: boolean;
+  // [BARU] Khusus halaman Other (jurnal disimpan di tabel Journal Entry,
+  // source_type='Other'): id draft di backend & status asli workflow-nya
+  // (draft/pending/approved/posted/rejected/exception). Lihat other/lib/otherStore.tsx.
+  otherDraftId?: string;
+  otherStatus?: string;
   // [BARU] ─── FIELD PENGHUBUNG KE ACCOUNTS PAYABLE ─────────────────────────
   // Field-field di bawah ini SENGAJA terpisah dari `status` (status posting
   // jurnal: Unposted/Posted/Draft/dst). `status` menjawab "sudah tercatat di

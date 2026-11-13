@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import { BarChart3 as TabIconOverview, TrendingUp as TabIconSales, ShoppingBag as TabIconPurchases, Boxes as TabIconInventory, Building2 as TabIconAssets, Landmark as TabIconBanking, Receipt as TabIconTax, Factory as TabIconProduction, CalendarClock as TabIconScheduled } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 import { FileBarChart, TrendingUp, Receipt, ArrowLeftRight, Target, ShieldCheck, Sliders, LayoutGrid, Plus, Calendar, Upload, Search, Download, Eye, Copy, Clock, CheckCircle, AlertCircle, Loader2, FileText, FileSpreadsheet, MoreVertical, X, Printer, RefreshCw, Mail, Pause, Play, BarChart3,  } from 'lucide-react';
 import { reports as initialReports, reportCategories, scheduledReports as initialScheduledReports, reportPreviewData, type Report, type ReportCategory, type ScheduledReport,  } from '@/lib/reportsMockData';
 import { useCurrency } from '@/lib/currency';
@@ -697,6 +699,27 @@ function AddScheduleModal({
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
+// Tab utama halaman Reports -- desain pill/segmented disamakan dengan
+// halaman Sales (SalesClient.tsx). Isi tiap tab dibuat di step berikutnya.
+// 'library' & 'scheduled' = konten lama (Report Library / Scheduled Reports),
+// belum punya tab sendiri di bar ini.
+type ReportsTabKey =
+  | 'business-overview' | 'sales' | 'purchases' | 'inventory'
+  | 'fixed-assets' | 'banking' | 'tax' | 'production'
+  | 'library' | 'scheduled';
+
+const REPORT_TABS: { key: ReportsTabKey; label: string; icon?: React.ComponentType<{ size?: number | string; className?: string }> }[] = [
+  { key: 'business-overview', label: 'Business Overview', icon: TabIconOverview },
+  { key: 'sales', label: 'Sales', icon: TabIconSales },
+  { key: 'purchases', label: 'Purchases', icon: TabIconPurchases },
+  { key: 'inventory', label: 'Inventory', icon: TabIconInventory },
+  { key: 'fixed-assets', label: 'Fixed Assets', icon: TabIconAssets },
+  { key: 'banking', label: 'Banking', icon: TabIconBanking },
+  { key: 'tax', label: 'Tax', icon: TabIconTax },
+  { key: 'production', label: 'Production', icon: TabIconProduction },
+  { key: 'scheduled', label: 'Scheduled Reports', icon: TabIconScheduled },
+];
+
 export default function ReportsPageClient() {
   const { reports: liveReports, isSampleData, loading: loadingReports, addReport } = useReportsData();
   const [reportList, setReportList] = useState<Report[]>(initialReports);
@@ -725,7 +748,20 @@ export default function ReportsPageClient() {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
-  const [activeTab, setActiveTab] = useState<'library' | 'scheduled'>('library');
+  const [activeTab, setActiveTab] = useState<ReportsTabKey>('business-overview');
+
+  // Deep link ?tab=sales + perintah suara Neo ("buka tab sales di halaman reports").
+  useEffect(() => {
+    const valid = (k: string | null | undefined): k is ReportsTabKey => !!k && REPORT_TABS.some(x => x.key === k);
+    const dariUrl = new URLSearchParams(window.location.search).get('tab');
+    if (valid(dariUrl)) setActiveTab(dariUrl);
+    const h = (e: Event) => {
+      const k = (e as CustomEvent).detail?.tab;
+      if (valid(k)) setActiveTab(k);
+    };
+    window.addEventListener('neo-tab', h);
+    return () => window.removeEventListener('neo-tab', h);
+  }, []);
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'category'>('date');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -832,15 +868,15 @@ export default function ReportsPageClient() {
   return (
     <div className="min-h-screen bg-background">
       {/* Page Header */}
-      <div className="bg-card border-b border-border px-6 py-5">
+      <div className="pb-2">
         <div className="max-w-screen-2xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <BarChart3 size={20} className="text-primary" />
-                <h1 className="text-2xl font-bold text-foreground tracking-tight">Reports</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">Reports</h1>
               </div>
-              <p className="text-sm text-muted-foreground">Create, analyze, export, and manage financial reports.</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Create, analyze, export, and manage financial reports.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <input
@@ -877,7 +913,7 @@ export default function ReportsPageClient() {
       </div>
 
       {isSampleData && !loadingReports && (
-        <div className="max-w-screen-2xl mx-auto px-6 pt-4">
+        <div className="max-w-screen-2xl mx-auto pt-4">
           <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <AlertCircle size={13} className="flex-shrink-0" />
             Showing sample data — select a client with generated reports to see real files.
@@ -885,26 +921,30 @@ export default function ReportsPageClient() {
         </div>
       )}
 
-      <div className="max-w-screen-2xl mx-auto px-6 py-6">
-        {/* Tabs */}
-        <div className="flex items-center gap-1 mb-6 bg-muted/40 rounded-lg p-1 w-fit">
-          {(['library', 'scheduled'] as const).map(tab => (
-            <button
-              key={`tab-${tab}`}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeTab === tab ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab === 'library' ? 'Report Library' : 'Scheduled Reports'}
-              {tab === 'scheduled' && (
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">
-                  {scheduleList.filter(s => s.status === 'Active').length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+      <div className="max-w-screen-2xl mx-auto pt-4 pb-6">
+        {/* Tabs -- gaya underline, disamakan dengan Financial Statements (TabNav) */}
+        <TabNav
+          className="mb-6"
+          activeKey={activeTab}
+          onSelect={(key) => setActiveTab(key as ReportsTabKey)}
+          items={REPORT_TABS.map(tab => ({
+            key: tab.key,
+            label: tab.label,
+            icon: tab.icon,
+            badge: tab.key === 'scheduled' ? scheduleList.filter(s => s.status === 'Active').length : undefined,
+            badgeClassName: 'inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold',
+          }))}
+        />
+
+        {/* Isi tab (masih kosong) -- diisi di step selanjutnya */}
+        {activeTab === 'business-overview' && <div />}
+        {activeTab === 'sales' && <div />}
+        {activeTab === 'purchases' && <div />}
+        {activeTab === 'inventory' && <div />}
+        {activeTab === 'fixed-assets' && <div />}
+        {activeTab === 'banking' && <div />}
+        {activeTab === 'tax' && <div />}
+        {activeTab === 'production' && <div />}
 
         {activeTab === 'library' && (
           <div className="flex gap-6">

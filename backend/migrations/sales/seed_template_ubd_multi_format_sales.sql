@@ -135,7 +135,7 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client = 'PT USHER BEYOND DESIGN' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'UBD' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
@@ -296,16 +296,12 @@ BEGIN
     SELECT id, client_code, nama_client INTO v_client_id, v_client_code, v_nama
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT USHER BEYOND DESIGN'
+      AND upper(trim(client_code)) = 'UBD'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT USHER BEYOND DESIGN') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT USHER BEYOND DESIGN di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien UBD belum ada di management_clients (dicari nama_client = ''PT USHER BEYOND DESIGN''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
+        RAISE EXCEPTION 'Klien UBD belum ada di management_clients (dicari client_code = ''UBD''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
     END IF;
     RAISE NOTICE 'Klien terpilih: % (client_code %)', v_nama, v_client_code;
 
@@ -386,4 +382,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT USHER BEYOND DESIGN';
+-- WHERE t.file_type = 'Multi' AND upper(m.client_code) = 'UBD';

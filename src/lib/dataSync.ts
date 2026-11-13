@@ -2,19 +2,19 @@
 
 // Notifikasi lintas-halaman: dipakai supaya halaman yang menampilkan data
 // TRANSAKSIONAL milik satu client (jurnal/Transaksi, KPI, dll) bisa
-// otomatis refresh begitu Agent AI selesai memproses & auto-posting file
+// otomatis refresh begitu Zafeb AI selesai memproses & auto-posting file
 // upload untuk client yang sedang aktif -- tanpa user harus pindah client
 // dulu atau reload halaman manual.
 //
 // SENGAJA dipisah dari CLIENTS_CHANGED_EVENT di clientsStore.tsx -- event
 // itu untuk perubahan DAFTAR client (tambah/hapus/edit client), event di
 // sini untuk perubahan DATA milik satu client yang sudah ada (jurnal baru
-// masuk/terposting lewat upload Agent AI).
+// masuk/terposting lewat upload Zafeb AI).
 
 const CLIENT_DATA_CHANGED_EVENT = 'gouf-client-data-changed';
 
 /** Panggil begitu data (jurnal/transaksi) client tertentu berubah di backend
- *  (mis. selesai upload & auto-posting di Agent AI). */
+ *  (mis. selesai upload & auto-posting di Zafeb AI). */
 export function notifyClientDataChanged(clientId: string | number | null | undefined) {
   if (typeof window === 'undefined' || clientId == null) return;
   window.dispatchEvent(

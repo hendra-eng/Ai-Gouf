@@ -2,7 +2,7 @@
 // PAYMENT & CASH RECEIPT ────────────────────────────────────────────────
 // Satu-satunya tempat yang menerjemahkan hasil GET
 // /api/client/{client_id}/bank-cash (lihat daftarBankCash() di
-// @/app/agent-ai/lib/api.js, dan dbc.daftar_bank_cash() di
+// @/app/zafeb-ai/lib/api.js, dan dbc.daftar_bank_cash() di
 // backend/db_client.py) menjadi bentuk Transaction[] yang dipakai
 // TransactionsContext & khusus 2 sub halaman Cash Payment/Cash Receipt
 // lewat getTransactionGroup(). Pola file ini SENGAJA identik dengan

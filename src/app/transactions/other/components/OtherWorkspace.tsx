@@ -41,7 +41,8 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 
 interface Ctx { clientId: string; meta: Meta | null; txs: OtherTx[]; loading: boolean; error: string | null; open: (id: string) => void }
 
-function OtherWorkspace() {
+export default function OtherWorkspace() {
+  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -142,11 +143,6 @@ function OtherWorkspace() {
       {kid && modal === 'import' && meta.data && <OtherImportModal clientId={kid} meta={meta.data} onClose={() => setModal(null)} />}
     </div>
   );
-}
-
-export default function OtherPage() {
-  useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
-  return <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}><OtherWorkspace /></React.Suspense>;
 }
 
 // ============================================================
@@ -523,10 +519,6 @@ function PreviewTab({ txs, loading, open }: Ctx) {
     </Card>
   );
 }
-
-// ============================================================
-// EXCEPTIONS
-// ============================================================
 
 function ExceptionsTab({ txs, loading, open }: Ctx) {
   const [q, setQ] = useState('');

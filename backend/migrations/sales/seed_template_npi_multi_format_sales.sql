@@ -127,7 +127,7 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client = 'PT NUSA PENIDA INVESTMENTS' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'NPI' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- SEED LAMA -- seed_template_npi_sales_recapitulation_excel.sql (1 format Excel,
@@ -331,16 +331,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT NUSA PENIDA INVESTMENTS'
+      AND upper(trim(client_code)) = 'NPI'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT NUSA PENIDA INVESTMENTS') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT NUSA PENIDA INVESTMENTS di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien NPI belum ada di management_clients (dicari nama_client = ''PT NUSA PENIDA INVESTMENTS''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien NPI belum ada di management_clients (dicari client_code = ''NPI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Akun default dipilih dari COA klien yang SEBENARNYA: untuk tiap peran, kandidat
@@ -467,4 +463,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT NUSA PENIDA INVESTMENTS';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'NPI';

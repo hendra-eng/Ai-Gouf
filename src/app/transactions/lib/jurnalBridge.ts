@@ -1,7 +1,7 @@
 // ─── JEMBATAN BACKEND (jurnal_posting) → HALAMAN TRANSAKSI ─────────────────
 // Satu-satunya tempat yang menerjemahkan hasil GET
 // /api/client/{client_id}/jurnal-posting (lihat daftarJurnalPosting() di
-// @/app/agent-ai/lib/api.js, dan dbc.daftar_jurnal_posting() di
+// @/app/zafeb-ai/lib/api.js, dan dbc.daftar_jurnal_posting() di
 // backend/db_client.py) menjadi bentuk Transaction[] yang dipakai
 // TransactionsContext & seluruh 5 sub halaman Transaksi (Sales, Expense,
 // Cash Payment, Cash Receipt, Other) lewat getTransactionGroup().

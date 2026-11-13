@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
-import { vendors } from '@/data/purchaseData';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, mapExceptionToUi } from '@/lib/purchaseStore';
 import {
@@ -174,15 +173,17 @@ export default function PurchaseOverviewPage() {
     postedAmount: purchaseTransactions.filter(p => p.status === 'posted').reduce((s, p) => s + p.total, 0),
   }), [purchaseTransactions]);
 
-  const topVendors = useMemo(() => vendors
-    .map(v => ({
-      ...v,
-      totalSpend: purchaseTransactions.filter(p => p.vendorId === v.id).reduce((s, p) => s + p.total, 0),
-      txCount: purchaseTransactions.filter(p => p.vendorId === v.id).length,
-    }))
-    .filter(v => v.totalSpend > 0)
-    .sort((a, b) => b.totalSpend - a.totalSpend)
-    .slice(0, 6), [purchaseTransactions]);
+  const topVendors = useMemo(() => {
+    const per = new Map<string, { id: string; name: string; totalSpend: number; txCount: number }>();
+    purchaseTransactions.forEach(p => {
+      const nama = (p.vendor || '').trim() || '-';
+      const cur = per.get(nama) ?? { id: nama, name: nama, totalSpend: 0, txCount: 0 };
+      cur.totalSpend += p.total;
+      cur.txCount += 1;
+      per.set(nama, cur);
+    });
+    return [...per.values()].filter(v => v.totalSpend > 0).sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 6);
+  }, [purchaseTransactions]);
 
   const recentActivity = useMemo(() => [...purchaseTransactions]
     .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate))

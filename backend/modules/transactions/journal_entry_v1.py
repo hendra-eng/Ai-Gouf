@@ -217,6 +217,29 @@ class JeDraftWithLinesCreateRequest(BaseModel):
 
 
 # ============================================================
+# SKEMA REQUEST -- 2c) Aksi status massal + edit penuh (halaman Other)
+# ============================================================
+
+class JeDraftStatusActionRequest(BaseModel):
+    """Approve / Post / Reject / Reopen / Hapus banyak draft sekaligus."""
+    draft_ids: List[UUID] = Field(..., min_length=1, max_length=5000)
+    posting_date: Optional[date] = Field(None, description="Khusus /post -- default = entry_date tiap jurnal.")
+    reason: Optional[str] = Field(None, max_length=1000, description="Khusus /reject -- disimpan ke notes.")
+
+
+class JeDraftFullUpdateRequest(BaseModel):
+    """Edit header + (opsional) ganti seluruh baris, hanya untuk draft yang belum diposting."""
+    je_number: Optional[str] = Field(None, min_length=1, max_length=100)
+    entry_date: Optional[date] = None
+    posting_date: Optional[date] = None
+    period_label: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = None
+    source_reference: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+    lines: Optional[List[JeDraftLineInput]] = Field(None, min_length=2)
+
+
+# ============================================================
 # SKEMA REQUEST -- 3) Draft Lines
 # ============================================================
 
@@ -456,6 +479,139 @@ def daftar_draft(
 ):
     data = dbc.list_je_drafts(client_id=client_id, status=status_filter, termasuk_nonaktif=termasuk_nonaktif)
     return sukses(data=data, message="OK")
+
+
+LEVEL_APPROVE_JE = 3
+LEVEL_POST_JE = 4
+
+
+def _jalankan_aksi_je(aksi: str, payload: JeDraftStatusActionRequest, current_user: Dict[str, Any]):
+    nama = current_user.get("nama") or current_user.get("username")
+    try:
+        hasil = dbc.ubah_status_je_drafts(
+            [str(i) for i in payload.draft_ids], aksi, nama,
+            oleh_id=current_user.get("id"), posting_date=payload.posting_date, alasan=payload.reason,
+        )
+    except Exception:  # noqa: BLE001 -- sudah di-log di db_client
+        logger.exception("Gagal %s journal entry drafts", aksi)
+        return gagal(message=f"Failed to {aksi} journals (database error).", status_code=500)
+    kata = {"approve": "approved", "post": "posted", "reject": "rejected", "reopen": "reopened"}[aksi]
+    pesan = f"{len(hasil['done'])} journal(s) {kata}."
+    if hasil["skipped"]:
+        pesan += f" {len(hasil['skipped'])} skipped."
+    return sukses(data=hasil, message=pesan)
+
+
+@router.get(
+    "/drafts-with-lines",
+    summary="Daftar draft Journal Entry lengkap dengan baris debit/kreditnya (halaman Other)",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_draft_dengan_baris(
+    client_id: Optional[str] = Query(None),
+    source_type: Optional[str] = Query(None, description="mis. 'Other'"),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    return sukses(data=dbc.list_je_drafts_with_lines(client_id=client_id, source_type=source_type, status=status_filter), message="OK")
+
+
+@router.post(
+    "/drafts/approve",
+    summary="Approve banyak draft (draft/pending/exception -> approved, Supervisor ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 403: {"description": "Forbidden."}},
+)
+def approve_drafts(payload: JeDraftStatusActionRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_JE))):
+    return _jalankan_aksi_je("approve", payload, current_user)
+
+
+@router.post(
+    "/drafts/post",
+    summary="Posting banyak draft (approved -> posted, Manager ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 403: {"description": "Forbidden."}},
+)
+def post_drafts(payload: JeDraftStatusActionRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_POST_JE))):
+    """Hanya jurnal 'approved' yang bisa diposting, dan hanya kalau >= 2 baris,
+    akun lengkap, debit = kredit, serta semua akun ada di COA klien."""
+    return _jalankan_aksi_je("post", payload, current_user)
+
+
+@router.post(
+    "/drafts/reject",
+    summary="Tolak banyak draft (-> rejected, Supervisor ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 403: {"description": "Forbidden."}},
+)
+def reject_drafts(payload: JeDraftStatusActionRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_JE))):
+    return _jalankan_aksi_je("reject", payload, current_user)
+
+
+@router.post(
+    "/drafts/reopen",
+    summary="Buka kembali draft yang ditolak (rejected -> draft, Supervisor ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 403: {"description": "Forbidden."}},
+)
+def reopen_drafts(payload: JeDraftStatusActionRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_JE))):
+    return _jalankan_aksi_je("reopen", payload, current_user)
+
+
+@router.post(
+    "/drafts/bulk-delete",
+    summary="Hapus (soft-delete) banyak draft yang belum diposting (Supervisor ke atas)",
+    responses={200: {"description": "OK -- lihat done/skipped."}, 403: {"description": "Forbidden."}},
+)
+def hapus_drafts(payload: JeDraftStatusActionRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_JE))):
+    nama = current_user.get("nama") or current_user.get("username")
+    try:
+        hasil = dbc.hapus_je_drafts([str(i) for i in payload.draft_ids], nama, current_user.get("id"))
+    except Exception:  # noqa: BLE001
+        logger.exception("Gagal hapus journal entry drafts")
+        return gagal(message="Failed to delete journals (database error).", status_code=500)
+    pesan = f"{len(hasil['done'])} journal(s) deleted."
+    if hasil["skipped"]:
+        pesan += f" {len(hasil['skipped'])} skipped."
+    return sukses(data=hasil, message=pesan)
+
+
+@router.put(
+    "/drafts/{draft_id}/full",
+    summary="Edit header + baris draft yang belum diposting (Supervisor ke atas)",
+    responses={
+        200: {"description": "OK."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."},
+        409: {"description": "Status tidak boleh diedit / je_number dobel."}, 422: {"description": "Baris tidak valid / tidak balance."},
+    },
+)
+def update_draft_full(
+    draft_id: str,
+    payload: JeDraftFullUpdateRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_APPROVE_JE)),
+):
+    lines_data = None
+    if payload.lines is not None:
+        total_debit = sum(l.debit for l in payload.lines)
+        total_credit = sum(l.credit for l in payload.lines)
+        if abs(total_debit - total_credit) > 0.01:
+            return gagal(
+                message=f"Journal entry is not balanced: total debit {total_debit:,.2f} != total credit {total_credit:,.2f}.",
+                errors={"code": "UNBALANCED_ENTRY", "total_debit": total_debit, "total_credit": total_credit},
+                status_code=422,
+            )
+        for idx, line in enumerate(payload.lines, start=1):
+            if (line.debit > 0 and line.credit > 0) or (line.debit == 0 and line.credit == 0):
+                return gagal(message=f"Line {idx}: fill either debit or credit (not both, not neither).", errors={"code": "INVALID_LINE", "line_no": idx}, status_code=422)
+        lines_data = [l.model_dump() for l in payload.lines]
+    draft_data = payload.model_dump(exclude={"lines"}, exclude_unset=True)
+    nama = current_user.get("nama") or current_user.get("username")
+    hasil = dbc.update_je_draft_with_lines(draft_id, draft_data, lines_data, oleh_nama=nama, updated_by=current_user.get("id"))
+    if not hasil["ok"]:
+        alasan = hasil["reason"]
+        if alasan == "NOT_FOUND":
+            return gagal(message="Journal Entry draft not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+        if alasan == "DUPLICATE_JE_NUMBER":
+            return gagal(message="This je_number is already used.", errors={"code": "DUPLICATE_JE_NUMBER", "field": "je_number"}, status_code=409)
+        if alasan == "DB_ERROR":
+            return gagal(message="Failed to update journal (database error).", status_code=500)
+        return gagal(message=alasan, errors={"code": "INVALID_STATUS"}, status_code=409)
+    return sukses(data=hasil["data"], message="Journal Entry updated successfully.")
 
 
 @router.get(

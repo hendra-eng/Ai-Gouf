@@ -19,7 +19,7 @@ import { useActiveClient } from '@/lib/activeClient';
 import {
   reportRegistryClient, reportScheduleClient,
   tambahReportRegistry, tambahReportSchedule, ubahStatusReportSchedule,
-} from '@/app/agent-ai/lib/api';
+} from '@/app/zafeb-ai/lib/api';
 import type {
   Report,
   ReportCategory,

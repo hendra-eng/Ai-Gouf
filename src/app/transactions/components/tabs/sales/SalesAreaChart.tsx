@@ -27,11 +27,11 @@ function CustomTooltip({ active, payload, label }: TooltipProps<number, string>)
   if (!active || !payload || !payload.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg shadow-lg p-3 text-xs min-w-[160px]">
-      <p className="font-600 text-foreground mb-2">{label} 2026</p>
+      <p className="font-semibold text-foreground mb-2">{label} 2026</p>
       {payload.map((entry) => (
         <div key={`tt-${entry.name}`} className="flex items-center justify-between gap-4 mb-1">
           <span className="text-muted-foreground capitalize">{entry.name}</span>
-          <span className="font-600 text-foreground font-tabular">
+          <span className="font-semibold text-foreground tabular-nums">
             ${Number(entry.value).toLocaleString()}
           </span>
         </div>

@@ -1648,7 +1648,7 @@ def ekstrak_rekening_koran(isi: bytes, nama_file: str, templates: Optional[List[
     dok = baca_dokumen(isi, nama_file)
     kandidat = kandidat_tabel(dok)
     try:
-        from . import bank_statement_recipes as _resep   # impor lambat: modul resep mengimpor modul ini
+        from . import bank_statement_recipes_willi as _resep   # impor lambat: modul resep mengimpor modul ini
         kandidat.extend(_resep.kandidat_resep(dok, isi))
     except EkstraksiGagal:
         raise

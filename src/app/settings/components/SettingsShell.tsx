@@ -24,8 +24,8 @@ export default function SettingsShell({ children }: { children: React.ReactNode 
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-screen-2xl px-6 py-6">
+      <div className="pb-2">
+        <div className="mx-auto max-w-screen-2xl">
           <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
             <Settings size={13} />
             <span>Settings</span>
@@ -38,7 +38,7 @@ export default function SettingsShell({ children }: { children: React.ReactNode 
               </span>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground mt-0.5">
                   Configuration for {activeClientName ? <span className="font-medium text-foreground">{activeClientName}</span> : 'the selected company'}.
                 </p>
               </div>
@@ -61,7 +61,7 @@ export default function SettingsShell({ children }: { children: React.ReactNode 
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-screen-2xl grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[250px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-screen-2xl grid-cols-1 gap-6 pt-4 pb-6 lg:grid-cols-[250px_minmax(0,1fr)]">
         {/* Sidebar kedua */}
         <aside className="lg:sticky lg:top-6 lg:self-start">
           <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-border bg-card p-2 shadow-sm lg:flex-col lg:overflow-visible">

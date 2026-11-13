@@ -131,7 +131,7 @@
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
 -- kolom NOT NULL untuk template Multi; yang dipakai pencocokan adalah resep di dalam varian.
 --
--- KLIEN: dicari lewat nama_client = 'PT WELL STAR INDONESIA' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'WSI' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
@@ -299,7 +299,7 @@ BEGIN
     END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien WSI belum ada di management_clients (dicari nama_client = ''PT WELL STAR INDONESIA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien WSI belum ada di management_clients (dicari client_code = ''WSI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Akun default dipilih dari COA klien yang ADA (pola seed NPI/AADL/ABE). COA WSI asli belum
@@ -413,4 +413,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT WELL STAR INDONESIA';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'WSI';

@@ -17,7 +17,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { purchaseDataClient } from '@/app/agent-ai/lib/api';
+import { purchaseDataClient } from '@/app/zafeb-ai/lib/api';
 import type {
   PurchaseLine,
   PurchaseTransaction,
@@ -319,7 +319,7 @@ export interface PurchaseBridgeData {
   purchaseOverviewKPIs: PurchaseOverviewKPIs;
   /** ID client aktif -- dibutuhkan halaman pemanggil untuk memanggil
    * updatePurchaseStatus/bulkUpdatePurchaseStatus/updatePurchaseExceptionStatus
-   * dari '@/app/agent-ai/lib/api' secara langsung. null kalau belum ada
+   * dari '@/app/zafeb-ai/lib/api' secara langsung. null kalau belum ada
    * client aktif. */
   activeClientId: string | number | null;
   /** Ambil ulang data dari Supabase -- panggil ini setelah mutasi

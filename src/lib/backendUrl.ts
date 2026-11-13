@@ -6,7 +6,7 @@
 // tunggu yang tidak bisa dikonfigurasi lagi di versi Next.js sekarang.
 //
 // SEBELUMNYA ada 2 definisi terpisah untuk hal yang sama (satu di
-// agent-ai/lib/api.js, satu lagi di ImportRekeningKoranModal.tsx) yang
+// zafeb-ai/lib/api.js, satu lagi di ImportRekeningKoranModal.tsx) yang
 // gampang tidak sinkron begitu backend pindah host/port -- itu penyebab
 // bug "Failed to fetch" di tab Bank Feed: env var yang dibaca
 // (NEXT_PUBLIC_BACKEND_URL) tidak pernah benar-benar di-set di mana pun,

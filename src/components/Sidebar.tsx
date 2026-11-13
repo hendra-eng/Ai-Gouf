@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
-import { Boxes, LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck } from 'lucide-react';
+import { Boxes, LayoutDashboard, FileText, ArrowLeftRight, CreditCard, Package, TrendingUp, Calculator, Brain, ClipboardCheck, FolderOpen, Building2, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, DollarSign, Scale, Activity, Wallet, ShieldCheck, X, Bot, ShoppingCart, MoreHorizontal, RefreshCcw, NotebookText, BookOpen, Landmark, ListTree, CalendarCheck, Banknote, Cuboid } from 'lucide-react';
 import Icon from '@/components/ui/AppIcon';
 import { useLanguage } from '@/lib/language';
 import { useAuth, userInitials } from '@/lib/auth';
@@ -32,7 +32,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: 'Overview',
     items: [
       { id: 'nav-overview', label: 'Overview', icon: LayoutDashboard, href: '/' },
-      { id: 'nav-agent-ai', label: 'Agent AI', icon: Bot, href: '/agent-ai', badge: 'AI', badgeVariant: 'ai' },
+      { id: 'nav-zafeb-ai', label: 'Zafeb AI', icon: Bot, href: '/zafeb-ai', badge: 'AI', badgeVariant: 'ai' },
+      { id: 'nav-memori-ai', label: 'Memori AI', icon: Brain, href: '/memori-ai' },
     ],
   },
   {
@@ -96,6 +97,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-year-end-closing', label: 'Year-End Closing', icon: CalendarCheck, href: '/year-end-closing' },
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
       { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
+      { id: 'nav-payroll', label: 'Payroll', icon: Banknote, href: '/payroll' },
+      { id: 'nav-agentic-ai', label: 'Agentic AI', icon: Cuboid, href: '/agentic-ai', badge: 'AI', badgeVariant: 'ai' },
     ],
   },
 ];

@@ -27,7 +27,7 @@
 // admin generik (batalkan/konfirmasi upload duplikat).
 
 import { useEffect, useRef, useState } from 'react';
-import { auditLogClient, daftarJurnalPosting } from '@/app/agent-ai/lib/api';
+import { auditLogClient, daftarJurnalPosting } from '@/app/zafeb-ai/lib/api';
 
 export interface ClientActivityItem {
   id: string;

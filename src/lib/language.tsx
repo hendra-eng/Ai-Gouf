@@ -1154,7 +1154,8 @@ const translations: Dict = {
 
   // ─── Sidebar: nav item labels ───
   'Overview': { en: 'Overview', id: 'Ringkasan', zh: '概览' },
-  'Agent AI': { en: 'Agent AI', id: 'Agent AI', zh: 'AI 代理' },
+  'Zafeb AI': { en: 'Zafeb AI', id: 'Zafeb AI', zh: 'Zafeb AI' },
+  'Agentic AI': { en: 'Agentic AI', id: 'Agentic AI', zh: '代理式 AI' },
   'Transactions': { en: 'Transactions', id: 'Transaksi', zh: '交易' },
   'Sales': { en: 'Sales', id: 'Penjualan', zh: '销售' },
   'Purchase': { en: 'Purchase', id: 'Pembelian', zh: '采购' },
@@ -1414,6 +1415,11 @@ const translations: Dict = {
   'Tren Sales Bulanan': { en: 'Monthly Sales Trend', id: 'Tren Sales Bulanan', zh: '月度销售趋势' },
   'Berdasarkan transaksi yang tercatat di halaman Transaksi': { en: 'Based on transactions recorded on the Transactions page', id: 'Berdasarkan transaksi yang tercatat di halaman Transaksi', zh: '基于交易页面中记录的交易' },
   'Belum ada transaksi Sales untuk ditampilkan.': { en: 'No Sales transactions to display yet.', id: 'Belum ada transaksi Sales untuk ditampilkan.', zh: '暂无可显示的销售交易。' },
+  'Tarik kanan/kiri untuk zoom periode · klik dua kali untuk reset': { en: 'Drag right/left to zoom the period · double-click to reset', id: 'Tarik kanan/kiri untuk zoom periode · klik dua kali untuk reset', zh: '左右拖动可缩放时间段 · 双击重置' },
+  'Estimated': { en: 'Estimated', id: 'Perkiraan', zh: '估算' },
+  'Daily': { en: 'Daily', id: 'Harian', zh: '按日' },
+  'Monthly': { en: 'Monthly', id: 'Bulanan', zh: '按月' },
+  'Yearly': { en: 'Yearly', id: 'Tahunan', zh: '按年' },
   'Tarik untuk zoom skala harga · klik dua kali untuk reset': { en: 'Drag to zoom the value scale · double-click to reset', id: 'Tarik untuk zoom skala harga · klik dua kali untuk reset', zh: '拖动可缩放数值刻度 · 双击重置' },
   'Sales per Kategori': { en: 'Sales by Category', id: 'Sales per Kategori', zh: '按类别销售' },
   'Breakdown pendapatan': { en: 'Revenue breakdown', id: 'Breakdown pendapatan', zh: '收入明细' },

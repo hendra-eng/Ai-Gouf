@@ -92,7 +92,7 @@
 -- Nilai level baris (header_row_index, data_start_row_index, header_columns) hanya pengisi
 -- kolom NOT NULL; yang dipakai pencocokan adalah nilai di dalam varian.
 --
--- KLIEN: dicari lewat nama_client = 'MALAMADRE MOTORCYCLES' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'MM' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md):
@@ -242,16 +242,12 @@ BEGIN
     SELECT id, client_code, nama_client INTO v_client_id, v_client_code, v_nama
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'MALAMADRE MOTORCYCLES'
+      AND upper(trim(client_code)) = 'MM'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'MALAMADRE MOTORCYCLES') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama MALAMADRE MOTORCYCLES di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien MM belum ada di management_clients (dicari nama_client = ''MALAMADRE MOTORCYCLES''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
+        RAISE EXCEPTION 'Klien MM belum ada di management_clients (dicari client_code = ''MM''). Buat dulu lewat halaman Clients, lalu jalankan ulang.';
     END IF;
     RAISE NOTICE 'Klien terpilih: % (client_code %)', v_nama, v_client_code;
 
@@ -332,4 +328,4 @@ $do$;
 --        (SELECT string_agg(v->>'file_type', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS tipe_file
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'MALAMADRE MOTORCYCLES';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'MM';

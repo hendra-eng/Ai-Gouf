@@ -47,7 +47,7 @@
 -- AKUN COA (dataset/COA/COA_Clients_GOUF.xlsx, sheet 'COA EVITA'): 10002 'Bank BCA' dan 10003 'Bank BNI'.
 -- PERLU: seed COA Evita belum ada di migrations/coa/ (baru ada nbm, npi, sau). Tambahkan EVITA ke KLIEN di
 -- migrations/generate_seed_coa.py (mis. "EVITA": ["EVITA", "CV EVITA BERKAT ABADI"]) lalu jalankan, dan jalankan seed COA-nya
--- SEBELUM seed ini. Klien dicari lewat nama_client = 'CV EVITA BERKAT ABADI' (sesuai data klien di VPS), sama dengan seed Sales/Purchase Evita;
+-- SEBELUM seed ini. Klien dicari lewat client_code = 'EVITA' (bukan nama klien), sama dengan seed Sales/Purchase Evita;
 -- GAGAL jelas kalau klien atau akun COA belum ada. client_id / coa id TIDAK di-hardcode.
 --
 -- Cara pakai:
@@ -57,9 +57,9 @@
 --
 -- Idempotensi: TIDAK pakai ON CONFLICT supaya run-2x kelihatan. Untuk menjalankan ulang:
 --   DELETE FROM financial_transaction_bank_cash_bank_mappings m USING management_clients c
---    WHERE m.client_id = c.id AND upper(trim(c.nama_client)) = 'CV EVITA BERKAT ABADI';
+--    WHERE m.client_id = c.id AND upper(trim(c.client_code)) = 'EVITA';
 --   DELETE FROM financial_transaction_bank_cash_import_templates t USING management_clients c
---    WHERE t.client_id = c.id AND upper(trim(c.nama_client)) = 'CV EVITA BERKAT ABADI';
+--    WHERE t.client_id = c.id AND upper(trim(c.client_code)) = 'EVITA';
 
 DO $do$
 DECLARE
@@ -72,16 +72,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'CV EVITA BERKAT ABADI'
+      AND upper(trim(client_code)) = 'EVITA'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'CV EVITA BERKAT ABADI') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama CV EVITA BERKAT ABADI di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien EVITA belum ada di management_clients (dicari nama_client = ''CV EVITA BERKAT ABADI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien EVITA belum ada di management_clients (dicari client_code = ''EVITA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     SELECT id INTO v_coa_bca FROM management_client_coa WHERE client_id = v_client_id AND acc_no = '10002' AND deleted_at IS NULL LIMIT 1;
@@ -320,9 +316,9 @@ $do$;
 -- SELECT t.template_name, t.file_type, jsonb_array_length(t.mapping_rules->'variants') AS jumlah_varian
 -- FROM financial_transaction_bank_cash_import_templates t
 -- JOIN management_clients c ON c.id = t.client_id
--- WHERE upper(trim(c.nama_client)) = 'CV EVITA BERKAT ABADI' AND t.deleted_at IS NULL;
+-- WHERE upper(c.client_code) = 'EVITA' AND t.deleted_at IS NULL;
 -- SELECT m.bank_name, m.account_number, a.acc_no, a.account_name
 -- FROM financial_transaction_bank_cash_bank_mappings m
 -- JOIN management_client_coa a ON a.id = m.bank_coa_id
 -- JOIN management_clients c ON c.id = m.client_id
--- WHERE upper(trim(c.nama_client)) = 'CV EVITA BERKAT ABADI' AND m.deleted_at IS NULL;
+-- WHERE upper(c.client_code) = 'EVITA' AND m.deleted_at IS NULL;

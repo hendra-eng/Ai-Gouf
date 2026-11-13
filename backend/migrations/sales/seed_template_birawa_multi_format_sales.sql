@@ -77,7 +77,14 @@
 --   hash_excel = b6cf5de9d3cb6de54091be4ac0d61fcae14cfa58969fa177e0f36df6b88d7e45
 --   -> 9fc6bf2f4962f95bf08b9d6064ab10af03b78a0b917a30b8f0206dbf3c17f3be  (tidak berubah)
 --
--- Cara pakai (runner: 1 transaksi + tercatat di history-migration.md):
+-- KLIEN: dicari lewat client_code = 'BIRAWA' (bukan nama klien) dan GAGAL dengan pesan jelas
+-- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
+--
+-- SEED LAMA: tidak ada (seed Birawa pertama; file ini sebelumnya kosong).
+--
+-- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
+-- File ini ada di subfolder sales/, jadi berikan PATH-nya (nama file saja akan dicari
+-- run_seed.py hanya di folder migrations/ dan tidak ketemu):
 --   cd backend
 --   venv\Scripts\python migrations\run_seed.py migrations\sales\seed_template_birawa_multi_format_sales.sql
 --
@@ -185,11 +192,13 @@ BEGIN
 
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
-    WHERE deleted_at IS NULL AND upper(trim(nama_client)) = ANY (v_nama_klien)
+    WHERE deleted_at IS NULL
+      AND upper(trim(client_code)) = 'BIRAWA'
+    ORDER BY created_at
     LIMIT 1;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien BRW belum ada di management_clients (dicari nama_client = ''PT BINA RANCANG WASESA'' / ''PT BINA RANCANG WASISA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien BIRAWA belum ada di management_clients (dicari client_code = ''BIRAWA''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Peringatan (tidak menggagalkan seed): akun default yang belum ada di COA klien.
@@ -259,5 +268,4 @@ $do$;
 --        t.mapping_rules->'variants'->0->'mapping_rules'->>'format_type' AS format_type
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi'
---   AND upper(trim(m.nama_client)) IN ('PT BINA RANCANG WASESA', 'PT BINA RANCANG WASISA');
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'BIRAWA';

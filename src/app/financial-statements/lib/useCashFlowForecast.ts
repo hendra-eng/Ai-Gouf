@@ -4,7 +4,7 @@
 // Position" (tabel) di halaman Cash Flow ke tabel proyeksi client aktif:
 //   ..._Cash Flow_cash_flow_forecast (schema 3_Financial)
 //   -> GET /api/client/{id}/cash-flow-forecast (ambilCashFlowForecast di
-//      agent-ai/lib/api.js) -> dbc.daftar_cash_flow_forecast().
+//      zafeb-ai/lib/api.js) -> dbc.daftar_cash_flow_forecast().
 // Pola koneksinya sama dengan useCashFlowData.ts: baca `activeClientId`
 // dari context global, fetch dari backend. Backend mengirim Rupiah penuh;
 // di sini dibagi 1 juta (satuan "Jt") supaya sejajar dengan CF_MONTHLY &
@@ -18,7 +18,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilCashFlowForecast } from '@/app/agent-ai/lib/api';
+import { ambilCashFlowForecast } from '@/app/zafeb-ai/lib/api';
 
 export interface CFForecastRow {
   month: string;   // mis. "Sep 2026" -- sama dengan format CF_FORECAST lama

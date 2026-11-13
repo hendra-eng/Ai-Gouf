@@ -176,9 +176,9 @@ export default function PurchaseTransactionTable() {
 
       {selectedRows.size > 0 && (
         <div className="animate-slide-up px-5 py-2.5 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
-          <span className="text-sm font-500 text-primary">{selectedRows.size} selected</span>
-          <button onClick={() => { toast.success(`${selectedRows.size} purchase(s) approved`); setSelectedRows(new Set()); }} className="text-sm font-500 text-primary hover:underline">Approve</button>
-          <button onClick={() => toast.success('Export initiated')} className="text-sm font-500 text-muted-foreground hover:text-foreground">Export</button>
+          <span className="text-sm font-medium text-primary">{selectedRows.size} selected</span>
+          <button onClick={() => { toast.success(`${selectedRows.size} purchase(s) approved`); setSelectedRows(new Set()); }} className="text-sm font-medium text-primary hover:underline">Approve</button>
+          <button onClick={() => toast.success('Export initiated')} className="text-sm font-medium text-muted-foreground hover:text-foreground">Export</button>
           <button onClick={() => setSelectedRows(new Set())} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
             <X size={14} />
           </button>
@@ -208,13 +208,13 @@ export default function PurchaseTransactionTable() {
                 <th
                   key={`pcol-${col.key}`}
                   onClick={() => handleSort(col.key as SortField)}
-                  className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
+                  className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
                 >
                   {col.label}
                   <SortIcon field={col.key as SortField} />
                 </th>
               ))}
-              <th className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground">Actions</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -223,7 +223,7 @@ export default function PurchaseTransactionTable() {
                 <td colSpan={13} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Filter size={28} className="text-muted-foreground opacity-40" />
-                    <p className="text-sm font-500 text-muted-foreground">No purchases match your filters</p>
+                    <p className="text-sm font-medium text-muted-foreground">No purchases match your filters</p>
                   </div>
                 </td>
               </tr>
@@ -237,16 +237,16 @@ export default function PurchaseTransactionTable() {
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selectedRows.has(row.id)} onChange={() => toggleRow(row.id)} className="rounded border-border" />
                   </td>
-                  <td className="px-4 py-3 font-500 text-primary font-tabular whitespace-nowrap">{row.purchaseId}</td>
-                  <td className="px-4 py-3 text-muted-foreground font-tabular whitespace-nowrap">{row.invoiceNumber}</td>
-                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap font-tabular">{row.purchaseDate}</td>
-                  <td className="px-4 py-3 font-500 text-foreground max-w-[160px] truncate">{row.vendor}</td>
+                  <td className="px-4 py-3 font-medium text-primary tabular-nums whitespace-nowrap">{row.purchaseId}</td>
+                  <td className="px-4 py-3 text-muted-foreground tabular-nums whitespace-nowrap">{row.invoiceNumber}</td>
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap tabular-nums">{row.purchaseDate}</td>
+                  <td className="px-4 py-3 font-medium text-foreground max-w-[160px] truncate">{row.vendor}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-500">{row.category}</span>
+                    <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-medium">{row.category}</span>
                   </td>
-                  <td className="px-4 py-3 text-right font-tabular text-foreground whitespace-nowrap">${row.subtotal.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-tabular text-muted-foreground whitespace-nowrap">${row.tax.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-700 font-tabular text-foreground whitespace-nowrap">${row.total.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-foreground whitespace-nowrap">${row.subtotal.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground whitespace-nowrap">${row.tax.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold tabular-nums text-foreground whitespace-nowrap">${row.total.toLocaleString()}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={row.approvalStatus as 'approved' | 'pending' | 'rejected' | 'draft'} size="sm" />
                   </td>
@@ -291,7 +291,7 @@ export default function PurchaseTransactionTable() {
             <ChevronLeft size={14} />
           </button>
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <button key={`ppage-${p}`} onClick={() => setPage(p)} className={`w-7 h-7 text-xs rounded-md font-500 transition-colors ${page === p ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-muted'}`}>
+            <button key={`ppage-${p}`} onClick={() => setPage(p)} className={`w-7 h-7 text-xs rounded-md font-medium transition-colors ${page === p ? 'bg-primary text-primary-foreground' : 'border border-border text-muted-foreground hover:bg-muted'}`}>
               {p}
             </button>
           ))}
