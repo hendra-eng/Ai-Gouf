@@ -28,7 +28,7 @@ export type LineType = 'sales_invoice' | 'purchase' | 'account';
 /** Keyakinan hasil ekstraksi per baris rekening koran (null = baris sebelum fitur ini). */
 export type Confidence = 'high' | 'medium' | 'low';
 export type ColumnRole = 'date' | 'description' | 'debit' | 'credit' | 'amount' | 'dc_flag' | 'balance' | 'balance_before' | 'reference' | 'ignore';
-export type ExtractionMethod = 'grid' | 'words' | 'ocr' | 'table' | 'legacy';
+export type ExtractionMethod = 'grid' | 'words' | 'ocr' | 'table' | 'recipe' | 'legacy';
 export type ValidationStatus = 'verified' | 'partial' | 'unverified' | 'failed';
 
 export interface BcAccount {
@@ -687,6 +687,7 @@ export const METHOD_LABEL: Record<ExtractionMethod, string> = {
   words: 'PDF text layout',
   ocr: 'OCR (scanned PDF)',
   table: 'Spreadsheet',
+  recipe: 'Format-specific reader',
   legacy: 'Generic parser',
 };
 

@@ -62,7 +62,7 @@ TOLERANSI_SALDO = Decimal("0.01")
 ROLES = ("date", "description", "debit", "credit", "amount", "dc_flag", "balance", "balance_before", "reference", "ignore")
 ROLE_ANGKA = {"debit", "credit", "amount", "balance", "balance_before"}
 ROLE_TEKS = {"description", "reference", "ignore", "date"}
-METODE = ("grid", "words", "ocr", "table")
+METODE = ("grid", "words", "ocr", "table", "recipe")   # recipe = parser khusus 1 format (bank_statement_recipes.py)
 
 OCR_DPI = 300
 OCR_WORKER_MAKS = int(os.environ.get("BANK_STATEMENT_OCR_WORKER_MAKS", "4"))
@@ -161,8 +161,9 @@ def peran_header(teks: str) -> Optional[str]:
     return None
 
 
-def _skor_header(roles: List[Optional[str]]) -> int:
-    """>0 kalau deretan peran ini layak dianggap header tabel mutasi."""
+def _skor_header(roles: List[Optional[str]], kosong: int = 0) -> int:
+    """>0 kalau deretan peran ini layak dianggap header tabel mutasi. kosong = jumlah sel
+    header tanpa teks (tidak dihukum: sheet Excel sering punya puluhan kolom kosong)."""
     r = [x for x in roles if x]
     if "date" not in r or "description" not in r:
         return 0
@@ -170,7 +171,7 @@ def _skor_header(roles: List[Optional[str]]) -> int:
         return 0
     if len(r) < 3:
         return 0
-    return len(r) * 10 + (5 if "balance" in r else 0) - (len(roles) - len(r))
+    return len(r) * 10 + (5 if "balance" in r else 0) - max(0, len(roles) - len(r) - kosong)
 
 
 def _rapikan_peran(roles: List[Optional[str]]) -> List[str]:
@@ -497,6 +498,9 @@ def _baca_pdf(isi: bytes) -> Dokumen:
     except PDFPasswordIncorrect:
         raise EkstraksiGagal("This PDF is password-protected. Open it, save a copy without a password, then upload again.", "PDF_LOCKED")
     except Exception as e:
+        # pdfplumber baru membungkus PDFPasswordIncorrect di PdfminerException.
+        if any(isinstance(a, PDFPasswordIncorrect) for a in getattr(e, "args", ())) or "PDFPasswordIncorrect" in repr(e):
+            raise EkstraksiGagal("This PDF is password-protected. Open it, save a copy without a password, then upload again.", "PDF_LOCKED")
         raise EkstraksiGagal(f"The PDF could not be opened (the file may be damaged): {e}")
     with pdf:
         for no, page in enumerate(pdf.pages, 1):
@@ -673,6 +677,11 @@ class TabelKandidat:
     header_row_index: int = 1
     ringkasan_teks: List[str] = field(default_factory=list)   # baris di luar tabel (untuk ringkasan saldo/total)
     teks_atas: str = ""                # jalur table: teks baris di atas header (judul dokumen)
+    sheets: List[str] = field(default_factory=list)            # jalur table: sheet yang digabung (buku kas per bulan)
+    resep: Optional[str] = None        # jalur recipe: nama resep (bank_statement_recipes.py)
+    bank: Optional[str] = None         # jalur recipe: nama bank yang pasti dari bentuk dokumen
+    periode: Tuple[Optional[date], Optional[date]] = (None, None)   # jalur recipe: periode dari isi dokumen
+    no_rekening: Optional[str] = None  # jalur recipe: nomor rekening dari isi dokumen
 
     @property
     def signature(self) -> str:
@@ -691,6 +700,19 @@ def _baris_visual(words: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
         else:
             hasil.append([w])
     return [sorted(b, key=lambda w: w["x0"]) for b in hasil]
+
+
+def _gabung_tanda(baris: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Tanda '-' / '+' yang tercetak sebagai kata terpisah tepat di kiri nominal ('- 2,000.00',
+    Permata Syariah Transaction History) digabung ke nominalnya -> '-2,000.00' (= debit)."""
+    hasil: List[Dict[str, Any]] = []
+    for w in baris:
+        if hasil and hasil[-1]["text"] in ("-", "+") and 0 <= w["x0"] - hasil[-1]["x1"] <= 4.0 \
+                and _RE_ANGKA_BEBAS.fullmatch(w["text"]):
+            tanda = hasil.pop()
+            w = dict(w, text=tanda["text"] + w["text"], x0=tanda["x0"])
+        hasil.append(w)
+    return hasil
 
 
 def _sel_header_dari_baris(baris: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -786,7 +808,7 @@ def _jalur_words(dok: Dokumen, metode: str) -> Optional[TabelKandidat]:
         if h.ocr != pakai_ocr or not h.words:
             continue
         ada_halaman = True
-        lines = _baris_visual(h.words)
+        lines = [_gabung_tanda(b) for b in _baris_visual(h.words)]
         hdr = _cari_header_halaman(lines)
         mulai = 0
         if hdr is not None:
@@ -910,18 +932,38 @@ def _gabung_blok(baris: List[BarisSel]) -> List[BarisSel]:
     return hasil
 
 
+def _keterangan_tanpa_judul(r: List[str], roles: List[Optional[str]]) -> List[Optional[str]]:
+    """Buku kas Excel yang judul kolom keterangannya kosong (mis. 'NO | TANGGAL | (kosong) | DEBET |
+    CREDIT | SALDO'): 1-satunya sel kosong di antara kolom tanggal dan kolom nominal pertama = keterangan."""
+    if "description" in roles or "date" not in roles:
+        return roles
+    i_tgl = roles.index("date")
+    i_angka = next((i for i, x in enumerate(roles) if x in ("amount", "debit", "credit")), None)
+    if i_angka is None or i_angka < i_tgl:
+        return roles
+    kosong = [i for i in range(i_tgl + 1, i_angka) if not (r[i] or "").strip()]
+    if len(kosong) != 1:
+        return roles
+    roles = list(roles)
+    roles[kosong[0]] = "description"
+    return roles
+
+
 def _cari_header_tabel(rows: List[List[str]], maks: int = 40) -> Optional[Tuple[int, List[Optional[str]]]]:
     terbaik = None
     for i, r in enumerate(rows[:maks]):
-        roles = [peran_header(c) for c in r]
-        skor = _skor_header(roles)
+        roles = _keterangan_tanpa_judul(r, [peran_header(c) for c in r])
+        skor = _skor_header(roles, kosong=sum(1 for c, x in zip(r, roles) if x is None and not (c or "").strip()))
         if skor > 0 and (terbaik is None or skor > terbaik[0]):
             terbaik = (skor, i, roles)
     return None if terbaik is None else (terbaik[1], terbaik[2])
 
 
 def _jalur_tabel(rows_per_bagian: List[Tuple[Optional[str], Optional[int], List[List[str]]]], metode: str) -> Optional[TabelKandidat]:
-    """Jalur grid (tabel PDF) / table (sheet Excel, CSV). rows_per_bagian: (sheet, halaman, rows)."""
+    """Jalur grid (tabel PDF) / table (sheet Excel, CSV). rows_per_bagian: (sheet, halaman, rows).
+    Excel: sheet-sheet berikutnya dengan header yang SAMA ikut digabung (buku kas 1 sheet per bulan,
+    'Desember 2025' .. 'Agustus 2026'); nomor urut sheet disimpan di BarisSel.halaman supaya baris
+    sambungan tidak menyeberang sheet. Sheet dengan header lain / tanpa header dilewati."""
     hasil: Optional[TabelKandidat] = None
     lebar = 0
     for sheet, halaman, rows in rows_per_bagian:
@@ -940,27 +982,27 @@ def _jalur_tabel(rows_per_bagian: List[Tuple[Optional[str], Optional[int], List[
                 lebar = len(rows[i_hdr])
                 hasil.ringkasan_teks.extend(" ".join(c for c in r if c) for r in rows[:i_hdr])
                 hasil.teks_atas = " ".join(" ".join(c for c in r if c) for r in rows[:i_hdr])
-            elif [_norm(c) for c in rows[i_hdr]] != [_norm(c) for c in hasil.headers]:
-                if metode == "table":
-                    break  # sheet lain dengan header berbeda -> bukan tabel yang sama
-                continue
+            elif signature_header(rows[i_hdr]) != signature_header(hasil.headers):
+                continue  # sheet/tabel lain dengan header berbeda -> bukan tabel yang sama
+            if metode == "table":
+                hasil.sheets.append(sheet or "")
+                halaman = len(hasil.sheets)
             badan = rows[i_hdr + 1:]
         elif hasil is not None and metode == "grid" and rows and len(rows[0]) == lebar:
             badan = rows  # tabel lanjutan di halaman berikutnya tanpa header
         else:
             continue
-        kosong = [i for i, h in enumerate(hasil.headers) if not (h or "").strip()]
+        kosong = [i for i, h in enumerate(hasil.headers)
+                  if not (h or "").strip() and not (hasil.roles_terdeteksi[i] if i < len(hasil.roles_terdeteksi) else None)]
         for r in badan:
             r = (r + [""] * lebar)[:lebar]
             hasil.baris.append(BarisSel(cells=r, halaman=halaman, teks_penuh=" ".join(c for c in r if c)))
             # Panel ringkasan di samping tabel (kolom tanpa judul), mis. Laporan Kas Kasir:
             # "Saldo Awal Juni 2026 | 1274590096" di kolom J-K sejajar baris data.
-            if metode == "table" and kosong:
+            if metode == "table" and kosong and len(hasil.sheets) == 1:
                 samping = " ".join(r[i] for i in kosong if r[i].strip())
                 if samping:
                     hasil.ringkasan_teks.append(samping)
-        if metode == "table":
-            break  # 1 sheet cukup
     return hasil
 
 
@@ -1174,6 +1216,10 @@ def _tanggal_final(p: Tuple[int, int, Optional[int], str], urutan: str, periode:
         return None, th
 
 
+# Baris penutup buku kas Excel ("Saldo Per 2025 | 7.750.000 | 9.208.276 | 1.556.040", "Saldo Akhir 2026",
+# "TOTAL"): bukan transaksi & bukan sambungan keterangan baris di atasnya.
+_RE_FOOTER_TABEL = re.compile(r"^(SALDO\s+(PER|AKHIR|PENUTUP)\b|SALDO\s+\d|TOTAL\b|JUMLAH\b|GRAND\s*TOTAL|SUB\s*TOTAL|CLOSING\b|ENDING\b)")
+_RE_FOOTER_PENUTUP = re.compile(r"^(SALDO\s+(PER|AKHIR|PENUTUP)\b|CLOSING\b|ENDING\b)")
 _RE_AWAL_BARIS = re.compile(r"^(SALDO AWAL|OPENING BALANCE|BEGINNING BALANCE|SALDO SEBELUMNYA|PREVIOUS BALANCE|BALANCE B/F|BALANCE BROUGHT FORWARD)")
 _RE_SALDO_PINDAHAN = re.compile(r"^(MODAL AWAL BULAN|SALDO BULAN LALU|SALDO PINDAHAN)|SALDO AKHIR .*(BULAN LALU|SEBELUMNYA)")
 
@@ -1187,16 +1233,59 @@ def rakit_baris(tabel: TabelKandidat, aturan: Aturan, periode: Tuple[Optional[da
     for t in tabel.ringkasan_teks:
         _baca_ringkasan(t, fmt, ringkasan)
 
+    # Jalur table: tanggal baris bertanggal BERIKUTNYA di sheet yang sama, untuk transaksi pertama
+    # sheet yang sel tanggalnya kosong (buku kas: tanggal di-merge ke baris bawahnya).
+    tgl_berikut: Dict[int, Tuple[int, int, Optional[int], str]] = {}
+    if tabel.metode == "table":
+        berikut, hal_b = None, object()
+        for j in range(len(tabel.baris) - 1, -1, -1):
+            bj = tabel.baris[j]
+            if bj.halaman != hal_b:
+                berikut, hal_b = None, bj.halaman
+            pj = pecah_tanggal(_ambil(bj.cells, roles, "date"))
+            if pj is not None:
+                berikut = pj
+            elif berikut is not None:
+                tgl_berikut[j] = berikut
+
     mentah: List[Dict[str, Any]] = []
     sekarang: Optional[Dict[str, Any]] = None
     halaman_sekarang = None
-    for b in tabel.baris:
+    for i_baris, b in enumerate(tabel.baris):
         if b.halaman != halaman_sekarang:
             halaman_sekarang, sekarang = b.halaman, None
         if not any(c.strip() for c in b.cells):
             continue
         teks_tgl = _ambil(b.cells, roles, "date")
         p = pecah_tanggal(teks_tgl)
+        if p is None and tabel.metode == "table":
+            desk_sel = re.sub(r"\s+", " ", _ambil(b.cells, roles, "description", semua=True)).strip()
+            ada_nominal = any(_ambil(b.cells, roles, r) for r in ("amount", "debit", "credit"))
+            if _RE_AWAL_BARIS.match(desk_sel.upper()):
+                # "Saldo Awal | | 0.00 | 807.335": saldo awal = sel kolom saldo, bukan angka pertama di baris.
+                sal, arah_sal = parse_angka(_ambil(b.cells, roles, "balance"), fmt)
+                if sal is not None:
+                    ringkasan.setdefault("opening", -sal if arah_sal == "debit" else sal)
+                    sekarang = None
+                    continue
+            if _RE_FOOTER_TABEL.match(desk_sel.upper()):
+                if len(tabel.sheets) <= 1:
+                    # 1 sheet: saldo penutup = sel kolom saldo (bukan angka pertama di baris = total debet)
+                    sal, arah_sal = parse_angka(_ambil(b.cells, roles, "balance"), fmt)
+                    if sal is not None and _RE_FOOTER_PENUTUP.match(desk_sel.upper()):
+                        ringkasan.setdefault("closing", -sal if arah_sal == "debit" else sal)
+                    _baca_ringkasan(b.teks_penuh, fmt, ringkasan)
+                sekarang = None
+                continue
+            bukan_ringkasan = not _RE_RINGKASAN_GABUNG.search(re.sub(r"\s+", " ", b.teks_penuh.upper()))
+            if ada_nominal and sekarang is not None and (sekarang["amount"] or sekarang["debit"] or sekarang["credit"]) \
+                    and bukan_ringkasan:
+                if not desk_sel:
+                    sekarang = None   # nominal lepas tanpa keterangan (selisih/catatan di bawah tabel)
+                    continue
+                p = sekarang["p"]     # transaksi baru tanpa tanggal = tanggal baris di atasnya (sel tanggal di-merge)
+            elif ada_nominal and sekarang is None and desk_sel and bukan_ringkasan and i_baris in tgl_berikut:
+                p = tgl_berikut[i_baris]   # baris pertama sheet tanpa tanggal -> tanggal baris bertanggal berikutnya
         if p is None:
             if _baca_ringkasan(b.teks_penuh, fmt, ringkasan):
                 sekarang = None
@@ -1511,6 +1600,41 @@ def _periode_dari_baris(baris: List[Baris]) -> Tuple[Optional[date], Optional[da
     return (min(tgl), max(tgl)) if tgl else (None, None)
 
 
+def _skor_hasil_metode(h: "HasilEkstraksi") -> float:
+    """Resep khusus format (bank_statement_recipes) yang tidak gagal didahulukan: jalur generik bisa
+    'menang' jumlah baris dengan membaca tabel yang salah (mis. sheet ekspor Xero 2024 di workbook
+    Petty Cash NPI), padahal resep dipicu oleh bentuk dokumen yang pasti."""
+    skor = _skor_hasil(h.validasi, len(h.baris))
+    if h.metode == "recipe" and h.baris and h.validasi.get("status") != "failed":
+        skor += 1e6
+    return skor
+
+
+def _periode_buku_kas(baris: List[Baris], peringatan: List[str]) -> Tuple[Optional[date], Optional[date]]:
+    """Buku kas Excel 1 sheet per bulan: periode = bulan dominan sheet pertama s/d sheet terakhir.
+    Tanggal salah ketik (mis. 2025-01-05 di sheet Desember 2025) tidak melebarkan periode, tapi
+    barisnya diberi catatan supaya dicek."""
+    per_sheet: Dict[Any, Dict[Tuple[int, int], int]] = {}
+    for b in baris:
+        if b.tanggal:
+            hit = per_sheet.setdefault(b.halaman, {})
+            hit[(b.tanggal.year, b.tanggal.month)] = hit.get((b.tanggal.year, b.tanggal.month), 0) + 1
+    bulan = [max(h, key=h.get) for h in per_sheet.values() if h]
+    if not bulan:
+        return None, None
+    (y1, m1), (y2, m2) = min(bulan), max(bulan)
+    mulai = date(y1, m1, 1)
+    akhir = date.fromordinal(date(y2 + (m2 == 12), m2 % 12 + 1, 1).toordinal() - 1)
+    luar = 0
+    for b in baris:
+        if b.tanggal and not (mulai <= b.tanggal <= akhir):
+            b.catatan.append("Date is outside the statement period.")
+            luar += 1
+    if luar:
+        peringatan.append(f"{luar} line(s) have a date outside {mulai:%b %Y} - {akhir:%b %Y} (typo in the cash book?).")
+    return mulai, akhir
+
+
 def _teks_semua(dok: Dokumen) -> str:
     """Teks seluruh halaman PDF."""
     return " ".join(w["text"] for h in dok.halaman for w in h.words)
@@ -1523,12 +1647,24 @@ def ekstrak_rekening_koran(isi: bytes, nama_file: str, templates: Optional[List[
     None kalau tidak ada tabel mutasi yang dikenali (pemanggil boleh mencoba parser lama)."""
     dok = baca_dokumen(isi, nama_file)
     kandidat = kandidat_tabel(dok)
+    try:
+        from . import bank_statement_recipes as _resep   # impor lambat: modul resep mengimpor modul ini
+        kandidat.extend(_resep.kandidat_resep(dok, isi))
+    except EkstraksiGagal:
+        raise
+    except Exception as e:  # resep rusak tidak boleh mematikan jalur generik
+        logger.warning("Resep ekstraksi gagal untuk %s: %s", nama_file, e)
     if not kandidat:
         return None
     periode = _cari_periode(dok.teks_awal)
+    bank_ekor: Optional[str] = None
     if dok.file_type == "PDF":
-        # Nama bank kadang hanya tercetak di halaman terakhir (mis. BRI "Unit Kerja BANK BRI").
-        bank_dok = deteksi_nama_bank(dok.teks_awal) or deteksi_nama_bank(_teks_semua(dok))
+        # Nama bank dicari di KEPALA dokumen (teks sebelum judul tabel) dulu: isi transaksi sering
+        # menyebut bank lain ("TRF KE ... BANK MANDIRI"). Lalu ekor dokumen (BRI hanya mencetak
+        # "Unit Kerja BANK BRI" di halaman terakhir), baru seluruh teks sebagai pilihan terakhir.
+        teks_semua = _teks_semua(dok)
+        bank_ekor = deteksi_nama_bank(teks_semua[-800:])
+        bank_dok = None
         no_rek = deteksi_no_rekening(dok.teks_awal)
         judul = dok.teks_awal
     else:
@@ -1549,27 +1685,50 @@ def ekstrak_rekening_koran(isi: bytes, nama_file: str, templates: Optional[List[
     terbaik: Optional[HasilEkstraksi] = None
     for k in dipilih:
         template = per_sig.get(k.signature)
+        bank_template = ((template or {}).get("mapping_rules") or {}).get("bank_name")
         aturan = None
         sumber = override or ((template or {}).get("mapping_rules"))
         if sumber:
             aturan = aturan_dari_dict(sumber, k.headers)
-        if aturan is None:
-            aturan = aturan_otomatis(k)
-        baris, ringkasan, peringatan = rakit_baris(k, aturan, periode)
-        v = validasi(baris, ringkasan)
-        periode_k = periode if periode[0] else _periode_dari_baris(baris)
-        # Dokumen tanpa nama bank (mis. laporan kas tunai) -> label dari template yang cocok.
-        bank = bank_dok or ((template or {}).get("mapping_rules") or {}).get("bank_name")
-        h = HasilEkstraksi(
-            file_type=dok.file_type, metode=k.metode, headers=k.headers, signature=k.signature, aturan=aturan,
-            baris=baris, validasi=v, peringatan=list(dok.peringatan) + peringatan, bank=bank, periode=periode_k,
-            sheet_name=k.sheet_name, header_row_index=k.header_row_index, template=template,
-            roles_terdeteksi=k.roles_terdeteksi, ocr=k.metode == "ocr", no_rekening=no_rek or _no_rekening_kolom(k),
-            teks_judul=judul[:2000],
-        )
-        h.mapping_rules = aturan.ke_dict(k.headers, k.metode, bank)
-        if terbaik is None or _skor_hasil(h.validasi, len(h.baris)) > _skor_hasil(terbaik.validasi, len(terbaik.baris)):
-            terbaik = h
+        pilihan_aturan = [aturan] if aturan is not None else [aturan_otomatis(k)]
+        if aturan is None and pilihan_aturan[0].amount_mode == "split":
+            # Buku kas (patty cash) mencatat dari sudut pandang KAS: DEBET = uang masuk, KREDIT = keluar
+            # (kebalikan rekening koran). Kalau saldo berjalan lebih cocok dengan arah ditukar, itu yang dipakai.
+            a0 = pilihan_aturan[0]
+            tukar = {"debit": "credit", "credit": "debit"}
+            pilihan_aturan.append(Aturan(roles=[tukar.get(r, r) for r in a0.roles], amount_mode="split",
+                                         default_direction=None, number_format=a0.number_format, date_order=a0.date_order))
+        multi_sheet = len(k.sheets) > 1
+        periode_rakit = k.periode if k.periode[0] else ((None, None) if multi_sheet else periode)
+        if dok.file_type == "PDF":
+            pos = dok.teks_awal.upper().find((k.headers[0] if k.headers else "").upper()) if k.metode != "recipe" else -1
+            kepala = dok.teks_awal[:pos] if pos > 0 else dok.teks_awal[:400]
+            # Dokumen tanpa nama bank di kepala -> label dari template yang cocok, lalu ekor dokumen.
+            bank = k.bank or deteksi_nama_bank(kepala) or bank_template or bank_ekor or deteksi_nama_bank(teks_semua)
+        else:
+            # Dokumen tanpa nama bank (mis. laporan kas tunai) -> label dari template yang cocok.
+            bank = k.bank or bank_dok or bank_template
+        for aturan in pilihan_aturan:
+            baris, ringkasan, peringatan = rakit_baris(k, aturan, periode_rakit)
+            v = validasi(baris, ringkasan)
+            if k.periode[0]:
+                periode_k = k.periode
+            elif multi_sheet:
+                periode_k = _periode_buku_kas(baris, peringatan)
+            else:
+                periode_k = periode if periode[0] else _periode_dari_baris(baris)
+            h = HasilEkstraksi(
+                file_type=dok.file_type, metode=k.metode, headers=k.headers, signature=k.signature, aturan=aturan,
+                baris=baris, validasi=v, peringatan=list(dok.peringatan) + peringatan, bank=bank, periode=periode_k,
+                sheet_name=k.sheet_name, header_row_index=k.header_row_index, template=template,
+                roles_terdeteksi=k.roles_terdeteksi, ocr=k.metode == "ocr",
+                no_rekening=k.no_rekening or no_rek or _no_rekening_kolom(k), teks_judul=judul[:2000],
+            )
+            h.mapping_rules = aturan.ke_dict(k.headers, k.metode, bank)
+            if k.resep:
+                h.mapping_rules["recipe"] = k.resep
+            if terbaik is None or _skor_hasil_metode(h) > _skor_hasil_metode(terbaik):
+                terbaik = h
     if terbaik is not None and terbaik.validasi.get("opening_conflict"):
         terbaik.peringatan.append("The opening balance line differs from the statement summary.")
     return terbaik
