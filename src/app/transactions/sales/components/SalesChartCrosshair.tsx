@@ -30,10 +30,16 @@ interface Props {
   geometry: CrosshairGeometry;
   view: TimeRange;
   gran: Granularity;
-  /** Batas atas sumbu Y saat ini (sudah memperhitungkan zoom skala harga). */
+  /** Batas bawah & atas sumbu Y saat ini (sudah memperhitungkan zoom & geser). */
+  yMin: number;
   yMax: number;
   trend: TrendPoint[];
   pointLabel: (t: number, g: Granularity) => string;
+  /** Opsional: bucket & label khusus saat user memilih interval (5m ... 1Y). */
+  bucketOf?: (t: number) => number;
+  labelOf?: (t: number) => string;
+  /** Opsional: teks tambahan di legenda untuk bucket ke-i (mis. Open -> Close saat mode candle). */
+  extraOf?: (index: number) => string | null;
   /** Nilai sementara saat titik data sedang ditarik (fitur drag titik). */
   dragPreview: { index: number; value: number } | null;
   estimatedLabel: string;
@@ -43,10 +49,10 @@ interface Props {
 const CHIP = 'absolute rounded px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white whitespace-nowrap shadow-sm';
 const CHIP_BG = '#0E2F26'; // hijau sidebar (--nav)
 const LINE = '#94a3b8';
-const DATE_CHIP_HALF = 46; // setengah lebar perkiraan label tanggal, supaya tidak keluar dari grafik
+const DATE_CHIP_HALF = 80; // setengah lebar perkiraan label tanggal, supaya tidak keluar dari grafik
 
 export default function SalesChartCrosshair({
-  wrapRef, geometry, view, gran, yMax, trend, pointLabel, dragPreview, estimatedLabel, salesLabel,
+  wrapRef, geometry, view, gran, yMin, yMax, trend, pointLabel, bucketOf, labelOf, extraOf, dragPreview, estimatedLabel, salesLabel,
 }: Props) {
   const [pos, setPos] = useState<{ x: number; y: number; w: number } | null>(null);
   const { plotLeft, plotRightMargin, plotTop, plotBottom } = geometry;
@@ -78,14 +84,15 @@ export default function SalesChartCrosshair({
   const plotHeight = Math.max(1, plotBottom - plotTop);
 
   // Piksel -> nilai: harga di sumbu Y, waktu di sumbu X.
-  const price = Math.max(0, ((plotBottom - pos.y) / plotHeight) * yMax);
+  const price = yMin + ((plotBottom - pos.y) / plotHeight) * (yMax - yMin);
   const time = view.from + ((pos.x - plotLeft) / plotWidth) * (view.to - view.from);
-  const bucketStart = startOf(time, gran);
+  const bucketStart = bucketOf ? bucketOf(time) : startOf(time, gran);
   const bucketIndex = trend.findIndex((p) => p.t === bucketStart);
   const bucket = bucketIndex >= 0 ? trend[bucketIndex] : undefined;
   const dragged = dragPreview != null && dragPreview.index === bucketIndex;
   const bucketValue = dragged ? dragPreview!.value : bucket?.total ?? 0;
-  const dateText = pointLabel(bucketStart, gran);
+  const extra = extraOf && bucketIndex >= 0 ? extraOf(bucketIndex) : null;
+  const dateText = labelOf ? labelOf(bucketStart) : pointLabel(bucketStart, gran);
   const dateCenter = Math.min(plotRight - DATE_CHIP_HALF, Math.max(plotLeft + DATE_CHIP_HALF, pos.x));
 
   return (
@@ -114,6 +121,7 @@ export default function SalesChartCrosshair({
         <span className="text-yellow-600">
           {' · '}{salesLabel}: {dragged ? `${estimatedLabel} · ` : ''}{formatIDR(bucketValue)}
         </span>
+        {extra && <span className="text-slate-500">{' · '}{extra}</span>}
       </div>
     </div>
   );

@@ -216,10 +216,10 @@ export function buildTicks(from: number, to: number, gran: Granularity, f: TickF
 // ── Zoom dan geser ──────────────────────────────────────────────
 
 /** Tahun paling awal yang bisa dijelajahi di chart. */
-export const TREND_FIRST_YEAR = 2020;
+export const TREND_FIRST_YEAR = 1950;
 
 /**
- * Batas geser/zoom: dari 1 Jan 2020 (atau tahun data tertua kalau lebih awal) sampai akhir tahun berjalan
+ * Batas geser/zoom: dari 1 Jan 1950 (atau tahun data tertua kalau lebih awal) sampai akhir tahun berjalan
  * (atau tahun data terbaru kalau lebih akhir). Zoom out terjauh = seluruh rentang itu.
  */
 export function makeBounds(idx: TrendIndex, defaultYear: number, now: number = Date.now()): TimeBounds {
@@ -258,4 +258,191 @@ export function zoomRange(start: TimeRange, factor: number, anchorRatio: number,
 
 export function panRange(start: TimeRange, deltaMs: number, b: TimeBounds): TimeRange {
   return fit(start.from + deltaMs, start.to - start.from, b);
+}
+
+// ── Interval ala TradingView (5m, 15m, ... 1Y) ──────────────────
+// Data invoice hanya punya TANGGAL (tanpa jam), jadi:
+//  - interval >= 1 hari  : total = jumlah asli invoice di dalam bucket (tidak ada data karangan)
+//  - interval  < 1 hari  : total harian dibagi rata ke semua bucket di hari itu
+//    (total per hari tetap persis sama, hanya "dipotong" lebih halus)
+
+export type IntervalId = '5m' | '15m' | '30m' | '45m' | '1h' | '4h' | '1d' | '4d' | '1w' | '4w' | '1M' | '6M' | '1Y';
+
+export interface IntervalDef {
+  id: IntervalId;
+  label: string;
+  title: string;
+  kind: 'fixed' | 'months';
+  /** kind 'fixed': panjang bucket (ms). */
+  ms: number;
+  /** kind 'months': panjang bucket (bulan kalender). */
+  months: number;
+  /** Titik acuan penyelarasan bucket 'fixed' (minggu mulai Senin). */
+  anchor: number;
+  /** Jumlah bucket di jendela bawaan saat interval dipilih. */
+  bars: number;
+}
+
+const MIN_MS = 60_000;
+const HOUR_MS = 60 * MIN_MS;
+const EPOCH_MONDAY = Date.UTC(1970, 0, 5);
+
+const fixedDef = (id: IntervalId, title: string, ms: number, bars: number, anchor = 0): IntervalDef =>
+  ({ id, label: id, title, kind: 'fixed', ms, months: 0, anchor, bars });
+const monthsDef = (id: IntervalId, title: string, months: number, bars: number): IntervalDef =>
+  ({ id, label: id, title, kind: 'months', ms: 0, months, anchor: 0, bars });
+
+export const INTERVALS: IntervalDef[] = [
+  fixedDef('5m', '5 menit', 5 * MIN_MS, 72),
+  fixedDef('15m', '15 menit', 15 * MIN_MS, 64),
+  fixedDef('30m', '30 menit', 30 * MIN_MS, 48),
+  fixedDef('45m', '45 menit', 45 * MIN_MS, 64),
+  fixedDef('1h', '1 jam', HOUR_MS, 72),
+  fixedDef('4h', '4 jam', 4 * HOUR_MS, 60),
+  fixedDef('1d', '1 hari', DAY_MS, 90),
+  fixedDef('4d', '4 hari', 4 * DAY_MS, 90),
+  fixedDef('1w', '1 minggu', 7 * DAY_MS, 52, EPOCH_MONDAY),
+  fixedDef('4w', '4 minggu', 28 * DAY_MS, 39, EPOCH_MONDAY),
+  monthsDef('1M', '1 bulan', 1, 24),
+  monthsDef('6M', '6 bulan', 6, 10),
+  monthsDef('1Y', '1 tahun', 12, 8),
+];
+
+export const INTERVAL_BY_ID = INTERVALS.reduce((acc, d) => { acc[d.id] = d; return acc; }, {} as Record<IntervalId, IntervalDef>);
+
+export const isIntraday = (d: IntervalDef) => d.kind === 'fixed' && d.ms < DAY_MS;
+const barMs = (d: IntervalDef) => (d.kind === 'fixed' ? d.ms : d.months * AVG_MONTH_MS);
+
+/** Awal bucket yang memuat waktu t. */
+export function intervalStart(t: number, d: IntervalDef): number {
+  if (d.kind === 'fixed') return d.anchor + Math.floor((t - d.anchor) / d.ms) * d.ms;
+  const dt = new Date(t);
+  const idx = dt.getUTCFullYear() * 12 + dt.getUTCMonth();
+  const b = Math.floor(idx / d.months) * d.months;
+  return utc(Math.floor(b / 12), b % 12, 1);
+}
+
+/** Bucket ke-n setelah t (n boleh negatif). */
+export function intervalNext(t: number, d: IntervalDef, n = 1): number {
+  return d.kind === 'fixed' ? t + d.ms * n : addGran(t, 'month', d.months * n);
+}
+
+function bucketValue(idx: TrendIndex, t: number, d: IntervalDef): Bucket | undefined {
+  if (d.kind === 'fixed') {
+    if (d.ms < DAY_MS) {
+      const b = idx.day.get(startOf(t, 'day'));
+      return b ? { total: b.total * (d.ms / DAY_MS), count: b.count } : undefined;
+    }
+    let total = 0, count = 0, found = false;
+    for (let x = t; x < t + d.ms; x += DAY_MS) {
+      const b = idx.day.get(x);
+      if (b) { total += b.total; count += b.count; found = true; }
+    }
+    return found ? { total, count } : undefined;
+  }
+  let total = 0, count = 0, found = false;
+  for (let m = 0; m < d.months; m++) {
+    const b = idx.month.get(addGran(t, 'month', m));
+    if (b) { total += b.total; count += b.count; found = true; }
+  }
+  return found ? { total, count } : undefined;
+}
+
+/** Titik chart untuk jendela from..to dengan bucket sesuai interval (+1 bucket di tiap sisi). */
+export function buildSeriesInterval(
+  idx: TrendIndex,
+  from: number,
+  to: number,
+  d: IntervalDef,
+  fmt: (t: number) => string,
+): TrendPoint[] {
+  const out: TrendPoint[] = [];
+  const end = intervalNext(intervalStart(to, d), d, 1);
+  let guard = 0;
+  for (let t = intervalNext(intervalStart(from, d), d, -1); t <= end && guard < 3000; t = intervalNext(t, d, 1), guard++) {
+    const b = bucketValue(idx, t, d);
+    out.push({ t, total: b?.total ?? 0, count: b?.count ?? 0, label: fmt(t) });
+  }
+  return out;
+}
+
+/** Tick sumbu X untuk interval < 1 hari: jam (HH:mm), tanggal tebal di tengah malam. */
+export function buildIntradayTicks(from: number, to: number, f: TickFormatters): TickInfo[] {
+  const span = to - from;
+  const step = smallest([5, 15, 30, 60, 120, 240, 360, 720].map((m) => m * MIN_MS), (s) => span / s <= 10);
+  const ticks: TickInfo[] = [];
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
+    const dt = new Date(t);
+    if (t % DAY_MS === 0) {
+      ticks.push({ t, kind: 'month', label: `${dt.getUTCDate()} ${f.monthShort(t)}` });
+    } else {
+      const hh = String(dt.getUTCHours()).padStart(2, '0');
+      const mm = String(dt.getUTCMinutes()).padStart(2, '0');
+      ticks.push({ t, kind: 'day', label: `${hh}:${mm}` });
+    }
+  }
+  return ticks;
+}
+
+/**
+ * Jendela bawaan saat interval dipilih: `bars` bucket yang berakhir di hari invoice terakhir
+ * pada tahun `year` (atau akhir tahun itu kalau belum ada invoice).
+ */
+export function defaultWindowForInterval(idx: TrendIndex, d: IntervalDef, year: number): TimeRange {
+  let lastDay: number | null = null;
+  for (const k of Array.from(idx.day.keys())) {
+    if (new Date(k).getUTCFullYear() === year && (lastDay === null || k > lastDay)) lastDay = k;
+  }
+  const anchorEnd = (lastDay ?? utc(year, 11, 31)) + DAY_MS;
+  const to = intervalNext(intervalStart(anchorEnd - 1, d), d, 1);
+  return { from: intervalNext(to, d, -d.bars), to };
+}
+
+/** Batas zoom/geser saat interval dipilih: 8 s/d 600 bucket supaya jumlah titik tetap wajar. */
+export function makeBoundsForInterval(idx: TrendIndex, defaultYear: number, d: IntervalDef, now: number = Date.now()): TimeBounds {
+  const b = makeBounds(idx, defaultYear, now);
+  const bar = barMs(d);
+  return { ...b, minSpan: 8 * bar, maxSpan: Math.min(b.maxSpan, 600 * bar) };
+}
+
+/** Tick sumbu Y yang "bulat" untuk rentang lo..hi (boleh melewati 0 / negatif). */
+export function niceStep(span: number, target = 5): number {
+  const raw = span / target;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / pow;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+}
+
+export function niceTicksRange(lo: number, hi: number, target = 5): number[] {
+  const span = hi - lo;
+  if (!(span > 0)) return [0];
+  const step = niceStep(span, target);
+  const out: number[] = [];
+  for (let k = Math.ceil(lo / step); k * step <= hi + step * 1e-9; k++) out.push(k * step || 0);
+  return out;
+}
+
+/**
+ * Haluskan garis (Gaussian) supaya dataran + lompatan antar-hari jadi lengkung mulus.
+ * Hanya untuk tampilan; dipakai di interval < 1 hari, di mana nilai di dalam satu hari memang
+ * hasil bagi rata (bukan data asli per jam). sigma dalam satuan bucket.
+ */
+export function smoothSeries(points: TrendPoint[], sigma: number): TrendPoint[] {
+  const n = points.length;
+  if (sigma <= 0 || n < 3) return points;
+  const radius = Math.ceil(sigma * 3);
+  const w: number[] = [];
+  for (let k = -radius; k <= radius; k++) w.push(Math.exp(-(k * k) / (2 * sigma * sigma)));
+  return points.map((p, i) => {
+    let sum = 0;
+    let ws = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      if (j < 0 || j >= n) continue;
+      const wk = w[k + radius];
+      sum += points[j].total * wk;
+      ws += wk;
+    }
+    return { ...p, total: sum / ws };
+  });
 }

@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseExceptions } from '@/lib/purchaseStore';
 import { tabBadgeCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { formatRangeLabel, usePurchaseDateRange } from '@/app/transactions/purchase/purchaseDateRange';
 
 interface Tab {
   id: string;
@@ -27,7 +28,9 @@ const tabs: Tab[] = [
 
 /** `actions` (opsional) = tombol aksi di baris tab sebelah kanan. Bila diisi, header & bar tab
  *  memakai tata letak yang sama dengan halaman Sales (judul + rentang tanggal, tab + aksi satu baris). */
-export default function PurchaseTabs({ actions }: { actions?: React.ReactNode }) {
+export default function PurchaseTabs({ actions, dateRangeActive = false }: { actions?: React.ReactNode; dateRangeActive?: boolean }) {
+  const [range, setRange] = usePurchaseDateRange();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const pathname = usePathname();
   // Badge Exceptions = jumlah exception yang belum selesai (data asli, seperti tab Sales); disembunyikan bila 0.
   const { activeClientId } = useActiveClient();
@@ -65,12 +68,37 @@ export default function PurchaseTabs({ actions }: { actions?: React.ReactNode })
             <h1 className="text-2xl font-bold text-foreground">Purchase</h1>
             <p className="text-xs font-bold text-muted-foreground mt-0.5">{activeTab.description}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
+          <div className="relative flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!dateRangeActive}
+              onClick={() => setPickerOpen(o => !o)}
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors disabled:cursor-default disabled:hover:bg-card"
+            >
               <CalendarDays size={14} className="text-muted-foreground" />
-              <span className="text-foreground font-medium">{`01 Jan ${year} – 31 Dec ${year}`}</span>
+              <span className="text-foreground font-medium">{dateRangeActive ? formatRangeLabel(range) : `01 Jan ${year} – 31 Dec ${year}`}</span>
               <ChevronDown size={14} className="text-muted-foreground" />
             </button>
+            {dateRangeActive && pickerOpen && (
+              <div className="absolute right-0 top-full mt-2 z-30 w-72 rounded-lg border border-border bg-card p-3 shadow-lg space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs text-muted-foreground">From
+                    <input type="date" className="je-input mt-1" value={range.from} max={range.to || undefined}
+                      onChange={e => setRange({ ...range, from: e.target.value })} />
+                  </label>
+                  <label className="text-xs text-muted-foreground">To
+                    <input type="date" className="je-input mt-1" value={range.to} min={range.from || undefined}
+                      onChange={e => setRange({ ...range, to: e.target.value })} />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" className="je-btn-secondary text-xs px-2 py-1" onClick={() => setRange({ from: `${year}-01-01`, to: `${year}-12-31` })}>This year</button>
+                  <button type="button" className="je-btn-secondary text-xs px-2 py-1" onClick={() => setRange({ from: `${year - 1}-01-01`, to: `${year - 1}-12-31` })}>Last year</button>
+                  <button type="button" className="je-btn-secondary text-xs px-2 py-1" onClick={() => setRange({ from: '', to: '' })}>All time</button>
+                  <button type="button" className="je-btn-secondary text-xs px-2 py-1 ml-auto" onClick={() => setPickerOpen(false)}>Done</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {/* Satu baris di layar lebar (xl+); di layar sempit tombol naik ke atas tab, tanpa scrollbar. */}

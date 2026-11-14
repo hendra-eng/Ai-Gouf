@@ -3,16 +3,19 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, Store, Trophy, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
 import { formatIDR } from '../../lib/groupAnalytics';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getNiceTicksFromZero } from '@/lib/chartTicks';
+import InteractiveDonutChart, { type DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
 import { useSalesInvoices, formatTanggalSingkat, type BackendSalesInvoice } from '@/lib/salesStore';
 import {
-  buildTrendIndex, buildSeries, buildTicks, makeBounds, pickGranularity, zoomRange, panRange, utc,
-  type TimeRange, type TickInfo, type Granularity,
+  buildTrendIndex, buildSeries, buildTicks, makeBounds, pickGranularity, zoomRange, panRange, utc, addGran, DAY_MS,
+  niceTicksRange, niceStep, smoothSeries, buildSeriesInterval, buildIntradayTicks, makeBoundsForInterval, defaultWindowForInterval,
+  intervalStart, intervalNext, isIntraday, INTERVALS, INTERVAL_BY_ID,
+  type TimeRange, type TickInfo, type Granularity, type IntervalId, type IntervalDef,
 } from './salesTrendTime';
 import SalesChartCrosshair from './SalesChartCrosshair';
+import SalesCandleLayer, { type SalesChartType } from './SalesCandleLayer';
 
 // ── Sumbu Y: lebarnya dihitung otomatis dari label harga terlebar (lihat salesAxisWidth di
 // dalam komponen), dan margin kiri chart = 0, supaya label harga terlebar mulai tepat di
@@ -80,12 +83,14 @@ const pctOf = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
 
 // Dropdown filter kustom -- sama dengan FilterSelect di tab Sales Transaction
 // & Posted: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih hijau brand.
-interface FilterOption { value: string; label: string }
+interface FilterOption { value: string; label: string; short?: string }
 
-function FilterSelect({ value, onChange, options }: {
+function FilterSelect({ value, onChange, options, searchable: searchableProp, title }: {
   value: string;
   onChange: (v: string) => void;
   options: FilterOption[];
+  searchable?: boolean;
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -106,7 +111,7 @@ function FilterSelect({ value, onChange, options }: {
   }, [open]);
 
   const current = options.find(o => o.value === value) ?? options[0];
-  const searchable = options.length > 10;
+  const searchable = searchableProp ?? options.length > 10;
   const needle = q.trim().toLowerCase();
   const shown = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
 
@@ -117,9 +122,10 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
+        title={title}
         className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
       >
-        <span className="truncate max-w-[170px]">{current?.label}</span>
+        <span className="truncate max-w-[170px]">{current?.short ?? current?.label}</span>
         <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -158,6 +164,19 @@ function FilterSelect({ value, onChange, options }: {
     </div>
   );
 }
+
+// Pilihan dropdown timeframe & bentuk grafik Tren Sales.
+const INTERVAL_OPTIONS: FilterOption[] = [
+  { value: 'auto', label: 'Auto', short: 'Auto' },
+  ...INTERVALS.map((d) => ({ value: d.id, label: `${d.label} · ${d.title}`, short: d.label })),
+];
+const CHART_TYPE_OPTIONS: FilterOption[] = [
+  { value: 'area', label: 'Area' },
+  { value: 'line', label: 'Line' },
+  { value: 'column', label: 'Column' },
+  { value: 'candle', label: 'Candle' },
+  { value: 'ohlc', label: 'OHLC Bar' },
+];
 
 function buildPageItems(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -231,8 +250,51 @@ const BRANCH_COLORS = ['#0F7D4E', '#14B8A6', '#3B82F6', '#8B5CF6', '#F59E0B', '#
 const BRANCH_OTHERS_COLOR = '#CBD5E1';
 
 const fmtPct = (p: number) => `${p > 0 && p < 10 ? p.toFixed(1) : p.toFixed(0)}%`;
-const initialsOf = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+
+// ── Pembulatan yang jumlahnya selalu pas (metode largest remainder) ──
+// Membulatkan tiap angka sendiri-sendiri bikin jumlah legenda meleset dari total
+// (mis. 100% + 0,1% = 100,1%, atau Rp 1,10M + Rp 1Jt != Rp 1,11M). Di sini
+// pembulatan dibagi bersama: sisa pembulatan diberikan ke yang pecahannya terbesar.
+function largestRemainder(rawUnits: number[], targetUnits: number): number[] {
+  const base = rawUnits.map((r) => Math.floor(r));
+  let left = targetUnits - base.reduce((a, b) => a + b, 0);
+  const order = rawUnits.map((r, i) => ({ i, frac: r - base[i] })).sort((a, b) => b.frac - a.frac);
+  const out = base.slice();
+  for (let k = 0; left > 0 && k < order.length; k++, left--) out[order[k].i] += 1;
+  return out;
+}
+
+// Persen satu desimal yang dijamin berjumlah tepat 100,0.
+function allocatePcts(values: number[]): number[] {
+  const sum = values.reduce((a, b) => a + b, 0);
+  if (sum <= 0 || values.some((v) => v < 0)) return values.map(() => 0);
+  return largestRemainder(values.map((v) => (v / sum) * 1000), 1000).map((u) => u / 10);
+}
+const pctLabel = (p: number, value = 1) =>
+  p === 0 && value > 0 ? '<0.1%' : Number.isInteger(p) ? `${p}%` : `${p.toFixed(1)}%`;
+
+// Nominal ringkas yang dijamin berjumlah pas dengan totalnya. Di rentang miliar
+// ("M") angka dihitung dalam resolusi juta, ditulis 3 desimal (Rp 1,104M) supaya
+// cabang kecil (Rp 1Jt) tidak hilang karena dibulatkan ke 0,01M.
+function allocateMoney(values: number[], total: number): string[] {
+  if (total >= 1e9 && values.every((v) => v >= 0)) {
+    const units = largestRemainder(values.map((v) => v / 1e6), Math.round(total / 1e6));
+    return units.map((u, i) =>
+      u >= 1000 ? `Rp ${(u / 1000).toFixed(3).replace('.', ',')}M` : u > 0 ? `Rp ${u}Jt` : formatIDR(values[i], true)
+    );
+  }
+  return values.map((v) => formatIDR(v, true));
+}
+// Inisial avatar: abaikan keterangan dalam kurung (mis. "AHIN (ATX)" -> "A"), hanya huruf/angka.
+// >= 2 kata -> huruf depan 2 kata pertama ("TEGUH PS" -> "TP"); 1 kata -> 1 huruf depan ("SETIAWAN" -> "S").
+const initialsOf = (name: string) => {
+  const cleaned = name.replace(/\(.*$/, ' ').replace(/[^\p{L}\p{N}\s]/gu, ' ');
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const src = words.length ? words : name.replace(/[^\p{L}\p{N}]/gu, ' ').split(/\s+/).filter(Boolean);
+  if (src.length === 0) return '?';
+  const out = src.length >= 2 ? src[0][0] + src[1][0] : src[0][0];
+  return out.toUpperCase();
+};
 
 function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
   icon: React.ElementType;
@@ -258,7 +320,11 @@ function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
 
 function BranchDonutCard({ branches, total }: { branches: { name: string; value: number }[]; total: number }) {
   const { t } = useLanguage();
-  const [hover, setHover] = useState<number | null>(null);
+  // Sama seperti Purchase Status: klik segmen (atau baris legenda) -> segmen
+  // membesar, yang lain meredup, dan kotak di tengah donut menampilkan nama
+  // cabang + persen + nilainya. Tarik garis pemisah untuk preview "what-if".
+  const [active, setActive] = useState<number | null>(null);
+  const [live, setLive] = useState<DonutLivePreview[] | null>(null);
 
   const segs = useMemo(() => {
     const list = branches.map((b, i) => ({
@@ -267,21 +333,20 @@ function BranchDonutCard({ branches, total }: { branches: { name: string; value:
       color: BRANCH_COLORS[i % BRANCH_COLORS.length],
     }));
     const rest = total - branches.reduce((s2, b) => s2 + b.value, 0);
-    if (total > 0 && rest > total * 0.005) list.push({ name: t('Others'), value: rest, color: BRANCH_OTHERS_COLOR });
+    if (total > 0 && rest > 1) list.push({ name: t('Others'), value: rest, color: BRANCH_OTHERS_COLOR });
     return list;
   }, [branches, total, t]);
 
-  const R = 52;
-  const C = 2 * Math.PI * R;
-  const GAP = segs.length > 1 ? 2.5 : 0;
-  let acc = 0;
-  const arcs = segs.map((sg) => {
-    const frac = total > 0 ? sg.value / total : 0;
-    const arc = { ...sg, frac, len: Math.max(0, frac * C - GAP), off: acc };
-    acc += frac * C;
-    return arc;
-  });
-  const active = hover != null ? arcs[hover] : null;
+  // Jumlah segmen bisa berubah (ganti company / data baru) -> reset pilihan.
+  useEffect(() => { setActive(null); }, [segs.length]);
+
+  // Angka yang sedang tampil (nilai asli, atau nilai preview saat garis pemisah ditarik),
+  // lalu dibulatkan bersama supaya persen = 100,0% dan nominal = total.
+  const shownValues = useMemo(() => (live ? live.map((p) => p.value) : segs.map((sg) => sg.value)), [live, segs]);
+  const shownTotal = useMemo(() => shownValues.reduce((a, b) => a + b, 0), [shownValues]);
+  const shownPcts = useMemo(() => allocatePcts(shownValues), [shownValues]);
+  const shownMoney = useMemo(() => allocateMoney(shownValues, shownTotal), [shownValues, shownTotal]);
+  const toggle = (i: number) => setActive((prev) => (prev === i ? null : i));
 
   return (
     <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
@@ -290,53 +355,39 @@ function BranchDonutCard({ branches, total }: { branches: { name: string; value:
         <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
       ) : (
         <>
-          <div className="relative mx-auto h-[176px] w-[176px] shrink-0">
-            <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90" onMouseLeave={() => setHover(null)}>
-              <circle cx="70" cy="70" r={R} fill="none" stroke="#F1F5F9" strokeWidth="16" />
-              {arcs.map((a, i) => (
-                <circle
-                  key={`donut-${a.name}-${i}`}
-                  cx="70"
-                  cy="70"
-                  r={R}
-                  fill="none"
-                  stroke={a.color}
-                  strokeWidth={hover === i ? 20 : 16}
-                  strokeDasharray={`${a.len} ${C - a.len}`}
-                  strokeDashoffset={-a.off}
-                  opacity={hover == null || hover === i ? 1 : 0.35}
-                  style={{ transition: 'stroke-width 150ms, opacity 150ms', cursor: 'pointer' }}
-                  onMouseEnter={() => setHover(i)}
-                />
-              ))}
-            </svg>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-9 text-center">
-              <span className="max-w-full truncate text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
-                {active ? active.name : t('Total Sales')}
-              </span>
-              <span className="mt-0.5 text-base font-extrabold tabular-nums text-[#064E3B]">
-                {formatIDR(active ? active.value : total, true)}
-              </span>
-              {active && <span className="text-[11px] font-semibold text-slate-500">{fmtPct(active.frac * 100)}</span>}
-            </div>
+          <div className="mx-auto w-full max-w-[220px] shrink-0">
+            <InteractiveDonutChart
+              data={segs}
+              height={190}
+              centerLabel={allocateMoney([total], total)[0]}
+              centerSubLabel={t('Total Sales')}
+              activeIndex={active}
+              onActiveChange={setActive}
+              onLiveChange={setLive}
+              rawValue
+              minVisibleDeg={5}
+              formatValue={(v, i) => shownMoney[i] ?? formatIDR(v, true)}
+              formatPct={(p, i) => pctLabel(shownPcts[i] ?? p, shownValues[i] ?? 1)}
+            />
           </div>
 
           <ul className="mt-4 space-y-1">
-            {arcs.map((a, i) => (
-              <li
-                key={`legend-${a.name}-${i}`}
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(null)}
-                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${hover === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
-              >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground" title={a.name}>{a.name}</span>
-                <span className="font-semibold tabular-nums text-foreground">{formatIDR(a.value, true)}</span>
-                <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
-                  {fmtPct(a.frac * 100)}
-                </span>
-              </li>
-            ))}
+            {segs.map((a, i) => {
+              return (
+                <li
+                  key={`legend-${a.name}-${i}`}
+                  onClick={() => toggle(i)}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
+                  <span className={`min-w-0 flex-1 truncate ${active === i ? 'font-bold' : 'font-medium'} text-foreground`} title={a.name}>{a.name}</span>
+                  <span className="font-semibold tabular-nums text-foreground">{shownMoney[i]}</span>
+                  <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
+                    {pctLabel(shownPcts[i], shownValues[i])}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
@@ -368,40 +419,37 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
           {customers.map((c, i) => {
             const first = i === 0;
             const share = total > 0 ? (c.amount / total) * 100 : 0;
-            const badge = i === 0 ? 'bg-white/20 text-white' : i === 1 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 2 ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-slate-100 text-slate-600';
+            const badge = i === 0 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 1 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 2 ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-slate-100 text-slate-600';
             return (
               <div
                 key={`top-customer-${c.name}`}
-                className={`relative overflow-hidden rounded-[10px] border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                  first
-                    ? 'border-transparent bg-gradient-to-br from-[#0F7D4E] to-[#0B5E5C] text-white shadow-md'
-                    : 'border-primary/30 bg-gradient-to-br from-white via-white to-[#F0FDF7]'
-                }`}
+                className="group relative overflow-hidden rounded-[10px] border border-primary/30 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-transparent hover:shadow-md"
               >
-                <span className={`pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full blur-xl ${first ? 'bg-white opacity-10' : 'bg-[#6EE7B7] opacity-[0.15]'}`} />
+                <span className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#0F7D4E] to-[#0B5E5C] opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100" />
+                <span className="pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full bg-[#6EE7B7] opacity-[0.15] blur-xl transition-all duration-300 group-hover:bg-white group-hover:opacity-10" />
                 <div className="relative flex items-center justify-between">
-                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-extrabold ${badge}`}>
+                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-extrabold transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white ${badge}`}>
                     {first ? <Trophy size={12} /> : null}#{i + 1}
                   </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${first ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-slate-600 transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white">
                     {fmtPct(share)}
                   </span>
                 </div>
                 <div className="relative mt-3 flex items-center gap-2.5">
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ring-1 ${first ? 'bg-white/20 text-white ring-white/30' : 'bg-[#ECFDF5] text-[#047857] ring-white'}`}>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] text-xs font-extrabold text-[#047857] ring-1 ring-white transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white group-hover:ring-white/30">
                     {initialsOf(c.name)}
                   </span>
-                  <p className={`min-w-0 truncate text-sm font-bold ${first ? 'text-white' : 'text-foreground'}`} title={c.name}>{c.name}</p>
+                  <p className="min-w-0 truncate text-sm font-bold text-foreground transition-colors duration-300 group-hover:text-white" title={c.name}>{c.name}</p>
                 </div>
-                <p className={`relative mt-3 truncate text-lg font-extrabold tabular-nums ${first ? 'text-white' : 'text-[#064E3B]'}`} title={formatIDR(c.amount)}>
+                <p className="relative mt-3 truncate text-lg font-extrabold tabular-nums text-[#064E3B] transition-colors duration-300 group-hover:text-white" title={formatIDR(c.amount)}>
                   {formatIDR(c.amount)}
                 </p>
-                <p className={`relative text-[11px] font-semibold ${first ? 'text-white/75' : 'text-slate-500'}`}>
+                <p className="relative text-[11px] font-semibold text-slate-500 transition-colors duration-300 group-hover:text-white/75">
                   {c.count} {t('invoices')}
                 </p>
-                <div className={`relative mt-2 h-1.5 w-full overflow-hidden rounded-full ${first ? 'bg-white/20' : 'bg-slate-100'}`}>
+                <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 transition-colors duration-300 group-hover:bg-white/20">
                   <div
-                    className={`h-full rounded-full ${first ? 'bg-white' : 'bg-[#0F7D4E]'}`}
+                    className="h-full rounded-full bg-[#0F7D4E] transition-colors duration-300 group-hover:bg-white"
                     style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
                   />
                 </div>
@@ -501,8 +549,19 @@ export default function SalesOverview() {
 
   const defaultView = useMemo<TimeRange>(() => ({ from: utc(trendYear, 0, 1), to: utc(trendYear, 11, 1) }), [trendYear]);
   const [range, setRange] = useState<TimeRange | null>(null);
-  const view = range ?? defaultView;
-  const timeBounds = useMemo(() => makeBounds(trendIndex, trendYear), [trendIndex, trendYear]);
+  // Interval bucket pilihan user (5m ... 1Y) ala TradingView. null = otomatis, mengikuti zoom (perilaku lama).
+  const [intervalId, setIntervalId] = useState<IntervalId | null>(null);
+  const [chartType, setChartType] = useState<SalesChartType>('area');
+  const intervalDef: IntervalDef | null = intervalId ? INTERVAL_BY_ID[intervalId] : null;
+  const intervalWindow = useMemo(
+    () => (intervalDef ? defaultWindowForInterval(trendIndex, intervalDef, trendYear) : null),
+    [trendIndex, intervalDef, trendYear]
+  );
+  const view = range ?? intervalWindow ?? defaultView;
+  const timeBounds = useMemo(
+    () => (intervalDef ? makeBoundsForInterval(trendIndex, trendYear, intervalDef) : makeBounds(trendIndex, trendYear)),
+    [trendIndex, trendYear, intervalDef]
+  );
   const gran: Granularity = pickGranularity(view.to - view.from);
 
   const intlLocale = lang === 'id' ? 'id-ID' : lang === 'zh' ? 'zh-CN' : 'en-US';
@@ -515,12 +574,42 @@ export default function SalesOverview() {
   );
   const tickFormatters = useMemo(() => ({ monthShort: (tm: number) => fmtMonth.format(tm) }), [fmtMonth]);
 
+  // Label bucket untuk interval pilihan (tooltip/crosshair): jam, tanggal, rentang minggu, bulan, tahun.
+  const fmtTime = useMemo(() => new Intl.DateTimeFormat(intlLocale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' }), [intlLocale]);
+  const fmtDayMonth = useMemo(() => new Intl.DateTimeFormat(intlLocale, { day: 'numeric', month: 'short', timeZone: 'UTC' }), [intlLocale]);
+  const intervalLabel = useCallback((tm: number, d: IntervalDef) => {
+    if (d.kind === 'fixed') {
+      if (d.ms < DAY_MS) return `${fmtFullDay.format(tm)} ${fmtTime.format(tm)}`;
+      if (d.ms === DAY_MS) return fmtFullDay.format(tm);
+      return `${fmtDayMonth.format(tm)} – ${fmtFullDay.format(tm + d.ms - DAY_MS)}`;
+    }
+    if (d.months === 1) return fmtMonthYear.format(tm);
+    if (d.months === 12) return String(new Date(tm).getUTCFullYear());
+    return `${fmtMonth.format(tm)} – ${fmtMonthYear.format(addGran(tm, 'month', d.months - 1))}`;
+  }, [fmtFullDay, fmtTime, fmtDayMonth, fmtMonth, fmtMonthYear]);
+
   // Titik chart untuk jendela saat ini (+1 bucket di tiap sisi supaya garis menyentuh tepi).
   const trend = useMemo(
-    () => buildSeries(trendIndex, view.from, view.to, gran, pointLabel),
-    [trendIndex, view.from, view.to, gran, pointLabel]
+    () => (intervalDef
+      ? buildSeriesInterval(trendIndex, view.from, view.to, intervalDef, (tm) => intervalLabel(tm, intervalDef))
+      : buildSeries(trendIndex, view.from, view.to, gran, pointLabel)),
+    [trendIndex, view.from, view.to, gran, pointLabel, intervalDef, intervalLabel]
   );
-  const xTicks = useMemo(() => buildTicks(view.from, view.to, gran, tickFormatters), [view.from, view.to, gran, tickFormatters]);
+  const xTicks = useMemo(
+    () => (intervalDef && isIntraday(intervalDef)
+      ? buildIntradayTicks(view.from, view.to, tickFormatters)
+      : buildTicks(view.from, view.to, gran, tickFormatters)),
+    [view.from, view.to, gran, tickFormatters, intervalDef]
+  );
+  // Lebar tiap batang/candle = jarak ke awal periode berikutnya; teks Open -> Close untuk crosshair.
+  const bucketEnd = useCallback(
+    (tm: number) => (intervalDef ? intervalNext(tm, intervalDef, 1) : addGran(tm, gran, 1)),
+    [intervalDef, gran]
+  );
+  const candleExtra = useCallback(
+    (i: number) => (i > 0 && trend[i] ? `Open ${formatIDR(trend[i - 1].total)} → Close ${formatIDR(trend[i].total)}` : null),
+    [trend]
+  );
   const xTickValues = useMemo(() => xTicks.map((k) => k.t), [xTicks]);
   const xTickInfo = useMemo(() => new Map(xTicks.map((k) => [k.t, k])), [xTicks]);
 
@@ -575,18 +664,31 @@ export default function SalesOverview() {
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama seperti chart
   // Financial Overview / Balance Sheet. ──
-  const salesBaseMax = useMemo(() => {
-    const visible = Math.max(0, ...trend.filter((d) => d.t >= view.from && d.t <= view.to).map((d) => d.total));
+  // Skala dasar: dari sedikit di bawah 0 (supaya ada ruang bernilai negatif, label "-") sampai nilai
+  // tertinggi yang terlihat. Bisa digeser naik/turun (tarik grafik) dan di-zoom (tarik sumbu Y).
+  const salesBase = useMemo(() => {
+    const vals = trend.filter((d) => d.t >= view.from && d.t <= view.to).map((d) => d.total);
+    let hiData = Math.max(0, ...vals);
+    const loData = Math.min(0, ...vals);
     // Jendela kosong (mis. digeser ke tahun tanpa data): pakai skala bulanan tertinggi supaya sumbu Y tetap masuk akal.
-    return Math.max(1, visible > 0 ? visible : allTimeMaxMonth) * 1.08;
+    if (hiData <= 0) hiData = allTimeMaxMonth;
+    hiData = Math.max(1, hiData);
+    const hi = hiData * 1.08;
+    // Data tanpa nilai negatif: sisakan ruang tepat satu langkah tick di bawah 0 (muncul label "-").
+    return { lo: loData < 0 ? loData * 1.08 : -niceStep(hi, 4), hi };
   }, [trend, view.from, view.to, allTimeMaxMonth]);
   const [salesPriceZoom, setSalesPriceZoom] = useState(1);
+  const [salesYShift, setSalesYShift] = useState(0);
+  const salesYShiftRef = useRef(0);
+  salesYShiftRef.current = salesYShift;
   const salesZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
-  const { ticks: salesYTicks } = useMemo(
-    () => getNiceTicksFromZero(salesBaseMax / salesPriceZoom, 5),
-    [salesBaseMax, salesPriceZoom]
-  );
+  const salesYDomain = useMemo<[number, number]>(() => {
+    const mid = (salesBase.lo + salesBase.hi) / 2 + salesYShift;
+    const half = (salesBase.hi - salesBase.lo) / 2 / salesPriceZoom;
+    return [mid - half, mid + half];
+  }, [salesBase, salesPriceZoom, salesYShift]);
+  const salesYTicks = useMemo(() => niceTicksRange(salesYDomain[0], salesYDomain[1], 5), [salesYDomain]);
 
   // Lebar sumbu Y = label harga terlebar + jarak ke garis sumbu. Diukur dengan canvas memakai font
   // halaman (diukur ulang setelah font selesai dimuat); tebakan awal dipakai untuk render pertama.
@@ -609,7 +711,6 @@ export default function SalesOverview() {
     return () => { alive = false; };
   }, [salesYTicks]);
   const salesAxisOverlayWidth = salesAxisWidth + SALES_PLOT_LEFT;
-  const salesYDomain = useMemo<[number, number]>(() => [0, salesBaseMax / salesPriceZoom], [salesBaseMax, salesPriceZoom]);
   const salesYDomainRef = useRef(salesYDomain);
   salesYDomainRef.current = salesYDomain;
 
@@ -631,7 +732,7 @@ export default function SalesOverview() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
-  const resetSalesZoom = () => setSalesPriceZoom(1);
+  const resetSalesZoom = () => { setSalesPriceZoom(1); setSalesYShift(0); };
 
   // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
   // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
@@ -738,10 +839,18 @@ export default function SalesOverview() {
     };
   }, [springBackSales]);
 
+  // Interval < 1 hari: isi tiap hari hanya hasil bagi rata, jadi garis dihaluskan (khusus tampilan Area/Line)
+  // supaya tidak berbentuk kotak-kotak. Nilai asli tetap dipakai di legenda crosshair & skala sumbu Y.
+  const lineTrend = useMemo(
+    () => (intervalDef && isIntraday(intervalDef) && (chartType === 'area' || chartType === 'line')
+      ? smoothSeries(trend, Math.max(1, (DAY_MS / intervalDef.ms) * 0.12))
+      : trend),
+    [trend, intervalDef, chartType]
+  );
   const salesDisplayTrend = useMemo(() => {
-    if (!salesDragPreview) return trend;
-    return trend.map((d, i) => (i === salesDragPreview.index ? { ...d, total: salesDragPreview.value } : d));
-  }, [trend, salesDragPreview]);
+    if (!salesDragPreview) return lineTrend;
+    return lineTrend.map((d, i) => (i === salesDragPreview.index ? { ...d, total: salesDragPreview.value } : d));
+  }, [lineTrend, salesDragPreview]);
 
   // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
   const renderSalesCalibrationDot = (props: any) => {
@@ -791,12 +900,20 @@ export default function SalesOverview() {
     const start = viewRef.current;
     const span = start.to - start.from;
     const startX = e.clientX;
+    const startY = e.clientY;
+    const startShift = salesYShiftRef.current;
+    const [yLo, yHi] = salesYDomainRef.current;
+    const plotH = Math.max(60, SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT - SALES_PLOT_TOP);
     if (mode === 'pan') setPanning(true);
     const anchor = Math.min(1, Math.max(0, (startX - plotLeft) / plotWidth));
     const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       if (mode === 'zoom') setRange(zoomRange(start, Math.exp(dx / SALES_TIME_ZOOM_PX), anchor, boundsRef.current));
-      else setRange(panRange(start, (-dx / plotWidth) * span, boundsRef.current));
+      else {
+        setRange(panRange(start, (-dx / plotWidth) * span, boundsRef.current));
+        // Tarik ke bawah = grafik turun (rentang nilai yang terlihat naik), seperti TradingView.
+        setSalesYShift(startShift + ((ev.clientY - startY) / plotH) * (yHi - yLo));
+      }
     };
     const onUp = () => {
       setPanning(false);
@@ -818,6 +935,20 @@ export default function SalesOverview() {
     const y = e.clientY - rect.top;
     if (x < salesAxisOverlayWidth || y > rect.height - SALES_XAXIS_HEIGHT) return; // sumbu Y & sumbu X punya handler sendiri
     beginTimeDrag(e, 'pan');
+  };
+
+  const chartGeometry = {
+    plotLeft: salesAxisOverlayWidth,
+    plotRightMargin: SALES_PLOT_RIGHT,
+    plotTop: SALES_PLOT_TOP,
+    plotBottom: SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT,
+  };
+
+  const selectInterval = (id: IntervalId | null) => {
+    setIntervalId(id);
+    setRange(null);
+    setSalesPriceZoom(1);
+    setSalesYShift(0);
   };
 
   return (
@@ -918,19 +1049,31 @@ export default function SalesOverview() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">{t('Based on invoice date, gross amount')}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground bg-muted rounded px-1.5 py-0.5">
-                {gran === 'day' ? t('Daily') : gran === 'month' ? t('Monthly') : t('Yearly')}
-              </span>
-              {range && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/* Timeframe (5m ... 1Y) + bentuk grafik ala TradingView */}
+              <FilterSelect
+                title="Timeframe"
+                searchable={false}
+                value={intervalId ?? 'auto'}
+                onChange={(v) => selectInterval(v === 'auto' ? null : (v as IntervalId))}
+                options={INTERVAL_OPTIONS}
+              />
+              <FilterSelect
+                title="Bentuk grafik"
+                searchable={false}
+                value={chartType}
+                onChange={(v) => setChartType(v as SalesChartType)}
+                options={CHART_TYPE_OPTIONS}
+              />
+              {(range || intervalId) && (
                 <button
                   type="button"
-                  onClick={() => setRange(null)}
+                  onClick={() => { setRange(null); setIntervalId(null); setSalesYShift(0); setSalesPriceZoom(1); }}
                   className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground hover:bg-muted"
                 >
                   {t('Reset')}
@@ -987,18 +1130,22 @@ export default function SalesOverview() {
                     domain={salesYDomain}
                     allowDataOverflow
                   />
+                  <ReferenceLine y={0} stroke={SALES_AXIS_BORDER} strokeOpacity={0.35} />
                   <Tooltip content={() => null} cursor={false} />
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    name="Sales"
-                    stroke={SALES_LINE_COLOR}
-                    strokeWidth={2.5}
-                    fill="url(#gradSalesMain)"
-                    dot={renderSalesCalibrationDot as any}
-                    activeDot={renderSalesActiveDot as any}
-                    isAnimationActive={!salesDragPreview && range === null}
-                  />
+                  {(chartType === 'area' || chartType === 'line') && (
+                    <Area
+                      type="monotone"
+                      dataKey="total"
+                      name="Sales"
+                      stroke={SALES_LINE_COLOR}
+                      strokeWidth={2.5}
+                      baseValue={0}
+                    fill={chartType === 'area' ? 'url(#gradSalesMain)' : 'none'}
+                      dot={renderSalesCalibrationDot as any}
+                      activeDot={renderSalesActiveDot as any}
+                      isAnimationActive={!salesDragPreview && range === null}
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
               {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
@@ -1017,25 +1164,45 @@ export default function SalesOverview() {
                 className="absolute bottom-0 cursor-ew-resize"
                 style={{ left: salesAxisOverlayWidth, right: SALES_PLOT_RIGHT, height: SALES_XAXIS_HEIGHT, touchAction: 'none' }}
               />
+              {(chartType === 'column' || chartType === 'candle' || chartType === 'ohlc') && (
+                <SalesCandleLayer
+                  wrapRef={chartWrapRef}
+                  geometry={chartGeometry}
+                  view={view}
+                  yMin={salesYDomain[0]}
+                  yMax={salesYDomain[1]}
+                  points={trend}
+                  nextOf={bucketEnd}
+                  type={chartType}
+                />
+              )}
               {/* Crosshair: garis horizontal + vertikal di kursor dengan label harga & tanggal */}
               <SalesChartCrosshair
                 wrapRef={chartWrapRef}
-                geometry={{
-                  plotLeft: salesAxisOverlayWidth,
-                  plotRightMargin: SALES_PLOT_RIGHT,
-                  plotTop: SALES_PLOT_TOP,
-                  plotBottom: SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT,
-                }}
+                geometry={chartGeometry}
                 view={view}
                 gran={gran}
+                yMin={salesYDomain[0]}
                 yMax={salesYDomain[1]}
                 trend={trend}
                 pointLabel={pointLabel}
+                bucketOf={intervalDef ? (tm) => intervalStart(tm, intervalDef) : undefined}
+                labelOf={intervalDef ? (tm) => intervalLabel(tm, intervalDef) : undefined}
+                extraOf={chartType === 'candle' || chartType === 'ohlc' ? candleExtra : undefined}
                 dragPreview={salesDragPreview}
                 estimatedLabel={t('Estimated')}
                 salesLabel={t('Sales')}
               />
             </div>
+          )}
+          {intervalDef && isIntraday(intervalDef) && hasAnySales && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {lang === 'id'
+                ? 'Data invoice tercatat per hari; interval di bawah 1 hari = total harian dibagi rata.'
+                : lang === 'zh'
+                  ? '发票按天记录；小于1天的周期将当日总额平均分配。'
+                  : 'Invoices are recorded per day; intervals under 1 day split the daily total evenly.'}
+            </p>
           )}
         </div>
 
