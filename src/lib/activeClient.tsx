@@ -2,8 +2,8 @@
 
 // Global "active client" context.
 //
-// Sebelumnya cuma ada /agent-ai/context/ClientContext.jsx yang scope-nya
-// lokal ke halaman Agent AI saja (lihat komentar di AgentAIChat.jsx:
+// Sebelumnya cuma ada /zafeb-ai/context/ClientContext.jsx yang scope-nya
+// lokal ke halaman Zafeb AI saja (lihat komentar di ZafebAIChat.jsx:
 // "belum ada ClientProvider di level dashboard"). Akibatnya Topbar (Switch
 // Company) punya state client-nya SENDIRI (useState lokal), jadi client
 // yang aktif hilang/reset tiap pindah halaman dan tidak nyambung sama

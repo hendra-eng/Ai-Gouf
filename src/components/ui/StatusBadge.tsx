@@ -47,7 +47,7 @@ export default function StatusBadge({
   if (size) {
     return (
       <span
-        className={`inline-flex items-center rounded-full font-600 whitespace-nowrap ${sizeMap[size]} ${className}`}
+        className={`inline-flex items-center rounded-full font-semibold whitespace-nowrap ${sizeMap[size]} ${className}`}
       >
         {label}
       </span>

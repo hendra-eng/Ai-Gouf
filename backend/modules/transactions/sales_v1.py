@@ -201,7 +201,7 @@ class SalesInvoiceCreateRequest(BaseModel):
     posting_status: str = Field("Draft", max_length=20)
     reconcile_status: str = Field("Unreconciled", max_length=20)
     journal_sync_status: str = Field("Pending", max_length=20)
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[str] = None
     source_row_id: Optional[str] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None
@@ -230,7 +230,7 @@ class SalesInvoiceUpdateRequest(BaseModel):
     posting_status: Optional[str] = Field(None, max_length=20)
     reconcile_status: Optional[str] = Field(None, max_length=20)
     journal_sync_status: Optional[str] = Field(None, max_length=20)
-    journal_entry_id: Optional[int] = None
+    journal_entry_id: Optional[str] = None
     source_row_id: Optional[str] = None
     posted_at: Optional[datetime] = None
     posted_by: Optional[str] = None

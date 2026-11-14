@@ -40,7 +40,7 @@ export default function CashBankOverviewPage() {
   const maksSaldo = Math.max(1, ...akun.map((a) => Math.abs(a.book_balance)));
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       {error && (
@@ -57,7 +57,7 @@ export default function CashBankOverviewPage() {
         >
           <ExclamationTriangleIcon className="w-4 h-4 shrink-0" />
           <span>
-            <span className="font-semibold">{unmatched} Bank Feed lines</span> are unmatched — click to open Reconciliation.
+            <span className="font-semibold">{unmatched} Source Data lines</span> are unmatched — click to open Reconciliation.
           </span>
         </Link>
       )}
@@ -69,7 +69,7 @@ export default function CashBankOverviewPage() {
           <Link href="/transactions/bank-cash/reconciliation" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 hover:bg-amber-100 transition-colors">
             <p className="text-xs text-amber-800">Unmatched</p>
             <p className="text-lg font-bold text-amber-900 font-mono">{unmatched}</p>
-            <p className="text-[11px] text-amber-700">Bank Feed lines</p>
+            <p className="text-[11px] text-amber-700">Source Data lines</p>
           </Link>
           <Link href="/transactions/bank-cash/journal-preview" className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-slate-100 transition-colors">
             <p className="text-xs text-slate-700">Draft (awaiting Approve)</p>
@@ -105,7 +105,7 @@ export default function CashBankOverviewPage() {
           icon="ExclamationTriangleIcon"
           iconColor={unmatched > 0 ? 'text-amber-600' : 'text-slate-400'}
           iconBg={unmatched > 0 ? 'bg-amber-50' : 'bg-slate-50'}
-          subLabel={`of ${totalMutasi} Bank Feed lines`}
+          subLabel={`of ${totalMutasi} Source Data lines`}
         />
       </div>
 

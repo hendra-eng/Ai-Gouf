@@ -545,7 +545,7 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
                 {paginated.map(row => (
                   <tr
                     key={row.id}
-                    className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedInvoiceNo === row.invoice_no ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedInvoiceNo === row.invoice_no ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                     onClick={() => openDetail(row)}
                   >
                     <td className="py-2 px-3" onClick={ev => ev.stopPropagation()}>

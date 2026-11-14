@@ -12,7 +12,7 @@
 //
 // Sumber data backend (lihat backend/modules/laporan_keuangan.py):
 //   - GET/POST /api/client/{id}/laporan-bulanan/{tahun} (ambilLaporanBulanan
-//     / generateLaporanBulanan di agent-ai/lib/api.js) -> trial_balance_bulanan
+//     / generateLaporanBulanan di zafeb-ai/lib/api.js) -> trial_balance_bulanan
 //     (saldo tiap akun per bulan, kumulatif YTD) + laba_rugi_bulanan
 //     (total_pendapatan_ytd/total_beban_ytd/laba_bersih_ytd per bulan).
 //   - GET /api/client/{id}/coa (ambilCoaClient) -> field "sub_kategori"
@@ -41,7 +41,7 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/zafeb-ai/lib/api';
 import { listenClientDataChanged } from '@/lib/dataSync';
 import { COMPANY } from '@/lib/financialData';
 
@@ -284,7 +284,7 @@ export function useProfitLossData(): ProfitLossData {
   const loading = !hydrated || (!!activeClientId && query.isPending);
   const computed = query.data ?? null;
 
-  // [BARU] Auto-refresh begitu Agent AI selesai upload & auto-posting utk
+  // [BARU] Auto-refresh begitu Zafeb AI selesai upload & auto-posting utk
   // client yang sedang aktif -- BEDA dari fetch normal di atas (yang GET
   // laporan CACHED biar hemat), di sini SENGAJA generateLaporanBulanan()
   // (POST, force hitung ulang dari jurnal+COA terbaru & timpa snapshot

@@ -1,0 +1,1598 @@
+﻿diff --cc backend/db_client.py
+index ec1eeb4,a28094e..0000000
+--- a/backend/db_client.py
++++ b/backend/db_client.py
+@@@ -6487,6 -6861,105 +6665,108 @@@ def _angka_gl(v: Any) -> float
+      return float(v) if v is not None else 0.0
+  
+  
+++<<<<<<< HEAD
+++=======
++ def baris_jurnal_kas_bank(tx: "BankCashTransaction", lines: List["BankCashTransactionLine"]) -> List[Dict[str, Any]]:
++     """Baris jurnal 1 transaksi Cash & Bank: akun kas/bank (receipt = debit,
++     payment = kredit) diikuti baris lawan apa adanya. Dipakai GL/FS & preview."""
++     nominal = _angka_gl(tx.amount)
++     hasil = [{
++         "account_code": tx.bank_account_code, "account_name": tx.bank_account_name,
++         "description": tx.description,
++         "debit": nominal if tx.direction == "receipt" else 0.0,
++         "kredit": nominal if tx.direction == "payment" else 0.0,
++     }]
++     for l in sorted(lines, key=lambda x: x.line_no):
++         hasil.append({
++             "account_code": l.account_code, "account_name": l.account_name,
++             "description": l.description or tx.description,
++             "debit": _angka_gl(l.debit), "kredit": _angka_gl(l.credit),
++         })
++     return hasil
++ 
++ 
++ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
++     """Transaksi Cash & Bank posted/reversed -> baris GL. Reversed = jurnal
++     asal (tx_date) + jurnal pembalik RV-<no> (reversal_date, sisi dibalik)."""
++     q = session.query(BankCashTransaction).filter(
++         BankCashTransaction.client_id == management_client_id,
++         BankCashTransaction.status.in_(("posted", "reversed")),
++         BankCashTransaction.deleted_at.is_(None),
++     )
++     if sampai_tanggal:
++         q = q.filter(BankCashTransaction.tx_date <= sampai_tanggal)
++     transaksi = q.order_by(BankCashTransaction.tx_date, BankCashTransaction.tx_number).all()
++     if not transaksi:
++         return []
++     baris_per_tx: Dict[str, List[BankCashTransactionLine]] = {}
++     for l in session.query(BankCashTransactionLine).filter(
++         BankCashTransactionLine.transaction_id.in_([t.id for t in transaksi])
++     ).all():
++         baris_per_tx.setdefault(l.transaction_id, []).append(l)
++ 
++     hasil: List[Dict[str, Any]] = []
++     for tx in transaksi:
++         jurnal = baris_jurnal_kas_bank(tx, baris_per_tx.get(tx.id, []))
++         dasar = {
++             "sumber": "cash_bank", "jurnal_id": f"cash_bank:{tx.id}", "nomor": tx.tx_number,
++             "tanggal": tx.tx_date, "pihak": tx.counterparty, "segmen": {},
++         }
++         for b in jurnal:
++             hasil.append({**dasar, "keterangan": b["description"] or tx.category or tx.tx_number,
++                           "account_code": b["account_code"], "account_name": b["account_name"],
++                           "debit": b["debit"], "kredit": b["kredit"]})
++         if tx.status == "reversed" and tx.reversal_date and (not sampai_tanggal or tx.reversal_date <= sampai_tanggal):
++             dasar_rv = {**dasar, "jurnal_id": f"cash_bank_rv:{tx.id}", "nomor": f"RV-{tx.tx_number}", "tanggal": tx.reversal_date}
++             for b in jurnal:
++                 hasil.append({**dasar_rv, "keterangan": f"Reversal {tx.tx_number}: {tx.reversal_reason or ''}".strip(),
++                               "account_code": b["account_code"], "account_name": b["account_name"],
++                               "debit": b["kredit"], "kredit": b["debit"]})
++     return hasil
++ 
++ 
++ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
++                            sampai_tanggal: Optional[date], kolom_pihak: str = "reference") -> List[Dict[str, Any]]:
++     """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
++     -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
++     q = session.query(model).filter(model.client_id == management_client_id, model.status.in_(("posted", "reversed")))
++     if sampai_tanggal:
++         q = q.filter(model.journal_date <= sampai_tanggal)
++     jurnal = q.order_by(model.journal_date, model.journal_no).all()
++     if not jurnal:
++         return []
++     baris_per_j: Dict[str, List[Any]] = {}
++     for l in session.query(model_baris).filter(model_baris.journal_id.in_([j.id for j in jurnal])).order_by(model_baris.line_no).all():
++         baris_per_j.setdefault(l.journal_id, []).append(l)
++     hasil: List[Dict[str, Any]] = []
++     for j in jurnal:
++         dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
++                  "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None), "segmen": {}}
++         for l in baris_per_j.get(j.id, []):
++             hasil.append({**dasar, "keterangan": l.description or j.description or j.journal_no,
++                           "account_code": l.account_code, "account_name": l.account_name,
++                           "debit": _angka_gl(l.debit), "kredit": _angka_gl(l.credit)})
++         if j.status == "reversed" and j.reversal_date and (not sampai_tanggal or j.reversal_date <= sampai_tanggal):
++             dasar_rv = {**dasar, "jurnal_id": f"{sumber}_rv:{j.id}", "nomor": f"RV-{j.journal_no}", "tanggal": j.reversal_date}
++             for l in baris_per_j.get(j.id, []):
++                 hasil.append({**dasar_rv, "keterangan": f"Reversal {j.journal_no}: {j.reversal_reason or ''}".strip(),
++                               "account_code": l.account_code, "account_name": l.account_name,
++                               "debit": _angka_gl(l.credit), "kredit": _angka_gl(l.debit)})
++     return hasil
++ 
++ 
++ def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
++     """Jurnal Inventory posted/reversed -> baris GL (sumber "inventory")."""
++     return _baris_gl_jurnal_modul(session, InventoryJournal, InventoryJournalLine, "inventory", management_client_id, sampai_tanggal)
++ 
++ 
++ 
++ def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
++     """Jurnal Fixed Assets posted/reversed -> baris GL (sumber "fixed_asset")."""
++     return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal)
++ 
++ 
+++>>>>>>> origin/playground-willi
+  def ambil_baris_jurnal_posted_transaksi(
+      client_id: Optional[str] = None,
+      sampai_tanggal: Optional[date] = None,
+@@@ -6625,6 -7105,19 +6905,22 @@@
+                  kode, nama = akun_posting_purchase(tx)["ap"]
+                  hasil.append({**dasar, "account_code": kode, "account_name": nama, "debit": 0.0, "kredit": _angka_gl(tx.accounts_payable)})
+  
+++<<<<<<< HEAD
+++=======
++         # --- 4) Cash & Bank --- client_id tabel ini = management_clients,
++         # jadi hanya ikut kalau difilter per klien (management_client_id).
++         if management_client_id:
++             hasil.extend(_baris_gl_kas_bank(session, management_client_id, sampai_tanggal))
++             # --- 5) Fixed Assets (jurnal FA-..., sama: client_id = management_clients) ---
++             hasil.extend(_baris_gl_aset_tetap(session, management_client_id, sampai_tanggal))
++             # --- 6) Inventory (jurnal INV-... penyesuaian / HPP / penerimaan) ---
++             hasil.extend(_baris_gl_persediaan(session, management_client_id, sampai_tanggal))
++             # --- 7) Other Transactions (OT-..., asset_other_transactions; jurnal OTH- lama
++             #        sudah disalin ke tabel ini oleh migration 48) ---
++             hasil.extend(_baris_gl_jurnal_modul(session, OtherTransaction, OtherTransactionLine, "other", management_client_id,
++                                                 sampai_tanggal, kolom_pihak="counterparty"))
++ 
+++>>>>>>> origin/playground-willi
+          return hasil
+      except Exception as e:
+          session.rollback()
+diff --cc backend/main.py
+index f007375,79bcc1e..0000000
+--- a/backend/main.py
++++ b/backend/main.py
+@@@ -108,9 -104,11 +108,10 @@@ from modules.management import document
+  from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
+  from modules.assets_and_equity import fixed_assets_v1 as asset_fixed_assets_v1  # /api/v1/asset/fixed-assets/... (halaman Fixed Assets, migration 39)
+  from modules.assets_and_equity import inventory_v1 as asset_inventory_v1  # /api/v1/asset/inventory/... (halaman Inventory, migration 40)
++ from modules.assets_and_equity import other_transactions_v1 as asset_other_transactions_v1  # /api/v1/asset/other-transactions/... (Transactions > Other, migration 48)
+  from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # /api/v1/planning/tax/... (halaman Tax Compliance, migration 41)
+  from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
+ -from modules.finance import receivables_payables_v1 as finance_receivables_payables_v1  # [BARU] /api/v1/finance/receivables|payables -- Accounts Receivable & Accounts Payable
+ -from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [BARU] AR: customers, Create Invoice, Collections + log statement AR/AP
+ +from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview
+  from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
+  from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
+  from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
+@@@ -122,10 -121,9 +123,14 @@@ from modules.transactions import sales_
+  from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
+  from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
+  from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
+++<<<<<<< HEAD
+++=======
++ from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
+++>>>>>>> origin/playground-willi
+  from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
+ -from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills
+ +from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills/...
+ +from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/...
+ +from modules.finance import payables_v1 as finance_payables_v1  # [BARU] Accounts Payable dari Purchase posted: /api/v1/finance/payables/...
+  from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
+  from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
+  from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
+@@@ -369,9 -388,14 +374,10 @@@ app.include_router(management_documents
+  app.include_router(management_reports_v1.router)  # [BARU] /api/v1/management/reports/... -- prefix sudah di router-nya sendiri
+  app.include_router(asset_fixed_assets_v1.router)  # /api/v1/asset/fixed-assets/... register, penyusutan, disposal, jurnal FA, laporan
+  app.include_router(asset_inventory_v1.router)  # /api/v1/asset/inventory/... item, gudang, dokumen stok, kartu stok, jurnal INV, laporan
++ app.include_router(asset_other_transactions_v1.router)  # /api/v1/asset/other-transactions/... template, review, post, reverse, lampiran, import
+  app.include_router(planning_tax_compliance_v1.router)  # /api/v1/planning/tax/... ledger pajak, PPh, PPN, setoran, SPT, rekonsiliasi, temuan
+  app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/finance/bank-cash/exceptions -- prefix sudah di router-nya sendiri
+ -app.include_router(finance_receivables_payables_v1.router_ar)  # [BARU] /api/v1/finance/receivables -- Accounts Receivable (piutang atas Sales)
+ -app.include_router(finance_receivables_payables_v1.router_ap)  # [BARU] /api/v1/finance/payables -- Accounts Payable (hutang atas Purchase)
+ -app.include_router(finance_receivables_ar_v1.router_ar)  # [BARU] /api/v1/finance/receivables/customers|invoice-form|invoice-entries|collections
+ -app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api/v1/finance/receivables/statements -- riwayat Customer Statement + email
+ -app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements -- riwayat Vendor Statement + email
+ +app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri
+  app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
+  app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
+  app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
+@@@ -383,10 -408,9 +389,14 @@@ app.include_router(transactions_sales_i
+  app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
+  app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
+  app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
+++<<<<<<< HEAD
+++=======
++ app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
+++>>>>>>> origin/playground-willi
+  app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
+ -app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills
+ +app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills/... -- Create Bill manual
+ +app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- Source Data, Bank Mapping, mutasi
+ +app.include_router(finance_payables_v1.router)  # [BARU] /api/v1/finance/payables/... -- Accounts Payable (bill Purchase posted)
+  app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
+  app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
+  app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes
+diff --cc backend/migrations/history-migration.md
+index b02d8c1,58dcf9c..0000000
+--- a/backend/migrations/history-migration.md
++++ b/backend/migrations/history-migration.md
+@@@ -39,13 -39,31 +39,22 @@@ seed_coa_nbm.sq
+  seed_fs_mapping_rules.sql
+  seed_fs_note_templates.sql
+  32-repoint_sales_client_id_fk_to_management_clients.py
+ -33-create_year_end_closing.py
+ -34-create_bank_cash_tables.py
+ -35-create_bank_cash_import_templates.py
+ -36-create_bank_cash_bank_mappings.py
+ -seed_template_sau_bank_cash.sql
+ -seed_template_npi_bank_cash.sql
+ -seed_template_nbm_bank_cash.sql
+ -37-add_ar_ap_settlement_columns.py
+ -38-create_ar_invoice_collection_statement_tables.py
+ -39-create_fixed_asset_tables.py
+ -40-create_inventory_tables.py
+ -41-create_tax_compliance_tables.py
+ -42-create_other_journal_tables.py
+ -43-add_lock_to_account_mappings.py
+ -44-add_bill_fields_to_purchase.py
+ -45-create_opening_balance_imports.py
+ -46-add_opening_balance_flag_to_sales_purchase.py
+  33-create_purchase_source_files_rows.py
+ -35-create_journal_entry_source_files_rows.py
+  34-allow_null_purchase_date.py
+ +seed_template_nbm_multi_format_purchase.sql
+ +seed_template_sau_multi_format_purchase.sql
+ +35-create_journal_entry_source_files_rows.py
+  36-create_bank_cash_import_templates_and_bank_mappings.py
+  37-create_bank_cash_statements_and_mutations.py
+++<<<<<<< HEAD
+ +seed_template_birawa_multi_format_bank_cash.sql
+ +44-add_bill_fields_to_purchase.py
+ +43-add_lock_to_account_mappings.py
+++=======
++ sales/seed_template_nbm_multi_format_sales.sql
++ sales/seed_template_npi_multi_format_sales.sql
++ purchase/seed_template_nbm_multi_format_purchase.sql
++ bank_cash/seed_template_nbm_multi_format_bank_cash.sql
++ bank_cash/seed_template_npi_multi_format_bank_cash.sql
++ 48-create_other_transaction_tables.py
+++>>>>>>> origin/playground-willi
+diff --cc src/app/transactions/other/components/OtherWorkspace.tsx
+index 9027a58,1ff14d9..0000000
+--- a/src/app/transactions/other/components/OtherWorkspace.tsx
++++ b/src/app/transactions/other/components/OtherWorkspace.tsx
+@@@ -1,215 -1,591 +1,802 @@@
+  'use client';
+  
+++<<<<<<< HEAD
+ +import React, { useCallback, useMemo, useState } from 'react';
+ +import { toast } from 'sonner';
+ +import { CheckCircle2, Send, XCircle, RotateCcw, Trash2, Pencil } from 'lucide-react';
+ +import { useAuth } from '@/lib/auth';
+ +import { updateJeDraftFull, type BackendJeDraftWithLines } from '@/lib/journalEntryStore';
+ +import { useOtherData } from '../lib/otherStore';
+ +import {
+ +  buildOtherJournals,
+ +  allowedActions,
+ +  ACTION_LABEL,
+ +  journalsToCsv,
+ +  downloadCsv,
+ +  type OtherAction,
+ +  type OtherJournal,
+ +} from '../lib/otherJournals';
+ +import OtherJournalModal from './OtherJournalModal';
+ +
+ +// Satu "ruang kerja" yang dipakai semua tab Other: data jurnal + semua aksi
+ +// (tambah, edit, approve, posting, tolak, buka kembali, hapus, ekspor CSV)
+ +// + dialog yang dibutuhkan. Setiap tab cukup memanggil useOtherWorkspace()
+ +// dan merender {ws.dialogs}.
+ +
+ +type PendingConfirm = {
+ +  action: 'post' | 'reject' | 'delete';
+ +  journals: OtherJournal[];
+ +};
+ +
+ +const CONFIRM_TEXT: Record<PendingConfirm['action'], { title: string; button: string; tone: string }> = {
+ +  post: { title: 'Posting jurnal', button: 'Posting Sekarang', tone: 'bg-emerald-600 hover:bg-emerald-700' },
+ +  reject: { title: 'Tolak jurnal', button: 'Tolak', tone: 'bg-rose-600 hover:bg-rose-700' },
+ +  delete: { title: 'Hapus jurnal', button: 'Hapus', tone: 'bg-rose-600 hover:bg-rose-700' },
+ +};
+ +
+ +export function useOtherWorkspace() {
+ +  const data = useOtherData();
+ +  const { user } = useAuth();
+ +  const [modal, setModal] = useState<{ draft: BackendJeDraftWithLines | null } | null>(null);
+ +  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
+ +  const [reason, setReason] = useState('');
+ +  const [postingDate, setPostingDate] = useState('');
+ +  const [busy, setBusy] = useState(false);
+++=======
++ // Halaman Other Transactions (layout dataset/picture/Template UI/other/1.jpeg):
++ // tab Overview, Categories, Review Queue, Journal Preview, Exceptions, Posted +
++ // tombol Create Transaction, Transaction Templates, Import, Export.
++ // Backend: modules/assets_and_equity/other_transactions_v1.py.
++ 
++ import React, { useCallback, useMemo, useState } from 'react';
++ import Link from 'next/link';
++ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
++ import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
++ import {
++   AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight, CircleCheck, Clock, Download, Eye, FileText, LayoutGrid, Loader2, Plus, Tag, Upload,
++ } from 'lucide-react';
++ import { toast } from 'sonner';
++ import { useActiveClient } from '@/lib/activeClient';
++ import { fmtDate, fmtMonth, rupiah, rupiahShort, todayIso } from '@/lib/receivablesPayablesStore';
++ import { downloadTable, type ExportFormat } from '@/lib/tableExport';
++ import {
++   fetchCategories, fetchMeta, fetchOverview, fetchTransactions, useOtherTxData,
++   type CategoryStat, type Meta, type OtherTx, type Overview, type TxStatus, type TypeKey,
++ } from '@/lib/otherTransactionStore';
++ import { btnOutline, btnPrimary, btnSmall, Card, EmptyRow, inputCls, Menu, MenuItem } from '@/components/arap/arapUi';
++ import { JournalLines, KpiGrid, tabCls, tabNavCls, tdCls } from '@/components/shared/moduleUi';
++ import {
++   cocok, createHref, editHref, EDITABLE, runBulk, SearchBox, StatusPill, TransactionDrawer, TYPE_ORDER, TYPE_UI, TypeIcon,
++ } from './otherUi';
++ import TemplatesModal from './TemplatesModal';
++ import OtherImportModal from './OtherImportModal';
++ 
++ type Tab = 'overview' | 'categories' | 'review' | 'preview' | 'exceptions' | 'posted';
++ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
++   { id: 'overview', label: 'Overview', icon: LayoutGrid },
++   { id: 'categories', label: 'Categories', icon: Tag },
++   { id: 'review', label: 'Review Queue', icon: Clock },
++   { id: 'preview', label: 'Journal Preview', icon: FileText },
++   { id: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
++   { id: 'posted', label: 'Posted', icon: CircleCheck },
++ ];
++ 
++ interface Ctx { clientId: string; meta: Meta | null; txs: OtherTx[]; loading: boolean; error: string | null; open: (id: string) => void }
++ 
++ function OtherWorkspace() {
++   const router = useRouter();
++   const pathname = usePathname();
++   const params = useSearchParams();
++   const { activeClientId } = useActiveClient();
++   const kid = activeClientId ? String(activeClientId) : null;
++   const tab = (params.get('tab') as Tab) || 'overview';
++   const goTab = useCallback((t: Tab) => router.replace(t === 'overview' ? pathname : `${pathname}?tab=${t}`, { scroll: false }), [pathname, router]);
++   const meta = useOtherTxData<Meta | null>(kid ? `otmeta:${kid}` : null, s => fetchMeta(kid as string, s), null);
++   const txs = useOtherTxData<OtherTx[]>(kid ? `otx:${kid}` : null, s => fetchTransactions(kid as string, s), []);
++   const [buka, setBuka] = useState<string | null>(null);
++   const [modal, setModal] = useState<null | 'templates' | 'import'>(null);
++   const [exporting, setExporting] = useState(false);
++   const review = txs.data.filter(t => t.status === 'pending_review').length;
++   const exceptions = txs.data.filter(t => !['posted', 'reversed'].includes(t.status) && t.issues.length).length;
++ 
++   const ekspor = async (format: ExportFormat) => {
++     if (!txs.data.length) { toast.info('There are no transactions to export.'); return; }
++     setExporting(true);
++     try {
++       await downloadTable(format, {
++         title: 'Other Transactions', clientName: meta.data?.client_name || '', fileName: `other-transactions-${todayIso()}`, orientation: 'landscape',
++         rows: txs.data,
++         columns: [
++           { header: 'Transaction ID', value: t => t.journal_no }, { header: 'Date', value: t => fmtDate(t.journal_date) },
++           { header: 'Type', value: t => t.type_name }, { header: 'Subtype', value: t => t.subtype_label },
++           { header: 'Counterparty', value: t => t.counterparty }, { header: 'Reference', value: t => t.reference_no },
++           { header: 'Description', value: t => t.description }, { header: 'Amount (IDR)', value: t => t.amount_idr, type: 'money' },
++           { header: 'Status', value: t => t.status_label },
++           { header: 'Journal', value: t => t.lines.map(l => `${l.debit ? 'Dr' : 'Cr'} ${l.account_code} ${(l.debit || l.credit).toLocaleString('id-ID')}`).join('; ') },
++         ],
++       });
++     } catch (e) {
++       toast.error((e as Error).message || 'Export failed.');
++     } finally {
++       setExporting(false);
++     }
++   };
++ 
++   const ctx: Ctx | null = kid ? { clientId: kid, meta: meta.data, txs: txs.data, loading: txs.loading && !txs.data.length, error: txs.error || meta.error, open: setBuka } : null;
++   const templates = (meta.data?.templates ?? []).filter(t => t.is_active);
++ 
++   return (
++     <div className="min-h-screen bg-background pb-16">
++       <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
++         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
++           <div>
++             <h1 className="text-2xl font-bold tracking-tight text-[#0B5E5C] sm:text-3xl">Other Transactions</h1>
++             <p className="mt-1 text-sm text-muted-foreground">Special business events outside Sales, Purchase, and Cash &amp; Bank.</p>
++           </div>
++           <div className="flex flex-wrap items-center gap-2">
++             <Menu width="w-72" button={() => (
++               <button type="button" disabled={!kid} className={`${btnPrimary} bg-[#0E2F26] hover:bg-[#0B5E5C]`}><Plus size={16} /> Create Transaction <ChevronDown size={14} /></button>
++             )}>
++               {close => <>
++                 {(templates.length ? templates : []).map(t => (
++                   <MenuItem key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
++                     <TypeIcon type={t.type_key} /> <span className="flex-1">{t.name}</span>{!t.is_system && <span className="text-[10px] text-muted-foreground">Custom</span>}
++                   </MenuItem>
++                 ))}
++                 {!templates.length && <p className="px-3 py-2 text-xs text-muted-foreground">Loading templates...</p>}
++               </>}
++             </Menu>
++             <button type="button" disabled={!kid} onClick={() => setModal('templates')} className={btnOutline}><FileText size={16} /> Transaction Templates</button>
++             <button type="button" disabled={!kid} onClick={() => setModal('import')} className={btnOutline}><Upload size={16} /> Import</button>
++             <Menu width="w-44" button={() => (
++               <button type="button" disabled={!kid || exporting} className={btnOutline}>{exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export</button>
++             )}>
++               {close => <>
++                 <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
++                 <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
++                 <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
++               </>}
++             </Menu>
++           </div>
++         </div>
++         <nav className={tabNavCls}>
++           {TABS.map(t => {
++             const n = t.id === 'review' ? review : t.id === 'exceptions' ? exceptions : 0;
++             return (
++               <button key={t.id} type="button" onClick={() => goTab(t.id)} className={tabCls(t.id === tab)}>
++                 <t.icon size={16} /> {t.label}
++                 {n > 0 && <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{n}</span>}
++               </button>
++             );
++           })}
++         </nav>
++         {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
++         {ctx?.error && <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{ctx.error}</div>}
++         {ctx && tab === 'overview' && <OverviewTab {...ctx} onTemplates={() => setModal('templates')} />}
++         {ctx && tab === 'categories' && <CategoriesTab {...ctx} />}
++         {ctx && tab === 'review' && <ReviewTab {...ctx} />}
++         {ctx && tab === 'preview' && <PreviewTab {...ctx} />}
++         {ctx && tab === 'exceptions' && <ExceptionsTab {...ctx} />}
++         {ctx && tab === 'posted' && <PostedTab {...ctx} />}
++       </div>
++       {kid && <TransactionDrawer clientId={kid} txId={buka} canPost={!!meta.data?.can_post} onClose={() => setBuka(null)} />}
++       {kid && modal === 'templates' && meta.data && <TemplatesModal clientId={kid} meta={meta.data} onClose={() => setModal(null)} />}
++       {kid && modal === 'import' && meta.data && <OtherImportModal clientId={kid} meta={meta.data} onClose={() => setModal(null)} />}
++     </div>
++   );
++ }
+++>>>>>>> origin/playground-willi
+  
+ -export default function OtherPage() {
+ -  return <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}><OtherWorkspace /></React.Suspense>;
+ -}
+ +  const journals = useMemo(() => buildOtherJournals(data.transactions), [data.transactions]);
+ +  const createdByName = user?.nama || user?.username || 'System';
+  
+++<<<<<<< HEAD
+ +  const openNew = useCallback(() => setModal({ draft: null }), []);
+ +
+ +  const run = useCallback(
+ +    async (action: 'approve' | 'post' | 'reject' | 'reopen' | 'delete', js: OtherJournal[], opts: { reason?: string; postingDate?: string } = {}) => {
+ +      const ids = js.filter((j) => allowedActions(j).includes(action)).map((j) => j.draftId as string);
+ +      if (ids.length === 0) {
+ +        toast.info(`Tidak ada jurnal yang bisa di-${ACTION_LABEL[action].toLowerCase()} pada status saat ini.`);
+ +        return 0;
+ +      }
+ +      setBusy(true);
+ +      try {
+ +        const res = await data.runAction(action === 'delete' ? 'bulk-delete' : action, ids, opts);
+ +        return res.done;
+ +      } finally {
+ +        setBusy(false);
+ +      }
+ +    },
+ +    [data],
+++=======
++ // ============================================================
++ // TABEL TRANSAKSI (dipakai beberapa tab)
++ // ============================================================
++ 
++ function TxTable({ rows, loading, open, empty, select, extra }: {
++   rows: OtherTx[]; loading?: boolean; open: (id: string) => void; empty: string;
++   select?: { ids: Set<string>; toggle: (id: string) => void; all: () => void };
++   extra?: (t: OtherTx) => React.ReactNode;
++ }) {
++   const cols = 8 + (select ? 1 : 0) + (extra ? 1 : 0);
++   return (
++     <div className="overflow-x-auto">
++       <table className="w-full min-w-[900px] text-sm">
++         <thead><tr className="bg-slate-50 text-left text-xs text-muted-foreground">
++           {select && <th className="w-8 px-3 py-2.5"><input type="checkbox" checked={!!rows.length && rows.every(r => select.ids.has(r.id))} onChange={select.all} /></th>}
++           <th className="px-3 py-2.5 font-medium">Transaction ID</th><th className="px-3 py-2.5 font-medium">Date</th>
++           <th className="px-3 py-2.5 font-medium">Type</th><th className="px-3 py-2.5 font-medium">Counterparty</th>
++           <th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 font-medium">Status</th>
++           <th className="px-3 py-2.5 font-medium">Journal Result</th>
++           {extra && <th className="px-3 py-2.5 font-medium">Notes</th>}
++           <th className="px-3 py-2.5" />
++         </tr></thead>
++         <tbody className="divide-y divide-border">
++           {!rows.length ? <EmptyRow cols={cols} text={empty} loading={loading} /> : rows.map(t => (
++             <tr key={t.id} className="hover:bg-slate-50/60">
++               {select && <td className="px-3 py-2.5"><input type="checkbox" checked={select.ids.has(t.id)} onChange={() => select.toggle(t.id)} /></td>}
++               <td className={`${tdCls} font-mono text-xs`}><button type="button" onClick={() => open(t.id)} className="hover:text-[#0F7D4E] hover:underline">{t.journal_no}</button></td>
++               <td className={`${tdCls} whitespace-nowrap text-xs`}>{fmtDate(t.journal_date)}</td>
++               <td className={tdCls}><span className="flex items-center gap-2"><TypeIcon type={t.type_key} /><span className="text-xs"><b className="font-medium">{t.type_name}</b><span className="block text-muted-foreground">{t.subtype_label}</span></span></span></td>
++               <td className={`${tdCls} text-xs`}>{t.counterparty || 'ΓÇö'}</td>
++               <td className={`${tdCls} whitespace-nowrap text-right text-xs font-medium`}>{rupiah(t.amount_idr)}</td>
++               <td className={tdCls}><StatusPill s={t.status} /></td>
++               <td className={`${tdCls} text-xs`}>{['posted', 'reversed'].includes(t.status)
++                 ? <span className="inline-flex items-center gap-1 font-mono"><FileText size={13} className="text-muted-foreground" />{t.journal_no}</span>
++                 : <span className="text-muted-foreground">ΓÇö</span>}</td>
++               {extra && <td className={`${tdCls} text-xs`}>{extra(t)}</td>}
++               <td className={`${tdCls} text-right`}>
++                 <span className="inline-flex gap-1">
++                   {EDITABLE.includes(t.status) && t.source !== 'legacy' && <Link href={editHref(t.id)} className={btnSmall}>Edit</Link>}
++                   <button type="button" onClick={() => open(t.id)} className={btnSmall}><Eye size={13} /></button>
++                 </span>
++               </td>
++             </tr>
++           ))}
++         </tbody>
++       </table>
++     </div>
++   );
++ }
++ 
++ function useSelect(rows: OtherTx[]) {
++   const [ids, setIds] = useState<Set<string>>(new Set());
++   const aktif = new Set([...ids].filter(i => rows.some(r => r.id === i)));
++   return {
++     ids: aktif,
++     toggle: (id: string) => setIds(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }),
++     all: () => setIds(aktif.size === rows.length ? new Set() : new Set(rows.map(r => r.id))),
++     clear: () => setIds(new Set()),
++   };
++ }
++ 
++ function Filters({ q, setQ, type, setType, status, setStatus, statuses }: {
++   q: string; setQ: (v: string) => void; type: '' | TypeKey; setType: (v: '' | TypeKey) => void;
++   status?: '' | TxStatus; setStatus?: (v: '' | TxStatus) => void; statuses?: TxStatus[];
++ }) {
++   return (
++     <div className="flex flex-col gap-2 px-5 pb-3 sm:flex-row">
++       <SearchBox value={q} onChange={setQ} placeholder="Search transactions, counterparty, or reference..." className="flex-1" />
++       <select value={type} onChange={e => setType(e.target.value as '' | TypeKey)} className={`${inputCls} sm:w-56`}>
++         <option value="">All types</option>
++         {TYPE_ORDER.map(k => <option key={k} value={k}>{TYPE_UI[k].title}</option>)}
++       </select>
++       {setStatus && statuses && (
++         <select value={status} onChange={e => setStatus(e.target.value as '' | TxStatus)} className={`${inputCls} sm:w-44`}>
++           <option value="">All statuses</option>
++           {statuses.map(s => <option key={s} value={s}>{s === 'pending_review' ? 'Under Review' : s[0].toUpperCase() + s.slice(1)}</option>)}
++         </select>
++       )}
++     </div>
+++>>>>>>> origin/playground-willi
+    );
++ }
+  
+++<<<<<<< HEAD
+ +  /** Titik masuk tunggal untuk semua tombol aksi. */
+ +  const act = useCallback(
+ +    (action: OtherAction, js: OtherJournal[]) => {
+ +      if (js.length === 0) return;
+ +      if (action === 'edit') {
+ +        const d = data.drafts.find((x) => x.id === js[0].draftId) || null;
+ +        if (!d) { toast.error('Data jurnal tidak ditemukan di server.'); return; }
+ +        setModal({ draft: d });
+ +        return;
+ +      }
+ +      if (action === 'approve' || action === 'reopen') { void run(action, js); return; }
+ +      setReason('');
+ +      setPostingDate('');
+ +      setConfirm({ action, journals: js.filter((j) => allowedActions(j).includes(action)) });
+ +    },
+ +    [data.drafts, run],
+ +  );
+ +
+ +  /** Tandai catatan review selesai (menghapus notes jurnal). */
+ +  const clearNotes = useCallback(
+ +    async (j: OtherJournal) => {
+ +      if (!j.draftId) return;
+ +      setBusy(true);
+ +      try {
+ +        await updateJeDraftFull(j.draftId, { notes: null });
+ +        toast.success('Catatan ditandai selesai.', { description: j.jeId });
+ +        data.refresh();
+ +      } catch (err) {
+ +        toast.error(err instanceof Error ? err.message : 'Gagal menyimpan perubahan.');
+ +      } finally {
+ +        setBusy(false);
+ +      }
+ +    },
+ +    [data],
+ +  );
+ +
+ +  const exportCsv = useCallback((js: OtherJournal[], name = 'jurnal-other') => {
+ +    if (js.length === 0) { toast.info('Tidak ada data untuk diekspor.'); return; }
+ +    downloadCsv(`${name}-${new Date().toISOString().slice(0, 10)}.csv`, journalsToCsv(js));
+ +    toast.success(`${js.length} jurnal diekspor ke CSV.`);
+ +  }, []);
+ +
+ +  const submitConfirm = async () => {
+ +    if (!confirm) return;
+ +    if (confirm.action === 'reject' && !reason.trim()) { toast.error('Alasan penolakan wajib diisi.'); return; }
+ +    const c = confirm;
+ +    await run(c.action, c.journals, { reason: reason.trim() || undefined, postingDate: postingDate || undefined });
+ +    setConfirm(null);
+ +  };
+ +
+ +  const dialogs = (
+ +    <>
+ +      {modal && data.clientId && (
+ +        <OtherJournalModal
+ +          clientId={data.clientId}
+ +          createdByName={createdByName}
+ +          draft={modal.draft}
+ +          onClose={() => setModal(null)}
+ +          onSaved={data.refresh}
+ +        />
+ +      )}
+ +      {confirm && (
+ +        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+ +          <div className="bg-card w-full max-w-md rounded-xl p-5 space-y-3 shadow-xl">
+ +            <h3 className="text-base font-semibold text-foreground">{CONFIRM_TEXT[confirm.action].title}</h3>
+ +            <p className="text-sm text-muted-foreground">
+ +              {confirm.journals.length} jurnal akan {ACTION_LABEL[confirm.action].toLowerCase()}:{' '}
+ +              <span className="font-mono text-xs">{confirm.journals.slice(0, 3).map((j) => j.jeId).join(', ')}{confirm.journals.length > 3 ? ` +${confirm.journals.length - 3} lagi` : ''}</span>
+ +            </p>
+ +            {confirm.action === 'post' && (
+ +              <>
+ +                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+ +                  Jurnal yang diposting langsung masuk Buku Besar & Financial Statements dan tidak bisa diedit lagi.
+ +                  Jurnal tidak balance atau berakun di luar COA klien akan dilewati.
+ +                </p>
+ +                <div>
+ +                  <label className="text-[11px] text-muted-foreground">Tanggal posting (opsional, default = tanggal jurnal)</label>
+ +                  <input type="date" value={postingDate} onChange={(e) => setPostingDate(e.target.value)} className="w-full mt-0.5 px-2 py-1.5 text-sm bg-background border border-border rounded-md" />
+ +                </div>
+ +              </>
+ +            )}
+ +            {confirm.action === 'reject' && (
+ +              <div>
+ +                <label className="text-[11px] text-muted-foreground">Alasan penolakan</label>
+ +                <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} className="w-full mt-0.5 px-2 py-1.5 text-sm bg-background border border-border rounded-md" />
+ +              </div>
+ +            )}
+ +            {confirm.action === 'delete' && (
+ +              <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-md px-3 py-2">Jurnal yang dihapus tidak tampil lagi di halaman ini.</p>
+ +            )}
+ +            <div className="flex gap-2 pt-1">
+ +              <button onClick={() => setConfirm(null)} className="flex-1 py-2 border border-border rounded-lg text-xs font-medium hover:bg-muted">Batal</button>
+ +              <button onClick={submitConfirm} disabled={busy} className={`flex-1 py-2 text-white rounded-lg text-xs font-semibold disabled:opacity-50 ${CONFIRM_TEXT[confirm.action].tone}`}>
+ +                {busy ? 'MemprosesΓÇª' : CONFIRM_TEXT[confirm.action].button}
+ +              </button>
+ +            </div>
+ +          </div>
+ +        </div>
+ +      )}
+ +    </>
+++=======
++ // ============================================================
++ // OVERVIEW
++ // ============================================================
++ 
++ const PIPELINE = [
++   ['Select Type', 'Choose transaction template'], ['Enter Details', 'Fill in transaction information'],
++   ['Review Rules', 'System applies accounting rules'], ['Approval', 'Send for approval (if required)'], ['Post to GL', 'Generate and post journal entry'],
++ ];
++ 
++ function OverviewTab({ clientId, meta, open, onTemplates }: Ctx & { onTemplates: () => void }) {
++   const [months, setMonths] = useState(6);
++   const ov = useOtherTxData<Overview | null>(`otov:${clientId}:${months}`, s => fetchOverview(clientId, months, s), null);
++   const d = ov.data;
++   const templates = (d?.templates ?? meta?.templates ?? []).filter(t => t.is_active);
++   return (
++     <div className="space-y-5">
++       <Card title="Quick Create by Transaction Type" subtitle="Choose a business event template to get started. Each template comes with predefined rules and account mappings."
++         action={<button type="button" onClick={onTemplates} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F7D4E]">View all templates <ArrowRight size={13} /></button>}>
++         <div className="grid grid-cols-2 gap-3 px-5 pb-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
++           {(templates.length ? templates.filter(t => t.is_system) : []).map(t => {
++             const u = TYPE_UI[t.type_key];
++             return (
++               <Link key={t.id} href={createHref(t.type_key, t.id)} className={`rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${u.card}`}>
++                 <TypeIcon type={t.type_key} size="md" />
++                 <p className="mt-3 text-sm font-semibold text-foreground">{t.name}</p>
++                 <p className="mt-0.5 text-xs text-muted-foreground">{t.description}</p>
++               </Link>
++             );
++           })}
++           {!templates.length && [0, 1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-32 animate-pulse rounded-2xl bg-slate-100" />)}
++         </div>
++       </Card>
++ 
++       <Card title="Transaction Pipeline" subtitle="From business event to automated journal entry.">
++         <div className="flex flex-col gap-3 px-5 pb-5 lg:flex-row lg:items-center">
++           {PIPELINE.map(([t, s], i) => (
++             <React.Fragment key={t}>
++               <div className="flex flex-1 items-start gap-3">
++                 <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${i === 0 ? 'bg-[#0F7D4E] text-white' : 'bg-slate-100 text-foreground'}`}>{i + 1}</span>
++                 <div><p className="text-sm font-semibold">{t}</p><p className="text-xs text-muted-foreground">{s}</p></div>
++               </div>
++               {i < PIPELINE.length - 1 && <ArrowRight size={18} className="hidden shrink-0 text-muted-foreground lg:block" />}
++             </React.Fragment>
++           ))}
++         </div>
++       </Card>
++ 
++       <KpiGrid cols={5} loading={ov.loading && !d} cards={[
++         { label: 'Total Transactions', value: String(d?.kpi.total ?? 0), icon: LayoutGrid, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">{d?.kpi.draft ?? 0} draft</span> },
++         { label: 'Under Review', value: String(d?.kpi.pending_review ?? 0), icon: Clock, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">Waiting for approval</span> },
++         { label: 'Ready to Post', value: String(d?.kpi.approved ?? 0), icon: CheckCircle2, tone: 'amber', delta: <span className="text-[11px] text-muted-foreground">Approved, not posted yet</span> },
++         { label: 'Posted', value: String(d?.kpi.posted ?? 0), icon: CircleCheck, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">{rupiah(d?.kpi.posted_amount)}</span> },
++         { label: 'Exceptions', value: String(d?.kpi.exceptions ?? 0), icon: AlertTriangle, tone: 'red', delta: <span className="text-[11px] text-muted-foreground">Need attention before posting</span> },
++       ]} />
++ 
++       <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
++         <Card className="xl:col-span-3" title="Recent Other Transactions"
++           action={<Link href="/transactions/other?tab=posted" className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F7D4E]">View all <ArrowRight size={13} /></Link>}>
++           <TxTable rows={d?.recent ?? []} loading={ov.loading && !d} open={open} empty="No other transactions yet. Pick a template above to create one." />
++         </Card>
++         <div className="space-y-5 xl:col-span-2">
++           <Card title="Other Transactions by Month" action={
++             <select value={months} onChange={e => setMonths(Number(e.target.value))} className="rounded-lg border border-border bg-card px-2 py-1 text-xs">
++               <option value={6}>Last 6 months</option><option value={12}>Last 12 months</option>
++             </select>
++           }>
++             <div className="h-60 px-3 pb-4">
++               {!d?.trend.some(t => t.count) ? <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No transactions in this period.</p> : (
++                 <ResponsiveContainer width="100%" height="100%">
++                   <ComposedChart data={d.trend} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
++                     <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
++                     <XAxis dataKey="month" tickFormatter={m => fmtMonth(String(m))} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} />
++                     <YAxis yAxisId="n" allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={28} />
++                     <YAxis yAxisId="rp" orientation="right" tickFormatter={v => rupiahShort(Number(v))} tick={{ fontSize: 10, fill: '#64748B' }} axisLine={false} tickLine={false} width={64} />
++                     <Tooltip formatter={(v: number, n: string) => (n === 'Total Amount (Rp)' ? rupiah(v) : v)} labelFormatter={m => fmtMonth(String(m))} />
++                     <Legend wrapperStyle={{ fontSize: 11 }} />
++                     <Bar yAxisId="n" dataKey="count" name="Number of Transactions" fill="#BBF7D0" radius={[4, 4, 0, 0]} />
++                     <Line yAxisId="rp" type="monotone" dataKey="amount" name="Total Amount (Rp)" stroke="#0F7D4E" strokeWidth={2} dot={{ r: 3 }} />
++                   </ComposedChart>
++                 </ResponsiveContainer>
++               )}
++             </div>
++           </Card>
++           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
++             <Card title="Rule Mapping Summary" action={<button type="button" onClick={onTemplates} className="text-muted-foreground"><ChevronRight size={16} /></button>}>
++               <dl className="space-y-2 px-5 pb-5 text-xs">
++                 {[['Active Rules', d?.rules.active_rules], ['Transaction Templates', d?.rules.templates], ['Auto-Post Enabled', d?.rules.auto_post],
++                   ['Requires Approval', d?.rules.requires_approval]].map(([l, v]) => (
++                   <div key={String(l)} className="flex justify-between"><dt className="text-muted-foreground">{l}</dt><dd className="font-semibold">{v ?? 0}</dd></div>
++                 ))}
++                 {!!d?.rules.incomplete && <p className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">{d.rules.incomplete} rule(s) have no default account yet.</p>}
++               </dl>
++             </Card>
++             <Card title="Top Categories" action={<Link href="/transactions/other?tab=categories" className="text-muted-foreground"><ChevronRight size={16} /></Link>}>
++               <ul className="space-y-2 px-5 pb-5 text-xs">
++                 {!d?.top_categories.length && <li className="text-muted-foreground">No data yet.</li>}
++                 {d?.top_categories.map(c => (
++                   <li key={c.type_key} className="flex items-center gap-2">
++                     <span className="h-2 w-2 rounded-full" style={{ background: TYPE_UI[c.type_key].dot }} />
++                     <span className="flex-1 truncate">{c.type_name}</span><b>{c.count}</b><span className="w-10 text-right text-muted-foreground">{c.share}%</span>
++                   </li>
++                 ))}
++               </ul>
++             </Card>
++           </div>
++           <Card title="Pending Review" action={<Link href="/transactions/other?tab=review" className="text-muted-foreground"><ChevronRight size={16} /></Link>}>
++             <ul className="divide-y divide-border px-5 pb-4 text-xs">
++               {!d?.pending.length && <li className="py-2 text-muted-foreground">Nothing is waiting for review.</li>}
++               {d?.pending.map(t => (
++                 <li key={t.id} className="flex items-center gap-2 py-2">
++                   <TypeIcon type={t.type_key} />
++                   <button type="button" onClick={() => open(t.id)} className="flex-1 truncate text-left"><b className="font-mono font-medium">{t.journal_no}</b> ┬╖ {t.counterparty || t.type_name}</button>
++                   <span className="font-medium">{rupiah(t.amount_idr)}</span>
++                 </li>
++               ))}
++             </ul>
++           </Card>
++         </div>
++       </div>
++     </div>
++   );
++ }
++ 
++ // ============================================================
++ // CATEGORIES
++ // ============================================================
++ 
++ function CategoriesTab({ clientId, txs, loading, open }: Ctx) {
++   const cat = useOtherTxData<CategoryStat[]>(`otcat:${clientId}`, s => fetchCategories(clientId, s), []);
++   const [type, setType] = useState<'' | TypeKey>('');
++   const [q, setQ] = useState('');
++   const [status, setStatus] = useState<'' | TxStatus>('');
++   const rows = txs.filter(t => (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
++   return (
++     <div className="space-y-5">
++       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
++         {(cat.data.length ? cat.data : []).map(c => {
++           const u = TYPE_UI[c.type_key];
++           const aktif = type === c.type_key;
++           return (
++             <div key={c.type_key} className={`rounded-2xl border p-4 shadow-sm ${aktif ? 'border-[#0F7D4E] ring-2 ring-[#22C55E]/20' : 'border-border'} bg-card`}>
++               <div className="flex items-start gap-3">
++                 <TypeIcon type={c.type_key} size="md" />
++                 <div className="min-w-0 flex-1">
++                   <p className="text-sm font-semibold">{c.name}</p>
++                   <p className="text-xs text-muted-foreground">{c.description}</p>
++                 </div>
++               </div>
++               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
++                 <div className="rounded-lg bg-slate-50 py-1.5"><p className="font-bold">{c.count}</p><p className="text-[10px] text-muted-foreground">Total</p></div>
++                 <div className="rounded-lg bg-emerald-50 py-1.5"><p className="font-bold text-emerald-700">{c.posted}</p><p className="text-[10px] text-muted-foreground">Posted</p></div>
++                 <div className="rounded-lg bg-amber-50 py-1.5"><p className="font-bold text-amber-700">{c.in_progress}</p><p className="text-[10px] text-muted-foreground">In Progress</p></div>
++               </div>
++               <ul className="mt-3 space-y-1 text-[11px]">
++                 {c.subtypes.map(s => (
++                   <li key={s.subtype} className="flex justify-between gap-2"><span className="truncate text-muted-foreground">{s.label}</span><span>{s.count} ┬╖ {rupiahShort(s.amount)}</span></li>
++                 ))}
++               </ul>
++               <p className="mt-2 text-[11px] text-muted-foreground">Posted value <b className="text-foreground">{rupiah(c.posted_amount)}</b>{c.last_date ? ` ┬╖ last ${fmtDate(c.last_date)}` : ''}</p>
++               <div className="mt-3 flex gap-2">
++                 <Link href={createHref(c.type_key, c.templates.find(t => t.is_system)?.id)} className={`${btnSmall} border-transparent ${u.iconBg}`}><Plus size={12} /> Create</Link>
++                 <button type="button" onClick={() => setType(aktif ? '' : c.type_key)} className={btnSmall}>{aktif ? 'Show all' : 'View transactions'}</button>
++               </div>
++             </div>
++           );
++         })}
++         {!cat.data.length && [0, 1, 2, 3].map(i => <div key={i} className="h-64 animate-pulse rounded-2xl bg-slate-100" />)}
++       </div>
++       <Card title={type ? `${TYPE_UI[type].title} Transactions` : 'All Other Transactions'} subtitle={`${rows.length} transaction(s)`}>
++         <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus}
++           statuses={['draft', 'pending_review', 'approved', 'rejected', 'posted', 'reversed']} />
++         <TxTable rows={rows} loading={loading} open={open} empty="No transactions match the filter." />
++       </Card>
++     </div>
++   );
++ }
++ 
++ // ============================================================
++ // REVIEW QUEUE
++ // ============================================================
++ 
++ function ReviewTab({ clientId, meta, txs, loading, open }: Ctx) {
++   const [q, setQ] = useState('');
++   const [type, setType] = useState<'' | TypeKey>('');
++   const [busy, setBusy] = useState<string | null>(null);
++   const [alasan, setAlasan] = useState<string | null>(null);
++   const filt = (t: OtherTx) => (!type || t.type_key === type) && cocok(t, q);
++   const antre = txs.filter(t => t.status === 'pending_review' && filt(t));
++   const siap = txs.filter(t => t.status === 'approved' && filt(t));
++   const sel = useSelect(antre);
++   const selPost = useSelect(siap);
++   const jalan = async (label: string, fn: () => Promise<boolean>, clear: () => void) => {
++     setBusy(label);
++     if (await fn()) clear();
++     setBusy(null);
++   };
++   const hari = (iso: string | null) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)) : null);
++   return (
++     <div className="space-y-5">
++       <Card title="Waiting for Review" subtitle="Transactions submitted for approval. Approve to make them ready for posting, or reject with a reason."
++         action={<>
++           <button type="button" disabled={!sel.ids.size || !!busy} onClick={() => setAlasan('')} className={`${btnOutline} text-rose-600`}>Reject</button>
++           <button type="button" disabled={!sel.ids.size || !!busy} onClick={() => jalan('approve', () => runBulk(clientId, 'approve', [...sel.ids]), sel.clear)} className={btnPrimary}>
++             {busy === 'approve' && <Loader2 size={14} className="animate-spin" />} Approve {sel.ids.size ? `(${sel.ids.size})` : ''}
++           </button>
++         </>}>
++         <Filters q={q} setQ={setQ} type={type} setType={setType} />
++         <TxTable rows={antre} loading={loading} open={open} empty="Nothing is waiting for review." select={sel}
++           extra={t => {
++             const n = hari(t.submitted_at);
++             return <span className={t.has_error ? 'text-rose-600' : 'text-muted-foreground'}>
++               {t.has_error ? t.issues.find(i => i.level === 'error')?.message : `By ${t.submitted_by_name ?? 'ΓÇö'}${n !== null ? ` ┬╖ ${n} day(s) ago` : ''}`}
++             </span>;
++           }} />
++       </Card>
++       <Card title="Approved ΓÇö Ready to Post" subtitle={meta?.can_post ? 'Post approved transactions to the General Ledger.' : 'Posting requires Manager level or above.'}
++         action={meta?.can_post && (
++           <button type="button" disabled={!selPost.ids.size || !!busy} onClick={() => jalan('post', () => runBulk(clientId, 'post', [...selPost.ids]), selPost.clear)} className={btnPrimary}>
++             {busy === 'post' && <Loader2 size={14} className="animate-spin" />} Post to GL {selPost.ids.size ? `(${selPost.ids.size})` : ''}
++           </button>
++         )}>
++         <TxTable rows={siap} loading={loading} open={open} empty="No approved transactions waiting to be posted." select={meta?.can_post ? selPost : undefined}
++           extra={t => <span className="text-muted-foreground">Approved by {t.approved_by_name ?? 'ΓÇö'}</span>} />
++       </Card>
++       {alasan !== null && (
++         <RejectModal count={sel.ids.size} onClose={() => setAlasan(null)}
++           onConfirm={async r => { await jalan('reject', () => runBulk(clientId, 'reject', [...sel.ids], r), sel.clear); setAlasan(null); }} />
++       )}
++     </div>
++   );
++ }
++ 
++ function RejectModal({ count, onClose, onConfirm }: { count: number; onClose: () => void; onConfirm: (reason: string) => Promise<void> }) {
++   const [r, setR] = useState('');
++   const [busy, setBusy] = useState(false);
++   return (
++     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
++       <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
++         <h3 className="text-lg font-bold">Reject {count} transaction(s)</h3>
++         <p className="mt-1 text-xs text-muted-foreground">The submitter can edit and resubmit after rejection.</p>
++         <textarea value={r} onChange={e => setR(e.target.value)} rows={3} maxLength={2000} placeholder="Reason" className={`${inputCls} mt-4`} />
++         <div className="mt-4 flex justify-end gap-2">
++           <button type="button" onClick={onClose} className={btnOutline}>Cancel</button>
++           <button type="button" disabled={busy || r.trim().length < 3} onClick={async () => { setBusy(true); await onConfirm(r.trim()); setBusy(false); }}
++             className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
++             {busy && <Loader2 size={14} className="animate-spin" />} Reject
++           </button>
++         </div>
++       </div>
++     </div>
++   );
++ }
++ 
++ // ============================================================
++ // JOURNAL PREVIEW
++ // ============================================================
++ 
++ function PreviewTab({ txs, loading, open }: Ctx) {
++   const [q, setQ] = useState('');
++   const [type, setType] = useState<'' | TypeKey>('');
++   const [status, setStatus] = useState<'' | TxStatus>('');
++   const rows = txs.filter(t => !['posted', 'reversed'].includes(t.status) && (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
++   const seimbang = rows.filter(t => t.lines.length && t.total_debit === t.total_credit).length;
++   return (
++     <Card title="Journal Preview" subtitle={`Journals generated from the template rules for transactions not posted yet ΓÇö ${seimbang} of ${rows.length} balanced.`}>
++       <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus} statuses={['draft', 'pending_review', 'approved', 'rejected']} />
++       <div className="grid grid-cols-1 gap-4 px-5 pb-5 lg:grid-cols-2">
++         {loading && [0, 1].map(i => <div key={i} className="h-48 animate-pulse rounded-2xl bg-slate-100" />)}
++         {!loading && !rows.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No unposted transactions.</p>}
++         {rows.map(t => {
++           const ok = t.lines.length > 0 && t.total_debit === t.total_credit;
++           return (
++             <div key={t.id} className="rounded-2xl border border-border p-4">
++               <div className="mb-2 flex items-start justify-between gap-2">
++                 <button type="button" onClick={() => open(t.id)} className="flex items-center gap-2 text-left">
++                   <TypeIcon type={t.type_key} />
++                   <span className="text-xs"><b className="font-mono text-sm">{t.journal_no}</b><span className="block text-muted-foreground">{t.subtype_label} ┬╖ {fmtDate(t.journal_date)} ┬╖ {t.counterparty || 'ΓÇö'}</span></span>
++                 </button>
++                 <span className="flex items-center gap-1.5">
++                   <StatusPill s={t.status} />
++                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'}`}>{ok ? 'Balanced' : 'Not balanced'}</span>
++                 </span>
++               </div>
++               {t.lines.length ? <JournalLines lines={t.lines} /> : <p className="py-3 text-xs text-muted-foreground">No journal lines yet ΓÇö complete the accounts.</p>}
++               {t.issues.some(i => i.level === 'error') && <p className="mt-2 text-[11px] text-rose-600">{t.issues.find(i => i.level === 'error')?.message}</p>}
++             </div>
++           );
++         })}
++       </div>
++     </Card>
+++>>>>>>> origin/playground-willi
+    );
+ +
+ +  return { ...data, journals, busy, openNew, act, clearNotes, exportCsv, dialogs };
+  }
+  
+ -// ============================================================
+ -// EXCEPTIONS
+ -// ============================================================
+ +export type OtherWorkspace = ReturnType<typeof useOtherWorkspace>;
+ +
+++<<<<<<< HEAD
+ +const ACTION_STYLE: Record<OtherAction, { icon: React.ReactNode; cls: string }> = {
+ +  edit: { icon: <Pencil size={12} />, cls: 'border-border hover:bg-muted text-foreground' },
+ +  approve: { icon: <CheckCircle2 size={12} />, cls: 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700' },
+ +  post: { icon: <Send size={12} />, cls: 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700' },
+ +  reject: { icon: <XCircle size={12} />, cls: 'border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700' },
+ +  reopen: { icon: <RotateCcw size={12} />, cls: 'border-border hover:bg-muted text-foreground' },
+ +  delete: { icon: <Trash2 size={12} />, cls: 'border-rose-200 hover:bg-rose-50 text-rose-600' },
+ +};
+  
+ +/** Deretan tombol aksi untuk satu jurnal (hanya yang diizinkan status-nya). */
+ +export function OtherActionButtons({
+ +  journal,
+ +  ws,
+ +  only,
+ +  compact = false,
+ +}: {
+ +  journal: OtherJournal;
+ +  ws: OtherWorkspace;
+ +  only?: OtherAction[];
+ +  compact?: boolean;
+ +}) {
+ +  const actions = allowedActions(journal).filter((a) => !only || only.includes(a));
+ +  if (actions.length === 0) return null;
+ +  return (
+ +    <div className="flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+ +      {actions.map((a) => (
+ +        <button
+ +          key={a}
+ +          type="button"
+ +          disabled={ws.busy}
+ +          onClick={() => ws.act(a, [journal])}
+ +          title={ACTION_LABEL[a]}
+ +          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-medium disabled:opacity-50 ${ACTION_STYLE[a].cls}`}
+ +        >
+ +          {ACTION_STYLE[a].icon}
+ +          {!compact && ACTION_LABEL[a]}
+ +        </button>
+ +      ))}
+ +    </div>
+ +  );
+ +}
+++=======
++ function ExceptionsTab({ txs, loading, open }: Ctx) {
++   const [q, setQ] = useState('');
++   const [type, setType] = useState<'' | TypeKey>('');
++   const [level, setLevel] = useState<'' | 'error' | 'warning'>('');
++   const rows = useMemo(() => txs.filter(t => !['posted', 'reversed'].includes(t.status) && t.issues.length
++     && (!level || t.issues.some(i => i.level === level)) && (!type || t.type_key === type) && cocok(t, q)), [txs, level, type, q]);
++   const nErr = txs.filter(t => !['posted', 'reversed'].includes(t.status) && t.has_error).length;
++   const nWarn = txs.filter(t => !['posted', 'reversed'].includes(t.status) && !t.has_error && t.issues.length).length;
++   return (
++     <div className="space-y-5">
++       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
++         <button type="button" onClick={() => setLevel(level === 'error' ? '' : 'error')} className={`rounded-2xl border p-4 text-left ${level === 'error' ? 'border-rose-300 bg-rose-50' : 'border-rose-100 bg-rose-50/40'}`}>
++           <p className="text-xs text-muted-foreground">Blocking errors</p><p className="text-2xl font-bold text-rose-600">{nErr}</p>
++           <p className="text-[11px] text-muted-foreground">Cannot be submitted, approved or posted until fixed</p>
++         </button>
++         <button type="button" onClick={() => setLevel(level === 'warning' ? '' : 'warning')} className={`rounded-2xl border p-4 text-left ${level === 'warning' ? 'border-amber-300 bg-amber-50' : 'border-amber-100 bg-amber-50/40'}`}>
++           <p className="text-xs text-muted-foreground">Warnings only</p><p className="text-2xl font-bold text-amber-600">{nWarn}</p>
++           <p className="text-[11px] text-muted-foreground">Can be posted, but should be reviewed</p>
++         </button>
++       </div>
++       <Card title="Exceptions" subtitle="Unposted transactions with findings: missing accounts, closed periods, inactive or unmapped accounts, overdue reviews.">
++         <Filters q={q} setQ={setQ} type={type} setType={setType} />
++         <TxTable rows={rows} loading={loading} open={open} empty="No exceptions. All unposted transactions passed the checks."
++           extra={t => (
++             <ul className="space-y-0.5">
++               {t.issues.slice(0, 3).map(i => <li key={i.message} className={i.level === 'error' ? 'text-rose-600' : 'text-amber-700'}>{i.message}</li>)}
++               {t.issues.length > 3 && <li className="text-muted-foreground">+{t.issues.length - 3} more</li>}
++             </ul>
++           )} />
++       </Card>
++     </div>
++   );
++ }
++ 
++ // ============================================================
++ // POSTED
++ // ============================================================
++ 
++ function PostedTab({ txs, loading, open }: Ctx) {
++   const [q, setQ] = useState('');
++   const [type, setType] = useState<'' | TypeKey>('');
++   const [status, setStatus] = useState<'' | TxStatus>('');
++   const semua = txs.filter(t => ['posted', 'reversed'].includes(t.status));
++   const rows = semua.filter(t => (!type || t.type_key === type) && (!status || t.status === status) && cocok(t, q));
++   const posted = semua.filter(t => t.status === 'posted');
++   const total = posted.reduce((n, t) => n + t.amount_idr, 0);
++   const bulanIni = todayIso().slice(0, 7);
++   return (
++     <div className="space-y-5">
++       <KpiGrid cols={4} cards={[
++         { label: 'Posted Transactions', value: String(posted.length), icon: CircleCheck, tone: 'green', delta: <span className="text-[11px] text-muted-foreground">In the General Ledger</span> },
++         { label: 'Posted Value', value: rupiah(total), icon: FileText, tone: 'blue', delta: <span className="text-[11px] text-muted-foreground">All posted transactions</span> },
++         { label: 'Posted This Month', value: String(posted.filter(t => t.journal_date.startsWith(bulanIni)).length), icon: Clock, tone: 'amber', delta: <span className="text-[11px] text-muted-foreground">{fmtMonth(bulanIni)}</span> },
++         { label: 'Reversed', value: String(semua.length - posted.length), icon: AlertTriangle, tone: 'red', delta: <span className="text-[11px] text-muted-foreground">Reversing journal RV- posted</span> },
++       ]} />
++       <Card title="Posted Transactions" subtitle="Other transactions posted to the General Ledger (source: Other).">
++         <Filters q={q} setQ={setQ} type={type} setType={setType} status={status} setStatus={setStatus} statuses={['posted', 'reversed']} />
++         <TxTable rows={rows} loading={loading} open={open} empty="No posted transactions yet."
++           extra={t => <span className="text-muted-foreground">{t.status === 'reversed' ? `Reversed ${fmtDate(t.reversal_date)}` : `By ${t.posted_by_name ?? 'ΓÇö'}`}</span>} />
++       </Card>
++     </div>
++   );
++ }
+++>>>>>>> origin/playground-willi
+diff --cc src/app/transactions/other/page.tsx
+index 7ac2cfc,2e90b6d..0000000
+--- a/src/app/transactions/other/page.tsx
++++ b/src/app/transactions/other/page.tsx
+@@@ -1,453 -1,10 +1,460 @@@
+ -import OtherPage from './components/OtherWorkspace';
+ +'use client';
+  
+++<<<<<<< HEAD
+ +import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+ +import KpiCard from '@/components/shared/KpiCard';
+ +import TransactionDrawer from '../components/TransactionDrawer';
+ +import { Transaction } from '../components/transactionData';
+ +import { formatIDR, formatDate, uniqueJournalTotal, uniqueJournalCount, countJournalsByStatus, countJournalsWhere, draftJournalTotal, monthlyTrendFor, categoryBreakdown, topParties, CHART_COLORS, transactionsMissingJeId, unbalancedJournals } from '../lib/groupAnalytics';
+ +import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+ +import { getNiceTicksFromZero } from '@/lib/chartTicks';
+ +import OtherTabs from './components/OtherTabs';
+ +import OtherJournalTable from './components/OtherJournalTable';
+ +import { useOtherWorkspace, OtherActionButtons } from './components/OtherWorkspace';
+ +import { buildOtherExceptions } from './lib/otherJournals';
+ +import { Plus, Download, CheckCircle2, Send } from 'lucide-react';
+++=======
++ export const metadata = {
++   title: 'Other Transactions ΓÇö zafeb',
++   description: 'Special business events outside Sales, Purchase and Cash & Bank: templates, review, and posting to the General Ledger.',
++ };
+++>>>>>>> origin/playground-willi
+  
+ -export default function OtherTransactionsPage() {
+ -  return <OtherPage />;
+ +// ΓöÇΓöÇ Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/dst). ΓöÇΓöÇ
+ +const OTHER_AXIS_WIDTH = 65;
+ +const OTHER_AXIS_OVERLAY_WIDTH = OTHER_AXIS_WIDTH + 10;
+ +const OTHER_SPRING_MS = 380;
+ +const otherEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
+ +
+ +interface OtherDragPreview {
+ +  index: number;
+ +  value: number;
+  }
+ +
+ +function OtherTrendTooltip({
+ +  active,
+ +  payload,
+ +  label,
+ +  dragPreview,
+ +}: {
+ +  active?: boolean;
+ +  payload?: { value: number; name: string; color: string; payload: { month: string } }[];
+ +  label?: string;
+ +  dragPreview?: OtherDragPreview | null;
+ +}) {
+ +  if (!active || !payload || !payload.length) return null;
+ +  const entry = payload[0];
+ +  const isDragged = !!dragPreview;
+ +  const value = isDragged ? dragPreview!.value : entry.value;
+ +  return (
+ +    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
+ +      <p className="font-semibold text-slate-800 mb-1">{label}</p>
+ +      <p className="text-slate-600">
+ +        {entry.name}: {isDragged ? 'Estimasi ┬╖ ' : ''}
+ +        {formatIDR(value)}
+ +      </p>
+ +    </div>
+ +  );
+ +}
+ +
+ +// [BARU] Kelompok 'other' = sisanya yang tidak masuk 4 kelompok lain
+ +// (mis. CapEx / aset tetap, atau kategori baru yang belum dipetakan) ΓÇö
+ +// lihat CATEGORY_TO_GROUP & classifyByAccountName() di transactionData.ts.
+ +export default function OtherTransactionsPage() {
+ +  const ws = useOtherWorkspace();
+ +  const otherTx = ws.transactions;
+ +  const exceptionCount = useMemo(() => buildOtherExceptions(ws.journals).length, [ws.journals]);
+ +  const approvable = useMemo(() => ws.journals.filter((j) => (j.rawStatus === 'draft' || j.rawStatus === 'pending' || j.rawStatus === 'exception') && j.balanced), [ws.journals]);
+ +  const postable = useMemo(() => ws.journals.filter((j) => j.rawStatus === 'approved'), [ws.journals]);
+ +
+ +  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+ +
+ +  // [DIUBAH] Sama seperti Sales/Purchase/Cash Payment ΓÇö dikelompokkan per
+ +  // NOMOR JURNAL (jeId) dulu sebelum dijumlah/dihitung, supaya transaksi
+ +  // dengan 2 kaki jurnal tidak terhitung dua kali. Lihat groupAnalytics.ts.
+ +  const totalOther = uniqueJournalTotal(otherTx);
+ +  const txCount = uniqueJournalCount(otherTx);
+ +  const avgTxValue = txCount > 0 ? totalOther / txCount : 0;
+ +  const unpostedCount = countJournalsByStatus(otherTx, 'Unposted');
+ +  // [BARU] Sama seperti Sales/Purchase/Cash Payment ΓÇö transaksi 'Draft'
+ +  // sengaja dikeluarkan dari totalOther/txCount lewat groupByJournalRealized(),
+ +  // nilainya ditampilkan terpisah supaya tidak hilang begitu saja.
+ +  const draftCount = countJournalsByStatus(otherTx, 'Draft');
+ +  const draftTotal = draftJournalTotal(otherTx);
+ +  // [DIUBAH] "Perlu Ditinjau" ΓÇö catatan (`notes`) biasanya cuma terisi di
+ +  // kaki jurnal yang bermasalah (mis. anomali), bukan di kedua kaki
+ +  // sekaligus, jadi predicate mengecek SELURUH baris dalam 1 jeId (bukan
+ +  // cuma baris pertama) supaya transaksi yang notes-nya ada di salah satu
+ +  // kaki saja tetap kehitung, dan tidak dihitung dua kali kalau kebetulan
+ +  // kedua kaki sama-sama punya notes.
+ +  const needsReview = countJournalsWhere(otherTx, (rows) => rows.some((r) => !!r.notes));
+ +
+ +  // [BARU] Peringatan integritas data ΓÇö sama seperti Sales/Purchase/Cash
+ +  // Payment/Cash Receipt. Lihat transactionsMissingJeId() di groupAnalytics.ts.
+ +  const missingJeIdCount = useMemo(() => transactionsMissingJeId(otherTx).length, [otherTx]);
+ +  const unbalanced = useMemo(() => unbalancedJournals(otherTx), [otherTx]);
+ +
+ +  const trend = useMemo(() => monthlyTrendFor(otherTx), [otherTx]);
+ +  const byCategory = useMemo(() => categoryBreakdown(otherTx).slice(0, 6), [otherTx]);
+ +  const topParties5 = useMemo(() => topParties(otherTx, 5), [otherTx]);
+ +
+ +  // ΓöÇΓöÇ Zoom skala harga (drag vertikal di sumbu Y) ΓÇö sama pola dengan chart
+ +  // Sales / Purchase / Cash Payment / Cash Receipt / Financial Overview. ΓöÇΓöÇ
+ +  const otherBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
+ +  const [otherPriceZoom, setOtherPriceZoom] = useState(1);
+ +  const otherZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
+ +
+ +  const { ticks: otherYTicks } = useMemo(
+ +    () => getNiceTicksFromZero(otherBaseMax / otherPriceZoom, 5),
+ +    [otherBaseMax, otherPriceZoom]
+ +  );
+ +  const otherYDomain = useMemo<[number, number]>(
+ +    () => [0, otherBaseMax / otherPriceZoom],
+ +    [otherBaseMax, otherPriceZoom]
+ +  );
+ +  const otherYDomainRef = useRef(otherYDomain);
+ +  otherYDomainRef.current = otherYDomain;
+ +
+ +  const handleOtherAxisMouseDown = (e: React.MouseEvent) => {
+ +    e.preventDefault();
+ +    otherZoomDragRef.current = { startY: e.clientY, startZoom: otherPriceZoom };
+ +    const onMove = (ev: MouseEvent) => {
+ +      if (!otherZoomDragRef.current) return;
+ +      const deltaY = otherZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
+ +      const factor = Math.exp(deltaY / 150);
+ +      const next = Math.min(6, Math.max(0.25, otherZoomDragRef.current.startZoom * factor));
+ +      setOtherPriceZoom(next);
+ +    };
+ +    const onUp = () => {
+ +      otherZoomDragRef.current = null;
+ +      window.removeEventListener('mousemove', onMove);
+ +      window.removeEventListener('mouseup', onUp);
+ +    };
+ +    window.addEventListener('mousemove', onMove);
+ +    window.addEventListener('mouseup', onUp);
+ +  };
+ +  const resetOtherZoom = () => setOtherPriceZoom(1);
+ +
+ +  // ΓöÇΓöÇ Drag titik data (tarik nilai "total" bulan tertentu) ΓÇö kalibrasi
+ +  // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ΓöÇΓöÇ
+ +  const otherDotsRef = useRef<{ value: number; cy: number }[]>([]);
+ +  const [otherDragPreview, setOtherDragPreview] = useState<OtherDragPreview | null>(null);
+ +  const otherDragStateRef = useRef<{
+ +    index: number;
+ +    originalValue: number;
+ +    currentValue: number;
+ +    startClientY: number;
+ +    pxPerUnit: number;
+ +  } | null>(null);
+ +  const otherAnimRef = useRef<number | null>(null);
+ +
+ +  const stopOtherSpring = () => {
+ +    if (otherAnimRef.current) cancelAnimationFrame(otherAnimRef.current);
+ +    otherAnimRef.current = null;
+ +  };
+ +
+ +  useEffect(() => {
+ +    stopOtherSpring();
+ +    otherDragStateRef.current = null;
+ +    setOtherDragPreview(null);
+ +    otherDotsRef.current = [];
+ +  }, [trend]);
+ +
+ +  useEffect(() => stopOtherSpring, []);
+ +
+ +  const springBackOther = useCallback(() => {
+ +    const drag = otherDragStateRef.current;
+ +    if (!drag) return;
+ +    stopOtherSpring();
+ +    const from = drag.currentValue;
+ +    const target = drag.originalValue;
+ +    const { index } = drag;
+ +    const start = performance.now();
+ +    const step = (now: number) => {
+ +      const elapsed = Math.min(1, (now - start) / OTHER_SPRING_MS);
+ +      const eased = otherEaseOutQuint(elapsed);
+ +      const next = from + (target - from) * eased;
+ +      if (otherDragStateRef.current) otherDragStateRef.current.currentValue = next;
+ +      setOtherDragPreview({ index, value: next });
+ +      if (elapsed < 1) {
+ +        otherAnimRef.current = requestAnimationFrame(step);
+ +      } else {
+ +        otherDragStateRef.current = null;
+ +        otherAnimRef.current = null;
+ +        setOtherDragPreview(null);
+ +      }
+ +    };
+ +    otherAnimRef.current = requestAnimationFrame(step);
+ +  }, []);
+ +
+ +  const handleOtherDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
+ +    e.preventDefault();
+ +    e.stopPropagation();
+ +    stopOtherSpring();
+ +
+ +    const samples = otherDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+ +    let pxPerUnit = -1;
+ +    if (samples.length >= 2) {
+ +      const a = samples[0];
+ +      const b = samples[samples.length - 1];
+ +      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
+ +    }
+ +    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
+ +      const [dMin, dMax] = otherYDomainRef.current;
+ +      pxPerUnit = -160 / (dMax - dMin || 1);
+ +    }
+ +
+ +    otherDragStateRef.current = {
+ +      index,
+ +      originalValue,
+ +      currentValue: originalValue,
+ +      startClientY: e.clientY,
+ +      pxPerUnit,
+ +    };
+ +    setOtherDragPreview({ index, value: originalValue });
+ +  }, []);
+ +
+ +  useEffect(() => {
+ +    const handleMove = (e: PointerEvent) => {
+ +      const drag = otherDragStateRef.current;
+ +      if (!drag) return;
+ +      const deltaY = e.clientY - drag.startClientY;
+ +      const [, dMax] = otherYDomainRef.current;
+ +      const maxValue = dMax * 1.4;
+ +      const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
+ +      drag.currentValue = value;
+ +      setOtherDragPreview({ index: drag.index, value });
+ +    };
+ +    const handleUp = () => {
+ +      if (otherDragStateRef.current) springBackOther();
+ +    };
+ +    window.addEventListener('pointermove', handleMove);
+ +    window.addEventListener('pointerup', handleUp);
+ +    window.addEventListener('pointercancel', handleUp);
+ +    return () => {
+ +      window.removeEventListener('pointermove', handleMove);
+ +      window.removeEventListener('pointerup', handleUp);
+ +      window.removeEventListener('pointercancel', handleUp);
+ +    };
+ +  }, [springBackOther]);
+ +
+ +  const otherDisplayTrend = useMemo(() => {
+ +    if (!otherDragPreview) return trend;
+ +    return trend.map((d, i) => (i === otherDragPreview.index ? { ...d, total: otherDragPreview.value } : d));
+ +  }, [trend, otherDragPreview]);
+ +
+ +  // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
+ +  const renderOtherCalibrationDot = (props: any) => {
+ +    const { cx, cy, index, payload } = props;
+ +    otherDotsRef.current[index] = { value: payload.total, cy };
+ +    return <circle key={`other-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+ +  };
+ +
+ +  // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
+ +  const renderOtherActiveDot = (props: any) => {
+ +    const { cx, cy, index, payload } = props;
+ +    if (cx == null || cy == null) return null;
+ +    const isDraggingThis = otherDragPreview?.index === index;
+ +    return (
+ +      <g key={`other-pt-${index}`}>
+ +        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#64748b" stroke="#fff" strokeWidth={1.5} />
+ +        <circle
+ +          cx={cx}
+ +          cy={cy}
+ +          r={12}
+ +          fill="transparent"
+ +          style={{ cursor: 'ns-resize', touchAction: 'none' }}
+ +          onPointerDown={(e) => handleOtherDotPointerDown(e, index, payload.total)}
+ +        />
+ +      </g>
+ +    );
+ +  };
+ +
+ +  return (
+ +    <div className="space-y-5">
+ +      <OtherTabs activeTab="overview" exceptionCount={exceptionCount} />
+ +      {ws.dialogs}
+ +      {ws.error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">Gagal memuat jurnal Other: {ws.error}</div>}
+ +
+ +      {missingJeIdCount > 0 && (
+ +        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+ +          <span className="font-semibold">Perhatian:</span>
+ +          <span>
+ +            {missingJeIdCount} baris transaksi Other tidak memiliki nomor jurnal (jeId). KPI di bawah tetap dihitung
+ +            memakai nomor referensi sebagai gantinya, tapi sebaiknya diperbaiki lewat tab Exceptions.
+ +          </span>
+ +        </div>
+ +      )}
+ +
+ +      {unbalanced.length > 0 && (
+ +        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+ +          <span className="font-semibold">Perhatian:</span>
+ +          <span>
+ +            {unbalanced.length} jurnal Other tidak balance (total debit Γëá total kredit) ΓÇö contoh: {unbalanced[0].jeId}
+ +            {' '}(selisih {formatIDR(unbalanced[0].diff, true)}). Total Other tetap dihitung dari sisi yang lebih
+ +            besar, tapi sebaiknya jurnal ini diperbaiki lewat tab Exceptions.
+ +          </span>
+ +        </div>
+ +      )}
+ +
+ +      {draftCount > 0 && (
+ +        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+ +          <span className="font-semibold">Perhatian:</span>
+ +          <span>
+ +            {draftCount} transaksi Other senilai {formatIDR(draftTotal, true)} masih berstatus Draft (menunggu
+ +            approval) ΓÇö belum termasuk dalam Total Other di bawah sampai disetujui.
+ +          </span>
+ +        </div>
+ +      )}
+ +
+ +      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+ +        <KpiCard
+ +          title="Total Other"
+ +          value={totalOther}
+ +          icon="Squares2X2Icon"
+ +          iconColor="text-slate-600"
+ +          iconBg="bg-slate-100"
+ +          subLabel={draftCount > 0 ? `+ ${formatIDR(draftTotal, true)} pending approval` : undefined}
+ +        />
+ +        <KpiCard title="Jumlah Transaksi" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
+ +        <KpiCard title="Rata-rata / Transaksi" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
+ +        <KpiCard title="Belum Diposting" value={String(unpostedCount)} icon="ClockIcon" iconColor="text-amber-600" iconBg="bg-amber-50" alert={unpostedCount > 0} />
+ +        <KpiCard title="Perlu Ditinjau" value={String(needsReview)} icon="ExclamationTriangleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" alert={needsReview > 0} />
+ +      </div>
+ +
+ +      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+ +        <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
+ +          <div className="mb-4">
+ +            <h2 className="text-sm font-bold text-foreground">Tren Other Bulanan</h2>
+ +            <p className="text-xs text-muted-foreground mt-0.5">Berdasarkan transaksi yang tercatat di halaman Transaksi</p>
+ +          </div>
+ +          {trend.every(t => t.total === 0) ? (
+ +            <p className="text-xs text-muted-foreground py-10 text-center">Belum ada transaksi Other untuk ditampilkan.</p>
+ +          ) : (
+ +            <div className="relative">
+ +              <ResponsiveContainer width="100%" height={220}>
+ +                <AreaChart data={otherDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+ +                  <defs>
+ +                    <linearGradient id="gradOtherMain" x1="0" y1="0" x2="0" y2="1">
+ +                      <stop offset="5%" stopColor="#64748b" stopOpacity={0.2} />
+ +                      <stop offset="95%" stopColor="#64748b" stopOpacity={0} />
+ +                    </linearGradient>
+ +                  </defs>
+ +                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+ +                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+ +                  <YAxis
+ +                    tickFormatter={v => formatIDR(v, true)}
+ +                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+ +                    axisLine={false}
+ +                    tickLine={false}
+ +                    width={OTHER_AXIS_WIDTH}
+ +                    ticks={otherYTicks}
+ +                    domain={otherYDomain}
+ +                    allowDataOverflow
+ +                  />
+ +                  <Tooltip content={<OtherTrendTooltip dragPreview={otherDragPreview} />} cursor={false} />
+ +                  <Area
+ +                    type="monotone"
+ +                    dataKey="total"
+ +                    name="Other"
+ +                    stroke="#64748b"
+ +                    strokeWidth={2.5}
+ +                    fill="url(#gradOtherMain)"
+ +                    dot={renderOtherCalibrationDot as any}
+ +                    activeDot={renderOtherActiveDot as any}
+ +                    isAnimationActive={!otherDragPreview}
+ +                  />
+ +                </AreaChart>
+ +              </ResponsiveContainer>
+ +              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+ +              <div
+ +                onMouseDown={handleOtherAxisMouseDown}
+ +                onDoubleClick={resetOtherZoom}
+ +                title="Tarik untuk zoom skala harga ┬╖ klik dua kali untuk reset"
+ +                className="absolute top-0 left-0 h-full cursor-ns-resize"
+ +                style={{ width: OTHER_AXIS_OVERLAY_WIDTH }}
+ +              />
+ +            </div>
+ +          )}
+ +        </div>
+ +
+ +        <div className="card-elevated-md rounded-xl p-5">
+ +          <h2 className="text-sm font-bold text-foreground mb-1">Other per Kategori</h2>
+ +          <p className="text-xs text-muted-foreground mb-3">Breakdown transaksi lain-lain</p>
+ +          {byCategory.length === 0 ? (
+ +            <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+ +          ) : (
+ +            <div className="space-y-2.5">
+ +              {byCategory.map((cat, i) => {
+ +                const total = byCategory.reduce((s, c) => s + c.value, 0);
+ +                const pct = total > 0 ? (cat.value / total) * 100 : 0;
+ +                return (
+ +                  <div key={cat.name}>
+ +                    <div className="flex items-center justify-between mb-1">
+ +                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name}</span>
+ +                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
+ +                    </div>
+ +                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
+ +                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+ +                    </div>
+ +                  </div>
+ +                );
+ +              })}
+ +            </div>
+ +          )}
+ +        </div>
+ +      </div>
+ +
+ +      <div className="card-elevated-md rounded-xl p-5 mb-6">
+ +        <h2 className="text-sm font-bold text-foreground mb-1">Top Pihak Terkait</h2>
+ +        <p className="text-xs text-muted-foreground mb-4">Berdasarkan kontribusi nominal</p>
+ +        {topParties5.length === 0 ? (
+ +          <p className="text-xs text-muted-foreground py-6 text-center">Belum ada data.</p>
+ +        ) : (
+ +          <div className="space-y-3">
+ +            {topParties5.map((c, i) => {
+ +              const max = topParties5[0].amount || 1;
+ +              return (
+ +                <div key={c.name} className="flex items-center gap-3">
+ +                  <span className="text-xs font-bold text-text-muted w-4">{i + 1}</span>
+ +                  <div className="flex-1 min-w-0">
+ +                    <div className="flex items-center justify-between mb-1">
+ +                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
+ +                      <span className="text-xs font-semibold font-mono text-slate-600 ml-2">{formatIDR(c.amount, true)}</span>
+ +                    </div>
+ +                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
+ +                      <div className="h-full rounded-full bg-slate-400" style={{ width: `${(c.amount / max) * 100}%` }} />
+ +                    </div>
+ +                  </div>
+ +                </div>
+ +              );
+ +            })}
+ +          </div>
+ +        )}
+ +      </div>
+ +
+ +      {/* Aksi & Upload Data + Tabel Transaksi Other ΓÇö digabung jadi 1 kolom,
+ +          aksi & filter di atas tabel. */}
+ +      <div className="space-y-3">
+ +        <div className="flex flex-wrap items-center justify-between gap-2">
+ +          <h2 className="text-sm font-bold text-foreground">Daftar Jurnal Other</h2>
+ +          <div className="flex flex-wrap items-center gap-2">
+ +            <button onClick={ws.openNew} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90"><Plus size={13} /> Jurnal Baru</button>
+ +            <button disabled={ws.busy || approvable.length === 0} onClick={() => ws.act('approve', approvable)} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"><CheckCircle2 size={13} /> Approve Draft ({approvable.length})</button>
+ +            <button disabled={ws.busy || postable.length === 0} onClick={() => ws.act('post', postable)} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"><Send size={13} /> Posting Disetujui ({postable.length})</button>
+ +            <button onClick={() => ws.exportCsv(ws.journals, 'jurnal-other')} className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted"><Download size={13} /> Ekspor CSV</button>
+ +          </div>
+ +        </div>
+ +        <OtherJournalTable
+ +          journals={ws.journals}
+ +          onSelect={(j) => setSelectedTx(j.lines[0])}
+ +          statusOptions={['Draft', 'Unposted', 'Posted', 'Voided']}
+ +          emptyMessage={ws.loading ? 'Memuat jurnal OtherΓÇª' : 'Belum ada jurnal Other. Klik "Jurnal Baru" untuk menambah.'}
+ +          renderActions={(j) => <OtherActionButtons journal={j} ws={ws} compact />}
+ +        />
+ +      </div>
+ +
+ +      {selectedTx && <TransactionDrawer transaction={selectedTx} onClose={() => setSelectedTx(null)} />}
+ +    </div>
+ +  );
+ +}
+diff --cc src/app/transactions/sales/components/SalesClient.tsx
+index c341122,b65d7b0..0000000
+--- a/src/app/transactions/sales/components/SalesClient.tsx
++++ b/src/app/transactions/sales/components/SalesClient.tsx
+@@@ -1,8 -1,9 +1,14 @@@
+  'use client';
+  
+  import React, { useEffect, useState } from 'react';
+++<<<<<<< HEAD
+ +import { CalendarDays, ChevronDown, LayoutDashboard, Database, ShoppingCart, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+ +import TabNav from '@/components/ui/TabNav';
+++=======
++ import Link from 'next/link';
++ import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus } from 'lucide-react';
++ import { tabBadgeCls, tabCls, tabNavCls } from '@/components/shared/moduleUi';
+++>>>>>>> origin/playground-willi
+  import SalesOverview from './SalesOverview';
+  import SalesSourceData from './SalesSourceData';
+  import SalesTransaction from './SalesTransaction';
+@@@ -75,24 -57,35 +81,31 @@@ export default function SalesClient() 
+              {activeTab === 'posted' && t('Daftar transaksi penjualan yang telah diposting ke dalam sistem akuntansi.')}
+            </p>
+          </div>
+-         <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
+-           <CalendarDays size={14} className="text-muted-foreground" />
+-           <span className="text-foreground font-medium">01 Jan 2024 ΓÇô 31 Dec 2024</span>
+-           <ChevronDown size={14} className="text-muted-foreground" />
+-         </button>
++         <div className="flex items-center gap-2">
++           {activeTab === 'sales-transaction' && (
++             <Link href="/transactions/sales/invoice/new" className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
++               <Plus size={14} /> {t('Tambah Transaksi')}
++             </Link>
++           )}
++           <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
++             <CalendarDays size={14} className="text-muted-foreground" />
++             <span className="text-foreground font-medium">01 Jan 2024 ΓÇô 31 Dec 2024</span>
++             <ChevronDown size={14} className="text-muted-foreground" />
++           </button>
++         </div>
+        </div>
+  
+ -      {/* Tabs ΓÇö gaya underline bersama (tabCls, acuan Transactions > Other). */}
+ -      <nav className={tabNavCls}>
+ -        {TABS?.map(tab => (
+ -          <button
+ -            key={tab?.key}
+ -            onClick={() => setActiveTab(tab?.key)}
+ -            className={tabCls(activeTab === tab?.key)}
+ -          >
+ -            <tab.icon size={16} /> {t(tab?.label)}
+ -            {tab?.key === 'exceptions' && openExceptionCount > 0 && (
+ -              <span className={tabBadgeCls}>{openExceptionCount}</span>
+ -            )}
+ -          </button>
+ -        ))}
+ -      </nav>
+ +      {/* Tabs -- gaya underline, disamakan dengan Financial Statements (TabNav) */}
+ +      <TabNav
+ +        activeKey={activeTab}
+ +        onSelect={setActiveTab}
+ +        items={TABS.map(tab => ({
+ +          key: tab.key,
+ +          label: t(tab.label),
+ +          icon: TAB_ICONS[tab.key],
+ +          badge: tab.key === 'exceptions' && openExceptionCount > 0 ? openExceptionCount : undefined,
+ +        }))}
+ +      />
+  
+        {/* Tab Content */}
+        <div className="pt-5">

@@ -1,397 +1,500 @@
 """
 modules/transactions/purchase_bill_v1.py
-========================================
-Purchase > Purchase Transaction > **Create Bill** (form manual tagihan vendor,
-layout dataset/picture/Template UI/Purchase/1-2.png).
+=========================================
+Fitur "Create Bill" (input manual 1 tagihan vendor) di Transactions > Purchase.
+Router: /api/v1/transactions/purchase/bills/...
 
-Bill = 1 Purchase Transaction + baris itemnya (tabel yang sama dengan hasil
-import, jadi ikut alur Approve -> Post di Purchase Preview, tab Posted,
-Financial Statements & Accounts Payable tanpa perubahan apa pun).
+Posisinya di alur Purchase yang SUDAH ada (tidak membuat alur baru):
 
-    GET    /api/v1/transactions/purchase/bills/form-options   nomor berikut, vendor, akun COA, akun default
-    GET    /api/v1/transactions/purchase/bills/check-duplicate invoice vendor sudah pernah dipakai?
-    GET    /api/v1/transactions/purchase/bills/{id}            bill + baris (mode edit)
-    POST   /api/v1/transactions/purchase/bills                 simpan draft / submit (pending_review)
-    PUT    /api/v1/transactions/purchase/bills/{id}            ubah bill draft / pending_review / rejected / exception
+    Create Bill (modul ini)  -> financial_transaction_purchase_transactions + _lines
+         status 'draft' (Save Draft) atau 'pending_review' (Submit for Approval)
+    -> tab Purchase Transaction : bill tampil di daftar (sama seperti hasil import)
+    -> tab Purchase Preview     : Approve (Supervisor+) -> Post (Manager+)
+                                   lewat /transactions/approve & /transactions/post
+                                   (dbc.ubah_status_purchase_transactions -- TIDAK diubah)
+    -> tab Posted / Financial Statements / Accounts Payable membaca transaksi
+       berstatus 'posted' -- otomatis, tanpa kode tambahan di sini.
 
-Angka dihitung ULANG di sini (hitung_baris), bukan dipercaya dari client:
-    gross    = qty x unit_price
-    diskon   = persen (maks 100%) atau rupiah (maks gross)
-    net      = gross - diskon
-    exclusive: DPP = net,             PPN = DPP x tarif
-    inclusive: DPP = net / (1+tarif), PPN = net - DPP
-Baris disimpan dengan subtotal - discount = DPP (inclusive: subtotal & diskon
-dibagi 1+tarif) supaya jurnal posting (Dr akun item + Dr PPN Masukan = Cr AP)
-tetap balance -- lihat db_client._validasi_posting_purchase.
+Yang DIKERJAKAN modul ini (tidak ada di endpoint CRUD lama):
+  1. GET  /bills/form-options  -> nomor Purchase berikutnya, daftar vendor yang pernah dipakai,
+                                  COA aktif klien, akun default dari Settings > Account Mapping.
+  2. GET  /bills/check-invoice -> cek duplikat (vendor + nomor invoice vendor) untuk 1 klien.
+  3. POST /bills               -> buat bill. Angka (DPP, PPN, total, AP) DIHITUNG ULANG di server
+                                  dari qty/harga/diskon/kode pajak -- angka kiriman browser tidak dipercaya.
+  4. GET  /bills/{id}          -> header + baris (untuk mode edit).
+  5. PUT  /bills/{id}          -> edit bill selama masih draft/pending_review/rejected/exception;
+                                  baris lama diganti baris baru dalam 1 transaksi DB.
+
+Konvensi angka baris (HARUS sama dengan import & _validasi_posting_purchase):
+    subtotal = nilai sebelum diskon (DPP + diskon), discount = nominal diskon (Rp),
+    tax_amount = PPN baris, total = subtotal - discount + tax_amount.
+    Debit jurnal = SUM(subtotal - discount) + tax_amount  ==  accounts_payable = SUM(total).
+Kalau harga "tax inclusive", harga/diskon dikonversi ke DPP dulu (dibagi 1+tarif) sebelum disimpan,
+jadi seluruh baris di DB selalu dalam bentuk exclusive.
 """
 
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 import db_client as dbc
-from ..api_response import gagal, sukses
+from ..auth import core as auth
 from ..auth.v1 import get_current_user_v1
+from ..api_response import gagal, sukses
 from ..logging_config import get_module_logger
-from .purchase_v1 import _require_level_v1
 
 logger = get_module_logger("transactions_purchase_bill_v1")
 
-router = APIRouter(prefix="/api/v1/transactions/purchase", tags=["transactions-purchase-v1"])
+router = APIRouter(prefix="/api/v1/transactions/purchase/bills", tags=["transactions-purchase-bill-v1"])
 
-LEVEL_INPUT_BILL = 3
-STATUS_BISA_DIUBAH = ("draft", "pending_review", "rejected", "exception")
 TARIF_PAJAK = {"ppn_11": Decimal("0.11"), "ppn_12": Decimal("0.12"), "non_ppn": Decimal("0")}
-LABEL_PAJAK = {"ppn_11": "PPN 11%", "ppn_12": "PPN 12%", "non_ppn": "Non-PPN"}
-TERMIN = ["Due on Receipt", "Net 7", "Net 14", "Net 30", "Net 45", "Net 60", "Net 90"]
-KATEGORI = ["Inventory", "Office Supplies", "IT Equipment", "Professional Services", "Utilities", "Maintenance",
-            "Marketing", "Travel", "Fixed Assets", "Raw Materials", "Logistics", "Other"]
-SUMBER = ["Manual", "Purchase Order", "Vendor Invoice", "Goods Receipt", "Service Receipt", "Supplier Bill",
-          "Expense Claim", "Recurring Purchase"]
+STATUS_BISA_DIEDIT = ("draft", "pending_review", "rejected", "exception")
 _BULAN_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-TaxType = Literal["ppn_11", "ppn_12", "non_ppn"]
-DiscountType = Literal["percent", "amount"]
+_DUA = Decimal("0.01")
 
 
-class _Gagal(Exception):
-    def __init__(self, pesan: str, status_code: int = 400, kode: str = "VALIDATION_ERROR", detail: Optional[List[str]] = None):
-        super().__init__(pesan)
-        self.pesan, self.status_code, self.kode, self.detail = pesan, status_code, kode, detail
+def _require_level_v1(min_tahap: int):
+    def _dependency(current_user: Dict[str, Any] = Depends(get_current_user_v1)) -> Dict[str, Any]:
+        if auth.role_level(current_user.get("role")) < min_tahap:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Fitur ini khusus untuk Tahap {min_tahap} ke atas. Akun kamu: {auth.role_label(current_user.get('role'))}.",
+            )
+        return current_user
+
+    return _dependency
 
 
 # ============================================================
-# SKEMA REQUEST
+# Skema request
 # ============================================================
 
-class BillLineRequest(BaseModel):
+class BillLineIn(BaseModel):
     item_code: Optional[str] = Field(None, max_length=50)
     description: str = Field("", max_length=2000)
-    account_code: str = Field("", max_length=50)
+    account_code: Optional[str] = Field(None, max_length=50)
     quantity: float = 0
     unit: Optional[str] = Field(None, max_length=20)
     unit_price: float = 0
-    discount_type: DiscountType = "percent"
+    discount_type: str = Field("percent", pattern="^(percent|amount)$")
     discount_value: float = 0
-    tax_type: TaxType = "ppn_11"
+    tax_code: str = Field("ppn_11", pattern="^(ppn_11|ppn_12|non_ppn)$")
 
 
-class BillRequest(BaseModel):
+class BillIn(BaseModel):
     management_client_id: str
-    purchase_no: Optional[str] = Field(None, max_length=100)
-    vendor_name: str = Field("", max_length=255)
-    vendor_code: Optional[str] = Field(None, max_length=50)
-    invoice_number: str = Field("", max_length=100)
-    po_number: Optional[str] = Field(None, max_length=100)
-    invoice_date: date
+    purchase_no: str = Field(..., min_length=1, max_length=100)
     purchase_date: date
-    due_date: date
-    payment_terms: str = Field("Net 30", max_length=50)
-    currency: str = Field("IDR", max_length=10)
+    invoice_date: Optional[date] = None
+    invoice_number: Optional[str] = Field(None, max_length=100)
+    po_number: Optional[str] = Field(None, max_length=100)
+    vendor_name: str = Field(..., min_length=1, max_length=255)
+    vendor_code: Optional[str] = Field(None, max_length=50)
     source_doc_type: str = Field("Manual", max_length=30)
     source_ref: Optional[str] = Field(None, max_length=100)
-    category: str = Field("Other", max_length=50)
-    description: Optional[str] = Field(None, max_length=2000)
-    tax_type: TaxType = "ppn_11"
+    category: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = None
+    currency: str = Field("IDR", max_length=10)
+    payment_terms: Optional[str] = Field(None, max_length=50)
+    due_date: Optional[date] = None
     tax_inclusive: bool = False
-    ap_account_code: str = Field("", max_length=50)
+    ap_account_code: Optional[str] = Field(None, max_length=50)
     tax_account_code: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=500)
-    submit: bool = False
-    lines: List[BillLineRequest] = Field(default_factory=list, max_length=500)
+    submit: bool = Field(False, description="False = Save Draft ('draft'); True = Submit for Approval ('pending_review').")
+    lines: List[BillLineIn] = Field(..., min_length=1)
 
 
 # ============================================================
-# HITUNG & VALIDASI
+# Helper
 # ============================================================
 
-def _sen(x: Decimal) -> Decimal:
-    return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def _d(v: Any) -> Decimal:
+    return Decimal(str(v if v is not None else 0))
 
 
-def hitung_baris(l: BillLineRequest, inklusif: bool) -> Dict[str, Decimal]:
-    """Sama dengan computeInvoiceLine di frontend (receivablesPayablesStore.ts)."""
-    gross = _sen(Decimal(str(l.quantity or 0)) * Decimal(str(l.unit_price or 0)))
-    nilai = Decimal(str(l.discount_value or 0))
-    diskon = _sen(gross * min(nilai, Decimal(100)) / 100) if l.discount_type == "percent" else min(_sen(nilai), gross)
-    net = gross - diskon
-    tarif = TARIF_PAJAK[l.tax_type]
-    if inklusif and tarif:
-        dpp = _sen(net / (1 + tarif))
-        pajak = net - dpp
-        # subtotal & diskon ikut "dikeluarkan" pajaknya supaya subtotal - diskon = DPP.
-        subtotal = _sen(gross / (1 + tarif))
-        diskon_simpan = subtotal - dpp
-    else:
-        dpp, pajak = net, _sen(net * tarif)
-        subtotal, diskon_simpan = gross, diskon
-    return {"gross": gross, "diskon": diskon, "subtotal": subtotal, "diskon_simpan": diskon_simpan,
-            "dpp": dpp, "pajak": pajak, "total": dpp + pajak, "tarif": tarif}
-
-
-def _akun_coa(session, kid: str) -> Dict[str, str]:
-    return {
-        acc: nama for acc, nama in session.query(dbc.ManagementClientCoa.acc_no, dbc.ManagementClientCoa.account_name).filter(
-            dbc.ManagementClientCoa.client_id == kid, dbc.ManagementClientCoa.deleted_at.is_(None),
-        ).all()
-    }
-
-
-def _invoice_dobel(session, kid: str, vendor: str, invoice: str, kecuali_id: Optional[str] = None) -> Optional[str]:
-    """purchase_no bill lain milik vendor yang sama dengan nomor invoice yang sama."""
-    if not vendor.strip() or not invoice.strip():
-        return None
-    T = dbc.PurchaseTransaction
-    q = session.query(T.purchase_no).filter(
-        T.management_client_id == kid, T.deleted_at.is_(None),
-        func.upper(func.trim(T.vendor_name)) == vendor.strip().upper(),
-        func.upper(func.trim(T.invoice_number)) == invoice.strip().upper(),
-        T.status != "cancelled",
-    )
-    if kecuali_id:
-        q = q.filter(T.id != kecuali_id)
-    r = q.first()
-    return r[0] if r else None
-
-
-def _validasi(session, p: BillRequest, kecuali_id: Optional[str]) -> List[Dict[str, Any]]:
-    """Daftar cek yang SAMA dengan panel Validation di form (ok/warning/error)."""
-    coa = _akun_coa(session, p.management_client_id)
-    baris = [l for l in p.lines if l.description.strip() or l.unit_price or l.account_code.strip()]
-    hasil_baris = [hitung_baris(l, p.tax_inclusive) for l in baris]
-    total_pajak = sum((h["pajak"] for h in hasil_baris), Decimal(0))
-    dobel = _invoice_dobel(session, p.management_client_id, p.vendor_name, p.invoice_number, kecuali_id)
-    akun_baris_ok = bool(baris) and all(l.account_code.strip() and (not coa or l.account_code.strip() in coa) for l in baris)
-    # (key, label panel Validation, lolos?, level, pesan error kalau gagal)
-    cek = [
-        ("vendor", "Vendor selected", bool(p.vendor_name.strip()), "error", "Choose a vendor"),
-        ("invoice", "Vendor invoice number filled", bool(p.invoice_number.strip()), "error", "Enter the vendor invoice number"),
-        ("duplicate", "Invoice number not used before for this vendor (Duplicate Invoice)", dobel is None, "error",
-         f"Invoice {p.invoice_number.strip()} from this vendor is already recorded in {dobel}"),
-        ("po", "PO number filled for Purchase Order source", p.source_doc_type != "Purchase Order" or bool((p.po_number or "").strip()), "error",
-         "Enter the PO number (source document is Purchase Order)"),
-        ("items", "Every item has description, qty and unit price",
-         bool(baris) and all(l.description.strip() and l.quantity > 0 and l.unit_price > 0 for l in baris), "error",
-         "Every item needs a description, a quantity and a unit price"),
-        ("gl", "Every item has a GL account", akun_baris_ok, "error", "Choose a GL account from the chart of accounts for every item"),
-        ("ap", "Accounts Payable account chosen", bool(p.ap_account_code.strip()) and (not coa or p.ap_account_code.strip() in coa), "error",
-         "Choose the Accounts Payable account"),
-        ("vat", "Input VAT account chosen (tax is charged)",
-         total_pajak <= 0 or (bool((p.tax_account_code or "").strip()) and (not coa or p.tax_account_code.strip() in coa)), "error",
-         "Choose the Input VAT account (tax is charged)"),
-        ("due", "Due date is not before invoice date", p.due_date >= p.invoice_date, "error", "The due date cannot be earlier than the invoice date"),
-        ("tax", "Tax is charged on at least one item (Tax Mismatch)", p.tax_type == "non_ppn" or total_pajak > 0, "warning", ""),
-    ]
-    hasil = [{"key": k, "label": label, "ok": ok, "level": lvl, "message": pesan} for k, label, ok, lvl, pesan in cek]
-    return hasil
+def _q(v: Decimal) -> Decimal:
+    return v.quantize(_DUA, rounding=ROUND_HALF_UP)
 
 
 def _period_label(d: date) -> str:
     return f"{_BULAN_EN[d.month - 1]} {d.year}"
 
 
-def _nomor_berikut(session, kid: str, d: date) -> str:
-    awalan = f"PUR-{d.year}-{d.month:02d}-"
-    nomor = [n for (n,) in session.query(dbc.PurchaseTransaction.purchase_no).filter(
-        dbc.PurchaseTransaction.management_client_id == kid, dbc.PurchaseTransaction.purchase_no.like(f"{awalan}%"),
-    ).all()]
-    urut = max((int(m.group(1)) for n in nomor if (m := re.fullmatch(re.escape(awalan) + r"(\d+)", n or ""))), default=0)
-    return f"{awalan}{urut + 1:04d}"
+def _nama_user(u: Dict[str, Any]) -> Optional[str]:
+    return u.get("nama") or u.get("username")
 
 
-def _ke_dict(tx, lines) -> Dict[str, Any]:
-    data = dbc._purchase_row_ke_dict(tx, dbc.CRUD_FIELDS_PURCHASE_TRANSACTION)
-    data["lines"] = [dbc._purchase_row_ke_dict(l, dbc.CRUD_FIELDS_PURCHASE_TRANSACTION_LINE) for l in lines]
-    data["editable"] = (tx.status or "").lower() in STATUS_BISA_DIUBAH
-    return data
+def hitung_baris(line: BillLineIn, inklusif: bool) -> Dict[str, Any]:
+    """Angka 1 baris -> dict siap simpan (bentuk exclusive)."""
+    qty, harga = _d(line.quantity), _d(line.unit_price)
+    kotor = qty * harga
+    if line.discount_type == "percent":
+        diskon = kotor * min(_d(line.discount_value), Decimal(100)) / Decimal(100)
+    else:
+        diskon = min(_d(line.discount_value), kotor)
+    bersih = kotor - diskon
+    tarif = TARIF_PAJAK[line.tax_code]
+    if inklusif and tarif > 0:
+        dpp = bersih / (1 + tarif)
+        diskon_dpp = diskon / (1 + tarif)
+    else:
+        dpp, diskon_dpp = bersih, diskon
+    dpp, diskon_dpp = _q(dpp), _q(diskon_dpp)
+    pajak = _q(dpp * tarif)
+    subtotal = dpp + diskon_dpp
+    return {
+        "item_code": (line.item_code or "").strip() or None,
+        "description": line.description.strip(),
+        "quantity": qty,
+        "unit": (line.unit or "").strip() or None,
+        "unit_price": _q(subtotal / qty) if qty > 0 else _q(harga),
+        "discount": diskon_dpp,
+        "tax_rate": _q(tarif * 100),
+        "tax_amount": pajak,
+        "subtotal": subtotal,
+        "total": dpp + pajak,
+        "account_code": (line.account_code or "").strip(),
+    }
 
 
-def _simpan(p: BillRequest, current_user: Dict[str, Any], bill_id: Optional[str] = None) -> Dict[str, Any]:
+def _coa_aktif(session, management_client_id: str) -> Dict[str, Dict[str, Any]]:
+    rows = session.query(dbc.ManagementClientCoa).filter(
+        dbc.ManagementClientCoa.client_id == management_client_id,
+        dbc.ManagementClientCoa.deleted_at.is_(None),
+    ).order_by(dbc.ManagementClientCoa.acc_no).all()
+    return {
+        r.acc_no: {
+            "acc_no": r.acc_no,
+            "account_name": r.account_name,
+            "account_classification": getattr(r, "account_classification", None),
+            "is_active": bool(getattr(r, "is_active", True)),
+        }
+        for r in rows
+    }
+
+
+def _duplikat_invoice(session, management_client_id: str, vendor: str, invoice_no: str, exclude_id: Optional[str]) -> Optional[Any]:
+    PT = dbc.PurchaseTransaction
+    q = session.query(PT).filter(
+        PT.management_client_id == management_client_id,
+        PT.deleted_at.is_(None),
+        PT.status.notin_(("cancelled", "rejected")),
+        func.lower(func.trim(PT.vendor_name)) == vendor.strip().lower(),
+        func.lower(func.trim(PT.invoice_number)) == invoice_no.strip().lower(),
+    )
+    if exclude_id:
+        q = q.filter(PT.id != exclude_id)
+    return q.first()
+
+
+def _nomor_berikut(session, management_client_id: str, tanggal: date) -> str:
+    """PUR-YYYY-MM-#### -- urutan berikutnya per klien & bulan."""
+    prefix = f"PUR-{tanggal.year}-{tanggal.month:02d}-"
+    PT = dbc.PurchaseTransaction
+    nomor = [
+        r[0] for r in session.query(PT.purchase_no).filter(
+            PT.management_client_id == management_client_id, PT.purchase_no.like(f"{prefix}%"),  # termasuk yang soft-deleted
+        ).all()
+    ]
+    terbesar = 0
+    for n in nomor:
+        akhir = n[len(prefix):]
+        if akhir.isdigit():
+            terbesar = max(terbesar, int(akhir))
+    return f"{prefix}{terbesar + 1:04d}"
+
+
+def _validasi_dan_susun(session, payload: BillIn, exclude_id: Optional[str]) -> Dict[str, Any]:
+    """Validasi bisnis + hitung ulang. Return {"errors": [...]} atau {"header":..., "lines":[...]}."""
+    errors: List[Dict[str, str]] = []
+
+    def err(field: str, msg: str) -> None:
+        errors.append({"field": field, "message": msg})
+
+    mcid = payload.management_client_id
+    vendor = payload.vendor_name.strip()
+    invoice_no = (payload.invoice_number or "").strip()
+    if not invoice_no:
+        err("invoice_number", "Vendor invoice number is required.")
+    elif _duplikat_invoice(session, mcid, vendor, invoice_no, exclude_id):
+        err("invoice_number", f"Invoice {invoice_no} from {vendor} already exists for this company.")
+
+    PT = dbc.PurchaseTransaction
+    # Constraint unik (client_id, purchase_no) di DB tidak peduli soft-delete -> nomor milik bill terhapus tetap terpakai.
+    q = session.query(PT.id).filter(PT.management_client_id == mcid, PT.purchase_no == payload.purchase_no.strip())
+    if exclude_id:
+        q = q.filter(PT.id != exclude_id)
+    if q.first():
+        err("purchase_no", f"Purchase number {payload.purchase_no} is already used.")
+
+    if payload.invoice_date and payload.due_date and payload.due_date < payload.invoice_date:
+        err("due_date", "Due date cannot be earlier than the invoice date.")
+    if payload.source_doc_type == "Purchase Order" and not (payload.po_number or "").strip():
+        err("po_number", "PO number is required when the source document is a Purchase Order.")
+
+    isi = [l for l in payload.lines if (l.description or "").strip() or l.unit_price]
+    if not isi:
+        err("lines", "Add at least one bill item.")
+    for i, l in enumerate(isi, start=1):
+        if not (l.description or "").strip():
+            err(f"lines.{i}", f"Item {i}: description is required.")
+        if not (l.quantity > 0):
+            err(f"lines.{i}", f"Item {i}: quantity must be greater than zero.")
+        if not (l.unit_price > 0):
+            err(f"lines.{i}", f"Item {i}: unit price must be greater than zero.")
+        if l.discount_type == "percent" and l.discount_value > 100:
+            err(f"lines.{i}", f"Item {i}: discount cannot exceed 100%.")
+
+    baris = [hitung_baris(l, payload.tax_inclusive) for l in isi]
+
+    # Akun: yang kosong diisi dari Settings > Account Mapping (aturan yang sama dgn import).
+    setting = dbc.akun_purchase_setting(mcid, session=session)
+    header_akun: Dict[str, Any] = {
+        "ap_account_code": (payload.ap_account_code or "").strip() or None,
+        "tax_account_code": (payload.tax_account_code or "").strip() or None,
+    }
+    dbc.lengkapi_akun_purchase(header_akun, baris, setting)
+    total_pajak = sum((b["tax_amount"] for b in baris), Decimal(0))
+
+    coa = _coa_aktif(session, mcid)
+    if not header_akun.get("ap_account_code"):
+        err("ap_account_code", "Choose the Accounts Payable account (or set it in Settings > Account Mapping).")
+    if total_pajak > 0 and not header_akun.get("tax_account_code"):
+        err("tax_account_code", "Choose the Input VAT account (or set it in Settings > Account Mapping).")
+    for i, b in enumerate(baris, start=1):
+        if not b["account_code"]:
+            err(f"lines.{i}", f"Item {i}: choose a GL account.")
+    if coa:
+        dipakai = {b["account_code"] for b in baris if b["account_code"]}
+        if header_akun.get("ap_account_code"):
+            dipakai.add(header_akun["ap_account_code"])
+        if total_pajak > 0 and header_akun.get("tax_account_code"):
+            dipakai.add(header_akun["tax_account_code"])
+        hilang = sorted(k for k in dipakai if k not in coa)
+        if hilang:
+            err("accounts", f"Account(s) not found in this company's chart of accounts: {', '.join(hilang)}.")
+        nonaktif = sorted(k for k in dipakai if k in coa and not coa[k]["is_active"])
+        if nonaktif:
+            err("accounts", f"Inactive account(s): {', '.join(nonaktif)}.")
+
+    if errors:
+        return {"errors": errors}
+
+    for b in baris:
+        b["account_name"] = (coa.get(b["account_code"]) or {}).get("account_name")
+    for kunci in ("ap", "tax"):
+        kode = header_akun.get(f"{kunci}_account_code")
+        if kode:
+            header_akun[f"{kunci}_account_name"] = (coa.get(kode) or {}).get("account_name") or (setting.get(kunci) or {}).get("account_name")
+
+    subtotal = sum((b["subtotal"] for b in baris), Decimal(0))
+    diskon = sum((b["discount"] for b in baris), Decimal(0))
+    total = sum((b["total"] for b in baris), Decimal(0))
+    header = {
+        "client_id": mcid,  # kolom client_id Purchase = FK management_clients (pola sama dgn import)
+        "management_client_id": mcid,
+        "purchase_no": payload.purchase_no.strip(),
+        "purchase_date": payload.purchase_date,
+        "invoice_date": payload.invoice_date,
+        "invoice_number": invoice_no,
+        "po_number": (payload.po_number or "").strip() or None,
+        "vendor_name": vendor,
+        "vendor_code": (payload.vendor_code or "").strip() or None,
+        "source_doc_type": payload.source_doc_type,
+        "source_ref": (payload.source_ref or "").strip() or None,
+        "category": payload.category,
+        "description": (payload.description or "").strip() or None,
+        "subtotal": subtotal,
+        "discount": diskon,
+        "tax_amount": total_pajak,
+        "total": total,
+        "accounts_payable": total,
+        "currency": payload.currency,
+        "payment_terms": payload.payment_terms,
+        "due_date": payload.due_date,
+        "period_label": _period_label(payload.purchase_date),
+        "notes": (payload.notes or "").strip() or None,
+        "ap_account_code": header_akun.get("ap_account_code"),
+        "ap_account_name": header_akun.get("ap_account_name"),
+        "tax_account_code": header_akun.get("tax_account_code"),
+        "tax_account_name": header_akun.get("tax_account_name"),
+    }
+    return {"header": header, "lines": baris}
+
+
+def _ke_dict(obj: Any, fields: List[str]) -> Dict[str, Any]:
+    return dbc._purchase_row_ke_dict(obj, fields)
+
+
+def _detail(session, tx: Any) -> Dict[str, Any]:
+    hasil = _ke_dict(tx, dbc.CRUD_FIELDS_PURCHASE_TRANSACTION)
+    PL = dbc.PurchaseTransactionLine
+    hasil["lines"] = [
+        _ke_dict(l, dbc.CRUD_FIELDS_PURCHASE_TRANSACTION_LINE)
+        for l in session.query(PL).filter(PL.transaction_id == tx.id, PL.deleted_at.is_(None)).order_by(PL.line_no).all()
+    ]
+    return hasil
+
+
+def _gagal_validasi(errors: List[Dict[str, str]]):
+    return gagal(message=errors[0]["message"], errors={"code": "VALIDATION_FAILED", "details": errors}, status_code=422)
+
+
+# ============================================================
+# Endpoints
+# ============================================================
+
+@router.get("/form-options", summary="Opsi form Create Bill: nomor berikutnya, vendor, COA, akun default")
+def form_options(
+    management_client_id: str = Query(...),
+    purchase_date: Optional[date] = Query(None),
+    _user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    tanggal = purchase_date or date.today()
     session = dbc.SessionLocal()
     try:
-        T, L = dbc.PurchaseTransaction, dbc.PurchaseTransactionLine
-        tx = None
-        if bill_id:
-            tx = session.query(T).filter(T.id == bill_id, T.deleted_at.is_(None)).first()
-            if tx is None or tx.management_client_id != p.management_client_id:
-                raise _Gagal("Bill not found.", 404, "NOT_FOUND")
-            if (tx.status or "").lower() not in STATUS_BISA_DIUBAH:
-                raise _Gagal(f"{tx.purchase_no} is {tx.status} and can no longer be edited.", 409, "CONFLICT")
+        PT = dbc.PurchaseTransaction
+        baris = session.query(PT.vendor_name, PT.vendor_code, PT.payment_terms, PT.category).filter(
+            PT.management_client_id == management_client_id, PT.deleted_at.is_(None),
+        ).order_by(PT.purchase_date.desc()).all()
+        vendors: Dict[str, Dict[str, Any]] = {}
+        for nama, kode, termin, kategori in baris:  # terbaru menang
+            kunci = (nama or "").strip().upper()
+            if kunci and kunci not in vendors:
+                vendors[kunci] = {"name": nama.strip(), "code": kode, "payment_terms": termin, "category": kategori}
+        setting = dbc.akun_purchase_setting(management_client_id, session=session)
+        coa = _coa_aktif(session, management_client_id)
+        return sukses(data={
+            "next_number": _nomor_berikut(session, management_client_id, tanggal),
+            "vendors": sorted(vendors.values(), key=lambda v: v["name"]),
+            "accounts": [a for a in coa.values() if a["is_active"]],
+            "defaults": {k: (setting.get(k) or None) for k in ("ap", "tax", "line", "biaya")},
+        }, message="OK")
+    except Exception:  # noqa: BLE001
+        logger.exception("Gagal memuat form-options Create Bill")
+        return gagal(message="Failed to load form options (database error).", status_code=500)
+    finally:
+        session.close()
 
-        cek = _validasi(session, p, bill_id)
-        salah = [c for c in cek if not c["ok"] and c["level"] == "error"]
-        if salah:
-            raise _Gagal(salah[0]["message"] + ".", detail=[c["message"] for c in salah])
 
-        nomor = (p.purchase_no or "").strip().upper() or (tx.purchase_no if tx else _nomor_berikut(session, p.management_client_id, p.purchase_date))
-        bentrok = session.query(T.id).filter(T.management_client_id == p.management_client_id, T.purchase_no == nomor, T.deleted_at.is_(None))
-        if tx:
-            bentrok = bentrok.filter(T.id != tx.id)
-        if bentrok.first():
-            raise _Gagal(f"Purchase No. {nomor} is already used.", 409, "DUPLICATE_PURCHASE_NO")
+@router.get("/check-duplicate", include_in_schema=False)  # alias: frontend (purchaseStore.checkBillDuplicate) memanggil nama ini
+@router.get("/check-invoice", summary="Cek duplikat vendor + nomor invoice vendor")
+def check_invoice(
+    management_client_id: str = Query(...),
+    vendor_name: str = Query(...),
+    invoice_number: str = Query(...),
+    exclude_id: Optional[str] = Query(None),
+    _user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    session = dbc.SessionLocal()
+    try:
+        ada = _duplikat_invoice(session, management_client_id, vendor_name, invoice_number, exclude_id)
+        return sukses(data={"duplicate": bool(ada), "purchase_no": ada.purchase_no if ada else None}, message="OK")
+    finally:
+        session.close()
 
-        coa = _akun_coa(session, p.management_client_id)
-        baris = [l for l in p.lines if l.description.strip() or l.unit_price or l.account_code.strip()]
-        hitung = [hitung_baris(l, p.tax_inclusive) for l in baris]
-        subtotal = sum((h["subtotal"] for h in hitung), Decimal(0))
-        diskon = sum((h["diskon_simpan"] for h in hitung), Decimal(0))
-        pajak = sum((h["pajak"] for h in hitung), Decimal(0))
-        total = sum((h["total"] for h in hitung), Decimal(0))
-        nama = current_user.get("nama") or current_user.get("username")
-        sekarang = datetime.now()
-        kode_pajak = (p.tax_account_code or "").strip() or None
 
-        header = dict(
-            management_client_id=p.management_client_id, purchase_no=nomor, purchase_date=p.purchase_date,
-            invoice_date=p.invoice_date, invoice_number=p.invoice_number.strip(), po_number=(p.po_number or "").strip() or None,
-            vendor_name=p.vendor_name.strip().upper(), vendor_code=(p.vendor_code or "").strip() or None,
-            source_doc_type=p.source_doc_type, source_ref=(p.source_ref or "").strip() or None,
-            description=(p.description or "").strip() or None, category=p.category,
-            subtotal=subtotal, discount=diskon, tax_amount=pajak, total=total, accounts_payable=total,
-            currency=p.currency, payment_status="unpaid", payment_terms=p.payment_terms, due_date=p.due_date,
-            status="pending_review" if p.submit else "draft", period_label=_period_label(p.purchase_date),
-            notes=(p.notes or "").strip() or None, tax_type=p.tax_type, tax_inclusive=p.tax_inclusive,
-            ap_account_code=p.ap_account_code.strip(), ap_account_name=coa.get(p.ap_account_code.strip()),
-            tax_account_code=kode_pajak, tax_account_name=coa.get(kode_pajak) if kode_pajak else None,
+@router.post("", summary="Buat bill (khusus Supervisor ke atas)", status_code=201)
+def buat_bill(payload: BillIn, current_user: Dict[str, Any] = Depends(_require_level_v1(3))):
+    session = dbc.SessionLocal()
+    try:
+        hasil = _validasi_dan_susun(session, payload, exclude_id=None)
+        if "errors" in hasil:
+            return _gagal_validasi(hasil["errors"])
+        header, baris = hasil["header"], hasil["lines"]
+        tx = dbc.PurchaseTransaction(
+            **header,
+            status="pending_review" if payload.submit else "draft",
+            payment_status="unpaid",
+            created_by_name=_nama_user(current_user),
+            created_by=current_user.get("id"),
         )
-        if tx is None:
-            tx = T(**header, client_id=current_user.get("id"), created_by=current_user.get("id"), created_by_name=nama)
-            session.add(tx)
-            session.flush()
-        else:
-            for k, v in header.items():
-                setattr(tx, k, v)
-            # Disimpan ulang = keluar dari status penolakan / approval lama.
-            tx.approved_by_name, tx.approved_at = None, None
-            tx.edited_at, tx.edited_by = sekarang, current_user.get("id")
-            session.query(L).filter(L.transaction_id == tx.id).delete(synchronize_session=False)
-
-        for i, (l, h) in enumerate(zip(baris, hitung), start=1):
-            kode = l.account_code.strip()
-            session.add(L(
-                transaction_id=tx.id, client_id=tx.client_id, line_no=i,
-                item_code=(l.item_code or "").strip() or None, description=l.description.strip(),
-                quantity=Decimal(str(l.quantity)), unit=(l.unit or "").strip() or None, unit_price=Decimal(str(l.unit_price)),
-                discount=h["diskon_simpan"], tax_rate=h["tarif"] * 100, tax_amount=h["pajak"],
-                subtotal=h["subtotal"], total=h["total"], account_code=kode, account_name=coa.get(kode),
-                discount_type=l.discount_type, discount_value=Decimal(str(l.discount_value or 0)),
-                created_by=current_user.get("id"),
+        session.add(tx)
+        session.flush()
+        for idx, b in enumerate(baris, start=1):
+            session.add(dbc.PurchaseTransactionLine(
+                **b, transaction_id=tx.id, client_id=tx.client_id, line_no=idx, created_by=current_user.get("id"),
             ))
         session.commit()
         session.refresh(tx)
-        lines = session.query(L).filter(L.transaction_id == tx.id, L.deleted_at.is_(None)).order_by(L.line_no).all()
-        return _ke_dict(tx, lines)
-    except _Gagal:
+        return sukses(
+            data=_detail(session, tx),
+            message="Bill submitted for approval." if payload.submit else "Bill saved as draft.",
+            status_code=201,
+        )
+    except Exception:  # noqa: BLE001
         session.rollback()
-        raise
-    except Exception:
-        session.rollback()
-        logger.exception("Gagal menyimpan bill")
-        raise _Gagal("Failed to save the bill (database error).", 500, "DB_ERROR")
+        logger.exception("Gagal membuat bill")
+        return gagal(message="Failed to create bill (database error).", status_code=500)
     finally:
         session.close()
 
 
-def _jawab_gagal(e: _Gagal):
-    return gagal(message=e.pesan, errors={"code": e.kode, "details": e.detail} if e.detail else {"code": e.kode}, status_code=e.status_code)
-
-
-# ============================================================
-# ENDPOINT
-# ============================================================
-
-@router.get("/bills/form-options", summary="Opsi form Create Bill: nomor berikut, vendor, akun COA, akun default Account Mapping")
-def opsi_form_bill(
-    management_client_id: str = Query(...),
-    purchase_date: Optional[date] = Query(None),
-    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
-):
+@router.get("/{transaction_id}", summary="Detail bill + baris (untuk mode edit)")
+def detail_bill(transaction_id: str, _user: Dict[str, Any] = Depends(get_current_user_v1)):
     session = dbc.SessionLocal()
     try:
-        kid = management_client_id
-        T = dbc.PurchaseTransaction
-        vendor: Dict[str, Dict[str, Any]] = {}
-        for nama, kode, termin, tgl in session.query(T.vendor_name, T.vendor_code, T.payment_terms, T.purchase_date).filter(
-            T.management_client_id == kid, T.deleted_at.is_(None),
-        ).order_by(T.purchase_date.desc()).all():
-            k = (nama or "").strip().upper()
-            if not k:
-                continue
-            v = vendor.setdefault(k, {"name": k, "code": kode, "payment_terms": termin, "bills": 0, "last_date": tgl})
-            v["bills"] += 1
-            v["code"] = v["code"] or kode
-        akun = [
-            {"code": c.acc_no, "name": c.account_name, "classification": c.account_classification}
-            for c in session.query(dbc.ManagementClientCoa).filter(
-                dbc.ManagementClientCoa.client_id == kid, dbc.ManagementClientCoa.deleted_at.is_(None),
-                dbc.ManagementClientCoa.is_active.isnot(False),
-            ).order_by(dbc.ManagementClientCoa.acc_no).all()
-        ]
-        default = dbc.akun_purchase_setting(kid, session=session)
-        return sukses(data={
-            "next_number": _nomor_berikut(session, kid, purchase_date or date.today()),
-            "vendors": sorted(vendor.values(), key=lambda v: v["name"]),
-            "accounts": akun,
-            "defaults": {k: (v["account_code"] if v else None) for k, v in default.items()},
-            "payment_terms": TERMIN, "categories": KATEGORI, "source_types": SUMBER,
-            "tax_types": [{"key": k, "label": LABEL_PAJAK[k], "rate": float(r)} for k, r in TARIF_PAJAK.items()],
-        }, message="OK")
-    finally:
-        session.close()
-
-
-@router.get("/bills/check-duplicate", summary="Cek nomor invoice vendor sudah dipakai bill lain (Duplicate Invoice)")
-def cek_invoice_dobel(
-    management_client_id: str = Query(...),
-    vendor_name: str = Query(""),
-    invoice_number: str = Query(""),
-    exclude_id: Optional[str] = Query(None),
-    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
-):
-    session = dbc.SessionLocal()
-    try:
-        dobel = _invoice_dobel(session, management_client_id, vendor_name, invoice_number, exclude_id)
-        return sukses(data={"duplicate": dobel is not None, "purchase_no": dobel}, message="OK")
-    finally:
-        session.close()
-
-
-@router.get("/bills/{bill_id}", summary="Detail 1 bill + baris item (mode edit)")
-def detail_bill(bill_id: str, management_client_id: str = Query(...), _current_user: Dict[str, Any] = Depends(get_current_user_v1)):
-    session = dbc.SessionLocal()
-    try:
-        T, L = dbc.PurchaseTransaction, dbc.PurchaseTransactionLine
-        tx = session.query(T).filter(T.id == bill_id, T.management_client_id == management_client_id, T.deleted_at.is_(None)).first()
+        tx = session.query(dbc.PurchaseTransaction).filter(
+            dbc.PurchaseTransaction.id == transaction_id, dbc.PurchaseTransaction.deleted_at.is_(None),
+        ).first()
         if tx is None:
             return gagal(message="Bill not found.", errors={"code": "NOT_FOUND"}, status_code=404)
-        lines = session.query(L).filter(L.transaction_id == tx.id, L.deleted_at.is_(None)).order_by(L.line_no).all()
-        return sukses(data=_ke_dict(tx, lines), message="OK")
+        return sukses(data=_detail(session, tx), message="OK")
     finally:
         session.close()
 
 
-@router.post("/bills", summary="Create Bill: simpan draft, atau submit (pending_review) untuk di-approve di Purchase Preview (Supervisor+)")
-def buat_bill(payload: BillRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_INPUT_BILL))):
+@router.put("/{transaction_id}", summary="Edit bill yang belum di-approve (khusus Supervisor ke atas)")
+def edit_bill(transaction_id: str, payload: BillIn, current_user: Dict[str, Any] = Depends(_require_level_v1(3))):
+    session = dbc.SessionLocal()
     try:
-        data = _simpan(payload, current_user)
-    except _Gagal as e:
-        return _jawab_gagal(e)
-    pesan = f"{data['purchase_no']} submitted for approval." if payload.submit else f"{data['purchase_no']} saved as draft."
-    return sukses(data=data, message=pesan, status_code=201)
+        tx = session.query(dbc.PurchaseTransaction).filter(
+            dbc.PurchaseTransaction.id == transaction_id, dbc.PurchaseTransaction.deleted_at.is_(None),
+        ).with_for_update().first()
+        if tx is None:
+            return gagal(message="Bill not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+        if (tx.status or "").lower() not in STATUS_BISA_DIEDIT:
+            return gagal(
+                message=f"A bill with status '{tx.status}' can no longer be edited.",
+                errors={"code": "NOT_EDITABLE"}, status_code=409,
+            )
+        if tx.management_client_id and tx.management_client_id != payload.management_client_id:
+            return gagal(message="This bill belongs to another company.", errors={"code": "WRONG_COMPANY"}, status_code=409)
 
+        hasil = _validasi_dan_susun(session, payload, exclude_id=tx.id)
+        if "errors" in hasil:
+            return _gagal_validasi(hasil["errors"])
+        header, baris = hasil["header"], hasil["lines"]
 
-@router.put("/bills/{bill_id}", summary="Ubah bill draft / pending_review / rejected / exception (kembali draft kecuali submit)")
-def ubah_bill(bill_id: str, payload: BillRequest, current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_INPUT_BILL))):
-    try:
-        data = _simpan(payload, current_user, bill_id)
-    except _Gagal as e:
-        return _jawab_gagal(e)
-    pesan = f"{data['purchase_no']} submitted for approval." if payload.submit else f"{data['purchase_no']} saved as draft."
-    return sukses(data=data, message=pesan)
+        for kolom, nilai in header.items():
+            setattr(tx, kolom, nilai)
+        tx.status = "pending_review" if payload.submit else "draft"
+        tx.edited_at = datetime.now()
+        tx.edited_by = current_user.get("id")
+
+        # Baris lama diganti seluruhnya. HARD delete (bukan soft-delete): constraint unik
+        # (transaction_id, line_no) tidak peduli deleted_at, jadi baris lama yg hanya di-soft-delete
+        # akan menabrak baris baru ber-line_no sama. Aman karena bill masih draft/belum diposting.
+        PL = dbc.PurchaseTransactionLine
+        session.query(PL).filter(PL.transaction_id == tx.id).delete(synchronize_session=False)
+        for idx, b in enumerate(baris, start=1):
+            session.add(PL(**b, transaction_id=tx.id, client_id=tx.client_id, line_no=idx, created_by=current_user.get("id")))
+        session.commit()
+        session.refresh(tx)
+        return sukses(
+            data=_detail(session, tx),
+            message="Bill submitted for approval." if payload.submit else "Bill saved as draft.",
+        )
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        logger.exception("Gagal mengedit bill")
+        return gagal(message="Failed to update bill (database error).", status_code=500)
+    finally:
+        session.close()

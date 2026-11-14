@@ -69,8 +69,8 @@ export default function AIAnalysisArea({ activeAnalysis, isAnalyzing, onNewAnaly
             </div>
             <span className="text-xs font-semibold text-ai-purple uppercase tracking-wider">AI Financial Analysis</span>
           </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">{analysisLabels[activeAnalysis]}</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">{activeClientName ?? 'No client selected'}</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{analysisLabels[activeAnalysis]}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{activeClientName ?? 'No client selected'}</p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button onClick={() => toast.success('Analysis saved')} className="flex items-center gap-1.5 text-sm border border-border rounded-md px-2.5 py-1.5 text-foreground hover:bg-secondary transition-colors">

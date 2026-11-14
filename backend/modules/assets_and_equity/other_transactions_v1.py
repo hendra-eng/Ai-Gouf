@@ -50,7 +50,7 @@ from ..auth import core as auth
 from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from ..management.clients_v1 import _require_level_v1
-from ..transactions import bank_cash_v1 as bc
+from ..transactions import bank_cash_helpers as bc
 
 logger = get_module_logger("asset_other_transactions_v1")
 

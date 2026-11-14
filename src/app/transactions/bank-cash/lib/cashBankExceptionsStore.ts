@@ -148,7 +148,7 @@ export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDe
       hasil.push({
         ref, tanggal: m.date, tx_no: noRef, counterparty: ringkas(m.description),
         exception_type: 'Duplicate transaction', source: 'Reconciliation', priority: 'High',
-        ai_suggestion: 'An identical bank line (same date, amount, account and description) appears more than once. If these really are two transactions, leave them; if it was misread, ignore one of them in the Bank Feed tab.',
+        ai_suggestion: 'An identical bank line (same date, amount, account and description) appears more than once. If these really are two transactions, leave them; if it was misread, ignore one of them in the Source Data tab.',
         source_snippet: { date: m.date, amount: nominal, account: rekening },
       });
     }
@@ -162,7 +162,7 @@ export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDe
         exception_type: 'Unmatched bank mutation', source: 'Reconciliation', priority: prioritas(nominal),
         ai_suggestion: kandidat
           ? `Matching candidate: invoice ${kandidat.no} (${ringkas(kandidat.pihak)}) — its outstanding equals the line amount. Match it in the Reconciliation tab.`
-          : `No outstanding ${m.credit ? 'Sales' : 'Purchase'} invoice with the same amount. Check whether the invoice has been posted. If it is not an invoice settlement (bank charges, interest, inter-bank transfer, capital injection), record it via "Not an invoice settlement?" in the Reconciliation tab, or ignore it in the Bank Feed tab.`,
+          : `No outstanding ${m.credit ? 'Sales' : 'Purchase'} invoice with the same amount. Check whether the invoice has been posted. If it is not an invoice settlement (bank charges, interest, inter-bank transfer, capital injection), record it via "Not an invoice settlement?" in the Reconciliation tab, or ignore it in the Source Data tab.`,
         source_snippet: { date: m.date, [m.credit ? 'credit' : 'debit']: nominal, account: rekening },
       });
       continue;

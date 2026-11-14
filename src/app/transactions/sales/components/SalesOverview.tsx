@@ -1,19 +1,37 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
-import { formatIDR, CHART_COLORS } from '../../lib/groupAnalytics';
-import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getNiceTicksFromZero } from '@/lib/chartTicks';
+import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, Store, Trophy, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
+import { formatIDR } from '../../lib/groupAnalytics';
+import InteractiveDonutChart, { type DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
 import { useSalesInvoices, formatTanggalSingkat, type BackendSalesInvoice } from '@/lib/salesStore';
+import {
+  buildTrendIndex, buildSeries, buildTicks, makeBounds, pickGranularity, zoomRange, panRange, utc, addGran, DAY_MS,
+  niceTicksRange, niceStep, smoothSeries, buildSeriesInterval, buildIntradayTicks, makeBoundsForInterval, defaultWindowForInterval,
+  intervalStart, intervalNext, isIntraday, INTERVALS, INTERVAL_BY_ID,
+  type TimeRange, type TickInfo, type Granularity, type IntervalId, type IntervalDef,
+} from './salesTrendTime';
+import SalesChartCrosshair from './SalesChartCrosshair';
+import SalesCandleLayer, { type SalesChartType } from './SalesCandleLayer';
 
-// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Financial
-// Overview / Balance Sheet): width YAxis (65) + margin.left AreaChart (10). ──
-const SALES_AXIS_WIDTH = 65;
-const SALES_AXIS_OVERLAY_WIDTH = SALES_AXIS_WIDTH + 10;
+// ── Sumbu Y: lebarnya dihitung otomatis dari label harga terlebar (lihat salesAxisWidth di
+// dalam komponen), dan margin kiri chart = 0, supaya label harga terlebar mulai tepat di
+// tepi kiri kartu -- sejajar dengan judul di atasnya. Overlay drag-zoom sumbu Y mengikuti
+// lebar yang sama (sama pola dengan chart Financial Overview / Balance Sheet). ──
+const SALES_PLOT_LEFT = 0;        // margin.left AreaChart
+const SALES_AXIS_GAP = 5;         // jarak label harga ke garis sumbu Y (offset tick Recharts + geser teks)
 const SALES_SPRING_MS = 380;
+// Sumbu waktu (X) ala TradingView: tarik di area label bulan = zoom, tarik di grafik = geser.
+const SALES_XAXIS_HEIGHT = 34;
+const SALES_PLOT_RIGHT = 10;      // margin.right AreaChart
+const SALES_CHART_HEIGHT = 220;
+const SALES_PLOT_TOP = 5;         // margin.top AreaChart
+const SALES_TIME_ZOOM_PX = 220;   // jarak tarik (px) untuk melebarkan/menyempitkan jendela ~2,7x
+const SALES_AXIS_BORDER = '#0E2F26'; // hijau sidebar (--nav) untuk garis tepi sumbu harga & bulan
+const SALES_LINE_COLOR = '#EAB308';  // kuning garis chart
 const salesEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 // Kartu KPI Overview -- desain sama dengan kartu KPI di tab Source Data, Sales
@@ -65,12 +83,14 @@ const pctOf = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
 
 // Dropdown filter kustom -- sama dengan FilterSelect di tab Sales Transaction
 // & Posted: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih hijau brand.
-interface FilterOption { value: string; label: string }
+interface FilterOption { value: string; label: string; short?: string }
 
-function FilterSelect({ value, onChange, options }: {
+function FilterSelect({ value, onChange, options, searchable: searchableProp, title }: {
   value: string;
   onChange: (v: string) => void;
   options: FilterOption[];
+  searchable?: boolean;
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -91,7 +111,7 @@ function FilterSelect({ value, onChange, options }: {
   }, [open]);
 
   const current = options.find(o => o.value === value) ?? options[0];
-  const searchable = options.length > 10;
+  const searchable = searchableProp ?? options.length > 10;
   const needle = q.trim().toLowerCase();
   const shown = needle ? options.filter(o => o.label.toLowerCase().includes(needle)) : options;
 
@@ -102,9 +122,10 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
+        title={title}
         className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
       >
-        <span className="truncate max-w-[170px]">{current?.label}</span>
+        <span className="truncate max-w-[170px]">{current?.short ?? current?.label}</span>
         <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -144,6 +165,19 @@ function FilterSelect({ value, onChange, options }: {
   );
 }
 
+// Pilihan dropdown timeframe & bentuk grafik Tren Sales.
+const INTERVAL_OPTIONS: FilterOption[] = [
+  { value: 'auto', label: 'Auto', short: 'Auto' },
+  ...INTERVALS.map((d) => ({ value: d.id, label: `${d.label} · ${d.title}`, short: d.label })),
+];
+const CHART_TYPE_OPTIONS: FilterOption[] = [
+  { value: 'area', label: 'Area' },
+  { value: 'line', label: 'Line' },
+  { value: 'column', label: 'Column' },
+  { value: 'candle', label: 'Candle' },
+  { value: 'ohlc', label: 'OHLC Bar' },
+];
+
 function buildPageItems(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages = new Set<number>([1, total, current - 1, current, current + 1]);
@@ -170,53 +204,263 @@ const STATUS_DOT: Record<string, string> = {
 };
 const NAV_BTN = 'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card';
 
-// Garis yang bisa ditarik: 'total' (mode Actual) atau 'thisYear'/'lastYear' (mode Previous Year).
-type SalesLineKey = 'total' | 'thisYear' | 'lastYear';
-type SalesPeriod = '6M' | 'YTD' | '12M' | '3Y';
-type SalesViewMode = 'Actual' | 'Previous Year';
-const SALES_PERIODS: SalesPeriod[] = ['6M', 'YTD', '12M', '3Y'];
-const SALES_VIEW_MODES: SalesViewMode[] = ['Actual', 'Previous Year'];
-
 interface SalesDragPreview {
-  key: SalesLineKey;
   index: number;
   value: number;
 }
 
-function SalesTrendTooltip({
-  active,
-  payload,
-  label,
-  dragPreview,
-}: {
-  active?: boolean;
-  payload?: { value: number; name: string; color?: string; stroke?: string; dataKey?: string }[];
-  label?: string;
-  dragPreview?: SalesDragPreview | null;
-}) {
-  if (!active || !payload || !payload.length) return null;
+// Teks label sumbu Y: nominal angka penuh tanpa awalan "Rp". Dipakai juga untuk mengukur
+// lebar sumbu, jadi harus satu sumber dengan yang digambar SalesYTick.
+const salesYLabel = (value: number) =>
+  new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.round(value));
+
+// Label sumbu Y: rata kanan (menempel ke garis sumbu), dalam satu baris.
+function SalesYTick({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) {
+  if (x == null || y == null || !payload) return null;
   return (
-    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
-      <p className="font-semibold text-slate-800 mb-1.5">{label}</p>
-      {payload.map((p, i) => {
-        const isDragged = !!dragPreview && dragPreview.key === p.dataKey;
-        const value = isDragged ? dragPreview!.value : p.value;
-        return (
-          <div key={`sales-tt-${i}`} className="flex items-center gap-2 py-0.5">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
-            <span className="text-slate-500">{p.name}:</span>
-            <span className="font-semibold text-slate-800">
-              {isDragged ? 'Estimated · ' : ''}
-              {formatIDR(value)}
-            </span>
-          </div>
-        );
-      })}
+    <g>
+      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#94a3b8">{salesYLabel(payload.value)}</text>
+    </g>
+  );
+}
+
+// Label sumbu X: tahun/bulan tebal, tanggal tipis; tahun muncul di baris bawah Januari.
+function SalesXTick({ x, y, payload, info }: { x?: number; y?: number; payload?: { value: number }; info: Map<number, TickInfo> }) {
+  const tick = payload ? info.get(payload.value) : undefined;
+  if (!tick || x == null || y == null) return null;
+  const strong = tick.kind !== 'day';
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={strong ? 600 : 400} fill={strong ? '#64748b' : '#94a3b8'}>
+        {tick.label}
+      </text>
+      {tick.sub && (
+        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#475569">
+          {tick.sub}
+        </text>
+      )}
+    </g>
+  );
+}
+
+// ── Kartu Sales per Branch (donut) & Top Customer (leaderboard) ──
+// Desain mengikuti kartu KPI di atas: palet hijau brand, strip aksen, glow
+// mint lembut, ikon dalam chip, angka tabular.
+const BRANCH_COLORS = ['#0F7D4E', '#14B8A6', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4'];
+const BRANCH_OTHERS_COLOR = '#CBD5E1';
+
+const fmtPct = (p: number) => `${p > 0 && p < 10 ? p.toFixed(1) : p.toFixed(0)}%`;
+
+// ── Pembulatan yang jumlahnya selalu pas (metode largest remainder) ──
+// Membulatkan tiap angka sendiri-sendiri bikin jumlah legenda meleset dari total
+// (mis. 100% + 0,1% = 100,1%, atau Rp 1,10M + Rp 1Jt != Rp 1,11M). Di sini
+// pembulatan dibagi bersama: sisa pembulatan diberikan ke yang pecahannya terbesar.
+function largestRemainder(rawUnits: number[], targetUnits: number): number[] {
+  const base = rawUnits.map((r) => Math.floor(r));
+  let left = targetUnits - base.reduce((a, b) => a + b, 0);
+  const order = rawUnits.map((r, i) => ({ i, frac: r - base[i] })).sort((a, b) => b.frac - a.frac);
+  const out = base.slice();
+  for (let k = 0; left > 0 && k < order.length; k++, left--) out[order[k].i] += 1;
+  return out;
+}
+
+// Persen satu desimal yang dijamin berjumlah tepat 100,0.
+function allocatePcts(values: number[]): number[] {
+  const sum = values.reduce((a, b) => a + b, 0);
+  if (sum <= 0 || values.some((v) => v < 0)) return values.map(() => 0);
+  return largestRemainder(values.map((v) => (v / sum) * 1000), 1000).map((u) => u / 10);
+}
+const pctLabel = (p: number, value = 1) =>
+  p === 0 && value > 0 ? '<0.1%' : Number.isInteger(p) ? `${p}%` : `${p.toFixed(1)}%`;
+
+// Nominal ringkas yang dijamin berjumlah pas dengan totalnya. Di rentang miliar
+// ("M") angka dihitung dalam resolusi juta, ditulis 3 desimal (Rp 1,104M) supaya
+// cabang kecil (Rp 1Jt) tidak hilang karena dibulatkan ke 0,01M.
+function allocateMoney(values: number[], total: number): string[] {
+  if (total >= 1e9 && values.every((v) => v >= 0)) {
+    const units = largestRemainder(values.map((v) => v / 1e6), Math.round(total / 1e6));
+    return units.map((u, i) =>
+      u >= 1000 ? `Rp ${(u / 1000).toFixed(3).replace('.', ',')}M` : u > 0 ? `Rp ${u}Jt` : formatIDR(values[i], true)
+    );
+  }
+  return values.map((v) => formatIDR(v, true));
+}
+// Inisial avatar: abaikan keterangan dalam kurung (mis. "AHIN (ATX)" -> "A"), hanya huruf/angka.
+// >= 2 kata -> huruf depan 2 kata pertama ("TEGUH PS" -> "TP"); 1 kata -> 1 huruf depan ("SETIAWAN" -> "S").
+const initialsOf = (name: string) => {
+  const cleaned = name.replace(/\(.*$/, ' ').replace(/[^\p{L}\p{N}\s]/gu, ' ');
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const src = words.length ? words : name.replace(/[^\p{L}\p{N}]/gu, ' ').split(/\s+/).filter(Boolean);
+  if (src.length === 0) return '?';
+  const out = src.length >= 2 ? src[0][0] + src[1][0] : src[0][0];
+  return out.toUpperCase();
+};
+
+function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white">
+          <Icon size={17} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-bold text-foreground">{title}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      {right}
     </div>
   );
 }
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function BranchDonutCard({ branches, total }: { branches: { name: string; value: number }[]; total: number }) {
+  const { t } = useLanguage();
+  // Sama seperti Purchase Status: klik segmen (atau baris legenda) -> segmen
+  // membesar, yang lain meredup, dan kotak di tengah donut menampilkan nama
+  // cabang + persen + nilainya. Tarik garis pemisah untuk preview "what-if".
+  const [active, setActive] = useState<number | null>(null);
+  const [live, setLive] = useState<DonutLivePreview[] | null>(null);
+
+  const segs = useMemo(() => {
+    const list = branches.map((b, i) => ({
+      name: b.name === 'Unassigned' ? t('Unassigned') : b.name,
+      value: b.value,
+      color: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    }));
+    const rest = total - branches.reduce((s2, b) => s2 + b.value, 0);
+    if (total > 0 && rest > 1) list.push({ name: t('Others'), value: rest, color: BRANCH_OTHERS_COLOR });
+    return list;
+  }, [branches, total, t]);
+
+  // Jumlah segmen bisa berubah (ganti company / data baru) -> reset pilihan.
+  useEffect(() => { setActive(null); }, [segs.length]);
+
+  // Angka yang sedang tampil (nilai asli, atau nilai preview saat garis pemisah ditarik),
+  // lalu dibulatkan bersama supaya persen = 100,0% dan nominal = total.
+  const shownValues = useMemo(() => (live ? live.map((p) => p.value) : segs.map((sg) => sg.value)), [live, segs]);
+  const shownTotal = useMemo(() => shownValues.reduce((a, b) => a + b, 0), [shownValues]);
+  const shownPcts = useMemo(() => allocatePcts(shownValues), [shownValues]);
+  const shownMoney = useMemo(() => allocateMoney(shownValues, shownTotal), [shownValues, shownTotal]);
+  const toggle = (i: number) => setActive((prev) => (prev === i ? null : i));
+
+  return (
+    <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
+      <SalesCardHeader icon={Store} title={t('Sales per Branch')} subtitle={t('Gross sales by branch')} />
+      {segs.length === 0 || total <= 0 ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+      ) : (
+        <>
+          <div className="mx-auto w-full max-w-[220px] shrink-0">
+            <InteractiveDonutChart
+              data={segs}
+              height={190}
+              centerLabel={allocateMoney([total], total)[0]}
+              centerSubLabel={t('Total Sales')}
+              activeIndex={active}
+              onActiveChange={setActive}
+              onLiveChange={setLive}
+              rawValue
+              minVisibleDeg={5}
+              formatValue={(v, i) => shownMoney[i] ?? formatIDR(v, true)}
+              formatPct={(p, i) => pctLabel(shownPcts[i] ?? p, shownValues[i] ?? 1)}
+            />
+          </div>
+
+          <ul className="mt-4 space-y-1">
+            {segs.map((a, i) => {
+              return (
+                <li
+                  key={`legend-${a.name}-${i}`}
+                  onClick={() => toggle(i)}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
+                  <span className={`min-w-0 flex-1 truncate ${active === i ? 'font-bold' : 'font-medium'} text-foreground`} title={a.name}>{a.name}</span>
+                  <span className="font-semibold tabular-nums text-foreground">{shownMoney[i]}</span>
+                  <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
+                    {pctLabel(shownPcts[i], shownValues[i])}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TopCustomerCard({ customers, total }: { customers: { name: string; amount: number; count: number }[]; total: number }) {
+  const { t } = useLanguage();
+  const max = customers[0]?.amount || 1;
+  const topShare = total > 0 ? (customers.reduce((s2, c) => s2 + c.amount, 0) / total) * 100 : 0;
+
+  return (
+    <div className="card-elevated-md rounded-xl p-5">
+      <SalesCardHeader
+        icon={Trophy}
+        title={t('Top Customer')}
+        subtitle={t('Berdasarkan kontribusi nominal')}
+        right={customers.length > 0 ? (
+          <span className="shrink-0 rounded-full bg-[#ECFDF5] px-3 py-1 text-[11px] font-bold text-[#047857] ring-1 ring-[#A7F3D0]">
+            Top {customers.length} · {fmtPct(topShare)} {t('of total sales')}
+          </span>
+        ) : undefined}
+      />
+      {customers.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {customers.map((c, i) => {
+            const first = i === 0;
+            const share = total > 0 ? (c.amount / total) * 100 : 0;
+            const badge = i === 0 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 1 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 2 ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-slate-100 text-slate-600';
+            return (
+              <div
+                key={`top-customer-${c.name}`}
+                className="group relative overflow-hidden rounded-[10px] border border-primary/30 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-transparent hover:shadow-md"
+              >
+                <span className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#0F7D4E] to-[#0B5E5C] opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100" />
+                <span className="pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full bg-[#6EE7B7] opacity-[0.15] blur-xl transition-all duration-300 group-hover:bg-white group-hover:opacity-10" />
+                <div className="relative flex items-center justify-between">
+                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-extrabold transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white ${badge}`}>
+                    {first ? <Trophy size={12} /> : null}#{i + 1}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-slate-600 transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white">
+                    {fmtPct(share)}
+                  </span>
+                </div>
+                <div className="relative mt-3 flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] text-xs font-extrabold text-[#047857] ring-1 ring-white transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white group-hover:ring-white/30">
+                    {initialsOf(c.name)}
+                  </span>
+                  <p className="min-w-0 truncate text-sm font-bold text-foreground transition-colors duration-300 group-hover:text-white" title={c.name}>{c.name}</p>
+                </div>
+                <p className="relative mt-3 truncate text-lg font-extrabold tabular-nums text-[#064E3B] transition-colors duration-300 group-hover:text-white" title={formatIDR(c.amount)}>
+                  {formatIDR(c.amount)}
+                </p>
+                <p className="relative text-[11px] font-semibold text-slate-500 transition-colors duration-300 group-hover:text-white/75">
+                  {c.count} {t('invoices')}
+                </p>
+                <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 transition-colors duration-300 group-hover:bg-white/20">
+                  <div
+                    className="h-full rounded-full bg-[#0F7D4E] transition-colors duration-300 group-hover:bg-white"
+                    style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Status invoice (taksonomi financial_transaction_sales_invoices.posting_status):
 // Draft/Review/Approved = belum diposting; Posted/Partial/Paid = sudah diposting.
@@ -253,8 +497,8 @@ const NUMERIC_COLS = ['DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding'];
 //  - Paid / Accounts Receivable / Overdue     : hanya invoice yang sudah diposting
 //    (piutang baru sah setelah diposting; sama dengan kolom AR di tab Posted).
 export default function SalesOverview() {
-  const { t } = useLanguage();
-  const { activeClientId, activeClientName } = useActiveClient();
+  const { t, lang } = useLanguage();
+  const { activeClientId } = useActiveClient();
   const clientId = activeClientId ?? null;
   const { invoices: allInvoices, loading, error } = useSalesInvoices(clientId);
   const invoices = useMemo(() => allInvoices.filter((i) => i.aktif !== false), [allInvoices]);
@@ -284,68 +528,94 @@ export default function SalesOverview() {
     return { count: rows.length, total: sumBy(rows, (i) => i.outstanding_amount) };
   }, [postedInvoices]);
 
-  // ── Tren bulanan (berdasarkan invoice_date) -- sama seperti chart Financial
-  // Overview: filter periode 6M / YTD / 12M / 3Y, ujung PALING KANAN selalu
-  // bulan berjalan (dari jam sistem), plus mode Actual vs Previous Year. ──
-  const [period, setPeriod] = useState<SalesPeriod>('YTD');
-  const [viewMode, setViewMode] = useState<SalesViewMode>('Actual');
-
-  const now = new Date();
-  const anchorYear = now.getFullYear();
-  const anchorMonthIdx = now.getMonth(); // 0 = Jan
-  const anchorAbs = anchorYear * 12 + anchorMonthIdx;
-
-  // Total & jumlah invoice per bulan absolut (tahun * 12 + indeks bulan).
-  const monthlyTotals = useMemo(() => {
-    const map = new Map<number, { total: number; count: number }>();
-    invoices.forEach((i) => {
-      const y = yearOf(i.invoice_date);
-      const m = Number((i.invoice_date || '').slice(5, 7)) - 1;
-      if (!y || m < 0 || m > 11) return;
-      const key = y * 12 + m;
-      const cur = map.get(key) ?? { total: 0, count: 0 };
-      cur.total += num(i.gross_amount);
-      cur.count += 1;
-      map.set(key, cur);
-    });
-    return map;
+  // ── Tren bulanan (per tahun, berdasarkan invoice_date) ──
+  const availableYears = useMemo(() => {
+    const ys = new Set<number>();
+    invoices.forEach((i) => { const y = yearOf(i.invoice_date); if (y) ys.add(y); });
+    return Array.from(ys).sort((a, b) => b - a);
   }, [invoices]);
+  const [pickedYear, setPickedYear] = useState<number | null>(null);
+  const trendYear = pickedYear && availableYears.includes(pickedYear) ? pickedYear : (availableYears[0] ?? new Date().getFullYear());
 
-  // Mode Actual: deret kronologis dipotong sesuai periode. Kalau rentang
-  // melewati beberapa tahun, label bulan diberi akhiran tahun (mis. Jan '25).
-  const trend = useMemo(() => {
-    const windowSize = period === '6M' ? 6 : period === '12M' ? 12 : period === '3Y' ? 36 : null; // null = YTD
-    const lowerBound = windowSize ? anchorAbs - (windowSize - 1) : anchorYear * 12; // YTD: dari Jan tahun ini
-    const rows: { year: number; mon: string; total: number; count: number }[] = [];
-    for (let abs = lowerBound; abs <= anchorAbs; abs++) {
-      const v = monthlyTotals.get(abs);
-      rows.push({ year: Math.floor(abs / 12), mon: MONTH_LABELS[abs % 12], total: v?.total ?? 0, count: v?.count ?? 0 });
+  // ── Sumbu waktu ala TradingView ──
+  // Jendela waktu (view) bisa digeser dan di-zoom. Makin sempit jendelanya, makin halus datanya:
+  // tahun -> bulan -> hari. Default = satu tahun penuh (Jan..Des) seperti sebelumnya.
+  const trendIndex = useMemo(
+    () => buildTrendIndex(invoices, (i) => i.invoice_date, (i) => num(i.gross_amount)),
+    [invoices]
+  );
+  const hasAnySales = useMemo(() => Array.from(trendIndex.month.values()).some((b) => b.total !== 0), [trendIndex]);
+  const allTimeMaxMonth = useMemo(() => Math.max(0, ...Array.from(trendIndex.month.values()).map((b) => b.total)), [trendIndex]);
+
+  const defaultView = useMemo<TimeRange>(() => ({ from: utc(trendYear, 0, 1), to: utc(trendYear, 11, 1) }), [trendYear]);
+  const [range, setRange] = useState<TimeRange | null>(null);
+  // Interval bucket pilihan user (5m ... 1Y) ala TradingView. null = otomatis, mengikuti zoom (perilaku lama).
+  const [intervalId, setIntervalId] = useState<IntervalId | null>(null);
+  const [chartType, setChartType] = useState<SalesChartType>('area');
+  const intervalDef: IntervalDef | null = intervalId ? INTERVAL_BY_ID[intervalId] : null;
+  const intervalWindow = useMemo(
+    () => (intervalDef ? defaultWindowForInterval(trendIndex, intervalDef, trendYear) : null),
+    [trendIndex, intervalDef, trendYear]
+  );
+  const view = range ?? intervalWindow ?? defaultView;
+  const timeBounds = useMemo(
+    () => (intervalDef ? makeBoundsForInterval(trendIndex, trendYear, intervalDef) : makeBounds(trendIndex, trendYear)),
+    [trendIndex, trendYear, intervalDef]
+  );
+  const gran: Granularity = pickGranularity(view.to - view.from);
+
+  const intlLocale = lang === 'id' ? 'id-ID' : lang === 'zh' ? 'zh-CN' : 'en-US';
+  const fmtMonth = useMemo(() => new Intl.DateTimeFormat(intlLocale, { month: 'short', timeZone: 'UTC' }), [intlLocale]);
+  const fmtMonthYear = useMemo(() => new Intl.DateTimeFormat(intlLocale, { month: 'short', year: 'numeric', timeZone: 'UTC' }), [intlLocale]);
+  const fmtFullDay = useMemo(() => new Intl.DateTimeFormat(intlLocale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }), [intlLocale]);
+  const pointLabel = useCallback(
+    (tm: number, g: Granularity) => (g === 'day' ? fmtFullDay.format(tm) : g === 'month' ? fmtMonthYear.format(tm) : String(new Date(tm).getUTCFullYear())),
+    [fmtFullDay, fmtMonthYear]
+  );
+  const tickFormatters = useMemo(() => ({ monthShort: (tm: number) => fmtMonth.format(tm) }), [fmtMonth]);
+
+  // Label bucket untuk interval pilihan (tooltip/crosshair): jam, tanggal, rentang minggu, bulan, tahun.
+  const fmtTime = useMemo(() => new Intl.DateTimeFormat(intlLocale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' }), [intlLocale]);
+  const fmtDayMonth = useMemo(() => new Intl.DateTimeFormat(intlLocale, { day: 'numeric', month: 'short', timeZone: 'UTC' }), [intlLocale]);
+  const intervalLabel = useCallback((tm: number, d: IntervalDef) => {
+    if (d.kind === 'fixed') {
+      if (d.ms < DAY_MS) return `${fmtFullDay.format(tm)} ${fmtTime.format(tm)}`;
+      if (d.ms === DAY_MS) return fmtFullDay.format(tm);
+      return `${fmtDayMonth.format(tm)} – ${fmtFullDay.format(tm + d.ms - DAY_MS)}`;
     }
-    const spansMultipleYears = rows.some((r) => r.year !== rows[0].year);
-    return rows.map((r) => ({
-      month: spansMultipleYears ? `${r.mon} '${String(r.year).slice(-2)}` : r.mon,
-      total: r.total,
-      count: r.count,
-    }));
-  }, [monthlyTotals, period, anchorAbs, anchorYear]);
+    if (d.months === 1) return fmtMonthYear.format(tm);
+    if (d.months === 12) return String(new Date(tm).getUTCFullYear());
+    return `${fmtMonth.format(tm)} – ${fmtMonthYear.format(addGran(tm, 'month', d.months - 1))}`;
+  }, [fmtFullDay, fmtTime, fmtDayMonth, fmtMonth, fmtMonthYear]);
 
-  // Mode Previous Year: penjualan bulanan tahun berjalan vs tahun lalu,
-  // sejajar per nama bulan, dari Jan sampai bulan berjalan.
-  const yoyTrend = useMemo(() => {
-    const rows: { month: string; thisYear: number; lastYear: number }[] = [];
-    for (let m = 0; m <= anchorMonthIdx; m++) {
-      rows.push({
-        month: MONTH_LABELS[m],
-        thisYear: monthlyTotals.get(anchorYear * 12 + m)?.total ?? 0,
-        lastYear: monthlyTotals.get((anchorYear - 1) * 12 + m)?.total ?? 0,
-      });
-    }
-    return rows;
-  }, [monthlyTotals, anchorYear, anchorMonthIdx]);
+  // Titik chart untuk jendela saat ini (+1 bucket di tiap sisi supaya garis menyentuh tepi).
+  const trend = useMemo(
+    () => (intervalDef
+      ? buildSeriesInterval(trendIndex, view.from, view.to, intervalDef, (tm) => intervalLabel(tm, intervalDef))
+      : buildSeries(trendIndex, view.from, view.to, gran, pointLabel)),
+    [trendIndex, view.from, view.to, gran, pointLabel, intervalDef, intervalLabel]
+  );
+  const xTicks = useMemo(
+    () => (intervalDef && isIntraday(intervalDef)
+      ? buildIntradayTicks(view.from, view.to, tickFormatters)
+      : buildTicks(view.from, view.to, gran, tickFormatters)),
+    [view.from, view.to, gran, tickFormatters, intervalDef]
+  );
+  // Lebar tiap batang/candle = jarak ke awal periode berikutnya; teks Open -> Close untuk crosshair.
+  const bucketEnd = useCallback(
+    (tm: number) => (intervalDef ? intervalNext(tm, intervalDef, 1) : addGran(tm, gran, 1)),
+    [intervalDef, gran]
+  );
+  const candleExtra = useCallback(
+    (i: number) => (i > 0 && trend[i] ? `Open ${formatIDR(trend[i - 1].total)} → Close ${formatIDR(trend[i].total)}` : null),
+    [trend]
+  );
+  const xTickValues = useMemo(() => xTicks.map((k) => k.t), [xTicks]);
+  const xTickInfo = useMemo(() => new Map(xTicks.map((k) => [k.t, k])), [xTicks]);
 
-  const hasChartData = viewMode === 'Previous Year'
-    ? yoyTrend.some((d) => d.thisYear > 0 || d.lastYear > 0)
-    : trend.some((d) => d.total > 0);
+  // Dot kalibrasi dideklarasikan di sini supaya direset tepat saat data titik berganti (sebelum chart dirender).
+  const salesDotsRef = useRef<{ value: number; cy: number }[]>([]);
+  useMemo(() => { salesDotsRef.current = []; }, [trend]);
 
   // ── Sales per cabang & top customer ──
   const byBranch = useMemo(() => {
@@ -358,12 +628,15 @@ export default function SalesOverview() {
   }, [invoices]);
 
   const topCustomers = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { amount: number; count: number }>();
     invoices.forEach((i) => {
       const key = (i.customer_name || '').trim() || '-';
-      map.set(key, (map.get(key) || 0) + num(i.gross_amount));
+      const cur = map.get(key) ?? { amount: 0, count: 0 };
+      cur.amount += num(i.gross_amount);
+      cur.count += 1;
+      map.set(key, cur);
     });
-    return Array.from(map, ([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+    return Array.from(map, ([name, v]) => ({ name, amount: v.amount, count: v.count })).sort((a, b) => b.amount - a.amount).slice(0, 5);
   }, [invoices]);
 
   // ── Tabel invoice (cari + filter cabang + paging) ──
@@ -391,20 +664,53 @@ export default function SalesOverview() {
 
   // ── Zoom skala harga (drag vertikal di sumbu Y) — sama seperti chart
   // Financial Overview / Balance Sheet. ──
-  const salesBaseMax = useMemo(() => {
-    const maxVal = viewMode === 'Previous Year'
-      ? Math.max(0, ...yoyTrend.map((d) => Math.max(d.thisYear, d.lastYear)))
-      : Math.max(0, ...trend.map((d) => d.total));
-    return Math.max(1, maxVal) * 1.08;
-  }, [trend, yoyTrend, viewMode]);
+  // Skala dasar: dari sedikit di bawah 0 (supaya ada ruang bernilai negatif, label "-") sampai nilai
+  // tertinggi yang terlihat. Bisa digeser naik/turun (tarik grafik) dan di-zoom (tarik sumbu Y).
+  const salesBase = useMemo(() => {
+    const vals = trend.filter((d) => d.t >= view.from && d.t <= view.to).map((d) => d.total);
+    let hiData = Math.max(0, ...vals);
+    const loData = Math.min(0, ...vals);
+    // Jendela kosong (mis. digeser ke tahun tanpa data): pakai skala bulanan tertinggi supaya sumbu Y tetap masuk akal.
+    if (hiData <= 0) hiData = allTimeMaxMonth;
+    hiData = Math.max(1, hiData);
+    const hi = hiData * 1.08;
+    // Data tanpa nilai negatif: sisakan ruang tepat satu langkah tick di bawah 0 (muncul label "-").
+    return { lo: loData < 0 ? loData * 1.08 : -niceStep(hi, 4), hi };
+  }, [trend, view.from, view.to, allTimeMaxMonth]);
   const [salesPriceZoom, setSalesPriceZoom] = useState(1);
+  const [salesYShift, setSalesYShift] = useState(0);
+  const salesYShiftRef = useRef(0);
+  salesYShiftRef.current = salesYShift;
   const salesZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
 
-  const { ticks: salesYTicks } = useMemo(
-    () => getNiceTicksFromZero(salesBaseMax / salesPriceZoom, 5),
-    [salesBaseMax, salesPriceZoom]
+  const salesYDomain = useMemo<[number, number]>(() => {
+    const mid = (salesBase.lo + salesBase.hi) / 2 + salesYShift;
+    const half = (salesBase.hi - salesBase.lo) / 2 / salesPriceZoom;
+    return [mid - half, mid + half];
+  }, [salesBase, salesPriceZoom, salesYShift]);
+  const salesYTicks = useMemo(() => niceTicksRange(salesYDomain[0], salesYDomain[1], 5), [salesYDomain]);
+
+  // Lebar sumbu Y = label harga terlebar + jarak ke garis sumbu. Diukur dengan canvas memakai font
+  // halaman (diukur ulang setelah font selesai dimuat); tebakan awal dipakai untuk render pertama.
+  const [salesAxisWidth, setSalesAxisWidth] = useState(() =>
+    Math.ceil(Math.max(...salesYTicks.map((v) => salesYLabel(v).length)) * 6.8) + SALES_AXIS_GAP
   );
-  const salesYDomain = useMemo<[number, number]>(() => [0, salesBaseMax / salesPriceZoom], [salesBaseMax, salesPriceZoom]);
+  useEffect(() => {
+    const labels = salesYTicks.map(salesYLabel);
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `10px ${getComputedStyle(document.body).fontFamily}`;
+      const widest = Math.max(0, ...labels.map((l) => ctx.measureText(l).width));
+      const next = Math.ceil(widest) + SALES_AXIS_GAP;
+      setSalesAxisWidth((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    let alive = true;
+    document.fonts?.ready.then(() => { if (alive) measure(); });
+    return () => { alive = false; };
+  }, [salesYTicks]);
+  const salesAxisOverlayWidth = salesAxisWidth + SALES_PLOT_LEFT;
   const salesYDomainRef = useRef(salesYDomain);
   salesYDomainRef.current = salesYDomain;
 
@@ -426,14 +732,12 @@ export default function SalesOverview() {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
-  const resetSalesZoom = () => setSalesPriceZoom(1);
+  const resetSalesZoom = () => { setSalesPriceZoom(1); setSalesYShift(0); };
 
   // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
   // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
-  const salesDotsRef = useRef<Record<SalesLineKey, { value: number; cy: number }[]>>({ total: [], thisYear: [], lastYear: [] });
   const [salesDragPreview, setSalesDragPreview] = useState<SalesDragPreview | null>(null);
   const salesDragStateRef = useRef<{
-    key: SalesLineKey;
     index: number;
     originalValue: number;
     currentValue: number;
@@ -447,13 +751,11 @@ export default function SalesOverview() {
     salesAnimRef.current = null;
   };
 
-  // Reset drag kalau data / periode / mode berganti (index bulan & kalibrasi piksel tidak relevan lagi).
   useEffect(() => {
     stopSalesSpring();
     salesDragStateRef.current = null;
     setSalesDragPreview(null);
-    salesDotsRef.current = { total: [], thisYear: [], lastYear: [] };
-  }, [trend, yoyTrend, period, viewMode]);
+  }, [trend]);
 
   useEffect(() => stopSalesSpring, []);
 
@@ -463,14 +765,14 @@ export default function SalesOverview() {
     stopSalesSpring();
     const from = drag.currentValue;
     const target = drag.originalValue;
-    const { key, index } = drag;
+    const { index } = drag;
     const start = performance.now();
     const step = (now: number) => {
       const elapsed = Math.min(1, (now - start) / SALES_SPRING_MS);
       const eased = salesEaseOutQuint(elapsed);
       const next = from + (target - from) * eased;
       if (salesDragStateRef.current) salesDragStateRef.current.currentValue = next;
-      setSalesDragPreview({ key, index, value: next });
+      setSalesDragPreview({ index, value: next });
       if (elapsed < 1) {
         salesAnimRef.current = requestAnimationFrame(step);
       } else {
@@ -482,16 +784,20 @@ export default function SalesOverview() {
     salesAnimRef.current = requestAnimationFrame(step);
   }, []);
 
-  const handleSalesDotPointerDown = useCallback((e: React.PointerEvent, key: SalesLineKey, index: number, originalValue: number) => {
+  const handleSalesDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
     e.preventDefault();
     e.stopPropagation();
     stopSalesSpring();
 
-    const samples = salesDotsRef.current[key].filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
-    let pxPerUnit = -1;
+    const samples = salesDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
+    let pxPerUnit = 0; // 0 = belum terkalibrasi -> pakai fallback di bawah
     if (samples.length >= 2) {
-      const a = samples[0];
-      const b = samples[samples.length - 1];
+      let a = samples[0];
+      let b = samples[0];
+      for (const pt of samples) {
+        if (pt.value < a.value) a = pt;
+        if (pt.value > b.value) b = pt;
+      }
       if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
     }
     if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
@@ -500,14 +806,13 @@ export default function SalesOverview() {
     }
 
     salesDragStateRef.current = {
-      key,
       index,
       originalValue,
       currentValue: originalValue,
       startClientY: e.clientY,
       pxPerUnit,
     };
-    setSalesDragPreview({ key, index, value: originalValue });
+    setSalesDragPreview({ index, value: originalValue });
   }, []);
 
   useEffect(() => {
@@ -519,7 +824,7 @@ export default function SalesOverview() {
       const maxValue = dMax * 1.4;
       const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
       drag.currentValue = value;
-      setSalesDragPreview({ key: drag.key, index: drag.index, value });
+      setSalesDragPreview({ index: drag.index, value });
     };
     const handleUp = () => {
       if (salesDragStateRef.current) springBackSales();
@@ -534,43 +839,117 @@ export default function SalesOverview() {
     };
   }, [springBackSales]);
 
+  // Interval < 1 hari: isi tiap hari hanya hasil bagi rata, jadi garis dihaluskan (khusus tampilan Area/Line)
+  // supaya tidak berbentuk kotak-kotak. Nilai asli tetap dipakai di legenda crosshair & skala sumbu Y.
+  const lineTrend = useMemo(
+    () => (intervalDef && isIntraday(intervalDef) && (chartType === 'area' || chartType === 'line')
+      ? smoothSeries(trend, Math.max(1, (DAY_MS / intervalDef.ms) * 0.12))
+      : trend),
+    [trend, intervalDef, chartType]
+  );
   const salesDisplayTrend = useMemo(() => {
-    if (!salesDragPreview) return trend;
-    return trend.map((d, i) => (i === salesDragPreview.index ? { ...d, [salesDragPreview.key]: salesDragPreview.value } : d));
-  }, [trend, salesDragPreview]);
-
-  const salesDisplayYoy = useMemo(() => {
-    if (!salesDragPreview) return yoyTrend;
-    return yoyTrend.map((d, i) => (i === salesDragPreview.index ? { ...d, [salesDragPreview.key]: salesDragPreview.value } : d));
-  }, [yoyTrend, salesDragPreview]);
+    if (!salesDragPreview) return lineTrend;
+    return lineTrend.map((d, i) => (i === salesDragPreview.index ? { ...d, total: salesDragPreview.value } : d));
+  }, [lineTrend, salesDragPreview]);
 
   // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
-  const renderSalesCalibrationDot = (key: SalesLineKey) => function SalesCalibrationDot(props: any) {
+  const renderSalesCalibrationDot = (props: any) => {
     const { cx, cy, index, payload } = props;
-    salesDotsRef.current[key][index] = { value: payload[key], cy };
-    return <circle key={`sales-cal-${key}-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
+    salesDotsRef.current[index] = { value: payload.total, cy };
+    return <circle key={`sales-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
   };
 
   // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
-  const renderSalesActiveDot = (key: SalesLineKey, color: string) => function SalesActiveDot(props: any) {
+  const renderSalesActiveDot = (props: any) => {
     const { cx, cy, index, payload } = props;
     if (cx == null || cy == null) return null;
-    const isDraggingThis = salesDragPreview?.key === key && salesDragPreview?.index === index;
+    const isDraggingThis = salesDragPreview?.index === index;
     return (
-      <g key={`sales-pt-${key}-${index}`}>
-        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill={color} stroke="#fff" strokeWidth={1.5} />
+      <g key={`sales-pt-${index}`}>
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill={SALES_LINE_COLOR} stroke="#fff" strokeWidth={1.5} />
         <circle
           cx={cx}
           cy={cy}
           r={12}
           fill="transparent"
           style={{ cursor: 'ns-resize', touchAction: 'none' }}
-          onPointerDown={(e) => handleSalesDotPointerDown(e, key, index, payload[key])}
+          onPointerDown={(e) => handleSalesDotPointerDown(e, index, payload.total)}
         />
       </g>
     );
   };
 
+  // ── Zoom & geser sumbu waktu (ala TradingView) ──
+  //  - Tarik di area label bulan: kanan = jendela melebar (bulan -> tahun), kiri = menyempit (bulan -> tanggal).
+  //    Titik yang diklik tetap di tempatnya saat zoom.
+  //  - Tarik di grafik: geser periode kiri/kanan. Klik dua kali di label = kembali ke satu tahun penuh.
+  const chartWrapRef = useRef<HTMLDivElement>(null);
+  const [panning, setPanning] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const boundsRef = useRef(timeBounds);
+  boundsRef.current = timeBounds;
+
+  const beginTimeDrag = (e: React.PointerEvent, mode: 'zoom' | 'pan') => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const plotLeft = rect.left + salesAxisOverlayWidth;
+    const plotWidth = Math.max(60, rect.width - salesAxisOverlayWidth - SALES_PLOT_RIGHT);
+    const start = viewRef.current;
+    const span = start.to - start.from;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startShift = salesYShiftRef.current;
+    const [yLo, yHi] = salesYDomainRef.current;
+    const plotH = Math.max(60, SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT - SALES_PLOT_TOP);
+    if (mode === 'pan') setPanning(true);
+    const anchor = Math.min(1, Math.max(0, (startX - plotLeft) / plotWidth));
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (mode === 'zoom') setRange(zoomRange(start, Math.exp(dx / SALES_TIME_ZOOM_PX), anchor, boundsRef.current));
+      else {
+        setRange(panRange(start, (-dx / plotWidth) * span, boundsRef.current));
+        // Tarik ke bawah = grafik turun (rentang nilai yang terlihat naik), seperti TradingView.
+        setSalesYShift(startShift + ((ev.clientY - startY) / plotH) * (yHi - yLo));
+      }
+    };
+    const onUp = () => {
+      setPanning(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
+
+  const handleChartPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < salesAxisOverlayWidth || y > rect.height - SALES_XAXIS_HEIGHT) return; // sumbu Y & sumbu X punya handler sendiri
+    beginTimeDrag(e, 'pan');
+  };
+
+  const chartGeometry = {
+    plotLeft: salesAxisOverlayWidth,
+    plotRightMargin: SALES_PLOT_RIGHT,
+    plotTop: SALES_PLOT_TOP,
+    plotBottom: SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT,
+  };
+
+  const selectInterval = (id: IntervalId | null) => {
+    setIntervalId(id);
+    setRange(null);
+    setSalesPriceZoom(1);
+    setSalesYShift(0);
+  };
 
   return (
     <div className="space-y-6">
@@ -670,129 +1049,104 @@ export default function SalesOverview() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {[
-                  activeClientName,
-                  viewMode === 'Previous Year'
-                    ? `${anchorYear - 1} vs ${anchorYear}`
-                    : trend.length > 1 ? `${trend[0].month} – ${trend[trend.length - 1].month}` : trend[0]?.month,
-                  t('Based on invoice date, gross amount'),
-                ].filter(Boolean).join(' · ')}
-              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('Based on invoice date, gross amount')}</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex gap-1">
-                {SALES_VIEW_MODES.map((m) => (
-                  <button
-                    key={`sales-mode-${m}`}
-                    onClick={() => setViewMode(m)}
-                    className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      viewMode === m ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'
-                    }`}
-                  >
-                    {t(m)}
-                  </button>
-                ))}
-              </div>
-              {viewMode === 'Actual' && (
-                <div className="flex gap-1">
-                  {SALES_PERIODS.map((p) => (
-                    <button
-                      key={`sales-period-${p}`}
-                      onClick={() => setPeriod(p)}
-                      className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                        period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
+              {/* Timeframe (5m ... 1Y) + bentuk grafik ala TradingView */}
+              <FilterSelect
+                title="Timeframe"
+                searchable={false}
+                value={intervalId ?? 'auto'}
+                onChange={(v) => selectInterval(v === 'auto' ? null : (v as IntervalId))}
+                options={INTERVAL_OPTIONS}
+              />
+              <FilterSelect
+                title="Bentuk grafik"
+                searchable={false}
+                value={chartType}
+                onChange={(v) => setChartType(v as SalesChartType)}
+                options={CHART_TYPE_OPTIONS}
+              />
+              {(range || intervalId) && (
+                <button
+                  type="button"
+                  onClick={() => { setRange(null); setIntervalId(null); setSalesYShift(0); setSalesPriceZoom(1); }}
+                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground hover:bg-muted"
+                >
+                  {t('Reset')}
+                </button>
+              )}
+              {availableYears.length > 1 && (
+                <select
+                  value={trendYear}
+                  onChange={(e) => { setPickedYear(Number(e.target.value)); setRange(null); }}
+                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground"
+                >
+                  {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
               )}
             </div>
           </div>
-          {!hasChartData ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">
-              {loading ? t('Loading...') : invoices.length > 0 ? t('No sales invoices in this period — try a longer period.') : t('No sales invoices to display yet.')}
-            </p>
+          {!hasAnySales ? (
+            <p className="text-xs text-muted-foreground py-10 text-center">{loading ? t('Loading...') : t('No sales invoices to display yet.')}</p>
           ) : (
-            <div className="relative">
-              <ResponsiveContainer width="100%" height={340}>
-                {viewMode === 'Previous Year' ? (
-                  <ComposedChart data={salesDisplayYoy} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tickFormatter={v => formatIDR(v, true)}
-                      tick={{ fontSize: 10, fill: '#94a3b8' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={SALES_AXIS_WIDTH}
-                      ticks={salesYTicks}
-                      domain={salesYDomain}
-                      allowDataOverflow
-                    />
-                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={false} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
-                    <Line
-                      type="monotone"
-                      dataKey="thisYear"
-                      name={t('Tahun Ini')}
-                      stroke="#0F7D4E"
-                      strokeWidth={2.5}
-                      dot={renderSalesCalibrationDot('thisYear') as any}
-                      activeDot={renderSalesActiveDot('thisYear', '#0F7D4E') as any}
-                      isAnimationActive={!salesDragPreview}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="lastYear"
-                      name={t('Tahun Lalu')}
-                      stroke="#94a3b8"
-                      strokeWidth={2}
-                      strokeDasharray="4 2"
-                      dot={renderSalesCalibrationDot('lastYear') as any}
-                      activeDot={renderSalesActiveDot('lastYear', '#94a3b8') as any}
-                      isAnimationActive={!salesDragPreview}
-                    />
-                  </ComposedChart>
-                ) : (
-                  <AreaChart data={salesDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradSalesMain" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0F7D4E" stopOpacity={0.2} />
-                        <stop offset="95%" stopColor="#0F7D4E" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tickFormatter={v => formatIDR(v, true)}
-                      tick={{ fontSize: 10, fill: '#94a3b8' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={SALES_AXIS_WIDTH}
-                      ticks={salesYTicks}
-                      domain={salesYDomain}
-                      allowDataOverflow
-                    />
-                    <Tooltip content={<SalesTrendTooltip dragPreview={salesDragPreview} />} cursor={false} />
+            <div
+              ref={chartWrapRef}
+              onPointerDown={handleChartPointerDown}
+              className={`relative select-none ${panning ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+              style={{ touchAction: 'pan-y' }}
+            >
+              <ResponsiveContainer width="100%" height={SALES_CHART_HEIGHT}>
+                <AreaChart data={salesDisplayTrend} margin={{ top: SALES_PLOT_TOP, right: SALES_PLOT_RIGHT, left: SALES_PLOT_LEFT, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradSalesMain" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.65} />
+                      <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.12} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis
+                    dataKey="t"
+                    type="number"
+                    scale="linear"
+                    domain={[view.from, view.to]}
+                    allowDataOverflow
+                    ticks={xTickValues}
+                    interval={0}
+                    tick={(p: any) => <SalesXTick {...p} info={xTickInfo} />}
+                    axisLine={{ stroke: SALES_AXIS_BORDER, strokeWidth: 1.5 }}
+                    tickLine={false}
+                    height={SALES_XAXIS_HEIGHT}
+                  />
+                  <YAxis
+                    tick={(p: any) => <SalesYTick {...p} />}
+                    axisLine={{ stroke: SALES_AXIS_BORDER, strokeWidth: 1.5 }}
+                    tickLine={false}
+                    width={salesAxisWidth}
+                    ticks={salesYTicks}
+                    domain={salesYDomain}
+                    allowDataOverflow
+                  />
+                  <ReferenceLine y={0} stroke={SALES_AXIS_BORDER} strokeOpacity={0.35} />
+                  <Tooltip content={() => null} cursor={false} />
+                  {(chartType === 'area' || chartType === 'line') && (
                     <Area
                       type="monotone"
                       dataKey="total"
                       name="Sales"
-                      stroke="#0F7D4E"
+                      stroke={SALES_LINE_COLOR}
                       strokeWidth={2.5}
-                      fill="url(#gradSalesMain)"
-                      dot={renderSalesCalibrationDot('total') as any}
-                      activeDot={renderSalesActiveDot('total', '#0F7D4E') as any}
-                      isAnimationActive={!salesDragPreview}
+                      baseValue={0}
+                    fill={chartType === 'area' ? 'url(#gradSalesMain)' : 'none'}
+                      dot={renderSalesCalibrationDot as any}
+                      activeDot={renderSalesActiveDot as any}
+                      isAnimationActive={!salesDragPreview && range === null}
                     />
-                  </AreaChart>
-                )}
+                  )}
+                </AreaChart>
               </ResponsiveContainer>
               {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
               <div
@@ -800,69 +1154,63 @@ export default function SalesOverview() {
                 onDoubleClick={resetSalesZoom}
                 title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
                 className="absolute top-0 left-0 h-full cursor-ns-resize"
-                style={{ width: SALES_AXIS_OVERLAY_WIDTH }}
+                style={{ width: salesAxisOverlayWidth }}
+              />
+              {/* Overlay drag di area label waktu: tarik kanan = zoom out (tahun), tarik kiri = zoom in (tanggal) */}
+              <div
+                onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); beginTimeDrag(e, 'zoom'); }}
+                onDoubleClick={() => setRange(null)}
+                title={t('Tarik kanan/kiri untuk zoom periode · klik dua kali untuk reset')}
+                className="absolute bottom-0 cursor-ew-resize"
+                style={{ left: salesAxisOverlayWidth, right: SALES_PLOT_RIGHT, height: SALES_XAXIS_HEIGHT, touchAction: 'none' }}
+              />
+              {(chartType === 'column' || chartType === 'candle' || chartType === 'ohlc') && (
+                <SalesCandleLayer
+                  wrapRef={chartWrapRef}
+                  geometry={chartGeometry}
+                  view={view}
+                  yMin={salesYDomain[0]}
+                  yMax={salesYDomain[1]}
+                  points={trend}
+                  nextOf={bucketEnd}
+                  type={chartType}
+                />
+              )}
+              {/* Crosshair: garis horizontal + vertikal di kursor dengan label harga & tanggal */}
+              <SalesChartCrosshair
+                wrapRef={chartWrapRef}
+                geometry={chartGeometry}
+                view={view}
+                gran={gran}
+                yMin={salesYDomain[0]}
+                yMax={salesYDomain[1]}
+                trend={trend}
+                pointLabel={pointLabel}
+                bucketOf={intervalDef ? (tm) => intervalStart(tm, intervalDef) : undefined}
+                labelOf={intervalDef ? (tm) => intervalLabel(tm, intervalDef) : undefined}
+                extraOf={chartType === 'candle' || chartType === 'ohlc' ? candleExtra : undefined}
+                dragPreview={salesDragPreview}
+                estimatedLabel={t('Estimated')}
+                salesLabel={t('Sales')}
               />
             </div>
           )}
-        </div>
-
-        <div className="space-y-4">
-        <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">{t('Sales per Branch')}</h2>
-          <p className="text-xs text-muted-foreground mb-3">{t('Gross sales by branch')}</p>
-          {byBranch.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada data.')}</p>
-          ) : (
-            <div className="space-y-2.5">
-              {byBranch.map((cat, i) => {
-                const total = byBranch.reduce((s, c) => s + c.value, 0);
-                const pct = total > 0 ? (cat.value / total) * 100 : 0;
-                return (
-                  <div key={cat.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name === 'Unassigned' ? t('Unassigned') : cat.name}</span>
-                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {intervalDef && isIntraday(intervalDef) && hasAnySales && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {lang === 'id'
+                ? 'Data invoice tercatat per hari; interval di bawah 1 hari = total harian dibagi rata.'
+                : lang === 'zh'
+                  ? '发票按天记录；小于1天的周期将当日总额平均分配。'
+                  : 'Invoices are recorded per day; intervals under 1 day split the daily total evenly.'}
+            </p>
           )}
         </div>
 
-        {/* Top Customers */}
-        <div className="card-elevated-md rounded-xl p-5">
-        <h2 className="text-sm font-bold text-foreground mb-1">{t('Top Customer')}</h2>
-        <p className="text-xs text-muted-foreground mb-4">{t('Berdasarkan kontribusi nominal')}</p>
-        {topCustomers.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">{t('Belum ada data.')}</p>
-        ) : (
-          <div className="space-y-3">
-            {topCustomers.map((c, i) => {
-              const max = topCustomers[0].amount || 1;
-              return (
-                <div key={c.name} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-muted-foreground w-4">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
-                      <span className="text-xs font-semibold font-mono text-primary ml-2">{formatIDR(c.amount, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${(c.amount / max) * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        </div>
-        </div>
+        <BranchDonutCard branches={byBranch} total={grossSales} />
       </div>
+
+      {/* Top Customer -- leaderboard lebar penuh */}
+      <TopCustomerCard customers={topCustomers} total={grossSales} />
 
       {/* Tabel invoice Sales (read-only ringkasan -- edit/approve/posting ada di tab Sales Transaction) */}
       {invoices.length === 0 ? (
@@ -919,7 +1267,7 @@ export default function SalesOverview() {
                     <td className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${num(v) < 0 ? 'text-red-600' : ''} ${extra}`}>{formatIDR(num(v))}</td>
                   );
                   return (
-                    <tr key={r.id} className="border-b border-slate-300/70 hover:bg-slate-200/70 transition-colors text-xs">
+                    <tr key={r.id} className="border-b border-slate-400/80 hover:bg-slate-200/70 transition-colors text-xs">
                       <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalSingkat(r.invoice_date)}</td>
                       <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{r.invoice_no}</td>
                       <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{r.customer_name}</td>

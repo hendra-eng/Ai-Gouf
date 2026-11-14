@@ -1,5 +1,6 @@
 'use client';
 
+import { useTabSuara } from '@/lib/tabSuara';
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import { CheckCircleIcon, PlusIcon, ArrowDownTrayIcon, FunnelIcon, MagnifyingGlassIcon, XMarkIcon, PaperClipIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
@@ -7,7 +8,7 @@ import { formatIDR } from '@/lib/financialData';
 import { useCurrency } from '@/lib/currency';
 import { useAuditTrail } from './lib/useAuditTrail';
 import { useAuditData, type AuditFinding, type FindingRisk, type FindingStatus, type AuditEvidenceItem } from './lib/auditBridge';
-import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/agent-ai/lib/api';
+import { tambahAuditFinding, ubahAuditFinding, tambahAuditEvidence, hapusAuditEvidence, auditEvidenceFileUrl, ubahAuditStage } from '@/app/zafeb-ai/lib/api';
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 // [FIX] Sebelumnya auditStages/findings/auditActivities di sini SENGAJA
@@ -356,6 +357,7 @@ function RiskHeatmap({ findings, onFindingClick }: { findings: AuditFinding[]; o
 export default function AuditPage() {
   const { fx } = useCurrency();
   const [activeTab, setActiveTab] = useState<'all' | 'open' | 'high-risk' | 'resolved'>('all');
+  useTabSuara(['all', 'open', 'high-risk', 'resolved'], (k) => setActiveTab(k as 'all' | 'open' | 'high-risk' | 'resolved')); // perintah suara Neo
   const [selectedFinding, setSelectedFinding] = useState<AuditFinding | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStage, setActiveStage] = useState<string | null>(null);
@@ -409,11 +411,11 @@ export default function AuditPage() {
 
   return (
     <>
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">Audit Center</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Audit Center</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Monitor audit procedures, findings, risks, and supporting evidence.</p>
           </div>
           <div className="flex items-center gap-3">
@@ -498,7 +500,7 @@ export default function AuditPage() {
           {kpis.map((kpi) => (
             <div key={kpi.label} className="bg-card rounded-xl border border-border p-4 hover:shadow-sm transition-shadow">
               <p className="text-[10px] font-medium text-muted-foreground mb-2">{kpi.label}</p>
-              <p className="text-xl font-bold font-mono" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
+              <p className="number-display text-xl font-bold text-foreground leading-none" style={{ color: kpi.color }}>{fx(kpi.value)}</p>
             </div>
           ))}
         </div>

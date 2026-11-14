@@ -61,45 +61,6 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine)
 
 
-# ------------------------------------------------------------
-# Kunci periode (Year-End Closing). Trigger DB (migrations/33-*.py) menolak
-# perubahan transaksi POSTED di periode yang sudah ditutup dengan pesan
-# berawalan "PERIOD_LOCKED:". Banyak fungsi CRUD di file ini menelan error
-# DB (return None -> endpoint menjawab "not found"), jadi pesannya dicatat di
-# sini & middleware di main.py mengganti respon request itu jadi 409 yang
-# jelas. `WADAH_KUNCI_PERIODE` diisi dict baru per request oleh middleware.
-# ------------------------------------------------------------
-import contextvars
-import re as _re
-from sqlalchemy import event as _sa_event
-
-WADAH_KUNCI_PERIODE: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("wadah_kunci_periode", default=None)
-_POLA_KUNCI_PERIODE = _re.compile(r"PERIOD_LOCKED:\s*([^\n]+)")
-
-
-_POLA_MAPPING_TERKUNCI = _re.compile(r"MAPPING_LOCKED:\s*([^\n]+)")
-
-
-def pesan_mapping_terkunci(err: BaseException) -> Optional[str]:
-    """Pesan ramah dari trigger kunci Account Mapping (migration 43), None kalau bukan."""
-    m = _POLA_MAPPING_TERKUNCI.search(str(err))
-    return m.group(1).strip() if m else None
-
-
-def pesan_periode_terkunci(err: BaseException) -> Optional[str]:
-    """Pesan ramah dari error trigger kunci periode, None kalau bukan."""
-    m = _POLA_KUNCI_PERIODE.search(str(err))
-    return m.group(1).strip() if m else None
-
-
-@_sa_event.listens_for(engine, "handle_error")
-def _catat_periode_terkunci(ctx):
-    pesan = pesan_periode_terkunci(ctx.original_exception)
-    wadah = WADAH_KUNCI_PERIODE.get()
-    if pesan and wadah is not None:
-        wadah["pesan"] = pesan
-
-
 # ============================================================
 # [FIX -- POINT 4] BULK UPSERT HELPER (dialect-aware)
 # ============================================================
@@ -307,8 +268,8 @@ class CoaStandardMapping(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
-    coa_id = Column(Integer, nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=False)
     standard_account_id = Column(Integer, ForeignKey("management_standard_accounts.id"), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
@@ -327,9 +288,9 @@ class CompanyAccountRole(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     role_id = Column(Integer, ForeignKey("management_account_roles.id"), nullable=False)
-    coa_id = Column(Integer, nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), nullable=False)
     active = Column(Boolean, default=True, nullable=False)
     effective_from = Column(Date, nullable=True)
     effective_to = Column(Date, nullable=True)
@@ -536,7 +497,7 @@ class SalesInvoice(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
@@ -568,7 +529,7 @@ class SalesInvoice(Base):
     posting_status = Column(String(20), nullable=False, default="Draft")
     reconcile_status = Column(String(20), nullable=False, default="Unreconciled")
     journal_sync_status = Column(String(20), nullable=False, default="Pending")
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     source_row_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_sales_source_rows.id"), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
@@ -722,7 +683,7 @@ class JournalEntrySourceRecord(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     source_code = Column(String(100), nullable=False)
     source_type = Column(String(20), nullable=False)
     source_date = Column(Date, nullable=True)
@@ -756,7 +717,7 @@ class JournalEntryDraft(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
@@ -777,7 +738,7 @@ class JournalEntryDraft(Base):
     reviewed_by_name = Column(String(255), nullable=True)
     approved_by_name = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     posted_by = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
@@ -802,7 +763,7 @@ class JournalEntryDraftLine(Base):
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     line_no = Column(Integer, nullable=False)
     account_code = Column(String(50), nullable=False)
     account_name = Column(String(200), nullable=True)
@@ -827,7 +788,7 @@ class JournalEntryActivityLog(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     draft_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
     je_number = Column(String(100), nullable=True)
     event_type = Column(String(50), nullable=False)
@@ -1109,13 +1070,15 @@ class PurchaseTransaction(Base):
     )
 
     id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=True)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True)
     # [BARU] Klien (perusahaan, management_clients) pemilik transaksi -- dipakai
     # filter per client di Financial Statements. BEDA dari client_id di atas
     # (management_users, akun yang login). Lihat migrations/14-*.py.
     management_client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=True, index=True)
     purchase_no = Column(String(100), nullable=False)
-    purchase_date = Column(Date, nullable=False)
+    # Boleh NULL: import Excel tanpa tanggal (migrations/purchase/34-allow_null_purchase_date.py).
+    # Posting WAJIB punya tanggal (posting_date atau purchase_date).
+    purchase_date = Column(Date, nullable=True)
     invoice_date = Column(Date, nullable=True)
     invoice_number = Column(String(100), nullable=True)
     po_number = Column(String(100), nullable=True)
@@ -1141,7 +1104,7 @@ class PurchaseTransaction(Base):
     approved_by_name = Column(String(255), nullable=True)
     posted_by_name = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
-    journal_entry_id = Column(Integer, nullable=True)
+    journal_entry_id = Column(PG_UUID(as_uuid=False), nullable=True)
     posting_date = Column(Date, nullable=True)
     posted_at = Column(DateTime(timezone=True), nullable=True)
     # [BARU - migration 18] Akun posting per transaksi (Cr Hutang Usaha, Dr PPN
@@ -2326,7 +2289,7 @@ class UserClientAccess(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_users.id_user"), nullable=False)
-    client_id = Column(Integer, ForeignKey("management_clients.id"), nullable=False)
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
     access_role = Column(String(50), nullable=True)
     active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -3821,6 +3784,29 @@ JENIS_DOKUMEN_BANK_CASH_VALID = {"cash_payment", "cash_receipt"}
 # ============================================================
 
 STATUS_BANK_FEED_VALID = {"unmatched", "matched"}
+
+
+def _pesan_dari_trigger(e: Exception, penanda: tuple) -> Optional[str]:
+    """Ambil teks pesan dari error trigger/fungsi PostgreSQL yang diawali penanda
+    (mis. 'MAPPING_LOCKED: ...'). None kalau error ini bukan error kunci."""
+    teks = str(getattr(e, "orig", None) or e)
+    for p in penanda:
+        i = teks.find(p)
+        if i >= 0:
+            sisa = teks[i + len(p):].split("\n")[0].strip()
+            return sisa or "Data ini terkunci."
+    return None
+
+
+def pesan_mapping_terkunci(e: Exception) -> Optional[str]:
+    """Pesan untuk error trigger kunci Account Mapping (migration 43: 'MAPPING_LOCKED: ...')."""
+    return _pesan_dari_trigger(e, ("MAPPING_LOCKED:",))
+
+
+def pesan_periode_terkunci(e: Exception) -> Optional[str]:
+    """Pesan untuk error trigger kunci periode (fn_tolak_periode_terkunci).
+    Penanda yang dikenali: 'PERIOD_LOCKED:' / 'PERIODE_TERKUNCI:'."""
+    return _pesan_dari_trigger(e, ("PERIOD_LOCKED:", "PERIODE_TERKUNCI:"))
 
 
 # ============================================================
@@ -5426,6 +5412,7 @@ def lengkapi_akun_purchase(transaction: Any, lines: List[Any], akun: Dict[str, O
 #   piutang_account              {account_code, account_name}  Dr Piutang
 #   pendapatan_account           {account_code, account_name}  Cr Pendapatan (default)
 #   pendapatan_account_by_cabang {"CRS": {...}, ...}           Cr Pendapatan per cabang
+#   piutang_account_by_cabang    {"ASF": {...}, ...}           Dr Piutang per cabang (opsional)
 #   ppn_account                  {account_code, account_name}  Cr PPN Keluaran
 # Tiap invoice tetap punya mapping sendiri (financial_transaction_sales_account_mappings)
 # yang dibuat otomatis dari default ini dan bisa diubah user di Journal Preview.
@@ -5434,8 +5421,8 @@ def akun_default_sales(management_client_id: Optional[str], cabang: Optional[str
     """{"piutang": (kode, nama), "pendapatan": (...), "ppn": (...)} untuk 1
     klien, atau None kalau piutang/pendapatan belum bisa ditentukan.
 
-    Prioritas: pendapatan per cabang di template > Settings > Account Mapping
-    (account_receivable / sales_revenue / sales_tax_payable) > akun umum
+    Prioritas: pendapatan / piutang per cabang di template > Settings > Account
+    Mapping (account_receivable / sales_revenue / sales_tax_payable) > akun umum
     template import Sales."""
     if not management_client_id:
         return None
@@ -5451,10 +5438,16 @@ def akun_default_sales(management_client_id: Optional[str], cabang: Optional[str
                 rules = mr
                 break
         setting = akun_mapping_setting(management_client_id, session=session)
-        pendapatan = ((rules.get("pendapatan_account_by_cabang") or {}).get((cabang or "").strip().upper())
+        kunci_cabang = (cabang or "").strip().upper()
+        pendapatan = ((rules.get("pendapatan_account_by_cabang") or {}).get(kunci_cabang)
                       or setting.get("sales_revenue") or rules.get("pendapatan_account"))
+        # Piutang per cabang (opsional, mis. Birawa: "Piutang - <pelanggan>") -- polanya sama dengan
+        # pendapatan per cabang: kalau cabang ada di peta resep, itu yang dipakai; kalau tidak, jatuh ke
+        # Settings > Account Mapping lalu akun piutang umum. Resep tanpa peta ini tidak berubah perilakunya.
+        piutang = ((rules.get("piutang_account_by_cabang") or {}).get(kunci_cabang)
+                   or setting.get("account_receivable") or rules.get("piutang_account"))
         akun = {
-            "piutang": setting.get("account_receivable") or rules.get("piutang_account"),
+            "piutang": piutang,
             "pendapatan": pendapatan,
             "ppn": setting.get("sales_tax_payable") or rules.get("ppn_account"),
         }
@@ -5482,8 +5475,7 @@ def pastikan_mapping_sales(invoice_id: str, dibuat_oleh: Optional[str] = None) -
     if not akun:
         return None
     return create_sales_account_mapping({
-        # FK account_mappings.client_id -> management_clients (migration 32), bukan id user di invoice.client_id.
-        "client_id": inv.get("management_client_id"),
+        "client_id": inv.get("client_id"),
         "invoice_id": invoice_id,
         "piutang_account_code": akun["piutang"][0], "piutang_account_name": akun["piutang"][1],
         "pendapatan_account_code": akun["pendapatan"][0], "pendapatan_account_name": akun["pendapatan"][1],
@@ -5524,6 +5516,91 @@ def validasi_posting_sales(invoice_id: str) -> List[str]:
     if tidak_ada:
         return [f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}."]
     return []
+
+
+def promote_sales_rows_bulk(source_file_id: str, management_client_id: Optional[str], user_id: Optional[str] = None,
+                            chunk: int = 500) -> Dict[str, int]:
+    """[BARU] Versi MASSAL dari loop promote-to-invoices (tombol "Buat Invoice"): naikkan baris valid satu file jadi
+    invoice Draft + mapping akun default klien. Aturan SAMA dengan loop lama (baris tidak valid / tanpa no. invoice
+    dilewati; baris yang sudah pernah naik dilewati; no. invoice yang sudah dipakai klien -- juga yang dobel di
+    dalam file ini -- dilewati sebagai 'bentrok'), tapi memakai 3 query baca + INSERT multi-baris per potongan,
+    bukan ~8 query per baris. Return {total_baris, invoice_dibuat, dilewati_*}."""
+    import uuid as _uuid
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
+    session = SessionLocal()
+    try:
+        rows = session.query(
+            SalesSourceRow.id, SalesSourceRow.is_valid, SalesSourceRow.no_invoice, SalesSourceRow.tanggal,
+            SalesSourceRow.nama_customer, SalesSourceRow.cabang, SalesSourceRow.dpp, SalesSourceRow.ppn, SalesSourceRow.total,
+        ).filter(SalesSourceRow.source_file_id == source_file_id, SalesSourceRow.deleted_at.is_(None)).all()
+        sudah_row = {str(r[0]) for r in session.query(SalesInvoice.source_row_id).filter(
+            SalesInvoice.source_row_id.in_(session.query(SalesSourceRow.id).filter(SalesSourceRow.source_file_id == source_file_id)),
+            SalesInvoice.deleted_at.is_(None)).all()}
+        dipakai_no = {r[0] for r in session.query(SalesInvoice.invoice_no).filter(
+            SalesInvoice.client_id == management_client_id, SalesInvoice.deleted_at.is_(None)).all()}
+    finally:
+        session.close()
+
+    tidak_valid = sudah_pernah = bentrok = 0
+    kandidat = []
+    for (rid, valid, no, tgl, cust, cab, dpp, ppn, total) in rows:
+        if not valid:
+            tidak_valid += 1; continue
+        if str(rid) in sudah_row:
+            sudah_pernah += 1; continue
+        if not no or tgl is None:  # invoice_date NOT NULL: baris tanpa tanggal tidak bisa jadi invoice
+            tidak_valid += 1; continue
+        if no in dipakai_no:
+            bentrok += 1; continue
+        dipakai_no.add(no)
+        kandidat.append({
+            "id": str(_uuid.uuid4()), "client_id": management_client_id, "management_client_id": management_client_id,
+            "invoice_no": no, "invoice_date": tgl, "customer_name": cust or "-", "cabang": cab,
+            "dpp": dpp or 0, "ppn": ppn or 0, "pph": 0, "gross_amount": total or 0, "paid_amount": 0,
+            "tax_invoice_status": "Belum Terbit Faktur", "posting_status": "Draft", "reconcile_status": "Unreconciled",
+            "journal_sync_status": "Pending", "is_opening_balance": False, "source_row_id": str(rid), "created_by": user_id,
+        })
+
+    dibuat = 0
+    akun_cache: Dict[tuple, Any] = {}
+    for k in range(0, len(kandidat), chunk):
+        potong = kandidat[k:k + chunk]
+        session = SessionLocal()
+        try:
+            hasil = session.execute(
+                _pg_insert(SalesInvoice.__table__).values(potong).on_conflict_do_nothing().returning(SalesInvoice.__table__.c.id)
+            ).all()
+            masuk = {str(r[0]) for r in hasil}
+            peta = []
+            for inv in potong:
+                if inv["id"] not in masuk:
+                    continue
+                kunci = (management_client_id, inv["cabang"] or "")
+                if kunci not in akun_cache:
+                    akun_cache[kunci] = akun_default_sales(management_client_id, inv["cabang"], session=session)
+                a = akun_cache[kunci]
+                if not a:
+                    continue
+                peta.append({
+                    "client_id": management_client_id, "invoice_id": inv["id"],
+                    "piutang_account_code": a["piutang"][0], "piutang_account_name": a["piutang"][1],
+                    "pendapatan_account_code": a["pendapatan"][0], "pendapatan_account_name": a["pendapatan"][1],
+                    "ppn_account_code": a["ppn"][0] if a["ppn"] else None, "ppn_account_name": a["ppn"][1] if a["ppn"] else None,
+                    "is_ai_suggested": False, "mapped_by": user_id, "created_by": user_id,
+                })
+            if peta:
+                session.execute(_pg_insert(SalesAccountMapping.__table__).values(peta).on_conflict_do_nothing())
+            session.commit()
+            dibuat += len(masuk)
+            bentrok += len(potong) - len(masuk)
+        except Exception as e:
+            session.rollback()
+            print(f"Error promote_sales_rows_bulk: {e}")
+            bentrok += len(potong)
+        finally:
+            session.close()
+    return {"total_baris": len(rows), "invoice_dibuat": dibuat, "dilewati_tidak_valid": tidak_valid,
+            "dilewati_sudah_pernah_dipromosikan": sudah_pernah, "dilewati_invoice_no_bentrok": bentrok}
 
 
 # --- 5) financial_transaction_sales_exceptions ---
@@ -5984,6 +6061,78 @@ def touch_je_import_template_usage(template_id: str) -> bool:
         session.close()
 
 
+# --- 4b) financial_transaction_journal_entry_source_files / _source_rows ---
+# Versi Journal Entry dari CRUD purchase_source_files/_rows (tab Source Data).
+
+CRUD_FIELDS_JE_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "period_label",
+    "rows_detected", "rows_valid", "rows_invalid", "duplicate_count", "status_ekstraksi",
+    "status_mapping", "confidence_score", "debit_total", "credit_total",
+    "extraction_duration_ms", "ai_model_version", "mapping_rules", "template_id",
+    "processed_by", "uploaded_at", "uploaded_by",
+]
+
+def create_je_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_create(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, data, created_by)
+
+def get_je_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _je_crud_get_by_id(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_je_source_files(management_client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _je_crud_list(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, {"management_client_id": management_client_id}, termasuk_nonaktif)
+
+def update_je_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntrySourceFile, CRUD_FIELDS_JE_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_je_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _je_crud_soft_delete(JournalEntrySourceFile, source_file_id, deleted_by)
+
+
+CRUD_FIELDS_JE_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "je_number", "description", "source_type",
+    "line_count", "debit_total", "credit_total", "is_valid", "validation_notes",
+    "is_duplicate_candidate", "payload", "draft_id",
+]
+
+def create_je_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: str, client_id: Optional[str], created_by: Optional[str] = None, chunk_size: int = 500) -> int:
+    """Insert massal baris source_rows dalam SATU transaksi (semua-atau-tidak-sama-sekali:
+    gagal di tengah = rollback, return 0) -- pola sama dengan create_purchase_source_rows_bulk."""
+    if not rows:
+        return 0
+    session = SessionLocal()
+    try:
+        payload = []
+        for r in rows:
+            item = {k: v for k, v in r.items() if k in CRUD_FIELDS_JE_SOURCE_ROW}
+            item["source_file_id"] = source_file_id
+            item["client_id"] = client_id
+            item["created_by"] = created_by
+            payload.append(item)
+        for i in range(0, len(payload), chunk_size):
+            session.bulk_insert_mappings(JournalEntrySourceRow, payload[i:i + chunk_size])
+        session.commit()
+        return len(payload)
+    except Exception as e:
+        session.rollback()
+        print(f"Error bulk create {JournalEntrySourceRow.__tablename__}: {e}")
+        return 0
+    finally:
+        session.close()
+
+def list_je_source_rows(source_file_id: Optional[str] = None, termasuk_nonaktif: bool = False, dengan_payload: bool = True) -> List[Dict[str, Any]]:
+    """Urut row_no naik supaya File Preview menampilkan baris sesuai urutan di file.
+    dengan_payload=False membuang JSON baris debit/kredit (berat) -- dipakai panel preview."""
+    hasil = _je_crud_list(JournalEntrySourceRow, CRUD_FIELDS_JE_SOURCE_ROW, {"source_file_id": source_file_id}, termasuk_nonaktif)
+    hasil.sort(key=lambda r: r.get("row_no") or 0)
+    if not dengan_payload:
+        for r in hasil:
+            r.pop("payload", None)
+    return hasil
+
+def update_je_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _je_crud_update(JournalEntrySourceRow, CRUD_FIELDS_JE_SOURCE_ROW, source_row_id, data, updated_by)
+
+
 def create_je_draft_with_lines(
     draft_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
@@ -6029,7 +6178,11 @@ def create_je_draft_with_lines(
             draft_id=draft.id,
             je_number=draft.je_number,
             event_type="Created",
-            description=f"Journal entry {draft.je_number} dibuat manual.",
+            description=(
+                f"Journal entry {draft.je_number} dibuat dari file import ({draft.source_reference})."
+                if draft.source_type == "Import" and draft.source_reference
+                else f"Journal entry {draft.je_number} dibuat manual."
+            ),
             status_snapshot=draft.status,
             performed_by=draft_data.get("created_by_name") or "System",
             created_by=created_by,
@@ -6050,6 +6203,287 @@ def create_je_draft_with_lines(
         session.rollback()
         print(f"Error create draft+lines financial_transaction_journal_entry_drafts: {e}")
         return None
+    finally:
+        session.close()
+
+
+# ============================================================
+# FITUR TRANSACTIONS > OTHER -- memakai tabel Journal Entry (source_type="Other")
+# ------------------------------------------------------------
+# Jurnal halaman Other disimpan di financial_transaction_journal_entry_drafts
+# (+ _draft_lines) dengan source_type = "Other". Status 'posted' otomatis
+# dibaca Buku Besar / Financial Statements (lihat ambil_baris_jurnal_posted_
+# transaksi, bagian "1) Journal Entry"). Alur status:
+#   draft/pending/exception --approve--> approved --post--> posted
+#   draft/pending/exception/approved --reject--> rejected --reopen--> draft
+# ============================================================
+
+JE_STATUS_BISA_APPROVE = ("draft", "pending", "exception")
+JE_STATUS_BISA_POST = ("approved",)
+JE_STATUS_BISA_REJECT = ("draft", "pending", "exception", "approved")
+JE_STATUS_BISA_REOPEN = ("rejected",)
+JE_STATUS_BISA_EDIT = ("draft", "pending", "exception", "rejected")
+JE_STATUS_BISA_HAPUS = ("draft", "pending", "exception", "rejected")
+_TOLERANSI_BALANCE_JE = Decimal("0.01")
+
+
+def _validasi_posting_je_draft(session, draft: "JournalEntryDraft", lines: List["JournalEntryDraftLine"]) -> List[str]:
+    """Alasan draft JE TIDAK boleh diposting (list kosong = boleh)."""
+    alasan: List[str] = []
+    if len(lines) < 2:
+        return ["Journal needs at least 2 lines."]
+    tanpa_akun = [l.line_no for l in lines if not (l.account_code or "").strip()]
+    if tanpa_akun:
+        alasan.append(f"Line(s) {', '.join(map(str, tanpa_akun))} have no account code.")
+    dua_sisi = [l.line_no for l in lines if Decimal(str(l.debit or 0)) > 0 and Decimal(str(l.credit or 0)) > 0]
+    if dua_sisi:
+        alasan.append(f"Line(s) {', '.join(map(str, dua_sisi))} fill both debit and credit.")
+    kosong = [l.line_no for l in lines if Decimal(str(l.debit or 0)) == 0 and Decimal(str(l.credit or 0)) == 0]
+    if kosong:
+        alasan.append(f"Line(s) {', '.join(map(str, kosong))} have no amount.")
+    debit = sum((Decimal(str(l.debit or 0)) for l in lines), Decimal(0))
+    kredit = sum((Decimal(str(l.credit or 0)) for l in lines), Decimal(0))
+    if abs(debit - kredit) > _TOLERANSI_BALANCE_JE:
+        alasan.append(f"Journal is not balanced (debit {debit:,.2f} vs credit {kredit:,.2f}).")
+    if debit == 0:
+        alasan.append("Journal total is zero.")
+    # Kalau klien punya master COA, semua akun jurnal WAJIB ada di COA-nya.
+    if draft.management_client_id:
+        coa = {
+            r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
+                ManagementClientCoa.client_id == draft.management_client_id,
+                ManagementClientCoa.deleted_at.is_(None),
+            ).all()
+        }
+        if coa:
+            tidak_ada = sorted({l.account_code for l in lines if l.account_code and l.account_code not in coa})
+            if tidak_ada:
+                alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
+    return alasan
+
+
+def _log_je(session, draft: "JournalEntryDraft", event_type: str, deskripsi: str, oleh_nama: Optional[str], oleh_id: Optional[str]) -> None:
+    session.add(JournalEntryActivityLog(
+        client_id=draft.client_id, draft_id=draft.id, je_number=draft.je_number,
+        event_type=event_type, description=deskripsi, status_snapshot=draft.status,
+        performed_by=oleh_nama or "System", created_by=oleh_id,
+    ))
+
+
+def list_je_drafts_with_lines(
+    client_id: Optional[str] = None,
+    source_type: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Daftar draft JE LENGKAP dengan baris debit/kreditnya (1 query untuk
+    semua baris, bukan N+1) -- dipakai 6 tab halaman Other."""
+    session = SessionLocal()
+    try:
+        q = session.query(JournalEntryDraft).filter(JournalEntryDraft.deleted_at.is_(None))
+        if client_id:
+            q = q.filter(JournalEntryDraft.client_id == client_id)
+        if source_type:
+            q = q.filter(JournalEntryDraft.source_type == source_type)
+        if status:
+            q = q.filter(func.lower(JournalEntryDraft.status) == status.lower())
+        drafts = q.order_by(JournalEntryDraft.entry_date.desc(), JournalEntryDraft.je_number.desc()).all()
+        if not drafts:
+            return []
+        lines_per: Dict[str, List[Dict[str, Any]]] = {}
+        for l in session.query(JournalEntryDraftLine).filter(
+            JournalEntryDraftLine.draft_id.in_([d.id for d in drafts]),
+            JournalEntryDraftLine.deleted_at.is_(None),
+        ).order_by(JournalEntryDraftLine.draft_id, JournalEntryDraftLine.line_no).all():
+            lines_per.setdefault(l.draft_id, []).append(_je_row_ke_dict(l, CRUD_FIELDS_JE_DRAFT_LINE))
+        hasil = []
+        for d in drafts:
+            row = _je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT)
+            row["lines"] = lines_per.get(d.id, [])
+            hasil.append(row)
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error list draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def ubah_status_je_drafts(
+    draft_ids: List[str],
+    aksi: str,
+    oleh_nama: Optional[str],
+    oleh_id: Optional[str] = None,
+    posting_date: Optional[date] = None,
+    alasan: Optional[str] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Ubah status banyak draft JE sekaligus (1 transaksi DB). Draft yang tidak
+    memenuhi syarat dilewati (`skipped` + alasan), sisanya tetap diproses.
+
+    approve : draft/pending/exception -> approved
+    post    : approved -> posted (divalidasi: >=2 baris, akun lengkap, tiap baris
+              satu sisi, debit = kredit, akun ada di COA klien); posting_date
+              default = entry_date
+    reject  : draft/pending/exception/approved -> rejected (alasan -> notes)
+    reopen  : rejected -> draft
+    """
+    if aksi not in ("approve", "post", "reject", "reopen"):
+        raise ValueError("aksi harus 'approve', 'post', 'reject' atau 'reopen'.")
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
+    try:
+        drafts = {
+            d.id: d for d in session.query(JournalEntryDraft).filter(
+                JournalEntryDraft.id.in_(draft_ids), JournalEntryDraft.deleted_at.is_(None)
+            ).all()
+        }
+        lines_per: Dict[str, List[JournalEntryDraftLine]] = {}
+        if drafts and aksi == "post":
+            for l in session.query(JournalEntryDraftLine).filter(
+                JournalEntryDraftLine.draft_id.in_(list(drafts)), JournalEntryDraftLine.deleted_at.is_(None)
+            ).order_by(JournalEntryDraftLine.line_no).all():
+                lines_per.setdefault(l.draft_id, []).append(l)
+
+        sekarang = datetime.now()
+        for draft_id in dict.fromkeys(draft_ids):
+            d = drafts.get(draft_id)
+            if d is None:
+                hasil["skipped"].append({"id": draft_id, "je_number": None, "reason": "Journal not found."})
+                continue
+            status_lama = (d.status or "").lower()
+            if aksi == "approve":
+                if status_lama not in JE_STATUS_BISA_APPROVE:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be approved."})
+                    continue
+                d.status = "approved"
+                d.approved_by_name = oleh_nama
+                _log_je(session, d, "Approved", f"Journal {d.je_number} approved.", oleh_nama, oleh_id)
+            elif aksi == "post":
+                if status_lama not in JE_STATUS_BISA_POST:
+                    pesan = "Approve the journal first." if status_lama in JE_STATUS_BISA_APPROVE else f"Status '{d.status}' cannot be posted."
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": pesan})
+                    continue
+                masalah = _validasi_posting_je_draft(session, d, lines_per.get(draft_id, []))
+                if masalah:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": " ".join(masalah)})
+                    continue
+                d.status = "posted"
+                d.posted_at = sekarang
+                d.posted_by = oleh_id
+                d.posting_date = posting_date or d.posting_date or d.entry_date
+                _log_je(session, d, "Posted", f"Journal {d.je_number} posted to the general ledger.", oleh_nama, oleh_id)
+            elif aksi == "reject":
+                if status_lama not in JE_STATUS_BISA_REJECT:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be rejected."})
+                    continue
+                d.status = "rejected"
+                if alasan:
+                    d.notes = alasan
+                _log_je(session, d, "Rejected", f"Journal {d.je_number} rejected." + (f" Reason: {alasan}" if alasan else ""), oleh_nama, oleh_id)
+            else:  # reopen
+                if status_lama not in JE_STATUS_BISA_REOPEN:
+                    hasil["skipped"].append({"id": draft_id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be reopened."})
+                    continue
+                d.status = "draft"
+                d.approved_by_name = None
+                _log_je(session, d, "Reopened", f"Journal {d.je_number} reopened as draft.", oleh_nama, oleh_id)
+            d.edited_at = sekarang
+            d.edited_by = oleh_id
+            hasil["done"].append(_je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT))
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error {aksi} journal entry drafts: {e}")
+        raise
+    finally:
+        session.close()
+
+
+def update_je_draft_with_lines(
+    draft_id: str,
+    draft_data: Dict[str, Any],
+    lines_data: Optional[List[Dict[str, Any]]],
+    oleh_nama: Optional[str] = None,
+    updated_by: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Edit header (+ ganti seluruh baris kalau `lines_data` diisi) draft JE
+    yang belum diposting, atomik. Mengembalikan {"ok": bool, "reason": str|None,
+    "data": dict|None}. Baris lama dihapus permanen lalu diganti baris baru
+    (UniqueConstraint(draft_id, line_no) membuat soft-delete tidak cocok);
+    jejaknya tercatat di activity log."""
+    session = SessionLocal()
+    try:
+        d = session.query(JournalEntryDraft).filter(
+            JournalEntryDraft.id == draft_id, JournalEntryDraft.deleted_at.is_(None)
+        ).first()
+        if d is None:
+            return {"ok": False, "reason": "NOT_FOUND", "data": None}
+        if (d.status or "").lower() not in JE_STATUS_BISA_EDIT:
+            return {"ok": False, "reason": f"Status '{d.status}' cannot be edited.", "data": None}
+
+        bolehkan = {"entry_date", "posting_date", "period_label", "description", "source_reference", "notes", "currency", "je_number"}
+        for k, v in draft_data.items():
+            if k in bolehkan:
+                setattr(d, k, v)
+
+        if lines_data is not None:
+            session.query(JournalEntryDraftLine).filter(JournalEntryDraftLine.draft_id == d.id).delete(synchronize_session=False)
+            session.flush()
+            for idx, line in enumerate(lines_data, start=1):
+                session.add(JournalEntryDraftLine(
+                    **{k: v for k, v in line.items() if k in CRUD_FIELDS_JE_DRAFT_LINE and k not in ("line_no", "draft_id", "client_id")},
+                    draft_id=d.id, client_id=d.client_id, line_no=idx, created_by=updated_by,
+                ))
+            d.total_debit = sum((Decimal(str(l.get("debit") or 0)) for l in lines_data), Decimal(0))
+            d.total_credit = sum((Decimal(str(l.get("credit") or 0)) for l in lines_data), Decimal(0))
+
+        d.edited_at = datetime.now()
+        d.edited_by = updated_by
+        _log_je(session, d, "Edited", f"Journal {d.je_number} edited.", oleh_nama, updated_by)
+        session.commit()
+        session.refresh(d)
+        row = _je_row_ke_dict(d, CRUD_FIELDS_JE_DRAFT)
+        row["lines"] = [
+            _je_row_ke_dict(l, CRUD_FIELDS_JE_DRAFT_LINE)
+            for l in session.query(JournalEntryDraftLine).filter(JournalEntryDraftLine.draft_id == d.id)
+            .order_by(JournalEntryDraftLine.line_no).all()
+        ]
+        return {"ok": True, "reason": None, "data": row}
+    except IntegrityError as e:
+        session.rollback()
+        print(f"Error update draft+lines (integrity): {e}")
+        return {"ok": False, "reason": "DUPLICATE_JE_NUMBER", "data": None}
+    except Exception as e:
+        session.rollback()
+        print(f"Error update draft+lines financial_transaction_journal_entry_drafts: {e}")
+        return {"ok": False, "reason": "DB_ERROR", "data": None}
+    finally:
+        session.close()
+
+
+def hapus_je_drafts(draft_ids: List[str], oleh_nama: Optional[str], oleh_id: Optional[str]) -> Dict[str, List[Dict[str, Any]]]:
+    """Soft-delete banyak draft JE -- HANYA yang belum diposting/approved."""
+    session = SessionLocal()
+    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
+    try:
+        sekarang = datetime.now()
+        for d in session.query(JournalEntryDraft).filter(
+            JournalEntryDraft.id.in_(draft_ids), JournalEntryDraft.deleted_at.is_(None)
+        ).all():
+            if (d.status or "").lower() not in JE_STATUS_BISA_HAPUS:
+                hasil["skipped"].append({"id": d.id, "je_number": d.je_number, "reason": f"Status '{d.status}' cannot be deleted."})
+                continue
+            d.deleted_at = sekarang
+            d.deleted_by = oleh_id
+            _log_je(session, d, "Deleted", f"Journal {d.je_number} deleted.", oleh_nama, oleh_id)
+            hasil["done"].append({"id": d.id, "je_number": d.je_number})
+        session.commit()
+        return hasil
+    except Exception as e:
+        session.rollback()
+        print(f"Error hapus journal entry drafts: {e}")
+        raise
     finally:
         session.close()
 
@@ -6385,17 +6819,6 @@ _AKUN_DEFAULT_PURCHASE = {
 }
 
 
-def akun_posting_purchase(tx: Any) -> Dict[str, tuple]:
-    """Akun Cr Hutang Usaha & Dr PPN Masukan 1 Purchase Transaction (ORM
-    object atau dict) -- kolom per transaksi (ap_account_* / tax_account_*),
-    fallback ke _AKUN_DEFAULT_PURCHASE kalau kosong."""
-    ambil = (lambda k: tx.get(k)) if isinstance(tx, dict) else (lambda k: getattr(tx, k, None))
-    return {
-        "ap": (ambil("ap_account_code"), ambil("ap_account_name") or "") if ambil("ap_account_code") else _AKUN_DEFAULT_PURCHASE["hutang"],
-        "tax": (ambil("tax_account_code"), ambil("tax_account_name") or "") if ambil("tax_account_code") else _AKUN_DEFAULT_PURCHASE["ppn_masukan"],
-    }
-
-
 # Status yang boleh di-approve / di-post (alur Approve -> Post, lihat
 # modules/transactions/purchase_v1.py POST /transactions/approve & /post).
 PURCHASE_STATUS_BISA_APPROVE = ("draft", "pending_review", "exception")
@@ -6403,116 +6826,80 @@ PURCHASE_STATUS_BISA_POST = ("approved", "pending_posting")
 _TOLERANSI_BALANCE_PURCHASE = Decimal("1")
 
 
-def _validasi_posting_purchase(session, tx: "PurchaseTransaction", lines: List["PurchaseTransactionLine"]) -> List[str]:
-    """Alasan transaksi TIDAK boleh diposting (list kosong = boleh)."""
-    alasan: List[str] = []
-    if not lines:
-        return ["Transaction has no item lines."]
-    tanpa_akun = [l.line_no for l in lines if not (l.account_code or "").strip()]
-    if tanpa_akun:
-        alasan.append(f"Line(s) {', '.join(map(str, tanpa_akun))} have no account code.")
+# --- 4b) financial_transaction_purchase_source_files / _source_rows ---
+# Versi Purchase dari CRUD sales_source_files/_rows (tab Source Data).
 
-    debit = sum((Decimal(str(l.subtotal or 0)) - Decimal(str(l.discount or 0))) for l in lines) + Decimal(str(tx.tax_amount or 0))
-    kredit = Decimal(str(tx.accounts_payable or 0))
-    if abs(debit - kredit) > _TOLERANSI_BALANCE_PURCHASE:
-        alasan.append(f"Journal is not balanced (debit {debit:,.2f} vs accounts payable {kredit:,.2f}).")
+CRUD_FIELDS_PURCHASE_SOURCE_FILE = [
+    "client_id", "management_client_id", "file_name", "file_type", "period_label", "vendor_hint",
+    "rows_detected", "rows_valid", "rows_invalid", "duplicate_count", "status_ekstraksi",
+    "status_mapping", "confidence_score", "dpp_total", "ppn_total", "grand_total",
+    "extraction_duration_ms", "ai_model_version", "mapping_rules", "template_id",
+    "processed_by", "uploaded_at", "uploaded_by",
+]
 
-    # Kalau klien punya master COA, semua akun jurnal WAJIB ada di COA-nya.
-    if tx.management_client_id:
-        coa = {
-            r[0] for r in session.query(ManagementClientCoa.acc_no).filter(
-                ManagementClientCoa.client_id == tx.management_client_id,
-                ManagementClientCoa.deleted_at.is_(None),
-            ).all()
-        }
-        if coa:
-            akun = akun_posting_purchase(tx)
-            dipakai = {l.account_code for l in lines if l.account_code} | {akun["ap"][0]}
-            if Decimal(str(tx.tax_amount or 0)) > 0:
-                dipakai.add(akun["tax"][0])
-            tidak_ada = sorted(k for k in dipakai if k not in coa)
-            if tidak_ada:
-                alasan.append(f"Account(s) not found in the client's chart of accounts: {', '.join(tidak_ada)}.")
-    return alasan
+def create_purchase_source_file(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_create(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, data, created_by)
+
+def get_purchase_source_file_by_id(source_file_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, source_file_id, termasuk_nonaktif)
+
+def list_purchase_source_files(management_client_id: Optional[str] = None, termasuk_nonaktif: bool = False) -> List[Dict[str, Any]]:
+    return _purchase_crud_list(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, {"management_client_id": management_client_id}, termasuk_nonaktif)
+
+def update_purchase_source_file(source_file_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceFile, CRUD_FIELDS_PURCHASE_SOURCE_FILE, source_file_id, data, updated_by)
+
+def soft_delete_purchase_source_file(source_file_id: str, deleted_by: Optional[str] = None) -> bool:
+    return _purchase_crud_soft_delete(PurchaseSourceFile, source_file_id, deleted_by)
 
 
-def ubah_status_purchase_transactions(
-    transaction_ids: List[str],
-    aksi: str,
-    oleh_nama: Optional[str],
-    oleh_id: Optional[str] = None,
-    posting_date: Optional[date] = None,
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Approve (`aksi`='approve') atau Post (`aksi`='post') banyak Purchase
-    Transaction sekaligus, 1 transaksi DB. Transaksi yang tidak memenuhi
-    syarat dilewati (`skipped` + alasan), sisanya tetap diproses.
+CRUD_FIELDS_PURCHASE_SOURCE_ROW = [
+    "source_file_id", "client_id", "row_no", "tanggal", "no_invoice", "nama_vendor", "vendor_code",
+    "no_po", "cabang", "dpp", "ppn", "total", "is_valid", "validation_notes",
+    "is_duplicate_candidate", "payload", "transaction_id",
+]
 
-    approve: status draft/pending_review/exception -> approved (approved_by_name, approved_at)
-    post   : status approved/pending_posting -> posted (posted_by_name, posted_at,
-             posting_date default = purchase_date) -- divalidasi dulu lewat
-             _validasi_posting_purchase (baris & akun lengkap, balance, akun ada di COA klien).
-    """
-    if aksi not in ("approve", "post"):
-        raise ValueError("aksi harus 'approve' atau 'post'.")
+def create_purchase_source_rows_bulk(rows: List[Dict[str, Any]], source_file_id: str, client_id: Optional[str], created_by: Optional[str] = None, chunk_size: int = 500) -> int:
+    """Insert massal baris source_rows dalam SATU transaksi (semua-atau-tidak-sama-sekali:
+    gagal di tengah = rollback, return 0) -- pola sama dengan create_sales_source_rows_bulk."""
+    if not rows:
+        return 0
     session = SessionLocal()
-    hasil: Dict[str, List[Dict[str, Any]]] = {"done": [], "skipped": []}
     try:
-        txs = {
-            t.id: t for t in session.query(PurchaseTransaction).filter(
-                PurchaseTransaction.id.in_(transaction_ids), PurchaseTransaction.deleted_at.is_(None)
-            ).all()
-        }
-        lines_per_tx: Dict[str, List[PurchaseTransactionLine]] = {}
-        if txs:
-            for l in session.query(PurchaseTransactionLine).filter(
-                PurchaseTransactionLine.transaction_id.in_(list(txs)), PurchaseTransactionLine.deleted_at.is_(None)
-            ).order_by(PurchaseTransactionLine.line_no).all():
-                lines_per_tx.setdefault(l.transaction_id, []).append(l)
-
-        sekarang = datetime.now()
-        for tx_id in dict.fromkeys(transaction_ids):
-            tx = txs.get(tx_id)
-            if tx is None:
-                hasil["skipped"].append({"id": tx_id, "purchase_no": None, "reason": "Transaction not found."})
-                continue
-            status_lama = (tx.status or "").lower()
-            if aksi == "approve":
-                if status_lama not in PURCHASE_STATUS_BISA_APPROVE:
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": f"Status '{tx.status}' cannot be approved."})
-                    continue
-                if not lines_per_tx.get(tx_id):
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": "Transaction has no item lines."})
-                    continue
-                tx.status = "approved"
-                tx.approved_by_name = oleh_nama
-                tx.approved_at = sekarang
-            else:
-                if status_lama not in PURCHASE_STATUS_BISA_POST:
-                    alasan = "Approve the transaction first." if status_lama in PURCHASE_STATUS_BISA_APPROVE else f"Status '{tx.status}' cannot be posted."
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
-                    continue
-                alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
-                if not (posting_date or tx.purchase_date):
-                    # Import tanpa tanggal (tanggal_wajib=false: NBM/AADL) -- jurnal GL wajib bertanggal.
-                    alasan = [*(alasan or []), "Purchase date is empty -- fill in the date before posting."]
-                if alasan:
-                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": " ".join(alasan)})
-                    continue
-                tx.status = "posted"
-                tx.posted_by_name = oleh_nama
-                tx.posted_at = sekarang
-                tx.posting_date = posting_date or tx.purchase_date
-            tx.edited_at = sekarang
-            tx.edited_by = oleh_id
-            hasil["done"].append(_purchase_row_ke_dict(tx, CRUD_FIELDS_PURCHASE_TRANSACTION))
+        payload = []
+        for r in rows:
+            item = {k: v for k, v in r.items() if k in CRUD_FIELDS_PURCHASE_SOURCE_ROW}
+            item["source_file_id"] = source_file_id
+            item["client_id"] = client_id
+            item["created_by"] = created_by
+            payload.append(item)
+        for i in range(0, len(payload), chunk_size):
+            session.bulk_insert_mappings(PurchaseSourceRow, payload[i:i + chunk_size])
         session.commit()
-        return hasil
+        return len(payload)
     except Exception as e:
         session.rollback()
-        print(f"Error {aksi} purchase transactions: {e}")
-        raise
+        print(f"Error bulk create {PurchaseSourceRow.__tablename__}: {e}")
+        return 0
     finally:
         session.close()
+
+def get_purchase_source_row_by_id(source_row_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_get_by_id(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, termasuk_nonaktif)
+
+def list_purchase_source_rows(source_file_id: Optional[str] = None, termasuk_nonaktif: bool = False, dengan_payload: bool = True) -> List[Dict[str, Any]]:
+    """Urut row_no naik (bukan created_at desc seperti list lain) supaya File Preview
+    menampilkan baris sesuai urutan di file. dengan_payload=False membuang JSON
+    item-item (berat) -- dipakai panel preview yang hanya butuh kolom ringkas."""
+    hasil = _purchase_crud_list(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, {"source_file_id": source_file_id}, termasuk_nonaktif)
+    hasil.sort(key=lambda r: r.get("row_no") or 0)
+    if not dengan_payload:
+        for r in hasil:
+            r.pop("payload", None)
+    return hasil
+
+def update_purchase_source_row(source_row_id: str, data: Dict[str, Any], updated_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    return _purchase_crud_update(PurchaseSourceRow, CRUD_FIELDS_PURCHASE_SOURCE_ROW, source_row_id, data, updated_by)
 
 
 # --- 5) financial_transaction_purchase_import_templates ---
@@ -6748,6 +7135,9 @@ def ubah_status_purchase_transactions(
                     alasan = "Approve the transaction first." if status_lama in PURCHASE_STATUS_BISA_APPROVE else f"Status '{tx.status}' cannot be posted."
                     hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": alasan})
                     continue
+                if not (posting_date or tx.purchase_date):
+                    hasil["skipped"].append({"id": tx_id, "purchase_no": tx.purchase_no, "reason": "Posting date is required: this transaction has no purchase date. Fill in the purchase date or pass posting_date."})
+                    continue
                 alasan = _validasi_posting_purchase(session, tx, lines_per_tx.get(tx_id, []))
                 if not (posting_date or tx.purchase_date):
                     # Import tanpa tanggal (tanggal_wajib=false: NBM/AADL) -- jurnal GL wajib bertanggal.
@@ -6845,62 +7235,6 @@ def create_purchase_transaction_with_lines(
             asli = getattr(e, "orig", None) or e
             error_out.append(str(asli).strip().splitlines()[0] if str(asli).strip() else type(e).__name__)
         return None
-    finally:
-        session.close()
-
-
-# --- 5) financial_transaction_purchase_import_templates ---
-# Pola sama dengan CRUD_FIELDS_JE_IMPORT_TEMPLATE -- client_id di sini
-# reference ke management_clients, list di-order by usage_count.
-
-CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE = [
-    "client_id", "client_code", "file_type", "sheet_name",
-    "header_row_index", "data_start_row_index", "column_signature_hash",
-    "header_columns", "mapping_rules", "detected_by", "ai_model_version",
-    "ai_confidence", "is_active",
-]
-
-def create_purchase_import_template(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    return _purchase_crud_create(PurchaseImportTemplate, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE, data, created_by)
-
-def get_purchase_import_template_by_id(template_id: str) -> Optional[Dict[str, Any]]:
-    return _purchase_crud_get_by_id(PurchaseImportTemplate, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE, template_id, termasuk_nonaktif=True)
-
-def list_purchase_import_templates(client_id: Optional[str] = None, file_type: Optional[str] = None, hanya_aktif: bool = True) -> List[Dict[str, Any]]:
-    """Daftar template pola kolom Purchase -- dipakai untuk mencocokkan file
-    baru (lihat _cocokkan_template di modules/transactions/purchase_import_v1.py)."""
-    session = SessionLocal()
-    try:
-        query = session.query(PurchaseImportTemplate).filter(PurchaseImportTemplate.deleted_at.is_(None))
-        if client_id is not None:
-            query = query.filter(PurchaseImportTemplate.client_id == client_id)
-        if file_type is not None:
-            query = query.filter(PurchaseImportTemplate.file_type == file_type)
-        if hanya_aktif:
-            query = query.filter(PurchaseImportTemplate.is_active.is_(True))
-        return [_purchase_row_ke_dict(obj, CRUD_FIELDS_PURCHASE_IMPORT_TEMPLATE) for obj in query.order_by(PurchaseImportTemplate.usage_count.desc()).all()]
-    except Exception:
-        session.rollback()
-        return []
-    finally:
-        session.close()
-
-def touch_purchase_import_template_usage(template_id: str) -> bool:
-    """Naikkan usage_count +1 & set last_used_at=now() -- dipanggil setiap
-    kali template ini berhasil dipakai mencocokkan file baru."""
-    session = SessionLocal()
-    try:
-        obj = session.query(PurchaseImportTemplate).filter(PurchaseImportTemplate.id == template_id).first()
-        if not obj:
-            return False
-        obj.usage_count = (obj.usage_count or 0) + 1
-        obj.last_used_at = datetime.now()
-        session.commit()
-        return True
-    except Exception as e:
-        session.rollback()
-        print(f"Error touch usage purchase_import_template: {e}")
-        return False
     finally:
         session.close()
 
@@ -7058,16 +7392,11 @@ def ambil_baris_jurnal_posted_transaksi(
     client_id: Optional[str] = None,
     sampai_tanggal: Optional[date] = None,
     management_client_id: Optional[str] = None,
-    termasuk_penutup: bool = False,
 ) -> List[Dict[str, Any]]:
     """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
     utama Financial Statements) dan/atau `client_id` (id_user
     management_users, akun yang login). Minimal salah satu WAJIB diisi.
-    Jurnal penutup tahun buku (source_type SOURCE_TYPE_TUTUP_BUKU) hanya ikut
-    kalau `termasuk_penutup=True` (General Ledger) -- Financial Statements
-    menghitung laba ditahan dari akun P&L, jadi jurnal itu tidak dibaca agar
-    laba tidak terhitung dua kali & P&L tahun yang ditutup tidak jadi nol.
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
@@ -7097,11 +7426,9 @@ def ambil_baris_jurnal_posted_transaksi(
         )
         if sampai_tanggal:
             q = q.filter(JournalEntryDraft.entry_date <= sampai_tanggal)
-        if not termasuk_penutup:
-            q = q.filter(JournalEntryDraft.source_type != SOURCE_TYPE_TUTUP_BUKU)
         for draft, line in q.order_by(JournalEntryDraft.entry_date, JournalEntryDraftLine.line_no).all():
             hasil.append({
-                "sumber": "year_end_closing" if draft.source_type == SOURCE_TYPE_TUTUP_BUKU else "journal_entry",
+                "sumber": "journal_entry",
                 "jurnal_id": f"je:{draft.id}",
                 "nomor": draft.je_number,
                 "tanggal": draft.entry_date,
@@ -7892,3 +8219,86 @@ def _audit_iso_dt(dt):
     return dt.isoformat() if dt else None
 
 
+class ManagementPayrollSetting(Base):
+    """Payroll > Settings: tarif BPJS, batas upah, biaya jabatan, nama akun
+    jurnal, dst. -- 1 baris per klien, isi fleksibel di kolom JSONB `settings`
+    (kunci mengikuti PayrollSettings di src/app/payroll/lib/payrollTypes.ts).
+    Lihat modules/management/payroll_v1.py & migrations/38-*.py."""
+    __tablename__ = "management_payroll_settings"
+    __table_args__ = (
+        UniqueConstraint("client_id", name="uq_management_payroll_settings_client"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    settings = Column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementPayrollEmployee(Base):
+    """Payroll > Employees: master karyawan per klien (soft delete lewat
+    deleted_at). NIP unik per klien (di antara yang belum dihapus)."""
+    __tablename__ = "management_payroll_employees"
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False, index=True)
+    nip = Column(String(50), nullable=False)
+    name = Column(String(255), nullable=False)
+    position = Column(String(255), nullable=True)
+    department = Column(String(255), nullable=True)
+    branch = Column(String(255), nullable=True)
+    employment_type = Column(String(10), nullable=False, default="PKWTT", server_default=text("'PKWTT'"))
+    join_date = Column(Date, nullable=True)
+    npwp = Column(String(50), nullable=True)
+    ptkp = Column(String(10), nullable=False, default="TK/0", server_default=text("'TK/0'"))
+    base_salary = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    fixed_allowance = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    variable_allowance = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    bank_name = Column(String(100), nullable=True)
+    bank_account = Column(String(100), nullable=True)
+    bpjs_tk = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    bpjs_kes = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class ManagementPayrollRun(Base):
+    """Payroll > Payroll Run: 1 baris per klien per periode (YYYY-MM).
+    `lines` (JSONB) = snapshot per karyawan (data master + input + hasil
+    hitung) supaya payroll yang sudah disetujui tidak berubah walau master
+    karyawan diedit. Kolom total_* dihitung server dari `lines`.
+    Status: draft -> approved -> paid (lihat payroll_v1.py)."""
+    __tablename__ = "management_payroll_runs"
+    __table_args__ = (
+        UniqueConstraint("client_id", "period", name="uq_management_payroll_runs_client_period"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False, index=True)
+    period = Column(String(7), nullable=False)
+    pay_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
+    lines = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    headcount = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    total_gross = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_pph21 = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_bpjs = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    total_net = Column(Numeric(18, 2), nullable=False, default=0, server_default=text("0"))
+    # Riwayat perubahan status [{at, by, from, to, reason}] -- termasuk buka kembali (migration 39).
+    status_history = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    paid_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)

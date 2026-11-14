@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import TabNav from '@/components/ui/TabNav';
 import { usePathname } from 'next/navigation';
 import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen, Lock } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -28,7 +29,7 @@ export default function FsShell({ title, subtitle, actions, children }: {
 }) {
   const pathname = usePathname();
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5 fade-in">
+    <div className="space-y-5">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -41,27 +42,13 @@ export default function FsShell({ title, subtitle, actions, children }: {
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
 
-      <nav className={tabNavCls}>
-        {FS_TABS.map(t => {
-          const active = pathname === t.href;
-          const Icon = t.icon;
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={tabCls(active)}
-            >
-              <Icon size={16} /> {t.label}
-            </Link>
-          );
-        })}
-        <Link
-          href="/reports/general-ledger"
-          className={`ml-auto ${tabCls(false)}`}
-        >
-          <BookOpen size={16} /> General Ledger
-        </Link>
-      </nav>
+      <TabNav
+        activeKey={FS_TABS.find(t => t.href === pathname)?.href ?? ''}
+        items={[
+          ...FS_TABS.map(t => ({ key: t.href, label: t.label, href: t.href, icon: t.icon })),
+          { key: '/reports/general-ledger', label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen },
+        ]}
+      />
 
       {children}
     </div>

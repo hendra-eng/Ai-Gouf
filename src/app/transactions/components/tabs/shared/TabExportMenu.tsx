@@ -35,7 +35,7 @@ export default function TabExportMenu({ onExportCSV, onExportPDF, onExportGLSnap
       <button
         type="button"
         onClick={() => setOpen((p) => !p)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-600 bg-muted text-foreground rounded-lg hover:bg-muted/70 transition-colors duration-150 border border-border"
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-muted text-foreground rounded-lg hover:bg-muted/70 transition-colors duration-150 border border-border"
       >
         <Download size={14} />
         Export

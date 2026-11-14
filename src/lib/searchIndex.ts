@@ -8,7 +8,7 @@ export interface SearchIndexItem {
 
 export const searchIndex: SearchIndexItem[] = [
   { label: 'Overview', href: '/', group: 'Overview' },
-  { label: 'Agent AI', href: '/agent-ai', group: 'Overview' },
+  { label: 'Zafeb AI', href: '/zafeb-ai', group: 'Overview' },
   { label: 'Financial Statements', href: '/financial-statements', group: 'Financial' },
   { label: 'Profit & Loss', href: '/financial-statements/profit-loss', group: 'Financial' },
   { label: 'Balance Sheet', href: '/financial-statements/balance-sheet', group: 'Financial' },
@@ -30,6 +30,9 @@ export const searchIndex: SearchIndexItem[] = [
   { label: 'Chart of Accounts', href: '/coa', group: 'Management' },
   { label: 'Year-End Closing', href: '/year-end-closing', group: 'Management' },
   { label: 'Documents', href: '/documents', group: 'Management' },
+  { label: 'Settings', href: '/settings', group: 'Management' },
+  { label: 'Payroll', href: '/payroll', group: 'Management' },
+  { label: 'Agentic AI', href: '/agentic-ai', group: 'Management' },
 ];
 
 export function searchPages(query: string, limit = 6): SearchIndexItem[] {

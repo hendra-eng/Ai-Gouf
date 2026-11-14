@@ -25,7 +25,7 @@ export default function RetainedEarningsAnalysis({ isSampleData, steps, periodLa
     <div className="fin-card p-5">
       <div className="flex items-center gap-2 mb-4">
         <div>
-          <div className="text-[14px] font-600 text-foreground">Retained Earnings Analysis</div>
+          <div className="text-[14px] font-semibold text-foreground">Retained Earnings Analysis</div>
           <div className="text-[11px] text-muted-foreground">Movement from beginning to ending balance{period ? ` \u2014 ${period}` : ''}</div>
         </div>
       </div>
@@ -55,14 +55,14 @@ export default function RetainedEarningsAnalysis({ isSampleData, steps, periodLa
                       {step.type === 'neutral' && <Icon name="MinusIcon" size={12} />}
                     </div>
                     <div>
-                      <div className={`text-[13px] font-600 ${step.type === 'result' ? 'text-primary' : 'text-foreground'}`}>
+                      <div className={`text-[13px] font-semibold ${step.type === 'result' ? 'text-primary' : 'text-foreground'}`}>
                         {step.label}
                       </div>
                       <div className="text-[10px] text-muted-foreground">{step.description}</div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={`text-[14px] font-700 financial-value ${
+                    <div className={`text-[14px] font-bold financial-value ${
                       step.type === 'positive' ? 'text-positive' :
                       step.type === 'negative' ? 'text-negative' :
                       step.type === 'result' ? 'text-primary' : 'text-foreground'
@@ -86,7 +86,7 @@ export default function RetainedEarningsAnalysis({ isSampleData, steps, periodLa
           {/* Summary note */}
           {ending && (
             <div className="mt-4 bg-muted/50 rounded-lg px-4 py-3 text-[11px] text-muted-foreground">
-              Retained earnings of <span className="font-600 text-foreground">{fx(formatMoney(ending.amount, 'IDR'))}</span> represents accumulated undistributed profits. This connects directly to the Balance Sheet equity section and is reconciled with the Profit &amp; Loss statement.
+              Retained earnings of <span className="font-semibold text-foreground">{fx(formatMoney(ending.amount, 'IDR'))}</span> represents accumulated undistributed profits. This connects directly to the Balance Sheet equity section and is reconciled with the Profit &amp; Loss statement.
             </div>
           )}
         </>

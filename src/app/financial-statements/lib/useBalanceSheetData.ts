@@ -33,7 +33,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/zafeb-ai/lib/api';
 import { COMPANY } from '@/lib/financialData';
 
 export interface BSItem { name: string; current: number; prev: number; href: string }

@@ -51,7 +51,7 @@ export default function PurchaseTabContent() {
           onExportPDF={handleExportPDF}
           onExportGLSnapshot={handleExportGLSnapshot}
         />
-        <button className="px-3 py-1.5 text-sm font-600 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95">
+        <button className="px-3 py-1.5 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95">
           + New Purchase
         </button>
       </div>

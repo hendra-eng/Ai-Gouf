@@ -4,16 +4,16 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PlusIcon } from '@heroicons/react/24/outline';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CircleCheck, Eye, GitCompareArrows, Landmark, LayoutGrid } from 'lucide-react';
-import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
 import CashBankTransactionModal from './CashBankTransactionModal';
+import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Database, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import TabNav from '@/components/ui/TabNav';
 
 interface Tab {
   id: string;
   label: string;
   href: string;
-  icon: React.ElementType;
   description: string;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }
 
 // Tab Cash & Bank + tombol "Transaksi Baru" (input manual kas/bank tanpa
@@ -21,58 +21,58 @@ interface Tab {
 const tabs: Tab[] = [
   {
     id: 'tab-overview',
+    icon: LayoutDashboard,
     label: 'Overview',
     href: '/transactions/bank-cash/overview',
-    icon: LayoutGrid,
     description: 'Cash flow summary, balance per account & reconciliation status',
   },
   {
     id: 'tab-cash-payment',
+    icon: ArrowUpRight,
     label: 'Cash Payment',
     href: '/transactions/bank-cash/cash-payment',
-    icon: ArrowUpRight,
     description: 'Posted Purchase bills & their payment status',
   },
   {
     id: 'tab-cash-receipt',
+    icon: ArrowDownLeft,
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
-    icon: ArrowDownLeft,
     description: 'Posted Sales invoices & their receipt status',
   },
   {
     id: 'tab-bank-feed',
-    label: 'Bank Feed',
-    href: '/transactions/bank-cash/bank-feed',
-    icon: Landmark,
+    icon: Database,
+    label: 'Source Data',
+    href: '/transactions/bank-cash/source-data',
     description: 'Import bank statements (saved permanently) to match against the books',
   },
   {
     id: 'tab-reconciliation',
+    icon: Scale,
     label: 'Reconciliation',
     href: '/transactions/bank-cash/reconciliation',
-    icon: GitCompareArrows,
-    description: 'Match Bank Feed lines to Sales/Purchase invoices or other accounts — including matched history',
+    description: 'Match Source Data lines to Sales/Purchase invoices or other accounts — including matched history',
   },
   {
     id: 'tab-journal-preview',
+    icon: Eye,
     label: 'Journal Preview',
     href: '/transactions/bank-cash/journal-preview',
-    icon: Eye,
     description: 'Review cash & bank journals, then Approve and Post them to the ledger',
   },
   {
     id: 'tab-exceptions',
+    icon: AlertTriangle,
     label: 'Exceptions',
     href: '/transactions/bank-cash/exceptions',
-    icon: AlertTriangle,
     description: 'Manage and follow up cash & bank items that need review',
   },
   {
     id: 'tab-posted',
+    icon: CheckCircle2,
     label: 'Posted',
     href: '/transactions/bank-cash/posted',
-    icon: CircleCheck,
     description: 'Cash & bank transactions posted to the ledger (and their reversals)',
   },
 ];
@@ -101,20 +101,11 @@ export default function CashBankTabs() {
       </div>
       <CashBankTransactionModal open={formBaru} onClose={() => setFormBaru(false)} />
 
-      <nav className={`${tabNavCls} mt-4`}>
-        {tabs.map((tab) => {
-          const active = isActive(tab.href);
-          return (
-            <Link
-              key={tab.id}
-              href={tab.href}
-              className={tabCls(active)}
-            >
-              <tab.icon size={16} /> {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <TabNav
+        className="mt-4"
+        activeKey={activeTab.id}
+        items={tabs.map(t => ({ key: t.id, label: t.label, href: t.href, icon: t.icon }))}
+      />
     </div>
   );
 }

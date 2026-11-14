@@ -46,7 +46,15 @@ interface Props {
    *  plain count instead of a currency amount). Overrides `rawValue` /
    *  the default money formatting when provided — use this for donuts
    *  whose `value` isn't a monetary figure (e.g. a status count). */
-  formatValue?: (value: number) => string;
+  formatValue?: (value: number, index: number) => string;
+  /** Custom formatter for the percentage in the center callout. Default is
+   *  a rounded integer (`17%`). Pass this when small slices need decimals
+   *  (e.g. 0.1%) so they don't collapse to "0%". */
+  formatPct?: (pct: number, index: number) => string;
+  /** Minimum on-screen angle (degrees) for a slice that is real but tiny
+   *  (e.g. 0.1% = 0.36deg), so it doesn't vanish under the white separators.
+   *  Display only: the real size still drives pct/value/drag. Default 0 = off. */
+  minVisibleDeg?: number;
 }
 
 const CX = 120;
@@ -153,6 +161,8 @@ export default function InteractiveDonutChart({
   onLiveChange,
   rawValue = false,
   formatValue,
+  formatPct,
+  minVisibleDeg = 0,
 }: Props) {
   const { t } = useLanguage();
   const { currency } = useCurrency();
@@ -352,6 +362,7 @@ export default function InteractiveDonutChart({
   const callout =
     calloutIndex !== null && data[calloutIndex]
       ? {
+          index: calloutIndex,
           name: data[calloutIndex].name,
           color: data[calloutIndex].color,
           pct: signs[calloutIndex] * ((liveSizes[calloutIndex] / 360) * 100),
@@ -360,7 +371,7 @@ export default function InteractiveDonutChart({
         }
       : null;
 
-  const fmtValue = formatValue ?? ((v: number) => formatMoney(rawValue ? v : v * 1e6, currency));
+  const fmtValue = formatValue ?? ((v: number, _i: number) => formatMoney(rawValue ? v : v * 1e6, currency));
 
   if (N === 0 || total <= 0) {
     return (
@@ -369,6 +380,44 @@ export default function InteractiveDonutChart({
       </svg>
     );
   }
+
+  // Slice nyata tapi sangat kecil (mis. 0,1% = 0,36°) tertutup garis pemisah
+  // putih dan tak terlihat. Kalau minVisibleDeg diisi, slice itu DIGAMBAR
+  // minimal selebar itu (berpusat di titik tengah aslinya) dan dirender
+  // SESUDAH garis pemisah. Hanya tampilan: nilai/persen/drag tetap pakai
+  // ukuran aslinya.
+  const isTiny = (seg: { start: number; end: number }) =>
+    minVisibleDeg > 0 && seg.end - seg.start > 0 && seg.end - seg.start < minVisibleDeg;
+
+  const renderSeg = (seg: (typeof segments)[number]) => {
+    const tiny = isTiny(seg);
+    let start = seg.start;
+    let end = seg.end;
+    if (tiny) {
+      const mid = (seg.start + seg.end) / 2;
+      start = mid - minVisibleDeg / 2;
+      end = mid + minVisibleDeg / 2;
+    }
+    const isActive = activeIndex === seg.index;
+    const isDimmed = activeIndex !== null && !isActive;
+    const outer = isActive ? R_OUTER + 6 : R_OUTER;
+    const isNegative = signs[seg.index] < 0;
+    return (
+      <path
+        key={`donut-seg-${seg.index}`}
+        d={arcPath(CX, CY, outer, R_INNER, start, end)}
+        fill={isNegative ? `url(#donut-hatch-${seg.index})` : seg.color}
+        stroke={isNegative ? seg.color : tiny ? 'var(--card)' : undefined}
+        strokeWidth={isNegative || tiny ? 1 : undefined}
+        opacity={isDimmed ? 0.35 : 1}
+        style={{ cursor: 'pointer', transition: 'opacity 150ms ease, filter 150ms ease' }}
+        filter={hoverIndex === seg.index ? 'brightness(1.08)' : undefined}
+        onClick={() => setActiveIndex((prev) => (prev === seg.index ? null : seg.index))}
+        onPointerEnter={() => setHoverIndex(seg.index)}
+        onPointerLeave={() => setHoverIndex(null)}
+      />
+    );
+  };
 
   return (
     <svg
@@ -398,27 +447,7 @@ export default function InteractiveDonutChart({
           ) : null
         )}
       </defs>
-      {segments.map((seg) => {
-        const isActive = activeIndex === seg.index;
-        const isDimmed = activeIndex !== null && !isActive;
-        const outer = isActive ? R_OUTER + 6 : R_OUTER;
-        const isNegative = signs[seg.index] < 0;
-        return (
-          <path
-            key={`donut-seg-${seg.index}`}
-            d={arcPath(CX, CY, outer, R_INNER, seg.start, seg.end)}
-            fill={isNegative ? `url(#donut-hatch-${seg.index})` : seg.color}
-            stroke={isNegative ? seg.color : undefined}
-            strokeWidth={isNegative ? 1 : undefined}
-            opacity={isDimmed ? 0.35 : 1}
-            style={{ cursor: 'pointer', transition: 'opacity 150ms ease, filter 150ms ease' }}
-            filter={hoverIndex === seg.index ? 'brightness(1.08)' : undefined}
-            onClick={() => setActiveIndex((prev) => (prev === seg.index ? null : seg.index))}
-            onPointerEnter={() => setHoverIndex(seg.index)}
-            onPointerLeave={() => setHoverIndex(null)}
-          />
-        );
-      })}
+      {segments.filter((seg) => !isTiny(seg)).map(renderSeg)}
 
       {/* draggable white separators between segments (only meaningful with 2+ slices) */}
       {N > 1 && baseBoundaries.map((_, i) => {
@@ -453,6 +482,9 @@ export default function InteractiveDonutChart({
         );
       })}
 
+      {/* slice mungil digambar di atas garis pemisah supaya tetap kelihatan */}
+      {segments.filter(isTiny).map(renderSeg)}
+
       {callout ? (
         <g style={{ pointerEvents: 'none' }}>
           <rect
@@ -470,10 +502,10 @@ export default function InteractiveDonutChart({
             {t(callout.name)}
           </text>
           <text x={CX} y={CY + 10} textAnchor="middle" fontSize={20} fontWeight={700} fill={callout.color}>
-            {callout.pct.toFixed(0)}%
+            {formatPct ? formatPct(callout.pct, callout.index) : `${callout.pct.toFixed(0)}%`}
           </text>
           <text x={CX} y={CY + 23} textAnchor="middle" fontSize={9} fill="var(--muted-foreground)">
-            {callout.isPreview ? `${t('estimate')} · ` : ''}{fmtValue(callout.value)}
+            {callout.isPreview ? `${t('estimate')} · ` : ''}{fmtValue(callout.value, callout.index)}
           </text>
         </g>
       ) : (

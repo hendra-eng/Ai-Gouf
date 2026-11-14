@@ -82,7 +82,7 @@ export default function KPICard({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 truncate">
             {t(title)}
           </p>
-          <p className="number-display font-bold text-foreground leading-none text-xl">
+          <p className="number-display text-xl font-bold text-foreground leading-none">
             {value}
           </p>
           {previousValue ? (

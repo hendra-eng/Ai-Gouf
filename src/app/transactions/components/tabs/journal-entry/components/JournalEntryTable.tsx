@@ -127,14 +127,14 @@ export default function JournalEntryTable() {
       {journalData.some((j) => j.balanceStatus === 'unbalanced') && (
         <div className="px-5 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
           <AlertTriangle size={14} className="text-red-600 shrink-0" />
-          <p className="text-xs font-500 text-red-700">
+          <p className="text-xs font-medium text-red-700">
             {journalData.filter((j) => j.balanceStatus === 'unbalanced').length} unbalanced journal{' '}
             {journalData.filter((j) => j.balanceStatus === 'unbalanced').length === 1 ? 'entry requires' : 'entries require'} correction before posting.
             Total DR ≠ Total CR on these entries.
           </p>
           <button
             onClick={() => setBalanceFilter('unbalanced')}
-            className="ml-auto text-xs font-600 text-red-700 underline hover:no-underline"
+            className="ml-auto text-xs font-semibold text-red-700 underline hover:no-underline"
           >
             Show only unbalanced
           </button>
@@ -214,16 +214,16 @@ export default function JournalEntryTable() {
       {/* Bulk action bar */}
       {selectedRows.size > 0 && (
         <div className="animate-slide-up px-5 py-2.5 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
-          <span className="text-sm font-500 text-primary">{selectedRows.size} selected</span>
+          <span className="text-sm font-medium text-primary">{selectedRows.size} selected</span>
           <button
             onClick={() => { toast.success(`${selectedRows.size} entry/entries submitted for review`); setSelectedRows(new Set()); }}
-            className="text-sm font-500 text-primary hover:underline"
+            className="text-sm font-medium text-primary hover:underline"
           >
             Submit for Review
           </button>
           <button
             onClick={() => { toast.success(`${selectedRows.size} entry/entries posted to GL`); setSelectedRows(new Set()); }}
-            className="text-sm font-500 text-primary hover:underline"
+            className="text-sm font-medium text-primary hover:underline"
           >
             Post to GL
           </button>
@@ -262,13 +262,13 @@ export default function JournalEntryTable() {
                 <th
                   key={`jcol-${col.key}`}
                   onClick={() => handleSort(col.key as SortField)}
-                  className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
+                  className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground whitespace-nowrap select-none"
                 >
                   {col.label}
                   <SortIcon field={col.key as SortField} />
                 </th>
               ))}
-              <th className="px-4 py-3 text-left text-[11px] font-600 uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Actions
               </th>
             </tr>
@@ -279,7 +279,7 @@ export default function JournalEntryTable() {
                 <td colSpan={13} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Filter size={28} className="text-muted-foreground opacity-40" />
-                    <p className="text-sm font-500 text-muted-foreground">No journal entries match your filters</p>
+                    <p className="text-sm font-medium text-muted-foreground">No journal entries match your filters</p>
                     <button
                       onClick={() => { setSearch(''); setStatusFilter('all'); setReviewFilter('all'); setBalanceFilter('all'); setPeriodFilter('all'); }}
                       className="text-xs text-primary hover:underline"
@@ -308,7 +308,7 @@ export default function JournalEntryTable() {
                         className="rounded border-border"
                       />
                     </td>
-                    <td className="px-4 py-3 font-500 text-primary font-tabular whitespace-nowrap">
+                    <td className="px-4 py-3 font-medium text-primary tabular-nums whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         {row.balanceStatus === 'unbalanced' && (
                           <AlertTriangle size={12} className="text-red-500 shrink-0" />
@@ -316,7 +316,7 @@ export default function JournalEntryTable() {
                         {row.jeNumber}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground font-tabular whitespace-nowrap">
+                    <td className="px-4 py-3 text-muted-foreground tabular-nums whitespace-nowrap">
                       {row.journalDate}
                     </td>
                     <td className="px-4 py-3 text-foreground max-w-[240px]">
@@ -326,18 +326,18 @@ export default function JournalEntryTable() {
                       {row.source}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-500">
+                      <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-md font-medium">
                         {row.accountingPeriod}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right font-tabular font-500 text-blue-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-blue-600 whitespace-nowrap">
                       ${row.totalDebit.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-right font-tabular font-500 text-emerald-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-emerald-600 whitespace-nowrap">
                       ${row.totalCredit.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-right font-tabular whitespace-nowrap">
-                      <span className={`font-700 ${row.difference === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                      <span className={`font-bold ${row.difference === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {row.difference === 0 ? '$0' : `$${Math.abs(row.difference).toLocaleString()}`}
                       </span>
                     </td>
@@ -412,7 +412,7 @@ export default function JournalEntryTable() {
             <button
               key={`jpage-${p}`}
               onClick={() => setPage(p)}
-              className={`w-7 h-7 text-xs rounded-md font-500 transition-colors ${
+              className={`w-7 h-7 text-xs rounded-md font-medium transition-colors ${
                 page === p
                   ? 'bg-primary text-primary-foreground'
                   : 'border border-border text-muted-foreground hover:bg-muted'

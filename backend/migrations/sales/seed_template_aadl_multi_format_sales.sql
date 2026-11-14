@@ -153,7 +153,7 @@
 -- hanya pengisi kolom NOT NULL untuk template Multi; yang dipakai pencocokan
 -- adalah nilai di dalam tiap varian.
 --
--- KLIEN: dicari lewat nama_client = 'PT AKSHAYA ANANDA DYLAN LESTARI' (sesuai data klien di VPS) dan GAGAL dengan pesan jelas
+-- KLIEN: dicari lewat client_code = 'AADL' (bukan nama klien) dan GAGAL dengan pesan jelas
 -- kalau belum ada di management_clients. client_id & client_code diambil otomatis.
 --
 -- Cara pakai (lewat runner: 1 transaksi + nama file dicatat ke history-migration.md).
@@ -454,16 +454,12 @@ BEGIN
     SELECT id, client_code INTO v_client_id, v_client_code
     FROM management_clients
     WHERE deleted_at IS NULL
-      AND upper(trim(nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI'
+      AND upper(trim(client_code)) = 'AADL'
     ORDER BY created_at
     LIMIT 1;
-    IF (SELECT count(*) FROM management_clients
-        WHERE deleted_at IS NULL AND upper(trim(nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI') > 1 THEN
-        RAISE EXCEPTION 'Ada lebih dari 1 klien aktif bernama PT AKSHAYA ANANDA DYLAN LESTARI di management_clients. Hapus/gabungkan duplikatnya dulu (supaya template tidak menempel ke klien yang salah), lalu jalankan ulang seed ini.';
-    END IF;
 
     IF v_client_id IS NULL THEN
-        RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari nama_client = ''PT AKSHAYA ANANDA DYLAN LESTARI''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
+        RAISE EXCEPTION 'Klien AADL belum ada di management_clients (dicari client_code = ''AADL''). Buat dulu lewat halaman Clients, lalu jalankan ulang seed ini.';
     END IF;
 
     -- Akun default dipilih dari COA klien yang SEBENARNYA (lihat AKUN JURNAL di kepala file):
@@ -585,4 +581,4 @@ $do$;
 --        (SELECT string_agg(v->'mapping_rules'->>'cabang_tetap', ', ') FROM jsonb_array_elements(t.mapping_rules->'variants') v) AS cabang
 -- FROM financial_transaction_sales_import_templates t
 -- JOIN management_clients m ON m.id = t.client_id
--- WHERE t.file_type = 'Multi' AND upper(trim(m.nama_client)) = 'PT AKSHAYA ANANDA DYLAN LESTARI';
+-- WHERE t.file_type = 'Multi' AND upper(trim(m.client_code)) = 'AADL';

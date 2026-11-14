@@ -18,7 +18,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { documentsDataClient, tambahDokumen, ubahStatusDokumen } from '@/app/agent-ai/lib/api';
+import { documentsDataClient, tambahDokumen, ubahStatusDokumen } from '@/app/zafeb-ai/lib/api';
 import type {
   FinancialDocument,
   DocumentFolder,

@@ -94,8 +94,8 @@ export default function OpeningBalanceNewClient() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto max-w-5xl px-6 py-5">
+      <div className="pb-2">
+        <div className="mx-auto max-w-5xl px-6">
           <nav className="mb-3 flex items-center gap-1 text-xs text-muted-foreground">
             <ListTree size={13} />
             <Link href="/coa" className="hover:text-foreground">Chart of Accounts</Link>
@@ -109,8 +109,8 @@ export default function OpeningBalanceNewClient() {
               <ArrowLeft size={16} />
             </Link>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-foreground">New Opening Balance</h1>
-              <p className="text-xs text-muted-foreground">Step 1 of 2 — set the period and branch. Balances per account come next.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">New Opening Balance</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">Step 1 of 2 — set the period and branch. Balances per account come next.</p>
             </div>
           </div>
         </div>

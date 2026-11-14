@@ -1,6 +1,6 @@
 """
-migrations/bank_cash/36-create_bank_cash_import_templates_and_bank_mappings.py
-=============================================================================
+migrations/36-create_bank_cash_import_templates_and_bank_mappings.py
+====================================================================
 Menambahkan 2 tabel BARU untuk tab "Source Data" Bank & Cash:
 
   - financial_transaction_bank_cash_import_templates : pola ekstraksi
@@ -18,19 +18,18 @@ AMAN DIPANGGIL BERKALI-KALI (idempoten) -- tabel yang sudah ada di-skip.
 
 Cara pakai:
     cd backend
-    venv\\Scripts\\python migrations\\bank_cash\\36-create_bank_cash_import_templates_and_bank_mappings.py
+    venv\\Scripts\\python migrations\\36-create_bank_cash_import_templates_and_bank_mappings.py
 """
 
 import sys
 from pathlib import Path
 
-# File ini ada di migrations/<subfolder>/ -> _history ada di migrations/, db_client & .env di backend/.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent.parent / ".env")
+    load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
 
@@ -56,11 +55,12 @@ def _buat_tabel_jika_belum_ada(connection, table_name: str, orm_class) -> bool:
         print(f"✅ Tabel '{table_name}' berhasil dibuat.")
         return True
     except (OperationalError, ProgrammingError) as e:
-        connection.rollback()
-        if "already exists" in str(e).lower():
+        msg = str(e).lower()
+        if "already exists" in msg:
             print(f"⏭️  Tabel '{table_name}' sudah ada (terdeteksi via error), skip.")
             return True
         print(f"❌ Gagal buat tabel '{table_name}': {e}")
+        connection.rollback()
         return False
 
 

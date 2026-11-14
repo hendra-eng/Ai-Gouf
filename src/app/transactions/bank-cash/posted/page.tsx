@@ -250,7 +250,7 @@ export default function CashBankPostedPage() {
   const adaFilter = search !== '' || arahFilter !== 'all' || periodeFilter !== 'all' || bankFilter !== 'all';
 
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
 
       {error && (
@@ -452,7 +452,7 @@ export default function CashBankPostedPage() {
                               {/* Info mutasi bank asal */}
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 {[
-                                  { label: 'Source', value: row.mutationRef ? 'Bank Feed' : 'Manual entry', mono: false },
+                                  { label: 'Source', value: row.mutationRef ? 'Source Data' : 'Manual entry', mono: false },
                                   { label: 'Bank Line Description', value: row.mutationDescription || '—', mono: false },
                                   { label: 'Bank Line Ref', value: row.mutationRef || '—', mono: true },
                                 ].map((item) => (
@@ -636,7 +636,7 @@ export default function CashBankPostedPage() {
                   ) : (
                     <li>This journal has no invoice, so no Purchase/Sales outstanding changes.</li>
                   )}
-                  {balikTarget.mutationRef && <li>Its Bank Feed line returns to Unmatched and can be matched again in the Reconciliation tab.</li>}
+                  {balikTarget.mutationRef && <li>Its Source Data line returns to Unmatched and can be matched again in the Reconciliation tab.</li>}
                 </ul>
               </div>
 

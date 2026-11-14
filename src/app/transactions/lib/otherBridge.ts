@@ -1,7 +1,7 @@
 // ─── JEMBATAN BACKEND (finance_transaction_other) → HALAMAN OTHER ─────────
 // Satu-satunya tempat yang menerjemahkan hasil GET
 // /api/client/{client_id}/finance-other (lihat daftarFinanceOther() di
-// @/app/agent-ai/lib/api.js, dan dbc.daftar_finance_other() di
+// @/app/zafeb-ai/lib/api.js, dan dbc.daftar_finance_other() di
 // backend/db_client.py) menjadi bentuk Transaction[] yang dipakai
 // TransactionsContext & halaman Other (src/app/transactions/other/page.tsx)
 // lewat getTransactionGroup(). Pola file ini SENGAJA mirip bankCashBridge.ts

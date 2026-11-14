@@ -33,7 +33,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilLaporanKeuangan, riwayatCalk, riwayatPphBadan } from '@/app/agent-ai/lib/api';
+import { ambilLaporanKeuangan, riwayatCalk, riwayatPphBadan } from '@/app/zafeb-ai/lib/api';
 import { useReportRegistry, useReportSchedule } from './reportsDbBridge';
 import { reports as sampleReports, scheduledReports as sampleScheduledReports, type Report, type ReportCategory, type ScheduledReport } from '@/lib/reportsMockData';
 

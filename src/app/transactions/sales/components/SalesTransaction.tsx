@@ -681,7 +681,7 @@ export default function SalesTransaction() {
                   <tr
                     key={row.uuid}
                     onClick={() => openDetail(row)}
-                    className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
                   >
                     <td className="py-2 px-3">
                       <input type="checkbox" checked={selectedRows.has(row.uuid)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.uuid)} className="rounded border-border" />

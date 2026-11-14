@@ -15,6 +15,8 @@ interface PrintMenuProps {
   /** Arah dropdown -- 'right' = rata kanan tombol (default). */
   align?: 'left' | 'right';
   className?: string;
+  /** Ganti gaya tombol (default: border abu-abu). */
+  buttonClassName?: string;
 }
 
 const OPTIONS: { format: PrintFormat; label: string; hint: string; icon: React.ReactNode }[] = [
@@ -23,7 +25,7 @@ const OPTIONS: { format: PrintFormat; label: string; hint: string; icon: React.R
   { format: 'csv', label: 'CSV', hint: 'Plain comma-separated data', icon: <Sheet size={14} className="text-slate-600" /> },
 ];
 
-export default function PrintMenu({ onPrint, label = 'Print', disabled, align = 'right', className }: PrintMenuProps) {
+export default function PrintMenu({ onPrint, label = 'Print', disabled, align = 'right', className, buttonClassName }: PrintMenuProps) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<PrintFormat | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -60,7 +62,7 @@ export default function PrintMenu({ onPrint, label = 'Print', disabled, align = 
         type="button"
         onClick={() => setOpen(o => !o)}
         disabled={disabled || busy !== null}
-        className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs font-medium text-foreground bg-card hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className={buttonClassName ?? 'flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-xs font-medium text-foreground bg-card hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed'}
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
         {busy ? 'Preparing…' : label}

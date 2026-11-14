@@ -1,7 +1,7 @@
 """
 modules/transactions/sales_import_v1.py
 ==========================================
-Upload file laporan penjualan (CSV/Excel) + ekstraksi otomatis lewat Sales
+Upload file laporan penjualan (CSV/Excel/PDF) + ekstraksi otomatis lewat Sales
 Import Template -- implementasi backend dari alur yang didokumentasikan di
 root/SALES_IMPORT_TEMPLATES.md. Endpoint tunggal:
 
@@ -18,9 +18,10 @@ TEMPLATES.md):
        (SHA-256, dinormalisasi) -- kalau SAMA dengan column_signature_hash
        template, itu templatenya.
     4. KETEMU template -> ekstrak baris (dispatch berdasar
-       mapping_rules.format_type: 'grouped_invoice_report' atau flat),
-       simpan ke financial_transaction_sales_source_rows, naikkan
-       usage_count template.
+       mapping_rules.format_type: 'grouped_invoice_report',
+       'grouped_invoice_report_pdf', 'flat_grouped_by_key',
+       'sectioned_by_customer_header', atau flat), simpan ke
+       financial_transaction_sales_source_rows, naikkan usage_count template.
     5. TIDAK ketemu template -> BELUM ada inferensi AI terpasang (lihat
        "Langkah Implementasi" di SALES_IMPORT_TEMPLATES.md) -- file tetap
        disimpan sbg source_files tapi status_ekstraksi/status_mapping =
@@ -28,6 +29,57 @@ TEMPLATES.md):
        template baru secara manual (lewat SQL seed atau -- kalau UI-nya
        dibangun nanti -- lewat modal Mapping Rules) sebelum file jenis ini
        bisa diekstrak otomatis.
+
+Template "Multi" (1 baris DB, beberapa format file -- lihat seed_template_
+sau_multi_format_sales.sql dan seed_template_nbm_multi_format_sales.sql):
+langkah 2-3 memecahnya jadi template virtual per varian (mapping_rules.
+variants, difilter per file_type), jadi 1 klien bisa melayani CSV, Excel dan
+PDF sekaligus tanpa baris template terpisah. Contoh resep per format_type:
+  - flat_grouped_by_key            CSV/Excel flat 1 baris = 1 item (NBM: POS; NPI: Excel POS 'Sales
+                                   Recapitulation Detail Report', kop di atas header; UBD: Excel jurnal
+                                   pendapatan buku besar, No Voucher = nomor invoice; Evita: sheet DATA,
+                                   nomor invoice dirakit dari 2 kolom -- opsi lengkap di docstring
+                                   _parse_flat_grouped_by_key)
+  - sectioned_by_customer_header   Excel "Penjualan per Pelanggan" (NBM: wholesale)
+  - category_summary               Excel/CSV laporan POS "Category Sales": 1 baris = 1 kategori, TANPA
+                                   nomor invoice & tanggal di isi file; periode + outlet dari NAMA
+                                   FILE, cabang = kategori (MM)
+  - grouped_invoice_report(_pdf)   laporan blok per invoice (SAU: CSV dan PDF)
+  - monthly_daily_matrix           Excel rekap pendapatan HARIAN, 1 sheet per bulan,
+                                   kolom = tanggal 1..31 (AADL: Warung, Kafe Kapu,
+                                   Omah & Kopi, Villa Putu)
+  - monthly_rent_roll              Excel daftar sewa kamar, 1 sheet per bulan,
+                                   1 invoice = total "Uang Kamar" sebulan (AADL: Kost)
+  - multi_sheet_line_items         Excel catatan penjualan manual, 1 workbook = banyak sheet
+                                   (1 sheet per jalur/pelanggan), 1 baris = 1 item, tanggal
+                                   hanya diisi di baris pertama (ABE -- lihat bagian 3c)
+  - monthly_block_invoice_register Excel register tagihan manual, 1 sheet berisi blok per bulan
+                                   (header diulang tiap blok), 1 baris = 1 invoice, nomor invoice
+                                   ADA di file, tanggal = kolom BULAN blok (Birawa -- bagian 3d)
+  - monthly_income_list            Excel (xlsx/xls) daftar income per tamu, 1 sheet per bulan, header dicari lewat LABEL
+                                   kolom, tanpa nomor invoice (dibentuk prefix + tanggal + nama tamu); sheet
+                                   "YANG DI PAKAI" diutamakan, sheet tersembunyi dilewati (YM -- bagian 3f)
+Tiga format sebelum ini BUKAN laporan invoice: file tidak punya nomor invoice, jadi
+nomor invoice dibentuk dari prefix_invoice + tanggal (lihat bagian 3b dan 3c di bawah).
+Catatan tambahan (bukan salah satu dari tiga format di atas):
+  - daily_channel_recap            Excel rekap penjualan hotel per channel OTA: 1 workbook = 1 properti (nama
+                                   properti dari NAMA FILE), 1 sheet = 1 channel (AIRBNB, BOOKING.COM), 1 baris =
+                                   1 hari; 1 invoice = 1 hari x channel x properti (WSI -- bagian 3e)
+
+CABANG itu opsional per klien/resep -- tidak ada setting klien khusus. Cabang
+hanya terisi kalau resep memintanya: kolom di file (recipe "cabang", format
+flat), nama file ("cabang_dari_nama_file", mis. SAU), atau judul seksi
+("cabang_dari_judul_section"). Resep tanpa ketiganya (mis. NBM) menghasilkan
+cabang kosong dan jurnal memakai akun pendapatan default klien.
+
+PDF (format_type 'grouped_invoice_report_pdf'): alurnya SAMA, hanya cara baca
+dan cara cocokkan signature-nya beda -- PDF tidak punya baris/sel, jadi file
+dibaca sebagai KATA + POSISI (x0, top) dari text layer (pdfplumber), dan
+signature = hash band header tabel yang tercetak di halaman 1. Resepnya
+dibaca dari varian PDF di template 'Multi' (lihat seed_template_sau_multi_
+format_sales.sql). PDF hasil scan (tanpa text layer) tidak didukung.
+
+File .xls (Excel lama) dikonversi ke .xlsx di memory oleh _pastikan_xlsx() (butuh paket xlrd) sebelum dicocokkan.
 
 File TIDAK disimpan ke disk (storage_path tetap NULL) -- diproses di
 memory saja, konsisten dengan komentar yang sudah ada di DDL
@@ -37,6 +89,7 @@ fisik (local disk / object storage) sengaja di luar scope perubahan ini.
 
 from __future__ import annotations
 
+import calendar
 import csv
 import hashlib
 import io
@@ -44,7 +97,7 @@ import re
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -154,8 +207,7 @@ def _pastikan_xlsx(content: bytes) -> bytes:
 
 def _norm_nama_sheet(nama: str) -> str:
     """Nama sheet dibandingkan tanpa peduli huruf besar/kecil, spasi di ujung, spasi ganda,
-    underscore maupun strip ("DATA", "Data ", "data_penjualan" == "Data Penjualan").
-    (Diambil dari playground-hendra commit d2ed6fa.)"""
+    underscore maupun strip (\"DATA\", \"Data \", \"data_penjualan\" == \"Data Penjualan\")."""
     return re.sub(r"[\s_\-]+", " ", (nama or "").strip().lower())
 
 
@@ -195,9 +247,147 @@ def _baca_excel_baris(content: bytes, sheet_name: Optional[str]) -> List[List[st
 def _baca_file_jadi_baris(content: bytes, file_type: str, encoding: str, delimiter: str, sheet_name: Optional[str], quoted_fields: bool = False) -> List[List[str]]:
     if file_type == "Excel":
         return _baca_excel_baris(content, sheet_name)
-    # CSV/TXT dianggap delimited text -- PDF ditangani terpisah (tidak
-    # pernah sampai fungsi ini, lihat endpoint di bawah).
+    # CSV/TXT dianggap delimited text -- PDF TIDAK lewat sini (tidak punya
+    # baris/sel); PDF dibaca per kata+posisi lewat _PdfSumber di bawah.
     return _baca_csv_baris(content, encoding, delimiter, quoted_fields)
+
+
+class _PdfSumber:
+    """Pembungkus bytes PDF yang dikembalikan _cocokkan_template() sebagai
+    pengganti "rows" untuk file_type='PDF'. Isi PDF SENGAJA belum dibaca di
+    sini -- laporan penuh bisa ribuan halaman (CRS: 1.813), jadi pencocokan
+    template cukup membaca halaman 1, dan seluruh halaman baru dibaca
+    (halaman demi halaman) oleh _parse_grouped_invoice_report_pdf()."""
+
+    def __init__(self, content: bytes):
+        self.content = content
+
+
+# True = baca teks PDF pakai pypdfium2 (sekitar 7x lebih cepat dari pdfplumber,
+# penting untuk laporan ribuan halaman). pypdfium2 ikut terpasang bersama
+# pdfplumber. Kalau gagal/tidak ada, otomatis kembali ke pdfplumber. Ubah ke
+# False untuk memaksa pdfplumber (referensi; hasilnya sama untuk PDF contoh).
+PDF_PAKAI_PDFIUM = True
+
+
+def _iter_kata_pdfium(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    """Versi cepat: ambil "rect" teks pdfium (1 rect = 1 sel/segmen teks),
+    lalu pecah per kata. Semua kata dalam 1 rect memakai x0 rect itu (+ selisih
+    kecil supaya urutan terjaga) -- cukup untuk parser, yang hanya butuh
+    kolom (x0) tempat sel dimulai dan urutan baris (top)."""
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(content)
+    try:
+        for idx in range(len(pdf)):
+            page = pdf[idx]
+            try:
+                tinggi = page.get_height()
+                tp = page.get_textpage()
+                kata: List[Dict[str, Any]] = []
+                for k in range(tp.count_rects()):
+                    kiri, bawah, kanan, atas = tp.get_rect(k)
+                    teks = tp.get_text_bounded(kiri, bawah, kanan, atas)
+                    for j, token in enumerate((teks or "").split()):
+                        kata.append({"text": token, "x0": kiri + j * 0.001, "top": tinggi - atas})
+                tp.close()
+            finally:
+                page.close()
+            yield idx + 1, kata
+            if hanya_halaman is not None and idx + 1 >= hanya_halaman:
+                return
+    finally:
+        pdf.close()
+
+
+def _iter_kata_pdfplumber(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    import pdfplumber
+
+    with pdfplumber.open(BytesIO(content)) as pdf:
+        for no, page in enumerate(pdf.pages, start=1):
+            try:
+                kata = page.extract_words()
+            finally:
+                page.flush_cache()  # jaga memori untuk PDF ribuan halaman
+            yield no, kata
+            if hanya_halaman is not None and no >= hanya_halaman:
+                return
+
+
+def _iter_kata_halaman_pdf(content: bytes, hanya_halaman: Optional[int] = None) -> Iterator[Tuple[int, List[Dict[str, Any]]]]:
+    """Hasilkan (nomor_halaman, kata) per halaman, kata = dict (text, x0, top).
+    hanya_halaman=1 -> berhenti setelah halaman 1. Utamakan pdfium (cepat);
+    kalau gagal SEBELUM ada halaman yang dihasilkan, ulangi pakai pdfplumber."""
+    if PDF_PAKAI_PDFIUM:
+        try:
+            gen = _iter_kata_pdfium(content, hanya_halaman)
+            pertama = next(gen)
+        except StopIteration:
+            return
+        except Exception as e:
+            logger.warning(f"pypdfium2 gagal ({e}); pakai pdfplumber.")
+        else:
+            yield pertama
+            yield from gen
+            return
+    yield from _iter_kata_pdfplumber(content, hanya_halaman)
+
+
+def _kelompokkan_kata_jadi_baris(kata: List[Dict[str, Any]], toleransi: float = 3.0) -> List[List[Dict[str, Any]]]:
+    """Urutkan kata menurut top, lalu kelompokkan jadi 1 baris bila selisih
+    top terhadap kata pertama baris itu <= toleransi (pt). WAJIB toleransi,
+    bukan pembulatan: kata dalam 1 baris footer bisa berbeda ~1 pt vertikal."""
+    urut = sorted(kata, key=lambda w: (w["top"], w["x0"]))
+    baris: List[List[Dict[str, Any]]] = []
+    acuan: Optional[float] = None
+    sekarang: List[Dict[str, Any]] = []
+    for w in urut:
+        if acuan is None or w["top"] - acuan > toleransi:
+            if sekarang:
+                baris.append(sorted(sekarang, key=lambda x: x["x0"]))
+            sekarang = [w]
+            acuan = w["top"]
+        else:
+            sekarang.append(w)
+    if sekarang:
+        baris.append(sorted(sekarang, key=lambda x: x["x0"]))
+    return baris
+
+
+def _teks_baris(baris: List[Dict[str, Any]]) -> str:
+    return " ".join(w["text"] for w in baris)
+
+
+def _norm_teks(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
+
+
+_RE_CAP_TANGGAL = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+_RE_CAP_JAM = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
+_RE_CAP_HALAMAN = re.compile(r"^\d+/\d+$")
+
+
+def _buang_cap_halaman(baris_halaman: List[List[Dict[str, Any]]]) -> List[List[Dict[str, Any]]]:
+    """Buang HANYA kata cap di dasar halaman ('<dd/mm/yyyy> <hh:mm> REPORT
+    <n>/<N>'): tanggal/jam/REPORT di x0 < 130 dan penghitung halaman di
+    x0 >= 538, pada baris yang memuat kata REPORT. Kata lain di baris yang
+    sama BUKAN cap (lanjutan alamat invoice bisa tercetak di baris itu)."""
+    hasil = []
+    for b in baris_halaman:
+        if any(w["text"].upper() == "REPORT" and w["x0"] < 130 for w in b):
+            b = [
+                w for w in b
+                if not (
+                    w["x0"] < 130 and (
+                        w["text"].upper() in ("REPORT", "AM", "PM")
+                        or _RE_CAP_TANGGAL.match(w["text"]) or _RE_CAP_JAM.match(w["text"])
+                    )
+                )
+                and not (w["x0"] >= 538 and _RE_CAP_HALAMAN.match(w["text"]))
+            ]
+        if b:
+            hasil.append(b)
+    return hasil
 
 
 # ============================================================
@@ -285,6 +475,8 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
     decode) kalau ketemu yang cocok, None kalau tidak ada satu pun yang
     match (file ini polanya belum pernah dipelajari)."""
     kandidat = _kandidat_template(management_client_id, file_type)
+    if file_type == "PDF":
+        return _cocokkan_template_pdf(content, kandidat)
     if file_type == "Excel":
         # .xls (Excel lama) -> .xlsx dulu; semua pembaca di bawah (dan sumber yang dikembalikan) memakai hasilnya.
         content = _pastikan_xlsx(content)
@@ -313,7 +505,7 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
             id_rekap = {id(t) for t in rekap}
             kandidat = [t for t in kandidat if id(t) not in id_rekap]
         # Varian register invoice berblok bulanan (Birawa) dicocokkan lewat header 1 sheet
-        # bernama -- bagian 3d (kolom A kosong / lebar sheet tidak ikut di-hash).
+        # bernama -- bagian 3d (kolom A kosong/lebar sheet tidak ikut di-hash).
         register = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_REGISTER_BLOK]
         if register:
             cocok_register = _cocokkan_template_excel_register_blok(content, register)
@@ -321,8 +513,16 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
                 return cocok_register
             id_register = {id(t) for t in register}
             kandidat = [t for t in kandidat if id(t) not in id_register]
-        # Varian rekap bulanan (AADL: 1 workbook = 1 usaha, 1 sheet per bulan) dicocokkan
-        # lewat baris judul sheet-sheet bulanan -- bagian 3e.
+        # Varian rekap bulanan (1 sheet per bulan) dicocokkan lewat judul sheet,
+        # bukan lewat 1 sheet tertentu -- lihat bagian 3b.
+        # Varian rekap harian per channel OTA (WSI) dicocokkan lewat LABEL kolom header di sheet mana pun -- bagian 3e.
+        rekap = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") == FORMAT_EXCEL_REKAP_CHANNEL]
+        if rekap:
+            cocok_rekap = _cocokkan_template_excel_rekap_channel(content, rekap)
+            if cocok_rekap is not None:
+                return cocok_rekap
+            id_rekap = {id(t) for t in rekap}
+            kandidat = [t for t in kandidat if id(t) not in id_rekap]
         bulanan = [t for t in kandidat if (t.get("mapping_rules") or {}).get("format_type") in FORMAT_EXCEL_BULANAN]
         if bulanan:
             cocok_bulanan = _cocokkan_template_excel_bulanan(content, bulanan)
@@ -363,10 +563,6 @@ def _cocokkan_template(content: bytes, file_type: str, management_client_id: str
     return None
 
 
-def _norm_label(v: Any) -> str:
-    return " ".join(str(v).strip().lower().split()) if v is not None else ""
-
-
 def _hash_header(row: List[str], abaikan_kosong_di_ujung: bool) -> str:
     if abaikan_kosong_di_ujung:
         row = list(row)
@@ -376,9 +572,8 @@ def _hash_header(row: List[str], abaikan_kosong_di_ujung: bool) -> str:
 
 
 def _cocokkan_header_fleksibel(rows: List[List[str]], template: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Cocokkan baris header file ke template (diambil dari playground-hendra commit d2ed6fa).
-    Tanpa opsi di resep, perilakunya SAMA seperti sebelumnya (hash baris header_row_index
-    persis). Opsi resep (semuanya opsional):
+    """Cocokkan baris header file ke template. Tanpa opsi di resep, perilakunya SAMA seperti
+    sebelumnya (hash baris header_row_index persis). Opsi resep (semuanya opsional):
       signature_abaikan_kolom_kosong_di_ujung  sel kosong di ujung baris header tidak ikut di-hash
                                                (kolom bantu tanpa judul boleh ditambah/dihapus)
       header_cari_dalam_baris N                header juga dicari di N baris pertama (baris judul/
@@ -409,6 +604,441 @@ def _cocokkan_header_fleksibel(rows: List[List[str]], template: Dict[str, Any]) 
             if wajib <= {_norm_label(c) for c in rows[i]}:
                 return geser(i)
     return None
+
+
+def _cocokkan_template_pdf(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_PdfSumber"]]:
+    """Cocokkan PDF ke template: band header tabel (mis. 'No Transaksi |
+    Tanggal | Dept. | Kode Pel. | Nama Pelanggan | Alamat') harus tercetak
+    di halaman 1 sebagai 1 baris, dan SHA-256 sel-selnya (algoritma yang sama
+    dengan CSV/Excel: _hash_baris) harus sama dengan column_signature_hash
+    varian. mapping_rules.signature_rule.guard_judul_halaman_1 (kalau ada)
+    = judul yang wajib ada di halaman 1, pengaman tambahan."""
+    if not kandidat:
+        return None
+    try:
+        _, kata = next(_iter_kata_halaman_pdf(content, hanya_halaman=1))
+    except StopIteration:
+        return None  # PDF tanpa halaman
+    except Exception as e:
+        logger.warning(f"Gagal membaca halaman 1 PDF: {e}")
+        return None
+    if not kata:
+        return None  # tidak ada text layer (PDF scan) -- belum didukung
+    teks_baris = [_norm_teks(_teks_baris(b)) for b in _kelompokkan_kata_jadi_baris(kata)]
+
+    for template in kandidat:
+        mapping_rules = template.get("mapping_rules") or {}
+        sig = mapping_rules.get("signature_rule") or {}
+        sel = sig.get("cells") or template.get("header_columns") or []
+        if not sel:
+            continue
+        guard = sig.get("guard_judul_halaman_1")
+        if guard and not any(_norm_teks(guard) in t for t in teks_baris):
+            continue
+        target = " ".join(_norm_teks(c) for c in sel)
+        if not any(t == target or t.startswith(target + " ") for t in teks_baris):
+            continue
+        if _hash_baris(sel) == template["column_signature_hash"]:
+            return template, _PdfSumber(content)
+    return None
+
+
+# ============================================================
+# 3b) Excel REKAP BULANAN -- 1 sheet per bulan (klien AADL)
+# ============================================================
+# Bentuk file ini berbeda dari laporan invoice: 1 workbook = 1 cabang = 1 tahun,
+# isinya 1 sheet per bulan ("Januari 2026", "Jan 2026", "JANUARI'26", "Des'25"),
+# ditambah sheet RESUME/Sheet1 yang bukan data. Karena itu pencocokan template
+# TIDAK memakai 1 sheet tertentu seperti _baca_excel_baris(): signature = hash
+# baris JUDUL (mis. baris 2 = nama usaha) dari sheet-sheet bulanan, dan ekstraksi
+# membaca SEMUA sheet bulanan.
+
+
+class _ExcelBulananSumber:
+    """Pembungkus bytes workbook yang dikembalikan _cocokkan_template() sebagai
+    pengganti "rows" untuk varian Excel rekap bulanan (pola yang sama dengan
+    _PdfSumber): semua sheet bulanan baru dibaca oleh parser format_type-nya."""
+
+    def __init__(self, content: bytes):
+        self.content = content
+
+
+def _buka_workbook_bulanan(content: bytes):
+    import openpyxl
+
+    return openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+
+
+def _bulan_dari_nama_sheet(nama: str) -> Tuple[Optional[int], Optional[int]]:
+    """(bulan, tahun) dari nama sheet; (None, None) kalau bukan sheet bulanan
+    (RESUME, Sheet1, dst). Tahun 2 digit (\"Des'25\") dijadikan 20xx; tahun
+    boleh tidak ada (None)."""
+    m = re.match(r"^\s*([A-Za-z]+)\W*(\d{4}|\d{2})?\s*$", nama or "")
+    if not m:
+        return None, None
+    bulan = _BULAN_NAMA_SHEET.get(m.group(1).lower())
+    if bulan is None:
+        return None, None
+    tahun = int(m.group(2)) if m.group(2) else None
+    if tahun is not None and tahun < 100:
+        tahun += 2000
+    return bulan, tahun
+
+
+def _daftar_sheet_bulanan(nama_sheet: List[str], recipe: Dict[str, Any]) -> List[Tuple[str, int, int]]:
+    """[(nama_sheet, tahun, bulan)] untuk sheet bulanan saja, urut seperti di
+    workbook. recipe.tahun:
+      "nama_sheet"   (default) tahun dari nama sheet; kalau tidak ada, ikut sheet sebelumnya.
+      "urutan_sheet" tahun HANYA dari sheet bulanan pertama, lalu naik 1 setiap bulan
+                     \"mundur\" (Des -> Jan). Dipakai AADL karena nama sheet sering salah
+                     ketik (\"Juli 2024\" di file 2026, judul sheet \"Juni 2025\")."""
+    kandidat = []
+    for nama in nama_sheet:
+        bulan, tahun = _bulan_dari_nama_sheet(nama)
+        if bulan is not None:
+            kandidat.append((nama, bulan, tahun))
+    tahun_awal = next((t for _, _, t in kandidat if t), None)
+    mode = recipe.get("tahun", "nama_sheet")
+    hasil: List[Tuple[str, int, int]] = []
+    tahun_kini: Optional[int] = None
+    bulan_lalu: Optional[int] = None
+    for nama, bulan, tahun in kandidat:
+        if mode == "urutan_sheet":
+            if tahun_kini is None:
+                tahun_kini = tahun or tahun_awal or date.today().year
+            elif bulan < (bulan_lalu or 0):
+                tahun_kini += 1
+        else:
+            tahun_kini = tahun or tahun_kini or tahun_awal or date.today().year
+        bulan_lalu = bulan
+        hasil.append((nama, tahun_kini, bulan))
+    return hasil
+
+
+def _periode_diizinkan(tahun: int, bulan: int, recipe: Dict[str, Any]) -> bool:
+    """recipe.periode_mulai / periode_akhir (\"YYYY-MM\", opsional) -- sheet di luar
+    rentang dilewati (mis. sheet Desember tahun sebelumnya)."""
+    ym = f"{tahun:04d}-{bulan:02d}"
+    if recipe.get("periode_mulai") and ym < recipe["periode_mulai"]:
+        return False
+    if recipe.get("periode_akhir") and ym > recipe["periode_akhir"]:
+        return False
+    return True
+
+
+
+def _baca_meta_bulanan(wb) -> Optional[Dict[str, Any]]:
+    """Baca sheet 'META' (opsional) di workbook rekap bulanan AADL.
+    Isi yang dibaca (posisi baris bebas, dicari lewat isinya):
+      kolom A = 'CABANG', kolom B = nama cabang
+      tabel: A = nama sheet persis, B = periode 'YYYY-MM', C = status FINAL / RENCANA / ABAIKAN
+    Kalau ada META, daftar sheet & periodenya DIPAKAI dari sini (bukan ditebak dari nama
+    sheet / urutan sheet). Tidak ada META atau tabelnya kosong -> None (perilaku lama)."""
+    nama_meta = next((n for n in wb.sheetnames if n.strip().lower() == "meta"), None)
+    if nama_meta is None:
+        return None
+    cabang = None
+    sheets: Dict[str, Tuple[str, int, int, str]] = {}
+    for row in wb[nama_meta].iter_rows(values_only=True):
+        a = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ""
+        b = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+        c = str(row[2]).strip().upper() if len(row) > 2 and row[2] is not None else ""
+        if not a:
+            continue
+        if a.lower() == "cabang" and b:
+            cabang = b
+            continue
+        m = re.fullmatch(r"(\d{4})-(\d{2})", b)
+        if m and 1 <= int(m.group(2)) <= 12:
+            sheets[_norm_label(a)] = (a, int(m.group(1)), int(m.group(2)), c or "FINAL")
+    if not sheets:
+        return None
+    return {"cabang": cabang, "sheets": sheets}
+
+
+def _pilih_sheet_bulanan(wb, recipe: Dict[str, Any]) -> Tuple[List[Tuple[str, int, int]], List[str]]:
+    """([(nama_sheet, tahun, bulan)], [peringatan]) -- sheet bulanan yang akan dibaca.
+    Dengan META: hanya sheet berstatus FINAL; sheet di luar META / META tanpa sheet-nya
+    dilaporkan. Tanpa META: aturan lama (nama sheet + recipe.tahun + periode_mulai/akhir),
+    ditambah laporan untuk sheet yang namanya tidak dikenali (mis. 'Agustus 2026 (2)')."""
+    nama_sheet = list(wb.sheetnames)
+    peringatan: List[str] = []
+    meta = _baca_meta_bulanan(wb)
+    if meta is None:
+        semua = _daftar_sheet_bulanan(nama_sheet, recipe)
+        dikenal = {n for n, _, _ in semua}
+        hasil = [(n, t, b) for n, t, b in semua if _periode_diizinkan(t, b, recipe)]
+        for n in nama_sheet:
+            if n not in dikenal and _norm_label(n) not in _SHEET_ABAIKAN:
+                peringatan.append(
+                    f"Sheet '{n.strip()}' tidak dikenali sebagai sheet bulanan (pola nama: 'Agustus 2026') -- diabaikan, bulan ini TIDAK ikut diimpor."
+                )
+        return hasil, peringatan
+
+    ada = {_norm_label(n): n for n in nama_sheet}
+    hasil = []
+    for kunci, (raw, tahun, bulan, status) in meta["sheets"].items():
+        asli = ada.get(kunci)
+        if asli is None:
+            if status == "FINAL":
+                peringatan.append(f"Sheet '{raw}' terdaftar FINAL di META tetapi tidak ada di file -- bulan ini TIDAK ikut diimpor.")
+            continue
+        if status == "FINAL":
+            hasil.append((asli, tahun, bulan))
+    for n in nama_sheet:
+        k = _norm_label(n)
+        if k not in meta["sheets"] and k not in _SHEET_ABAIKAN:
+            peringatan.append(f"Sheet '{n.strip()}' tidak terdaftar di sheet META -- diabaikan, tambahkan barisnya di META bila perlu diimpor.")
+    cabang_recipe = recipe.get("cabang_tetap")
+    if meta["cabang"] and cabang_recipe and _norm_label(meta["cabang"]) != _norm_label(cabang_recipe):
+        peringatan.append(f"CABANG di META ('{meta['cabang']}') berbeda dari cabang template ('{cabang_recipe}') -- pastikan file ini benar.")
+    hasil.sort(key=lambda x: (x[1], x[2]))
+    return hasil, peringatan
+
+
+def _baris_peringatan(hasil: List[Dict[str, Any]], cabang: Optional[str], pesan: str) -> None:
+    """Tambah baris INVALID berisi pesan (dpp/ppn/total 0, tanpa tanggal & invoice) supaya
+    masalah struktur file terlihat di Source Data (status 'Butuh Review') dan tidak ikut
+    jadi invoice -- bukan hilang diam-diam."""
+    hasil.append({
+        "row_no": len(hasil) + 1, "tanggal": None, "no_invoice": None, "nama_customer": None,
+        "cabang": cabang, "dpp": 0.0, "ppn": 0.0, "total": 0.0,
+        "is_valid": False, "validation_notes": pesan, "is_duplicate_candidate": False,
+    })
+
+
+def _cocokkan_template_excel_bulanan(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
+    """Cocok kalau hash baris judul (header_row_index) SALAH SATU sheet bulanan
+    sama dengan column_signature_hash varian, atau salah satu dari
+    mapping_rules.signature_alternatif (judul lain yang sah, mis. judul yang
+    berubah di tengah tahun). Sel kosong di ujung baris dibuang dulu karena
+    lebar sheet beda-beda tiap bulan."""
+    try:
+        wb = _buka_workbook_bulanan(content)
+    except Exception as e:
+        logger.warning(f"Gagal membuka workbook untuk pencocokan template bulanan: {e}")
+        return None
+    try:
+        hash_per_baris: Dict[int, set] = {}
+        for template in kandidat:
+            recipe = template.get("mapping_rules") or {}
+            idx = template["header_row_index"]
+            if idx not in hash_per_baris:
+                hashes = set()
+                for nama in wb.sheetnames:
+                    if _bulan_dari_nama_sheet(nama)[0] is None:
+                        continue
+                    baris = next(wb[nama].iter_rows(min_row=idx, max_row=idx, values_only=True), None)
+                    if baris is None:
+                        continue
+                    sel = ["" if v is None else str(v) for v in baris]
+                    while sel and not sel[-1].strip():
+                        sel.pop()
+                    if sel:
+                        hashes.add(_hash_baris(sel))
+                hash_per_baris[idx] = hashes
+            diterima = {template["column_signature_hash"], *(recipe.get("signature_alternatif") or [])}
+            if hash_per_baris[idx] & diterima:
+                return template, _ExcelBulananSumber(content)
+    except Exception as e:
+        logger.warning(f"Gagal mencocokkan template Excel bulanan: {e}")
+    finally:
+        wb.close()
+    return None
+
+
+# ============================================================
+# 3c) Excel MULTI-SHEET catatan penjualan manual (klien ABE)
+# ============================================================
+# Bentuk file: 1 workbook = beberapa sheet (Supermarket, cash, Permonth, COCO,
+# Retur, ...), tiap sheet = 1 jalur penjualan/pelanggan dengan kolom berbeda-beda.
+# TIDAK ada nomor invoice: 1 baris = 1 ITEM, tanggal hanya diisi di baris pertama
+# tiap kelompok (baris di bawahnya kosong = ikut tanggal di atasnya), dan sel
+# tanggal tercampur: sel bertipe tanggal yang SUDAH TERTUKAR hari<->bulan (Excel
+# membaca "02/07/2026" sbg 7 Februari padahal 2 Juli) dan teks "22/7/2026" /
+# "07/31/2026". Resepnya (mapping_rules.sheets) mendaftar tiap sheet sendiri-sendiri.
+# 1 baris source_rows = 1 invoice = 1 (sheet, tanggal, pelanggan).
+
+
+
+def _cari_sheet_multi(nama_sheet: List[str], target: str) -> Optional[str]:
+    kunci = _norm_label(target)
+    return next((n for n in nama_sheet if _norm_label(n) == kunci), None)
+
+
+
+
+
+
+# ============================================================
+# 3d) Excel REGISTER INVOICE BERBLOK BULANAN (klien Birawa)
+# ============================================================
+# Bentuk file: 1 sheet (mis. "Sheet1") = register tagihan manual 1 tahun. Tiap bulan =
+# 1 BLOK: baris header (diulang di tiap blok), lalu 1 baris per invoice, lalu baris
+# kosong. Kolom BULAN (tanggal 1 bulan itu) hanya terisi di baris PERTAMA blok (sel
+# gabungan) -> dibawa ke baris-baris di bawahnya. Nomor invoice ADA di file (kolom NO
+# INVOICE), tapi tanggal invoice TIDAK ada -- hanya bulan -> tanggal = BULAN blok.
+# Blok bulan depan sudah berisi nomor invoice urut tanpa nilai (placeholder) -> baris
+# tanpa nilai dilewati diam-diam. Sheet lain di workbook (pivot/rekap) tidak dibaca.
+# 1 baris source_rows = 1 baris register = 1 invoice.
+
+
+def _sel_dari_kolom(baris: Any, kolom_awal: int) -> List[str]:
+    """Sel header mulai kolom `kolom_awal` (1-based), sel kosong di ujung dibuang --
+    kolom A / kolom terakhir yang kosong (lebar sheet beda-beda) tidak ikut di-hash."""
+    sel = ["" if v is None else str(v) for v in (baris or [])]
+    return _sel_header_terpangkas(sel[max(kolom_awal, 1) - 1:])
+
+
+
+
+def _parse_monthly_block_invoice_register(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parser format_type='monthly_block_invoice_register' (Birawa). Kolom dicari lewat
+    NAMA di baris header (mapping_rules.kolom). Baris header yang diulang di tiap blok,
+    baris tanpa nomor invoice (subtotal) dan baris tanpa nilai (placeholder bulan depan)
+    dilewati. dasar='tagihan' : total = NILAI INVOICE, ppn = kolom PPN (dibulatkan 2 desimal), dpp = total - ppn
+                                (invoice tagihan penuh, termasuk gaji yang ditagihkan ulang). Baris
+                                dengan NILAI INVOICE kosong/0 dilewati, termasuk baris subtotal yang
+                                hanya mengisi kolom turunan (mis. PPN) tanpa nomor invoice.
+    dasar='fee'     : dpp = kolom FEE NET(DPP), ppn = kolom PPN, total = dpp + ppn."""
+    import openpyxl
+
+    recipe = template["mapping_rules"]
+    kol = recipe["kolom"]
+    number_format = recipe.get("number_format", {"thousands_separator": ",", "decimal_separator": "."})
+    dasar = recipe.get("dasar", "tagihan")
+    kolom_awal = recipe.get("kolom_awal", 1)
+    hasil: List[Dict[str, Any]] = []
+    wb = openpyxl.load_workbook(BytesIO(sumber.content), data_only=True, read_only=True)
+    try:
+        nama = _cari_sheet_multi(list(wb.sheetnames), template.get("sheet_name") or "")
+        if nama is None:
+            _baris_peringatan(hasil, None, f"Sheet '{template.get('sheet_name')}' tidak ada di file.")
+            return hasil
+        baris_semua = list(wb[nama].iter_rows(values_only=True))
+        idx_h = template["header_row_index"] - 1
+        header = _sel_dari_kolom(baris_semua[idx_h] if 0 <= idx_h < len(baris_semua) else [], kolom_awal)
+        header_norm = [_norm_label(h) for h in header]
+
+        def posisi(nama_kolom: str) -> int:
+            try:
+                return kolom_awal - 1 + header_norm.index(_norm_label(nama_kolom))
+            except ValueError:
+                raise ValueError(f"Kolom '{nama_kolom}' tidak ada di header sheet '{nama}'")
+
+        i_bulan, i_inv, i_cust = posisi(kol["bulan"]), posisi(kol["invoice"]), posisi(kol["customer"])
+        i_total = posisi(kol["total"]) if dasar == "tagihan" else None
+        i_ppn = posisi(kol["ppn"])
+        i_fee = posisi(kol["dpp"]) if dasar == "fee" else None
+        lbl_bulan, lbl_inv = _norm_label(kol["bulan"]), _norm_label(kol["invoice"])
+
+        def sel(row: List[Any], i: Optional[int]) -> Any:
+            return row[i] if i is not None and i < len(row) else None
+
+        tgl_kini: Optional[date] = None
+        seen = set()
+        for row in baris_semua[template["data_start_row_index"] - 1:]:
+            mentah_bulan = sel(row, i_bulan)
+            if isinstance(mentah_bulan, (datetime, date)):
+                tgl_kini = mentah_bulan.date() if isinstance(mentah_bulan, datetime) else mentah_bulan
+            elif mentah_bulan is not None and str(mentah_bulan).strip():
+                if _norm_label(mentah_bulan) == lbl_bulan:
+                    continue  # baris header yang diulang di tiap blok bulan
+                d = _parse_tanggal(str(mentah_bulan), recipe.get("date_format", "YYYY-MM-DD"))
+                if d is not None:
+                    tgl_kini = d
+            raw_inv = sel(row, i_inv)
+            no_invoice = str(raw_inv).strip() if raw_inv is not None else ""
+            if no_invoice and _norm_label(no_invoice) == lbl_inv:
+                continue
+            if dasar == "tagihan":
+                total = round(_angka_sel(sel(row, i_total), number_format) or 0.0, 2)
+                if not total:
+                    # placeholder (nomor invoice urut tanpa nilai), baris kosong, atau baris SUBTOTAL
+                    # yang hanya mengisi kolom turunan (mis. PPN) tanpa NILAI INVOICE -- bukan invoice.
+                    continue
+                ppn = round(_angka_sel(sel(row, i_ppn), number_format) or 0.0, 2)
+                dpp = round(total - ppn, 2)  # ppn sudah dibulatkan -> dpp + ppn = total persis
+            else:
+                dpp = round(_angka_sel(sel(row, i_fee), number_format) or 0.0, 2)
+                ppn = round(_angka_sel(sel(row, i_ppn), number_format) or 0.0, 2)
+                total = round(dpp + ppn, 2)
+                if not total and not dpp:
+                    continue  # placeholder (nomor invoice urut tanpa nilai) / baris kosong
+            customer = str(sel(row, i_cust) or "").strip()
+            catatan = []
+            if not no_invoice:
+                catatan.append("No. invoice kosong")  # ada nilai tapi tanpa nomor (mis. baris subtotal salah letak)
+            if tgl_kini is None:
+                catatan.append("Tanggal tidak terbaca (kolom BULAN blok belum terisi)")
+            if not customer:
+                catatan.append("Nama pelanggan (BEBAN) kosong")
+            hasil.append({
+                "row_no": len(hasil) + 1,
+                "tanggal": tgl_kini,
+                "no_invoice": no_invoice or None,
+                "nama_customer": customer or None,
+                "cabang": (customer if recipe.get("cabang_dari_kolom_customer") else None),
+                "dpp": dpp,
+                "ppn": ppn,
+                "total": total,
+                "is_valid": not catatan,
+                "validation_notes": "; ".join(catatan) or None,
+                "is_duplicate_candidate": bool(no_invoice) and no_invoice in seen,
+            })
+            if no_invoice:
+                seen.add(no_invoice)
+    finally:
+        wb.close()
+    return hasil
+
+
+# ============================================================
+# 3e) Excel REKAP HARIAN PER CHANNEL OTA (klien WSI)
+# ============================================================
+# Bentuk file: 1 workbook = 1 PROPERTI (nama properti HANYA ada di NAMA FILE, mis.
+# "HOTEL SALES RECAP - August Lime villa.xlsx"; isi sheet hanya memuat nama PT). 1 sheet
+# = 1 channel/OTA (AIRBNB, BOOKING.COM, ...). Tiap sheet: kop beberapa baris, header
+# (MONTH | INCOME BEFORE TAX | SERVICE FEE (INC VAT) | TOTAL RECEIVING | HOTEL TAX 10% |
+# NET INCOME AFTER TAX), lalu 1 baris per HARI (tanggal bertipe tanggal, hari tanpa
+# transaksi berisi 0/kosong), lalu baris total (posisinya beda tiap sheet/file).
+# Kolom TOTAL RECEIVING, HOTEL TAX dan NET INCOME berisi RUMUS -- file yang disimpan
+# tanpa Excel bisa tidak punya nilai hasil rumus, jadi pajak dihitung ulang dari
+# INCOME BEFORE TAX bila selnya kosong. 1 baris source_rows = 1 HARI x 1 CHANNEL x 1
+# PROPERTI yang nilainya tidak 0. Tidak ada nomor invoice -> dibentuk
+# <prefix_invoice>-<PROPERTI>-<CHANNEL>-YYYYMMDD. Kolom dicari lewat NAMA header (bukan
+# posisi), header dicari di N baris teratas, dan sheet channel baru (mis. AGODA) otomatis
+# ikut terbaca selama headernya sama -- lihat docstring _parse_daily_channel_recap.
+
+# Alias nama kolom (dibandingkan sebagai AWALAN setelah huruf kecil & spasi dirapikan).
+# Bisa ditambah/diganti per klien lewat mapping_rules.kolom_alias.
+
+
+
+
+
+
+
+
+# ============================================================
+# 3f) Excel DAFTAR INCOME BULANAN (klien YM -- PT Yoniso Manasikara)
+# ============================================================
+# Bentuk file: 1 workbook = beberapa sheet, tiap sheet = 1 BULAN (nama sheet "0826",
+# "0226 YANG DI PAKAI", "Jan 26", "Maret 26"), 1 baris = 1 tamu = 1 invoice. TIDAK ada nomor
+# invoice (dibentuk dari prefix + tanggal + nama tamu). Header dicari lewat LABEL kolom
+# ("Date of invoice", "Name", ...), baris total ada di bawah data, dan satu bulan bisa punya
+# 2 sheet (mis. "0826" dan "0826 YANG DI PAKAI" -- yang dipakai adalah versi akhirnya).
+# Dua varian resep memakai parser yang sama: INCOME LIST (xlsx, kolom "Total" dalam Rp) dan
+# "Pemasukan" (xls, kolom "Total Rp" + "total EUR" untuk pembayaran cash). File .xls dikonversi
+# dulu ke .xlsx oleh _pastikan_xlsx().
+
+
+
+
+
+
+
+
 
 
 # ============================================================
@@ -447,7 +1077,7 @@ def _parse_tanggal(s: str, fmt: str) -> Optional[date]:
     except ValueError:
         pass
     # fallback -- beberapa format tanggal umum lain, kalau format template meleset
-    for alt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+    for alt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y", "%d-%b-%Y", "%d %b %Y", "%d %B %Y"):
         try:
             return datetime.strptime(s, alt).date()
         except ValueError:
@@ -547,6 +1177,129 @@ def _parse_grouped_invoice_report(rows: List[List[str]], recipe: Dict[str, Any])
         if i < n and all((c or "").strip() == "" for c in rows[i]):
             i += 1
 
+    return hasil
+
+
+def _parse_grouped_invoice_report_pdf(sumber: "_PdfSumber", recipe: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Parser resep format_type='grouped_invoice_report_pdf' -- laporan yang
+    SAMA dengan grouped_invoice_report (1 invoice = 1 blok: header invoice,
+    label item, item, subtotal, footer), tetapi dibaca dari KATA + POSISI
+    di text layer PDF. 1 baris hasil = 1 invoice.
+
+    Mesin status membaca baris demi baris lintas halaman. 1 invoice "terbuka"
+    sejak baris header-nya sampai footer 'Pot. ... Total Akhir' terbaca, sehingga
+    3 kasus pergantian halaman di recipe.page_break_rules tertangani:
+      * footer jatuh di halaman berikutnya -> tetap milik invoice terbuka;
+      * header terbelah -> lanjutan nama/alamat (sebelum label item) digabung
+        ke invoice terbuka;
+      * header dicetak 2x (nomor sama, belum ada footer) -> salinan kedua
+        menimpa nama/alamat, TIDAK membuat baris baru."""
+    number_format = recipe.get("number_format", {})
+    date_format = recipe.get("date_format", "DD/MM/YYYY")
+    hdr = recipe["invoice_header"]
+    kolom = hdr["columns_x0"]
+    pola_no = re.compile(hdr["no_invoice_pattern"])
+    band = _norm_teks(recipe.get("ignore", {}).get("table_header_band", {}).get("value", ""))
+    item_marker = _norm_teks(recipe["item_header_marker"]["value"])
+    pola_footer = re.compile(recipe["block_footer_marker"]["value"], re.IGNORECASE)
+    end_marker = (recipe.get("end_of_data_marker") or {}).get("value")
+
+    def di_rentang(baris: List[Dict[str, Any]], nama_kolom: str) -> str:
+        lo, hi = kolom[nama_kolom]
+        return " ".join(w["text"] for w in baris if lo <= w["x0"] < hi).strip()
+
+    hasil: List[Dict[str, Any]] = []
+    seen_invoice_no = set()
+    terbuka: Optional[Dict[str, Any]] = None  # invoice yang headernya sudah terbaca tapi footernya belum
+
+    def tutup(inv: Dict[str, Any], pajak: float, total_akhir: float, ada_footer: bool) -> None:
+        nama = " ".join(inv["nama"]).strip()
+        tanggal = _parse_tanggal(inv["tanggal_raw"], date_format)
+        no_invoice = inv["no_invoice"]
+        is_duplicate = no_invoice in seen_invoice_no
+        if no_invoice:
+            seen_invoice_no.add(no_invoice)
+        catatan = []
+        if not no_invoice:
+            catatan.append("No. invoice kosong")
+        if tanggal is None:
+            catatan.append("Tanggal tidak terbaca")
+        if not ada_footer:
+            catatan.append("Footer invoice (Total Akhir) tidak ditemukan")
+        hasil.append({
+            "row_no": len(hasil) + 1,
+            "tanggal": tanggal,
+            "no_invoice": no_invoice or None,
+            "nama_customer": nama or None,
+            "cabang": None,  # diisi dari nama file oleh _ekstrak_dengan_template
+            "dpp": round(total_akhir - pajak, 2),
+            "ppn": pajak,
+            "total": total_akhir,
+            "is_valid": not catatan,
+            "validation_notes": "; ".join(catatan) or None,
+            "is_duplicate_candidate": is_duplicate,
+        })
+
+    selesai = False
+    for _no_hal, kata in _iter_kata_halaman_pdf(sumber.content):
+        baris_halaman = _buang_cap_halaman(_kelompokkan_kata_jadi_baris(kata))
+        for baris in baris_halaman:
+            teks = _teks_baris(baris)
+            norm = _norm_teks(teks)
+
+            if end_marker and end_marker.lower() in teks.lower():
+                selesai = True
+                break
+            if band and norm.startswith(band):
+                continue  # band header tabel yang diulang di tiap halaman
+
+            m_footer = pola_footer.search(teks)
+            if m_footer:
+                if terbuka is not None:
+                    pajak = _parse_angka(m_footer.group(2) or "", number_format)
+                    total_akhir = _parse_angka(m_footer.group(4) or "", number_format)
+                    tutup(terbuka, pajak, total_akhir, ada_footer=True)
+                    terbuka = None
+                continue
+
+            if norm.startswith(item_marker):
+                if terbuka is not None:
+                    terbuka["di_item"] = True
+                continue
+
+            pertama = baris[0]
+            if pertama["x0"] < kolom["no_invoice"][1] and pola_no.match(pertama["text"]):
+                no_invoice = pertama["text"]
+                tanggal_raw = di_rentang(baris, "tanggal")
+                nama = di_rentang(baris, "nama_pelanggan")
+                if terbuka is not None and terbuka["no_invoice"] == no_invoice:
+                    # header dicetak 2x: pakai salinan kedua yang lengkap
+                    if tanggal_raw:
+                        terbuka["tanggal_raw"] = tanggal_raw
+                    terbuka["nama"] = [nama] if nama else []
+                    terbuka["di_item"] = False
+                    continue
+                if terbuka is not None:
+                    # invoice sebelumnya tidak pernah punya footer -- catat sbg tidak valid
+                    tutup(terbuka, 0.0, 0.0, ada_footer=False)
+                terbuka = {
+                    "no_invoice": no_invoice,
+                    "tanggal_raw": tanggal_raw,
+                    "nama": [nama] if nama else [],
+                    "di_item": False,
+                }
+                continue
+
+            if terbuka is not None and not terbuka["di_item"]:
+                # lanjutan nama pelanggan yang membungkus / terbelah antar halaman
+                lanjutan = di_rentang(baris, "nama_pelanggan")
+                if lanjutan:
+                    terbuka["nama"].append(lanjutan)
+        if selesai:
+            break
+
+    if terbuka is not None:
+        tutup(terbuka, 0.0, 0.0, ada_footer=False)
     return hasil
 
 
@@ -857,6 +1610,333 @@ def _parse_sectioned_by_customer_header(rows: List[List[str]], template: Dict[st
     return _susun_baris_hasil(agregat, recipe.get("date_format", "DD/MM/YYYY"))
 
 
+def _slug_kode(teks: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", "-", (teks or "").upper()).strip("-")
+
+
+def _periode_dari_nama_file(file_name: Optional[str]) -> Tuple[Optional[date], Optional[date]]:
+    """(awal, akhir) periode laporan dari NAMA FILE, mis. \"Report Category Sales - 01-08-2026 -
+    31-08-2026 - Outlet 1.xlsx\" (spasi/underscore/strip/titik sebagai pemisah, DD-MM-YYYY atau
+    YYYY-MM-DD). Hanya 1 tanggal ketemu -> awal = akhir. Tidak ada -> (None, None)."""
+    if not file_name:
+        return None, None
+    stem = file_name.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[0]
+    m = re.search(r"(?<!\d)(\d{1,2})[-_./ ](\d{1,2})[-_./ ](\d{4})(?:\D+?(\d{1,2})[-_./ ](\d{1,2})[-_./ ](\d{4}))?(?!\d)", stem)
+    if m:
+        def mk(d: Optional[str], mo: Optional[str], y: Optional[str]) -> Optional[date]:
+            try:
+                return date(int(y), int(mo), int(d)) if d else None
+            except (ValueError, TypeError):
+                return None
+        awal = mk(m.group(1), m.group(2), m.group(3))
+        akhir = mk(m.group(4), m.group(5), m.group(6)) if m.group(4) else awal
+        return awal, akhir
+    m = re.search(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:\D+?(\d{4})-(\d{2})-(\d{2}))?(?!\d)", stem)
+    if m:
+        try:
+            awal = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            akhir = date(int(m.group(4)), int(m.group(5)), int(m.group(6))) if m.group(4) else awal
+            return awal, akhir
+        except ValueError:
+            pass
+    return None, None
+
+
+def _parse_category_summary(rows: List[List[str]], template: Dict[str, Any], file_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Format_type='category_summary' (MM) -- laporan POS "Category Sales": 1 baris = 1 KATEGORI
+    untuk 1 periode, TANPA nomor invoice dan TANPA tanggal di dalam file. Periode (dan outlet)
+    diambil dari NAMA FILE. 1 baris source_rows = 1 kategori (kategori yang sama dijumlah).
+      kategori            nama kolom kategori (dicari lewat NAMA header)
+      dpp_columns         kolom nilai yang dijumlah jadi dpp (mis. [\"Net Sales\"]); ppn_columns idem
+      akhir_data_jika     nilai kolom kategori yang menandai baris total/akhir data (default [\"Total\"])
+      abaikan_nilai_nol   lewati kategori yang dpp + ppn = 0
+      prefix_invoice      nomor invoice = <prefix>-<awal YYYYMMDD>-<akhir YYYYMMDD>[-<OUTLET>]-<KATEGORI>
+      tanggal_pakai       \"akhir\" (default) atau \"awal\" periode sebagai tanggal invoice
+      outlet_dari_nama_file {pattern, group, label}  mis. Outlet_1 -> OUTLET1 (opsional)
+      customer_prefix     nama customer = <prefix> [- Outlet <x>] - <kategori>
+    cabang = kategori (dipakai memilih akun pendapatan lewat pendapatan_account_by_cabang).
+    Periode tidak terbaca dari nama file -> baris tetap dibuat tapi INVALID (aman, tidak ikut
+    di-promote); kolom tambahan di kanan tabel (catatan manual user) diabaikan."""
+    recipe = template["mapping_rules"]
+    header_idx = template["header_row_index"] - 1
+    if header_idx < 0 or header_idx >= len(rows):
+        return []
+    header = [h.strip().lower() for h in rows[header_idx]]
+
+    def kolom(nama: str) -> int:
+        try:
+            return header.index(nama.strip().lower())
+        except ValueError:
+            raise ValueError(f"Kolom '{nama}' tidak ada di header file")
+
+    number_format = recipe.get("number_format", {})
+    i_kat = kolom(recipe["kategori"])
+    i_dpp = [kolom(n) for n in recipe["dpp_columns"]]
+    i_ppn = [kolom(n) for n in recipe.get("ppn_columns", [])]
+    akhir = {_norm_label(v) for v in recipe.get("akhir_data_jika", ["Total"])}
+    nol_dilewati = recipe.get("abaikan_nilai_nol", False)
+    lebar = len(header)
+
+    awal_p, akhir_p = _periode_dari_nama_file(file_name)
+    tanggal = awal_p if recipe.get("tanggal_pakai") == "awal" else akhir_p
+    outlet = ""
+    aturan_outlet = recipe.get("outlet_dari_nama_file")
+    if aturan_outlet and file_name:
+        stem = file_name.replace(chr(92), "/").split("/")[-1].rsplit(".", 1)[0]
+        mo = re.search(aturan_outlet["pattern"], stem, re.IGNORECASE)
+        if mo:
+            outlet = (mo.group(aturan_outlet.get("group", 1)) or "").strip()
+
+    agregat: Dict[str, Dict[str, Any]] = {}
+    for row in rows[template["data_start_row_index"] - 1:]:
+        sel = list(row[:lebar])
+        if all((c or "").strip() == "" for c in sel):
+            continue
+        kategori = _ambil_kolom(row, i_kat + 1)
+        if _norm_label(kategori) in akhir:
+            break
+        dpp = sum(_parse_angka(_ambil_kolom(row, i + 1), number_format) for i in i_dpp)
+        ppn = sum(_parse_angka(_ambil_kolom(row, i + 1), number_format) for i in i_ppn)
+        a = agregat.get(_norm_label(kategori))
+        if a is None:
+            a = agregat[_norm_label(kategori)] = {"kategori": kategori, "dpp": 0.0, "ppn": 0.0}
+        a["dpp"] += dpp
+        a["ppn"] += ppn
+
+    hasil: List[Dict[str, Any]] = []
+    prefix = recipe.get("prefix_invoice", "POS")
+    label_outlet = aturan_outlet.get("label", "OUTLET") if aturan_outlet else "OUTLET"
+    for a in agregat.values():
+        dpp = round(a["dpp"], 2)
+        ppn = round(a["ppn"], 2)
+        if nol_dilewati and dpp == 0 and ppn == 0 and a["kategori"]:
+            continue
+        catatan = []
+        if not a["kategori"]:
+            if dpp == 0 and ppn == 0:
+                continue
+            catatan.append("Kategori kosong")
+        if tanggal is None:
+            catatan.append("Tanggal tidak terbaca (periode tidak ada di nama file)")
+        bagian = [prefix]
+        if awal_p and akhir_p:
+            bagian += [awal_p.strftime("%Y%m%d"), akhir_p.strftime("%Y%m%d")]
+        if outlet:
+            bagian.append(_slug_kode(f"{label_outlet}{outlet}"))
+        bagian.append(_slug_kode(a["kategori"]) or "TANPA-KATEGORI")
+        nama = " - ".join([p for p in (recipe.get("customer_prefix", "Penjualan POS"), f"Outlet {outlet}" if outlet else "", a["kategori"]) if p])
+        hasil.append({
+            "row_no": len(hasil) + 1,
+            "tanggal": tanggal,
+            "no_invoice": "-".join(bagian)[:100],
+            "nama_customer": nama[:255],
+            "cabang": (a["kategori"] or None),
+            "dpp": dpp,
+            "ppn": ppn,
+            "total": round(dpp + ppn, 2),
+            "is_valid": not catatan,
+            "validation_notes": "; ".join(catatan) or None,
+            "is_duplicate_candidate": False,
+        })
+    return hasil
+
+
+def _norm_label(v: Any) -> str:
+    return " ".join(str(v).strip().lower().split()) if v is not None else ""
+
+
+def _angka_sel(v: Any, number_format: Dict[str, str]) -> Optional[float]:
+    """Angka dari sel Excel mentah (openpyxl): angka -> float; teks berisi angka
+    -> _parse_angka; kosong/teks tanpa angka -> None."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s or not re.search(r"\d", s):
+        return None
+    # Angka yang terlanjur diketik sebagai TEKS: "1.500.000" / "1.500.000,50" (gaya Indonesia)
+    # atau "1,500,000" -- tidak boleh dibuang diam-diam.
+    s = re.sub(r"^(rp\.?\s*)", "", s, flags=re.IGNORECASE)
+    if re.search(r"[A-Za-z]", s):  # teks campur huruf ("abc 12") bukan angka -- jangan ditebak
+        return None
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+(,\d+)?", s):
+        return float(s.replace(".", "").replace(",", "."))
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+(\.\d+)?", s):
+        return float(s.replace(",", ""))
+    try:
+        return _parse_angka(s, number_format)
+    except Exception:
+        return None
+
+
+def _cari_kolom_hari(rows: List[List[Any]], maks_baris: int) -> Optional[Tuple[int, Dict[int, int]]]:
+    """(index_baris_header, {index_kolom: hari}) -- baris header = baris pertama
+    (dalam `maks_baris` baris teratas) yang memuat angka 1..31 di >= 28 kolom
+    (minimal 1..28 lengkap). Posisi kolom hari beda per cabang (B, C, atau D),
+    jadi dicari, bukan di-hardcode."""
+    for i, row in enumerate(rows[:maks_baris]):
+        peta: Dict[int, int] = {}
+        for j, v in enumerate(row):
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and float(v).is_integer() and 1 <= int(v) <= 31:
+                peta[j] = int(v)
+        if len(peta) >= 28 and set(range(1, 29)) <= set(peta.values()):
+            return i, peta
+    return None
+
+
+def _parse_monthly_daily_matrix(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Rekap pendapatan HARIAN (AADL: Warung, Kafe Kapu, Omah & Kopi, Villa Putu).
+    Tiap sheet bulanan = matriks: kolom = tanggal 1..31, baris = komponen
+    pendapatan, 1 baris ringkasan (mis. \"TOTAL\") memuat pendapatan harian.
+    1 baris kanonis (source_rows) = 1 HARI per cabang: dpp = nilai baris ringkasan
+    hari itu, ppn = 0. File tidak punya nomor invoice -> dibentuk
+    <prefix_invoice>-YYYY-MM-DD. Tanggal diambil dari NAMA SHEET + angka header
+    hari (sel tanggal di baris header sering salah/tidak dirawat)."""
+    recipe = template["mapping_rules"]
+    number_format = recipe.get("number_format", {})
+    spec = recipe["baris_pendapatan"]
+    label_target = _norm_label(spec["label"])
+    awalan = spec.get("cocok", "persis") == "awalan"
+    kolom_label = spec.get("kolom", 1) - 1
+    prefix = recipe["prefix_invoice"]
+    customer = recipe.get("customer")
+    cabang = recipe.get("cabang_tetap")
+    lewati_nol = recipe.get("lewati_nol", True)
+    maks_baris = recipe.get("maks_baris_header", 12)
+
+    hasil: List[Dict[str, Any]] = []
+    sudah_ada = set()
+    wb = _buka_workbook_bulanan(sumber.content)
+    try:
+        sheets, peringatan = _pilih_sheet_bulanan(wb, recipe)
+        for p in peringatan:
+            _baris_peringatan(hasil, cabang, p)
+        for nama, tahun, bulan in sheets:
+            rows = [list(r) for r in wb[nama].iter_rows(values_only=True)]
+            header = _cari_kolom_hari(rows, maks_baris)
+            if header is None:
+                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': baris header hari 1..31 tidak ditemukan -- bulan ini TIDAK ikut diimpor.")
+                continue
+            idx_header, peta_hari = header
+            baris_target = None
+            for row in rows[idx_header + 1:]:
+                label = _norm_label(row[kolom_label]) if kolom_label < len(row) else ""
+                if label and (label == label_target or (awalan and label.startswith(label_target))):
+                    baris_target = row
+                    break
+            if baris_target is None:
+                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': baris '{spec['label']}' tidak ditemukan (label diubah?) -- bulan ini TIDAK ikut diimpor.")
+                continue
+            for kolom, hari in sorted(peta_hari.items(), key=lambda kv: kv[1]):
+                mentah = baris_target[kolom] if kolom < len(baris_target) else None
+                nilai = _angka_sel(mentah, number_format)
+                if nilai is None and isinstance(mentah, str) and re.search(r"\d", mentah):
+                    _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}' hari {hari}: isi '{mentah.strip()}' bukan angka yang valid -- hari ini dilewati.")
+                    continue
+                if nilai is None or (lewati_nol and nilai == 0):
+                    continue
+                try:
+                    tanggal = date(tahun, bulan, hari)
+                except ValueError:
+                    continue  # mis. kolom 31 di sheet Februari
+                no_invoice = f"{prefix}-{tahun:04d}-{bulan:02d}-{hari:02d}"
+                dpp = round(nilai, 2)
+                catatan = []
+                if dpp < 0:
+                    catatan.append("Total harian negatif (periksa biaya/potongan)")
+                hasil.append({
+                    "row_no": len(hasil) + 1,
+                    "tanggal": tanggal,
+                    "no_invoice": no_invoice,
+                    "nama_customer": customer,
+                    "cabang": cabang,
+                    "dpp": dpp,
+                    "ppn": 0.0,
+                    "total": dpp,
+                    "is_valid": not catatan,
+                    "validation_notes": "; ".join(catatan) or None,
+                    "is_duplicate_candidate": no_invoice in sudah_ada,
+                })
+                sudah_ada.add(no_invoice)
+    finally:
+        wb.close()
+    return hasil
+
+
+def _parse_monthly_rent_roll(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Daftar sewa kamar (AADL: Kost Kapu Soemantri, Kost Warung Soemantri).
+    Tiap sheet bulanan = tabel kamar (NO, KAMAR, Tanggal Masuk, ..., Deposit,
+    Uang Kamar, Total Bayar) + baris TOTAL. 1 baris kanonis = 1 BULAN per
+    cabang: dpp = jumlah kolom `kolom_jumlah` (\"Uang Kamar\") semua kamar
+    bernomor; Deposit TIDAK ikut (jaminan, bukan pendapatan -- cocok dengan sheet
+    RESUME file). Nomor invoice <prefix_invoice>-YYYY-MM, tanggal = akhir
+    bulan (tanggal_bulanan = \"akhir_bulan\") atau tanggal 1 (\"awal_bulan\")."""
+    recipe = template["mapping_rules"]
+    number_format = recipe.get("number_format", {})
+    judul_kolom = _norm_label(recipe["kolom_jumlah"])
+    prefix = recipe["prefix_invoice"]
+    customer = recipe.get("customer")
+    cabang = recipe.get("cabang_tetap")
+    lewati_nol = recipe.get("lewati_nol", True)
+    maks_baris = recipe.get("maks_baris_header", 12)
+    awal_bulan = recipe.get("tanggal_bulanan", "akhir_bulan") == "awal_bulan"
+
+    hasil: List[Dict[str, Any]] = []
+    sudah_ada = set()
+    wb = _buka_workbook_bulanan(sumber.content)
+    try:
+        sheets, peringatan = _pilih_sheet_bulanan(wb, recipe)
+        for p in peringatan:
+            _baris_peringatan(hasil, cabang, p)
+        for nama, tahun, bulan in sheets:
+            rows = [list(r) for r in wb[nama].iter_rows(values_only=True)]
+            idx_header = kolom = None
+            for i, row in enumerate(rows[:maks_baris]):
+                for j, v in enumerate(row):
+                    if _norm_label(v) == judul_kolom:
+                        idx_header, kolom = i, j
+                        break
+                if idx_header is not None:
+                    break
+            if idx_header is None:
+                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': kolom '{recipe['kolom_jumlah']}' tidak ditemukan -- bulan ini TIDAK ikut diimpor.")
+                continue
+            jumlah = 0.0
+            for row in rows[idx_header + 1:]:
+                label = _norm_label(row[0]) if row else ""
+                if label == "total":
+                    break
+                if re.fullmatch(r"\d+", label):  # baris kamar bernomor
+                    mentah = row[kolom] if kolom < len(row) else None
+                    angka = _angka_sel(mentah, number_format)
+                    if angka is None and isinstance(mentah, str) and re.search(r"\d", mentah):
+                        _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}' kamar {row[1] if len(row) > 1 else label}: isi '{mentah.strip()}' bukan angka yang valid -- kamar ini dilewati.")
+                    jumlah += angka or 0.0
+            if lewati_nol and jumlah == 0:
+                continue
+            tanggal = date(tahun, bulan, 1 if awal_bulan else calendar.monthrange(tahun, bulan)[1])
+            no_invoice = f"{prefix}-{tahun:04d}-{bulan:02d}"
+            dpp = round(jumlah, 2)
+            hasil.append({
+                "row_no": len(hasil) + 1,
+                "tanggal": tanggal,
+                "no_invoice": no_invoice,
+                "nama_customer": customer,
+                "cabang": cabang,
+                "dpp": dpp,
+                "ppn": 0.0,
+                "total": dpp,
+                "is_valid": True,
+                "validation_notes": None,
+                "is_duplicate_candidate": no_invoice in sudah_ada,
+            })
+            sudah_ada.add(no_invoice)
+    finally:
+        wb.close()
+    return hasil
+
+
 def _cabang_dari_nama_file(recipe: Dict[str, Any], file_name: Optional[str]) -> Optional[str]:
     """Cabang yang diambil dari SUBSTRING nama file (dipakai klien yang
     laporannya tidak memuat kolom cabang, tapi 1 file = 1 cabang -- mis. SAU:
@@ -890,22 +1970,8 @@ def _cabang_dari_nama_file(recipe: Dict[str, Any], file_name: Optional[str]) -> 
 FORMAT_EXCEL_REGISTER_BLOK = "monthly_block_invoice_register"
 
 
-class _ExcelBulananSumber:
-    """Pembungkus bytes workbook yang dikembalikan _cocokkan_template() sebagai pengganti
-    "rows" untuk format Excel yang membaca workbook-nya sendiri (register blok)."""
-
-    def __init__(self, content: bytes):
-        self.content = content
 
 
-def _sel_dari_kolom(baris: Any, kolom_awal: int) -> List[str]:
-    """Sel header mulai kolom `kolom_awal` (1-based), sel kosong di ujung dibuang --
-    kolom A / kolom terakhir yang kosong (lebar sheet beda-beda) tidak ikut di-hash."""
-    sel = ["" if v is None else str(v) for v in (baris or [])]
-    sel = sel[max(kolom_awal, 1) - 1:]
-    while sel and not sel[-1].strip():
-        sel.pop()
-    return sel
 
 
 def _cari_sheet_nama(nama_sheet: List[str], target: str) -> Optional[str]:
@@ -913,27 +1979,6 @@ def _cari_sheet_nama(nama_sheet: List[str], target: str) -> Optional[str]:
     return next((n for n in nama_sheet if _norm_label(n) == kunci), None)
 
 
-def _angka_sel(v: Any, number_format: Dict[str, str]) -> Optional[float]:
-    """Angka dari sel Excel mentah (openpyxl): angka -> float; teks berisi angka
-    -> _parse_angka; kosong/teks tanpa angka -> None."""
-    if v is None or isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip()
-    if not s or not re.search(r"\d", s):
-        return None
-    s = re.sub(r"^(rp\.?\s*)", "", s, flags=re.IGNORECASE)
-    if re.search(r"[A-Za-z]", s):  # teks campur huruf bukan angka -- jangan ditebak
-        return None
-    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+(,\d+)?", s):
-        return float(s.replace(".", "").replace(",", "."))
-    if re.fullmatch(r"-?\d{1,3}(,\d{3})+(\.\d+)?", s):
-        return float(s.replace(",", ""))
-    try:
-        return _parse_angka(s, number_format)
-    except Exception:
-        return None
 
 
 def _cocokkan_template_excel_register_blok(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
@@ -991,102 +2036,6 @@ def _cocokkan_template_excel_register_blok(content: bytes, kandidat: List[Dict[s
     return None
 
 
-def _parse_monthly_block_invoice_register(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parser format_type='monthly_block_invoice_register' (Birawa). Kolom dicari lewat
-    NAMA di baris header (mapping_rules.kolom). Baris header yang diulang di tiap blok,
-    baris tanpa nilai (placeholder bulan depan) dan baris subtotal dilewati.
-    dasar='tagihan' : total = NILAI INVOICE, ppn = kolom PPN (dibulatkan 2 desimal), dpp = total - ppn.
-                      Baris dengan NILAI INVOICE kosong/0 dilewati.
-    dasar='fee'     : dpp = kolom FEE NET(DPP), ppn = kolom PPN, total = dpp + ppn."""
-    import openpyxl
-
-    recipe = template["mapping_rules"]
-    kol = recipe["kolom"]
-    number_format = recipe.get("number_format", {"thousands_separator": ",", "decimal_separator": "."})
-    dasar = recipe.get("dasar", "tagihan")
-    kolom_awal = recipe.get("kolom_awal", 1)
-    hasil: List[Dict[str, Any]] = []
-    wb = openpyxl.load_workbook(BytesIO(sumber.content), data_only=True, read_only=True)
-    try:
-        nama = _cari_sheet_nama(list(wb.sheetnames), template.get("sheet_name") or "")
-        if nama is None:
-            raise ValueError(f"Sheet '{template.get('sheet_name')}' not found in the file.")
-        baris_semua = list(wb[nama].iter_rows(values_only=True))
-        idx_h = template["header_row_index"] - 1
-        header = _sel_dari_kolom(baris_semua[idx_h] if 0 <= idx_h < len(baris_semua) else [], kolom_awal)
-        header_norm = [_norm_label(h) for h in header]
-
-        def posisi(nama_kolom: str) -> int:
-            try:
-                return kolom_awal - 1 + header_norm.index(_norm_label(nama_kolom))
-            except ValueError:
-                raise ValueError(f"Column '{nama_kolom}' not found in the header of sheet '{nama}'.")
-
-        i_bulan, i_inv, i_cust = posisi(kol["bulan"]), posisi(kol["invoice"]), posisi(kol["customer"])
-        i_total = posisi(kol["total"]) if dasar == "tagihan" else None
-        i_ppn = posisi(kol["ppn"])
-        i_fee = posisi(kol["dpp"]) if dasar == "fee" else None
-        lbl_bulan, lbl_inv = _norm_label(kol["bulan"]), _norm_label(kol["invoice"])
-
-        def sel(row: Any, i: Optional[int]) -> Any:
-            return row[i] if i is not None and i < len(row) else None
-
-        tgl_kini: Optional[date] = None
-        seen = set()
-        for row in baris_semua[template["data_start_row_index"] - 1:]:
-            mentah_bulan = sel(row, i_bulan)
-            if isinstance(mentah_bulan, (datetime, date)):
-                tgl_kini = mentah_bulan.date() if isinstance(mentah_bulan, datetime) else mentah_bulan
-            elif mentah_bulan is not None and str(mentah_bulan).strip():
-                if _norm_label(mentah_bulan) == lbl_bulan:
-                    continue  # baris header yang diulang di tiap blok bulan
-                d = _parse_tanggal(str(mentah_bulan), recipe.get("date_format", "YYYY-MM-DD"))
-                if d is not None:
-                    tgl_kini = d
-            raw_inv = sel(row, i_inv)
-            no_invoice = str(raw_inv).strip() if raw_inv is not None else ""
-            if no_invoice and _norm_label(no_invoice) == lbl_inv:
-                continue
-            if dasar == "tagihan":
-                total = round(_angka_sel(sel(row, i_total), number_format) or 0.0, 2)
-                if not total:
-                    # placeholder (nomor invoice urut tanpa nilai), baris kosong, atau baris
-                    # SUBTOTAL yang hanya mengisi kolom turunan (mis. PPN) -- bukan invoice.
-                    continue
-                ppn = round(_angka_sel(sel(row, i_ppn), number_format) or 0.0, 2)
-                dpp = round(total - ppn, 2)  # ppn sudah dibulatkan -> dpp + ppn = total persis
-            else:
-                dpp = round(_angka_sel(sel(row, i_fee), number_format) or 0.0, 2)
-                ppn = round(_angka_sel(sel(row, i_ppn), number_format) or 0.0, 2)
-                total = round(dpp + ppn, 2)
-                if not total and not dpp:
-                    continue
-            customer = str(sel(row, i_cust) or "").strip()
-            catatan = []
-            if not no_invoice:
-                catatan.append("Invoice number is empty")
-            if tgl_kini is None:
-                catatan.append("Date not readable (month column of the block is empty)")
-            if not customer:
-                catatan.append("Customer name (BEBAN) is empty")
-            hasil.append({
-                "row_no": len(hasil) + 1,
-                "tanggal": tgl_kini,
-                "no_invoice": no_invoice or None,
-                "nama_customer": customer or None,
-                "cabang": (customer if recipe.get("cabang_dari_kolom_customer") else None),
-                "dpp": dpp,
-                "ppn": ppn,
-                "total": total,
-                "is_valid": not catatan,
-                "validation_notes": "; ".join(catatan) or None,
-                "is_duplicate_candidate": bool(no_invoice) and no_invoice in seen,
-            })
-            if no_invoice:
-                seen.add(no_invoice)
-    finally:
-        wb.close()
-    return hasil
 
 
 # ============================================================
@@ -1114,338 +2063,26 @@ _BULAN_NAMA_SHEET = {
 _SHEET_ABAIKAN = {"resume", "sheet1", "meta", "cek upload"}
 
 
-def _buka_workbook_bulanan(content: bytes):
-    import openpyxl
-
-    return openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
 
 
-def _bulan_dari_nama_sheet(nama: str) -> Tuple[Optional[int], Optional[int]]:
-    """(bulan, tahun) dari nama sheet; (None, None) kalau bukan sheet bulanan
-    (RESUME, Sheet1, dst). Tahun 2 digit ("Des'25") dijadikan 20xx; tahun boleh tidak ada."""
-    m = re.match(r"^\s*([A-Za-z]+)\W*(\d{4}|\d{2})?\s*$", nama or "")
-    if not m:
-        return None, None
-    bulan = _BULAN_NAMA_SHEET.get(m.group(1).lower())
-    if bulan is None:
-        return None, None
-    tahun = int(m.group(2)) if m.group(2) else None
-    if tahun is not None and tahun < 100:
-        tahun += 2000
-    return bulan, tahun
 
 
-def _daftar_sheet_bulanan(nama_sheet: List[str], recipe: Dict[str, Any]) -> List[Tuple[str, int, int]]:
-    """[(nama_sheet, tahun, bulan)] untuk sheet bulanan saja, urut seperti di workbook.
-    recipe.tahun:
-      "nama_sheet"   (default) tahun dari nama sheet; kalau tidak ada, ikut sheet sebelumnya.
-      "urutan_sheet" tahun HANYA dari sheet bulanan pertama, lalu naik 1 setiap bulan
-                     "mundur" (Des -> Jan). Dipakai AADL karena nama sheet sering salah
-                     ketik ("Juli 2024" di file 2026)."""
-    kandidat = []
-    for nama in nama_sheet:
-        bulan, tahun = _bulan_dari_nama_sheet(nama)
-        if bulan is not None:
-            kandidat.append((nama, bulan, tahun))
-    tahun_awal = next((t for _, _, t in kandidat if t), None)
-    mode = recipe.get("tahun", "nama_sheet")
-    hasil: List[Tuple[str, int, int]] = []
-    tahun_kini: Optional[int] = None
-    bulan_lalu: Optional[int] = None
-    for nama, bulan, tahun in kandidat:
-        if mode == "urutan_sheet":
-            if tahun_kini is None:
-                tahun_kini = tahun or tahun_awal or date.today().year
-            elif bulan < (bulan_lalu or 0):
-                tahun_kini += 1
-        else:
-            tahun_kini = tahun or tahun_kini or tahun_awal or date.today().year
-        bulan_lalu = bulan
-        hasil.append((nama, tahun_kini, bulan))
-    return hasil
 
 
-def _periode_diizinkan(tahun: int, bulan: int, recipe: Dict[str, Any]) -> bool:
-    """recipe.periode_mulai / periode_akhir ("YYYY-MM", opsional) -- sheet di luar rentang dilewati."""
-    ym = f"{tahun:04d}-{bulan:02d}"
-    if recipe.get("periode_mulai") and ym < recipe["periode_mulai"]:
-        return False
-    if recipe.get("periode_akhir") and ym > recipe["periode_akhir"]:
-        return False
-    return True
 
 
-def _baca_meta_bulanan(wb) -> Optional[Dict[str, Any]]:
-    """Sheet 'META' (opsional): A='CABANG' B=nama cabang; tabel A=nama sheet, B='YYYY-MM',
-    C=FINAL/RENCANA/ABAIKAN. Ada META -> daftar sheet & periodenya dipakai dari sini."""
-    nama_meta = next((n for n in wb.sheetnames if n.strip().lower() == "meta"), None)
-    if nama_meta is None:
-        return None
-    cabang = None
-    sheets: Dict[str, Tuple[str, int, int, str]] = {}
-    for row in wb[nama_meta].iter_rows(values_only=True):
-        a = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ""
-        b = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
-        c = str(row[2]).strip().upper() if len(row) > 2 and row[2] is not None else ""
-        if not a:
-            continue
-        if a.lower() == "cabang" and b:
-            cabang = b
-            continue
-        m = re.fullmatch(r"(\d{4})-(\d{2})", b)
-        if m and 1 <= int(m.group(2)) <= 12:
-            sheets[_norm_label(a)] = (a, int(m.group(1)), int(m.group(2)), c or "FINAL")
-    if not sheets:
-        return None
-    return {"cabang": cabang, "sheets": sheets}
 
 
-def _pilih_sheet_bulanan(wb, recipe: Dict[str, Any]) -> Tuple[List[Tuple[str, int, int]], List[str]]:
-    """([(nama_sheet, tahun, bulan)], [peringatan]) -- sheet bulanan yang akan dibaca."""
-    nama_sheet = list(wb.sheetnames)
-    peringatan: List[str] = []
-    meta = _baca_meta_bulanan(wb)
-    if meta is None:
-        semua = _daftar_sheet_bulanan(nama_sheet, recipe)
-        dikenal = {n for n, _, _ in semua}
-        hasil = [(n, t, b) for n, t, b in semua if _periode_diizinkan(t, b, recipe)]
-        for n in nama_sheet:
-            if n not in dikenal and _norm_label(n) not in _SHEET_ABAIKAN:
-                peringatan.append(
-                    f"Sheet '{n.strip()}' is not recognised as a monthly sheet (expected a name like 'August 2026') -- skipped, this month is NOT imported."
-                )
-        return hasil, peringatan
-
-    ada = {_norm_label(n): n for n in nama_sheet}
-    hasil = []
-    for kunci, (raw, tahun, bulan, status) in meta["sheets"].items():
-        asli = ada.get(kunci)
-        if asli is None:
-            if status == "FINAL":
-                peringatan.append(f"Sheet '{raw}' is listed as FINAL in META but does not exist in the file -- this month is NOT imported.")
-            continue
-        if status == "FINAL":
-            hasil.append((asli, tahun, bulan))
-    for n in nama_sheet:
-        k = _norm_label(n)
-        if k not in meta["sheets"] and k not in _SHEET_ABAIKAN:
-            peringatan.append(f"Sheet '{n.strip()}' is not listed in the META sheet -- skipped; add it to META if it should be imported.")
-    cabang_recipe = recipe.get("cabang_tetap")
-    if meta["cabang"] and cabang_recipe and _norm_label(meta["cabang"]) != _norm_label(cabang_recipe):
-        peringatan.append(f"CABANG in META ('{meta['cabang']}') differs from the template branch ('{cabang_recipe}') -- make sure this is the right file.")
-    hasil.sort(key=lambda x: (x[1], x[2]))
-    return hasil, peringatan
 
 
-def _baris_peringatan(hasil: List[Dict[str, Any]], cabang: Optional[str], pesan: str) -> None:
-    """Baris INVALID berisi pesan (nilai 0, tanpa tanggal & invoice) supaya masalah struktur
-    file terlihat di Source Data ('Butuh Review') dan tidak ikut jadi invoice."""
-    hasil.append({
-        "row_no": len(hasil) + 1, "tanggal": None, "no_invoice": None, "nama_customer": None,
-        "cabang": cabang, "dpp": 0.0, "ppn": 0.0, "total": 0.0,
-        "is_valid": False, "validation_notes": pesan, "is_duplicate_candidate": False,
-    })
 
 
-def _cocokkan_template_excel_bulanan(content: bytes, kandidat: List[Dict[str, Any]]) -> Optional[Tuple[Dict[str, Any], "_ExcelBulananSumber"]]:
-    """Cocok kalau hash baris judul (header_row_index) SALAH SATU sheet bulanan sama dengan
-    column_signature_hash varian atau salah satu mapping_rules.signature_alternatif.
-    Sel kosong di ujung baris dibuang dulu (lebar sheet beda-beda tiap bulan)."""
-    try:
-        wb = _buka_workbook_bulanan(content)
-    except Exception as e:
-        logger.warning(f"Failed to open workbook for monthly template matching: {e}")
-        return None
-    try:
-        hash_per_baris: Dict[int, set] = {}
-        for template in kandidat:
-            recipe = template.get("mapping_rules") or {}
-            idx = template["header_row_index"]
-            if idx not in hash_per_baris:
-                hashes = set()
-                for nama in wb.sheetnames:
-                    if _bulan_dari_nama_sheet(nama)[0] is None:
-                        continue
-                    baris = next(wb[nama].iter_rows(min_row=idx, max_row=idx, values_only=True), None)
-                    if baris is None:
-                        continue
-                    sel = ["" if v is None else str(v) for v in baris]
-                    while sel and not sel[-1].strip():
-                        sel.pop()
-                    if sel:
-                        hashes.add(_hash_baris(sel))
-                hash_per_baris[idx] = hashes
-            diterima = {template["column_signature_hash"], *(recipe.get("signature_alternatif") or [])}
-            if hash_per_baris[idx] & diterima:
-                return template, _ExcelBulananSumber(content)
-    except Exception as e:
-        logger.warning(f"Failed to match monthly Excel template: {e}")
-    finally:
-        wb.close()
-    return None
 
 
-def _cari_kolom_hari(rows: List[List[Any]], maks_baris: int) -> Optional[Tuple[int, Dict[int, int]]]:
-    """(index_baris_header, {index_kolom: hari}) -- baris pertama (dalam `maks_baris` baris
-    teratas) yang memuat angka 1..31 di >= 28 kolom (minimal 1..28 lengkap). Posisi kolom
-    hari beda per usaha (B, C, atau D), jadi dicari."""
-    for i, row in enumerate(rows[:maks_baris]):
-        peta: Dict[int, int] = {}
-        for j, v in enumerate(row):
-            if isinstance(v, (int, float)) and not isinstance(v, bool) and float(v).is_integer() and 1 <= int(v) <= 31:
-                peta[j] = int(v)
-        if len(peta) >= 28 and set(range(1, 29)) <= set(peta.values()):
-            return i, peta
-    return None
 
 
-def _parse_monthly_daily_matrix(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Rekap pendapatan HARIAN (AADL: Warung, Kafe Kapu, Omah & Kopi, Villa Putu). Tiap sheet
-    bulanan = matriks kolom hari 1..31 x komponen pendapatan; 1 baris ringkasan (mapping_rules.
-    baris_pendapatan, mis. "TOTAL") = pendapatan harian. 1 baris source_rows = 1 HARI:
-    dpp = nilai hari itu, ppn = 0, invoice = <prefix_invoice>-YYYY-MM-DD, tanggal = nama sheet
-    + angka header hari."""
-    recipe = template["mapping_rules"]
-    number_format = recipe.get("number_format", {})
-    spec = recipe["baris_pendapatan"]
-    label_target = _norm_label(spec["label"])
-    awalan = spec.get("cocok", "persis") == "awalan"
-    kolom_label = spec.get("kolom", 1) - 1
-    prefix = recipe["prefix_invoice"]
-    customer = recipe.get("customer")
-    cabang = recipe.get("cabang_tetap")
-    lewati_nol = recipe.get("lewati_nol", True)
-    maks_baris = recipe.get("maks_baris_header", 12)
-
-    hasil: List[Dict[str, Any]] = []
-    sudah_ada = set()
-    wb = _buka_workbook_bulanan(sumber.content)
-    try:
-        sheets, peringatan = _pilih_sheet_bulanan(wb, recipe)
-        for p in peringatan:
-            _baris_peringatan(hasil, cabang, p)
-        for nama, tahun, bulan in sheets:
-            rows = [list(r) for r in wb[nama].iter_rows(values_only=True)]
-            header = _cari_kolom_hari(rows, maks_baris)
-            if header is None:
-                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': day header row 1..31 not found -- this month is NOT imported.")
-                continue
-            idx_header, peta_hari = header
-            baris_target = None
-            for row in rows[idx_header + 1:]:
-                label = _norm_label(row[kolom_label]) if kolom_label < len(row) else ""
-                if label and (label == label_target or (awalan and label.startswith(label_target))):
-                    baris_target = row
-                    break
-            if baris_target is None:
-                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': row '{spec['label']}' not found (label changed?) -- this month is NOT imported.")
-                continue
-            for kolom, hari in sorted(peta_hari.items(), key=lambda kv: kv[1]):
-                mentah = baris_target[kolom] if kolom < len(baris_target) else None
-                nilai = _angka_sel(mentah, number_format)
-                if nilai is None and isinstance(mentah, str) and re.search(r"\d", mentah):
-                    _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}' day {hari}: '{mentah.strip()}' is not a valid number -- this day is skipped.")
-                    continue
-                if nilai is None or (lewati_nol and nilai == 0):
-                    continue
-                try:
-                    tanggal = date(tahun, bulan, hari)
-                except ValueError:
-                    continue  # mis. kolom 31 di sheet Februari
-                no_invoice = f"{prefix}-{tahun:04d}-{bulan:02d}-{hari:02d}"
-                dpp = round(nilai, 2)
-                catatan = []
-                if dpp < 0:
-                    catatan.append("Negative daily total (check fees/deductions)")
-                hasil.append({
-                    "row_no": len(hasil) + 1,
-                    "tanggal": tanggal,
-                    "no_invoice": no_invoice,
-                    "nama_customer": customer,
-                    "cabang": cabang,
-                    "dpp": dpp,
-                    "ppn": 0.0,
-                    "total": dpp,
-                    "is_valid": not catatan,
-                    "validation_notes": "; ".join(catatan) or None,
-                    "is_duplicate_candidate": no_invoice in sudah_ada,
-                })
-                sudah_ada.add(no_invoice)
-    finally:
-        wb.close()
-    return hasil
 
 
-def _parse_monthly_rent_roll(sumber: "_ExcelBulananSumber", template: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Daftar sewa kamar (AADL: Kost Kapu Soemantri, Kost Warung Soemantri). 1 baris
-    source_rows = 1 BULAN: dpp = jumlah kolom `kolom_jumlah` ("Uang Kamar") semua kamar
-    bernomor sampai baris TOTAL (Deposit tidak ikut). Invoice <prefix_invoice>-YYYY-MM,
-    tanggal = akhir bulan (tanggal_bulanan = "akhir_bulan") atau tanggal 1 ("awal_bulan")."""
-    import calendar
-
-    recipe = template["mapping_rules"]
-    number_format = recipe.get("number_format", {})
-    judul_kolom = _norm_label(recipe["kolom_jumlah"])
-    prefix = recipe["prefix_invoice"]
-    customer = recipe.get("customer")
-    cabang = recipe.get("cabang_tetap")
-    lewati_nol = recipe.get("lewati_nol", True)
-    maks_baris = recipe.get("maks_baris_header", 12)
-    awal_bulan = recipe.get("tanggal_bulanan", "akhir_bulan") == "awal_bulan"
-
-    hasil: List[Dict[str, Any]] = []
-    sudah_ada = set()
-    wb = _buka_workbook_bulanan(sumber.content)
-    try:
-        sheets, peringatan = _pilih_sheet_bulanan(wb, recipe)
-        for p in peringatan:
-            _baris_peringatan(hasil, cabang, p)
-        for nama, tahun, bulan in sheets:
-            rows = [list(r) for r in wb[nama].iter_rows(values_only=True)]
-            idx_header = kolom = None
-            for i, row in enumerate(rows[:maks_baris]):
-                for j, v in enumerate(row):
-                    if _norm_label(v) == judul_kolom:
-                        idx_header, kolom = i, j
-                        break
-                if idx_header is not None:
-                    break
-            if idx_header is None:
-                _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}': column '{recipe['kolom_jumlah']}' not found -- this month is NOT imported.")
-                continue
-            jumlah = 0.0
-            for row in rows[idx_header + 1:]:
-                label = _norm_label(row[0]) if row else ""
-                if label == "total":
-                    break
-                if re.fullmatch(r"\d+", label):  # baris kamar bernomor
-                    mentah = row[kolom] if kolom < len(row) else None
-                    angka = _angka_sel(mentah, number_format)
-                    if angka is None and isinstance(mentah, str) and re.search(r"\d", mentah):
-                        _baris_peringatan(hasil, cabang, f"Sheet '{nama.strip()}' room {row[1] if len(row) > 1 else label}: '{mentah.strip()}' is not a valid number -- this room is skipped.")
-                    jumlah += angka or 0.0
-            if lewati_nol and jumlah == 0:
-                continue
-            tanggal = date(tahun, bulan, 1 if awal_bulan else calendar.monthrange(tahun, bulan)[1])
-            no_invoice = f"{prefix}-{tahun:04d}-{bulan:02d}"
-            dpp = round(jumlah, 2)
-            hasil.append({
-                "row_no": len(hasil) + 1,
-                "tanggal": tanggal,
-                "no_invoice": no_invoice,
-                "nama_customer": customer,
-                "cabang": cabang,
-                "dpp": dpp,
-                "ppn": 0.0,
-                "total": dpp,
-                "is_valid": True,
-                "validation_notes": None,
-                "is_duplicate_candidate": no_invoice in sudah_ada,
-            })
-            sudah_ada.add(no_invoice)
-    finally:
-        wb.close()
-    return hasil
 
 
 # ============================================================
@@ -2336,10 +2973,26 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
         hasil = _parse_daily_channel_recap(rows, template, file_name)  # rows = _ExcelBulananSumber
     elif format_type == FORMAT_EXCEL_INCOME_LIST:
         hasil = _parse_monthly_income_list(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == "grouped_invoice_report_pdf":
+        hasil = _parse_grouped_invoice_report_pdf(rows, mapping_rules)  # rows = _PdfSumber
     elif format_type == "flat_grouped_by_key":
         hasil = _parse_flat_grouped_by_key(rows, template)
     elif format_type == "sectioned_by_customer_header":
         hasil = _parse_sectioned_by_customer_header(rows, template)
+    elif format_type == "category_summary":
+        hasil = _parse_category_summary(rows, template, file_name)
+    elif format_type == "monthly_daily_matrix":
+        hasil = _parse_monthly_daily_matrix(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == "monthly_rent_roll":
+        hasil = _parse_monthly_rent_roll(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_MULTI_SHEET:
+        hasil = _parse_multi_sheet_line_items(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_REGISTER_BLOK:
+        hasil = _parse_monthly_block_invoice_register(rows, template)  # rows = _ExcelBulananSumber
+    elif format_type == FORMAT_EXCEL_REKAP_CHANNEL:
+        hasil = _parse_daily_channel_recap(rows, template, file_name)  # rows = _ExcelBulananSumber; properti dari NAMA FILE
+    elif format_type == FORMAT_EXCEL_INCOME_LIST:
+        hasil = _parse_monthly_income_list(rows, template)  # rows = _ExcelBulananSumber
     else:
         hasil = _parse_flat_mapping(rows, template)
 
@@ -2357,7 +3010,7 @@ def _ekstrak_dengan_template(rows: List[List[str]], template: Dict[str, Any], fi
 
 @router.post(
     "/source-files/upload",
-    summary="Upload file laporan penjualan (CSV/Excel) + ekstraksi otomatis pakai template (khusus Supervisor ke atas)",
+    summary="Upload file laporan penjualan (CSV/Excel/PDF) + ekstraksi otomatis pakai template (khusus Supervisor ke atas)",
     responses={
         201: {"description": "File berhasil diupload (template cocok -> langsung diekstrak, atau ditandai Butuh Review kalau belum ada template yang cocok)."},
         400: {"description": "Tipe file tidak didukung, atau file terlalu besar."},
@@ -2382,30 +3035,6 @@ async def upload_source_file(
     user_id = current_user.get("id")  # management_users.id -- untuk uploaded_by / created_by
     client_id = management_client_id  # kolom client_id di DB = FK ke management_clients (BUKAN id user)
 
-    if file_type == "PDF":
-        # [CATATAN] PDF belum didukung pembelajaran pola sama sekali --
-        # lihat batasan fase ini di SALES_IMPORT_TEMPLATES.md. Tetap
-        # dicatat sbg source_files supaya jejak upload-nya ada, tapi
-        # langsung Butuh Review tanpa usaha ekstraksi apa pun.
-        source_file = dbc.create_sales_source_file({
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "file_name": file.filename,
-            "file_type": file_type,
-            "rows_detected": 0,
-            "status_ekstraksi": "Butuh Review",
-            "status_mapping": "Butuh Review",
-            "processed_by": current_user.get("nama") or current_user.get("username"),
-            "uploaded_by": user_id,
-        }, created_by=user_id)
-        if source_file is None:
-            return gagal(message="Gagal menyimpan source file (kesalahan database).", status_code=500)
-        return sukses(
-            data={**source_file, "template_matched": False, "rows_extracted": 0},
-            message="File PDF tercatat, tapi ekstraksi pola kolom belum didukung untuk PDF -- perlu ditinjau manual.",
-            status_code=201,
-        )
-
     cocok = None
     try:
         cocok = await run_in_threadpool(_cocokkan_template, content, file_type, management_client_id)
@@ -2429,7 +3058,8 @@ async def upload_source_file(
         return sukses(
             data={**source_file, "template_matched": False, "rows_extracted": 0},
             message=(
-                "Belum ada template pola kolom yang cocok untuk klien & format file ini -- "
+                "Belum ada template pola kolom yang cocok untuk klien & format file ini "
+                "(untuk PDF: pastikan PDF punya text layer, bukan hasil scan) -- "
                 "file tersimpan sbg 'Butuh Review'. Buat template barunya dulu (lihat "
                 "root/SALES_IMPORT_TEMPLATES.md) sebelum file jenis ini bisa diekstrak otomatis."
             ),
@@ -2547,60 +3177,15 @@ def promote_source_file_to_invoices(
         return gagal(message="Source file tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
 
     user_id = current_user.get("id")  # management_users.id -- untuk created_by / dibuat_oleh
-    # [FIX 2026-11-07] Di skema ini invoices.client_id ber-FK ke management_users
-    # (sama seperti POST /sales/invoices di sales_v1.py & 168 invoice SAU yang ada),
-    # BUKAN management_clients -- mengisinya dengan id perusahaan (perubahan dari
-    # skema playground-hendra, commit 7086b34) membuat SEMUA insert gagal FK
-    # tanpa pesan. Perusahaan pemilik tetap tercatat di management_client_id.
-    client_id = user_id
-    management_client_id = source_file.get("management_client_id")
-    rows = dbc.list_sales_source_rows(source_file_id=source_file_id, termasuk_nonaktif=False)
-
-    dibuat = 0
-    dilewati_tidak_valid = 0
-    dilewati_sudah_pernah = 0
-    dilewati_invoice_bentrok = 0
-
-    for row in rows:
-        if not row.get("is_valid"):
-            dilewati_tidak_valid += 1
-            continue
-        if dbc.get_sales_invoice_by_source_row_id(row["id"]):
-            dilewati_sudah_pernah += 1
-            continue
-        no_invoice = row.get("no_invoice")
-        if not no_invoice:
-            dilewati_tidak_valid += 1
-            continue
-        # Bentrok dicek per PERUSAHAAN (bukan per user pembuat) dan per user
-        # (UniqueConstraint client_id + invoice_no di DB).
-        if (dbc.get_sales_invoice_by_management_client_and_no(management_client_id, no_invoice)
-                or dbc.get_sales_invoice_by_client_and_no(client_id, no_invoice)):
-            dilewati_invoice_bentrok += 1
-            continue
-
-        invoice_baru = dbc.create_sales_invoice({
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "invoice_no": no_invoice,
-            "invoice_date": row.get("tanggal"),
-            "customer_name": row.get("nama_customer") or "-",
-            "cabang": row.get("cabang"),
-            "dpp": row.get("dpp") or 0,
-            "ppn": row.get("ppn") or 0,
-            "gross_amount": row.get("total") or 0,
-            "tax_invoice_status": "Belum Terbit Faktur",
-            "posting_status": "Draft",
-            "source_row_id": row["id"],
-        }, created_by=user_id)
-        if invoice_baru is not None:
-            dibuat += 1
-            # Akun jurnal langsung mengikuti akun default klien (COA klien) --
-            # dilewati diam-diam kalau klien belum punya pengaturan akun.
-            # dibuat_oleh -> mapped_by/created_by (FK management_users), jadi id user, bukan id perusahaan.
-            dbc.pastikan_mapping_sales(invoice_baru["id"], dibuat_oleh=user_id)
-        else:
-            dilewati_invoice_bentrok += 1  # gagal simpan (mis. race condition duplikat) -- hitung sbg dilewati, bukan error keras
+    client_id = source_file.get("management_client_id")  # FK client_id -> management_clients
+    # [DIUBAH] Promote MASSAL (dbc.promote_sales_rows_bulk): sebelumnya loop per baris (~8 query/baris) -> file ribuan
+    # baris berjam-jam. Aturan dilewati / bentrok tetap sama.
+    hasil_promote = dbc.promote_sales_rows_bulk(source_file_id, client_id, user_id)
+    dibuat = hasil_promote["invoice_dibuat"]
+    dilewati_tidak_valid = hasil_promote["dilewati_tidak_valid"]
+    dilewati_sudah_pernah = hasil_promote["dilewati_sudah_pernah_dipromosikan"]
+    dilewati_invoice_bentrok = hasil_promote["dilewati_invoice_no_bentrok"]
+    rows = [None] * hasil_promote["total_baris"]  # hanya untuk len(rows) di ringkasan di bawah
 
     if dibuat > 0:
         dbc.update_sales_source_file(source_file_id, {"status_ekstraksi": "Berhasil"}, updated_by=user_id)

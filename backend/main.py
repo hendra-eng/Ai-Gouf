@@ -109,21 +109,24 @@ from modules.planning import tax_compliance_v1 as planning_tax_compliance_v1  # 
 from modules.finance import bank_cash_exceptions_v1 as finance_bank_cash_exceptions_v1  # [BARU] /api/v1/finance/bank-cash/exceptions (GET|POST|/upsert|/{id} GET/PUT/DELETE) -- catatan penanganan tab Exceptions Cash & Bank
 from modules.finance import receivables_payables_v1 as finance_receivables_payables_v1  # [BARU] /api/v1/finance/receivables|payables -- Accounts Receivable & Accounts Payable
 from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [BARU] AR: customers, Create Invoice, Collections + log statement AR/AP
+from modules.management import opening_balance_import_v1 as management_opening_balance_import_v1  # [BARU] import saldo awal AR/AP/COA
+from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] /api/v1/management/year-end-closing/...
+# [DITAHAN SEMENTARA] from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
 from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
-from modules.management import opening_balance_import_v1 as management_opening_balance_import_v1  # [BARU] tab Import Data opening balance (template, upload, approval): /api/v1/management/opening-balances/.../imports
-from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] tutup buku tahunan + kunci periode: /api/v1/management/year-end-closing/...
 from modules.management import settings_v1 as management_settings_v1  # [BARU] Management > Settings: /api/v1/management/settings/...
 from modules.management import coa_industry_v1 as management_coa_industry_v1  # [BARU] template COA per industri: /api/v1/management/coa-industries
+from modules.management import payroll_v1 as management_payroll_v1  # [BARU] halaman Payroll: /api/v1/management/payroll/...
 from modules.transactions import sales_v1 as transactions_sales_v1  # [BARU] CRUD financial_transaction_sales_*: /api/v1/transactions/sales/...
 from modules.transactions import sales_import_v1 as transactions_sales_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Sales Import Template
 from modules.transactions import journal_entry_v1 as transactions_journal_entry_v1  # [BARU] CRUD financial_transaction_journal_entry_*: /api/v1/transactions/journal-entries/...
 from modules.transactions import journal_entry_import_v1 as transactions_journal_entry_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Journal Entry Import Template
 from modules.transactions import purchase_v1 as transactions_purchase_v1  # [BARU] CRUD financial_transaction_purchase_*: /api/v1/transactions/purchase/...
-from modules.transactions import bank_cash_v1 as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/... (Bank Feed, reconciliation, receipt/payment)
 from modules.transactions import purchase_import_v1 as transactions_purchase_import_v1  # [BARU] upload file + ekstraksi otomatis pakai Purchase Import Template
-from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills
+from modules.transactions import purchase_bill_v1 as transactions_purchase_bill_v1  # [BARU] Create Bill manual: /api/v1/transactions/purchase/bills/...
+from modules.transactions import bank_cash_willi as transactions_bank_cash_v1  # [BARU] Cash & Bank: /api/v1/transactions/bank-cash/...
+# [DITAHAN] from modules.finance import payables_v1 as finance_payables_v1  # [BARU] Accounts Payable dari Purchase posted: /api/v1/finance/payables/...  -- AP memakai receivables_payables_v1.router_ap (versi Willi)
 from modules.financial_statements import v1 as financial_statements_v1  # [BARU] Laporan keuangan dari transaksi posted: /api/v1/financial-statements/...
 from modules.financial_statements import general_ledger_v1 as reports_general_ledger_v1  # [BARU] Reports > General Ledger: /api/v1/reports/general-ledger
 from modules.financial_statements import statements_v1 as reports_fs_statements_v1  # [BARU] FS berbasis mapping COA: /api/v1/reports/financial-statements/...
@@ -229,7 +232,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
-        # [BARU] Frontend "Agent AI" sekarang di-port ke dalam Dashboard
+        # [BARU] Frontend "Zafeb AI" sekarang di-port ke dalam Dashboard
         # Next.js (default dev server port 3000), bukan lagi project Vite
         # yang lama (5173/5174) -- tanpa origin ini browser akan menolak
         # semua request dari Dashboard ke backend ini (CORS error di
@@ -300,31 +303,6 @@ async def _enforce_client_data_isolation(request: Request, call_next):
     return await call_next(request)
 
 
-# [BARU] Kunci periode (Year-End Closing): trigger DB menolak perubahan
-# transaksi posted di tahun buku yang sudah ditutup ("PERIOD_LOCKED: ...").
-# Banyak fungsi CRUD db_client menelan error DB lalu endpoint menjawab
-# "not found"/500 -- db_client mencatat pesannya ke wadah per request ini, dan
-# di sini respon request itu diganti jadi 409 dengan pesan yang jelas.
-@app.middleware("http")
-async def _respon_periode_terkunci(request: Request, call_next):
-    if not request.url.path.startswith("/api/"):
-        return await call_next(request)
-    wadah: Dict[str, Any] = {}
-    token = dbc.WADAH_KUNCI_PERIODE.set(wadah)
-    try:
-        try:
-            respon = await call_next(request)
-        except Exception:
-            if not wadah.get("pesan"):
-                raise
-            respon = None
-        if wadah.get("pesan") and (respon is None or respon.status_code >= 400):
-            return _gagal_v1(message=wadah["pesan"], errors={"code": "PERIOD_LOCKED"}, status_code=409)
-        return respon
-    finally:
-        dbc.WADAH_KUNCI_PERIODE.reset(token)
-
-
 # [BARU] Normalisasi error ke amplop standar {status,message,data,errors}
 # TAPI HANYA untuk path /api/v1/... (fitur auth baru). Endpoint lama tetap
 # dapat bentuk error bawaan FastAPI seperti sebelumnya (frontend yang sudah
@@ -380,6 +358,19 @@ _LOCK_CACHE_EXPORT_18_SHEET = threading.Lock()
 _BATAS_ENTRI_CACHE_EXPORT_18_SHEET = 200
 
 
+# [DIPULIHKAN] Error trigger kunci periode (PERIOD_LOCKED) -> respons 409 yang jelas,
+# untuk jalur yang tidak menangkapnya sendiri. Pengganti middleware lama.
+from sqlalchemy.exc import DBAPIError as _DBAPIError
+from fastapi.responses import JSONResponse as _JSONResponse
+
+
+@app.exception_handler(_DBAPIError)
+async def _respon_periode_terkunci(request, exc):
+    pesan = dbc.pesan_periode_terkunci(exc)
+    if pesan:
+        return _JSONResponse(status_code=409, content={"detail": pesan, "code": "PERIOD_LOCKED"})
+    raise exc
+
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
@@ -394,23 +385,26 @@ app.include_router(finance_bank_cash_exceptions_v1.router)  # [BARU] /api/v1/fin
 app.include_router(finance_receivables_payables_v1.router_ar)  # [BARU] /api/v1/finance/receivables -- Accounts Receivable (piutang atas Sales)
 app.include_router(finance_receivables_payables_v1.router_ap)  # [BARU] /api/v1/finance/payables -- Accounts Payable (hutang atas Purchase)
 app.include_router(finance_receivables_ar_v1.router_ar)  # [BARU] /api/v1/finance/receivables/customers|invoice-form|invoice-entries|collections
-app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api/v1/finance/receivables/statements -- riwayat Customer Statement + email
-app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements -- riwayat Vendor Statement + email
+app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api/v1/finance/receivables/statements
+app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements
+# [DITAHAN SEMENTARA] app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
 app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
-app.include_router(management_opening_balance_import_v1.router)  # [BARU] /api/v1/management/opening-balances/{ob_id}/imports/... & /imports/{batch_id}/...
-app.include_router(management_year_end_closing_v1.router)  # [BARU] /api/v1/management/year-end-closing/... -- prefix sudah di router-nya sendiri
+app.include_router(management_opening_balance_import_v1.router)  # [BARU] /api/v1/management/opening-balances (import)
+app.include_router(management_year_end_closing_v1.router)  # [BARU] /api/v1/management/year-end-closing/...
 app.include_router(management_settings_v1.router)  # [BARU] /api/v1/management/settings/users|accountants|purchase|product|account-mapping
 app.include_router(management_coa_industry_v1.router)  # [BARU] /api/v1/management/coa-industries -- pilihan Industry + template COA
+app.include_router(management_payroll_v1.router)  # [BARU] /api/v1/management/payroll/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_sales_v1.router)  # [BARU] /api/v1/transactions/sales/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_sales_import_v1.router)  # [BARU] /api/v1/transactions/sales/source-files/upload
 app.include_router(transactions_journal_entry_v1.router)  # [BARU] /api/v1/transactions/journal-entries/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_journal_entry_import_v1.router)  # [BARU] /api/v1/transactions/journal-entries/import/upload
 app.include_router(transactions_purchase_v1.router)  # [BARU] /api/v1/transactions/purchase/... -- prefix sudah di router-nya sendiri
-app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- prefix sudah di router-nya sendiri
 app.include_router(transactions_purchase_import_v1.router)  # [BARU] /api/v1/transactions/purchase/import/upload
-app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills
+app.include_router(transactions_purchase_bill_v1.router)  # [BARU] /api/v1/transactions/purchase/bills/... -- Create Bill manual
+app.include_router(transactions_bank_cash_v1.router)  # [BARU] /api/v1/transactions/bank-cash/... -- Source Data, Bank Mapping, mutasi
+# [DITAHAN] app.include_router(finance_payables_v1.router)  # [BARU] /api/v1/finance/payables/... -- Accounts Payable (bill Purchase posted)  -- bentrok jalur dengan router_ap Willi
 app.include_router(financial_statements_v1.router)  # [BARU] /api/v1/financial-statements/... -- prefix sudah di router-nya sendiri
 app.include_router(reports_general_ledger_v1.router)  # [BARU] /api/v1/reports/general-ledger -- prefix sudah di router-nya sendiri
 app.include_router(reports_fs_statements_v1.router)  # [BARU] /api/v1/reports/financial-statements/balance-sheet|profit-loss|changes-in-equity|cash-flow|segments|notes

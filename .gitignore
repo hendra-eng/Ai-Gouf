@@ -58,3 +58,11 @@ backend/encryption.key
 
 Gouf Task Documents.xlsx
 dataset/picture/*
+backend/logs/
+backend/logs/
+backend/logs/
+
+# rahasia dan data pelanggan (jangan di-commit)
+backend/.env.local
+backend/.gemini_tts_status.json
+backend/data/wa_files/

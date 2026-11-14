@@ -6,7 +6,7 @@ import CashBankExceptions from '../components/CashBankExceptions';
 
 export default function CashBankExceptionsPage() {
   return (
-    <div className="p-6">
+    <div className="space-y-5">
       <CashBankTabs />
       <CashBankExceptions />
     </div>

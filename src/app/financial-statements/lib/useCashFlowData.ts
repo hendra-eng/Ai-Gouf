@@ -14,7 +14,7 @@
 //
 // Sumber data backend (lihat backend/modules/laporan_keuangan.py):
 //   - GET/POST /api/client/{id}/laporan-bulanan/{tahun} (ambilLaporanBulanan
-//     / generateLaporanBulanan di agent-ai/lib/api.js) -> field BARU
+//     / generateLaporanBulanan di zafeb-ai/lib/api.js) -> field BARU
 //     "arus_kas_bulanan" (lihat susun_arus_kas_bulanan_setahun()): per bulan
 //     berisi { begin_cash, operating_cf, investing_cf, financing_cf,
 //     net_change, end_cash, rincian: { operasi/investasi/pendanaan:
@@ -49,7 +49,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useActiveClient } from '@/lib/activeClient';
-import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/agent-ai/lib/api';
+import { ambilLaporanBulanan, generateLaporanBulanan, ambilCoaClient } from '@/app/zafeb-ai/lib/api';
 import {
   CF_CORE as MOCK_CF_CORE,
   COMPANY,
