@@ -161,7 +161,7 @@ TAHAP_TANPA_REVIEW = 3        # internal tahap_3..5 (+ super_admin)
 CLIENT_LV_TANPA_REVIEW = 5    # client_lv_1..5 (Org Owner .. Supervisor)
 CLIENT_LV_MAKS_INPUT = 6      # client_lv_6 (Accounting Staff) boleh input, perlu review
 MAKS_UKURAN_FILE = 10 * 1024 * 1024
-MAKS_BARIS = 5000
+MAKS_BARIS = 50000
 NOL = Decimal("0")
 SEN = Decimal("0.01")
 
