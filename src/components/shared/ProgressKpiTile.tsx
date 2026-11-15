@@ -17,7 +17,7 @@ interface ProgressKpiTileProps {
   /** Angka utama. Number -> diformat id-ID; string dipakai apa adanya (mis. "Rp 12.500.000"). */
   value: number | string;
   detail: string;
-  detailUnit: string;
+  detailUnit?: string;
   pct: number;
   pctLabel: string;
   tone: KpiTone;
@@ -53,7 +53,7 @@ export default function ProgressKpiTile({
       </div>
       <div className={`relative ${sm ? 'mt-2' : 'mt-3'} flex w-fit max-w-full items-baseline gap-1.5 rounded-lg border border-slate-200 bg-white/80 ${sm ? 'px-2 py-0.5' : 'px-2.5 py-1'} shadow-sm`}>
         <span className={`truncate font-bold text-slate-900 ${sm ? 'text-xs' : 'text-sm'}`}>{detail}</span>
-        <span className="shrink-0 text-[11px] font-semibold text-slate-500">{detailUnit}</span>
+        {detailUnit && <span className="shrink-0 text-[11px] font-semibold text-slate-500">{detailUnit}</span>}
       </div>
       <div className={`relative ${sm ? 'mt-2 h-1.5' : 'mt-3 h-2'} w-full overflow-hidden rounded-full bg-slate-100 shadow-inner`}>
         <div className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${c.bar}`} style={{ width: `${active ? Math.min(Math.max(pct, 3), 100) : 0}%` }} />

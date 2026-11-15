@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon, ArrowTopRightOnSquareIcon, CheckCircleIcon, ExclamationTriangleIcon, ClockIcon, XCircleIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { ArrowsUpDownIcon } from '@heroicons/react/24/outline';
+import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, MoreHorizontal, Eye, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import SourceKpiTile, { type KpiTone } from '@/components/shared/ProgressKpiTile';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useJeSourceRecords, useJeDrafts, listJeImportTemplates, type BackendJeSourceRecord, type BackendJeDraft } from '@/lib/journalEntryStore';
-import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import ImportJournalModal, { HEADER_ALIASES, JE_REQUIRED_COLUMNS } from '@/app/transactions/journal-entry/components/ImportJournalModal';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
@@ -84,33 +87,59 @@ const sourceTypeColors: Record<string, string> = {
   Manual: 'bg-slate-100 text-slate-700',
 };
 
+// Badge status -- bentuk pil, ukuran & warna sama dengan tabel Source Data Purchase/Sales.
+const BADGE_BASE = 'text-[11px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap';
+const SOURCE_STATUS_CLS: Record<SourceStatus, string> = {
+  Mapped: 'bg-emerald-100 text-emerald-700',
+  'Pending Mapping': 'bg-amber-100 text-amber-700',
+  'Validation Error': 'bg-red-100 text-red-700',
+  Imported: 'bg-blue-100 text-blue-700',
+};
+const SYNC_STATUS_CLS: Record<SyncStatus, string> = {
+  Synced: 'bg-emerald-100 text-emerald-700',
+  'Pending Sync': 'bg-amber-100 text-amber-700',
+  'Sync Failed': 'bg-red-100 text-red-700',
+  Manual: 'bg-slate-100 text-slate-600',
+};
+
 function SourceStatusBadge({ status }: { status: SourceStatus }) {
-  const map: Record<SourceStatus, { cls: string; icon: React.ReactNode }> = {
-    Mapped: { cls: 'bg-green-50 text-green-700 border border-green-200', icon: <CheckCircleIcon className="w-3 h-3" /> },
-    'Pending Mapping': { cls: 'bg-amber-50 text-amber-700 border border-amber-200', icon: <ClockIcon className="w-3 h-3" /> },
-    'Validation Error': { cls: 'bg-red-50 text-red-700 border border-red-200', icon: <XCircleIcon className="w-3 h-3" /> },
-    Imported: { cls: 'bg-blue-50 text-blue-700 border border-blue-200', icon: <ClockIcon className="w-3 h-3" /> },
-  };
-  const { cls, icon } = map[status];
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-      {icon}{status}
-    </span>
-  );
+  return <span className={`${BADGE_BASE} ${SOURCE_STATUS_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
 }
 
 function SyncStatusBadge({ status }: { status: SyncStatus }) {
-  const map: Record<SyncStatus, string> = {
-    Synced: 'bg-green-50 text-green-700',
-    'Pending Sync': 'bg-amber-50 text-amber-700',
-    'Sync Failed': 'bg-red-50 text-red-700',
-    Manual: 'bg-slate-50 text-slate-600',
-  };
+  return <span className={`${BADGE_BASE} ${SYNC_STATUS_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
+}
+
+// Panel putih dengan header terpisah garis -- sama dengan SourcePanel di Purchase/Sales.
+function SourcePanel({ title, leading, action, children }: {
+  title: string; leading?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode;
+}) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${map[status]}`}>
-      {status}
-    </span>
+    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {leading}
+          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+        </div>
+        {action}
+      </div>
+      <div className="flex flex-1 flex-col p-4">{children}</div>
+    </div>
   );
+}
+
+function buildPageItems(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  if (current <= 3) { pages.add(2); pages.add(3); pages.add(4); }
+  if (current >= total - 2) { pages.add(total - 1); pages.add(total - 2); pages.add(total - 3); }
+  const sorted = Array.from(pages).filter(n => n >= 1 && n <= total).sort((x, y) => x - y);
+  const out: (number | '…')[] = [];
+  sorted.forEach((n, idx) => {
+    if (idx > 0 && n - sorted[idx - 1] > 1) out.push('…');
+    out.push(n);
+  });
+  return out;
 }
 
 export default function SourceDataPage() {
@@ -136,8 +165,11 @@ export default function SourceDataPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortField, setSortField] = useState<keyof SourceRecord>('sourceDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [pageSize, setPageSize] = useState(JE_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRow, setSelectedRow] = useState<SourceRecord | null>(null);
+  const [menuRowId, setMenuRowId] = useState<string | null>(null);
+  useEffect(() => { setCurrentPage(1); }, [search, typeFilter, statusFilter, sortField, sortDir, pageSize]);
 
   const sourceTypes = ['All', 'Sales', 'Purchase', 'Payroll', 'Bank', 'Cash', 'Expense', 'Inventory', 'Fixed Assets', 'Tax', 'Manual'];
   const statuses = ['All', 'Mapped', 'Pending Mapping', 'Validation Error', 'Imported'];
@@ -157,9 +189,10 @@ export default function SourceDataPage() {
     return data;
   }, [sourceData, search, typeFilter, statusFilter, sortField, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
+  const goToPage = (n: number) => setCurrentPage(Math.min(Math.max(1, n), totalPages));
 
   const handleSort = (field: keyof SourceRecord) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -237,157 +270,240 @@ export default function SourceDataPage() {
     toast.success('Export successful', { description: `${filtered.length} rows downloaded as Excel.` });
   };
 
+  // Tombol aksi -- ditaruh di baris yang sama dengan tab (sama dengan Source Data Purchase/Sales).
+  const actionBar = (
+    <div className="flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>button]:whitespace-nowrap">
+      <button onClick={() => setShowImport(true)} disabled={!clientId} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary disabled:opacity-50">
+        <Upload size={13} /> Upload File
+      </button>
+      <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+        <Download size={13} /> Excel Template
+      </button>
+      <button onClick={handleExport} disabled={filtered.length === 0} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary disabled:opacity-50">
+        <Download size={13} /> Export
+      </button>
+      <button onClick={() => setShowMapping(true)} className="btn-primary text-xs py-1.5 gap-1.5">
+        <Settings size={13} /> Mapping Rules
+      </button>
+    </div>
+  );
+
+  const pctOf = (n: number) => (summaryStats.total > 0 ? Math.round((n / summaryStats.total) * 100) : 0);
+  const kpiTiles: { label: string; value: number; sub: string; tone: KpiTone; icon: React.ElementType }[] = [
+    { label: 'Total Sources', value: summaryStats.total, sub: 'All source records', tone: 'slate', icon: Upload },
+    { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${pctOf(summaryStats.mapped)}% mapped`, tone: 'green', icon: CheckCircle },
+    { label: 'Pending / Imported', value: summaryStats.pending, sub: 'Awaiting mapping', tone: 'amber', icon: Clock },
+    { label: 'Validation Errors', value: summaryStats.errors, sub: 'Require attention', tone: 'sky', icon: AlertTriangle },
+  ];
+
+  const columns = [
+    { label: 'Source ID', field: 'sourceId', align: 'left' },
+    { label: 'Type', field: 'sourceType', align: 'left' },
+    { label: 'Date', field: 'sourceDate', align: 'left' },
+    { label: 'Description', field: 'description', align: 'left' },
+    { label: 'Amount', field: 'amount', align: 'right' },
+    { label: 'Account', field: 'relatedAccount', align: 'left' },
+    { label: 'JE Reference', field: 'jeReference', align: 'left' },
+    { label: 'Sync', field: 'syncStatus', align: 'left' },
+    { label: 'Status', field: 'sourceStatus', align: 'left' },
+  ];
+
   return (
-      <div className="space-y-6 fade-in">
-        <JournalEntryTabs activeTab="source" />
-        {showImport && clientId && (
-          <ImportJournalModal
-            clientId={clientId}
-            createdByName={user?.nama || user?.username || 'System'}
-            onClose={() => setShowImport(false)}
-          />
-        )}
-        {showMapping && (
-          <MappingRulesModal
-            onClose={() => setShowMapping(false)}
-            loadTemplates={activeClientId ? loadTemplates : undefined}
-            columns={JE_MAPPING_COLUMNS}
-            columnsNote="Used when no import template matches the uploaded file: rows are grouped per JE Number into balanced draft journals."
-          />
-        )}
+    <div className="fade-in">
+      <JournalEntryTabs activeTab="source" actions={actionBar} />
+      {showImport && clientId && (
+        <ImportJournalModal
+          clientId={clientId}
+          createdByName={user?.nama || user?.username || 'System'}
+          onClose={() => setShowImport(false)}
+        />
+      )}
+      {showMapping && (
+        <MappingRulesModal
+          onClose={() => setShowMapping(false)}
+          loadTemplates={activeClientId ? loadTemplates : undefined}
+          columns={JE_MAPPING_COLUMNS}
+          columnsNote="Used when no import template matches the uploaded file: rows are grouped per JE Number into balanced draft journals."
+        />
+      )}
 
-        {/* Action Bar */}
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <button onClick={() => setShowImport(true)} disabled={!clientId} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
-            <ArrowUpTrayIcon className="w-3.5 h-3.5" /> Upload File
-          </button>
-          <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5">
-            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Excel Template
-          </button>
-          <button onClick={handleExport} disabled={filtered.length === 0} className="btn-secondary text-xs py-1.5 gap-1.5 disabled:opacity-50">
-            <ArrowDownTrayIcon className="w-3.5 h-3.5" /> Export
-          </button>
-          <button onClick={() => setShowMapping(true)} className="btn-primary text-xs py-1.5 gap-1.5">
-            <Cog6ToothIcon className="w-3.5 h-3.5" /> Mapping Rules
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Total Sources', value: summaryStats.total, sub: 'All source records', color: 'text-slate-700', bg: 'bg-slate-50' },
-            { label: 'Mapped to JE', value: summaryStats.mapped, sub: `${summaryStats.total > 0 ? Math.round(summaryStats.mapped / summaryStats.total * 100) : 0}% mapped`, color: 'text-green-700', bg: 'bg-green-50' },
-            { label: 'Pending / Imported', value: summaryStats.pending, sub: 'Awaiting mapping', color: 'text-amber-700', bg: 'bg-amber-50' },
-            { label: 'Validation Errors', value: summaryStats.errors, sub: 'Require attention', color: 'text-red-700', bg: 'bg-red-50' },
-          ].map(card => (
-            <div key={card.label} className="je-card p-4">
-              <div className={`inline-flex items-center justify-center w-9 h-9 rounded-lg ${card.bg} mb-3`}>
-                <span className={`text-sm font-bold ${card.color}`}>{card.value}</span>
-              </div>
-              <p className="text-xl font-bold text-foreground tabular-nums">{card.value}</p>
-              <p className="text-xs font-medium text-foreground mt-0.5">{card.label}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{card.sub}</p>
-            </div>
+      <div className="pt-5 space-y-5">
+        {/* KPI Cards -- 4 kartu, ukuran & posisi sama dengan Source Data Purchase */}
+        <div className="!mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpiTiles.map(k => (
+            <SourceKpiTile
+              key={k.label}
+              label={k.label}
+              value={k.value}
+              detail={k.sub}
+              pct={pctOf(k.value)}
+              pctLabel="of all sources"
+              tone={k.tone}
+              icon={k.icon}
+            />
           ))}
         </div>
 
-        {/* Filters */}
-        <div className="je-card p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input className="je-input pl-9" placeholder="Search by source ID, description, or vendor…" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
+        {/* Source Record Table */}
+        <div className="card overflow-hidden">
+          <div className="px-0 py-3 border-b border-border flex flex-col gap-3">
+            <div>
+              <h3 className="text-2xl font-bold text-foreground">Journal Source Record List</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {filtered.length === 0
+                  ? `Showing 0 of ${sourceData.length} records`
+                  : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} records`}
+              </p>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}>
-                  {sourceTypes.map(t => <option key={t}>{t}</option>)}
-                </select>
+            {/* Filter bar -- dropdown di kiri, kolom cari di kanan (sama dengan Purchase) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                value={typeFilter}
+                onChange={setTypeFilter}
+                options={sourceTypes.map(t => ({ value: t, label: t === 'All' ? 'All Types' : t }))}
+              />
+              <FilterSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={statuses.map(st => ({ value: st, label: st === 'All' ? 'All Statuses' : st }))}
+              />
+              <div className="relative ml-auto w-full sm:w-[400px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search by source ID, description, or vendor…"
+                  className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
               </div>
-              <select className="je-select text-sm" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
-                {statuses.map(s => <option key={s}>{s}</option>)}
-              </select>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">{filtered.length} of {sourceData.length} records</p>
-        </div>
 
-        {/* Table */}
-        <div className="je-card overflow-hidden">
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1100px]">
               <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  {[
-                    { label: 'Source ID', field: 'sourceId' },
-                    { label: 'Type', field: 'sourceType' },
-                    { label: 'Date', field: 'sourceDate' },
-                    { label: 'Description', field: 'description' },
-                    { label: 'Amount', field: 'amount' },
-                    { label: 'Account', field: 'relatedAccount' },
-                    { label: 'JE Reference', field: 'jeReference' },
-                    { label: 'Sync', field: 'syncStatus' },
-                    { label: 'Status', field: 'sourceStatus' },
-                  ].map(col => (
-                    <th key={col.field} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer hover:text-foreground select-none whitespace-nowrap" onClick={() => handleSort(col.field as keyof SourceRecord)}>
-                      <span className="flex items-center gap-1">{col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-50" /></span>
+                <tr className="bg-[#8FE3B5]">
+                  {columns.map(col => (
+                    <th
+                      key={col.field}
+                      onClick={() => handleSort(col.field as keyof SourceRecord)}
+                      className={`py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32] cursor-pointer select-none hover:text-[#064E3B] ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'flex-row-reverse' : ''}`}>
+                        {col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-60" />
+                      </span>
                     </th>
                   ))}
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Actions</th>
+                  <th className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {loading ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading source records…</td></tr>
+                  <tr><td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">Loading source records…</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No source records match your filters.</td></tr>
+                  <tr><td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">No source records match your filters.</td></tr>
                 ) : paginated.map(row => (
-                  <tr key={row.id} className="table-row-hover cursor-pointer" onClick={() => setSelectedRow(row)}>
-                    <td className="px-4 py-3 font-mono text-xs font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceTypeColors[row.sourceType] || 'bg-gray-100 text-gray-700'}`}>{row.sourceType}</span>
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedRow(row)}
+                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedRow?.id === row.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                  >
+                    <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      <span className={`${BADGE_BASE} ${sourceTypeColors[row.sourceType] || 'bg-gray-100 text-gray-700'}`}>{row.sourceType}</span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.sourceDate}</td>
-                    <td className="px-4 py-3 text-xs max-w-xs truncate" title={row.description}>{row.description}</td>
-                    <td className="px-4 py-3 text-xs font-semibold tabular-nums text-right whitespace-nowrap">{fmt(row.amount)}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{row.sourceDate}</td>
+                    <td className="py-2 px-2 text-foreground max-w-xs truncate" title={row.description}>{row.description}</td>
+                    <td className="py-2 px-2 text-right font-semibold tabular-nums whitespace-nowrap">{fmt(row.amount)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap">
                       <span className="text-muted-foreground">{kodeAkun(row.accountCode)}</span>
                       <span className="mx-1 text-border">·</span>
-                      <span>{row.relatedAccount}</span>
+                      <span className="text-foreground">{row.relatedAccount}</span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {row.jeReference ? (
-                        <span className="font-mono text-xs text-primary font-medium">{row.jeReference}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">Not mapped</span>
-                      )}
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      {row.jeReference
+                        ? <span className="font-medium text-primary">{row.jeReference}</span>
+                        : <span className="text-muted-foreground">Not mapped</span>}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap"><SyncStatusBadge status={row.syncStatus} /></td>
-                    <td className="px-4 py-3 whitespace-nowrap"><SourceStatusBadge status={row.sourceStatus} /></td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
-                        View <ArrowTopRightOnSquareIcon className="w-3 h-3" />
-                      </button>
+                    <td className="py-2 px-2 whitespace-nowrap"><SyncStatusBadge status={row.syncStatus} /></td>
+                    <td className="py-2 px-2 whitespace-nowrap"><SourceStatusBadge status={row.sourceStatus} /></td>
+                    <td className="py-2 px-2">
+                      <div className="relative" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setMenuRowId(menuRowId === row.id ? null : row.id)}
+                          className="p-1 hover:bg-muted rounded transition-colors"
+                          aria-label="Actions"
+                        >
+                          <MoreHorizontal size={14} className="text-muted-foreground" />
+                        </button>
+                        {menuRowId === row.id && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuRowId(null)} />
+                            <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-border bg-card shadow-lg py-1">
+                              <button
+                                onClick={() => { setSelectedRow(row); setMenuRowId(null); }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left"
+                              >
+                                <Eye size={12} /> View detail
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="source records" />
+
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <span>Rows per page</span>
+                <select value={pageSize} onChange={ev => setPageSize(Number(ev.target.value))} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <span className="hidden sm:inline text-slate-300">|</span>
+              <span>
+                <span className="font-semibold text-foreground">
+                  {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
+                </span>{' '}
+                of <span className="font-semibold text-foreground">{filtered.length}</span> source records
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => goToPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label="Previous page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronLeft size={16} /></button>
+              {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+                p === '…' ? (
+                  <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+                ) : (
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                )
+              )}
+              <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
+            </div>
+          </div>
         </div>
 
-        {/* Detail Panel */}
+        {/* Detail Panel -- gaya SourcePanel Purchase */}
         {selectedRow && (
-          <div className="je-card p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">{selectedRow.sourceId}</h3>
-                <p className="text-sm text-muted-foreground mt-0.5">{selectedRow.description}</p>
-              </div>
-              <button className="text-muted-foreground hover:text-foreground text-xs" onClick={() => setSelectedRow(null)}>✕ Close</button>
-            </div>
+          <SourcePanel
+            title={selectedRow.sourceId}
+            leading={
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><FileText size={17} /></span>
+            }
+            action={
+              <button onClick={() => setSelectedRow(null)} className="flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs text-slate-600 hover:bg-slate-100">
+                <X size={13} /> Close
+              </button>
+            }
+          >
+            <p className="mb-4 text-sm text-muted-foreground">{selectedRow.description}</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               {[
                 { label: 'Source Type', value: selectedRow.sourceType },
@@ -402,20 +518,21 @@ export default function SourceDataPage() {
                 { label: 'Created Date', value: selectedRow.createdDate },
                 ...(selectedRow.vendor ? [{ label: 'Vendor / Party', value: selectedRow.vendor }] : []),
               ].map(item => (
-                <div key={item.label} className="bg-muted/30 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
-                  <p className="text-sm font-medium text-foreground">{item.value}</p>
+                <div key={item.label}>
+                  <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
+                  <p className="text-sm font-semibold text-foreground mt-0.5">{item.value}</p>
                 </div>
               ))}
             </div>
             {selectedRow.sourceStatus === 'Validation Error' && (
-              <div className="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
-                <ExclamationTriangleIcon className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+              <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5">
+                <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
                 <p className="text-xs text-red-700">This source record has a validation error. The associated Journal Entry may have a debit/credit mismatch. Please review the depreciation schedule and correct the amounts before reprocessing.</p>
               </div>
             )}
-          </div>
+          </SourcePanel>
         )}
       </div>
+    </div>
   );
 }
