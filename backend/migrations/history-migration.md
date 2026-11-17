@@ -58,3 +58,8 @@ bank_cash/seed_template_npi_multi_format_bank_cash.sql
 49-add_import_row_selection.py
 50-add_coa_source_acc_no.py
 45-create_opening_balance_imports.py
+51-add_bank_cash_adjustment.py
+52-add_bank_cash_auto_rules.py
+53-add_bank_cash_mutation_auto_rule_skip.py
+54-add_bank_cash_auto_rule_auto_approve.py
+55-add_bank_cash_auto_match_controls.py

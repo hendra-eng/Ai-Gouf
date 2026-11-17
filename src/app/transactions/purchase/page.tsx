@@ -4,7 +4,9 @@ import React, { useMemo } from 'react';
 import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseTransactions, usePurchaseExceptions, mapTransactionToUi, mapExceptionToUi } from '@/lib/purchaseStore';
-import ProgressKpiTile, { type KpiTone } from '@/components/shared/ProgressKpiTile';
+import { PurchaseKpiTile, KpiSectionLabel } from '@/app/transactions/purchase/components/PurchaseKpiTile';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { useLanguage } from '@/lib/language';
 import { ShoppingBag, CircleDollarSign, Banknote, Clock, CheckCircle, AlertTriangle, Receipt, CalendarClock } from 'lucide-react';
 import { PurchaseCategoryCard, PurchasePaymentStatusCard } from '@/app/transactions/purchase/components/PurchaseBreakdownCards';
 import { PurchaseTopVendorsCard, PurchaseRecentActivityCard } from '@/app/transactions/purchase/components/PurchaseVendorActivityCards';
@@ -59,22 +61,23 @@ const categoryData = [
 ];
 
 const statusDist = [
-  { name: 'Posted', value: 6, color: '#15803D' },
-  { name: 'Approved', value: 2, color: '#0369A1' },
+  { name: 'Posted', value: 6, color: '#0D9488' },
+  { name: 'Approved', value: 2, color: '#2563EB' },
   { name: 'Pending Review', value: 2, color: '#D97706' },
-  { name: 'Exception', value: 1, color: '#C2410C' },
+  { name: 'Exception', value: 1, color: '#EA580C' },
   { name: 'Cancelled', value: 1, color: '#64748B' },
 ];
 
 const paymentStatusDist = [
-  { name: 'Unpaid', value: 4, color: '#DC2626' },
-  { name: 'Paid', value: 5, color: '#15803D' },
-  { name: 'Partially Paid', value: 1, color: '#D97706' },
-  { name: 'Overdue', value: 1, color: '#C2410C' },
+  { name: 'Unpaid', value: 4, color: '#D97706' },
+  { name: 'Paid', value: 5, color: '#059669' },
+  { name: 'Partially Paid', value: 1, color: '#EA580C' },
+  { name: 'Overdue', value: 1, color: '#DC2626' },
   { name: 'On Hold', value: 1, color: '#64748B' },
 ];
 
 export default function PurchaseOverviewPage() {
+  const { t } = useLanguage();
   const { activeClientId } = useActiveClient();
   // Filter Purchase = company aktif ("Switch Company"), dikirim sbg management_client_id -- lihat purchaseStore.tsx.
   const clientId = activeClientId ?? null;
@@ -120,46 +123,69 @@ export default function PurchaseOverviewPage() {
   // Data tren (contoh, sumber sama seperti sebelumnya) untuk kartu Purchase Volume Trend.
   const trendRecords = useMemo(() => buildDailyPurchaseRecords(new Date()), []);
 
-  // Kartu KPI memakai desain yang sama dengan Purchase Source Data (ProgressKpiTile):
-  // angka utama, chip keterangan, bar proporsi + badge persen. Persen dihitung dari data asli.
+  // Kartu KPI memakai desain yang sama dengan Sales Overview (tema elegant monokrom), dibagi dua
+  // kelompok berlabel seperti di Sales. Persen dihitung dari data asli.
   const nTx = kpis.totalPurchases;
-  const pctOfCount = (n: number) => (nTx > 0 ? Math.round((n / nTx) * 100) : 0);
-  const pctOfAmount = (v: number) => (kpis.totalAmount > 0 ? Math.min(100, Math.round((v / kpis.totalAmount) * 100)) : 0);
-  const kpiTiles: {
-    label: string; value: string | number; detail: string; detailUnit: string;
-    pct: number; pctLabel: string; tone: KpiTone; icon: React.ElementType; compact?: boolean; barActive: boolean;
-  }[] = [
-    { label: 'Total Purchases', value: nTx, detail: 'All', detailUnit: 'transactions', pct: nTx > 0 ? 100 : 0, pctLabel: 'of all transactions', tone: 'slate', icon: ShoppingBag, barActive: nTx > 0 },
-    { label: 'Purchase Amount', value: fmt(kpis.totalAmount), detail: `${nTx}`, detailUnit: 'transactions, gross value', pct: nTx > 0 ? 100 : 0, pctLabel: 'of gross purchase value', tone: 'amber', icon: CircleDollarSign, compact: true, barActive: nTx > 0 },
-    { label: 'Outstanding AP', value: fmt(kpis.totalAP), detail: `${kpis.unpaidCount}`, detailUnit: 'unpaid invoices', pct: pctOfAmount(kpis.totalAP), pctLabel: 'of purchase amount', tone: 'green', icon: Banknote, compact: true, barActive: kpis.totalAP > 0 },
-    { label: 'Pending Review', value: kpis.pendingReview, detail: fmt(kpis.pendingReviewAmount), detailUnit: 'awaiting approval', pct: pctOfCount(kpis.pendingReview), pctLabel: 'of all transactions', tone: 'sky', icon: Clock, barActive: kpis.pendingReview > 0 },
-    { label: 'Posted', value: kpis.posted, detail: fmt(kpis.postedAmount), detailUnit: 'finalized to GL', pct: pctOfCount(kpis.posted), pctLabel: 'of all transactions', tone: 'slate', icon: CheckCircle, barActive: kpis.posted > 0 },
-    { label: 'Exceptions', value: kpis.exceptions, detail: `${purchaseExceptions.filter(e => e.status === 'Open').length}`, detailUnit: 'open exceptions', pct: pctOfCount(kpis.exceptions), pctLabel: 'of all transactions', tone: 'amber', icon: AlertTriangle, barActive: kpis.exceptions > 0 },
-    { label: 'Input Tax (VAT)', value: fmt(kpis.totalTax), detail: 'Recoverable', detailUnit: 'input tax', pct: pctOfAmount(kpis.totalTax), pctLabel: 'of purchase amount', tone: 'green', icon: Receipt, compact: true, barActive: kpis.totalTax > 0 },
-    { label: 'Overdue Amount', value: fmt(kpis.overdueAmount), detail: `${kpis.overdueCount}`, detailUnit: 'past due date', pct: pctOfAmount(kpis.overdueAmount), pctLabel: 'of purchase amount', tone: 'sky', icon: CalendarClock, compact: true, barActive: kpis.overdueAmount > 0 },
-  ];
+  const pctOfCount = (n: number) => (nTx > 0 ? (n / nTx) * 100 : 0);
+  const pctOfAmount = (v: number) => (kpis.totalAmount > 0 ? Math.min(100, (v / kpis.totalAmount) * 100) : 0);
+  const openExceptions = purchaseExceptions.filter(e => e.status === 'Open').length;
 
   return (
-      <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-6 fade-in">
-        <PurchaseTabs />
+    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
+      <PurchaseTabs variant="elegant" />
 
-        {/* KPI Grid — desain disamakan dengan kartu KPI Purchase Source Data (ProgressKpiTile). */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {kpiTiles.map((k) => (
-            <ProgressKpiTile
-              key={k.label}
-              label={k.label}
-              value={k.value}
-              detail={k.detail}
-              detailUnit={k.detailUnit}
-              pct={k.pct}
-              pctLabel={k.pctLabel}
-              tone={k.tone}
-              icon={k.icon}
-              compactValue={k.compact}
-              barActive={k.barActive}
+      <div className={`${salesFont.className} pt-5 space-y-6`}>
+        {/* KPI Cards -- desain & pengelompokan sama dengan Sales Overview */}
+        <div>
+          <KpiSectionLabel>{t('Purchase Performance')}</KpiSectionLabel>
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <PurchaseKpiTile
+              label="Total Purchases" value={nTx.toLocaleString('id-ID')} icon={ShoppingBag}
+              sub="All transactions"
+              pct={nTx > 0 ? 100 : 0} pctLabel="of all transactions"
             />
-          ))}
+            <PurchaseKpiTile
+              label="Purchase Amount" value={fmt(kpis.totalAmount)} icon={CircleDollarSign}
+              sub={`${nTx} transactions, gross value`}
+              pct={nTx > 0 ? 100 : 0} pctLabel="of gross purchase value"
+            />
+            <PurchaseKpiTile
+              label="Pending Review" value={kpis.pendingReview.toLocaleString('id-ID')} icon={Clock}
+              sub={kpis.pendingReview > 0 ? `${fmt(kpis.pendingReviewAmount)} awaiting approval` : undefined}
+              pct={pctOfCount(kpis.pendingReview)} pctLabel="of all transactions"
+            />
+            <PurchaseKpiTile
+              label="Posted" value={kpis.posted.toLocaleString('id-ID')} icon={CheckCircle}
+              sub={kpis.posted > 0 ? `${fmt(kpis.postedAmount)} finalized to GL` : undefined}
+              pct={pctOfCount(kpis.posted)} pctLabel="of all transactions"
+            />
+            <PurchaseKpiTile
+              label="Exceptions" value={kpis.exceptions.toLocaleString('id-ID')} icon={AlertTriangle}
+              sub={`${openExceptions} open exceptions`}
+              pct={pctOfCount(kpis.exceptions)} pctLabel="of all transactions"
+            />
+          </div>
+        </div>
+
+        <div>
+          <KpiSectionLabel>{t('Tax & Payables')}</KpiSectionLabel>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <PurchaseKpiTile
+              label="Input Tax (VAT)" value={fmt(kpis.totalTax)} icon={Receipt}
+              sub="Recoverable input tax"
+              pct={pctOfAmount(kpis.totalTax)} pctLabel="of purchase amount"
+            />
+            <PurchaseKpiTile
+              label="Outstanding AP" value={fmt(kpis.totalAP)} icon={Banknote}
+              sub={`${kpis.unpaidCount} unpaid invoices`}
+              pct={pctOfAmount(kpis.totalAP)} pctLabel="of purchase amount"
+            />
+            <PurchaseKpiTile
+              label="Overdue Amount" value={fmt(kpis.overdueAmount)} icon={CalendarClock}
+              sub={`${kpis.overdueCount} past due date`}
+              pct={pctOfAmount(kpis.overdueAmount)} pctLabel="of purchase amount"
+            />
+          </div>
         </div>
 
         {/* Charts Row 1 */}
@@ -184,5 +210,6 @@ export default function PurchaseOverviewPage() {
         {/* Exception Summary -- desain disamakan dengan kartu KPI Overview */}
         <PurchaseExceptionSummary exceptions={purchaseExceptions} />
       </div>
+    </div>
   );
 }

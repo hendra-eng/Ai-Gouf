@@ -144,6 +144,10 @@ export interface BcTxLine {
   credit: number;
   /** Nominal baris dari sudut pandang arah kas (positif = mengisi nominal kas). */
   amount: number;
+  /** true = baris penyeimbang selisih kecil (biaya admin / diskon / pembulatan). */
+  is_adjustment?: boolean;
+  adjustment_category?: AdjustmentCategory | null;
+  adjustment_type?: AdjustmentType | null;
 }
 
 export interface BcJournalLine {
@@ -184,6 +188,8 @@ export interface BcTransaction {
   created_by_name: string | null;
   lines: BcTxLine[];
   journal: BcJournalLine[];
+  /** Ringkasan adjustment selisih kecil di transaksi ini (null = tidak ada). */
+  adjustment?: BcAdjustmentSummary | null;
 }
 
 export interface BcInvoice {
@@ -217,14 +223,125 @@ export interface BcAllocation {
   amount: number;
 }
 
+export type AdjustmentCategory = 'bank_fee' | 'discount' | 'rounding';
+/** expense = selisih jadi biaya (Dr), income = selisih jadi pendapatan (Cr). */
+export type AdjustmentType = 'expense' | 'income';
+
+export const ADJUSTMENT_CATEGORY_LABEL: Record<AdjustmentCategory, string> = {
+  bank_fee: 'Bank admin fee',
+  discount: 'Discount',
+  rounding: 'Rounding',
+};
+
+/** Izin menutup selisih kecil saat match. Nominalnya TIDAK dikirim: server menghitung sendiri. */
+export interface BcAdjustmentInput {
+  category: AdjustmentCategory;
+  /** Kosong = akun default dari Settings > Account Mapping. */
+  coa_id?: string | null;
+  note?: string | null;
+}
+
+export interface BcAdjustmentAccount {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** Ringkasan adjustment yang disarankan backend (belum menulis apa pun). */
+export interface BcAdjustmentInfo {
+  amount: number;
+  type: AdjustmentType;
+  side: 'debit' | 'credit';
+  suggested_category: AdjustmentCategory;
+  account: BcAdjustmentAccount | null;
+  /** false = akun selisih belum diatur di Settings > Account Mapping. */
+  ready: boolean;
+  needs: 'ADJUSTMENT_ACCOUNT_NOT_SET' | null;
+  /** Akun & kesiapan untuk tiap kategori (akun kategori, atau akun expense/income kalau kategori belum diatur). */
+  by_category?: Record<AdjustmentCategory, { account: BcAdjustmentAccount | null; ready: boolean }>;
+}
+
+/** Adjustment yang sudah tercatat di sebuah transaksi. */
+export interface BcAdjustmentSummary {
+  line_id: string;
+  amount: number;
+  type: AdjustmentType;
+  side: 'debit' | 'credit';
+  category: AdjustmentCategory | null;
+  category_label: string | null;
+  account_code: string;
+  account_name: string;
+  note: string | null;
+}
+
+export interface BcAdjustmentSettings {
+  enabled: boolean;
+  limit: number;
+  default_limit: number;
+  max_limit: number;
+  categories: { key: AdjustmentCategory; label: string }[];
+  accounts: { expense: BcAdjustmentAccount | null; income: BcAdjustmentAccount | null };
+  /** Akun khusus per kategori (opsional). Kosong = jatuh ke akun expense/income. */
+  category_accounts?: Partial<Record<AdjustmentCategory, BcAdjustmentAccount | null>>;
+  mapping_keys: { expense: string; income: string } & Partial<Record<AdjustmentCategory, string>>;
+  ready: { expense: boolean; income: boolean };
+  edited_at: string | null;
+}
+
+export interface BcAdjustmentOverview {
+  enabled: boolean;
+  limit: number;
+  monthly: { month: number; expense: number; income: number; count: number }[];
+  /** Adjustment yang transaksinya masih draft/approved. */
+  pending: { count: number; amount: number };
+}
+
+export interface BcApplyAdjustmentItem {
+  mutation_id: string;
+  /** Kosong = server memakai saran selisih teratas (dihitung ulang di server). */
+  allocations?: BcLineInput[];
+  category?: AdjustmentCategory;
+  coa_id?: string | null;
+  note?: string | null;
+}
+
+export interface BcApplyAdjustmentResult {
+  done: { mutation_id: string; tx_number: string; adjustment: BcAdjustmentSummary | null }[];
+  failed: { mutation_id: string; code: string; reason: string }[];
+}
+
 export interface BcCandidate {
-  kind: 'single' | 'combo';
+  kind: 'single' | 'combo' | 'single_adjust' | 'combo_adjust';
   exact: boolean;
   ref_hit: boolean;
   party_ratio: number;
   score: number;
   allocations: BcAllocation[];
+  /** true = kandidat ini hanya bisa dicocokkan dengan adjustment (selisih kecil). */
+  adjustable?: boolean;
+  adjustment?: BcAdjustmentInfo;
 }
+
+/** Apakah kandidat memerlukan adjustment (selisih kecil)? */
+export const isAdjustCandidate = (c: BcCandidate) => c.kind === 'single_adjust' || c.kind === 'combo_adjust';
+
+/**
+ * Arah & jenis adjustment untuk selisih antara nominal mutasi dan nominal invoice.
+ * Cermin dari _arah_adjustment di backend (hanya untuk tampilan/validasi awal; server tetap menghitung sendiri).
+ *  receipt: uang masuk < invoice = biaya; > invoice = pendapatan.
+ *  payment: uang keluar < invoice = pendapatan; > invoice = biaya.
+ */
+export function hitungAdjustment(direction: Direction, invoiceAmount: number, mutationAmount: number):
+  { type: AdjustmentType; side: 'debit' | 'credit'; amount: number } | null {
+  const selisih = Math.round((mutationAmount - invoiceAmount) * 100) / 100;
+  if (selisih === 0) return null;
+  const jumlah = Math.abs(selisih);
+  if (direction === 'receipt') return selisih > 0 ? { type: 'income', side: 'credit', amount: jumlah } : { type: 'expense', side: 'debit', amount: jumlah };
+  return selisih > 0 ? { type: 'expense', side: 'debit', amount: jumlah } : { type: 'income', side: 'credit', amount: jumlah };
+}
+
+/** Kategori bawaan: selisih berupa biaya = Bank admin fee, selisih berupa pendapatan = Rounding. */
+export const kategoriBawaan = (type: AdjustmentType): AdjustmentCategory => (type === 'expense' ? 'bank_fee' : 'rounding');
 
 export interface BcSuggestion {
   mutation_id: string;
@@ -232,6 +349,8 @@ export interface BcSuggestion {
   amount: number;
   candidates: BcCandidate[];
   auto_match: boolean;
+  adjustment_enabled?: boolean;
+  adjustment_limit?: number;
 }
 
 export interface BcOverviewAccount extends BcAccount {
@@ -247,6 +366,8 @@ export interface BcOverview {
   monthly: { month: number; cash_in: number; cash_out: number }[];
   pipeline: Record<TxStatus, { count: number; amount: number }>;
   mutations: Record<MutationStatus, number>;
+  /** Pemantauan adjustment selisih kecil (ada sejak backend adjustment). */
+  adjustments?: BcAdjustmentOverview;
 }
 
 /** Baris lawan untuk membuat/mengubah transaksi. */
@@ -291,7 +412,137 @@ export interface BcUploadResult {
   bank_account_name: string;
   /** Mapping bank yang dipakai ('used') atau baru dipelajari dari upload ini ('created'). */
   bank_mapping: (BcBankMapping & { match_by: BankMappingMatch | null; action: 'used' | 'created' }) | null;
+  /** Ada hanya kalau 'Auto-match after upload' menyala: hasil auto-match yang dijalankan server setelah upload. */
+  auto_match?: { matched: number; rule_matched: number; skipped: number; low_confidence_skipped: number; auto_approved?: number } | null;
 }
+
+/** Aturan otomatis untuk mutasi tanpa invoice yang berulang (biaya admin, bunga, ...). */
+export interface BcAutoRule {
+  id: string;
+  name: string;
+  direction: 'payment' | 'receipt';
+  keywords: string;
+  amounts: number[];
+  max_amount: number | null;
+  bank_coa_id: string | null;
+  bank_account: string | null;
+  /** Null untuk aturan invoice (tidak punya akun lawan). */
+  counter_coa_id: string | null;
+  counter_account_code: string | null;
+  counter_account_name: string | null;
+  category: string;
+  counterparty: string | null;
+  is_active: boolean;
+  auto_approve: boolean;
+  /** 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP. */
+  kind: BcAutoRuleKind;
+  /** 'any' = salah satu kata kunci cukup | 'all' = semua kata kunci harus ada. */
+  keyword_mode: 'any' | 'all';
+  exclude_keywords: string | null;
+  reference_keywords: string | null;
+  counterparty_keywords: string | null;
+  min_amount: number | null;
+  /** Aturan akun: toleransi +/- untuk nominal persis. Aturan invoice: selisih yang boleh ditutup adjustment. */
+  amount_tolerance: number | null;
+  /** Angka kecil dicoba lebih dulu. */
+  priority: number;
+  usage_count: number;
+  last_used_at: string | null;
+}
+
+export type BcAutoRuleKind = 'account' | 'invoice';
+
+export interface BcAutoRuleInput {
+  name: string;
+  direction: 'payment' | 'receipt';
+  keywords: string;
+  amounts?: number[] | null;
+  max_amount?: number | null;
+  bank_coa_id?: string | null;
+  /** Wajib untuk aturan akun; kosong untuk aturan invoice. */
+  counter_coa_id: string | null;
+  category: string;
+  counterparty?: string | null;
+  is_active?: boolean;
+  /** Hasil aturan langsung APPROVED (Post tetap manual). Aturan akun: hanya valid kalau `amounts` diisi. */
+  auto_approve?: boolean;
+  kind?: BcAutoRuleKind;
+  keyword_mode?: 'any' | 'all';
+  exclude_keywords?: string | null;
+  reference_keywords?: string | null;
+  counterparty_keywords?: string | null;
+  min_amount?: number | null;
+  amount_tolerance?: number | null;
+  priority?: number;
+}
+
+/** Saran aturan dari baris berulang yang sudah dicatat manual (belum tercakup aturan aktif). */
+export interface BcAutoRuleSuggestion {
+  name: string;
+  direction: 'payment' | 'receipt';
+  keywords: string;
+  amounts: number[];
+  max_amount: number | null;
+  counter_coa_id: string;
+  counter_account_code: string | null;
+  counter_account_name: string | null;
+  category: string;
+  counterparty: string | null;
+  /** Berapa kali baris serupa sudah dicatat manual. */
+  occurrences: number;
+  example: string | null;
+  /** Baris unmatched sekarang yang akan langsung tercakup kalau aturan ini dibuat. */
+  pending_unmatched: number;
+}
+
+/** Mutasi unmatched yang akan dicatat oleh aturan otomatis saat Auto-match dijalankan. */
+export interface BcRuleMatch {
+  mutation_id: string;
+  rule_id: string;
+  rule_name: string;
+  category: string;
+  account_code: string | null;
+  account_name: string | null;
+  /** 'invoice' = aturan invoice (account_name berisi nomor invoice & pihak). */
+  kind?: BcAutoRuleKind;
+  /** True kalau hasilnya akan langsung APPROVED. */
+  will_approve?: boolean;
+}
+
+export interface BcAutoMatchResult {
+  matched: { mutation_id: string; tx_number: string; invoices: string[]; auto_approved?: boolean }[];
+  rule_matched: {
+    mutation_id: string; tx_number: string; rule_id: string; rule_name: string;
+    kind?: BcAutoRuleKind; invoices?: string[]; auto_approved?: boolean;
+  }[];
+  skipped: number;
+  low_confidence_skipped: number;
+  /** Baris confidence rendah yang ikut dicocokkan (sebagai DRAFT) karena opsi "include low-confidence" menyala. */
+  low_confidence_matched?: number;
+  /** Cocok invoice pasti tapi dibiarkan manual karena jenis auto-match itu dimatikan. */
+  skipped_by_setting?: number;
+  auto_approved?: number;
+}
+
+/** Pengaturan auto-match per klien: jalan sendiri, on/off per jenis, auto-approve invoice, baris confidence rendah. */
+export interface BcAutoSettings {
+  auto_match_on_upload: boolean;
+  /** Uang masuk -> invoice Sales (AR). */
+  auto_match_ar: boolean;
+  /** Uang keluar -> invoice Purchase (AP). */
+  auto_match_ap: boolean;
+  /** Aturan untuk mutasi tanpa invoice (biaya admin, bunga, ...). */
+  auto_match_rules: boolean;
+  auto_approve_ar: boolean;
+  auto_approve_ap: boolean;
+  /** Baris confidence rendah ikut diproses; selalu DRAFT, tidak pernah auto-approve. */
+  auto_include_low_confidence: boolean;
+}
+
+export const BC_AUTO_SETTINGS_DEFAULT: BcAutoSettings = {
+  auto_match_on_upload: false, auto_match_ar: true, auto_match_ap: true, auto_match_rules: true,
+  auto_approve_ar: false, auto_approve_ap: false, auto_include_low_confidence: false,
+};
 
 /** Cara file dicocokkan ke mapping bank (urutan prioritas backend). */
 export type BankMappingMatch = 'account_number' | 'keyword' | 'template' | 'bank_name';
@@ -541,16 +792,69 @@ export const ignoreMutation = (clientId: string, id: string, reason?: string | n
   kirim<{ id: string }>('POST', `/mutations/${id}/ignore`, { client_id: clientId, reason: reason || null });
 export const restoreMutation = (clientId: string, id: string) =>
   kirim<{ id: string }>('POST', `/mutations/${id}/restore`, { client_id: clientId });
-export const matchMutationToInvoices = (clientId: string, mutationId: string, allocations: BcLineInput[], description?: string | null) =>
-  kirim<BcTransaction>('POST', `/mutations/${mutationId}/match`, { client_id: clientId, allocations, description: description || null });
+export const matchMutationToInvoices = (
+  clientId: string, mutationId: string, allocations: BcLineInput[], description?: string | null,
+  adjustment?: BcAdjustmentInput | null,
+) =>
+  kirim<BcTransaction>('POST', `/mutations/${mutationId}/match`, {
+    client_id: clientId, allocations, description: description || null,
+    adjustment: adjustment ? { category: adjustment.category, coa_id: adjustment.coa_id || null, note: adjustment.note || null } : null,
+  });
 export const matchMutationToAccounts = (
   clientId: string, mutationId: string,
   input: { category: string; counterparty?: string | null; description?: string | null; lines: BcLineInput[] },
 ) => kirim<BcTransaction>('POST', `/mutations/${mutationId}/match-account`, { client_id: clientId, ...input });
-export const autoMatchMutations = (clientId: string) =>
-  kirim<{ matched: { mutation_id: string; tx_number: string; invoices: string[] }[]; skipped: number }>('POST', '/mutations/auto-match', { client_id: clientId });
+export const autoMatchMutations = (clientId: string, bankCoaId?: string | null) =>
+  kirim<BcAutoMatchResult>('POST', '/mutations/auto-match', bankCoaId ? { client_id: clientId, bank_coa_id: bankCoaId } : { client_id: clientId });
 export const unmatchMutation = (clientId: string, mutationId: string) =>
   kirim<{ id: string }>('POST', `/mutations/${mutationId}/unmatch`, { client_id: clientId });
+
+/** Transfer antar akun bank (ala Xero): satu jurnal; mutasi lawan yang cocok otomatis ditautkan (paired_mutation_id). */
+export interface BcPendingTransfer {
+  transaction_id: string;
+  tx_number: string;
+  tx_date: string | null;
+  amount: number;
+  status: TxStatus;
+  /** Akun bank yang sedang menunggu mutasi pasangannya. */
+  to_bank_coa_id: string;
+  /** Sisi mutasi yang dicari di akun itu: credit = uang masuk, debit = uang keluar. */
+  needs: 'credit' | 'debit';
+  from_bank_coa_id: string;
+  from_account_code: string | null;
+  from_account_name: string | null;
+}
+export const transferMutation = (clientId: string, mutationId: string, toBankCoaId: string, description?: string | null) =>
+  kirim<BcTransaction & { paired_mutation_id: string | null }>('POST', `/mutations/${mutationId}/transfer`,
+    { client_id: clientId, to_bank_coa_id: toBankCoaId, description: description ?? null });
+export const pairTransferMutation = (clientId: string, mutationId: string, transactionId: string) =>
+  kirim<BcTransaction>('POST', `/mutations/${mutationId}/pair-transfer`, { client_id: clientId, transaction_id: transactionId });
+export const fetchBcPendingTransfers = (clientId: string) =>
+  ambil<BcPendingTransfer[]>('/transfers/pending', { client_id: clientId });
+
+export const fetchBcAutoRules = (clientId: string) => ambil<BcAutoRule[]>('/auto-rules', { client_id: clientId });
+export const createBcAutoRule = (clientId: string, input: BcAutoRuleInput) =>
+  kirim<BcAutoRule>('POST', '/auto-rules', { client_id: clientId, ...input });
+export const updateBcAutoRule = (clientId: string, id: string, input: BcAutoRuleInput) =>
+  kirim<BcAutoRule>('PUT', `/auto-rules/${id}`, { client_id: clientId, ...input });
+export const deleteBcAutoRule = (clientId: string, id: string) =>
+  kirim<{ id: string }>('DELETE', `/auto-rules/${id}${qs({ client_id: clientId })}`);
+export const fetchBcAutoRuleSuggestions = (clientId: string) =>
+  ambil<BcAutoRuleSuggestion[]>('/auto-rules/suggestions', { client_id: clientId });
+export const fetchBcRuleMatches = (clientId: string) => ambil<BcRuleMatch[]>('/mutations/rule-matches', { client_id: clientId });
+export const fetchBcAutoSettings = (clientId: string) => ambil<BcAutoSettings>('/auto-settings', { client_id: clientId });
+/** Ubah pengaturan auto-match (Level 5+). Hanya field yang dikirim yang berubah. */
+export const updateBcAutoSettings = (clientId: string, input: Partial<BcAutoSettings>) =>
+  kirim<BcAutoSettings>('PUT', '/auto-settings', { client_id: clientId, ...input });
+
+export const fetchBcAdjustmentSettings = (clientId: string) =>
+  ambil<BcAdjustmentSettings>('/adjustment-settings', { client_id: clientId });
+/** Ubah batas & on/off adjustment (Level 5+). Akun selisih diatur di Settings > Account Mapping. */
+export const updateBcAdjustmentSettings = (clientId: string, input: { enabled: boolean; limit: number }) =>
+  kirim<BcAdjustmentSettings>('PUT', '/adjustment-settings', { client_id: clientId, ...input });
+/** Cocokkan banyak mutasi berselisih kecil sekaligus -> DRAFT. Sebagian boleh gagal (lihat `failed`). */
+export const applyBcAdjustments = (clientId: string, items: BcApplyAdjustmentItem[]) =>
+  kirim<BcApplyAdjustmentResult>('POST', '/mutations/apply-adjustments', { client_id: clientId, items });
 
 export const createBcTransaction = (input: BcTxInput) => kirim<BcTransaction>('POST', '/transactions', input);
 export const updateBcTransaction = (id: string, input: BcTxInput) => kirim<BcTransaction>('PUT', `/transactions/${id}`, input);
@@ -641,6 +945,44 @@ export function useBcBankMappings(clientId: string | null) {
 export function useBcSuggestions(clientId: string | null) {
   const r = useBcData<BcSuggestion[]>(clientId ? `sg:${clientId}` : null, () => fetchBcSuggestions(clientId!), KOSONG);
   return { suggestions: r.data, loading: r.loading, error: r.error, refresh: r.refresh };
+}
+
+export function useBcPendingTransfers(clientId: string | null) {
+  const r = useBcData<BcPendingTransfer[]>(clientId ? `pt:${clientId}` : null, () => fetchBcPendingTransfers(clientId!), KOSONG);
+  return { pending: r.data, refresh: r.refresh };
+}
+
+export function useBcAdjustmentSettings(clientId: string | null) {
+  const r = useBcData<BcAdjustmentSettings | null>(clientId ? `adj:${clientId}` : null, () => fetchBcAdjustmentSettings(clientId!), null);
+  const { refresh } = r;
+  // Akun selisih diatur di halaman Settings lain: muat ulang saat tab browser kembali aktif.
+  useEffect(() => {
+    if (!clientId) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [clientId, refresh]);
+  return { settings: r.data, loading: r.loading, error: r.error, refresh };
+}
+
+export function useBcAutoRules(clientId: string | null) {
+  const r = useBcData<BcAutoRule[]>(clientId ? `rules:${clientId}` : null, () => fetchBcAutoRules(clientId!), KOSONG);
+  return { rules: r.data, loading: r.loading, error: r.error, refresh: r.refresh };
+}
+
+export function useBcAutoRuleSuggestions(clientId: string | null) {
+  const r = useBcData<BcAutoRuleSuggestion[]>(clientId ? `rulesug:${clientId}` : null, () => fetchBcAutoRuleSuggestions(clientId!), KOSONG);
+  return { suggestions: r.data, refresh: r.refresh };
+}
+
+export function useBcRuleMatches(clientId: string | null) {
+  const r = useBcData<BcRuleMatch[]>(clientId ? `rulematch:${clientId}` : null, () => fetchBcRuleMatches(clientId!), KOSONG);
+  return { ruleMatches: r.data, refresh: r.refresh };
+}
+
+export function useBcAutoSettings(clientId: string | null) {
+  const r = useBcData<BcAutoSettings | null>(clientId ? `autoset:${clientId}` : null, () => fetchBcAutoSettings(clientId!), null);
+  return { settings: r.data, refresh: r.refresh };
 }
 
 export function useBcTransactions(clientId: string | null, f: { status?: TxStatus | TxStatus[]; direction?: Direction } = {}) {

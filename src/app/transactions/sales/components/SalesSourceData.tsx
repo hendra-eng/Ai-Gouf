@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { salesFont as sourceFont } from './salesFont';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
 import { Upload, Download, Settings, CheckCircle, Clock, AlertTriangle, FileText, ShieldCheck, MoreHorizontal, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
@@ -47,66 +48,68 @@ const SOURCE_COLUMN_OPTIONS = [
 // (mis. lewat proses ekstraksi manual di masa depan), panelnya akan
 // menampilkan status "belum ada data" apa adanya.
 
-const statusBadge = (s: string) => {
-  const map: Record<string, string> = {
-    Berhasil: 'bg-emerald-100 text-emerald-700',
-    Diproses: 'bg-blue-100 text-blue-700',
-    'Butuh Review': 'bg-amber-100 text-amber-700',
-    Gagal: 'bg-red-100 text-red-700',
-  };
-  return map[s] || 'bg-muted text-muted-foreground';
+// Pill status tabel file -- gaya sama dengan STATUS_STYLE di tab Overview
+// (pill bergaris + titik berwarna).
+const SOURCE_STATUS_STYLE: Record<string, { pill: string; dot: string }> = {
+  Berhasil: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
+  Diproses: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600' },
+  'Butuh Review': { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  Gagal: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
+};
+const SOURCE_STATUS_FALLBACK = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
+const SOURCE_NUMERIC_COLS = ['Rows Detected'];
+const SourceStatusPill = ({ status, label }: { status: string; label: string }) => {
+  const st = SOURCE_STATUS_STYLE[status] || SOURCE_STATUS_FALLBACK;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{label}
+    </span>
+  );
 };
 
-// Kartu KPI Source Data -- ukuran & penempatan sama dengan SalesKpiTile di tab
-// Sales Transaction (garis aksen atas, angka besar, bar proporsi), ditambah
-// latar gradasi hijau lembut & kilau warna di sudut supaya lebih hidup.
-// Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
-type KpiTone = 'slate' | 'amber' | 'green' | 'sky';
-const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
-  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
-  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
-  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
-};
-
-function SourceKpiTile({ label, count, detail, detailUnit, pct, pctLabel, tone, icon: Icon }: {
+// Kartu KPI Source Data -- desain sama persis dengan OverviewKpiTile di tab
+// Overview (garis aksen tipis di atas, ikon kecil, angka semibold, bar proporsi
+// netral, hover garis hitam).
+function SourceKpiTile({ label, count, detail, detailUnit, pct, pctLabel, icon: Icon }: {
   label: string;
   count: number;
   detail: string;
   detailUnit: string;
   pct: number;
   pctLabel: string;
-  tone: KpiTone;
   icon: React.ElementType;
 }) {
-  const c = KPI_TONE[tone];
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
-          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
-        </div>
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white ${c.iconBg}`}>
-          <Icon size={24} className={c.iconText} />
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
         </span>
       </div>
-      <p className="relative mt-3 truncate text-lg font-bold text-slate-900">
-        {detail} <span className="text-xs font-semibold text-slate-500">{detailUnit}</span>
-      </p>
-      <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{detail} {detailUnit}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="relative mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
   );
 }
 
 // Panel bawah Source Data (File Preview / AI Extraction Summary / Data Quality
-// Check) -- kartu putih bersih dengan header terpisah garis. Sengaja BEDA dari
-// kartu KPI (tanpa garis aksen & gradasi) supaya tidak terlihat sama persis.
+// Check) -- gaya sama dengan kartu KPI Overview (border neutral-300, garis aksen
+// hitam tipis di atas, chip ikon netral, judul neutral-900). Tinggi mengikuti isi.
+// Tombol baris tab -- gaya netral: putih bergaris abu (sekunder) & hitam (utama),
+// sama dengan tombol "Buat Invoice" dan halaman aktif di paginasi.
+const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+
+const PANEL_ICON_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
+
 function SourcePanel({ title, leading, action, children }: {
   title: string;
   leading?: React.ReactNode;
@@ -114,11 +117,12 @@ function SourcePanel({ title, leading, action, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+    <div className="relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-3">
           {leading}
-          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+          <h3 className="truncate text-sm font-semibold text-neutral-900">{title}</h3>
         </div>
         {action}
       </div>
@@ -403,24 +407,24 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
 
 
   const actionBar = (
-    <div className="flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0">
-      <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+    <div className={`${sourceFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
+      <button onClick={handleUploadClick} disabled={isUploading || !managementClientId} className={ACTION_BTN_SECONDARY}>
         <Upload size={13} /> {isUploading ? t('Mengunggah...') : t('Upload File')}
       </button>
-      <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+      <button onClick={handleDownloadTemplate} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> {t('Template Excel')}
       </button>
-      <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+      <button onClick={handleExport} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> {t('Export')}
       </button>
-      <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
+      <button onClick={openMappingModal} className={ACTION_BTN_PRIMARY}>
         <Settings size={13} /> {t('Mapping Rules')}
       </button>
     </div>
   );
 
   return (
-    <div className="space-y-5">
+    <div className={`${sourceFont.className} space-y-5`}>
       <input ref={fileInputRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.txt" className="hidden" onChange={handleFilesSelected} />
 
       {error && (
@@ -444,11 +448,11 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           const berhasil = sourceFiles.filter(f => f.status_ekstraksi === 'Berhasil');
           const review = sourceFiles.filter(f => f.status_ekstraksi === 'Butuh Review');
           const pctLabel = t('dari total file');
-          const tiles: { label: string; rows: typeof sourceFiles; tone: KpiTone; icon: React.ElementType }[] = [
-            { label: 'Total File Upload', rows: sourceFiles, tone: 'slate', icon: Upload },
-            { label: 'Menunggu Diproses', rows: menunggu, tone: 'amber', icon: Clock },
-            { label: 'Berhasil Diproses', rows: berhasil, tone: 'green', icon: CheckCircle },
-            { label: 'Butuh Review', rows: review, tone: 'sky', icon: AlertTriangle },
+          const tiles: { label: string; rows: typeof sourceFiles; icon: React.ElementType }[] = [
+            { label: 'Total File Upload', rows: sourceFiles, icon: Upload },
+            { label: 'Menunggu Diproses', rows: menunggu, icon: Clock },
+            { label: 'Berhasil Diproses', rows: berhasil, icon: CheckCircle },
+            { label: 'Butuh Review', rows: review, icon: AlertTriangle },
           ];
           return tiles.map(k => (
             <SourceKpiTile
@@ -459,7 +463,6 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
               detailUnit={t('baris terdeteksi')}
               pct={pctOf(k.rows.length)}
               pctLabel={pctLabel}
-              tone={k.tone}
               icon={k.icon}
             />
           ));
@@ -468,10 +471,10 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
 
       {/* File Table */}
       <div className="card overflow-hidden">
-        <div className="px-0 py-3 border-b border-border flex items-center justify-between">
+        <div className="px-0 py-3 border-b border-border">
           <div>
-            <h3 className="text-2xl font-bold text-foreground">{t('Daftar File Sumber Penjualan')}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar File Sumber Penjualan')}</h3>
+            <p className="text-sm text-neutral-500 mt-0.5">
               {loading
                 ? t('Memuat...')
                 : sourceFiles.length === 0
@@ -481,55 +484,55 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           </div>
         </div>
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full min-w-[900px]">
+          <table className="w-full min-w-[900px] select-text border-separate border-spacing-0">
             <thead>
-              <tr className="bg-[#8FE3B5]">
+              <tr className="bg-neutral-300">
                 {['Upload Date', 'Source File', 'Source Type', 'Customer / Entity', 'Period', 'Rows Detected', 'Status Ekstraksi', 'Status Mapping', 'Confidence', 'Processed By', 'Actions'].map(h => (
-                  <th key={h} className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">{t(h)}</th>
+                  <th key={h} className={`py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 ${SOURCE_NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {!loading && sourceFiles.length === 0 && (
-                <tr><td colSpan={11} className="py-8 text-center text-xs text-muted-foreground">{t('Belum ada file yang diunggah.')}</td></tr>
+                <tr><td colSpan={11} className="py-2 px-2 text-center text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Belum ada file yang diunggah.')}</span></td></tr>
               )}
               {paginated.map((f) => (
                 <tr
                   key={f.id}
                   onClick={() => setSelectedFileId(f.id)}
-                  className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedFile?.id === f.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                  className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedFile?.id === f.id ? '[&>td]:bg-neutral-100' : ''}`}
                 >
-                  <td className="py-2 px-2 text-xs text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
-                  <td className="py-2 px-2">
+                  <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalWaktu(f.uploaded_at)}</td>
+                  <td className="py-2 px-2 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${f.file_type === 'Excel' ? 'bg-emerald-100 text-emerald-700' : f.file_type === 'CSV' ? 'bg-blue-100 text-blue-700' : f.file_type === 'PDF' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>{(f.file_type || '?').slice(0, 3)}</div>
-                      <span className="text-xs text-foreground font-medium">{f.file_name}</span>
+                      <div className="flex h-5 min-w-[28px] items-center justify-center rounded bg-neutral-900 px-1 text-[9px] font-bold uppercase tracking-wider text-white">{(f.file_type || '?').slice(0, 3)}</div>
+                      <span className="font-medium text-blue-700">{f.file_name}</span>
                     </div>
                   </td>
-                  <td className="py-2 px-2 text-xs text-muted-foreground">{f.file_type || '-'}</td>
-                  <td className="py-2 px-2 text-xs text-foreground">{f.customer_hint || '—'}</td>
-                  <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">{f.period_label || '-'}</td>
-                  <td className="py-2 px-2 text-xs text-foreground">{f.rows_detected.toLocaleString('id-ID')}</td>
-                  <td className="py-2 px-2"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_ekstraksi)}`}>{t(f.status_ekstraksi)}</span></td>
-                  <td className="py-2 px-2"><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusBadge(f.status_mapping)}`}>{t(f.status_mapping)}</span></td>
-                  <td className="py-2 px-2">
+                  <td className="py-2 px-2 text-neutral-600 whitespace-nowrap">{f.file_type || '-'}</td>
+                  <td className="py-2 px-2 font-medium text-neutral-900 whitespace-nowrap">{f.customer_hint || '—'}</td>
+                  <td className="py-2 px-2 text-neutral-600 whitespace-nowrap">{f.period_label || '-'}</td>
+                  <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{f.rows_detected.toLocaleString('id-ID')}</td>
+                  <td className="py-2 px-2 whitespace-nowrap"><SourceStatusPill status={f.status_ekstraksi} label={t(f.status_ekstraksi)} /></td>
+                  <td className="py-2 px-2 whitespace-nowrap"><SourceStatusPill status={f.status_mapping} label={t(f.status_mapping)} /></td>
+                  <td className="py-2 px-2 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div className="w-16 h-1.5 bg-neutral-200 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full ${(f.confidence_score ?? 0) >= 90 ? 'bg-emerald-500' : (f.confidence_score ?? 0) >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${f.confidence_score ?? 0}%` }} />
                       </div>
-                      <span className="text-xs text-muted-foreground">{f.confidence_score ?? 0}%</span>
+                      <span className="text-neutral-600">{f.confidence_score ?? 0}%</span>
                     </div>
                   </td>
-                  <td className="py-2 px-2 text-xs text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
+                  <td className="py-2 px-2 text-foreground whitespace-nowrap">{f.processed_by || '-'}</td>
                   <td className="py-2 px-2">
                     <div className="relative" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => setMenuFileId(menuFileId === f.id ? null : f.id)}
                         disabled={deletingFileId === f.id}
-                        className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-50"
+                        className="p-1 hover:bg-neutral-300 rounded transition-colors disabled:opacity-50"
                         aria-label={t('Aksi')}
                       >
-                        <MoreHorizontal size={14} className="text-muted-foreground" />
+                        <MoreHorizontal size={14} className="text-neutral-600" />
                       </button>
                       {menuFileId === f.id && (
                         <>
@@ -545,6 +548,14 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                         </>
                       )}
                     </div>
+                  </td>
+                </tr>
+              ))}
+              {/* Baris kosong pengisi: tinggi tabel selalu = "Baris per halaman", supaya layar tidak bergeser. */}
+              {Array.from({ length: Math.max(0, pageSize - (paginated.length > 0 ? paginated.length : (!loading ? 1 : 0))) }).map((_, i) => (
+                <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
+                  <td colSpan={11} className="py-2 px-2 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
                   </td>
                 </tr>
               ))}
@@ -575,7 +586,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
               p === '…' ? (
                 <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
               ) : (
-                <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
               )
             )}
             <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
@@ -585,18 +596,18 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
 
       {/* Bottom Section -- SEMUA dari data asli (source file terpilih & baris
           source row-nya), tidak ada lagi angka contoh. */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 items-start xl:grid-cols-3 gap-4">
         {/* File Preview */}
         <SourcePanel
           title={t('File Preview')}
           leading={
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><FileText size={17} /></span>
+            <span className={PANEL_ICON_CHIP}><FileText size={17} /></span>
           }
           action={selectedFile && previewRows.length > 0 ? (
             <button
               onClick={handlePromoteToInvoices}
               disabled={isPromoting}
-              className="btn-primary shrink-0 rounded-xl px-3 py-1.5 text-xs gap-1 disabled:opacity-50"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
               title={t('Naikkan baris valid jadi invoice resmi di tab Sales Transaction')}
             >
               {isPromoting ? t('Memproses...') : t('Buat Invoice')}
@@ -604,38 +615,38 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
           ) : undefined}
         >
           {selectedFile ? (
-            <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D1FAE5] text-[11px] font-extrabold text-[#065F46] shadow-sm ring-1 ring-white">{(selectedFile.file_type || '?').slice(0, 3).toUpperCase()}</div>
+            <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-[11px] font-bold uppercase tracking-wider text-white">{(selectedFile.file_type || '?').slice(0, 3).toUpperCase()}</div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-foreground">{selectedFile.file_name}</p>
-                <p className="text-xs font-medium text-slate-600">{selectedFile.rows_detected} {t('baris')} · {t('Diunggah')} {formatTanggalWaktu(selectedFile.uploaded_at)}</p>
+                <p className="truncate text-sm font-semibold text-neutral-900">{selectedFile.file_name}</p>
+                <p className="text-xs font-medium text-neutral-500">{selectedFile.rows_detected} {t('baris')} · {t('Diunggah')} {formatTanggalWaktu(selectedFile.uploaded_at)}</p>
               </div>
             </div>
           ) : (
-            <p className="mb-3 text-xs text-muted-foreground">{t('Belum ada file yang dipilih.')}</p>
+            <p className="mb-3 text-xs text-neutral-500">{t('Belum ada file yang dipilih.')}</p>
           )}
           {selectedFile && !loadingRows && previewRows.length === 0 && (
-            <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada baris data untuk file ini (ekstraksi otomatis belum tersambung).')}</p>
+            <p className="py-6 text-center text-xs text-neutral-500">{t('Belum ada baris data untuk file ini (ekstraksi otomatis belum tersambung).')}</p>
           )}
           {selectedFile && previewRows.length > 0 && (
             <>
               <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full text-xs">
+                <table className="w-full select-text border-separate border-spacing-0 text-xs">
                   <thead>
-                    <tr className="bg-[#8FE3B5]">
+                    <tr className="bg-neutral-300">
                       {['No', 'Tanggal', 'No. Invoice', 'Nama Customer', 'Cabang', 'DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].map(h => (
-                        <th key={h} className="whitespace-nowrap border-b border-t-2 border-[#0A4A32] px-2 py-2.5 text-left text-[11px] font-bold text-[#065F46]">{t(h)}</th>
+                        <th key={h} className={`whitespace-nowrap border-b border-t border-neutral-800 px-2 py-2 text-xs font-bold text-black ${['DPP (IDR)', 'PPN (IDR)', 'Total (IDR)'].includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {pagedPreviewRows.map(r => (
-                      <tr key={r.id} className="border-b border-slate-400/80 transition-colors hover:bg-slate-200/70">
-                        <td className="px-2 py-2 text-muted-foreground">{r.row_no}</td>
+                      <tr key={r.id} className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200">
+                        <td className="px-2 py-2 text-neutral-600">{r.row_no}</td>
                         <td className="whitespace-nowrap px-2 py-2">{r.tanggal ? formatTanggalSingkat(r.tanggal) : '-'}</td>
-                        <td className="whitespace-nowrap px-2 py-2 font-medium text-primary">{r.no_invoice || '-'}</td>
-                        <td className="whitespace-nowrap px-2 py-2 font-medium text-foreground">{r.nama_customer || '-'}</td>
-                        <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">{r.cabang || '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 font-medium text-blue-700">{r.no_invoice || '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 font-medium text-neutral-900">{r.nama_customer || '-'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.cabang || '-'}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{(r.dpp / 1000).toFixed(0)}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{(r.ppn / 1000).toFixed(0)}</td>
                         <td className="px-2 py-2 text-right font-semibold tabular-nums">{(r.total / 1000).toFixed(0)}</td>
@@ -644,7 +655,7 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                   </tbody>
                 </table>
               </div>
-              <div className="mt-auto flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+              <div className="mt-auto flex items-center justify-between border-t border-neutral-200 pt-3 text-xs text-neutral-500">
                 <span>
                   <span className="font-semibold text-foreground">{(previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1}–{Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, previewRows.length)}</span> {t('dari')} <span className="font-semibold text-foreground">{previewRows.length}</span>
                 </span>
@@ -676,27 +687,27 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
         <SourcePanel
           title={t('AI Extraction Summary')}
           leading={
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-xs font-extrabold text-[#065F46]">AI</span>
+            <span className={`${PANEL_ICON_CHIP} text-xs font-bold`}>AI</span>
           }
         >
           {!selectedFile ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">{t('Pilih atau unggah file untuk melihat ringkasan.')}</p>
+            <p className="py-6 text-center text-xs text-neutral-500">{t('Pilih atau unggah file untuk melihat ringkasan.')}</p>
           ) : (
             <>
               {selectedFile.ai_model_version ? (
-                <p className="mb-3 text-xs text-slate-600">
-                  {t('Model')}: <span className="ml-1 rounded-full border border-[#6EE7B7]/60 bg-[#ECFDF5] px-2 py-0.5 font-semibold text-[#047857]">{selectedFile.ai_model_version}</span>
+                <p className="mb-3 text-xs text-neutral-600">
+                  {t('Model')}: <span className="ml-1 rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 font-semibold text-neutral-700">{selectedFile.ai_model_version}</span>
                 </p>
               ) : (
-                <p className="mb-3 text-xs text-muted-foreground">{t('Belum ada hasil ekstraksi otomatis untuk file ini.')}</p>
+                <p className="mb-3 text-xs text-neutral-500">{t('Belum ada hasil ekstraksi otomatis untuk file ini.')}</p>
               )}
               {(() => {
                 const totalRows = selectedFile.rows_detected || 0;
                 const validPct = totalRows > 0 ? Math.round((selectedFile.rows_valid / totalRows) * 100) : 0;
                 const stats: { label: string; value: number; cls: string }[] = [
-                  { label: 'Total Baris Terdeteksi', value: selectedFile.rows_detected, cls: 'text-[#064E3B]' },
-                  { label: 'Baris Valid', value: selectedFile.rows_valid, cls: 'text-[#0F7D4E]' },
-                  { label: 'Baris Tidak Valid', value: selectedFile.rows_invalid, cls: selectedFile.rows_invalid > 0 ? 'text-red-600' : 'text-[#064E3B]' },
+                  { label: 'Total Baris Terdeteksi', value: selectedFile.rows_detected, cls: 'text-neutral-900' },
+                  { label: 'Baris Valid', value: selectedFile.rows_valid, cls: 'text-neutral-900' },
+                  { label: 'Baris Tidak Valid', value: selectedFile.rows_invalid, cls: selectedFile.rows_invalid > 0 ? 'text-red-600' : 'text-neutral-900' },
                 ];
                 const rows: [string, string][] = [
                   ['Duplikat Potensial', String(selectedFile.duplicate_count)],
@@ -708,23 +719,23 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                   <>
                     <div className="grid grid-cols-3 gap-2">
                       {stats.map(st => (
-                        <div key={st.label} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                          <p className="truncate text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-500" title={t(st.label)}>{t(st.label)}</p>
-                          <p className={`mt-1.5 text-2xl font-extrabold leading-none tabular-nums ${st.cls}`}>{st.value.toLocaleString('id-ID')}</p>
+                        <div key={st.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+                          <p className="truncate text-[10px] font-semibold uppercase leading-tight tracking-wide text-neutral-500" title={t(st.label)}>{t(st.label)}</p>
+                          <p className={`mt-1.5 text-lg font-semibold leading-none tabular-nums tracking-tight ${st.cls}`}>{st.value.toLocaleString('id-ID')}</p>
                         </div>
                       ))}
                     </div>
                     <div className="mt-3">
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-[#0F7D4E]" style={{ width: `${selectedFile.rows_valid > 0 ? Math.max(validPct, 3) : 0}%` }} />
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${selectedFile.rows_valid > 0 ? Math.max(validPct, 3) : 0}%` }} />
                       </div>
-                      <p className="mt-1.5 text-xs font-semibold text-slate-600">{validPct}% {t('baris valid')}</p>
+                      <p className="mt-1 text-[11px] font-medium text-neutral-600">{validPct}% {t('baris valid')}</p>
                     </div>
-                    <div className="mt-3 divide-y divide-slate-200 text-xs">
+                    <div className="mt-3 divide-y divide-neutral-200 text-xs">
                       {rows.map(([k, v]) => (
                         <div key={k} className="flex items-center justify-between py-2">
-                          <span className="text-muted-foreground">{t(k)}</span>
-                          <span className="text-sm font-bold tabular-nums text-slate-900">{v}</span>
+                          <span className="text-neutral-500">{t(k)}</span>
+                          <span className="text-sm font-semibold tabular-nums text-neutral-900">{v}</span>
                         </div>
                       ))}
                     </div>
@@ -732,8 +743,8 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                 );
               })()}
               {selectedFile.extraction_duration_ms != null && (
-                <div className="mt-auto border-t border-border pt-3">
-                  <p className="text-[11px] font-medium text-muted-foreground">ℹ {t('Ekstraksi selesai dalam')} {(selectedFile.extraction_duration_ms / 1000).toFixed(1)} {t('detik')}</p>
+                <div className="mt-auto border-t border-neutral-200 pt-3">
+                  <p className="text-[11px] font-medium text-neutral-500">ℹ {t('Ekstraksi selesai dalam')} {(selectedFile.extraction_duration_ms / 1000).toFixed(1)} {t('detik')}</p>
                 </div>
               )}
             </>
@@ -746,11 +757,11 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
         <SourcePanel
           title={t('Data Quality Check')}
           leading={
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><ShieldCheck size={17} /></span>
+            <span className={PANEL_ICON_CHIP}><ShieldCheck size={17} /></span>
           }
         >
           {!selectedFile || previewRows.length === 0 ? (
-            <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada baris data untuk dicek.')}</p>
+            <p className="py-6 text-center text-xs text-neutral-500">{t('Belum ada baris data untuk dicek.')}</p>
           ) : (
             (() => {
               const total = previewRows.length;
@@ -774,23 +785,23 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                 <>
                   <div className="mb-3">
                     <div className="flex items-end justify-between">
-                      <p className="text-xs font-semibold text-slate-600">{t('Pemeriksaan lolos')}</p>
-                      <p className="text-2xl font-extrabold leading-none tabular-nums text-[#064E3B]">{okCount}<span className="text-sm font-bold text-slate-500"> / {checks.length}</span></p>
+                      <p className="text-xs font-semibold text-neutral-600">{t('Pemeriksaan lolos')}</p>
+                      <p className="text-lg font-semibold leading-none tabular-nums tracking-tight text-neutral-900">{okCount}<span className="text-sm font-medium text-neutral-500"> / {checks.length}</span></p>
                     </div>
-                    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div className={`h-full rounded-full ${okCount === checks.length ? 'bg-[#0F7D4E]' : 'bg-red-500'}`} style={{ width: `${okCount > 0 ? Math.max(okPct, 3) : 0}%` }} />
+                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                      <div className={`h-full rounded-full ${okCount === checks.length ? 'bg-neutral-800' : 'bg-red-500'}`} style={{ width: `${okCount > 0 ? Math.max(okPct, 3) : 0}%` }} />
                     </div>
                   </div>
-                  <div className="divide-y divide-slate-200 text-xs">
+                  <div className="divide-y divide-neutral-200 text-xs">
                     {checks.map(item => (
                       <div key={item.label} className={`flex items-center justify-between py-2 ${item.ok ? '' : 'rounded-lg bg-red-50 px-2'}`}>
                         <div className="flex items-center gap-2">
-                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${item.ok ? 'bg-[#D1FAE5] text-[#047857]' : 'bg-red-100 text-red-600'}`}>
+                          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${item.ok ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-100 text-red-600'}`}>
                             {item.ok ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
                           </span>
-                          <span className="text-muted-foreground">{t(item.label)}</span>
+                          <span className="text-neutral-600">{t(item.label)}</span>
                         </div>
-                        <span className={`text-sm font-bold tabular-nums ${item.ok ? 'text-slate-900' : 'text-red-600'}`}>{item.val}</span>
+                        <span className={`text-sm font-semibold tabular-nums ${item.ok ? 'text-neutral-900' : 'text-red-600'}`}>{item.val}</span>
                       </div>
                     ))}
                   </div>
@@ -798,12 +809,12 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
               );
             })()
           )}
-          <div className="mt-3 border-t border-border pt-3">
-            <p className="mb-2 text-sm font-bold text-foreground">{t('Detected Fields')}</p>
+          <div className="mt-3 border-t border-neutral-200 pt-3">
+            <p className="mb-2 text-sm font-semibold text-neutral-900">{t('Detected Fields')}</p>
             {(() => {
               const rules = selectedFile?.mapping_rules;
               if (!rules) {
-                return <p className="text-[11px] text-muted-foreground">{t('Belum ada mapping field yang disimpan untuk file ini -- pakai tombol "Mapping Rules" di atas.')}</p>;
+                return <p className="text-[11px] text-neutral-500">{t('Belum ada mapping field yang disimpan untuk file ini -- pakai tombol "Mapping Rules" di atas.')}</p>;
               }
               // Template "grouped_invoice_report" (dari Sales Import Template,
               // lihat SALES_IMPORT_TEMPLATES.md) menyimpan field kanonis di
@@ -814,12 +825,12 @@ export default function SalesSourceData({ actionSlot }: { actionSlot?: HTMLEleme
                 ? MAPPING_FIELDS.filter(f => !!(rules.field_mapping as Record<string, string>)?.[f.key])
                 : MAPPING_FIELDS.filter(f => !!rules[f.key]);
               if (terdeteksi.length === 0) {
-                return <p className="text-[11px] text-muted-foreground">{t('Belum ada mapping field yang disimpan untuk file ini -- pakai tombol "Mapping Rules" di atas.')}</p>;
+                return <p className="text-[11px] text-neutral-500">{t('Belum ada mapping field yang disimpan untuk file ini -- pakai tombol "Mapping Rules" di atas.')}</p>;
               }
               return (
                 <div className="flex flex-wrap gap-1.5">
                   {terdeteksi.map(f => (
-                    <span key={f.key} className="flex items-center gap-1 rounded-full border border-[#6EE7B7]/60 bg-[#ECFDF5] px-2.5 py-1 text-[11px] font-semibold text-[#047857]">
+                    <span key={f.key} className="flex items-center gap-1 rounded-full border border-neutral-300 bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-700">
                       <CheckCircle size={10} /> {t(f.label)}
                     </span>
                   ))}

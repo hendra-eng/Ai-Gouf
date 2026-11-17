@@ -1,17 +1,33 @@
 'use client';
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { EXCHANGE_RATE_EVENT, fetchLatestRates } from '@/lib/exchangeRateStore';
 
 export type CurrencyCode = 'IDR' | 'USD' | 'SGD';
 
 export const CURRENCIES: CurrencyCode[] = ['IDR', 'USD', 'SGD'];
 
-// Indicative exchange rates — IDR value of 1 unit of each currency.
-// Centralized here so the whole app converts consistently.
+// IDR value of 1 unit of each currency, used ONLY to display amounts in the selected
+// currency. The values below are fallbacks; CurrencyProvider replaces them with the latest
+// 'middle' rates from the Exchange Rates master (Management > Exchange Rates) once loaded.
+// Journals never use these -- transactions store their own exchange_rate.
 export const EXCHANGE_RATES: Record<CurrencyCode, number> = {
   IDR: 1,
   USD: 15800,
   SGD: 11700,
 };
+
+/** Overwrite the fallback rates with the master's latest rates. Returns true if anything changed. */
+function applyLatestRates(rows: { currency: string; rate: number }[]): boolean {
+  let berubah = false;
+  for (const r of rows) {
+    const kode = r.currency as CurrencyCode;
+    if (kode !== 'IDR' && CURRENCIES.includes(kode) && r.rate > 0 && EXCHANGE_RATES[kode] !== r.rate) {
+      EXCHANGE_RATES[kode] = r.rate;
+      berubah = true;
+    }
+  }
+  return berubah;
+}
 
 const SYMBOLS: Record<CurrencyCode, string> = {
   IDR: 'Rp',
@@ -42,6 +58,19 @@ export function parseRupiah(match: string): number {
   if (!suffixRaw) return normalized;
   const mult = SUFFIX_MULTIPLIERS[suffixRaw.toLowerCase()];
   return normalized * (mult || 1);
+}
+
+/** Nominal LENGKAP (tanpa singkatan Jt/Rb/M), mis. Rp 444.050,00. Untuk saldo kas & bank. */
+export function formatMoneyFull(rawIDR: number, currency: CurrencyCode): string {
+  if (!isFinite(rawIDR)) return '';
+  const value = rawIDR / EXCHANGE_RATES[currency];
+  const locale = currency === 'IDR' ? 'id-ID' : 'en-US';
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 /** Formats a raw IDR amount into the target currency's display shorthand. */
@@ -92,7 +121,31 @@ const CurrencyContext = createContext<CurrencyContextValue | undefined>(undefine
 
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const [currency, setCurrency] = useState<CurrencyCode>('IDR');
-  const fx = useCallback((text: string) => convertText(text, currency), [currency]);
+  const [rateVersion, setRateVersion] = useState(0);
+
+  // Load the latest master rates on mount, when the rates change, and when the tab becomes
+  // visible again. A failure (not logged in yet, backend down) keeps the fallback rates.
+  useEffect(() => {
+    let aktif = true;
+    const muat = () => {
+      fetchLatestRates('middle')
+        .then(rows => { if (aktif && applyLatestRates(rows)) setRateVersion(v => v + 1); })
+        .catch(() => { /* keep fallback rates */ });
+    };
+    const saatTampil = () => { if (document.visibilityState === 'visible') muat(); };
+    muat();
+    window.addEventListener(EXCHANGE_RATE_EVENT, muat);
+    document.addEventListener('visibilitychange', saatTampil);
+    return () => {
+      aktif = false;
+      window.removeEventListener(EXCHANGE_RATE_EVENT, muat);
+      document.removeEventListener('visibilitychange', saatTampil);
+    };
+  }, []);
+
+  // rateVersion makes consumers re-render (and fx() re-run) after the rates are replaced.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const fx = useCallback((text: string) => convertText(text, currency), [currency, rateVersion]);
   const value = useMemo(() => ({ currency, setCurrency, fx }), [currency, fx]);
   return <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>;
 }

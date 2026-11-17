@@ -7,7 +7,7 @@ import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import ImportPurchaseModal from '@/app/transactions/purchase/components/ImportPurchaseModal';
 import { downloadBlob } from '@/app/transactions/components/exportTemplates/exportExcelShared';
 import MappingRulesModal from '@/app/transactions/components/MappingRulesModal';
-import SourceKpiTile, { type KpiTone } from '@/components/shared/ProgressKpiTile';
+import { salesFont as sourceFont } from '@/app/transactions/sales/components/salesFont';
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseSourceRecords, mapSourceRecordToUi, listPurchaseImportTemplates } from '@/lib/purchaseStore';
 import { ArrowsUpDownIcon } from '@heroicons/react/24/outline';
@@ -21,49 +21,95 @@ type ValidationStatus = 'Valid' | 'Pending Validation' | 'Invalid';
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 
-const sourceTypeColors: Record<string, string> = {
-  'Purchase Order': 'bg-blue-100 text-blue-700',
-  'Vendor Invoice': 'bg-indigo-100 text-indigo-700',
-  'Goods Receipt': 'bg-emerald-100 text-emerald-700',
-  'Service Receipt': 'bg-teal-100 text-teal-700',
-  'Supplier Bill': 'bg-cyan-100 text-cyan-700',
-  'Expense Claim': 'bg-orange-100 text-orange-700',
-  'Recurring Purchase': 'bg-purple-100 text-purple-700',
-  Manual: 'bg-slate-100 text-slate-700',
+// Pill status -- desain SAMA PERSIS dengan SourceStatusPill di Source Data Sales
+// (pill bergaris + titik berwarna).
+const STATUS_PILL: Record<string, { pill: string; dot: string }> = {
+  emerald: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
+  blue: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600' },
+  amber: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  red: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
+};
+const STATUS_PILL_FALLBACK = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
+
+const SOURCE_STATUS_TONE: Record<SourceStatus, keyof typeof STATUS_PILL> = {
+  Mapped: 'emerald',
+  'Pending Mapping': 'amber',
+  'Validation Error': 'red',
+  Imported: 'blue',
+};
+const VALIDATION_TONE: Record<ValidationStatus, keyof typeof STATUS_PILL> = {
+  Valid: 'emerald',
+  'Pending Validation': 'amber',
+  Invalid: 'red',
 };
 
-// Badge status -- bentuk pil, ukuran & warna sama dengan tabel Source Data Sales.
-const BADGE_BASE = 'text-[11px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap';
-const SOURCE_STATUS_CLS: Record<SourceStatus, string> = {
-  Mapped: 'bg-emerald-100 text-emerald-700',
-  'Pending Mapping': 'bg-amber-100 text-amber-700',
-  'Validation Error': 'bg-red-100 text-red-700',
-  Imported: 'bg-blue-100 text-blue-700',
-};
-const VALIDATION_CLS: Record<ValidationStatus, string> = {
-  Valid: 'bg-emerald-100 text-emerald-700',
-  'Pending Validation': 'bg-amber-100 text-amber-700',
-  Invalid: 'bg-red-100 text-red-700',
-};
+function StatusPill({ label, tone }: { label: string; tone?: keyof typeof STATUS_PILL }) {
+  const st = (tone && STATUS_PILL[tone]) || STATUS_PILL_FALLBACK;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{label}
+    </span>
+  );
+}
 
 function SourceStatusBadge({ status }: { status: SourceStatus }) {
-  return <span className={`${BADGE_BASE} ${SOURCE_STATUS_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
+  return <StatusPill label={status} tone={SOURCE_STATUS_TONE[status]} />;
 }
 
 function ValidationBadge({ status }: { status: ValidationStatus }) {
-  return <span className={`${BADGE_BASE} ${VALIDATION_CLS[status] || 'bg-muted text-muted-foreground'}`}>{status}</span>;
+  return <StatusPill label={status} tone={VALIDATION_TONE[status]} />;
 }
 
-// Panel putih dengan header terpisah garis -- sama dengan SourcePanel di Sales.
+// Kartu KPI Source Data -- desain sama persis dengan SourceKpiTile di Source Data Sales
+// (garis aksen tipis di atas, ikon kecil, angka semibold, bar proporsi netral, hover garis hitam).
+function SourceKpiTile({ label, count, detail, detailUnit, pct, pctLabel, icon: Icon }: {
+  label: string;
+  count: number;
+  detail: string;
+  detailUnit: string;
+  pct: number;
+  pctLabel: string;
+  icon: React.ElementType;
+}) {
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
+  return (
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
+        </span>
+      </div>
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{detail} {detailUnit}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+      </div>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
+    </div>
+  );
+}
+
+// Tombol baris tab -- gaya netral: putih bergaris abu (sekunder) & hitam (utama), sama dengan Source Data Sales.
+const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+
+const PANEL_ICON_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
+
+// Panel -- sama dengan SourcePanel di Sales (border neutral-300, garis aksen hitam tipis di atas,
+// header neutral-50, judul neutral-900).
 function SourcePanel({ title, leading, action, children }: {
   title: string; leading?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+    <div className="relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-3">
           {leading}
-          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+          <h3 className="truncate text-sm font-semibold text-neutral-900">{title}</h3>
         </div>
         {action}
       </div>
@@ -86,8 +132,8 @@ function buildPageItems(current: number, total: number): (number | '…')[] {
   return out;
 }
 
-// Dropdown filter -- sama dengan FilterSelect di tab Sales Transaction: tombol berborder hijau,
-// selalu terbuka ke bawah, kolom cari bila opsi banyak, hover/terpilih hijau brand.
+// Dropdown filter -- sama persis dengan FilterSelect di tab Sales Transaction (netral:
+// border neutral-300, fokus neutral-700, opsi terpilih neutral-200).
 interface FilterOption { value: string; label: string }
 
 function FilterSelect({ value, onChange, options }: {
@@ -118,13 +164,13 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
       >
         <span className="truncate max-w-[170px]">{current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-neutral-300 bg-white shadow-xl">
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -132,12 +178,12 @@ function FilterSelect({ value, onChange, options }: {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Search..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Not found</li>}
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-neutral-500">Not found</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -145,7 +191,7 @@ function FilterSelect({ value, onChange, options }: {
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -159,6 +205,9 @@ function FilterSelect({ value, onChange, options }: {
     </div>
   );
 }
+
+// Kolom nominal (header & isi rata kanan).
+const NUMERIC_FIELDS = ['amount', 'taxAmount', 'totalAmount'];
 
 export default function PurchaseSourceDataPage() {
   const { activeClientId } = useActiveClient();
@@ -316,62 +365,62 @@ export default function PurchaseSourceDataPage() {
 
   // Tombol aksi -- ditaruh di baris yang sama dengan tab (sama dengan Source Data Sales).
   const actionBar = (
-    <div className="flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>button]:whitespace-nowrap">
-      <button onClick={handleUploadClick} disabled={!activeClientId} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary disabled:opacity-50">
+    <div className={`${sourceFont.className} flex flex-nowrap items-center justify-end gap-2 pb-2 xl:pb-0 [&>button]:whitespace-nowrap`}>
+      <button onClick={handleUploadClick} disabled={!activeClientId} className={ACTION_BTN_SECONDARY}>
         <Upload size={13} /> Upload File
       </button>
-      <button onClick={handleDownloadTemplate} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+      <button onClick={handleDownloadTemplate} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> Template Excel
       </button>
-      <button onClick={handleExport} className="btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary">
+      <button onClick={handleExport} className={ACTION_BTN_SECONDARY}>
         <Download size={13} /> Export
       </button>
-      <button onClick={openMappingModal} className="btn-primary text-xs py-1.5 gap-1.5">
+      <button onClick={openMappingModal} className={ACTION_BTN_PRIMARY}>
         <Settings size={13} /> Mapping Rules
       </button>
     </div>
   );
 
-  const kpiTiles: { label: string; g: { count: number; value: number }; tone: KpiTone; icon: React.ElementType; pctLabel: string }[] = [
-    { label: 'Total Sources', g: kpi.total, tone: 'slate', icon: Upload, pctLabel: 'of all sources' },
-    { label: 'Pending Mapping', g: kpi.pending, tone: 'amber', icon: Clock, pctLabel: 'of all sources' },
-    { label: 'Mapped', g: kpi.mapped, tone: 'green', icon: CheckCircle, pctLabel: 'of all sources' },
-    { label: 'Validation Errors', g: kpi.errors, tone: 'sky', icon: AlertTriangle, pctLabel: 'of all sources' },
+  const kpiTiles: { label: string; g: { count: number; value: number }; icon: React.ElementType; pctLabel: string }[] = [
+    { label: 'Total Sources', g: kpi.total, icon: Upload, pctLabel: 'of all sources' },
+    { label: 'Pending Mapping', g: kpi.pending, icon: Clock, pctLabel: 'of all sources' },
+    { label: 'Mapped', g: kpi.mapped, icon: CheckCircle, pctLabel: 'of all sources' },
+    { label: 'Validation Errors', g: kpi.errors, icon: AlertTriangle, pctLabel: 'of all sources' },
   ];
 
   const columns = [
-    { label: 'Source ID', field: 'sourceId', align: 'left' },
-    { label: 'Type', field: 'sourceType', align: 'left' },
-    { label: 'Vendor', field: 'vendor', align: 'left' },
-    { label: 'Date', field: 'sourceDate', align: 'left' },
-    { label: 'Invoice No.', field: 'invoiceNumber', align: 'left' },
-    { label: 'PO Number', field: 'poNumber', align: 'left' },
-    { label: 'Amount', field: 'amount', align: 'right' },
-    { label: 'Tax', field: 'taxAmount', align: 'right' },
-    { label: 'Total', field: 'totalAmount', align: 'right' },
-    { label: 'Purchase Ref', field: 'relatedPurchaseId', align: 'left' },
-    { label: 'Validation', field: 'validationStatus', align: 'left' },
-    { label: 'Status', field: 'status', align: 'left' },
+    { label: 'Source ID', field: 'sourceId' },
+    { label: 'Type', field: 'sourceType' },
+    { label: 'Vendor', field: 'vendor' },
+    { label: 'Date', field: 'sourceDate' },
+    { label: 'Invoice No.', field: 'invoiceNumber' },
+    { label: 'PO Number', field: 'poNumber' },
+    { label: 'Amount', field: 'amount' },
+    { label: 'Tax', field: 'taxAmount' },
+    { label: 'Total', field: 'totalAmount' },
+    { label: 'Purchase Ref', field: 'relatedPurchaseId' },
+    { label: 'Validation', field: 'validationStatus' },
+    { label: 'Status', field: 'status' },
   ];
+  const COL_COUNT = columns.length + 1; // + kolom Actions
 
   return (
-    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0 fade-in">
-      <PurchaseTabs actions={actionBar} />
+    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
+      <PurchaseTabs actions={actionBar} variant="elegant" />
       {showImport && <ImportPurchaseModal onClose={() => setShowImport(false)} />}
 
-      <div className="pt-5 space-y-5">
+      <div className={`${sourceFont.className} pt-5 space-y-5`}>
         {/* KPI Cards -- 4 kartu, ukuran & posisi sama dengan Source Data Sales */}
         <div className="!mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4">
           {kpiTiles.map(k => (
             <SourceKpiTile
               key={k.label}
               label={k.label}
-              value={k.g.count}
+              count={k.g.count}
               detail={fmt(k.g.value)}
               detailUnit="gross incl. tax"
               pct={kpi.pctOf(k.g.count)}
               pctLabel={k.pctLabel}
-              tone={k.tone}
               icon={k.icon}
             />
           ))}
@@ -381,8 +430,8 @@ export default function PurchaseSourceDataPage() {
         <div className="card overflow-hidden">
           <div className="px-0 py-3 border-b border-border flex flex-col gap-3">
             <div>
-              <h3 className="text-2xl font-bold text-foreground">Purchase Source Record List</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase Source Record List</h3>
+              <p className="text-sm text-neutral-500 mt-0.5">
                 {filtered.length === 0
                   ? `Showing 0 of ${purchaseSourceRecords.length} records`
                   : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} records`}
@@ -406,60 +455,59 @@ export default function PurchaseSourceDataPage() {
                 options={uniqueVendors.map(v => ({ value: v, label: v === 'All' ? 'All Vendors' : v }))}
               />
               <div className="relative ml-auto w-full sm:w-[400px]">
-                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search source, invoice, PO, vendor..."
-                  className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
                 />
               </div>
             </div>
           </div>
 
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[1100px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="bg-[#8FE3B5]">
+                <tr className="bg-neutral-300">
                   {columns.map(col => (
                     <th
                       key={col.field}
                       onClick={() => handleSort(col.field)}
-                      className={`py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32] cursor-pointer select-none hover:text-[#064E3B] ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                      className={`py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 cursor-pointer select-none ${NUMERIC_FIELDS.includes(col.field) ? 'text-right' : 'text-left'}`}
                     >
-                      <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'flex-row-reverse' : ''}`}>
-                        {col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-60" />
+                      <span className={`inline-flex items-center gap-1 ${NUMERIC_FIELDS.includes(col.field) ? 'flex-row-reverse' : ''}`}>
+                        {col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-50" />
                       </span>
                     </th>
                   ))}
-                  <th className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">Actions</th>
+                  <th className="py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={13} className="py-8 text-center text-xs text-muted-foreground">No source records match your filters.</td></tr>
-                ) : paginated.map(row => (
+                {filtered.length === 0 && (
+                  <tr><td colSpan={COL_COUNT} className="py-2 px-2 text-center text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">No source records match your filters.</span></td></tr>
+                )}
+                {paginated.map(row => (
                   <tr
                     key={row.id}
                     onClick={() => setSelectedRow(row)}
-                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedRow?.id === row.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedRow?.id === row.id ? '[&>td]:bg-neutral-100' : ''}`}
                   >
-                    <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{row.sourceId}</td>
-                    <td className="py-2 px-2 whitespace-nowrap">
-                      <span className={`${BADGE_BASE} ${sourceTypeColors[row.sourceType] || 'bg-gray-100 text-gray-700'}`}>{row.sourceType}</span>
-                    </td>
-                    <td className="py-2 px-2 text-foreground font-medium whitespace-nowrap max-w-[160px] truncate">{row.vendor}</td>
-                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{row.sourceDate}</td>
-                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.invoiceNumber || <span className="text-muted-foreground">—</span>}</td>
-                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.poNumber || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.sourceId}</td>
+                    <td className="py-2 px-2 text-neutral-600 whitespace-nowrap">{row.sourceType}</td>
+                    <td className="py-2 px-2 font-medium text-neutral-900 whitespace-nowrap max-w-[160px] truncate">{row.vendor}</td>
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.sourceDate}</td>
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.invoiceNumber || <span className="text-neutral-600">—</span>}</td>
+                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.poNumber || <span className="text-neutral-600">—</span>}</td>
                     <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{fmt(row.amount)}</td>
-                    <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap text-muted-foreground">{fmt(row.taxAmount)}</td>
+                    <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap text-neutral-600">{fmt(row.taxAmount)}</td>
                     <td className="py-2 px-2 text-right font-semibold tabular-nums whitespace-nowrap">{fmt(row.totalAmount)}</td>
                     <td className="py-2 px-2 whitespace-nowrap">
                       {row.relatedPurchaseId
-                        ? <span className="font-medium text-primary">{row.relatedPurchaseId}</span>
-                        : <span className="text-muted-foreground">Not mapped</span>}
+                        ? <span className="font-medium text-blue-700">{row.relatedPurchaseId}</span>
+                        : <span className="text-neutral-600">Not mapped</span>}
                     </td>
                     <td className="py-2 px-2 whitespace-nowrap"><ValidationBadge status={row.validationStatus} /></td>
                     <td className="py-2 px-2 whitespace-nowrap"><SourceStatusBadge status={row.status} /></td>
@@ -467,10 +515,10 @@ export default function PurchaseSourceDataPage() {
                       <div className="relative" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => setMenuRowId(menuRowId === row.id ? null : row.id)}
-                          className="p-1 hover:bg-muted rounded transition-colors"
+                          className="p-1 hover:bg-neutral-300 rounded transition-colors"
                           aria-label="Actions"
                         >
-                          <MoreHorizontal size={14} className="text-muted-foreground" />
+                          <MoreHorizontal size={14} className="text-neutral-600" />
                         </button>
                         {menuRowId === row.id && (
                           <>
@@ -478,7 +526,7 @@ export default function PurchaseSourceDataPage() {
                             <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg border border-border bg-card shadow-lg py-1">
                               <button
                                 onClick={() => { setSelectedRow(row); setMenuRowId(null); }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left"
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-100 text-left"
                               >
                                 <Eye size={12} /> View detail
                               </button>
@@ -486,6 +534,14 @@ export default function PurchaseSourceDataPage() {
                           </>
                         )}
                       </div>
+                    </td>
+                  </tr>
+                ))}
+                {/* Baris kosong pengisi: tinggi tabel selalu = "Rows per page", supaya layar tidak bergeser (sama dengan Sales). */}
+                {Array.from({ length: Math.max(0, pageSize - (paginated.length > 0 ? paginated.length : 1)) }).map((_, i) => (
+                  <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
+                    <td colSpan={COL_COUNT} className="py-2 px-2 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
                     </td>
                   </tr>
                 ))}
@@ -517,7 +573,7 @@ export default function PurchaseSourceDataPage() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
@@ -530,21 +586,21 @@ export default function PurchaseSourceDataPage() {
           <SourcePanel
             title={selectedRow.sourceId}
             leading={
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]"><FileText size={17} /></span>
+              <span className={PANEL_ICON_CHIP}><FileText size={17} /></span>
             }
             action={
-              <button onClick={() => setSelectedRow(null)} className="flex h-7 items-center gap-1 rounded-lg border border-border bg-card px-2 text-xs text-slate-600 hover:bg-slate-100">
+              <button onClick={() => setSelectedRow(null)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
                 <X size={13} /> Close
               </button>
             }
           >
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className={`${BADGE_BASE} ${sourceTypeColors[selectedRow.sourceType] || 'bg-gray-100 text-gray-700'}`}>{selectedRow.sourceType}</span>
+              <span className="rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700">{selectedRow.sourceType}</span>
               <SourceStatusBadge status={selectedRow.status} />
               <ValidationBadge status={selectedRow.validationStatus} />
             </div>
-            <p className="mb-4 text-sm text-muted-foreground">{selectedRow.description}</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <p className="mb-4 text-sm text-neutral-600">{selectedRow.description}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Vendor', value: selectedRow.vendor },
                 { label: 'Vendor ID', value: selectedRow.vendorId },
@@ -556,34 +612,32 @@ export default function PurchaseSourceDataPage() {
                 { label: 'Created Date', value: selectedRow.createdDate },
               ].map(item => (
                 <div key={item.label}>
-                  <p className="text-xs text-muted-foreground font-medium">{item.label}</p>
-                  <p className="text-sm font-semibold text-foreground mt-0.5">{item.value}</p>
+                  <p className="text-xs font-medium text-neutral-500">{item.label}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-neutral-900">{item.value}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-4 pt-4 border-t border-border grid grid-cols-3 gap-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-600">Net Amount</p>
-                <p className="text-base font-bold text-foreground tabular-nums">{fmt(selectedRow.amount)}</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-medium text-slate-600">Tax Amount</p>
-                <p className="text-base font-bold text-foreground tabular-nums">{fmt(selectedRow.taxAmount)}</p>
-              </div>
-              <div className="rounded-xl border border-[#6EE7B7]/60 bg-[#ECFDF5] p-3">
-                <p className="text-xs font-medium text-[#047857]">Total Amount</p>
-                <p className="text-base font-bold text-[#064E3B] tabular-nums">{fmt(selectedRow.totalAmount)}</p>
-              </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 border-t border-neutral-200 pt-4">
+              {[
+                { label: 'Net Amount', value: selectedRow.amount },
+                { label: 'Tax Amount', value: selectedRow.taxAmount },
+                { label: 'Total Amount', value: selectedRow.totalAmount },
+              ].map(st => (
+                <div key={st.label} className="rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+                  <p className="truncate text-[10px] font-semibold uppercase leading-tight tracking-wide text-neutral-500">{st.label}</p>
+                  <p className="mt-1.5 truncate text-lg font-semibold leading-none tabular-nums tracking-tight text-neutral-900">{fmt(st.value)}</p>
+                </div>
+              ))}
             </div>
             {selectedRow.relatedPurchaseId ? (
-              <div className="mt-3 flex items-center gap-2 rounded-xl border border-[#6EE7B7]/60 bg-[#ECFDF5] px-4 py-2.5">
-                <CheckCircle size={16} className="text-[#047857] shrink-0" />
-                <p className="text-xs text-[#065F46]">Mapped to purchase transaction: <span className="font-bold">{selectedRow.relatedPurchaseId}</span></p>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"><CheckCircle size={12} /></span>
+                <p className="text-xs text-neutral-600">Mapped to purchase transaction: <span className="font-semibold text-neutral-900">{selectedRow.relatedPurchaseId}</span></p>
               </div>
             ) : (
-              <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5">
-                <Clock size={16} className="text-amber-600 shrink-0" />
-                <p className="text-xs text-amber-700">This source document has not yet been mapped to a purchase transaction.</p>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-100/60 px-4 py-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-300"><Clock size={12} /></span>
+                <p className="text-xs font-medium text-amber-900">This source document has not yet been mapped to a purchase transaction.</p>
               </div>
             )}
           </SourcePanel>

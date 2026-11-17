@@ -11,6 +11,7 @@ import {
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
+import { salesFont } from './salesFont';
 import {
   useSalesInvoices, updateSalesInvoice, deleteSalesInvoice,
   createSalesActivityLog, formatTanggalSingkat, type BackendSalesInvoice,
@@ -82,14 +83,30 @@ function formatTanggal(iso: string): string {
   }
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  Paid: 'bg-emerald-100 text-emerald-700',
-  Partial: 'bg-amber-100 text-amber-700',
-  Draft: 'bg-gray-100 text-gray-600',
-  Posted: 'bg-blue-100 text-blue-700',
-  Review: 'bg-orange-100 text-orange-700',
-  Approved: 'bg-purple-100 text-purple-700',
+// Pill status -- gaya sama dengan STATUS_STYLE di tab Overview (pill bergaris + titik).
+const STATUS_STYLE: Record<string, { pill: string; dot: string }> = {
+  Draft: { pill: 'bg-slate-200 text-slate-800 border-slate-400', dot: 'bg-slate-500' },
+  Review: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  Approved: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600' },
+  Posted: { pill: 'bg-teal-100 text-teal-800 border-teal-300', dot: 'bg-teal-600' },
+  Partial: { pill: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-600' },
+  Paid: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
 };
+const STATUS_STYLE_FALLBACK = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
+
+function StatusPill({ status, label }: { status: string; label: string }) {
+  const st = STATUS_STYLE[status] || STATUS_STYLE_FALLBACK;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{label}
+    </span>
+  );
+}
+
+// Kolom nominal (header rata kanan) & gaya tombol netral.
+const TRX_NUMERIC_COLS = ['DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding'];
+const PRINT_BTN = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50';
+const BTN_SECONDARY = 'border border-neutral-300 bg-white rounded-lg text-xs font-semibold text-neutral-800 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 transition-colors';
 
 // Laporan Print (CSV / Excel / PDF): daftar = 1 baris per invoice sesuai
 // kolom tabel; detail = 1 invoice dengan rincian DPP/PPN/PPh/Gross.
@@ -170,7 +187,7 @@ const POSTING_STATUSES: TrxStatus[] = ['Draft', 'Review', 'Approved', 'Posted', 
 
 // Dropdown filter kustom: selalu terbuka ke BAWAH (select bawaan browser bisa
 // membuka ke atas), daftar bisa di-scroll, ada kolom cari bila opsinya banyak,
-// dan warna hover/terpilih memakai hijau brand (select bawaan memakai biru OS).
+// dan warna hover/terpilih netral (abu), sama dengan tab Overview.
 interface FilterOption { value: string; label: string }
 
 function FilterSelect({ value, onChange, options }: {
@@ -208,13 +225,13 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
       >
         <span className="truncate max-w-[170px]">{current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-neutral-300 bg-white shadow-xl">
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -222,12 +239,12 @@ function FilterSelect({ value, onChange, options }: {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Cari..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-neutral-500">Tidak ditemukan</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -235,7 +252,7 @@ function FilterSelect({ value, onChange, options }: {
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -250,44 +267,32 @@ function FilterSelect({ value, onChange, options }: {
   );
 }
 
-// Kartu KPI untuk ringkasan status transaksi: garis tepi hijau tipis, aksen warna
-// di sisi atas sesuai jenis, angka besar, nominal, dan bar proporsi terhadap total.
-type KpiTone = 'slate' | 'amber' | 'green' | 'sky';
-const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string }> = {
-  // Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
-  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]' },
-  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]' },
-  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]' },
-};
-
-function SalesKpiTile({ label, count, amount, pct, pctLabel, tone, icon: Icon }: {
+// Kartu KPI ringkasan status transaksi -- desain sama persis dengan OverviewKpiTile
+// di tab Overview (garis aksen hitam tipis, ikon kecil, angka semibold, bar netral).
+function SalesKpiTile({ label, count, amount, pct, pctLabel, icon: Icon }: {
   label: string;
   count: number;
   amount: string;
   pct: number;
   pctLabel: string;
-  tone: KpiTone;
   icon: React.ElementType;
 }) {
-  const c = KPI_TONE[tone];
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-white p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
-          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
-        </div>
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${c.iconBg}`}>
-          <Icon size={24} className={c.iconText} />
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
         </span>
       </div>
-      <p className="mt-3 truncate text-lg font-bold text-slate-900">{amount}</p>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{amount}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
   );
 }
@@ -497,7 +502,7 @@ export default function SalesTransaction() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className={`${salesFont.className} space-y-4`}>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
           <span>{error}</span>
@@ -522,11 +527,11 @@ export default function SalesTransaction() {
           const owing = transactions.filter(r => r.outstanding > 0);
           const owingTotal = transactions.reduce((acc, r) => acc + r.outstanding, 0);
           const pctLabel = t('dari total transaksi');
-          const tiles: { label: string; rows: typeof transactions; amount: number; tone: KpiTone; icon: React.ElementType }[] = [
-            { label: 'Draft', rows: draft, amount: sumGross(draft), tone: 'slate', icon: FileText },
-            { label: 'Ready for Approval', rows: review, amount: sumGross(review), tone: 'amber', icon: Clock },
-            { label: 'Posted', rows: posted, amount: sumGross(posted), tone: 'green', icon: CheckCircle },
-            { label: 'Outstanding AR', rows: owing, amount: owingTotal, tone: 'sky', icon: Banknote },
+          const tiles: { label: string; rows: typeof transactions; amount: number; icon: React.ElementType }[] = [
+            { label: 'Draft', rows: draft, amount: sumGross(draft), icon: FileText },
+            { label: 'Ready for Approval', rows: review, amount: sumGross(review), icon: Clock },
+            { label: 'Posted', rows: posted, amount: sumGross(posted), icon: CheckCircle },
+            { label: 'Outstanding AR', rows: owing, amount: owingTotal, icon: Banknote },
           ];
           return tiles.map(k => (
             <SalesKpiTile
@@ -536,7 +541,6 @@ export default function SalesTransaction() {
               amount={formatIDR(k.amount)}
               pct={pctOf(k.rows.length)}
               pctLabel={pctLabel}
-              tone={k.tone}
               icon={k.icon}
             />
           ));
@@ -544,28 +548,28 @@ export default function SalesTransaction() {
       </div>
 
       {/* Filters */}
-      <div className="card p-3 relative">
+      <div className="card relative px-0 pb-0 pt-3">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}>
-              <Calendar size={12} className="text-muted-foreground" />
-              <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
-              <span className="font-medium text-foreground">
+            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+              <Calendar size={12} className="text-neutral-500" />
+              <span className="text-neutral-500">{t('Periode Tanggal')}</span>
+              <span className="font-medium text-neutral-900">
                 {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
-              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
+              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Dari')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-2 bg-primary text-primary-foreground rounded-[6px] font-semibold hover:opacity-90">
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
                   {t('Terapkan')}
                 </button>
               </div>
@@ -602,49 +606,16 @@ export default function SalesTransaction() {
             options={[{ value: 'all', label: t('Semua Project') }, ...PROJECTS.map(p => ({ value: p, label: p }))]}
           />
 
-          <div className="relative ml-auto w-full sm:w-[400px]">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
-            <input
-              type="text"
-              value={search}
-              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-              placeholder="Search Invoice..."
-              className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          {/* Baris kedua: aksi Reset, Print All, Settings (rata kanan) */}
-          <div className="flex w-full items-center justify-end gap-2">
-          <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
-
-          <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} />
-          <div className="relative">
-            <button onClick={() => setShowSettings(v => !v)} className="p-1.5 border border-border rounded-[6px] hover:bg-muted transition-colors">
-              <Settings size={14} className="text-muted-foreground" />
-            </button>
-            {showSettings && (
-              <div className="absolute z-30 top-full mt-1 right-0 w-48 space-y-1.5 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
-                <p className="text-[11px] font-semibold text-foreground mb-1">{t('Tampilkan Kolom')}</p>
-                {([['pph', 'PPh'], ['dueDate', 'Due Date'], ['journal', 'Jurnal']] as const).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-xs text-foreground">
-                    <input type="checkbox" checked={visibleCols[key]} onChange={() => setVisibleCols(v => ({ ...v, [key]: !v[key] }))} className="rounded border-border" />
-                    {t(label)}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          </div>
         </div>
       </div>
 
       {/* Table + Drawer */}
-      <div className="flex gap-4">
-        <div className={`card overflow-hidden flex-1 min-w-0 transition-all ${selectedTrx ? 'xl:w-auto' : 'w-full'}`}>
-          <div className="px-0 py-3 border-b border-border flex items-center justify-between">
+      <div className="flex gap-4 !mt-1">
+        <div className={`card flex-1 min-w-0 transition-all ${selectedTrx ? 'xl:w-auto' : 'w-full'}`}>
+          <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
             <div>
-              <h3 className="text-2xl font-bold text-foreground">{t('Daftar Transaksi Penjualan')}</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar Transaksi Penjualan')}</h3>
+              <p className="text-sm text-neutral-500 mt-0.5">
                 {loading
                   ? t('Memuat...')
                   : filtered.length === 0
@@ -652,13 +623,46 @@ export default function SalesTransaction() {
                   : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('transaksi')}`}
               </p>
             </div>
+            <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
+              <div className="flex items-center justify-end gap-2">
+              <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
+
+              <PrintMenu onPrint={printList} label={t('Print All')} disabled={loading || filtered.length === 0} buttonClassName={PRINT_BTN} />
+              <div className="relative">
+                <button onClick={() => setShowSettings(v => !v)} className="rounded-lg border border-neutral-300 bg-white p-1.5 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+                  <Settings size={14} className="text-neutral-500" />
+                </button>
+                {showSettings && (
+                  <div className="absolute z-30 top-full mt-1 right-0 w-48 space-y-1.5 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
+                    <p className="text-[11px] font-semibold text-neutral-900 mb-1">{t('Tampilkan Kolom')}</p>
+                    {([['pph', 'PPh'], ['dueDate', 'Due Date'], ['journal', 'Jurnal']] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 text-xs text-neutral-900">
+                        <input type="checkbox" checked={visibleCols[key]} onChange={() => setVisibleCols(v => ({ ...v, [key]: !v[key] }))} className="rounded border-neutral-400 accent-neutral-800" />
+                        {t(label)}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              </div>
+              <div className="relative w-full sm:w-[400px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+                  placeholder="Search Invoice..."
+                  className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
+                />
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[1100px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="bg-[#8FE3B5]">
-                  <th className="py-2.5 px-3 w-8 border-t-2 border-b border-[#0A4A32]">
-                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
+                <tr className="bg-neutral-300">
+                  <th className="py-2 px-3 w-8 leading-none border-t border-b border-neutral-800">
+                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="block rounded border-neutral-400 accent-neutral-800" />
                   </th>
                   {[
                     'Tanggal', 'Invoice', 'Customer', 'Cabang', 'Deskripsi', 'DPP', 'PPN',
@@ -669,59 +673,59 @@ export default function SalesTransaction() {
                     ...(visibleCols.journal ? ['Jurnal'] : []),
                     'Status', 'Aksi',
                   ].map(h => (
-                    <th key={h} className={`text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]`}>{t(h)}</th>
+                    <th key={h} className={`py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 ${TRX_NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
-                  <tr><td colSpan={16} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td></tr>
+                  <tr><td colSpan={16} className="py-2 px-2 text-center text-xs text-neutral-500"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada transaksi yang cocok dengan filter.')}</span></td></tr>
                 )}
                 {paginated.map(row => (
                   <tr
                     key={row.uuid}
                     onClick={() => openDetail(row)}
-                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedTrx?.uuid === row.uuid ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedTrx?.uuid === row.uuid ? '[&>td]:bg-neutral-100' : ''}`}
                   >
                     <td className="py-2 px-3">
-                      <input type="checkbox" checked={selectedRows.has(row.uuid)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.uuid)} className="rounded border-border" />
+                      <input type="checkbox" checked={selectedRows.has(row.uuid)} onClick={ev => ev.stopPropagation()} onChange={() => toggleRow(row.uuid)} className="rounded border-neutral-400 accent-neutral-800" />
                     </td>
-                    <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.date}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-primary font-medium">{row.id}</td>
-                    <td className="py-2 px-2 whitespace-nowrap font-medium text-foreground">{row.customer}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.cabang}</td>
-                    <td className="py-2 px-2 max-w-[120px] truncate text-muted-foreground">{row.desc}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-right">{formatIDR(row.dpp)}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-right">{formatIDR(row.ppn)}</td>
-                    {visibleCols.pph && <td className="py-2 px-2 whitespace-nowrap text-right">{formatIDR(row.pph)}</td>}
-                    <td className="py-2 px-2 whitespace-nowrap text-right font-semibold">{formatIDR(row.gross)}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-right text-emerald-600">{formatIDR(row.paid)}</td>
-                    <td className="py-2 px-2 whitespace-nowrap text-right text-amber-600">{row.outstanding > 0 ? formatIDR(row.outstanding) : 'Rp 0'}</td>
-                    {visibleCols.dueDate && <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.dueDate}</td>}
-                    <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{t(row.type)}</td>
-                    {visibleCols.journal && <td className="py-2 px-2 whitespace-nowrap text-primary text-xs">{row.journal || '—'}</td>}
-                    <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[row.status] || 'bg-muted text-muted-foreground'}`}>{t(row.status)}</span>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{row.date}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.id}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-neutral-900">{row.customer}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{row.cabang}</td>
+                    <td className="py-2 px-2 max-w-[120px] truncate text-neutral-600">{row.desc}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.dpp)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.ppn)}</td>
+                    {visibleCols.pph && <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.pph)}</td>}
+                    <td className="py-2 px-2 whitespace-nowrap text-right font-semibold tabular-nums">{formatIDR(row.gross)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-right tabular-nums">{formatIDR(row.paid)}</td>
+                    <td className={`py-2 px-2 whitespace-nowrap text-right tabular-nums ${row.outstanding > 0 ? 'font-semibold' : ''}`}>{row.outstanding > 0 ? formatIDR(row.outstanding) : 'Rp 0'}</td>
+                    {visibleCols.dueDate && <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{row.dueDate}</td>}
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{t(row.type)}</td>
+                    {visibleCols.journal && <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.journal || '—'}</td>}
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      <StatusPill status={row.status} label={t(row.status)} />
                     </td>
                     <td className="py-2 px-2 relative" onClick={ev => ev.stopPropagation()}>
-                      <button onClick={() => setOpenMenuId(prev => (prev === row.uuid ? null : row.uuid))} className="p-1 hover:bg-muted rounded">
-                        <MoreHorizontal size={13} className="text-muted-foreground" />
+                      <button onClick={() => setOpenMenuId(prev => (prev === row.uuid ? null : row.uuid))} className="p-1 hover:bg-neutral-300 rounded transition-colors">
+                        <MoreHorizontal size={13} className="text-neutral-600" />
                       </button>
                       {openMenuId === row.uuid && (
-                        <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
-                          <button onClick={() => openDetail(row)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                        <div className="absolute z-20 right-2 top-full mt-1 w-40 rounded-lg border border-neutral-300 bg-white p-1 shadow-lg">
+                          <button onClick={() => openDetail(row)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 rounded-md">
                             <Eye size={12} /> {t('Lihat')}
                           </button>
-                          <button onClick={() => { openDetail(row); startEdit(row); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                          <button onClick={() => { openDetail(row); startEdit(row); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 rounded-md">
                             <Edit size={12} /> {t('Edit')}
                           </button>
                           {row.status === 'Review' && (
-                            <button onClick={() => approveTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-purple-600 hover:bg-purple-50 rounded-md">
+                            <button onClick={() => approveTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-800 hover:bg-neutral-100 rounded-md">
                               <CheckCircle size={12} /> {t('Approve')}
                             </button>
                           )}
                           {row.status !== 'Posted' && (
-                            <button onClick={() => postTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-md">
+                            <button onClick={() => postTrx(row.uuid, row.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-800 hover:bg-neutral-100 rounded-md">
                               <Send size={12} /> {t('Post')}
                             </button>
                           )}
@@ -733,14 +737,22 @@ export default function SalesTransaction() {
                     </td>
                   </tr>
                 ))}
+                {/* Baris kosong pengisi: tinggi tabel selalu = "Baris per halaman", supaya layar tidak bergeser. */}
+                {Array.from({ length: Math.max(0, pageSize - (paginated.length > 0 ? paginated.length : (!loading ? 1 : 0))) }).map((_, i) => (
+                  <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
+                    <td colSpan={16} className="py-2 px-2 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2">
                 <span>{t('Baris per halaman')}</span>
-                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs font-medium text-neutral-900 bg-card focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300">
                   <option value={10}>10</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>
@@ -748,10 +760,10 @@ export default function SalesTransaction() {
               </label>
               <span className="hidden sm:inline text-slate-300">|</span>
               <span>
-                <span className="font-semibold text-foreground">
+                <span className="font-semibold text-neutral-900">
                   {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
                 </span>{' '}
-                {t('dari')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('transaksi')}
+                {t('dari')} <span className="font-semibold text-neutral-900">{filtered.length}</span> {t('transaksi')}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -760,7 +772,7 @@ export default function SalesTransaction() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
@@ -770,16 +782,17 @@ export default function SalesTransaction() {
 
         {/* Detail Drawer */}
         {selectedTrx && (
-          <div className="w-80 flex-shrink-0 card p-4 space-y-3 self-start sticky top-4">
+          <div className="relative w-80 flex-shrink-0 self-start sticky top-4 space-y-3 overflow-hidden rounded-xl border border-neutral-300 bg-white p-4 pt-5 shadow-sm">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-foreground">{selectedTrx.id}</span>
-                <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selectedTrx.status]}`}>{t(selectedTrx.status)}</span>
+                <span className="text-sm font-semibold text-neutral-900">{selectedTrx.id}</span>
+                <StatusPill status={selectedTrx.status} label={t(selectedTrx.status)} />
               </div>
-              <button onClick={() => { setSelectedUuid(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
+              <button onClick={() => { setSelectedUuid(null); setIsEditing(false); }} className="p-1 hover:bg-neutral-100 rounded"><X size={14} /></button>
             </div>
-            <p className="text-xs text-muted-foreground">{selectedTrx.desc}</p>
-            <p className="text-xs text-muted-foreground">{selectedTrx.date}</p>
+            <p className="text-xs text-neutral-500">{selectedTrx.desc}</p>
+            <p className="text-xs text-neutral-500">{selectedTrx.date}</p>
 
             {!isEditing && (
               <div className="flex gap-1 border-b border-border pb-2">
@@ -789,7 +802,7 @@ export default function SalesTransaction() {
                   { key: 'jurnal', label: 'Jurnal' },
                   { key: 'riwayat', label: 'Riwayat' },
                 ].map(dt => (
-                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>{t(dt.label)}</button>
+                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{t(dt.label)}</button>
                 ))}
               </div>
             )}
@@ -805,8 +818,8 @@ export default function SalesTransaction() {
                   ['Status Pajak', t(selectedTrx.taxStatus)],
                 ].map(([k, v]) => (
                   <div key={k} className="flex justify-between">
-                    <span className="text-muted-foreground">{t(k)}</span>
-                    <span className="font-medium text-foreground text-right">{v}</span>
+                    <span className="text-neutral-500">{t(k)}</span>
+                    <span className="font-medium text-neutral-900 text-right">{v}</span>
                   </div>
                 ))}
                 <div className="border-t border-border pt-2 space-y-1.5">
@@ -818,8 +831,8 @@ export default function SalesTransaction() {
                     ['Paid', formatIDR(selectedTrx.paid)],
                     ['Outstanding', formatIDR(selectedTrx.outstanding)],
                   ].map(([k, v]) => (
-                    <div key={k} className={`flex justify-between ${k === 'Total (Gross)' ? 'font-semibold text-foreground' : ''}`}>
-                      <span className="text-muted-foreground">{t(k)}</span>
+                    <div key={k} className={`flex justify-between ${k === 'Total (Gross)' ? 'font-semibold text-neutral-900' : ''}`}>
+                      <span className="text-neutral-500">{t(k)}</span>
                       <span>{v}</span>
                     </div>
                   ))}
@@ -828,7 +841,7 @@ export default function SalesTransaction() {
             )}
 
             {!isEditing && drawerTab !== 'detail' && (
-              <div className="text-xs text-muted-foreground text-center py-4">
+              <div className="text-xs text-neutral-500 text-center py-4">
                 {drawerTab === 'pembayaran' && t('Riwayat pembayaran akan ditampilkan di sini.')}
                 {drawerTab === 'jurnal' && `${t('Jurnal')}: ${selectedTrx.journal || t('Belum ada jurnal')}`}
                 {drawerTab === 'riwayat' && t('Riwayat perubahan transaksi.')}
@@ -838,40 +851,40 @@ export default function SalesTransaction() {
             {isEditing && (
               <div className="space-y-2 text-xs">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Customer')}</label>
-                  <input value={editForm.customer} onChange={ev => setEditForm(f => ({ ...f, customer: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Customer')}</label>
+                  <input value={editForm.customer} onChange={ev => setEditForm(f => ({ ...f, customer: ev.target.value }))} className="w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Cabang')}</label>
-                  <input value={editForm.cabang} list="sales-branch-options" onChange={ev => setEditForm(f => ({ ...f, cabang: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Cabang')}</label>
+                  <input value={editForm.cabang} list="sales-branch-options" onChange={ev => setEditForm(f => ({ ...f, cabang: ev.target.value }))} className="w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Deskripsi')}</label>
-                  <input value={editForm.desc} onChange={ev => setEditForm(f => ({ ...f, desc: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Deskripsi')}</label>
+                  <input value={editForm.desc} onChange={ev => setEditForm(f => ({ ...f, desc: ev.target.value }))} className="w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('DPP')}</label>
-                  <input type="number" value={editForm.dpp} onChange={ev => setEditForm(f => ({ ...f, dpp: Number(ev.target.value) }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('DPP')}</label>
+                  <input type="number" value={editForm.dpp} onChange={ev => setEditForm(f => ({ ...f, dpp: Number(ev.target.value) }))} className="w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Project')}</label>
-                  <input value={editForm.project} onChange={ev => setEditForm(f => ({ ...f, project: ev.target.value }))} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Project')}</label>
+                  <input value={editForm.project} onChange={ev => setEditForm(f => ({ ...f, project: ev.target.value }))} className="w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
+                  <button onClick={() => setIsEditing(false)} className={`flex-1 py-1.5 ${BTN_SECONDARY}`}>{t('Batal')}</button>
+                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
                 </div>
               </div>
             )}
 
             {!isEditing && (
               <>
-                <PrintMenu onPrint={printDetail} label={t('Print')} align="left" className="pt-2 border-t border-border" />
+                <PrintMenu onPrint={printDetail} label={t('Print')} align="left" className="pt-2 border-t border-neutral-200" buttonClassName={PRINT_BTN} />
                 <div className="flex gap-2">
-                  <button onClick={() => { setDrawerTab('detail'); }} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
+                  <button onClick={() => { setDrawerTab('detail'); }} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 ${BTN_SECONDARY}`}>
                     <Eye size={12} /> {t('Lihat')}
                   </button>
-                  <button onClick={() => startEdit()} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
+                  <button onClick={() => startEdit()} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 ${BTN_SECONDARY}`}>
                     <Edit size={12} /> {t('Edit')}
                   </button>
                 </div>
@@ -879,14 +892,14 @@ export default function SalesTransaction() {
                   <button
                     onClick={() => approveTrx(selectedTrx.uuid, selectedTrx.id)}
                     disabled={selectedTrx.status !== 'Review'}
-                    className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                    className={`flex-1 py-1.5 ${BTN_SECONDARY} text-center disabled:opacity-40 disabled:cursor-not-allowed`}
                   >
                     {t('Approve')}
                   </button>
                   <button
                     onClick={() => postTrx(selectedTrx.uuid, selectedTrx.id)}
                     disabled={selectedTrx.status === 'Posted'}
-                    className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex-1 py-1.5 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors text-center disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {t('Post')}
                   </button>

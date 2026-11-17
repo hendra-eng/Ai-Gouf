@@ -7,6 +7,7 @@ import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, F
 import { useActiveClient } from '@/lib/activeClient';
 import { usePurchaseExceptions } from '@/lib/purchaseStore';
 import { tabBadgeCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 import { formatRangeLabel, usePurchaseDateRange } from '@/app/transactions/purchase/purchaseDateRange';
 
 interface Tab {
@@ -26,9 +27,17 @@ const tabs: Tab[] = [
   { id: 'tab-posted', label: 'Posted', icon: CircleCheck, href: '/transactions/purchase/posted', description: 'Purchase transactions that have been posted to the accounting system.' },
 ];
 
+// Varian "elegant" -- tema monokrom yang sama dengan halaman Sales (font Inter, garis bawah hitam,
+// tombol & rentang tanggal netral). Dipakai lewat prop variant="elegant"; tab lain tidak berubah.
+const elegantTabBarCls = 'flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between';
+const elegantTabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3.5 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
+const elegantTabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
+
 /** `actions` (opsional) = tombol aksi di baris tab sebelah kanan. Bila diisi, header & bar tab
  *  memakai tata letak yang sama dengan halaman Sales (judul + rentang tanggal, tab + aksi satu baris). */
-export default function PurchaseTabs({ actions, dateRangeActive = false }: { actions?: React.ReactNode; dateRangeActive?: boolean }) {
+export default function PurchaseTabs({ actions, dateRangeActive = false, variant = 'default' }: { actions?: React.ReactNode; dateRangeActive?: boolean; variant?: 'default' | 'elegant' }) {
+  const elegant = variant === 'elegant';
   const [range, setRange] = usePurchaseDateRange();
   const [pickerOpen, setPickerOpen] = useState(false);
   const pathname = usePathname();
@@ -50,11 +59,11 @@ export default function PurchaseTabs({ actions, dateRangeActive = false }: { act
       <Link
         key={tab.id}
         href={tab.href}
-        className={compact ? tabCls(active).replace('px-4', 'px-3.5') : tabCls(active)}
+        className={elegant ? elegantTabCls(active) : compact ? tabCls(active).replace('px-4', 'px-3.5') : tabCls(active)}
       >
-        <tab.icon size={16} /> {tab.label}
+        <tab.icon size={16} strokeWidth={elegant ? (active ? 2 : 1.5) : undefined} /> {tab.label}
         {tab.id === 'tab-exceptions' && openExceptionCount > 0 && (
-          <span className={tabBadgeCls}>{openExceptionCount}</span>
+          <span className={elegant ? elegantTabBadgeCls : tabBadgeCls}>{openExceptionCount}</span>
         )}
       </Link>
     );
@@ -63,21 +72,32 @@ export default function PurchaseTabs({ actions, dateRangeActive = false }: { act
   const year = new Date().getFullYear();
   return (
       <div>
-        <div className="flex items-start justify-between mb-4">
+        <div className={`${elegant ? `${salesFont.className} ` : ''}flex items-start justify-between mb-4`}>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Purchase</h1>
-            <p className="text-xs font-bold text-muted-foreground mt-0.5">{activeTab.description}</p>
+            {elegant ? (
+              <>
+                <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Purchase</h1>
+                <p className="mt-1 text-sm font-medium text-neutral-500">{activeTab.description}</p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl font-bold text-foreground">Purchase</h1>
+                <p className="text-xs font-bold text-muted-foreground mt-0.5">{activeTab.description}</p>
+              </>
+            )}
           </div>
           <div className="relative flex items-center gap-2">
             <button
               type="button"
               disabled={!dateRangeActive}
               onClick={() => setPickerOpen(o => !o)}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors disabled:cursor-default disabled:hover:bg-card"
+              className={elegant
+                ? 'flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:cursor-default disabled:hover:border-neutral-300 disabled:hover:bg-white'
+                : 'flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors disabled:cursor-default disabled:hover:bg-card'}
             >
-              <CalendarDays size={14} className="text-muted-foreground" />
-              <span className="text-foreground font-medium">{dateRangeActive ? formatRangeLabel(range) : `01 Jan ${year} – 31 Dec ${year}`}</span>
-              <ChevronDown size={14} className="text-muted-foreground" />
+              <CalendarDays size={14} className={elegant ? 'text-neutral-500' : 'text-muted-foreground'} />
+              <span className={`${elegant ? 'text-neutral-900' : 'text-foreground'} font-medium`}>{dateRangeActive ? formatRangeLabel(range) : `01 Jan ${year} – 31 Dec ${year}`}</span>
+              <ChevronDown size={14} className={elegant ? 'text-neutral-500' : 'text-muted-foreground'} />
             </button>
             {dateRangeActive && pickerOpen && (
               <div className="absolute right-0 top-full mt-2 z-30 w-72 rounded-lg border border-border bg-card p-3 shadow-lg space-y-3">
@@ -102,8 +122,8 @@ export default function PurchaseTabs({ actions, dateRangeActive = false }: { act
           </div>
         </div>
         {/* Satu baris di layar lebar (xl+); di layar sempit tombol naik ke atas tab, tanpa scrollbar. */}
-        <div className="flex flex-col gap-2 border-b border-border xl:flex-row xl:items-center xl:justify-between">
-          <nav className={`${tabListCls} min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>{renderTabs(true)}</nav>
+        <div className={elegant ? elegantTabBarCls : 'flex flex-col gap-2 border-b border-border xl:flex-row xl:items-center xl:justify-between'}>
+          <nav className={`${elegant ? `${salesFont.className} ` : ''}${tabListCls} min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>{renderTabs(true)}</nav>
           {actions && <div className="order-first flex shrink-0 items-center justify-end pt-1 xl:order-none xl:pt-0">{actions}</div>}
         </div>
       </div>

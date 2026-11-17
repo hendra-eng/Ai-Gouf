@@ -101,6 +101,9 @@ class BillIn(BaseModel):
     category: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = None
     currency: str = Field("IDR", max_length=10)
+    # Bill valas: harga item diisi dalam mata uang bill; exchange_rate = IDR per 1 unit pada tanggal bill
+    # (kosong -> kurs master 'middle' terakhir, maks 10 hari). Baris & header disimpan dalam IDR (GL membaca baris).
+    exchange_rate: Optional[float] = Field(None, gt=0)
     payment_terms: Optional[str] = Field(None, max_length=50)
     due_date: Optional[date] = None
     tax_inclusive: bool = False
@@ -254,6 +257,20 @@ def _validasi_dan_susun(session, payload: BillIn, exclude_id: Optional[str]) -> 
 
     baris = [hitung_baris(l, payload.tax_inclusive) for l in isi]
 
+    mu = (payload.currency or "IDR").strip().upper() or "IDR"
+    kurs = Decimal(1)
+    if mu != "IDR":
+        tgl_kurs = payload.invoice_date or payload.purchase_date
+        kurs = _d(payload.exchange_rate) if payload.exchange_rate is not None else None
+        if kurs is None:
+            from .bank_cash_willi import _kurs_master  # kurs master 'middle' terakhir (maks 10 hari)
+            kurs = _kurs_master(session, mu, tgl_kurs)
+        if kurs is None or kurs <= 0:
+            err("exchange_rate", f"Enter the exchange rate for {mu}: no recent rate is on file for {tgl_kurs:%d %b %Y}.")
+            kurs = None
+        else:
+            kurs = kurs.quantize(Decimal("0.000001"))
+
     # Akun: yang kosong diisi dari Settings > Account Mapping (aturan yang sama dgn import).
     setting = dbc.akun_purchase_setting(mcid, session=session)
     header_akun: Dict[str, Any] = {
@@ -294,9 +311,20 @@ def _validasi_dan_susun(session, payload: BillIn, exclude_id: Optional[str]) -> 
         if kode:
             header_akun[f"{kunci}_account_name"] = (coa.get(kode) or {}).get("account_name") or (setting.get(kunci) or {}).get("account_name")
 
+    asing_total = None
+    if mu != "IDR":
+        asing_total = sum((b["total"] for b in baris), Decimal(0))
+        for b in baris:      # angka baris dalam valas -> IDR (DPP + PPN = total per baris, jadi jurnal tetap seimbang)
+            dpp_i = _q((b["total"] - b["tax_amount"]) * kurs)
+            sub_i = _q(b["subtotal"] * kurs)
+            pajak_i = _q(b["tax_amount"] * kurs)
+            b.update({"unit_price": _q(sub_i / b["quantity"]) if b["quantity"] > 0 else _q(b["unit_price"] * kurs),
+                      "discount": sub_i - dpp_i, "tax_amount": pajak_i, "subtotal": sub_i, "total": dpp_i + pajak_i})
+
     subtotal = sum((b["subtotal"] for b in baris), Decimal(0))
     diskon = sum((b["discount"] for b in baris), Decimal(0))
     total = sum((b["total"] for b in baris), Decimal(0))
+    total_pajak = sum((b["tax_amount"] for b in baris), Decimal(0))
     header = {
         "client_id": mcid,  # kolom client_id Purchase = FK management_clients (pola sama dgn import)
         "management_client_id": mcid,
@@ -316,7 +344,9 @@ def _validasi_dan_susun(session, payload: BillIn, exclude_id: Optional[str]) -> 
         "tax_amount": total_pajak,
         "total": total,
         "accounts_payable": total,
-        "currency": payload.currency,
+        "currency": mu,
+        "exchange_rate": kurs,
+        "foreign_amount": asing_total,
         "payment_terms": payload.payment_terms,
         "due_date": payload.due_date,
         "period_label": _period_label(payload.purchase_date),
@@ -340,6 +370,12 @@ def _detail(session, tx: Any) -> Dict[str, Any]:
         _ke_dict(l, dbc.CRUD_FIELDS_PURCHASE_TRANSACTION_LINE)
         for l in session.query(PL).filter(PL.transaction_id == tx.id, PL.deleted_at.is_(None)).order_by(PL.line_no).all()
     ]
+    # Bill valas: baris tersimpan dalam IDR; kembalikan juga tampilan valas supaya form edit bisa mengisi ulang.
+    kurs = _d(tx.exchange_rate)
+    if tx.foreign_amount is not None and (tx.currency or "IDR").upper() != "IDR" and kurs > 0:
+        for l in hasil["lines"]:
+            l["foreign_unit_price"] = float(_q(_d(l.get("unit_price")) / kurs))
+            l["foreign_discount"] = float(_q(_d(l.get("discount")) / kurs))
     return hasil
 
 

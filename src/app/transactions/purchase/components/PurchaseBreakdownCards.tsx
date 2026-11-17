@@ -1,74 +1,113 @@
 'use client';
 
-import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useMemo, useState } from 'react';
+import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Layers, Wallet } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { PurchaseCardHeader, MINI_ROW_CLS } from '@/app/transactions/purchase/components/PurchaseKpiTile';
 
 // Kartu "Purchase by Category" & "Payment Status Overview" di tab Overview Purchase.
-// Data & angkanya sama seperti sebelumnya (dikirim dari page.tsx); hanya tampilannya disamakan
-// dengan kartu Overview lain: card-elevated-md, header ber-ikon, palet hijau brand, baris
-// bar bergaya kartu mini, dan dua kotak AP bergaya KPI (garis aksen + chip ikon).
+// Data & angkanya sama seperti sebelumnya (dikirim dari page.tsx); tampilannya memakai tema elegant
+// monokrom yang sama dengan Sales Overview: Inter, kartu card-elevated-md, header chip abu, grafik
+// biru #2563EB dengan grid putus-putus #ececec & sumbu abu gelap #404040, baris mini berborder abu.
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 const fmtAxis = (n: number) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
-const AXIS_BORDER = '#0E2F26'; // hijau sidebar, sama dengan sumbu chart Tren
+const AXIS_BORDER = '#404040';  // sama dengan SALES_AXIS_BORDER
+const BAR_COLOR = '#2563EB';    // sama dengan SALES_LINE_COLOR
 
-function CardHeader({ icon: Icon, title, subtitle }: { icon: React.ElementType; title: string; subtitle: string }) {
+// Label sumbu kategori: rata kiri, mulai tepat di tepi kiri kartu (x = 0) supaya sejajar dengan
+// ikon & judul di header. Posisi x dari Recharts sengaja diabaikan.
+function CategoryTick({ y, payload }: { y?: number; payload?: { value: string } }) {
+  if (y == null || !payload) return null;
   return (
-    <div className="mb-4 flex items-start gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white">
-        <Icon size={17} />
-      </span>
-      <div className="min-w-0">
-        <h2 className="truncate text-sm font-bold text-foreground">{title}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
-      </div>
-    </div>
+    <text x={0} y={y} dy={4} textAnchor="start" fontSize={11} fontWeight={500} fill="#525252">{payload.value}</text>
   );
 }
 
+// Persen kontribusi: "<1%" bila kecil tapi > 0, supaya tidak tampil 0%.
+const fmtShare = (v: number, total: number) => {
+  const p = total > 0 ? (v / total) * 100 : 0;
+  return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`;
+};
+
 export function PurchaseCategoryCard({ data }: { data: { name: string; value: number }[] }) {
   const { t } = useLanguage();
+  // Tanpa kotak tooltip: nilai & persen selalu tampil di ujung bar. Saat kursor lewat, baris itu
+  // disorot (bar lain meredup) -- tetap terbaca tanpa popup yang menutupi grafik.
+  const [hover, setHover] = useState<number | null>(null);
+  const total = data.reduce((s, d) => s + d.value, 0);
+  // Lebar area label = nama terpanjang (diukur) + celah ke garis sumbu, jadi tidak ada ruang kosong
+  // di kiri dan nama panjang ("Professional Services") tidak terpecah dua baris.
+  const yAxisWidth = useMemo(() => {
+    if (data.length === 0) return 0;
+    let widest = Math.max(...data.map((d) => d.name.length)) * 6.4;
+    if (typeof document !== 'undefined') {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (ctx) {
+        ctx.font = '500 11px Inter, system-ui, sans-serif';
+        widest = Math.max(...data.map((d) => ctx.measureText(d.name).width));
+      }
+    }
+    return Math.ceil(widest) + 14;
+  }, [data]);
+  const renderValueLabel = (props: { x?: number | string; y?: number | string; width?: number | string; height?: number | string; value?: number | string; index?: number }) => {
+    const x = Number(props.x) + Number(props.width) + 8;
+    const y = Number(props.y) + Number(props.height) / 2;
+    const v = Number(props.value);
+    const dim = hover !== null && hover !== props.index;
+    return (
+      <text x={x} y={y} dy={4} fontSize={11} opacity={dim ? 0.35 : 1} style={{ transition: 'opacity 150ms' }}>
+        <tspan fontWeight={600} fill="#171717">{fmt(v)}</tspan>
+        <tspan dx={6} fontWeight={500} fill="#8a8a8a">{fmtShare(v, total)}</tspan>
+      </text>
+    );
+  };
   return (
-    <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
-      <CardHeader icon={Layers} title={t('Purchase by Category')} subtitle={t('Spend distribution by category')} />
+    <div className={`${salesFont.className} card-elevated-md flex h-full flex-col rounded-xl p-5`}>
+      <PurchaseCardHeader icon={Layers} title={t('Purchase by Category')} subtitle={t('Spend distribution by category')} />
       {data.length === 0 ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+        <p className="py-10 text-center text-xs text-neutral-500">{t('Belum ada data.')}</p>
       ) : (
         <ResponsiveContainer width="100%" height={230}>
-          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="gradPurchaseCategory" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#34D399" />
-                <stop offset="100%" stopColor="#0F7D4E" />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+          <BarChart
+            data={data}
+            layout="vertical"
+            margin={{ top: 0, right: 120, left: 0, bottom: 0 }}
+            onMouseMove={(st: { activeTooltipIndex?: number }) => setHover(typeof st?.activeTooltipIndex === 'number' ? st.activeTooltipIndex : null)}
+            onMouseLeave={() => setHover(null)}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#ececec" horizontal={false} />
             <XAxis
               type="number"
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
+              tick={{ fontSize: 10, fill: '#8a8a8a' }}
               axisLine={{ stroke: AXIS_BORDER, strokeWidth: 1.5 }}
               tickLine={false}
               tickFormatter={(v) => fmtAxis(v)}
             />
+            {/* Hanya untuk pita sorot baris & pelacakan indeks hover -- tanpa kotak popup. */}
+            <Tooltip content={() => null} cursor={{ fill: '#f5f5f5' }} />
+            <Bar dataKey="value" fill={BAR_COLOR} radius={[0, 4, 4, 0]} barSize={16}>
+              {data.map((d, i) => (
+                <Cell key={d.name} fill={BAR_COLOR} fillOpacity={hover === null || hover === i ? 1 : 0.35} style={{ transition: 'fill-opacity 150ms' }} />
+              ))}
+              <LabelList dataKey="value" content={renderValueLabel} />
+            </Bar>
+            {/* Sumbu Y ditaruh SETELAH <Bar>: Recharts menggambar sesuai urutan elemen, jadi garis hitam
+                sumbu tampil di atas bar biru (bukan tertimpa). */}
             <YAxis
               type="category"
               dataKey="name"
-              tick={{ fontSize: 11, fill: '#64748b', fontWeight: 500 }}
+              tick={(p: { y?: number; payload?: { value: string } }) => <CategoryTick y={p.y} payload={p.payload} />}
               axisLine={{ stroke: AXIS_BORDER, strokeWidth: 1.5 }}
               tickLine={false}
-              width={120}
+              interval={0}
+              width={yAxisWidth}
             />
-            <Tooltip
-              formatter={(v: number) => [fmt(v), 'Amount']}
-              contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #A7F3D0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }}
-              cursor={{ fill: '#ECFDF5' }}
-            />
-            <Bar dataKey="value" fill="url(#gradPurchaseCategory)" radius={[0, 4, 4, 0]} barSize={16} />
           </BarChart>
         </ResponsiveContainer>
       )}
@@ -76,15 +115,13 @@ export function PurchaseCategoryCard({ data }: { data: { name: string; value: nu
   );
 }
 
-function ApTile({ label, value, tone }: { label: string; value: string; tone: 'danger' | 'warn' }) {
-  const c = tone === 'danger'
-    ? { strip: 'from-[#F87171] to-[#DC2626]', text: 'text-[#B91C1C]', label: 'text-[#DC2626]', border: 'border-red-300', bg: 'to-[#FEF2F2]' }
-    : { strip: 'from-[#FBBF24] to-[#D97706]', text: 'text-[#B45309]', label: 'text-[#B45309]', border: 'border-amber-300', bg: 'to-[#FFFBEB]' };
+// Kotak AP -- sama dengan kartu KPI (garis aksen hitam tipis, label kapital kecil, angka tabular).
+function ApTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`relative overflow-hidden rounded-xl border ${c.border} bg-gradient-to-br from-white via-white ${c.bg} p-4 pt-5 shadow-sm`}>
-      <span className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${c.strip}`} />
-      <p className={`text-[11px] font-extrabold uppercase tracking-wide ${c.label}`}>{label}</p>
-      <p className={`mt-1.5 truncate text-lg font-extrabold tabular-nums ${c.text}`} title={value}>{value}</p>
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{label}</p>
+      <p className="mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
     </div>
   );
 }
@@ -97,33 +134,33 @@ export function PurchasePaymentStatusCard({ data, overdueAmount, outstandingAP }
   const { t } = useLanguage();
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   return (
-    <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
-      <CardHeader icon={Wallet} title={t('Payment Status Overview')} subtitle={t('AP payment distribution')} />
+    <div className={`${salesFont.className} card-elevated-md flex h-full flex-col rounded-xl p-5`}>
+      <PurchaseCardHeader icon={Wallet} title={t('Payment Status Overview')} subtitle={t('AP payment distribution')} />
       <ul className="space-y-2">
         {data.map((item) => {
           const pct = Math.round((item.value / total) * 100);
           return (
-            <li key={item.name} className="rounded-[10px] border border-border bg-slate-50/50 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-[#ECFDF5]/60">
+            <li key={item.name} className={`${MINI_ROW_CLS} px-3 py-2`}>
               <div className="flex items-center justify-between gap-2 text-xs">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="truncate font-semibold text-foreground">{item.name}</span>
+                  <span className="truncate font-medium text-neutral-900">{item.name}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="font-bold tabular-nums text-foreground">{item.value}</span>
-                  <span className="w-11 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">{pct}%</span>
+                  <span className="font-semibold tabular-nums text-neutral-900">{item.value}</span>
+                  <span className="w-10 rounded-full bg-neutral-100 py-0.5 text-center text-[10px] font-semibold tabular-nums text-neutral-600">{pct}%</span>
                 </div>
               </div>
-              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(item.value > 0 ? 3 : 0, pct)}%`, backgroundColor: item.color }} />
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                <div className="h-full rounded-full bg-neutral-800 transition-all" style={{ width: `${Math.max(item.value > 0 ? 3 : 0, pct)}%` }} />
               </div>
             </li>
           );
         })}
       </ul>
-      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4">
-        <ApTile label="Overdue AP" value={fmt(overdueAmount)} tone="danger" />
-        <ApTile label="Outstanding AP" value={fmt(outstandingAP)} tone="warn" />
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-neutral-300 pt-4">
+        <ApTile label="Overdue AP" value={fmt(overdueAmount)} />
+        <ApTile label="Outstanding AP" value={fmt(outstandingAP)} />
       </div>
     </div>
   );

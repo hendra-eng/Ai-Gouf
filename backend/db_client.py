@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any
 import pandas as pd
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime,
-    Text, Boolean, ForeignKey, text, UniqueConstraint, Index,
+    Text, Boolean, ForeignKey, text, UniqueConstraint, Index, CheckConstraint,
     Numeric, Date, func, JSON, or_, select,
     Computed,  # dipakai financial_transaction_sales_invoices.outstanding_amount (GENERATED ALWAYS AS)
     LargeBinary,  # isi lampiran asset_other_transaction_attachments
@@ -521,6 +521,12 @@ class SalesInvoice(Base):
     gross_amount = Column(Numeric(24, 2), nullable=False, default=0)
     paid_amount = Column(Numeric(24, 2), nullable=False, default=0)
     outstanding_amount = Column(Numeric(24, 2), Computed("gross_amount - paid_amount", persisted=True))
+    # [BARU - migration 57] Mata uang asing. dpp/ppn/gross_amount/paid_amount SELALU dalam IDR (buku besar IDR).
+    # currency 'IDR' = invoice biasa (exchange_rate 1, foreign_amount NULL). Invoice valas: foreign_amount =
+    # total tagihan dalam mata uang asing, exchange_rate = IDR per 1 unit pada tanggal invoice (kurs pencatatan).
+    currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    exchange_rate = Column(Numeric(24, 6), nullable=False, default=1, server_default=text("1"))
+    foreign_amount = Column(Numeric(24, 2), nullable=True)
     tax_invoice_status = Column(String(30), nullable=False, default="Belum Terbit Faktur")
     # [BARU] Dokumen saldo awal dari import Opening AR/AP (migration 46): ikut di
     # AR/AP & pelunasan Cash & Bank, tapi TIDAK dibaca GL & tidak tampil di daftar modul.
@@ -1095,6 +1101,11 @@ class PurchaseTransaction(Base):
     total = Column(Numeric(24, 2), nullable=False, default=0)
     accounts_payable = Column(Numeric(24, 2), nullable=False, default=0)
     currency = Column(String(10), nullable=False, default="IDR")
+    # [BARU - migration 57] Bill valas: baris, subtotal/discount/tax_amount/total/accounts_payable SELALU IDR (GL membaca
+    # baris ini). foreign_amount = total bill dalam mata uang asing, exchange_rate = IDR per 1 unit pada tanggal bill.
+    # Bill lama ber-currency non-IDR TANPA foreign_amount dianggap nominalnya sudah IDR (tidak dihitung ulang).
+    exchange_rate = Column(Numeric(24, 6), nullable=False, default=1, server_default=text("1"))
+    foreign_amount = Column(Numeric(24, 2), nullable=True)
     payment_status = Column(String(20), nullable=False, default="unpaid")
     payment_terms = Column(String(50), nullable=True)
     due_date = Column(Date, nullable=True)
@@ -1663,6 +1674,8 @@ class BankCashMutation(Base):
     confidence = Column(String(10), nullable=True)
     confidence_notes = Column(JSONB, nullable=True)
     page_no = Column(Integer, nullable=True)
+    # [migration 53] true = baris pernah dibatalkan/dihapus/dibalik oleh user -> aturan otomatis tidak menyentuhnya lagi.
+    auto_rule_skip = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_by_name = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
@@ -1766,6 +1779,106 @@ class BankCashTransactionLine(Base):
     debit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
     credit = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
     created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+
+    # [migration 51] Baris selisih kecil (adjustment) saat mutasi bank dicocokkan ke invoice:
+    # biaya admin bank / diskon / pembulatan. Tetap line_type 'account'; flag ini yang menandainya.
+    is_adjustment = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    adjustment_category = Column(String(30), nullable=True)      # bank_fee / discount / rounding
+    adjustment_type = Column(String(10), nullable=True)          # expense / income
+
+    # [migration 57] Pelunasan invoice valas. Baris sales_invoice/purchase: debit/credit = nilai tercatat dalam IDR
+    # (fx_amount x kurs invoice), fx_amount = nominal valas yang dilunasi, fx_rate = kurs pelunasan (IDR per 1 unit).
+    # Baris selisih kurs terealisasi = line_type 'account' ke akun FX Gain/Loss, is_fx_difference true.
+    fx_amount = Column(Numeric(24, 2), nullable=True)
+    fx_rate = Column(Numeric(24, 6), nullable=True)
+    is_fx_difference = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+
+
+class BankCashSetting(Base):
+    """[migration 51] Pengaturan Cash & Bank per klien (1 baris per klien). Saat ini: toleransi
+    selisih kecil saat rekonsiliasi (adjustment). Akun tujuan selisih TIDAK disimpan di sini,
+    tetapi di Settings > Account Mapping (key bank_adjustment_expense / bank_adjustment_income)."""
+    __tablename__ = "financial_transaction_bank_cash_settings"
+    __table_args__ = (
+        UniqueConstraint("client_id", name="uq_bank_cash_settings_client"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    adjustment_enabled = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    adjustment_limit = Column(Numeric(24, 2), nullable=False, default=100, server_default=text("100"))
+    # [migration 52] true = begitu file rekening koran selesai di-upload, auto-match (invoice pasti + aturan otomatis)
+    # langsung dijalankan. Hasilnya tetap transaksi DRAFT. Default false: dinyalakan sadar dari panel Auto Rules.
+    auto_match_on_upload = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # [migration 55] On/off per jenis auto-match. AR = uang masuk -> invoice Sales, AP = uang keluar -> invoice Purchase,
+    # rules = aturan mutasi tanpa invoice. Auto-approve invoice: hasil match invoice langsung APPROVED (Post tetap manual).
+    # auto_include_low_confidence: baris berconfidence rendah ikut diproses (selalu DRAFT, tidak pernah auto-approve).
+    auto_match_ar = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    auto_match_ap = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    auto_match_rules = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    auto_approve_ar = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    auto_approve_ap = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    auto_include_low_confidence = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+
+
+class BankCashAutoRule(Base):
+    """[migration 52] Aturan otomatis untuk mutasi bank TANPA invoice yang berulang (biaya admin 2.500 / 6.500,
+    bunga, pajak bunga, dst). Mutasi unmatched yang cocok dengan aturan dicatat otomatis ke akun lawan sebagai
+    transaksi DRAFT (modules/transactions/bank_cash_willi.py::_cocok_aturan), tidak pernah langsung posted.
+
+    Cocok kalau: arah sama (payment = debet, receipt = kredit) DAN keterangan mutasi memuat salah satu kata kunci
+    (huruf kecil, tanpa spasi/tanda baca) DAN nominal ada di `amounts` (persis) atau <= `max_amount`.
+    Wajib salah satu dari amounts / max_amount supaya aturan tidak menelan transaksi besar."""
+    __tablename__ = "financial_transaction_bank_cash_auto_rules"
+    __table_args__ = (
+        Index("idx_bank_cash_auto_rules_client", "client_id"),
+        CheckConstraint("direction IN ('payment', 'receipt')", name="ck_bank_cash_auto_rule_direction"),
+        CheckConstraint("amounts IS NOT NULL OR max_amount IS NOT NULL OR kind = 'invoice'", name="ck_bank_cash_auto_rule_nominal"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    name = Column(String(150), nullable=False)                    # mis. "Biaya admin bank"
+    direction = Column(String(10), nullable=False)                # payment (uang keluar) / receipt (uang masuk)
+    keywords = Column(Text, nullable=False)                       # dipisah baris baru / koma / titik koma
+    amounts = Column(JSONB, nullable=True)                        # [2500, 6500] -> nominal persis
+    max_amount = Column(Numeric(24, 2), nullable=True)            # alternatif: nominal <= batas ini
+    bank_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)  # null = semua rekening
+    counter_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=True)  # null = aturan invoice
+    category = Column(String(100), nullable=False, default="Bank admin fee", server_default=text("'Bank admin fee'"))
+    counterparty = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # [migration 54] true = hasil aturan ini langsung APPROVED (Post tetap manual). Hanya untuk `amounts` persis.
+    auto_approve = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # [migration 55] Kondisi tambahan & jenis aturan.
+    #  kind: 'account' = catat ke akun lawan (tanpa invoice) | 'invoice' = cocokkan ke 1 invoice AR/AP.
+    #  keyword_mode: 'any' = salah satu kata kunci cukup, 'all' = semua kata kunci harus ada.
+    #  exclude_keywords: kalau salah satu ada di keterangan, aturan TIDAK berlaku.
+    #  reference_keywords: nomor/pola referensi yang harus ada di keterangan (salah satu).
+    #  counterparty_keywords: nama pihak yang harus ada di keterangan; untuk aturan invoice juga membatasi invoice ke pihak itu.
+    #  min_amount / max_amount: rentang nominal. amount_tolerance: toleransi +/- untuk `amounts` (aturan akun),
+    #  atau selisih yang boleh ditutup adjustment terhadap sisa invoice (aturan invoice).
+    #  priority: angka kecil dicoba lebih dulu.
+    kind = Column(String(10), nullable=False, default="account", server_default=text("'account'"))
+    keyword_mode = Column(String(5), nullable=False, default="any", server_default=text("'any'"))
+    exclude_keywords = Column(Text, nullable=True)
+    reference_keywords = Column(Text, nullable=True)
+    counterparty_keywords = Column(Text, nullable=True)
+    min_amount = Column(Numeric(24, 2), nullable=True)
+    amount_tolerance = Column(Numeric(24, 2), nullable=True)
+    priority = Column(Integer, nullable=False, default=100, server_default=text("100"))
+    usage_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
 
 
 # ============================================================
@@ -3855,6 +3968,72 @@ def _buat_je_id_other() -> str:
 # ============================================================
 
 
+class ExchangeRate(Base):
+    """[BARU - migration 56] Master kurs (Management > Exchange Rates). GLOBAL (tidak per
+    klien): 1 baris = nilai tukar 1 unit `currency` dalam IDR pada `rate_date`.
+    rate_type: middle (kurs tengah/BI), buy, sell, tax (kurs pajak KMK).
+    source: manual / auto (tarik otomatis dari penyedia kurs). Kunci unik:
+    (currency, rate_date, rate_type) -- input ulang = timpa."""
+    __tablename__ = "management_exchange_rates"
+    __table_args__ = (
+        UniqueConstraint("currency", "rate_date", "rate_type", name="uq_exchange_rates_ccy_date_type"),
+        CheckConstraint("rate > 0 AND currency <> 'IDR' AND rate_type IN ('middle', 'buy', 'sell', 'tax') AND source IN ('manual', 'auto')",
+                        name="ck_exchange_rates_nilai"),
+        Index("idx_exchange_rates_ccy_date", "currency", "rate_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    currency = Column(String(3), nullable=False)
+    rate_date = Column(Date, nullable=False)
+    rate_type = Column(String(10), nullable=False, default="middle", server_default=text("'middle'"))
+    rate = Column(Numeric(18, 6), nullable=False)                 # IDR per 1 unit currency
+    source = Column(String(10), nullable=False, default="manual", server_default=text("'manual'"))
+    source_name = Column(String(100), nullable=True)              # mis. "Frankfurter (ECB)", "BI JISDOR", "KMK 123/2026"
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    edited_by_name = Column(String(255), nullable=True)
+
+
+class FxRevaluationRun(Base):
+    """[BARU - migration 58] Riwayat REVALUASI akhir periode saldo AR/AP valas (Fase 3A kurs), modul
+    modules/finance/fx_revaluation_v1.py. 1 baris = 1 run: jurnal revaluasi (tanggal as_of) + jurnal
+    pembalik otomatis (as_of + 1 hari), keduanya di financial_transaction_journal_entry_drafts
+    (source_type 'Revaluation'). Hanya SATU run berstatus 'posted' per (client_id, as_of_date); run yang
+    dibatalkan (status 'cancelled') tetap tercatat sebagai riwayat. `detail` = snapshot per dokumen
+    saat run dibuat, `rates` = kurs penutup yang dipakai {mata uang: kurs}."""
+    __tablename__ = "finance_fx_revaluation_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('posted', 'cancelled')", name="ck_fx_reval_runs_status"),
+        Index("idx_fx_reval_runs_client_date", "client_id", "as_of_date"),
+        Index("uq_fx_reval_runs_posted", "client_id", "as_of_date", unique=True, postgresql_where=text("status = 'posted'")),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    as_of_date = Column(Date, nullable=False)
+    reversal_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default="posted", server_default=text("'posted'"))
+    rates = Column(JSONB, nullable=True)
+    total_gain = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    total_loss = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))
+    document_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    detail = Column(JSONB, nullable=True)
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    reversal_journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    cancelled_by_name = Column(String(255), nullable=True)
+    cancel_reason = Column(Text, nullable=True)
+
+
 class FinanceTransactionBankCashException(Base):
     """[BARU] Catatan PENANGANAN exception tab "Exceptions" di Cash & Bank.
 
@@ -5126,6 +5305,7 @@ CRUD_FIELDS_SALES_INVOICE = [
     "sales_person", "term_of_payment", "cabang", "dpp", "ppn", "pph", "gross_amount",
     "paid_amount", "tax_invoice_status", "posting_status", "reconcile_status",
     "journal_sync_status", "journal_entry_id", "source_row_id", "posted_at", "posted_by",
+    "currency", "exchange_rate", "foreign_amount",
 ]
 
 def _sales_invoice_ke_dict(obj: "SalesInvoice") -> Dict[str, Any]:
@@ -6133,6 +6313,66 @@ def update_je_source_row(source_row_id: str, data: Dict[str, Any], updated_by: O
     return _je_crud_update(JournalEntrySourceRow, CRUD_FIELDS_JE_SOURCE_ROW, source_row_id, data, updated_by)
 
 
+def promote_je_rows_to_drafts(source_file_id: str, client_id: Optional[str], created_by_name: Optional[str] = None) -> Dict[str, int]:
+    """Tombol "Create Journal" tab Source Data: naikkan baris VALID satu file jadi draft Journal Entry
+    (+ seluruh baris debit/kredit dari payload staging). client_id = akun yang login (pemilik draft,
+    sama seperti alur import lama). Idempoten: baris yang sudah punya draft_id dilewati; je_number
+    yang sudah dipakai draft lain milik akun ini dilewati sebagai 'bentrok'. Tiap draft dibuat
+    atomik (create_je_draft_with_lines) lalu baris ditandai draft_id -- bukan satu transaksi besar,
+    jadi kalau gagal di tengah, jalankan ulang aman (yang sudah jadi tidak dobel)."""
+    file_row = get_je_source_file_by_id(source_file_id) or {}
+    file_name = file_row.get("file_name")
+    rows = list_je_source_rows(source_file_id=source_file_id, dengan_payload=True)
+
+    dibuat = tidak_valid = sudah_pernah = bentrok = 0
+    for r in rows:
+        if r.get("draft_id"):
+            sudah_pernah += 1
+            continue
+        payload = r.get("payload") or {}
+        lines = payload.get("lines") or []
+        no = (r.get("je_number") or "").strip()
+        tgl = payload.get("entry_date") or r.get("tanggal")
+        if isinstance(tgl, str):
+            try:
+                tgl = date.fromisoformat(tgl[:10])
+            except ValueError:
+                tgl = None
+        if not r.get("is_valid") or not no or tgl is None or len(lines) < 2:
+            tidak_valid += 1
+            continue
+        if get_je_draft_by_client_and_number(client_id, no):
+            bentrok += 1
+            continue
+        draft_data = {
+            "client_id": client_id,
+            "management_client_id": file_row.get("management_client_id"),
+            "je_number": no,
+            "entry_date": tgl,
+            "period_label": payload.get("period_label") or f"{tgl.month:02d}/{tgl.year}",
+            "description": payload.get("description") or r.get("description"),
+            "source_type": payload.get("source_type") or r.get("source_type") or "Import",
+            "source_reference": file_name,
+            "currency": payload.get("currency") or "IDR",
+            "status": "draft",
+            "created_by_name": created_by_name,
+            "notes": payload.get("notes"),
+        }
+        draft = create_je_draft_with_lines(draft_data, lines, created_by=client_id)
+        if draft is None:
+            bentrok += 1
+            continue
+        update_je_source_row(r["id"], {"draft_id": draft["id"]}, updated_by=client_id)
+        dibuat += 1
+    return {
+        "total_rows": len(rows),
+        "journals_created": dibuat,
+        "skipped_invalid": tidak_valid,
+        "skipped_already_promoted": sudah_pernah,
+        "skipped_number_conflict": bentrok,
+    }
+
+
 def create_je_draft_with_lines(
     draft_data: Dict[str, Any],
     lines_data: List[Dict[str, Any]],
@@ -6698,7 +6938,7 @@ CRUD_FIELDS_PURCHASE_TRANSACTION = [
     "approved_by_name", "posted_by_name", "notes", "journal_entry_id",
     "posting_date", "posted_at",
     "ap_account_code", "ap_account_name", "tax_account_code", "tax_account_name", "approved_at",
-    "tax_type", "tax_inclusive",
+    "tax_type", "tax_inclusive", "exchange_rate", "foreign_amount",
 ]
 
 def create_purchase_transaction(data: Dict[str, Any], created_by: Optional[str] = None) -> Optional[Dict[str, Any]]:

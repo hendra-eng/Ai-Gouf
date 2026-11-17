@@ -561,6 +561,7 @@ def update_invoice(
 ):
     data = payload.model_dump(exclude_unset=True)
     status_baru = data.get("posting_status")
+    baru_diposting = False
     if status_baru in ("Approved", "Posted"):
         lama = dbc.get_sales_invoice_by_id(invoice_id)
         if lama is None:
@@ -577,10 +578,17 @@ def update_invoice(
                     errors={"code": "INVALID_ACCOUNTS", "reasons": alasan},
                     status_code=422,
                 )
+            baru_diposting = True
     diupdate = dbc.update_sales_invoice(invoice_id, data, updated_by=current_user.get("id"))
     if diupdate is None:
         return gagal(message="Invoice tidak ditemukan.", errors={"code": "NOT_FOUND"}, status_code=404)
-    return sukses(data=diupdate, message="Invoice berhasil diupdate.")
+    pesan = "Invoice berhasil diupdate."
+    if baru_diposting:
+        # Invoice baru diposting -> coba cocokkan ke mutasi bank yang sudah di-upload (toggle Auto-match; tidak pernah menggagalkan posting).
+        from . import bank_cash_willi as bc
+        pesan += bc.pesan_auto_match_ringkas(
+            bc.auto_match_setelah_invoice_posted(diupdate.get("management_client_id") or lama.get("management_client_id"), current_user))
+    return sukses(data=diupdate, message=pesan)
 
 
 @router.delete(

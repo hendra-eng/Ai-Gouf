@@ -6,9 +6,10 @@
 
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { ClipboardCheck } from 'lucide-react';
 import ConfidenceBadge from './ConfidenceBadge';
 import { useBankFeed, type BankFeedMutation } from '../context/BankFeedContext';
+import { ACTION_BTN_PRIMARY, ACTION_BTN_SECONDARY, FIELD_CLS, FIELD_LABEL_CLS, ModalShell } from './sourceUi';
 
 export default function ReviewLineModal({ line, onClose }: { line: BankFeedMutation; onClose: () => void }) {
   const { reviewLine } = useBankFeed();
@@ -52,58 +53,53 @@ export default function ReviewLineModal({ line, onClose }: { line: BankFeedMutat
     }
   };
 
-  const input = 'mt-1 w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground';
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-card border border-border rounded-xl shadow-lg w-full max-w-lg p-6 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">Review bank line</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Compare with the original statement{line.pageNo ? ` (page ${line.pageNo} of ${line.sourceFile})` : line.sourceFile ? ` (${line.sourceFile})` : ''}, fix anything that was misread, then save.
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded"><XMarkIcon className="w-4 h-4" /></button>
+    <ModalShell
+      title="Review bank line"
+      subtitle={`Compare with the original statement${line.pageNo ? ` (page ${line.pageNo} of ${line.sourceFile})` : line.sourceFile ? ` (${line.sourceFile})` : ''}, fix anything that was misread, then save.`}
+      icon={<ClipboardCheck size={17} />}
+      onClose={onClose}
+      closeDisabled={menyimpan}
+      footer={
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={onClose} disabled={menyimpan} className={ACTION_BTN_SECONDARY}>Cancel</button>
+          <button onClick={simpan} disabled={menyimpan} className={ACTION_BTN_PRIMARY}>
+            {menyimpan ? 'Saving…' : 'Save & mark reviewed'}
+          </button>
         </div>
-
+      }
+    >
+      <div className="space-y-4">
         {line.confidenceNotes.length > 0 && (
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs space-y-1">
+          <div className="space-y-1.5 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs">
             <ConfidenceBadge value={line.confidence} />
-            {line.confidenceNotes.map((n, i) => <p key={i} className="text-muted-foreground">{n}</p>)}
+            {line.confidenceNotes.map((n, i) => <p key={i} className="font-medium text-neutral-600">{n}</p>)}
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block col-span-2 sm:col-span-1">
-            <span className="text-[11px] text-muted-foreground">Date</span>
-            <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} className={input} />
+          <label className="col-span-2 block sm:col-span-1">
+            <span className={FIELD_LABEL_CLS}>Date</span>
+            <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} className={FIELD_CLS} />
           </label>
-          <label className="block col-span-2 sm:col-span-1">
-            <span className="text-[11px] text-muted-foreground">Balance after (optional)</span>
-            <input inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} className={`${input} font-mono`} />
+          <label className="col-span-2 block sm:col-span-1">
+            <span className={FIELD_LABEL_CLS}>Balance after (optional)</span>
+            <input inputMode="decimal" value={saldo} onChange={(e) => setSaldo(e.target.value)} className={`${FIELD_CLS} tabular-nums`} />
           </label>
-          <label className="block col-span-2">
-            <span className="text-[11px] text-muted-foreground">Description</span>
-            <textarea value={keterangan} onChange={(e) => setKeterangan(e.target.value)} rows={2} className={input} />
-          </label>
-          <label className="block">
-            <span className="text-[11px] text-muted-foreground">Money in</span>
-            <input inputMode="decimal" value={masuk} onChange={(e) => { setMasuk(e.target.value); if (e.target.value) setKeluar(''); }} className={`${input} font-mono`} />
+          <label className="col-span-2 block">
+            <span className={FIELD_LABEL_CLS}>Description</span>
+            <textarea value={keterangan} onChange={(e) => setKeterangan(e.target.value)} rows={2} className={FIELD_CLS} />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Money out</span>
-            <input inputMode="decimal" value={keluar} onChange={(e) => { setKeluar(e.target.value); if (e.target.value) setMasuk(''); }} className={`${input} font-mono`} />
+            <span className={FIELD_LABEL_CLS}>Money in</span>
+            <input inputMode="decimal" value={masuk} onChange={(e) => { setMasuk(e.target.value); if (e.target.value) setKeluar(''); }} className={`${FIELD_CLS} tabular-nums`} />
           </label>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} disabled={menyimpan} className="btn-secondary text-xs py-1.5 disabled:opacity-50">Cancel</button>
-          <button onClick={simpan} disabled={menyimpan} className="btn-primary text-xs py-1.5 disabled:opacity-50">
-            {menyimpan ? 'Saving…' : 'Save & mark reviewed'}
-          </button>
+          <label className="block">
+            <span className={FIELD_LABEL_CLS}>Money out</span>
+            <input inputMode="decimal" value={keluar} onChange={(e) => { setKeluar(e.target.value); if (e.target.value) setMasuk(''); }} className={`${FIELD_CLS} tabular-nums`} />
+          </label>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

@@ -24,8 +24,8 @@ import {
 } from '@/lib/bankCashStore';
 import CashBankTransactionModal from './CashBankTransactionModal';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { formatIDR } from '../lib/formatMoney';
 
-const formatIDR = (n: number) => 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const formatTanggal = (iso: string | null) => {
   if (!iso) return '—';
@@ -129,7 +129,7 @@ export default function CashBankJournalPreview() {
 
   if (!selected) {
     return (
-      <div className={`${PREVIEW_CARD} p-8 text-center text-xs text-muted-foreground space-y-2`}>
+      <div className={`${PREVIEW_CARD} p-8 text-center text-xs text-neutral-500 space-y-2`}>
         {error && <p className="text-rose-600">{error}</p>}
         <p>
           {loading
@@ -149,9 +149,9 @@ export default function CashBankJournalPreview() {
       {/* Kiri: daftar transaksi */}
       <div className={`lg:w-80 flex-shrink-0 ${PREVIEW_CARD} overflow-hidden self-start`}>
         <div className="p-3 border-b border-border space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Awaiting Approve / Post</h3>
+          <h3 className="text-sm font-semibold text-neutral-900">Awaiting Approve / Post</h3>
           <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
             <input
               type="text"
               value={search}
@@ -165,7 +165,7 @@ export default function CashBankJournalPreview() {
               <button
                 key={s}
                 onClick={() => { setStatusFilter(s); setPage(1); }}
-                className={`flex-1 px-2 py-1 rounded-md text-[11px] font-semibold ${statusFilter === s ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground'}`}
+                className={`flex-1 px-2 py-1 rounded-md text-[11px] font-semibold ${statusFilter === s ? 'bg-card text-neutral-900 shadow-card' : 'text-neutral-500'}`}
               >
                 {s === 'all' ? `All (${transactions.length})` : `${TX_STATUS_LABEL[s]} (${transactions.filter((t) => t.status === s).length})`}
               </button>
@@ -188,7 +188,7 @@ export default function CashBankJournalPreview() {
                   Post {pilihanApproved.length}
                 </button>
               )}
-              <button onClick={() => setChecked(new Set())} className="px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground">Clear selection</button>
+              <button onClick={() => setChecked(new Set())} className="px-2 py-1 text-[11px] text-neutral-500 hover:text-neutral-900">Clear selection</button>
             </div>
           )}
         </div>
@@ -212,20 +212,20 @@ export default function CashBankJournalPreview() {
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono font-semibold text-foreground">{t.tx_number}</span>
+                  <span className="text-xs tabular-nums font-semibold text-neutral-900">{t.tx_number}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${STATUS_BADGE[t.status]}`}>{TX_STATUS_LABEL[t.status]}</span>
                 </div>
-                <p className="text-[11px] text-muted-foreground truncate">{t.counterparty || t.category || '—'}</p>
+                <p className="text-[11px] text-neutral-500 truncate">{t.counterparty || t.category || '—'}</p>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground">{formatTanggal(t.tx_date)}</span>
-                  <span className={`font-mono font-semibold ${t.direction === 'receipt' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  <span className="text-neutral-500">{formatTanggal(t.tx_date)}</span>
+                  <span className={`tabular-nums font-semibold ${t.direction === 'receipt' ? 'text-emerald-700' : 'text-rose-700'}`}>
                     {t.direction === 'receipt' ? '+' : '−'}{formatIDR(t.amount)}
                   </span>
                 </div>
               </div>
             </div>
           ))}
-          {paged.length === 0 && <p className="text-xs text-muted-foreground p-4 text-center">No transactions match this filter.</p>}
+          {paged.length === 0 && <p className="text-xs text-neutral-500 p-4 text-center">No transactions match this filter.</p>}
         </div>
         <div className="px-3 pb-3">
           <PickerPagination page={safePage} totalPages={totalPages} total={filtered.length} itemLabel="transactions" onPageChange={setPage} />
@@ -237,14 +237,14 @@ export default function CashBankJournalPreview() {
         <div className={`${PREVIEW_CARD} p-5 flex flex-wrap items-start justify-between gap-3`}>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-foreground font-mono">{selected.tx_number}</h2>
+              <h2 className="text-lg font-bold text-neutral-900 tabular-nums">{selected.tx_number}</h2>
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${STATUS_BADGE[selected.status]}`}>{TX_STATUS_LABEL[selected.status]}</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-neutral-500 mt-0.5">
               {receipt ? 'Cash Receipt' : 'Cash Payment'} · {selected.category || '—'} · {{ bank_feed: 'from Source Data', manual: 'manual entry', ar: 'from Accounts Receivable', ap: 'from Accounts Payable', tax: 'from Tax Compliance' }[selected.source]}
             </p>
           </div>
-          <p className={`text-xl font-bold font-mono ${receipt ? 'text-emerald-700' : 'text-rose-700'}`}>{formatIDR(selected.amount)}</p>
+          <p className={`text-xl font-bold tabular-nums ${receipt ? 'text-emerald-700' : 'text-rose-700'}`}>{formatIDR(selected.amount)}</p>
         </div>
 
         <PreviewSection title="Transaction Information" step={1}>
@@ -267,7 +267,7 @@ export default function CashBankJournalPreview() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-border bg-slate-50 text-muted-foreground">
+                <tr className="border-b border-border bg-slate-50 text-neutral-500">
                   <th className="text-left px-4 py-2.5 font-semibold">Type</th>
                   <th className="text-left px-4 py-2.5 font-semibold">Invoice / Account</th>
                   <th className="text-left px-4 py-2.5 font-semibold">Description</th>
@@ -279,12 +279,12 @@ export default function CashBankJournalPreview() {
                   <tr key={l.id}>
                     <td className="px-4 py-2.5 whitespace-nowrap">{l.line_type === 'sales_invoice' ? 'Sales Invoice' : l.line_type === 'purchase' ? 'Purchase' : 'Account'}</td>
                     <td className="px-4 py-2.5">
-                      {l.invoice_no ? <span className="font-mono">{l.invoice_no}</span> : null}
-                      {l.party ? <span className="text-muted-foreground"> · {l.party}</span> : null}
-                      <span className="block text-muted-foreground">{kodeAkun(l.account_code)} · {l.account_name}</span>
+                      {l.invoice_no ? <span className="tabular-nums">{l.invoice_no}</span> : null}
+                      {l.party ? <span className="text-neutral-500"> · {l.party}</span> : null}
+                      <span className="block text-neutral-500">{kodeAkun(l.account_code)} · {l.account_name}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{l.description || '—'}</td>
-                    <td className={`px-4 py-2.5 text-right font-mono whitespace-nowrap ${l.amount < 0 ? 'text-rose-600' : ''}`}>{formatIDR(l.amount)}</td>
+                    <td className="px-4 py-2.5 text-neutral-500">{l.description || '—'}</td>
+                    <td className={`px-4 py-2.5 text-right tabular-nums whitespace-nowrap ${l.amount < 0 ? 'text-rose-600' : ''}`}>{formatIDR(l.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -303,7 +303,7 @@ export default function CashBankJournalPreview() {
         </PreviewSection>
 
         <div className={`${PREVIEW_CARD} p-4 flex flex-wrap items-center justify-between gap-3`}>
-          <p className="text-xs text-muted-foreground max-w-xl">
+          <p className="text-xs text-neutral-500 max-w-xl">
             {selected.status === 'draft'
               ? 'Review the lines & journal, then Approve. Invoices and the ledger only change once posted.'
               : 'Approved. When posted, the journal goes to the ledger and invoice settlements are applied. Posting requires Manager or above.'}

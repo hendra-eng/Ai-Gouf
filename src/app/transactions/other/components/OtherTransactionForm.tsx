@@ -20,6 +20,7 @@ import { btnOutline, btnPrimary, inputCls, Menu, MenuItem } from '@/components/a
 import { AccountSelect, FormField } from '@/components/shared/moduleUi';
 import { IssueList, StatusPill, TYPE_UI, TypeIcon, type DetailField } from './otherUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { fmtRate, lookupRate, type RateLookup } from '@/lib/exchangeRateStore';
 
 const STEPS = [
   ['Transaction Details', 'Enter transaction information'], ['Journal Preview', 'Review automatic journal'],
@@ -134,6 +135,27 @@ export default function OtherTransactionForm() {
   const set = <K extends keyof TxInput>(k: K, v: TxInput[K]) => setF(x => ({ ...x, [k]: v }));
   const setDetail = (k: string, v: string | number) => setF(x => ({ ...x, details: { ...x.details, [k]: v } }));
 
+  // Kurs dari master (Management > Exchange Rates): isi otomatis saat mata uang / tanggal berubah.
+  // Kurs tetap bisa diubah manual setelahnya. Saat membuka transaksi yang sudah tersimpan, kurs
+  // tersimpan TIDAK ditimpa -- hanya info kurs master yang ditampilkan.
+  const [kursInfo, setKursInfo] = useState<{ state: 'loading' | 'found' | 'missing' | 'error'; rate?: NonNullable<RateLookup['rate']> } | null>(null);
+  const kursDimuat = useRef(false);
+  useEffect(() => {
+    if (!siap || terkunci || f.currency === 'IDR' || !f.journal_date) { setKursInfo(null); return; }
+    const terapkan = !(editId && !kursDimuat.current);
+    kursDimuat.current = true;
+    const ctrl = new AbortController();
+    setKursInfo({ state: 'loading' });
+    lookupRate(f.currency, f.journal_date, 'middle', ctrl.signal)
+      .then(r => {
+        if (!r.found || !r.rate) { setKursInfo({ state: 'missing' }); return; }
+        setKursInfo({ state: 'found', rate: r.rate });
+        if (terapkan) setF(x => (x.currency === f.currency && x.journal_date === f.journal_date ? { ...x, exchange_rate: r.rate!.rate } : x));
+      })
+      .catch(e => { if ((e as Error).name !== 'AbortError') setKursInfo({ state: 'error' }); });
+    return () => ctrl.abort();
+  }, [siap, terkunci, f.currency, f.journal_date, editId]);
+
   const gantiSub = (key: string) => {
     const r = template?.rules.find(x => x.subtype === key);
     setF(x => {
@@ -188,6 +210,7 @@ export default function OtherTransactionForm() {
     if (ui.referenceRequired && !(f.reference_no || '').trim()) k.push(ui.referenceLabel);
     if (!(f.description || '').trim()) k.push(ui.descriptionLabel);
     if (f.amount <= 0) k.push('Amount');
+    if (f.currency !== 'IDR' && !(f.exchange_rate > 0)) k.push('Exchange Rate');
     ui.details.filter(d => d.required && !String(f.details[d.key] ?? '').trim()).forEach(d => k.push(d.label));
     if (ui.claimPeriod && (!f.period_start || !f.period_end)) k.push('Claim Period');
     return k;
@@ -376,8 +399,8 @@ export default function OtherTransactionForm() {
                 </button>
                 <Menu width="w-56" button={() => <button type="button" disabled={!!busy} className={`${btnPrimary} rounded-l-none border-l border-white/30 px-2.5`}><ChevronDown size={14} /></button>}>
                   {close => <>
-                    <MenuItem onClick={() => { close(); simpan('submit'); }}><Send size={13} /> {f.requires_approval ? 'Submit for Review' : 'Submit (no approval)'}</MenuItem>
-                    {bolehPost && <MenuItem onClick={() => { close(); post(); }}><CheckCircle2 size={13} /> Post to GL</MenuItem>}
+                    <MenuItem strong onClick={() => { close(); simpan('submit'); }}><Send size={13} /> {f.requires_approval ? 'Submit for Review' : 'Submit (no approval)'}</MenuItem>
+                    {bolehPost && <MenuItem strong onClick={() => { close(); post(); }}><CheckCircle2 size={13} /> Post to GL</MenuItem>}
                   </>}
                 </Menu>
               </div>
@@ -451,12 +474,22 @@ export default function OtherTransactionForm() {
                     <MoneyInput value={f.amount} disabled={terkunci} prefix={f.currency === 'IDR' ? 'Rp' : f.currency} onChange={v => set('amount', v)} />
                   </FormField>
                   <FormField label="Currency">
-                    <select value={f.currency} disabled={terkunci} onChange={e => setF(x => ({ ...x, currency: e.target.value, exchange_rate: e.target.value === 'IDR' ? 1 : x.exchange_rate }))} className={inputCls}>
+                    <select value={f.currency} disabled={terkunci} onChange={e => setF(x => ({ ...x, currency: e.target.value, exchange_rate: e.target.value === 'IDR' ? 1 : 0 }))} className={inputCls}>
                       {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
                     </select>
                   </FormField>
                   {f.currency !== 'IDR' && (
-                    <FormField label={`Exchange Rate (IDR per ${f.currency})`} required hint={`Journal amount: ${rupiah(totalIdr)}`}>
+                    <FormField label={`Exchange Rate (IDR per ${f.currency})`} required hint={<>
+                      Journal amount: {rupiah(totalIdr)}
+                      {kursInfo?.state === 'loading' && <span className="block">Looking up the rate…</span>}
+                      {kursInfo?.state === 'found' && kursInfo.rate && <span className={`block ${kursInfo.rate.exact ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {kursInfo.rate.exact ? 'Master rate' : `No rate on this date; latest earlier rate (${kursInfo.rate.days_old}d old)`}: {fmtRate(kursInfo.rate.rate)} on {fmtDate(kursInfo.rate.rate_date)}
+                        {kursInfo.rate.source_name ? ` · ${kursInfo.rate.source_name}` : ''}
+                        {Math.abs(f.exchange_rate - kursInfo.rate.rate) > 1e-6 && <> · <button type="button" className="underline" onClick={() => set('exchange_rate', kursInfo.rate!.rate)}>use master rate</button></>}
+                      </span>}
+                      {kursInfo?.state === 'missing' && <span className="block text-amber-700">No master rate for {f.currency} up to this date. Enter it manually or add it in Exchange Rates.</span>}
+                      {kursInfo?.state === 'error' && <span className="block text-amber-700">Could not load the master rate. Enter the rate manually.</span>}
+                    </>}>
                       <input type="number" min={0} step="0.000001" value={f.exchange_rate} disabled={terkunci} onChange={e => set('exchange_rate', Number(e.target.value) || 0)} className={inputCls} />
                     </FormField>
                   )}

@@ -20,12 +20,13 @@ import { useAuth } from '@/lib/auth';
 import { useBcAccounts } from '@/lib/bankCashStore';
 import {
   amountInWords, createSettlement, fetchArApDocs, fetchArApParties, fetchNextSettlementNumber, fetchSettlement, fmtDate,
-  LEVEL_INPUT, LEVEL_POST, PAYMENT_METHOD_LABEL, roleLevel, rupiah, SIDE_CONFIG, todayIso, updateSettlement, useArApData,
+  LEVEL_INPUT, LEVEL_POST, money, PAYMENT_METHOD_LABEL, roleLevel, rupiah, SIDE_CONFIG, todayIso, updateSettlement, useArApData,
   type ArApDoc, type ArApParty, type ArApSide, type PaymentMethod, type Settlement, type SettlementInput,
 } from '@/lib/receivablesPayablesStore';
 import { buildVoucherPdf } from './arapExport';
 import { btnOutline, btnPrimary, inputCls, SettlementBadge } from './arapUi';
 import { useReportHeader } from './StatementsTab';
+import { CurrencySelect, InfoKursTeks, RateInput, useMasterRate } from './CurrencyRateFields';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const angka = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
@@ -35,8 +36,14 @@ const parseUang = (s: string) => {
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 };
 
-export function MoneyInput({ value, onChange, disabled, autoFocus, className = '' }: {
-  value: number; onChange: (n: number) => void; disabled?: boolean; autoFocus?: boolean; className?: string;
+/** Mata uang dokumen (IDR bila tidak ada info valas). */
+const mataUangDoc = (d: ArApDoc) => (d.currency || 'IDR').toUpperCase();
+/** Sisa yang masih bisa dialokasikan, dalam MATA UANG DOKUMEN (valas: foreign_outstanding - foreign_in_process). */
+const sisaDoc = (d: ArApDoc) => (mataUangDoc(d) === 'IDR' ? d.available : Math.max(0, (d.foreign_outstanding ?? 0) - (d.foreign_in_process ?? 0)));
+const bulat2 = (n: number) => Math.round(n * 100) / 100;
+
+export function MoneyInput({ value, onChange, disabled, autoFocus, className = '', prefix = 'Rp' }: {
+  value: number; onChange: (n: number) => void; disabled?: boolean; autoFocus?: boolean; className?: string; prefix?: string;
 }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [teks, setTeks] = useState(value ? angka.format(value) : '');
@@ -44,7 +51,7 @@ export function MoneyInput({ value, onChange, disabled, autoFocus, className = '
   useEffect(() => { if (!fokus.current) setTeks(value ? angka.format(value) : ''); }, [value]);
   return (
     <div className={`flex items-center rounded-lg border px-2.5 ${disabled ? 'border-border bg-slate-50 text-muted-foreground' : 'border-border bg-card focus-within:border-[#22C55E] focus-within:ring-2 focus-within:ring-[#22C55E]/20'} ${className}`}>
-      <span className="text-xs text-muted-foreground">Rp</span>
+      <span className="text-xs text-muted-foreground">{prefix}</span>
       <input
         value={teks} disabled={disabled} autoFocus={autoFocus} inputMode="decimal" placeholder="0"
         onFocus={() => { fokus.current = true; }}
@@ -139,6 +146,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
   const [tglRef, setTglRef] = useState('');
   const [catatan, setCatatan] = useState('');
   const [alokasi, setAlokasi] = useState<Record<string, number>>({});
+  const [kurs, setKurs] = useState(0);
   const [pakaiSisa, setPakaiSisa] = useState(false);
   const [sisa, setSisa] = useState(0);
   const [akunSisa, setAkunSisa] = useState('');
@@ -179,11 +187,17 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
         const a: Record<string, number> = {};
         let lain = 0;
         let akun = '';
+        let kursLoad = 0;
         for (const l of s.lines) {
+          if (l.is_fx_difference) continue; // baris selisih kurs dibuat otomatis oleh server, bukan alokasi / unapplied
           const id = l.sales_invoice_id ?? l.purchase_transaction_id;
-          if (id) a[id] = (a[id] ?? 0) + l.amount;
-          else { lain += l.amount; akun = l.coa_id ?? ''; }
+          if (id) {
+            // Dokumen valas: alokasi diisi dalam valas (fx_amount); kurs pelunasan dari baris.
+            a[id] = (a[id] ?? 0) + (l.fx_amount != null ? l.fx_amount : l.amount);
+            if (l.fx_rate && !kursLoad) kursLoad = Number(l.fx_rate);
+          } else { lain += l.amount; akun = l.coa_id ?? ''; }
         }
+        setKurs(kursLoad);
         setAlokasi(a);
         setPakaiSisa(lain > 0);
         setSisa(lain);
@@ -218,7 +232,9 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
     const ids = invoiceAwal.current?.split(',').filter(Boolean);
     if (!ids?.length || !docs.data.length) return;
     const isi: Record<string, number> = {};
-    docs.data.filter(x => ids.includes(x.id) && x.available > 0).forEach(d => { isi[d.id] = d.available; });
+    const pilih = docs.data.filter(x => ids.includes(x.id) && sisaDoc(x) > 0);
+    const mu = pilih[0] ? mataUangDoc(pilih[0]) : 'IDR';
+    pilih.filter(x => mataUangDoc(x) === mu).forEach(d => { isi[d.id] = sisaDoc(d); });
     setAlokasi(a => ({ ...a, ...isi }));
     invoiceAwal.current = null;
   }, [docs.data]);
@@ -230,22 +246,52 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
       .sort((a, b) => a.due_date.localeCompare(b.due_date) || a.no.localeCompare(b.no));
   }, [docs.data, cari, hanyaTelat, alokasi]);
 
-  const totalAlokasi = Object.values(alokasi).reduce((n, v) => n + (v || 0), 0);
-  const nilaiSisa = pakaiSisa ? sisa : 0;
-  const totalTerima = totalAlokasi + nilaiSisa;
-  const lebih = docs.data.filter(d => (alokasi[d.id] ?? 0) > d.available + 0.5);
-  const semuaDicentang = daftar.length > 0 && daftar.every(d => alokasi[d.id] !== undefined);
   const terkunci = !!asal && !asal.editable;
-
-  const toggle = (d: ArApDoc) => setAlokasi(a => {
-    const n = { ...a };
-    if (n[d.id] !== undefined) delete n[d.id]; else n[d.id] = d.available;
-    return n;
+  // Mata uang pelunasan mengikuti dokumen yang dipilih (satu transaksi = satu mata uang).
+  const dipilihDocs = docs.data.filter(d => alokasi[d.id] !== undefined);
+  const mataUang = dipilihDocs.length ? mataUangDoc(dipilihDocs[0]) : 'IDR';
+  const valas = mataUang !== 'IDR';
+  const fm = (n: number) => money(n, mataUang);
+  const infoKurs = useMasterRate({
+    currency: mataUang, date: tanggal, enabled: !memuat && !terkunci && !docs.loading && (!editId || !!asal), preserveInitial: !!editId, onRate: setKurs,
   });
+
+  const totalAlokasi = bulat2(Object.values(alokasi).reduce((n, v) => n + (v || 0), 0));
+  const nilaiSisa = pakaiSisa && !valas ? sisa : 0;
+  const totalTerima = totalAlokasi + nilaiSisa;
+  const lebih = docs.data.filter(d => (alokasi[d.id] ?? 0) > sisaDoc(d) + (mataUangDoc(d) === 'IDR' ? 0.5 : 0.005));
+
+  // Estimasi per baris valas: nilai tercatat (IDR) vs kas riil (IDR) pada kurs pelunasan.
+  // Pelunasan penuh menghabiskan sisa IDR dokumen persis (sama dengan logika server).
+  const estimasi = (d: ArApDoc, nilai: number) => {
+    if (mataUangDoc(d) === 'IDR' || !(nilai > 0)) return { tercatat: nilai, kas: nilai, selisih: 0 };
+    const penuh = nilai >= sisaDoc(d) - 0.005;
+    const tercatat = penuh ? d.available : Math.round(nilai * (d.exchange_rate ?? 0));
+    const kas = Math.round(nilai * kurs);
+    return { tercatat, kas, selisih: side === 'ar' ? kas - tercatat : tercatat - kas };
+  };
+  const totalKas = dipilihDocs.reduce((n, d) => n + estimasi(d, alokasi[d.id] ?? 0).kas, 0);
+  const totalSelisih = dipilihDocs.reduce((n, d) => n + estimasi(d, alokasi[d.id] ?? 0).selisih, 0);
+
+  const bolehPilih = (d: ArApDoc) => !dipilihDocs.length || alokasi[d.id] !== undefined || mataUangDoc(d) === mataUang;
+  const semuaDicentang = daftar.length > 0 && daftar.every(d => alokasi[d.id] !== undefined);
+
+  const toggle = (d: ArApDoc) => {
+    if (alokasi[d.id] === undefined && !bolehPilih(d)) {
+      toast.error(`${d.no} is in ${mataUangDoc(d)}. Settle ${mataUang} and ${mataUangDoc(d)} documents in separate transactions.`);
+      return;
+    }
+    setAlokasi(a => {
+      const n = { ...a };
+      if (n[d.id] !== undefined) delete n[d.id]; else n[d.id] = sisaDoc(d);
+      return n;
+    });
+  };
   const toggleSemua = () => setAlokasi(a => {
     const n = { ...a };
-    if (semuaDicentang) daftar.forEach(d => delete n[d.id]);
-    else daftar.forEach(d => { if (n[d.id] === undefined) n[d.id] = d.available; });
+    if (semuaDicentang) { daftar.forEach(d => delete n[d.id]); return n; }
+    const mu = dipilihDocs.length ? mataUang : (daftar[0] ? mataUangDoc(daftar[0]) : 'IDR');
+    daftar.forEach(d => { if (n[d.id] === undefined && mataUangDoc(d) === mu) n[d.id] = sisaDoc(d); });
     return n;
   });
 
@@ -255,6 +301,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
     if (!tanggal) return `${cfg.settle} date is required.`;
     if (!nomor.trim()) return `${cfg.settle} number is required.`;
     if (!bankId) return `Select the ${side === 'ar' ? 'bank account receiving the money' : 'bank account paying the money'}.`;
+    if (valas && !(kurs > 0)) return `Enter the settlement exchange rate for ${mataUang}.`;
     if (lebih.length) return `Amount for ${lebih[0].no} exceeds its outstanding balance.`;
     if (Object.values(alokasi).some(v => !v || v <= 0)) return `Enter an amount for every selected ${cfg.doc.toLowerCase()} (or untick it).`;
     if (pakaiSisa && sisa > 0 && !akunSisa) return 'Choose the account for the unapplied amount.';
@@ -266,9 +313,11 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
     const m = masalah();
     if (m) { toast.error(m); return; }
     const input: SettlementInput = {
-      client_id: kid!, number: nomor.trim(), tx_date: tanggal, party, bank_coa_id: bankId, payment_method: metode, currency: 'IDR',
+      client_id: kid!, number: nomor.trim(), tx_date: tanggal, party, bank_coa_id: bankId, payment_method: metode, currency: mataUang,
       reference: referensi.trim() || null, reference_date: tglRef || null, notes: catatan.trim() || null,
-      allocations: Object.entries(alokasi).filter(([, v]) => v > 0).map(([invoice_id, amount]) => ({ invoice_id, amount })),
+      // Dokumen valas: kirim nominal valas (fx_amount) + kurs pelunasan; nilai IDR dihitung server. Dokumen IDR: amount.
+      allocations: Object.entries(alokasi).filter(([, v]) => v > 0).map(([invoice_id, v]) => (valas ? { invoice_id, fx_amount: v } : { invoice_id, amount: v })),
+      fx_rate: valas ? kurs : null,
       unapplied_amount: nilaiSisa, unapplied_coa_id: nilaiSisa > 0 ? akunSisa : null, submit,
     };
     setBusy(submit ? 'submit' : 'draft');
@@ -292,7 +341,7 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
       const doc = await buildVoucherPdf({
         cfg, header, number: nomor, date: tanggal, party, method: metode, bank: bank ? `${kodeAkun(bank.code)} · ${bank.name}` : '—',
         reference: referensi, referenceDate: tglRef, notes: catatan, status: asal ? asal.status.toUpperCase() : 'NOT SAVED YET',
-        allocations: docs.data.filter(d => alokasi[d.id]).map(d => ({ no: d.no, date: d.date, due_date: d.due_date, amount: alokasi[d.id] })),
+        allocations: docs.data.filter(d => alokasi[d.id]).map(d => ({ no: d.no, date: d.date, due_date: d.due_date, amount: valas ? estimasi(d, alokasi[d.id]).kas : alokasi[d.id] })),
         unapplied: nilaiSisa,
       });
       doc.autoPrint();
@@ -388,10 +437,16 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
             </div>
             <div className="lg:col-span-4">
               <Label wajib>Currency</Label>
-              <select value="IDR" disabled className={inputCls} title="The ledger is kept in IDR">
-                <option value="IDR">IDR - Indonesian Rupiah</option>
-              </select>
+              <CurrencySelect value={mataUang} disabled onChange={() => undefined} />
+              <p className="mt-1 text-[11px] text-muted-foreground">Follows the selected {cfg.docs.toLowerCase()}; the ledger is kept in IDR.</p>
             </div>
+            {valas && (
+              <div className="lg:col-span-4">
+                <Label wajib>Settlement Exchange Rate</Label>
+                <RateInput value={kurs} currency={mataUang} disabled={terkunci} onChange={setKurs} />
+                <InfoKursTeks info={infoKurs} />
+              </div>
+            )}
 
             <div className="lg:col-span-4">
               <Label>Reference No.</Label>
@@ -455,31 +510,49 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
                 ) : daftar.map(d => {
                   const dipilih = alokasi[d.id] !== undefined;
                   const nilai = alokasi[d.id] ?? 0;
-                  const sesudah = d.available - nilai;
+                  const mu = mataUangDoc(d);
+                  const sisaD = sisaDoc(d);
+                  const sesudah = bulat2(sisaD - nilai);
+                  const est = estimasi(d, nilai);
                   return (
                     <tr key={d.id} className={dipilih ? 'bg-[#ECFDF5]/40' : ''}>
-                      <td className="px-3 py-2"><input type="checkbox" checked={dipilih} onChange={() => toggle(d)} disabled={terkunci} className="h-4 w-4 accent-[#0F7D4E]" aria-label={`Select ${d.no}`} /></td>
+                      <td className="px-3 py-2"><input type="checkbox" checked={dipilih} onChange={() => toggle(d)} disabled={terkunci || (!dipilih && !bolehPilih(d))}
+                        title={!dipilih && !bolehPilih(d) ? `Different currency (${mataUangDoc(d)}) from the selected documents` : undefined} className="h-4 w-4 accent-[#0F7D4E]" aria-label={`Select ${d.no}`} /></td>
                       <td className="px-3 py-2">
                         <span className={dipilih ? 'font-medium text-[#0F7D4E]' : 'text-foreground'}>{d.no}</span>
                         {d.ref_no && d.ref_no !== d.no && <span className="block text-[11px] text-muted-foreground">{d.ref_no}</span>}
+                        {mataUangDoc(d) !== 'IDR' && <span className="mt-0.5 inline-block rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">{mataUangDoc(d)} @ {(d.exchange_rate ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 6 })}</span>}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{fmtDate(d.date)}</td>
                       <td className={`px-3 py-2 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-muted-foreground'}`}>{fmtDate(d.due_date)}</td>
                       <td className="px-3 py-2 text-right font-semibold">
-                        {rupiah(d.available)}
-                        {d.in_process > 0 && <span className="block text-[10px] font-normal text-sky-600">{rupiah(d.in_process)} in other drafts</span>}
+                        {money(sisaD, mu)}
+                        {mu !== 'IDR' && <span className="block text-[10px] font-normal text-muted-foreground">≈ {rupiah(d.available)} at invoice rate</span>}
+                        {d.in_process > 0 && <span className="block text-[10px] font-normal text-sky-600">{mu === 'IDR' ? rupiah(d.in_process) : money(d.foreign_in_process ?? 0, mu)} in other drafts</span>}
                       </td>
                       <td className="px-3 py-2">
-                        <MoneyInput value={nilai} disabled={!dipilih || terkunci} onChange={n => setAlokasi(a => ({ ...a, [d.id]: n }))}
-                          className={nilai > d.available + 0.5 ? '!border-rose-400' : ''} />
+                        <MoneyInput value={nilai} disabled={!dipilih || terkunci} prefix={mu === 'IDR' ? 'Rp' : mu} onChange={n => setAlokasi(a => ({ ...a, [d.id]: n }))}
+                          className={nilai > sisaD + (mu === 'IDR' ? 0.5 : 0.005) ? '!border-rose-400' : ''} />
                       </td>
-                      <td className={`px-3 py-2 text-right font-semibold ${sesudah < -0.5 ? 'text-rose-600' : 'text-foreground'}`}>{rupiah(sesudah)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${sesudah < -0.005 ? 'text-rose-600' : 'text-foreground'}`}>
+                        {money(sesudah, mu)}
+                        {mu !== 'IDR' && dipilih && nilai > 0 && kurs > 0 && (
+                          <span className={`block text-[10px] font-normal ${est.selisih < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            FX {est.selisih < 0 ? 'loss' : 'gain'} {rupiah(Math.abs(est.selisih))}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
 
+            {valas ? (
+              <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-3 text-xs text-muted-foreground">
+                Unapplied amounts are recorded in IDR, so they are not available for a {mataUang} {cfg.settle.toLowerCase()}. Allocate the full amount to the {cfg.docs.toLowerCase()}.
+              </p>
+            ) : (
             <div className="mt-4 rounded-xl border border-dashed border-border p-4">
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={pakaiSisa} disabled={terkunci} onChange={e => setPakaiSisa(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0F7D4E]" />
@@ -498,25 +571,30 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
                 </div>
               )}
             </div>
+            )}
           </div>
         </section>
 
         <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
           <h2 className="mb-3 text-lg font-bold text-foreground">{cfg.settle} Summary</h2>
           <div className="grid grid-cols-1 divide-y divide-border md:grid-cols-3 md:divide-x md:divide-y-0">
-            {[
-              { label: `Total ${side === 'ar' ? 'Received' : 'Paid'}`, value: totalTerima, icon: Wallet, tone: 'bg-[#ECFDF5] text-[#0F7D4E]' },
-              { label: 'Total Allocated', value: totalAlokasi, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
-              { label: 'Unapplied Amount', value: nilaiSisa, icon: FileText, tone: 'bg-sky-50 text-sky-600' },
-            ].map(k => {
+            {(valas ? [
+              { label: `Total ${side === 'ar' ? 'Received' : 'Paid'} (${mataUang})`, value: totalAlokasi, text: fm(totalAlokasi), icon: Wallet, tone: 'bg-[#ECFDF5] text-[#0F7D4E]' },
+              { label: `${side === 'ar' ? 'Received in' : 'Paid from'} bank (IDR @ ${kurs > 0 ? kurs.toLocaleString('id-ID', { maximumFractionDigits: 6 }) : '—'})`, value: totalKas, text: kurs > 0 ? rupiah(totalKas) : '—', icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
+              { label: 'Estimated realized FX gain / (loss)', value: totalSelisih, text: kurs > 0 ? `${totalSelisih < 0 ? '(' : ''}${rupiah(Math.abs(totalSelisih))}${totalSelisih < 0 ? ')' : ''}` : '—', icon: FileText, tone: totalSelisih < 0 ? 'bg-rose-50 text-rose-600' : 'bg-sky-50 text-sky-600' },
+            ] : [
+              { label: `Total ${side === 'ar' ? 'Received' : 'Paid'}`, value: totalTerima, text: rupiah(totalTerima), icon: Wallet, tone: 'bg-[#ECFDF5] text-[#0F7D4E]' },
+              { label: 'Total Allocated', value: totalAlokasi, text: rupiah(totalAlokasi), icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
+              { label: 'Unapplied Amount', value: nilaiSisa, text: rupiah(nilaiSisa), icon: FileText, tone: 'bg-sky-50 text-sky-600' },
+            ]).map(k => {
               const Ikon = k.icon;
               return (
                 <div key={k.label} className="flex items-center gap-4 px-2 py-3 md:px-6">
                   <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${k.tone}`}><Ikon size={22} /></span>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">{k.label}</p>
-                    <p className="text-xl font-bold text-foreground">{rupiah(k.value)}</p>
-                    <p className="truncate text-[11px] text-muted-foreground" title={amountInWords(k.value)}>{amountInWords(k.value)}</p>
+                    <p className="text-xl font-bold text-foreground">{k.text}</p>
+                    {!valas && <p className="truncate text-[11px] text-muted-foreground" title={amountInWords(k.value)}>{amountInWords(k.value)}</p>}
                   </div>
                 </div>
               );

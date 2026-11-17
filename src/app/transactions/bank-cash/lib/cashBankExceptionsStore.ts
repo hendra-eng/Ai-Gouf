@@ -176,7 +176,7 @@ export function deteksiException(mutations: BankFeedMutation[], sumber: SumberDe
         hasil.push({
           ref, tanggal: m.date, tx_no: noRef, counterparty: ringkas(m.description),
           exception_type: 'Amount mismatch', source: 'Reconciliation', priority: prioritas(selisih),
-          ai_suggestion: `The bank line amount differs by ${Math.abs(selisih).toLocaleString('en-US')} from the recorded payment total. Check for bank deductions/charges, partial payment, or a wrong match.`,
+          ai_suggestion: `The bank line amount differs by ${Math.abs(selisih).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from the recorded payment total. Check for bank deductions/charges, partial payment, or a wrong match.`,
           source_snippet: { date: m.date, bank_line: nominal, recorded_payment: dibayar, difference: selisih },
         });
       }

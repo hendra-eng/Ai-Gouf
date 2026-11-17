@@ -540,6 +540,12 @@ def _jalankan_aksi_status(aksi: str, payload: PurchaseStatusActionRequest, curre
     pesan = f"{len(hasil['done'])} transaction(s) {kata}."
     if hasil["skipped"]:
         pesan += f" {len(hasil['skipped'])} skipped."
+    if aksi == "post" and hasil["done"]:
+        # Invoice pembelian baru diposting -> coba cocokkan ke mutasi bank yang sudah di-upload
+        # (toggle Auto-match; tidak pernah menggagalkan posting). 1x per perusahaan.
+        from . import bank_cash_willi as bc
+        for mcid in dict.fromkeys(d.get("management_client_id") for d in hasil["done"] if d.get("management_client_id")):
+            pesan += bc.pesan_auto_match_ringkas(bc.auto_match_setelah_invoice_posted(mcid, current_user))
     return sukses(data=hasil, message=pesan)
 
 

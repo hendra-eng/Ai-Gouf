@@ -2,37 +2,36 @@
 
 import React, { useState, useMemo } from 'react';
 import { toast } from 'sonner';
+import {
+  Search, ArrowUpDown, Eye, X, Plus, Upload,
+  Clock, CheckCircle, Send, AlertTriangle, ShieldCheck,
+} from 'lucide-react';
 import JournalEntryTabs from '@/app/transactions/journal-entry/JournalEntryTabs';
 import NewJournalEntryModal from '@/app/transactions/journal-entry/components/NewJournalEntryModal';
 import ImportJournalModal from '@/app/transactions/journal-entry/components/ImportJournalModal';
+import JeKpiTile, { type KpiTone } from '@/app/transactions/journal-entry/components/JeKpiTile';
+import JeFilterSelect from '@/app/transactions/journal-entry/components/JeFilterSelect';
+import JeTablePagination from '@/app/transactions/journal-entry/components/JeTablePagination';
 import { buildJeListReport, buildJeDetailReport, type JePrintRow } from '@/app/transactions/journal-entry/components/jePrintReports';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintFormat } from '@/lib/printExport';
-import {
-  MagnifyingGlassIcon,
-  FunnelIcon,
-  ArrowsUpDownIcon,
-  EyeIcon,
-  PlusIcon,
-  ArrowUpTrayIcon,
-} from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useJeDrafts, useJeDraftLines, listJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiEntry, type JeUiStatus } from '@/lib/journalEntryStore';
-import JePagination, { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 type JEStatus = JeUiStatus;
 
 const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
+// Warna badge status -- keluarga warna yang sama dengan STATUS_STYLE di Sales Transaction.
 const statusColors: Record<JEStatus, string> = {
-  draft: 'bg-slate-100 text-slate-700',
-  pending: 'bg-amber-100 text-amber-700',
-  approved: 'bg-blue-100 text-blue-700',
-  posted: 'bg-green-100 text-green-700',
+  draft: 'bg-gray-100 text-gray-600',
+  pending: 'bg-orange-100 text-orange-700',
+  approved: 'bg-purple-100 text-purple-700',
+  posted: 'bg-blue-100 text-blue-700',
   rejected: 'bg-red-100 text-red-700',
-  exception: 'bg-orange-100 text-orange-700',
+  exception: 'bg-amber-100 text-amber-700',
 };
 
 const statusLabels: Record<JEStatus, string> = {
@@ -44,6 +43,20 @@ const statusLabels: Record<JEStatus, string> = {
   exception: 'Exception',
 };
 
+const STATUS_ORDER: JEStatus[] = ['draft', 'pending', 'approved', 'posted', 'rejected', 'exception'];
+
+const TABLE_COLUMNS: { label: string; field: string; align?: 'right' }[] = [
+  { label: 'JE Number', field: 'jeNumber' },
+  { label: 'Date', field: 'date' },
+  { label: 'Description', field: 'description' },
+  { label: 'Source', field: 'sourceType' },
+  { label: 'Debit', field: 'totalDebit', align: 'right' },
+  { label: 'Credit', field: 'totalCredit', align: 'right' },
+  { label: 'Status', field: 'status' },
+  { label: 'Period', field: 'period' },
+  { label: 'Created By', field: 'createdBy' },
+];
+
 export default function JournalEntryTransactionPage() {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { user } = useAuth();
@@ -51,14 +64,21 @@ export default function JournalEntryTransactionPage() {
   const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
   const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
 
+  // Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState('All');
   const [periodFilter, setPeriodFilter] = useState('All');
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Pagination (opsi & default sama dengan Sales Transaction)
+  const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Drawer
   const [selectedRow, setSelectedRow] = useState<JeUiEntry | null>(null);
+  const [drawerTab, setDrawerTab] = useState<'detail' | 'lines'>('detail');
   const { lines: selectedLines } = useJeDraftLines(selectedRow?.id);
   const mappedLines = useMemo(() => selectedLines.map(mapJeDraftLineToUi), [selectedLines]);
 
@@ -69,8 +89,8 @@ export default function JournalEntryTransactionPage() {
   const companyName = clients.find(c => c.id === activeClientId)?.companyName || activeClientName || undefined;
   const printedBy = user?.nama || user?.username || undefined;
 
-  const sourceTypes = ['All', ...Array.from(new Set(journalEntries.map(t => t.sourceType)))];
-  const periods = ['All', ...Array.from(new Set(journalEntries.map(t => t.period)))];
+  const sourceTypes = useMemo(() => Array.from(new Set(journalEntries.map(t => t.sourceType))), [journalEntries]);
+  const periods = useMemo(() => Array.from(new Set(journalEntries.map(t => t.period))), [journalEntries]);
 
   const filtered = useMemo(() => {
     let data = [...journalEntries];
@@ -92,14 +112,24 @@ export default function JournalEntryTransactionPage() {
     return data;
   }, [journalEntries, search, statusFilter, sourceFilter, periodFilter, sortField, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / JE_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((pageSafe - 1) * JE_PAGE_SIZE, pageSafe * JE_PAGE_SIZE);
+  const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
   const handleSort = (field: string) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
     setCurrentPage(1);
+  };
+
+  const resetFilters = () => {
+    setSearch(''); setStatusFilter('All'); setSourceFilter('All'); setPeriodFilter('All');
+    setCurrentPage(1);
+  };
+
+  const openDetail = (row: JeUiEntry) => {
+    setSelectedRow(row);
+    setDrawerTab('detail');
   };
 
   // Print daftar = semua JE yang lolos filter (bukan cuma halaman aktif), lengkap dengan baris jurnalnya.
@@ -121,232 +151,279 @@ export default function JournalEntryTransactionPage() {
     await printReport(buildJeDetailReport(selectedRow, mappedLines, companyName, printedBy), format);
   };
 
-  const summary = useMemo(() => ({
-    total: journalEntries.length,
-    pending: journalEntries.filter(t => t.status === 'pending').length,
-    approved: journalEntries.filter(t => t.status === 'approved').length,
-    posted: journalEntries.filter(t => t.status === 'posted').length,
-    exceptions: journalEntries.filter(t => t.status === 'exception').length,
-    totalDebit: journalEntries.reduce((s, t) => s + t.totalDebit, 0),
-  }), [journalEntries]);
+  // KPI: 4 kartu (count + total debit + proporsi terhadap seluruh JE) -- pola sama dengan Sales.
+  const kpiTiles = useMemo(() => {
+    const total = journalEntries.length;
+    const by = (s: JEStatus) => journalEntries.filter(t => t.status === s);
+    const sumDebit = (rows: JeUiEntry[]) => rows.reduce((acc, r) => acc + r.totalDebit, 0);
+    const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+    const defs: { label: string; rows: JeUiEntry[]; tone: KpiTone; icon: React.ElementType }[] = [
+      { label: 'Pending', rows: by('pending'), tone: 'slate', icon: Clock },
+      { label: 'Approved', rows: by('approved'), tone: 'amber', icon: ShieldCheck },
+      { label: 'Posted', rows: by('posted'), tone: 'green', icon: CheckCircle },
+      { label: 'Exceptions', rows: by('exception'), tone: 'sky', icon: AlertTriangle },
+    ];
+    return defs.map(d => ({ ...d, count: d.rows.length, amount: fmt(sumDebit(d.rows)), pct: pctOf(d.rows.length) }));
+  }, [journalEntries]);
 
   return (
-      <div className="space-y-6 fade-in">
-        <JournalEntryTabs activeTab="transaction" />
+    <div className="fade-in">
+      <JournalEntryTabs
+        activeTab="transaction"
+        actions={
+          <>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors"
+            >
+              <Upload size={14} className="text-muted-foreground" />
+              <span className="text-foreground font-medium">Import</span>
+            </button>
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              <Plus size={14} /> New Journal Entry
+            </button>
+          </>
+        }
+      />
 
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <PrintMenu onPrint={printList} label="Print All" disabled={loading || filtered.length === 0} />
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-lg px-3 py-2 hover:bg-muted transition-colors"
-          >
-            <ArrowUpTrayIcon className="w-4 h-4" /> Import
-          </button>
-          <button
-            onClick={() => setShowNewModal(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-3 py-2 hover:opacity-90 transition-colors"
-          >
-            <PlusIcon className="w-4 h-4" /> New Journal Entry
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          {[
-            { label: 'Total', value: summary.total, color: 'text-slate-700' },
-            { label: 'Pending', value: summary.pending, color: 'text-amber-700' },
-            { label: 'Approved', value: summary.approved, color: 'text-blue-700' },
-            { label: 'Posted', value: summary.posted, color: 'text-green-700' },
-            { label: 'Exceptions', value: summary.exceptions, color: 'text-orange-700' },
-            { label: 'Total Debit', value: fmt(summary.totalDebit), color: 'text-foreground' },
-          ].map(card => (
-            <div key={card.label} className="je-card p-3">
-              <p className={`text-lg font-bold tabular-nums ${card.color}`}>{card.value}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{card.label}</p>
-            </div>
+      <div className="pt-5 space-y-4">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpiTiles.map(k => (
+            <JeKpiTile
+              key={k.label}
+              label={k.label}
+              count={k.count}
+              amount={k.amount}
+              pct={k.pct}
+              pctLabel="of total entries"
+              tone={k.tone}
+              icon={k.icon}
+            />
           ))}
         </div>
 
         {/* Filters */}
-        <div className="je-card p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="card p-3 relative">
+          <div className="flex items-center gap-2 flex-wrap">
+            <JeFilterSelect
+              value={statusFilter}
+              onChange={v => { setStatusFilter(v); setCurrentPage(1); }}
+              options={[{ value: 'All', label: 'All Status' }, ...STATUS_ORDER.map(s => ({ value: s, label: statusLabels[s] }))]}
+            />
+            <JeFilterSelect
+              value={sourceFilter}
+              onChange={v => { setSourceFilter(v); setCurrentPage(1); }}
+              options={[{ value: 'All', label: 'All Sources' }, ...sourceTypes.map(s => ({ value: s, label: s }))]}
+            />
+            <JeFilterSelect
+              value={periodFilter}
+              onChange={v => { setPeriodFilter(v); setCurrentPage(1); }}
+              options={[{ value: 'All', label: 'All Periods' }, ...periods.map(p => ({ value: p, label: p }))]}
+            />
+
+            <div className="relative ml-auto w-full sm:w-[400px]">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
               <input
-                className="je-input pl-9"
-                placeholder="Search by JE number, description, or source reference…"
+                type="text"
                 value={search}
-                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+                placeholder="Search JE number, description, or source…"
+                className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <FunnelIcon className="w-4 h-4 text-muted-foreground" />
-                <select className="je-select text-sm" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}>
-                  {['All', 'draft', 'pending', 'approved', 'posted', 'rejected', 'exception'].map(s => (
-                    <option key={s} value={s}>{s === 'All' ? 'All' : statusLabels[s as JEStatus]}</option>
-                  ))}
-                </select>
-              </div>
-              <select className="je-select text-sm" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setCurrentPage(1); }}>
-                {sourceTypes.map(t => <option key={t}>{t}</option>)}
-              </select>
-              <select className="je-select text-sm" value={periodFilter} onChange={e => { setPeriodFilter(e.target.value); setCurrentPage(1); }}>
-                {periods.map(p => <option key={p}>{p}</option>)}
-              </select>
+
+            {/* Baris kedua: aksi Reset, Print All (rata kanan) */}
+            <div className="flex w-full items-center justify-end gap-2">
+              <button onClick={resetFilters} className="text-xs text-primary hover:underline">Reset</button>
+              <PrintMenu onPrint={printList} label="Print All" disabled={loading || filtered.length === 0} />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">{filtered.length} of {journalEntries.length} journal entries</p>
         </div>
 
-        {/* Table */}
-        <div className="je-card overflow-hidden">
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  {[
-                    { label: 'JE Number', field: 'jeNumber' },
-                    { label: 'Date', field: 'date' },
-                    { label: 'Description', field: 'description' },
-                    { label: 'Source', field: 'sourceType' },
-                    { label: 'Debit', field: 'totalDebit' },
-                    { label: 'Credit', field: 'totalCredit' },
-                    { label: 'Status', field: 'status' },
-                    { label: 'Period', field: 'period' },
-                    { label: 'Created By', field: 'createdBy' },
-                  ].map(col => (
-                    <th key={col.field} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer hover:text-foreground select-none whitespace-nowrap" onClick={() => handleSort(col.field)}>
-                      <span className="flex items-center gap-1">{col.label}<ArrowsUpDownIcon className="w-3 h-3 opacity-50" /></span>
-                    </th>
-                  ))}
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">Loading journal entries…</td></tr>
-                ) : filtered.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-12 text-center text-muted-foreground text-sm">No journal entries match your filters.</td></tr>
-                ) : paginated.map(row => (
-                  <tr
-                    key={row.id}
-                    className="table-row-hover cursor-pointer"
-                    onClick={() => setSelectedRow(selectedRow?.id === row.id ? null : row)}
-                  >
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">{row.jeNumber}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.date}</td>
-                    <td className="px-4 py-3 text-xs max-w-xs truncate" title={row.description}>{row.description}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded text-xs bg-muted text-muted-foreground">{row.sourceType}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs tabular-nums text-right whitespace-nowrap">{fmt(row.totalDebit)}</td>
-                    <td className="px-4 py-3 text-xs tabular-nums text-right whitespace-nowrap">{fmt(row.totalCredit)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[row.status]}`}>{statusLabels[row.status]}</span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.period}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.createdBy}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <button className="text-xs text-primary hover:underline flex items-center gap-0.5" onClick={e => { e.stopPropagation(); setSelectedRow(row); }}>
-                        <EyeIcon className="w-3.5 h-3.5" /> View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <JePagination page={pageSafe} pageSize={JE_PAGE_SIZE} total={filtered.length} onPageChange={setCurrentPage} itemLabel="journal entries" />
-        </div>
-
-        {/* Detail Panel */}
-        {selectedRow && (
-          <div className="je-card p-6">
-            <div className="flex items-start justify-between mb-5">
+        {/* Table + Drawer */}
+        <div className="flex gap-4">
+          <div className={`card overflow-hidden flex-1 min-w-0 transition-all ${selectedRow ? 'xl:w-auto' : 'w-full'}`}>
+            <div className="px-0 py-3 border-b border-border flex items-center justify-between">
               <div>
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="font-mono text-sm font-bold text-primary">{selectedRow.jeNumber}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedRow.status]}`}>{statusLabels[selectedRow.status]}</span>
-                </div>
-                <p className="text-sm text-foreground font-medium">{selectedRow.description}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{selectedRow.sourceType} · {selectedRow.sourceReference}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <PrintMenu onPrint={printDetail} />
-                <button className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 border border-border rounded" onClick={() => setSelectedRow(null)}>✕ Close</button>
+                <h3 className="text-2xl font-bold text-foreground">Journal Entry Transactions</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {loading
+                    ? 'Loading…'
+                    : filtered.length === 0
+                    ? 'Showing 0 of 0 journal entries'
+                    : `Showing ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} of ${filtered.length} journal entries`}
+                </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              {[
-                { label: 'Posting Date', value: selectedRow.postingDate },
-                { label: 'Period', value: selectedRow.period },
-                { label: 'Currency', value: selectedRow.currency },
-                { label: 'Created By', value: selectedRow.createdBy },
-                { label: 'Reviewed By', value: selectedRow.reviewedBy || '—' },
-                { label: 'Approved By', value: selectedRow.approvedBy || '—' },
-                { label: 'Created Date', value: selectedRow.createdDate },
-                { label: 'Last Updated', value: selectedRow.lastUpdated },
-              ].map(item => (
-                <div key={item.label}>
-                  <p className="text-xs text-muted-foreground">{item.label}</p>
-                  <p className="text-sm font-semibold text-foreground mt-0.5">{item.value}</p>
-                </div>
-              ))}
-            </div>
-            {/* Journal Lines */}
-            <div className="border border-border rounded-lg overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full min-w-[1100px]">
                 <thead>
-                  <tr className="bg-muted/40 border-b border-border">
-                    <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Account</th>
-                    <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Description</th>
-                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Debit</th>
-                    <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Credit</th>
+                  <tr className="bg-[#8FE3B5]">
+                    {TABLE_COLUMNS.map((col, i) => (
+                      <th
+                        key={col.field}
+                        className={`py-3 ${i === 0 ? 'pl-3 pr-2' : 'px-2'} ${col.align === 'right' ? 'text-right' : 'text-left'} text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleSort(col.field)}
+                          className={`inline-flex items-center gap-1 select-none hover:text-[#064E3B] ${col.align === 'right' ? 'flex-row-reverse' : ''}`}
+                        >
+                          {col.label}
+                          <ArrowUpDown size={11} className={sortField === col.field ? 'opacity-100' : 'opacity-50'} />
+                        </button>
+                      </th>
+                    ))}
+                    <th className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {mappedLines.map(line => (
-                    <tr key={line.id} className="table-row-hover">
-                      <td className="px-3 py-2 text-muted-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</td>
-                      <td className="px-3 py-2 text-foreground">{line.description}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{line.debit > 0 ? fmt(line.debit) : '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{line.credit > 0 ? fmt(line.credit) : '—'}</td>
+                <tbody>
+                  {loading && (
+                    <tr><td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">Loading journal entries…</td></tr>
+                  )}
+                  {!loading && paginated.length === 0 && (
+                    <tr><td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">No journal entries match your filters.</td></tr>
+                  )}
+                  {!loading && paginated.map(row => (
+                    <tr
+                      key={row.id}
+                      onClick={() => openDetail(row)}
+                      className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedRow?.id === row.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    >
+                      <td className="py-2 pl-3 pr-2 whitespace-nowrap text-primary font-medium">{row.jeNumber}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.date}</td>
+                      <td className="py-2 px-2 max-w-[200px] truncate text-muted-foreground" title={row.description}>{row.description}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.sourceType}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-right">{fmt(row.totalDebit)}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-right">{fmt(row.totalCredit)}</td>
+                      <td className="py-2 px-2">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusColors[row.status] || 'bg-muted text-muted-foreground'}`}>{statusLabels[row.status] || row.status}</span>
+                      </td>
+                      <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.period}</td>
+                      <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.createdBy}</td>
+                      <td className="py-2 px-2" onClick={ev => ev.stopPropagation()}>
+                        <button onClick={() => openDetail(row)} aria-label="View" className="p-1 hover:bg-muted rounded">
+                          <Eye size={13} className="text-muted-foreground" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr className="bg-muted/40 border-t border-border">
-                    <td colSpan={2} className="px-3 py-2 text-right font-semibold text-muted-foreground">Total</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums">{fmt(selectedRow.totalDebit)}</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums">{fmt(selectedRow.totalCredit)}</td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
-            {selectedRow.notes && (
-              <div className="mt-3 bg-amber-50 rounded-lg px-4 py-2.5">
-                <p className="text-xs text-amber-700">{selectedRow.notes}</p>
-              </div>
-            )}
+            <JeTablePagination
+              page={pageSafe}
+              pageSize={pageSize}
+              total={filtered.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={n => { setPageSize(n); setCurrentPage(1); }}
+            />
           </div>
-        )}
 
-        {showNewModal && clientId && (
-          <NewJournalEntryModal
-            clientId={clientId}
-            createdByName={user?.nama || user?.username || 'System'}
-            onClose={() => setShowNewModal(false)}
-          />
-        )}
-        {showImportModal && clientId && (
-          <ImportJournalModal
-            clientId={clientId}
-            createdByName={user?.nama || user?.username || 'System'}
-            onClose={() => setShowImportModal(false)}
-          />
-        )}
+          {/* Detail Drawer */}
+          {selectedRow && (
+            <div className="w-80 flex-shrink-0 card p-4 space-y-3 self-start sticky top-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">{selectedRow.jeNumber}</span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusColors[selectedRow.status]}`}>{statusLabels[selectedRow.status]}</span>
+                </div>
+                <button onClick={() => setSelectedRow(null)} aria-label="Close" className="p-1 hover:bg-muted rounded"><X size={14} /></button>
+              </div>
+              <p className="text-xs text-muted-foreground">{selectedRow.description}</p>
+              <p className="text-xs text-muted-foreground">{selectedRow.date}</p>
+
+              <div className="flex gap-1 border-b border-border pb-2">
+                {([
+                  { key: 'detail', label: 'Detail' },
+                  { key: 'lines', label: 'Journal Lines' },
+                ] as const).map(dt => (
+                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>{dt.label}</button>
+                ))}
+              </div>
+
+              {drawerTab === 'detail' && (
+                <div className="space-y-2 text-xs">
+                  {[
+                    ['Source', selectedRow.sourceType],
+                    ['Source Ref', selectedRow.sourceReference || '—'],
+                    ['Period', selectedRow.period],
+                    ['Posting Date', selectedRow.postingDate || '—'],
+                    ['Currency', selectedRow.currency],
+                    ['Created By', selectedRow.createdBy],
+                    ['Reviewed By', selectedRow.reviewedBy || '—'],
+                    ['Approved By', selectedRow.approvedBy || '—'],
+                    ['Created Date', selectedRow.createdDate || '—'],
+                    ['Last Updated', selectedRow.lastUpdated || '—'],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">{k}</span>
+                      <span className="font-medium text-foreground text-right break-words">{v}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-border pt-2 space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Debit</span>
+                      <span>{fmt(selectedRow.totalDebit)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-foreground">
+                      <span className="text-muted-foreground">Total Credit</span>
+                      <span>{fmt(selectedRow.totalCredit)}</span>
+                    </div>
+                  </div>
+                  {selectedRow.notes && (
+                    <div className="bg-amber-50 rounded-lg px-3 py-2">
+                      <p className="text-xs text-amber-700">{selectedRow.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {drawerTab === 'lines' && (
+                <div className="text-xs">
+                  {mappedLines.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-4">No journal lines.</p>
+                  ) : (
+                    <div className="divide-y divide-border">
+                      {mappedLines.map(line => (
+                        <div key={line.id} className="py-2 space-y-0.5">
+                          <p className="font-medium text-foreground">{kodeAkun(line.accountCode)} · {line.accountName}</p>
+                          {line.description && <p className="text-[11px] text-muted-foreground">{line.description}</p>}
+                          <div className="flex justify-between pt-0.5">
+                            <span className="text-muted-foreground">{line.debit > 0 ? 'Debit' : 'Credit'}</span>
+                            <span className="font-semibold tabular-nums">{fmt(line.debit > 0 ? line.debit : line.credit)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PrintMenu onPrint={printDetail} label="Print" align="left" className="pt-2 border-t border-border" />
+            </div>
+          )}
+        </div>
       </div>
+
+      {showNewModal && clientId && (
+        <NewJournalEntryModal
+          clientId={clientId}
+          createdByName={user?.nama || user?.username || 'System'}
+          onClose={() => setShowNewModal(false)}
+        />
+      )}
+      {showImportModal && clientId && (
+        <ImportJournalModal
+          clientId={clientId}
+          createdByName={user?.nama || user?.username || 'System'}
+          onClose={() => setShowImportModal(false)}
+        />
+      )}
+    </div>
   );
 }

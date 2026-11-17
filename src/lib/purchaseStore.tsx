@@ -212,6 +212,9 @@ export interface BackendPurchaseTransaction {
   total: number;
   accounts_payable: number;
   currency: string;
+  /** Bill valas: IDR per 1 unit; nominal header & baris tersimpan dalam IDR. */
+  exchange_rate?: number | null;
+  foreign_amount?: number | null;
   payment_status: string;
   payment_terms: string | null;
   due_date: string | null;
@@ -696,7 +699,7 @@ export interface BillLineInput {
 export interface BillInput {
   management_client_id: string; purchase_no: string | null; vendor_name: string; vendor_code: string | null;
   invoice_number: string; po_number: string | null; invoice_date: string; purchase_date: string; due_date: string;
-  payment_terms: string; currency: string; source_doc_type: string; source_ref: string | null; category: string;
+  payment_terms: string; currency: string; exchange_rate?: number | null; source_doc_type: string; source_ref: string | null; category: string;
   description: string | null; tax_type: BillTaxType; tax_inclusive: boolean; ap_account_code: string;
   tax_account_code: string | null; notes: string | null; submit: boolean; lines: BillLineInput[];
 }
@@ -704,7 +707,7 @@ export interface BillEntry extends BackendPurchaseTransaction {
   tax_type: BillTaxType | null;
   tax_inclusive: boolean;
   editable: boolean;
-  lines: (BackendPurchaseTransactionLine & { discount_type: BillDiscountType | null; discount_value: number | null })[];
+  lines: (BackendPurchaseTransactionLine & { discount_type: BillDiscountType | null; discount_value: number | null; foreign_unit_price?: number | null; foreign_discount?: number | null })[];
 }
 
 export async function fetchBillFormOptions(managementClientId: string, purchaseDate: string, signal?: AbortSignal): Promise<BillFormOptions> {

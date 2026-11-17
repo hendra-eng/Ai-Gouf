@@ -15,6 +15,8 @@ import {
 } from '@/lib/salesStore';
 import { useClientCoa, type CoaAccount } from '@/lib/coaStore';
 import { useActiveClient } from '@/lib/activeClient';
+import SalesLoading from './SalesLoading';
+import { salesFont } from './salesFont';
 import { PickerPagination } from '@/app/transactions/components/PreviewLayout';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -38,29 +40,31 @@ function formatTanggal(iso: string): string {
   }
 }
 
-// Warna status disamakan dengan palet hijau-teal aplikasi (lihat tab Posted / Source Data).
+// Warna status disamakan dengan pill bergaris di Sales Transaction (Review / Approved / Posted).
 const STATUS_BADGE: Record<UiStatus, string> = {
-  'Diproses': 'bg-amber-100 text-amber-700',
-  'Siap Posting': 'bg-[#CCFBF1] text-[#0F766E]',
-  'Diposting': 'bg-[#D1FAE5] text-[#065F46]',
+  'Diproses': 'bg-amber-100 text-amber-900 border-amber-300',
+  'Siap Posting': 'bg-blue-100 text-blue-800 border-blue-300',
+  'Diposting': 'bg-teal-100 text-teal-800 border-teal-300',
 };
 const STATUS_DOT: Record<UiStatus, string> = {
-  'Diproses': 'bg-amber-500',
-  'Siap Posting': 'bg-[#0F766E]',
-  'Diposting': 'bg-[#0F7D4E]',
+  'Diproses': 'bg-amber-600',
+  'Siap Posting': 'bg-blue-600',
+  'Diposting': 'bg-teal-600',
 };
 
 // Gaya kontrol -- sama dengan filter/tombol di tab Source Data, Sales Transaction & Posted.
-const BTN_SECONDARY = 'btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary';
-const CONTROL = 'w-full text-xs border border-primary/60 rounded-[6px] px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20';
+const BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const BTN_SECONDARY = `${BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const BTN_PRIMARY = `${BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const CONTROL = 'w-full text-xs border border-neutral-300 rounded-[6px] px-2.5 py-1.5 bg-white text-neutral-900 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300';
 
 const iconBadge = (node: React.ReactNode) => (
-  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]">{node}</span>
+  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-50 text-neutral-600 ring-1 ring-neutral-200">{node}</span>
 );
 
 function StatusPill({ status, label }: { status: UiStatus; label: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE[status]}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
       {label}
     </span>
@@ -78,13 +82,13 @@ function JPanel({ title, subtitle, leading, action, children, className = '', fl
   flush?: boolean;
 }) {
   return (
-    <section className={`flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+    <section className={`flex flex-col overflow-hidden rounded-[10px] border border-neutral-200 bg-white ${className}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
           {leading}
           <div className="min-w-0">
-            <h3 className="truncate text-base font-bold text-foreground">{title}</h3>
-            {subtitle && <p className="truncate text-xs text-muted-foreground">{subtitle}</p>}
+            <h3 className="truncate text-base font-semibold tracking-tight text-neutral-900">{title}</h3>
+            {subtitle && <p className="truncate text-xs font-medium text-neutral-700">{subtitle}</p>}
           </div>
         </div>
         {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
@@ -96,35 +100,26 @@ function JPanel({ title, subtitle, leading, action, children, className = '', fl
   );
 }
 
-// Kartu KPI -- gaya sama dengan PostedKpiTile / SourceKpiTile (garis aksen atas, kilau sudut, bar proporsi).
-type KpiTone = 'mint' | 'amber' | 'green' | 'teal';
-const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
-  mint: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
-  amber: { strip: 'bg-amber-400', iconBg: 'bg-amber-50', iconText: 'text-amber-600', bar: 'bg-amber-400', glow: 'bg-amber-400' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
-  teal: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
-};
-
-function JournalKpiTile({ label, value, pct, pctLabel, tone, icon: Icon }: {
-  label: string; value: string; pct: number; pctLabel: string; tone: KpiTone; icon: React.ElementType;
+// Kartu KPI -- desain sama dengan SalesKpiTile di Sales Transaction (garis aksen hitam tipis,
+// ikon kecil, angka semibold, bar netral).
+function JournalKpiTile({ label, value, pct, pctLabel, icon: Icon }: {
+  label: string; value: string; pct: number; pctLabel: string; icon: React.ElementType;
 }) {
-  const c = KPI_TONE[tone];
-  const p = Math.min(100, Math.max(0, Math.round(pct)));
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
       <div className="relative flex items-start justify-between gap-2">
-        <p className="min-w-0 truncate text-xs font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm ring-1 ring-white ${c.iconBg}`}>
-          <Icon size={16} className={c.iconText} />
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-700" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-50">
+          <Icon size={16} className="text-neutral-600" />
         </span>
       </div>
-      <p className="relative mt-1 truncate text-lg font-extrabold tabular-nums text-[#064E3B]">{value}</p>
-      <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{value}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="relative mt-1 truncate text-[11px] font-semibold text-slate-600">{p}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-semibold text-neutral-700">{p}% {pctLabel}</p>
     </div>
   );
 }
@@ -142,18 +137,18 @@ function StepCard({ step, state, icon: Icon, title, aside, flush, children }: {
   children: React.ReactNode;
 }) {
   const badge =
-    state === 'done' ? 'bg-[#0F7D4E] text-white'
-    : state === 'active' ? 'bg-[#D1FAE5] text-[#065F46] ring-2 ring-[#0F7D4E]/40'
-    : 'bg-slate-100 text-slate-500';
+    state === 'done' ? 'bg-neutral-100 text-neutral-700'
+    : state === 'active' ? 'bg-white text-neutral-900 ring-1 ring-neutral-400'
+    : 'bg-neutral-50 text-neutral-600 ring-1 ring-neutral-200';
   return (
-    <section className={`flex h-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-colors ${state === 'active' ? 'border-primary/60' : 'border-border'}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+    <section className={`flex h-full flex-col overflow-hidden rounded-[10px] border bg-white transition-colors ${state === 'active' ? 'border-neutral-400' : 'border-neutral-200'}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-extrabold ${badge}`}>
-            {state === 'done' ? <Check size={15} strokeWidth={3} /> : step}
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${badge}`}>
+            {state === 'done' ? <Check size={14} strokeWidth={2.5} /> : step}
           </span>
-          <h4 className="flex min-w-0 items-center gap-2 truncate text-sm font-bold text-foreground">
-            <Icon size={15} className="shrink-0 text-[#0F7D4E]" />
+          <h4 className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-neutral-900">
+            <Icon size={15} className="shrink-0 text-neutral-700" />
             <span className="truncate">{title}</span>
           </h4>
         </div>
@@ -169,18 +164,18 @@ interface RowSpec { label: React.ReactNode; value: React.ReactNode; strong?: boo
 // Daftar label : nilai (label kiri, nilai rata kanan) -- sama dengan baris ringkasan di panel detail Posted.
 function Rows({ rows }: { rows: RowSpec[] }) {
   return (
-    <dl className="divide-y divide-slate-200 text-xs">
+    <dl className="divide-y divide-neutral-200 text-xs">
       {rows.map((r, i) => (
         <div key={i} className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
-          <dt className="text-muted-foreground">{r.label}</dt>
-          <dd className={`min-w-0 break-words text-right tabular-nums ${r.strong ? 'text-sm font-extrabold text-[#064E3B]' : 'font-bold text-slate-900'}`}>{r.value}</dd>
+          <dt className="font-medium text-neutral-700">{r.label}</dt>
+          <dd className={`min-w-0 break-words text-right tabular-nums ${r.strong ? 'text-sm font-bold text-neutral-900' : 'font-semibold text-neutral-900'}`}>{r.value}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-const TAG = 'inline-flex rounded-md bg-[#D1FAE5] px-2 py-0.5 text-[11px] font-semibold text-[#065F46]';
+const TAG = 'inline-flex rounded-md border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[11px] font-semibold text-neutral-800';
 
 const STEPS = [
   { n: 1, label: 'Source Document', sub: 'Dokumen sumber' },
@@ -348,12 +343,11 @@ export default function SalesJournalPreview() {
 
   if (!selectedInvoice) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card px-6 py-16 text-center shadow-sm">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D1FAE5] text-[#065F46]">
-          {loading ? <Clock size={22} /> : <Inbox size={22} />}
-        </span>
-        <p className="text-sm font-bold text-foreground">{loading ? t('Memuat...') : t('Belum ada invoice penjualan untuk diproses ke jurnal.')}</p>
-      </div>
+      <SalesLoading
+        loading={loading}
+        emptyIcon={Inbox}
+        message={loading ? t('Memuat...') : t('Belum ada invoice penjualan untuk diproses ke jurnal.')}
+      />
     );
   }
 
@@ -487,20 +481,20 @@ export default function SalesJournalPreview() {
     { key: 'Diposting', label: 'Diposting', count: stats.diposting },
   ];
 
-  const footerTone =
-    uiStatus === 'Diposting' ? 'border-[#6EE7B7] bg-[#ECFDF5] text-[#065F46]'
-    : uiStatus === 'Siap Posting' ? 'border-[#99F6E4] bg-[#F0FDFA] text-[#0F766E]'
-    : 'border-amber-200 bg-amber-50 text-amber-800';
+  // Notifikasi: kotak netral tipis, hanya ikon yang diberi warna status.
+  const footerTone = 'border-neutral-200 bg-neutral-50 text-neutral-800';
+  const footerIconTone =
+    uiStatus === 'Diposting' ? 'text-teal-700' : uiStatus === 'Siap Posting' ? 'text-blue-700' : 'text-amber-700';
   const FooterIcon = uiStatus === 'Diposting' ? ShieldCheck : uiStatus === 'Siap Posting' ? Info : Clock;
 
   return (
-    <div className="space-y-5">
-      {/* KPI -- gaya sama dengan tab Posted / Source Data */}
+    <div className={`${salesFont.className} space-y-5`}>
+      {/* KPI -- desain sama dengan Sales Transaction */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <JournalKpiTile label={t('Antrian Jurnal')} value={String(stats.total)} pct={100} pctLabel={t('invoice belum final')} tone="mint" icon={FileText} />
-        <JournalKpiTile label={t('Menunggu Approval')} value={String(stats.diproses)} pct={persen(stats.diproses, stats.total)} pctLabel={t('dari antrian')} tone="amber" icon={Clock} />
-        <JournalKpiTile label={t('Siap Posting')} value={String(stats.siap)} pct={persen(stats.siap, stats.total)} pctLabel={t('dari antrian')} tone="teal" icon={ShieldCheck} />
-        <JournalKpiTile label={t('Nilai Belum Diposting')} value={formatIDR(stats.nilaiAntrian)} pct={persen(stats.nilaiAntrian, stats.nilaiTotal)} pctLabel={t('dari total nilai antrian')} tone="green" icon={BookOpen} />
+        <JournalKpiTile label={t('Antrian Jurnal')} value={String(stats.total)} pct={100} pctLabel={t('invoice belum final')} icon={FileText} />
+        <JournalKpiTile label={t('Menunggu Approval')} value={String(stats.diproses)} pct={persen(stats.diproses, stats.total)} pctLabel={t('dari antrian')} icon={Clock} />
+        <JournalKpiTile label={t('Siap Posting')} value={String(stats.siap)} pct={persen(stats.siap, stats.total)} pctLabel={t('dari antrian')} icon={ShieldCheck} />
+        <JournalKpiTile label={t('Nilai Belum Diposting')} value={formatIDR(stats.nilaiAntrian)} pct={persen(stats.nilaiAntrian, stats.nilaiTotal)} pctLabel={t('dari total nilai antrian')} icon={BookOpen} />
       </div>
 
       <div className="flex flex-col items-start gap-4 lg:flex-row">
@@ -511,15 +505,15 @@ export default function SalesJournalPreview() {
           leading={iconBadge(<FileSpreadsheet size={17} />)}
           flush
         >
-          <div className="space-y-2.5 border-b border-border p-3">
+          <div className="space-y-2.5 border-b border-neutral-200 p-3">
             <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600" />
               <input
                 type="text"
                 value={search}
                 onChange={e => handleSearchChange(e.target.value)}
                 placeholder={t('Cari nomor invoice atau pelanggan...')}
-                className="w-full rounded-lg border border-primary/60 bg-card py-1.5 pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-lg border border-neutral-300 bg-card py-1.5 pl-9 pr-3 text-xs text-neutral-900 placeholder:text-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -530,9 +524,9 @@ export default function SalesJournalPreview() {
                     key={tab.key}
                     type="button"
                     onClick={() => { setStatusFilter(tab.key); setCurrentPage(1); }}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${on ? 'border-[#0F7D4E] bg-[#0F7D4E] text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-primary/60 hover:bg-[#F0FDF7]'}`}
+                    className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${on ? 'border-neutral-300 bg-neutral-200 text-neutral-900' : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 hover:bg-neutral-50'}`}
                   >
-                    {t(tab.label)} <span className={on ? 'text-white/80' : 'text-slate-400'}>{tab.count}</span>
+                    {t(tab.label)} <span className="text-neutral-600">{tab.count}</span>
                   </button>
                 );
               })}
@@ -541,7 +535,7 @@ export default function SalesJournalPreview() {
 
           <div className="scrollbar-thin max-h-[560px] space-y-2 overflow-y-auto p-3">
             {pagedInvoices.length === 0 && (
-              <div className="py-8 text-center text-xs text-muted-foreground">{loading ? t('Memuat...') : t('Tidak ada invoice yang cocok.')}</div>
+              <div className="py-8 text-center text-xs text-neutral-600">{loading ? t('Memuat...') : t('Tidak ada invoice yang cocok.')}</div>
             )}
             {pagedInvoices.map(inv => {
               const s = keUiStatus(inv.posting_status);
@@ -552,17 +546,17 @@ export default function SalesJournalPreview() {
                   type="button"
                   onClick={() => handleSelectInvoice(inv)}
                   aria-current={aktif ? 'true' : undefined}
-                  className={`group flex w-full items-start gap-3 rounded-xl border p-2.5 text-left transition-all ${aktif ? 'border-primary bg-[#F0FDF7] shadow-sm ring-1 ring-primary/30' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-[#F0FDF7] hover:shadow-sm'}`}
+                  className={`group flex w-full items-start gap-3 rounded-lg border p-2.5 text-left transition-colors ${aktif ? 'border-neutral-400 bg-neutral-100' : 'border-neutral-200 bg-white hover:border-neutral-400 hover:bg-neutral-50'}`}
                 >
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-extrabold shadow-sm ring-1 ring-white ${aktif ? 'bg-[#0F7D4E] text-white' : 'bg-[#D1FAE5] text-[#065F46]'}`}>INV</span>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold ${aktif ? 'bg-neutral-200 text-neutral-700' : 'bg-neutral-100 text-neutral-600'}`}>INV</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-xs font-bold leading-snug text-foreground">{inv.invoice_no}</span>
-                    <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-600">{inv.customer_name}</span>
+                    <span className="block break-words text-xs font-semibold leading-snug text-blue-700">{inv.invoice_no}</span>
+                    <span className="mt-0.5 block truncate text-[11px] font-semibold text-neutral-800">{inv.customer_name}</span>
                     <span className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-muted-foreground">{formatTanggal(inv.invoice_date)}</span>
+                      <span className="text-[11px] font-medium text-neutral-700">{formatTanggal(inv.invoice_date)}</span>
                       <StatusPill status={s} label={t(s)} />
                     </span>
-                    <span className="mt-1 block text-sm font-extrabold tabular-nums text-[#064E3B]">{formatIDR(inv.gross_amount)}</span>
+                    <span className="mt-1 block text-sm font-semibold tabular-nums text-neutral-900">{formatIDR(inv.gross_amount)}</span>
                   </span>
                 </button>
               );
@@ -588,17 +582,17 @@ export default function SalesJournalPreview() {
             leading={iconBadge(<Eye size={17} />)}
             action={<StatusPill status={uiStatus} label={t(uiStatus)} />}
           >
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-[10px] border border-neutral-200 bg-neutral-50 p-3">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#D1FAE5] text-xs font-extrabold text-[#065F46] shadow-sm ring-1 ring-white">INV</span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-neutral-100 text-[11px] font-semibold text-neutral-600 ring-1 ring-neutral-200">INV</span>
                 <div className="min-w-0">
-                  <p className="break-words text-sm font-bold text-foreground">{selectedInvoice.invoice_no}</p>
-                  <p className="truncate text-xs font-medium text-slate-600">{selectedInvoice.customer_name} · {formatTanggal(selectedInvoice.invoice_date)}</p>
+                  <p className="break-words text-sm font-semibold text-blue-700">{selectedInvoice.invoice_no}</p>
+                  <p className="truncate text-xs font-semibold text-neutral-700">{selectedInvoice.customer_name} · {formatTanggal(selectedInvoice.invoice_date)}</p>
                 </div>
               </div>
               <div className="ml-auto text-right">
-                <p className="text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-500">{t('Total Invoice')}</p>
-                <p className="mt-1 text-xl font-extrabold leading-none tabular-nums text-[#064E3B]">{formatIDR(selectedInvoice.gross_amount)}</p>
+                <p className="text-[10px] font-semibold uppercase leading-tight tracking-wide text-neutral-600">{t('Total Invoice')}</p>
+                <p className="mt-1 text-xl font-semibold leading-none tabular-nums tracking-tight text-neutral-900">{formatIDR(selectedInvoice.gross_amount)}</p>
               </div>
             </div>
 
@@ -610,19 +604,19 @@ export default function SalesJournalPreview() {
                 return (
                   <li key={s.n} className="relative flex flex-col items-center px-1 text-center">
                     {i > 0 && (
-                      <span className={`absolute right-1/2 top-4 h-0.5 w-full -translate-y-1/2 rounded-full ${s.n <= activeStep || isPosted ? 'bg-[#0F7D4E]' : 'bg-slate-200'}`} />
+                      <span className={`absolute right-1/2 top-4 h-0.5 w-full -translate-y-1/2 rounded-full ${s.n <= activeStep || isPosted ? 'bg-neutral-300' : 'bg-neutral-200'}`} />
                     )}
                     <span
-                      className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-extrabold transition-colors ${
-                        done ? 'border-[#0F7D4E] bg-[#0F7D4E] text-white'
-                        : active ? 'border-[#0F7D4E] bg-white text-[#0F7D4E] ring-4 ring-[#0F7D4E]/20'
-                        : 'border-slate-300 bg-white text-slate-400'
+                      className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors ${
+                        done ? 'border-neutral-300 bg-neutral-100 text-neutral-700'
+                        : active ? 'border-neutral-500 bg-white text-neutral-900'
+                        : 'border-neutral-200 bg-white text-neutral-500'
                       }`}
                     >
-                      {done ? <Check size={15} strokeWidth={3} /> : s.n}
+                      {done ? <Check size={14} strokeWidth={2.5} /> : s.n}
                     </span>
-                    <p className={`mt-2 text-[11px] font-bold leading-tight ${done || active ? 'text-foreground' : 'text-slate-400'}`}>{t(s.label)}</p>
-                    <p className="hidden text-[10px] leading-tight text-muted-foreground sm:block">{t(s.sub)}</p>
+                    <p className={`mt-2 text-[11px] font-semibold leading-tight ${done || active ? 'text-neutral-900' : 'text-neutral-600'}`}>{t(s.label)}</p>
+                    <p className="hidden text-[10px] font-medium leading-tight text-neutral-600 sm:block">{t(s.sub)}</p>
                   </li>
                 );
               })}
@@ -668,7 +662,7 @@ export default function SalesJournalPreview() {
               state={stateOf(3)}
               icon={Landmark}
               title={t('Accounting Classification')}
-              aside={isEditingMapping && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{t('Mode Edit')}</span>}
+              aside={isEditingMapping && <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">{t('Mode Edit')}</span>}
             >
               {!isEditingMapping ? (
                 <Rows rows={[
@@ -679,8 +673,8 @@ export default function SalesJournalPreview() {
                 ].map(r => ({
                   label: r.label,
                   value: r.acc.code
-                    ? <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5"><span className="rounded bg-[#ECFDF5] px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary">{kodeAkun(r.acc.code)}</span><span>{t(r.acc.name)}</span></span>
-                    : <span className="font-medium text-muted-foreground">{t(r.acc.name)}</span>,
+                    ? <span className="inline-flex flex-wrap items-center justify-end gap-x-1.5"><span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-neutral-900">{kodeAkun(r.acc.code)}</span><span>{t(r.acc.name)}</span></span>
+                    : <span className="font-medium text-neutral-600">{t(r.acc.name)}</span>,
                 }))} />
               ) : (
                 <div className="space-y-3">
@@ -693,7 +687,7 @@ export default function SalesJournalPreview() {
                     label, key, value: draftMapping[key].code, options: denganAkunAktif(opsiAkun[key], draftMapping[key]),
                   })).map(f => (
                     <div key={f.label}>
-                      <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">{t(f.label)}</label>
+                      <label className="mb-1 block text-[11px] font-semibold text-neutral-700">{t(f.label)}</label>
                       <select
                         value={f.value ?? ''}
                         onChange={e => {
@@ -710,8 +704,8 @@ export default function SalesJournalPreview() {
                       </select>
                     </div>
                   ))}
-                  <div className="flex items-center gap-2 border-t border-border pt-3">
-                    <button onClick={saveEditMapping} disabled={savingMapping} className="btn-primary gap-1.5 py-1.5 text-xs">
+                  <div className="flex items-center gap-2 border-t border-neutral-300 pt-3">
+                    <button onClick={saveEditMapping} disabled={savingMapping} className={BTN_PRIMARY}>
                       <Check size={13} /> {savingMapping ? t('Menyimpan...') : t('Simpan')}
                     </button>
                     <button onClick={cancelEditMapping} className={BTN_SECONDARY}>
@@ -723,15 +717,15 @@ export default function SalesJournalPreview() {
             </StepCard>
 
             <StepCard step={4} state={stateOf(4)} icon={Scale} title={t('Tax Treatment')}>
-              <div className={`mb-3 flex items-start gap-2.5 rounded-xl border p-3 ${isTaxable ? 'border-[#6EE7B7] bg-[#ECFDF5]' : 'border-slate-200 bg-slate-50'}`}>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isTaxable ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-slate-200 text-slate-600'}`}>
+              <div className="mb-3 flex items-start gap-2.5 rounded-[10px] border border-neutral-200 bg-neutral-50 p-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-neutral-600">
                   {isTaxable ? <CheckCircle size={15} /> : <Info size={15} />}
                 </span>
                 <div>
-                  <p className={`text-xs font-bold ${isTaxable ? 'text-[#065F46]' : 'text-slate-700'}`}>
+                  <p className="text-xs font-semibold text-neutral-900">
                     {isTaxable ? t('Dikenakan PPN (Taxable)') : t('Tidak ada PPN Keluaran')}
                   </p>
-                  <p className={`text-[11px] ${isTaxable ? 'text-[#047857]' : 'text-slate-500'}`}>
+                  <p className="text-[11px] font-medium text-neutral-700">
                     {isTaxable ? t('Transaksi ini dikenakan PPN sesuai ketentuan yang berlaku.') : t('Transaksi ini tidak menghasilkan PPN keluaran.')}
                   </p>
                 </div>
@@ -753,15 +747,15 @@ export default function SalesJournalPreview() {
             title={t('Journal Entry')}
             flush
             aside={
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${balanced ? 'bg-[#D1FAE5] text-[#065F46]' : 'bg-red-100 text-red-700'}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${balanced ? 'border-neutral-200 bg-neutral-50 text-neutral-700' : 'border-red-300 bg-red-100 text-red-700'}`}>
                 {balanced ? <Check size={12} strokeWidth={3} /> : <X size={12} />} {balanced ? t('Seimbang') : t('Tidak seimbang')}
               </span>
             }
           >
             <div className="scrollbar-thin overflow-x-auto">
-              <table className="w-full min-w-[560px]">
+              <table className="w-full min-w-[560px] select-text border-separate border-spacing-0">
                 <thead>
-                  <tr className="bg-[#8FE3B5]">
+                  <tr className="bg-neutral-300">
                     {[
                       { h: t('No.'), cls: 'w-12 text-left' },
                       { h: t('Account Code'), cls: 'text-left' },
@@ -769,26 +763,26 @@ export default function SalesJournalPreview() {
                       { h: t('Debit (IDR)'), cls: 'text-right' },
                       { h: t('Credit (IDR)'), cls: 'text-right' },
                     ].map(c => (
-                      <th key={c.h} className={`whitespace-nowrap border-b border-t-2 border-[#0A4A32] px-4 py-3 text-xs font-bold text-[#065F46] ${c.cls}`}>{c.h}</th>
+                      <th key={c.h} className={`whitespace-nowrap border-b border-t border-neutral-800 px-4 py-2 text-xs font-bold text-black ${c.cls}`}>{c.h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {journalLines.map(l => (
-                    <tr key={l.no} className="border-b border-slate-400/80 text-xs transition-colors hover:bg-slate-200/70">
-                      <td className="px-4 py-2.5 text-muted-foreground">{l.no}</td>
-                      <td className="whitespace-nowrap px-4 py-2.5 font-mono font-semibold text-primary">{l.code ? kodeAkun(l.code) : '—'}</td>
-                      <td className="px-4 py-2.5 font-medium text-foreground">{l.name ? t(l.name) : '—'}</td>
+                    <tr key={l.no} className="text-xs [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200">
+                      <td className="px-4 py-2.5 text-neutral-600">{l.no}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono font-semibold text-neutral-900">{l.code ? kodeAkun(l.code) : '—'}</td>
+                      <td className="px-4 py-2.5 font-medium text-neutral-900">{l.name ? t(l.name) : '—'}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{l.debit !== 0 ? formatAngka(l.debit) : '—'}</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{l.credit !== 0 ? formatAngka(l.credit) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className={`border-t-2 text-xs font-extrabold ${balanced ? 'border-[#6EE7B7] bg-[#ECFDF5] text-[#065F46]' : 'border-red-200 bg-red-50 text-red-700'}`}>
-                    <td colSpan={3} className="px-4 py-3">{t('Total')}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatAngka(totalDebit)}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatAngka(totalCredit)}</td>
+                  <tr className={`text-xs font-semibold ${balanced ? 'bg-neutral-100 text-neutral-900' : 'bg-red-50 text-red-700'}`}>
+                    <td colSpan={3} className="border-t border-neutral-800 px-4 py-3">{t('Total')}</td>
+                    <td className="whitespace-nowrap border-t border-neutral-800 px-4 py-3 text-right tabular-nums">{formatAngka(totalDebit)}</td>
+                    <td className="whitespace-nowrap border-t border-neutral-800 px-4 py-3 text-right tabular-nums">{formatAngka(totalCredit)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -796,30 +790,30 @@ export default function SalesJournalPreview() {
           </StepCard>
 
           {/* Bar aksi -- menempel di bawah supaya tombol selalu terjangkau */}
-          <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur">
-            <div className={`flex min-w-0 flex-1 items-start gap-2.5 rounded-lg border px-3 py-2 text-xs font-medium ${footerTone}`}>
-              <FooterIcon size={15} className="mt-0.5 shrink-0" />
-              <span>{footerMessage}</span>
+          <div className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-neutral-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+            <div className={`flex min-w-0 flex-1 items-start gap-2.5 rounded-lg border px-3 py-2 text-xs ${footerTone}`}>
+              <FooterIcon size={15} className={`mt-0.5 shrink-0 ${footerIconTone}`} />
+              <span className="font-medium leading-snug">{footerMessage}</span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <button
                 onClick={startEditMapping}
                 disabled={isPosted || isEditingMapping}
-                className={`${BTN_SECONDARY} disabled:cursor-not-allowed disabled:opacity-40`}
+                className={BTN_SECONDARY}
               >
                 <Pencil size={12} /> {t('Edit Mapping')}
               </button>
               <button
                 onClick={handleApprove}
                 disabled={uiStatus !== 'Diproses'}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#0F7D4E] bg-white px-3 py-1.5 text-xs font-semibold text-[#0F7D4E] transition-all hover:bg-[#ECFDF5] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
+                className={BTN_SECONDARY}
               >
                 <CheckCircle size={13} /> {t('Approve')}
               </button>
               <button
                 onClick={handlePostJournal}
                 disabled={uiStatus !== 'Siap Posting'}
-                className="btn-primary gap-1.5 rounded-xl py-1.5 text-xs"
+                className={BTN_PRIMARY}
               >
                 <Send size={12} /> {t('Post Journal')}
               </button>
@@ -831,19 +825,19 @@ export default function SalesJournalPreview() {
       {/* Document Preview Modal */}
       {showDocPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={() => setShowDocPreview(false)}>
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
+          <div className={`${salesFont.className} w-full max-w-md overflow-hidden rounded-[10px] border border-neutral-200 bg-white shadow-2xl`} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-white px-4 py-3">
               <div className="flex min-w-0 items-center gap-2.5">
                 {iconBadge(<FileText size={17} />)}
-                <h3 className="truncate text-base font-bold text-foreground">{selectedInvoice.invoice_no}</h3>
+                <h3 className="truncate text-base font-semibold tracking-tight text-neutral-900">{selectedInvoice.invoice_no}</h3>
               </div>
-              <button onClick={() => setShowDocPreview(false)} className="rounded p-1 transition-colors hover:bg-muted" aria-label={t('Tutup')}>
-                <X size={16} className="text-muted-foreground" />
+              <button onClick={() => setShowDocPreview(false)} className="rounded p-1 transition-colors hover:bg-neutral-100" aria-label={t('Tutup')}>
+                <X size={16} className="text-neutral-600" />
               </button>
             </div>
             <div className="p-4">
-              <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-[#F0FDF7] px-6 text-center text-xs text-muted-foreground">
-                <FileText size={26} className="text-[#0F7D4E]/60" />
+              <div className="flex h-56 flex-col items-center justify-center gap-2 rounded-[10px] border border-dashed border-neutral-300 bg-neutral-50 px-6 text-center text-xs text-neutral-600">
+                <FileText size={26} className="text-neutral-500" />
                 {t('Pratinjau dokumen sumber belum tersedia (belum ada file yang tertaut ke invoice ini).')}
               </div>
               <div className="mt-3">

@@ -19,13 +19,14 @@ import {
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
-import { computeInvoiceLine, fmtDate, LEVEL_INPUT, roleLevel, rupiah, TAX_LABEL, todayIso } from '@/lib/receivablesPayablesStore';
+import { computeInvoiceLine, fmtDate, LEVEL_INPUT, money, roleLevel, rupiah, TAX_LABEL, todayIso } from '@/lib/receivablesPayablesStore';
 import {
   checkBillDuplicate, fetchBill, fetchBillFormOptions, saveBill,
   type BillAccountOption, type BillDiscountType, type BillEntry, type BillFormOptions, type BillInput, type BillTaxType, type BillVendorOption,
 } from '@/lib/purchaseStore';
 import { btnOutline, btnPrimary, btnSmall, inputCls } from '@/components/arap/arapUi';
 import { Label, MoneyInput } from '@/components/arap/SettlementForm';
+import { CurrencySelect, InfoKursTeks, RateInput, useMasterRate } from '@/components/arap/CurrencyRateFields';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const TERMIN_DEFAULT = ['Due on Receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
@@ -161,10 +162,11 @@ interface BarisJurnal { code: string; name: string; debit: number; credit: numbe
 
 function PreviewModal({ data, onClose }: {
   data: { company: string; nomor: string; status: string; vendor: string; vendorCode: string; invoice: string; po: string; invoiceDate: string;
-    purchaseDate: string; dueDate: string; termin: string; catatan: string; inklusif: boolean; subtotal: number; tax: number; total: number;
+    purchaseDate: string; dueDate: string; termin: string; catatan: string; inklusif: boolean; subtotal: number; tax: number; total: number; mataUang: string; kurs: number;
     baris: { b: Baris; amount: number; discount: number; tax: number }[]; jurnal: BarisJurnal[] };
   onClose: () => void;
 }) {
+  const fm = (n: number) => money(n, data.mataUang);
   const cetak = () => {
     const el = document.getElementById('bill-preview-doc');
     const w = el && window.open('', '_blank', 'width=900,height=1000');
@@ -227,19 +229,19 @@ function PreviewModal({ data, onClose }: {
                     <td className="px-2 py-1.5">{x.b.item_code && <b>{x.b.item_code} </b>}{x.b.description || '—'}</td>
                     <td className="px-2 py-1.5">{kodeAkun(x.b.account_code) || '—'}</td>
                     <td className="px-2 py-1.5 text-right">{x.b.quantity}{x.b.unit ? ` ${x.b.unit}` : ''}</td>
-                    <td className="px-2 py-1.5 text-right">{rupiah(x.b.unit_price)}</td>
-                    <td className="px-2 py-1.5 text-right">{x.discount ? rupiah(x.discount) : '—'}</td>
+                    <td className="px-2 py-1.5 text-right">{fm(x.b.unit_price)}</td>
+                    <td className="px-2 py-1.5 text-right">{x.discount ? fm(x.discount) : '—'}</td>
                     <td className="px-2 py-1.5">{TAX_LABEL[x.b.tax_type]}</td>
-                    <td className="px-2 py-1.5 text-right">{rupiah(x.amount)}</td>
+                    <td className="px-2 py-1.5 text-right">{fm(x.amount)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <table className="text-xs" style={{ width: 300, marginLeft: 'auto' }}>
               <tbody>
-                <tr><td>Subtotal{data.inklusif ? ' (excl. tax)' : ''}</td><td className="text-right">{rupiah(data.subtotal)}</td></tr>
-                <tr><td>Input VAT</td><td className="text-right">{rupiah(data.tax)}</td></tr>
-                <tr className="text-sm font-bold"><td className="border-t-2 border-[#0F7D4E] pt-1">Accounts Payable</td><td className="border-t-2 border-[#0F7D4E] pt-1 text-right">{rupiah(data.total)}</td></tr>
+                <tr><td>Subtotal{data.inklusif ? ' (excl. tax)' : ''}</td><td className="text-right">{fm(data.subtotal)}</td></tr>
+                <tr><td>Input VAT</td><td className="text-right">{fm(data.tax)}</td></tr>
+                <tr className="text-sm font-bold"><td className="border-t-2 border-[#0F7D4E] pt-1">Accounts Payable</td><td className="border-t-2 border-[#0F7D4E] pt-1 text-right">{fm(data.total)}</td></tr>
               </tbody>
             </table>
             {data.jurnal.length > 0 && (
@@ -293,6 +295,7 @@ function CreateBillInner() {
   const [jatuhTempo, setJatuhTempo] = useState(tambahHari(todayIso(), 30));
   const [tempoManual, setTempoManual] = useState(false);
   const [mataUang, setMataUang] = useState('IDR');
+  const [kurs, setKurs] = useState(0);
   const [sumber, setSumber] = useState('Manual');
   const [refSumber, setRefSumber] = useState('');
   const [kategori, setKategori] = useState('Other');
@@ -337,7 +340,7 @@ function CreateBillInner() {
       setInvoice(e.invoice_number ?? ''); setPo(e.po_number ?? '');
       setTglInvoice(e.invoice_date ?? e.purchase_date); setTglBeli(e.purchase_date);
       setTermin(e.payment_terms || 'Net 30'); setJatuhTempo(e.due_date ?? e.purchase_date); setTempoManual(true);
-      setMataUang(e.currency || 'IDR'); setSumber(e.source_doc_type || 'Manual'); setRefSumber(e.source_ref ?? '');
+      setMataUang(e.currency || 'IDR'); setKurs((e.currency || 'IDR') !== 'IDR' && Number(e.exchange_rate) > 0 ? Number(e.exchange_rate) : 0); setSumber(e.source_doc_type || 'Manual'); setRefSumber(e.source_ref ?? '');
       setKategori(e.category || 'Other'); setDeskripsi(e.description ?? '');
       setInklusif(!!e.tax_inclusive);
       setAkunAp(e.ap_account_code ?? ''); setAkunVat(e.tax_account_code ?? ''); setCatatan(e.notes ?? '');
@@ -345,9 +348,9 @@ function CreateBillInner() {
       setPajak(e.tax_type ?? pajakBaris.find(t => t !== 'non_ppn') ?? 'non_ppn');
       setBaris(e.lines.length ? e.lines.map((l, i) => ({
         key: kunciBaru(), item_code: l.item_code ?? '', description: l.description, account_code: l.account_code, quantity: Number(l.quantity),
-        unit: l.unit ?? '', unit_price: Number(l.unit_price), tax_type: pajakBaris[i],
+        unit: l.unit ?? '', unit_price: l.foreign_unit_price != null ? Number(l.foreign_unit_price) : Number(l.unit_price), tax_type: pajakBaris[i],
         // Bill hasil import tidak menyimpan input diskon -- tampilkan nominalnya.
-        discount_type: l.discount_type ?? 'amount', discount_value: l.discount_value != null ? Number(l.discount_value) : Number(l.discount),
+        discount_type: l.discount_type ?? 'amount', discount_value: l.discount_value != null ? Number(l.discount_value) : Number(l.foreign_discount ?? l.discount),
       })) : [barisKosong(e.tax_type ?? 'ppn_11')]);
     }).catch(e => toast.error((e as Error).message)).finally(() => setMemuat(false));
   }, [kid, editId]);
@@ -393,17 +396,28 @@ function CreateBillInner() {
     };
   }, [baris, inklusif]);
 
+  const valas = mataUang !== 'IDR';
+  const fm = (n: number) => money(n, mataUang);
+  // Kurs dari master saat mata uang / tanggal bill berubah; bill tersimpan tidak ditimpa saat pertama dibuka.
+  const infoKurs = useMasterRate({
+    currency: mataUang, date: tglInvoice || tglBeli, enabled: !memuat && !(asal && !asal.editable) && (!editId || !!asal), preserveInitial: !!editId, onRate: setKurs,
+  });
+  const gantiMataUang = (c: string) => { setMataUang(c); if (c === 'IDR') setKurs(0); };
+  // Jurnal GL selalu dalam IDR: item valas x kurs (estimasi; server membulatkan per baris).
+  const skala = valas ? kurs : 1;
+
   // Jurnal saat diposting: Dr akun item (DPP) + Dr PPN Masukan = Cr Hutang Usaha.
   const jurnal = useMemo<BarisJurnal[]>(() => {
     const perAkun = new Map<string, number>();
     ring.isi.forEach(x => { if (x.b.account_code) perAkun.set(x.b.account_code, (perAkun.get(x.b.account_code) ?? 0) + x.dpp); });
     if (!perAkun.size) return [];
     const nama = (k: string) => petaAkun.get(k)?.name ?? (k ? '(not in chart of accounts)' : 'Not chosen');
-    const hasil: BarisJurnal[] = Array.from(perAkun.entries()).map(([code, debit]) => ({ code, name: nama(code), debit, credit: 0 }));
-    if (ring.tax > 0) hasil.push({ code: akunVat || '—', name: akunVat ? nama(akunVat) : 'Input VAT account not chosen', debit: ring.tax, credit: 0 });
-    hasil.push({ code: akunAp || '—', name: akunAp ? nama(akunAp) : 'Accounts Payable account not chosen', debit: 0, credit: ring.total });
+    const idr = (n: number) => Math.round(n * skala * 100) / 100;
+    const hasil: BarisJurnal[] = Array.from(perAkun.entries()).map(([code, debit]) => ({ code, name: nama(code), debit: idr(debit), credit: 0 }));
+    if (ring.tax > 0) hasil.push({ code: akunVat || '—', name: akunVat ? nama(akunVat) : 'Input VAT account not chosen', debit: idr(ring.tax), credit: 0 });
+    hasil.push({ code: akunAp || '—', name: akunAp ? nama(akunAp) : 'Accounts Payable account not chosen', debit: 0, credit: idr(ring.total) });
     return hasil;
-  }, [ring, akunAp, akunVat, petaAkun]);
+  }, [ring, akunAp, akunVat, petaAkun, skala]);
 
   // Sama dengan purchase_bill_v1._validasi -- server tetap cek ulang saat simpan.
   const cek: Cek[] = useMemo(() => {
@@ -417,10 +431,11 @@ function CreateBillInner() {
       { key: 'gl', label: 'Every item has a GL account', ok: isi.length > 0 && isi.every(b => akunValid(b.account_code)), level: 'error' },
       { key: 'ap', label: 'Accounts Payable account chosen', ok: akunValid(akunAp), level: 'error' },
       { key: 'vat', label: 'Input VAT account chosen (tax is charged)', ok: ring.tax <= 0 || akunValid(akunVat), level: 'error' },
+      { key: 'rate', label: `Exchange rate for ${mataUang} filled`, ok: !valas || kurs > 0, level: 'error' },
       { key: 'due', label: 'Due date is not before invoice date', ok: !!jatuhTempo && jatuhTempo >= tglInvoice, level: 'error' },
       { key: 'tax', label: 'Tax is charged on at least one item (Tax Mismatch)', ok: pajak === 'non_ppn' || ring.tax > 0, level: 'warning' },
     ];
-  }, [vendor, invoice, dobel, sumber, po, baris, akunAp, akunVat, ring.tax, jatuhTempo, tglInvoice, pajak]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vendor, invoice, dobel, sumber, po, baris, akunAp, akunVat, ring.tax, jatuhTempo, tglInvoice, pajak, valas, kurs, mataUang]); // eslint-disable-line react-hooks/exhaustive-deps
   const salah = cek.filter(c => !c.ok && c.level === 'error');
   const peringatan = cek.filter(c => !c.ok && c.level === 'warning');
 
@@ -430,7 +445,7 @@ function CreateBillInner() {
     const input: BillInput = {
       management_client_id: kid, purchase_no: nomor.trim() || null, vendor_name: vendor.trim(), vendor_code: vendorKode.trim() || null,
       invoice_number: invoice.trim(), po_number: po.trim() || null, invoice_date: tglInvoice, purchase_date: tglBeli, due_date: jatuhTempo,
-      payment_terms: termin, currency: mataUang, source_doc_type: sumber, source_ref: refSumber.trim() || null, category: kategori,
+      payment_terms: termin, currency: mataUang, exchange_rate: valas ? kurs : null, source_doc_type: sumber, source_ref: refSumber.trim() || null, category: kategori,
       description: deskripsi.trim() || null, tax_type: pajak, tax_inclusive: inklusif, ap_account_code: akunAp, tax_account_code: akunVat || null,
       notes: catatan.trim() || null, submit,
       lines: baris.filter(isiBaris).map(b => ({
@@ -570,10 +585,15 @@ function CreateBillInner() {
                   </div>
                   <div>
                     <Label wajib>Currency</Label>
-                    <select value={mataUang} disabled={nonaktif} onChange={e => setMataUang(e.target.value)} className={inputCls}>
-                      <option value="IDR">IDR - Indonesian Rupiah</option>
-                    </select>
+                    <CurrencySelect value={mataUang} disabled={nonaktif || (!!asal && asal.currency !== mataUang)} onChange={gantiMataUang} />
                   </div>
+                  {valas && (
+                    <div>
+                      <Label wajib>Exchange Rate</Label>
+                      <RateInput value={kurs} currency={mataUang} disabled={nonaktif} onChange={setKurs} />
+                      <InfoKursTeks info={infoKurs} />
+                    </div>
+                  )}
                 </div>
               </div>
             </Section>
@@ -654,10 +674,10 @@ function CreateBillInner() {
                       <th className="w-[200px] px-2 py-2.5 text-left font-medium">Description <span className="text-rose-500">*</span></th>
                       <th className="w-[220px] px-2 py-2.5 text-left font-medium">GL Account <span className="text-rose-500">*</span></th>
                       <th className="w-[80px] px-2 py-2.5 text-left font-medium">Qty <span className="text-rose-500">*</span></th>
-                      <th className="w-[140px] px-2 py-2.5 text-left font-medium">Unit Price <span className="text-rose-500">*</span></th>
+                      <th className="w-[140px] px-2 py-2.5 text-left font-medium">Unit Price ({mataUang}) <span className="text-rose-500">*</span></th>
                       <th className="w-[130px] px-2 py-2.5 text-left font-medium">Discount</th>
                       <th className="w-[110px] px-2 py-2.5 text-left font-medium">Tax</th>
-                      <th className="w-[130px] px-2 py-2.5 text-right font-medium">Amount</th>
+                      <th className="w-[130px] px-2 py-2.5 text-right font-medium">Amount ({mataUang})</th>
                       <th className="w-12 px-2 py-2.5" />
                     </tr>
                   </thead>
@@ -683,7 +703,7 @@ function CreateBillInner() {
                             <input value={b.unit} disabled={nonaktif} maxLength={20} placeholder="unit" onChange={e => ubahBaris(b.key, { unit: e.target.value })}
                               className="mt-1 w-full rounded-lg border border-transparent bg-transparent px-1 text-[11px] text-muted-foreground hover:border-border focus:border-border focus:outline-none" />
                           </td>
-                          <td className="px-2 py-2"><MoneyInput value={b.unit_price} disabled={nonaktif} onChange={n => ubahBaris(b.key, { unit_price: n })} className="py-0.5" /></td>
+                          <td className="px-2 py-2"><MoneyInput value={b.unit_price} disabled={nonaktif} prefix={valas ? mataUang : 'Rp'} onChange={n => ubahBaris(b.key, { unit_price: n })} className="py-0.5" /></td>
                           <td className="px-2 py-2">
                             <div className="flex">
                               <input type="number" min={0} step="any" value={b.discount_value || ''} disabled={nonaktif} placeholder="0"
@@ -692,17 +712,17 @@ function CreateBillInner() {
                               <select value={b.discount_type} disabled={nonaktif} onChange={e => ubahBaris(b.key, { discount_type: e.target.value as BillDiscountType })}
                                 className="rounded-r-lg border border-l-0 border-border bg-card px-1 text-xs">
                                 <option value="percent">%</option>
-                                <option value="amount">Rp</option>
+                                <option value="amount">{valas ? mataUang : 'Rp'}</option>
                               </select>
                             </div>
-                            {h.discount > 0 && <p className="mt-1 text-right text-[11px] text-muted-foreground">-{rupiah(h.discount)}</p>}
+                            {h.discount > 0 && <p className="mt-1 text-right text-[11px] text-muted-foreground">-{fm(h.discount)}</p>}
                           </td>
                           <td className="px-2 py-2">
                             <select value={b.tax_type} disabled={nonaktif} onChange={e => ubahBaris(b.key, { tax_type: e.target.value as BillTaxType })} className={`${inputCls} py-2`}>
                               {(Object.keys(TAX_LABEL) as BillTaxType[]).map(t => <option key={t} value={t}>{TAX_LABEL[t]}</option>)}
                             </select>
                           </td>
-                          <td className="px-2 py-2 pt-4 text-right font-semibold text-foreground">{rupiah(h.amount)}</td>
+                          <td className="px-2 py-2 pt-4 text-right font-semibold text-foreground">{fm(h.amount)}</td>
                           <td className="px-2 py-2 pt-3 text-center">
                             <button type="button" disabled={nonaktif} aria-label="Remove item"
                               onClick={() => setBaris(bs => (bs.length > 1 ? bs.filter(x => x.key !== b.key) : [barisKosong(pajak, opsi?.defaults.line ?? '')]))}
@@ -724,13 +744,19 @@ function CreateBillInner() {
                   </span>
                 </button>
                 <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
-                  <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Subtotal{inklusif ? ' (excl. tax)' : ''}</span><span>{rupiah(ring.dpp)}</span></div>
-                  {ring.discount > 0 && <div className="flex justify-between py-0.5 text-xs"><span className="text-muted-foreground">Discount included</span><span>-{rupiah(ring.discount)}</span></div>}
-                  <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Input VAT</span><span>{rupiah(ring.tax)}</span></div>
+                  <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Subtotal{inklusif ? ' (excl. tax)' : ''}</span><span>{fm(ring.dpp)}</span></div>
+                  {ring.discount > 0 && <div className="flex justify-between py-0.5 text-xs"><span className="text-muted-foreground">Discount included</span><span>-{fm(ring.discount)}</span></div>}
+                  <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Input VAT</span><span>{fm(ring.tax)}</span></div>
                   <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
                     <span className="text-base font-bold text-[#0B5E5C]">Accounts Payable</span>
-                    <span className="text-xl font-bold text-[#0B5E5C]">{rupiah(ring.total)}</span>
+                    <span className="text-xl font-bold text-[#0B5E5C]">{fm(ring.total)}</span>
                   </div>
+                  {valas && (
+                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>IDR equivalent{kurs > 0 ? ` @ ${kurs.toLocaleString('id-ID', { maximumFractionDigits: 6 })}` : ''}</span>
+                      <span className="font-semibold text-foreground">{kurs > 0 ? rupiah(Math.round(ring.total * kurs)) : '—'}</span>
+                    </div>
+                  )}
                   <p className="mt-1 text-[11px] text-muted-foreground">Payment status after posting: Unpaid · due {jatuhTempo || '—'}</p>
                 </div>
               </div>
@@ -753,7 +779,7 @@ function CreateBillInner() {
                         <td className="py-1.5 text-right align-top">{j.credit ? rupiah(j.credit) : ''}</td>
                       </tr>
                     ))}
-                    <tr className="font-semibold"><td className="py-1.5">Total</td><td className="py-1.5 text-right">{rupiah(ring.dpp + ring.tax)}</td><td className="py-1.5 text-right">{rupiah(ring.total)}</td></tr>
+                    <tr className="font-semibold"><td className="py-1.5">Total</td><td className="py-1.5 text-right">{rupiah(Math.round((ring.dpp + ring.tax) * skala * 100) / 100)}</td><td className="py-1.5 text-right">{rupiah(Math.round(ring.total * skala * 100) / 100)}</td></tr>
                   </tbody>
                 </table>
               )}
@@ -790,7 +816,7 @@ function CreateBillInner() {
       {preview && (
         <PreviewModal onClose={() => setPreview(false)} data={{
           company: activeClientName ?? '', nomor, status: badge, vendor, vendorCode: vendorKode, invoice, po, invoiceDate: tglInvoice,
-          purchaseDate: tglBeli, dueDate: jatuhTempo, termin, catatan, inklusif, subtotal: ring.dpp, tax: ring.tax, total: ring.total,
+          purchaseDate: tglBeli, dueDate: jatuhTempo, termin, catatan, inklusif, subtotal: ring.dpp, tax: ring.tax, total: ring.total, mataUang, kurs,
           baris: ring.isi.map(x => ({ b: x.b, amount: x.amount, discount: x.discount, tax: x.tax })), jurnal,
         }} />
       )}

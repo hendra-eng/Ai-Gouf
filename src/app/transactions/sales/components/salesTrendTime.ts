@@ -159,18 +159,18 @@ export interface TickFormatters {
 }
 
 /**
- * Tick sumbu X sesuai tingkat zoom:
+ * Tick sumbu X sesuai tingkat zoom (maxTicks = jumlah label maksimum yang muat di lebar chart):
  *  - hari   : tanggal (1, 5, 10, ...) dengan nama bulan di tanggal 1
  *  - bulan  : nama bulan, tahun di bawah Januari (atau hanya tahun kalau sudah jauh)
  *  - tahun  : tahun saja
  */
-export function buildTicks(from: number, to: number, gran: Granularity, f: TickFormatters): TickInfo[] {
+export function buildTicks(from: number, to: number, gran: Granularity, f: TickFormatters, maxTicks = 14): TickInfo[] {
   const span = to - from;
   const ticks: TickInfo[] = [];
 
   if (gran === 'day') {
     const days = span / DAY_MS;
-    const step = smallest([1, 2, 5, 10, 15], (s) => days / s <= 14);
+    const step = smallest([1, 2, 5, 10, 15], (s) => days / s <= maxTicks);
     for (let t = startOf(from, 'day'); t <= to; t = addGran(t, 'day', 1)) {
       if (t < from) continue;
       const d = new Date(t).getUTCDate();
@@ -189,7 +189,7 @@ export function buildTicks(from: number, to: number, gran: Granularity, f: TickF
 
   if (gran === 'month') {
     const months = span / AVG_MONTH_MS;
-    const step = smallest([1, 2, 3, 6, 12], (s) => months / s <= 14);
+    const step = smallest([1, 2, 3, 6, 12], (s) => months / s <= maxTicks);
     for (let t = startOf(from, 'month'); t <= to; t = addGran(t, 'month', 1)) {
       if (t < from) continue;
       const dt = new Date(t);
@@ -204,7 +204,7 @@ export function buildTicks(from: number, to: number, gran: Granularity, f: TickF
   }
 
   const years = span / AVG_YEAR_MS;
-  const step = smallest([1, 2, 5, 10, 20], (s) => years / s <= 12);
+  const step = smallest([1, 2, 5, 10, 20], (s) => years / s <= Math.min(12, maxTicks));
   for (let t = startOf(from, 'year'); t <= to; t = addGran(t, 'year', 1)) {
     if (t < from) continue;
     const y = new Date(t).getUTCFullYear();
@@ -366,10 +366,20 @@ export function buildSeriesInterval(
   return out;
 }
 
-/** Tick sumbu X untuk interval < 1 hari: jam (HH:mm), tanggal tebal di tengah malam. */
-export function buildIntradayTicks(from: number, to: number, f: TickFormatters): TickInfo[] {
+/**
+ * Tick sumbu X untuk interval < 1 hari, cara TradingView:
+ *  - Timeframe (lebar bar) TIDAK berubah saat zoom; yang berubah hanya jumlah bar yang terlihat.
+ *  - Label dipilih dari tangga satuan waktu (menit -> jam -> hari -> bulan) -- diambil satuan
+ *    TERKECIL yang jumlah labelnya masih muat di lebar chart (`maxTicks`), jadi label tidak menumpuk.
+ *  - Batas hari (00:00) tampil sebagai tanggal tebal ("16 Jun"), bukan jam.
+ *  - Kalau jendela sudah terlalu lebar untuk label jam (> 12 jam per label), beralih ke label
+ *    harian/bulanan yang sama dengan interval >= 1 hari.
+ */
+export function buildIntradayTicks(from: number, to: number, f: TickFormatters, maxTicks = 10): TickInfo[] {
   const span = to - from;
-  const step = smallest([5, 15, 30, 60, 120, 240, 360, 720].map((m) => m * MIN_MS), (s) => span / s <= 10);
+  const steps = [5, 10, 15, 30, 60, 120, 180, 360, 720].map((m) => m * MIN_MS);
+  const step = steps.find((s) => span / s <= maxTicks);
+  if (step === undefined) return buildTicks(from, to, pickGranularity(span), f, maxTicks);
   const ticks: TickInfo[] = [];
   for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
     const dt = new Date(t);

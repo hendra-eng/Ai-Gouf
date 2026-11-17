@@ -7,9 +7,12 @@ import { ChevronDown, Check } from 'lucide-react';
 // tombol berborder hijau, selalu terbuka ke bawah, kolom cari bila opsi banyak, hover/terpilih hijau brand.
 export interface FilterOption { value: string; label: string }
 
-export default function FilterSelect({ value, onChange, options }: {
-  value: string; onChange: (v: string) => void; options: FilterOption[];
+// variant="elegant" = tema monokrom yang sama dengan Sales Transaction (border abu, fokus hitam,
+// opsi terpilih abu). Default tetap hijau supaya halaman lain tidak berubah.
+export default function FilterSelect({ value, onChange, options, variant = 'default' }: {
+  value: string; onChange: (v: string) => void; options: FilterOption[]; variant?: 'default' | 'elegant';
 }) {
+  const elegant = variant === 'elegant';
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -35,13 +38,15 @@ export default function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${elegant
+          ? `text-neutral-900 ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`
+          : `text-foreground ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}`}
       >
         <span className="truncate max-w-[170px]">{current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 ${elegant ? 'text-neutral-500' : 'text-muted-foreground'} transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className={`absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border ${elegant ? 'border-neutral-300 bg-white' : 'border-slate-300 bg-card'} shadow-xl`}>
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -49,12 +54,12 @@ export default function FilterSelect({ value, onChange, options }: {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Search..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className={`w-full rounded-md border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 ${elegant ? 'border-neutral-300 focus:border-neutral-700 focus:ring-neutral-300' : 'border-border focus:ring-primary/30'}`}
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Not found</li>}
+            {shown.length === 0 && <li className={`px-4 py-2 text-sm ${elegant ? 'text-neutral-500' : 'text-muted-foreground'}`}>Not found</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -62,7 +67,9 @@ export default function FilterSelect({ value, onChange, options }: {
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors ${elegant
+                      ? `hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`
+                      : `hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}

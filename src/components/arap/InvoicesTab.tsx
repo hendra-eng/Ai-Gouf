@@ -8,7 +8,7 @@ import {
   Pencil, RotateCcw, Search, Timer,
 } from 'lucide-react';
 import {
-  BUCKET_LABEL, BUCKETS, DOC_STATUS_LABEL, fetchPendingInvoices, fmtDate, rupiah, useArApData,
+  BUCKET_LABEL, BUCKETS, DOC_STATUS_LABEL, fetchPendingInvoices, fmtDate, money, rupiah, useArApData,
   type AgingBucket, type ArApDoc, type DocStatus, type PendingInvoice, type Settlement, type SideConfig,
 } from '@/lib/receivablesPayablesStore';
 import { downloadDocsCsv, downloadDocsXlsx } from './arapExport';
@@ -275,9 +275,17 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
                   <td className={`px-3 py-2.5 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-muted-foreground'}`}>
                     {fmtDate(d.due_date)}{d.due_date_estimated && <span className="ml-1 text-[10px] text-muted-foreground" title="Estimated from payment terms">*</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-right">{rupiah(d.total)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {rupiah(d.total)}
+                    {d.foreign_total != null && d.currency && d.currency !== 'IDR' && (
+                      <span className="block text-[10px] font-normal text-sky-700">{money(d.foreign_total, d.currency)}{d.exchange_rate ? ` @ ${d.exchange_rate.toLocaleString('id-ID', { maximumFractionDigits: 6 })}` : ''}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-right font-semibold">
                     {rupiah(d.outstanding)}
+                    {d.foreign_outstanding != null && d.currency && d.currency !== 'IDR' && (
+                      <span className="block text-[10px] font-normal text-sky-700">{money(d.foreign_outstanding, d.currency)}</span>
+                    )}
                     {d.in_process > 0 && <span className="block text-[10px] font-normal text-sky-600">{rupiah(d.in_process)} in process</span>}
                   </td>
                   <td className="px-3 py-2.5">

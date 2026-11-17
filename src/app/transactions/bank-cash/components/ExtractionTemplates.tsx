@@ -9,7 +9,7 @@
 
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDownIcon, PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ChevronDown, Layers, Pencil, Trash2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import {
   METHOD_LABEL,
@@ -19,6 +19,9 @@ import {
   useBcTemplates,
   type BcTemplate,
 } from '@/lib/bankCashStore';
+import {
+  CHECKBOX_CLS, ICON_BTN, ICON_BTN_DANGER, PANEL_ICON_CHIP, SourcePanel, StatusPill, TD_CLS, TH_CLS, TR_CLS,
+} from './sourceUi';
 
 function ringkasKolom(t: BcTemplate): string {
   return (t.mapping_rules.columns || [])
@@ -62,67 +65,73 @@ export default function ExtractionTemplates() {
   const aktif = templates.filter((t) => t.is_active).length;
 
   return (
-    <div className="card-elevated-md rounded-xl overflow-hidden mb-6">
-      <button onClick={() => setBuka((b) => !b)} className="w-full flex items-center gap-3 px-5 py-4 text-left">
-        <div>
-          <h2 className="text-sm font-bold text-foreground">Extraction Templates</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {aktif} active layout(s) — files with the same column layout are read automatically with these settings.
-          </p>
-        </div>
-        <ChevronDownIcon className={`w-4 h-4 ml-auto text-muted-foreground transition-transform ${buka ? 'rotate-180' : ''}`} />
-      </button>
-      {buka && (
-        <div className="overflow-x-auto border-t border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/20">
-                {['Template', 'Columns', 'Source', 'Verified', 'Used', 'Last used', 'Active', ''].map((h) => (
-                  <th key={h} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {templates.map((t) => (
-                <tr key={t.id} className={`border-b border-border/50 ${t.is_active ? '' : 'opacity-60'}`}>
-                  <td className="px-4 py-3 text-xs">
-                    <span className="font-semibold text-foreground">{t.template_name || '—'}</span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {t.file_type}{t.method ? ` · ${METHOD_LABEL[t.method]}` : ''}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-[11px] text-muted-foreground max-w-[380px]">{ringkasKolom(t)}</td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">
-                    {t.detected_by === 'manual' ? 'Set manually' : 'Learned automatically'}
-                  </td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">{t.verified_pct === null ? '—' : `${t.verified_pct}%`}</td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">{t.usage_count}×</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{(t.last_used_at || '').slice(0, 10) || '—'}</td>
-                  <td className="px-4 py-3">
+    <SourcePanel
+      title="Extraction Templates"
+      subtitle={`${aktif} active layout(s) — files with the same column layout are read automatically with these settings.`}
+      leading={<span className={PANEL_ICON_CHIP}><Layers size={17} /></span>}
+      open={buka}
+      onHeaderClick={() => setBuka((b) => !b)}
+      flush
+      action={
+        <button onClick={() => setBuka((b) => !b)} aria-label={buka ? 'Collapse' : 'Expand'} className={ICON_BTN}>
+          <ChevronDown size={16} className={`transition-transform ${buka ? 'rotate-180' : ''}`} />
+        </button>
+      }
+    >
+      <div className="scrollbar-thin overflow-x-auto">
+        <table className="w-full min-w-[960px] select-text border-separate border-spacing-0">
+          <thead>
+            <tr className="bg-neutral-300">
+              {['Template', 'Columns', 'Source', 'Verified', 'Used', 'Last used', 'Status', ''].map((h, i) => (
+                <th key={`${h}-${i}`} className={`${TH_CLS} text-left`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {templates.map((t) => (
+              <tr key={t.id} className={`${TR_CLS} ${t.is_active ? '' : 'opacity-60'}`}>
+                <td className="px-2 py-2">
+                  <span className="font-semibold text-neutral-900">{t.template_name || '—'}</span>
+                  <span className="block text-[11px] text-neutral-500">
+                    {t.file_type}{t.method ? ` · ${METHOD_LABEL[t.method]}` : ''}
+                  </span>
+                </td>
+                <td className="max-w-[380px] px-2 py-2 text-[11px] text-neutral-500">{ringkasKolom(t)}</td>
+                <td className={TD_CLS}>
+                  <StatusPill tone={t.detected_by === 'manual' ? 'blue' : 'neutral'} label={t.detected_by === 'manual' ? 'Set manually' : 'Learned automatically'} />
+                </td>
+                <td className={`${TD_CLS} tabular-nums`}>{t.verified_pct === null ? '—' : `${t.verified_pct}%`}</td>
+                <td className={`${TD_CLS} tabular-nums`}>{t.usage_count}×</td>
+                <td className={`${TD_CLS} text-neutral-600`}>{(t.last_used_at || '').slice(0, 10) || '—'}</td>
+                <td className={TD_CLS}>
+                  <label
+                    className="inline-flex cursor-pointer items-center gap-2"
+                    title={t.is_active ? 'Deactivate (files with this layout will be detected from scratch)' : 'Activate'}
+                  >
                     <input
                       type="checkbox"
                       checked={t.is_active}
                       disabled={busy === t.id}
                       onChange={(e) => jalankan(t.id, () => updateBcTemplate(clientId, t.id, { is_active: e.target.checked }),
                         e.target.checked ? 'Template activated.' : 'Template deactivated.')}
-                      title={t.is_active ? 'Deactivate (files with this layout will be detected from scratch)' : 'Activate'}
-                      className="rounded border-border"
+                      className={CHECKBOX_CLS}
                     />
-                  </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <button onClick={() => gantiNama(t)} disabled={busy === t.id} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40" title="Rename">
-                      <PencilSquareIcon className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => hapus(t)} disabled={busy === t.id} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-rose-600 disabled:opacity-40" title="Delete template">
-                      <TrashIcon className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+                    <StatusPill tone={t.is_active ? 'emerald' : 'neutral'} label={t.is_active ? 'Active' : 'Inactive'} />
+                  </label>
+                </td>
+                <td className="whitespace-nowrap px-2 py-2 text-right">
+                  <button onClick={() => gantiNama(t)} disabled={busy === t.id} className={ICON_BTN} title="Rename" aria-label="Rename template">
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => hapus(t)} disabled={busy === t.id} className={ICON_BTN_DANGER} title="Delete template" aria-label="Delete template">
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SourcePanel>
   );
 }

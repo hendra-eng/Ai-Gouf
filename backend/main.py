@@ -112,6 +112,8 @@ from modules.finance import receivables_ar_v1 as finance_receivables_ar_v1  # [B
 from modules.management import opening_balance_import_v1 as management_opening_balance_import_v1  # [BARU] import saldo awal AR/AP/COA
 from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] /api/v1/management/year-end-closing/...
 # [DITAHAN SEMENTARA] from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
+from modules.management import exchange_rates_v1 as management_exchange_rates_v1  # [BARU] master kurs: /api/v1/management/exchange-rates/... (migration 56)
+from modules.finance import fx_revaluation_v1 as finance_fx_revaluation_v1  # [BARU] revaluasi AR/AP valas: /api/v1/finance/fx-revaluation/... (migration 58)
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
 from modules.management import opening_balance_v1 as management_opening_balance_v1  # [BARU] saldo awal COA per tahun buku & cabang: /api/v1/management/opening-balances/...
@@ -388,6 +390,8 @@ app.include_router(finance_receivables_ar_v1.router_ar)  # [BARU] /api/v1/financ
 app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api/v1/finance/receivables/statements
 app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements
 # [DITAHAN SEMENTARA] app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
+app.include_router(management_exchange_rates_v1.router)  # [BARU] /api/v1/management/exchange-rates/... -- master kurs, tarik kurs otomatis
+app.include_router(finance_fx_revaluation_v1.router)  # [BARU] /api/v1/finance/fx-revaluation/... -- revaluasi akhir periode AR/AP valas + jurnal pembalik otomatis
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri
 app.include_router(management_opening_balance_v1.router)  # [BARU] /api/v1/management/opening-balances/... -- prefix sudah di router-nya sendiri
@@ -437,6 +441,7 @@ def _startup_scheduler_cache():
         jam_cache = int(os.environ.get("CACHE_CLEANUP_JAM", "3"))
         menit_cache = int(os.environ.get("CACHE_CLEANUP_MENIT", "0"))
         cache_cleanup.daftarkan_job_pembersihan_cache(_scheduler, jam=jam_cache, menit=menit_cache)
+        management_exchange_rates_v1.daftarkan_job_tarik_kurs(_scheduler)  # aktif kalau FX_AUTO_FETCH=1
         _scheduler.start()
     except Exception as e:  # noqa: BLE001
         print(f"[PERINGATAN] Gagal menyalakan scheduler cache cleanup: {e}")

@@ -24,13 +24,15 @@ Alur (ringkas):
     4. KETEMU template -> ekstrak baris pakai resep mapping_rules
        (format_type 'flat_grouped_by_voucher': baris-baris dengan nilai
        kolom kunci -- biasanya VOUCHER -- yang sama digabung jadi 1
-       journal entry multi-baris), lalu buat draft + lines LANGSUNG lewat
-       dbc.create_je_draft_with_lines (fungsi atomik yang sama dipakai
-       endpoint POST /drafts/full & ImportJournalModal.tsx sisi frontend)
-       -- BEDA dari Sales yang punya tahap staging (source_rows) sebelum
-       "dipromosikan" ke invoices, karena data jurnal di sini SUDAH
-       berbentuk pasangan debit/kredit yang siap jadi journal entry, tidak
-       perlu tahap mapping akun terpisah.
+       journal entry multi-baris), lalu CATAT file ke
+       financial_transaction_journal_entry_source_files + 1 baris staging
+       per journal entry ke ..._source_rows (header + semua baris
+       debit/kredit disimpan di kolom payload). Draft BELUM dibuat --
+       sama seperti Sales, user yang memutuskan lewat tombol "Create
+       Journal" (POST /source-files/{id}/promote-to-journals di
+       journal_entry_v1.py -> dbc.promote_je_rows_to_drafts), supaya data
+       yang belum ditinjau (tidak seimbang / dobel) tidak langsung
+       mencemari JE Transaction.
     5. TIDAK ketemu template -> BELUM ada inferensi AI terpasang (sama
        seperti Sales di fase ini) -- endpoint mengembalikan
        template_matched=false TANPA membuat draft apa pun, supaya
@@ -44,7 +46,9 @@ sales_import_v1.py.
 
 from __future__ import annotations
 
+import json
 import re
+import time
 from calendar import monthrange
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
@@ -692,7 +696,7 @@ def _period_label(d: date) -> str:
 
 @router.post(
     "/import/upload",
-    summary="Upload file laporan jurnal (CSV/Excel) + buat draft otomatis pakai template (khusus Supervisor ke atas)",
+    summary="Upload file laporan jurnal (CSV/Excel) + ekstraksi otomatis pakai template -> dicatat di Source Data (khusus Supervisor ke atas)",
     responses={
         201: {"description": "File diproses -- lihat ringkasan created/skipped di response. template_matched=false berarti belum ada template yang cocok, TIDAK ada draft yang dibuat."},
         400: {"description": "Tipe file tidak didukung, atau file terlalu besar."},
@@ -713,6 +717,7 @@ async def upload_journal_entry_import(
             status_code=400,
         )
 
+    t0 = time.perf_counter()
     file_type = _detect_file_type(file.filename or "file")
     client_id = current_user.get("id")  # management_users.id -- pemilik draft yang dibuat (akun yang login)
     created_by_name = current_user.get("nama") or current_user.get("username")
@@ -736,19 +741,34 @@ async def upload_journal_entry_import(
         )
 
     template, rows = cocok
+    currency = (template.get("mapping_rules") or {}).get("currency_default", "IDR")
     try:
         # extra_sheets (mis. sheet 'Jurnal sales pribadi' SAU) ikut diekstrak dengan resep yang sama
         ekstrak = await run_in_threadpool(_ekstrak_dengan_sheet_tambahan, content, file_type, rows, template)
     except Exception as e:
         logger.error(f"Gagal ekstraksi file {file.filename} pakai template {template['id']}: {e}")
+        file_gagal = await run_in_threadpool(dbc.create_je_source_file, {
+            "client_id": management_client_id,
+            "management_client_id": management_client_id,
+            "file_name": file.filename,
+            "file_type": file_type,
+            "status_ekstraksi": "Failed",
+            "status_mapping": "Failed",
+            "template_id": template["id"],
+            "processed_by": created_by_name,
+            "uploaded_by": client_id,
+        }, client_id)
         return sukses(
-            data={"template_matched": True, "groups_detected": 0, "created": 0, "drafts": []},
+            data={
+                **(file_gagal or {}),
+                "template_matched": True, "groups_detected": 0, "rows_extracted": 0, "created": 0, "drafts": [],
+                "note": f"Template found but extraction failed: {e}",
+            },
             message=f"Template found but extraction failed: {e}",
             status_code=201,
         )
 
     groups = ekstrak["groups"]
-    currency = (template.get("mapping_rules") or {}).get("currency_default", "IDR")
 
     # Kode akun di file boleh kode tampilan (Source Account Code, migration 50) -> disimpan sebagai acc_no.
     ke_acc_no = {kode.lower(): acc for acc, kode in dbc.peta_kode_tampil(management_client_id).items()}
@@ -758,59 +778,124 @@ async def upload_journal_entry_import(
             if kode:  # kode tampilan menang (sama dengan accNoDariKode di frontend)
                 l["account_code"] = ke_acc_no.get(kode.lower(), kode)
 
-    drafts_result: List[Dict[str, Any]] = []
-    created = 0
-    skipped_unbalanced = 0
-    skipped_duplicate = 0
+    def _susun_baris_staging() -> List[Dict[str, Any]]:
+        """1 group = 1 baris staging. is_valid = seimbang + punya nomor & tanggal; nomor yang
+        sudah dipakai draft lain / dobel di file ini hanya DITANDAI (is_duplicate_candidate) --
+        keputusan akhirnya saat 'Create Journal' (dilewati sebagai bentrok)."""
+        di_file: set = set()
+        hasil: List[Dict[str, Any]] = []
+        for i, g in enumerate(groups, start=1):
+            no = (g.get("je_number") or "").strip()
+            tgl = g.get("entry_date")
+            catatan = list(g.get("errors") or [])
+            dobel = bool(no) and (no in di_file or dbc.get_je_draft_by_client_and_number(client_id, no) is not None)
+            if no:
+                di_file.add(no)
+            if dobel:
+                catatan.append("This je_number already exists (as a draft or earlier in this file).")
+            if not no:
+                catatan.append("Missing journal number.")
+            if tgl is None:
+                catatan.append("Missing entry date.")
+            valid = bool(g.get("balanced")) and bool(no) and tgl is not None
+            hasil.append({
+                "row_no": i,
+                "tanggal": tgl,
+                "je_number": no,
+                "description": g.get("description"),
+                "source_type": g.get("source_type"),
+                "line_count": len(g.get("lines") or []),
+                "debit_total": g.get("total_debit") or 0,
+                "credit_total": g.get("total_credit") or 0,
+                "is_valid": valid,
+                "validation_notes": "; ".join(dict.fromkeys(catatan)) or None,
+                "is_duplicate_candidate": dobel,
+                "payload": {
+                    "entry_date": tgl.isoformat() if tgl else None,
+                    "period_label": _period_label(tgl) if tgl else None,
+                    "description": g.get("description"),
+                    "source_type": g.get("source_type"),
+                    "currency": currency,
+                    "notes": g.get("notes") or None,
+                    "lines": json.loads(json.dumps(g.get("lines") or [], default=str)),
+                },
+            })
+        return hasil
 
-    for g in groups:
-        if not g["balanced"]:
-            skipped_unbalanced += 1
-            drafts_result.append({"je_number": g["je_number"] or "-", "ok": False, "message": "; ".join(g["errors"])})
-            continue
-        if dbc.get_je_draft_by_client_and_number(client_id, g["je_number"]):
-            skipped_duplicate += 1
-            drafts_result.append({"je_number": g["je_number"], "ok": False, "message": "This je_number has already been imported previously for this client."})
-            continue
+    baris = await run_in_threadpool(_susun_baris_staging)
+    rows_valid = sum(1 for b in baris if b["is_valid"])
+    rows_invalid = len(baris) - rows_valid
+    duplicate_count = sum(1 for b in baris if b["is_duplicate_candidate"])
+    tanggal_ada = sorted(b["tanggal"] for b in baris if b["tanggal"])
+    if tanggal_ada:
+        awal, akhir = _period_label(tanggal_ada[0]), _period_label(tanggal_ada[-1])
+        period_label = awal if awal == akhir else f"{awal} - {akhir}"
+    else:
+        period_label = None
 
-        draft_data = {
-            "client_id": client_id,
-            "management_client_id": management_client_id,
-            "je_number": g["je_number"],
-            "entry_date": g["entry_date"],
-            "period_label": _period_label(g["entry_date"]),
-            "description": g["description"],
-            "source_type": g["source_type"],
-            "source_reference": file.filename,
-            "currency": currency,
-            "status": "draft",
-            "created_by_name": created_by_name,
-            "notes": g.get("notes") or None,  # mis. "Source: rows 12-15" / keterangan split_by_date
+    source_file = await run_in_threadpool(dbc.create_je_source_file, {
+        "client_id": management_client_id,
+        "management_client_id": management_client_id,
+        "file_name": file.filename,
+        "file_type": file_type,
+        "period_label": period_label,
+        "rows_detected": len(baris),
+        "rows_valid": rows_valid,
+        "rows_invalid": rows_invalid,
+        "duplicate_count": duplicate_count,
+        "status_ekstraksi": "Completed" if baris and rows_invalid == 0 else "Needs Review",
+        "status_mapping": "Completed",
+        "confidence_score": template.get("ai_confidence"),
+        "debit_total": round(sum(float(b["debit_total"]) for b in baris), 2),
+        "credit_total": round(sum(float(b["credit_total"]) for b in baris), 2),
+        "extraction_duration_ms": int((time.perf_counter() - t0) * 1000),
+        "ai_model_version": template.get("ai_model_version"),
+        "mapping_rules": template.get("mapping_rules"),
+        "template_id": template["id"],
+        "processed_by": created_by_name,
+        "uploaded_by": client_id,
+    }, client_id)
+    if source_file is None:
+        return gagal(message="Failed to save source file (database error).", status_code=500)
+
+    # Insert massal 1 transaksi di threadpool (pola sama dengan Sales) -- semua-atau-tidak-sama-sekali.
+    n_tersimpan = await run_in_threadpool(dbc.create_je_source_rows_bulk, baris, source_file["id"], management_client_id, client_id)
+    if n_tersimpan != len(baris):
+        await run_in_threadpool(dbc.update_je_source_file, source_file["id"],
+                                {"status_ekstraksi": "Failed", "status_mapping": "Failed"}, client_id)
+        return gagal(
+            message="Extraction succeeded but saving the rows failed (database error).",
+            errors={"code": "BULK_INSERT_FAILED"},
+            status_code=500,
+        )
+
+    await run_in_threadpool(dbc.touch_je_import_template_usage, template["id"])
+
+    drafts_result = [
+        {
+            "je_number": b["je_number"] or "-",
+            "ok": b["is_valid"],
+            "message": (f"Ready to create ({b['line_count']} lines)." if b["is_valid"] else (b["validation_notes"] or "Invalid.")),
         }
-        dibuat = dbc.create_je_draft_with_lines(draft_data, g["lines"], created_by=client_id)
-        if dibuat is None:
-            drafts_result.append({"je_number": g["je_number"], "ok": False, "message": "Failed to save draft (database error)."})
-            continue
-        created += 1
-        drafts_result.append({"je_number": g["je_number"], "ok": True, "message": f"Successfully imported ({len(g['lines'])} lines)."})
-
-    dbc.touch_je_import_template_usage(template["id"])
-
+        for b in baris
+    ]
     return sukses(
         data={
+            **source_file,
             "template_matched": True,
             "groups_detected": len(groups),
+            "rows_extracted": len(baris),
             "skipped_no_key_rows": ekstrak.get("skipped_no_key", 0),
             "skipped_zero_lines": ekstrak.get("skipped_zero_lines", 0),
-            "created": created,
-            "skipped_unbalanced": skipped_unbalanced,
-            "skipped_duplicate": skipped_duplicate,
+            "created": 0,  # draft baru dibuat lewat "Create Journal" (promote-to-journals)
             "drafts": drafts_result,
         },
-        message=f"{created} of {len(groups)} journal entries imported successfully using a previously learned template.",
+        message=(
+            f"{len(baris)} journal entries extracted ({rows_valid} valid, {rows_invalid} need review). "
+            "Open Source Data and click Create Journal to create them."
+        ),
         status_code=201,
     )
-
 
 @router.get(
     "/import/templates",

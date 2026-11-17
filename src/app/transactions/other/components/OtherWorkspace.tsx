@@ -98,7 +98,7 @@ export default function OtherWorkspace() {
             )}>
               {close => <>
                 {(templates.length ? templates : []).map(t => (
-                  <MenuItem key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
+                  <MenuItem strong key={t.id} href={createHref(t.type_key, t.id)} onClick={close}>
                     <TypeIcon type={t.type_key} /> <span className="flex-1">{t.name}</span>{!t.is_system && <span className="text-[10px] text-muted-foreground">Custom</span>}
                   </MenuItem>
                 ))}
@@ -111,9 +111,9 @@ export default function OtherWorkspace() {
               <button type="button" disabled={!kid || exporting} className={btnOutline}>{exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Export</button>
             )}>
               {close => <>
-                <MenuItem onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
-                <MenuItem onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
-                <MenuItem onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
+                <MenuItem strong onClick={() => { close(); ekspor('xlsx'); }}>Excel (.xlsx)</MenuItem>
+                <MenuItem strong onClick={() => { close(); ekspor('csv'); }}>CSV</MenuItem>
+                <MenuItem strong onClick={() => { close(); ekspor('pdf'); }}>PDF</MenuItem>
               </>}
             </Menu>
           </div>

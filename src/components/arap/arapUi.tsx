@@ -180,11 +180,13 @@ export function Menu({ button, children, align = 'right', width = 'w-56' }: {
   );
 }
 
-export function MenuItem({ onClick, href, children, danger, disabled }: {
+export function MenuItem({ onClick, href, children, danger, disabled, strong }: {
   onClick?: () => void; href?: string; children: React.ReactNode; danger?: boolean; disabled?: boolean;
+  /** Hover abu-abu pekat (konsisten dengan dropdown di Sales/Purchase/Journal Entry/Cash & Bank/Other). */
+  strong?: boolean;
 }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
-  const cls = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${danger ? 'text-rose-600 hover:bg-rose-50' : 'text-foreground hover:bg-slate-50'} ${disabled ? 'pointer-events-none opacity-40' : ''}`;
+  const cls = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${danger ? 'text-rose-600 hover:bg-rose-50' : strong ? 'text-neutral-800 hover:bg-neutral-300 hover:text-neutral-900' : 'text-foreground hover:bg-slate-50'} ${disabled ? 'pointer-events-none opacity-40' : ''}`;
   if (href) return <Link href={href} className={cls} onClick={onClick}>{children}</Link>;
   return <button type="button" className={cls} onClick={onClick} disabled={disabled}>{children}</button>;
 }
