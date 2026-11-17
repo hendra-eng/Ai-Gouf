@@ -12,6 +12,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { formatIDR } from '../lib/formatMoney';
 import type { AkunLawan, BarisLawanInput } from '../lib/useBankReconciliation';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { FilterSelect } from './sourceUi';
 
 const KATEGORI = [
   'Bank charges',
@@ -112,18 +113,16 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
         </button>
       </div>
 
-      <label className="block">
+      <div className="block">
         <span className="text-[11px] text-neutral-500">Transaction type</span>
-        <select
+        <FilterSelect
           value={kategori}
-          onChange={(e) => setKategori(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
-        >
-          {KATEGORI.map((k) => (
-            <option key={k} value={k}>{k}</option>
-          ))}
-        </select>
-      </label>
+          onChange={setKategori}
+          className="mt-1 w-full"
+          ariaLabel="Transaction type"
+          options={KATEGORI.map((k) => ({ value: k, label: k }))}
+        />
+      </div>
 
       <div className="flex justify-between rounded-lg border border-neutral-300 bg-card px-2.5 py-2 text-[11px] text-neutral-600">
         <span>{masuk ? 'Debit — Bank (money in)' : 'Credit — Bank (money out)'}</span>
@@ -143,25 +142,26 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
               placeholder="Search account (no. or name)…"
               className="w-full rounded-lg border border-neutral-300 px-2 py-1 text-xs placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
             />
-            <select
+            <FilterSelect
               value={b.coaId}
-              onChange={(e) => ubah(b.key, { coaId: e.target.value })}
-              className="w-full rounded-lg border border-neutral-300 bg-card px-2 py-1.5 text-xs focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
-            >
-              <option value="">— select account —</option>
-              {pilihan.map((a) => (
-                <option key={a.id} value={a.id}>{kodeAkun(a.no_akun)} · {a.nama_akun}</option>
-              ))}
-            </select>
+              onChange={(v) => ubah(b.key, { coaId: v })}
+              className="w-full"
+              ariaLabel="Account"
+              menuMaxWidth={420}
+              options={[
+                { value: '', label: '— select account —' },
+                ...pilihan.map((a) => ({ value: a.id, label: `${kodeAkun(a.no_akun)} · ${a.nama_akun}` })),
+              ]}
+            />
             <div className="flex items-center gap-2">
-              <select
+              <FilterSelect
                 value={b.side}
-                onChange={(e) => ubah(b.key, { side: e.target.value as 'debit' | 'credit' })}
-                className="rounded-lg border border-neutral-300 bg-card px-2 py-1 text-xs focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
-              >
-                <option value="debit">Debit</option>
-                <option value="credit">Credit</option>
-              </select>
+                onChange={(v) => ubah(b.key, { side: v as 'debit' | 'credit' })}
+                size="sm"
+                className="min-w-[88px]"
+                ariaLabel="Debit or credit"
+                options={[{ value: 'debit', label: 'Debit' }, { value: 'credit', label: 'Credit' }]}
+              />
               <input
                 type="number"
                 min="0"

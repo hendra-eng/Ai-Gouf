@@ -66,16 +66,21 @@ export function FilterSelect({ value, onChange, options, disabled, className = '
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; maxH: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
+    // Tinggi daftar dibatasi sesuai ruang yang tersisa di arah buka, supaya menu selalu muat di layar
+    // (arah buka sendiri TIDAK berubah: ke bawah kecuali openUp).
+    const cari = options.length > 10 ? 56 : 0;
+    const ruang = (openUp ? r.top : window.innerHeight - r.bottom) - 16 - cari;
+    const maxH = Math.max(140, Math.min(288, ruang));
     setPos(openUp
-      ? { left: r.left, bottom: window.innerHeight - r.top + 4, width: r.width }
-      : { left: r.left, top: r.bottom + 4, width: r.width });
+      ? { left: r.left, bottom: window.innerHeight - r.top + 4, width: r.width, maxH }
+      : { left: r.left, top: r.bottom + 4, width: r.width, maxH });
   };
 
   useLayoutEffect(() => { if (open) place(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -136,6 +141,7 @@ export function FilterSelect({ value, onChange, options, disabled, className = '
       {open && pos && typeof document !== 'undefined' && createPortal(
         <div
           ref={menuRef}
+          onClick={(e) => e.stopPropagation()}
           style={{ left: pos.left, top: pos.top, bottom: pos.bottom, minWidth: pos.width, maxWidth: menuMaxWidth }}
           className="fixed z-[70] w-max rounded-[6px] border border-neutral-300 bg-white shadow-xl"
         >
@@ -150,7 +156,7 @@ export function FilterSelect({ value, onChange, options, disabled, className = '
               />
             </div>
           )}
-          <ul role="listbox" className="scrollbar-thin max-h-72 overflow-y-auto py-1">
+          <ul role="listbox" style={{ maxHeight: pos.maxH }} className="scrollbar-thin max-h-72 overflow-y-auto py-1">
             {shown.length === 0 && <li className="px-4 py-2 text-xs text-neutral-500">Not found</li>}
             {groups.map((g) => (
               <li key={g.name || '_'} role="presentation">

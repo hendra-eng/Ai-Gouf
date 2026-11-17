@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Link2, X, Zap, EyeOff, Database, FileText, Info, Scale, Wand2 } from 'lucide-react';
+import { Link2, X, Zap, EyeOff, Database, FileText, Info, Scale, Wand2, Search, Sparkles } from 'lucide-react';
 import CashBankTabs from '../components/CashBankTabs';
 import NonInvoiceForm from '../components/NonInvoiceForm';
 import AutoRulesPanel from '../components/AutoRulesPanel';
@@ -293,6 +293,32 @@ const namaKandidat = (k: SaranKandidat) =>
 const pihakKandidat = (k: SaranKandidat) =>
   Array.from(new Set(k.allocations.map((a) => a.party).filter(Boolean))).join(', ') || '-';
 
+// ---- Skor kecocokan invoice <-> baris bank terpilih (hanya untuk mengurutkan kolom kanan; pencocokan tetap divalidasi backend).
+const normTeks = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const KATA_ABAIKAN = new Set(['pt', 'cv', 'ud', 'tbk', 'bank', 'trf', 'transfer', 'dari', 'ke', 'the', 'and', 'inv', 'invoice', 'pembayaran', 'bayar', 'payment']);
+
+function skorInvoice(
+  r: { id: string; no: string; pihak: string; sisa: number; dalamProses: number },
+  m: { description: string; credit: number; debit: number },
+  rankSaran: number | undefined,
+): { skor: number; saran: boolean; pas: boolean; refHit: boolean } {
+  const nominal = m.credit || m.debit;
+  const tersedia = Math.max(r.sisa - r.dalamProses, 0);
+  const pas = tersedia > 0.005 && Math.abs(tersedia - nominal) < 0.5;
+  const ket = normTeks(m.description);
+  const noNorm = normTeks(r.no);
+  const refHit = noNorm.length >= 3 && ket.includes(noNorm);
+  const kataPihak = normTeks(r.pihak).split(' ').filter((k) => k.length >= 3 && !KATA_ABAIKAN.has(k));
+  const hitPihak = kataPihak.filter((k) => ket.includes(k)).length;
+  let skor = 0;
+  if (rankSaran !== undefined) skor += 1000 - rankSaran;
+  if (pas) skor += 100;
+  if (refHit) skor += 80;
+  skor += Math.min(hitPihak, 4) * 10;
+  if (tersedia <= 0.005) skor -= 500;
+  return { skor, saran: rankSaran !== undefined, pas, refHit };
+}
+
 export default function ReconciliationPage() {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const { mutations, ignoreMutation } = useBankFeed();
@@ -314,6 +340,13 @@ export default function ReconciliationPage() {
   const [kategoriSaran, setKategoriSaran] = useState<Record<string, AdjustmentCategory>>({});
   const [kategoriManual, setKategoriManual] = useState<AdjustmentCategory | null>(null);
   const [pakaiAdj, setPakaiAdj] = useState(true);
+  // Kolom kanan: pencarian + tampilkan invoice lunas (default disembunyikan).
+  const [cariInvoice, setCariInvoice] = useState('');
+  const [tampilLunas, setTampilLunas] = useState(false);
+  // Kolom kiri: pencarian baris bank + pilihan massal (checkbox).
+  const [cariMutasi, setCariMutasi] = useState('');
+  const [pilihMassal, setPilihMassal] = useState<Set<string>>(new Set());
+  const [massalBusy, setMassalBusy] = useState(false);
   const batasAdj = pengaturanAdjustment?.enabled ? pengaturanAdjustment.limit : 0;
   const purchase = useCashPaymentsFromPurchase();
   const sales = useCashReceiptsFromSales();
@@ -357,6 +390,34 @@ export default function ReconciliationPage() {
     [unmatchedMutations, selectedMutation],
   );
 
+  // Pencarian baris kiri (keterangan / nominal / tanggal).
+  const mutasiTampil = useMemo(() => {
+    const q = cariMutasi.trim().toLowerCase();
+    if (!q) return unmatchedMutations;
+    const qAngka = q.replace(/[^0-9]/g, '');
+    return unmatchedMutations.filter((m) =>
+      (m.description || '').toLowerCase().includes(q)
+      || String(m.date).includes(q)
+      || (qAngka.length >= 3 && String(Math.round(m.credit || m.debit)).includes(qAngka)),
+    );
+  }, [unmatchedMutations, cariMutasi]);
+
+  // Pilihan massal hanya berlaku untuk baris yang masih unmatched & terlihat.
+  const idMassal = useMemo(() => mutasiTampil.filter((m) => pilihMassal.has(m.id)).map((m) => m.id), [mutasiTampil, pilihMassal]);
+  const semuaTerpilih = mutasiTampil.length > 0 && idMassal.length === mutasiTampil.length;
+  const togglePilih = (id: string) => setPilihMassal((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const togglePilihSemua = () => setPilihMassal((prev) => {
+    const n = new Set(prev);
+    if (semuaTerpilih) mutasiTampil.forEach((m) => n.delete(m.id));
+    else mutasiTampil.forEach((m) => n.add(m.id));
+    return n;
+  });
+  useEffect(() => { setPilihMassal(new Set()); }, [akunAktif, activeClientId]);
+
   // Mutasi berselisih kecil yang bisa langsung diterapkan sekaligus (akun selisih sudah diatur, baris sudah di-review).
   const siapSelisih = useMemo(
     () => unmatchedMutations.filter((m) => m.confidence !== 'low' && saranSelisih[m.id]?.adjustment?.ready),
@@ -376,6 +437,41 @@ export default function ReconciliationPage() {
           })),
     [sisiInvoice, purchase.rows, sales.rows],
   );
+  // Peringkat invoice yang disarankan backend untuk baris terpilih (0 = teratas).
+  const rankSaran = useMemo(() => {
+    const peta = new Map<string, number>();
+    if (!mutasiTerpilih) return peta;
+    (saran[mutasiTerpilih.id]?.candidates ?? []).forEach((c, i) => {
+      c.allocations.forEach((a) => { if (a.invoice_id && !peta.has(a.invoice_id)) peta.set(a.invoice_id, i); });
+    });
+    return peta;
+  }, [mutasiTerpilih, saran]);
+
+  const sisiBarisSesuai = mutasiTerpilih ? (mutasiTerpilih.credit ? 'receipt' : 'payment') === sisiInvoice : false;
+
+  const jumlahTerbuka = useMemo(() => daftarInvoice.filter((r) => r.sisa > 0.005).length, [daftarInvoice]);
+
+  // Sembunyikan invoice lunas, cari, lalu urutkan menurut kecocokan dengan baris terpilih.
+  const invoiceTampil = useMemo(() => {
+    const q = cariInvoice.trim().toLowerCase();
+    const qAngka = q.replace(/[^0-9]/g, '');
+    const hasil = daftarInvoice
+      .filter((r) => tampilLunas || r.sisa > 0.005)
+      .filter((r) => !q
+        || (r.no || '').toLowerCase().includes(q)
+        || (r.pihak || '').toLowerCase().includes(q)
+        || String(r.tanggal).includes(q)
+        || (qAngka.length >= 3 && (String(Math.round(r.total)).includes(qAngka) || String(Math.round(r.sisa)).includes(qAngka))))
+      .map((r, i) => ({
+        r, i,
+        info: mutasiTerpilih && sisiBarisSesuai
+          ? skorInvoice(r, mutasiTerpilih, rankSaran.get(r.id))
+          : { skor: r.sisa > 0.005 ? 0 : -500, saran: false, pas: false, refHit: false },
+      }));
+    hasil.sort((a, b) => (b.info.skor - a.info.skor) || (a.i - b.i)); // seri: urutan awal (tanggal terbaru)
+    return hasil;
+  }, [daftarInvoice, tampilLunas, cariInvoice, mutasiTerpilih, sisiBarisSesuai, rankSaran]);
+
   const loadingInvoice = sisiInvoice === 'payment' ? purchase.loading : sales.loading;
   const errorInvoice = sisiInvoice === 'payment' ? purchase.error : sales.error;
 
@@ -513,6 +609,32 @@ export default function ReconciliationPage() {
     }
   };
 
+  // Aksi massal: Ignore banyak baris sekaligus (satu alasan untuk semua). Tidak membuat jurnal apa pun.
+  const handleIgnoreMassal = async () => {
+    if (idMassal.length === 0) return;
+    const alasan = window.prompt(`Ignore ${idMassal.length} selected line(s)? Reason for all (optional):`, '');
+    if (alasan === null) return;
+    setMassalBusy(true);
+    let ok = 0;
+    let gagalPertama = '';
+    for (const id of idMassal) {
+      try { await ignoreMutation(id, alasan); ok += 1; } catch (e: any) { gagalPertama = gagalPertama || e?.message || 'Failed.'; }
+    }
+    setMassalBusy(false);
+    setPilihMassal(new Set());
+    setSelectedMutation(null);
+    const gagalN = idMassal.length - ok;
+    if (gagalN === 0) toast.success(`${ok} line(s) ignored. You can restore them from the Source Data tab.`);
+    else toast.error(`${ok} line(s) ignored, ${gagalN} failed.`, { description: gagalPertama });
+  };
+
+  // Aturan dibuat dari baris pertama yang dipilih (aturan berbasis kata kunci, jadi berlaku untuk semua baris serupa).
+  const handleRuleMassal = () => {
+    if (idMassal.length === 0) return;
+    setSelectedMutation(idMassal[0]);
+    setPermintaanAturan((n) => n + 1);
+  };
+
   const handleAuto = async () => {
     try {
       const r = await autoCocokkan(akunAktif);
@@ -555,6 +677,29 @@ export default function ReconciliationPage() {
         </div>
       )}
 
+      <ReconciliationSummary accounts={(overview?.accounts ?? []).filter((a) => !akunAktif || a.id === akunAktif)} />
+
+      <AdjustmentPanel
+        settings={pengaturanAdjustment}
+        ringkasan={overview?.adjustments}
+        akun={akunLawan}
+        onSave={simpanPengaturanAdjustment}
+      />
+
+      <AutoRulesPanel
+        aturan={aturan}
+        saran={saranAturan}
+        akun={akunLawan}
+        autoSetelahUpload={autoSetelahUpload}
+        pengaturan={autoSettings}
+        onUbahPengaturan={simpanAutoSettings}
+        mutasiTerpilih={mutasiTerpilih}
+        permintaanBuka={permintaanAturan}
+        onSave={simpanAturan}
+        onDelete={hapusAturan}
+        onToggleUpload={simpanAutoSetelahUpload}
+      />
+
       {daftarAkunBank.length === 0 && (
         <p className="text-xs text-neutral-500">
           Bank account selector: no bank account found for this client yet. Add one in Chart of Accounts (Cash &amp; Cash Equivalents) or upload a statement in Source Data.
@@ -578,29 +723,6 @@ export default function ReconciliationPage() {
           <span className="text-xs text-neutral-500">Only this account’s Source Data lines are shown and matched below.</span>
         </div>
       )}
-
-      <ReconciliationSummary accounts={(overview?.accounts ?? []).filter((a) => !akunAktif || a.id === akunAktif)} />
-
-      <AdjustmentPanel
-        settings={pengaturanAdjustment}
-        ringkasan={overview?.adjustments}
-        akun={akunLawan}
-        onSave={simpanPengaturanAdjustment}
-      />
-
-      <AutoRulesPanel
-        aturan={aturan}
-        saran={saranAturan}
-        akun={akunLawan}
-        autoSetelahUpload={autoSetelahUpload}
-        pengaturan={autoSettings}
-        onUbahPengaturan={simpanAutoSettings}
-        mutasiTerpilih={mutasiTerpilih}
-        permintaanBuka={permintaanAturan}
-        onSave={simpanAturan}
-        onDelete={hapusAturan}
-        onToggleUpload={simpanAutoSetelahUpload}
-      />
 
       <div className="flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between">
         <nav className="-mb-px flex gap-1 overflow-x-auto">
@@ -654,11 +776,53 @@ export default function ReconciliationPage() {
                 subtitle="Use Match / Auto-match, or click a line to match it to an invoice or record it without one"
               />
             </div>
+            {unmatchedMutations.length > 0 && (
+              <div className="space-y-2 border-b border-neutral-200 px-5 py-2.5">
+                <div className="relative">
+                  <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    value={cariMutasi}
+                    onChange={(e) => setCariMutasi(e.target.value)}
+                    placeholder="Search description, amount or date…"
+                    className="w-full rounded-md border border-neutral-300 bg-white py-1.5 pl-8 pr-2 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-neutral-700">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input type="checkbox" checked={semuaTerpilih} onChange={togglePilihSemua} disabled={mutasiTampil.length === 0 || massalBusy} />
+                    {idMassal.length > 0 ? `${idMassal.length} selected` : `Select all${cariMutasi.trim() ? ' (filtered)' : ''} (${mutasiTampil.length})`}
+                  </label>
+                  {idMassal.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleIgnoreMassal}
+                        disabled={massalBusy}
+                        className="flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 font-semibold text-neutral-800 transition-colors hover:bg-neutral-100 disabled:opacity-50"
+                        title="Ignore all selected lines (no journal is created; restorable from Source Data)"
+                      >
+                        <EyeOff size={12} /> {massalBusy ? 'Ignoring…' : `Ignore selected (${idMassal.length})`}
+                      </button>
+                      <button
+                        onClick={handleRuleMassal}
+                        disabled={massalBusy}
+                        className="flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 font-semibold text-neutral-800 transition-colors hover:bg-neutral-100 disabled:opacity-50"
+                        title="Open the Auto rule form prefilled from the first selected line. The rule is keyword-based, so it applies to similar lines too."
+                      >
+                        <Wand2 size={12} /> Rule from first selected
+                      </button>
+                      <button onClick={() => setPilihMassal(new Set())} className="text-neutral-500 underline hover:text-neutral-900">Clear</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             {unmatchedMutations.length === 0 ? (
               <p className="py-10 text-center text-xs text-neutral-500">No Source Data lines waiting.</p>
+            ) : mutasiTampil.length === 0 ? (
+              <p className="py-10 text-center text-xs text-neutral-500">No lines match “{cariMutasi}”.</p>
             ) : (
               <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-200 overflow-y-auto">
-                {unmatchedMutations.map((m) => {
+                {mutasiTampil.map((m) => {
                   const s = saran[m.id];
                   const auto = s?.auto_match ? s.candidates[0] : null;
                   const adjCand = !auto ? saranSelisih[m.id] ?? null : null;
@@ -677,10 +841,19 @@ export default function ReconciliationPage() {
                         setSelectedMutation(selected ? null : m.id);
                         if (!selected) setSisiInvoice(m.credit ? 'receipt' : 'payment');
                       }}
-                      className={`px-5 py-3 transition-colors ${isBusy ? 'cursor-wait opacity-60' : 'cursor-pointer'} ${selected ? 'bg-neutral-100 shadow-[inset_3px_0_0_#262626]' : 'hover:bg-neutral-50'}`}
+                      className={`group px-5 py-2.5 transition-colors ${isBusy ? 'cursor-wait opacity-60' : 'cursor-pointer'} ${selected ? 'bg-neutral-100 shadow-[inset_3px_0_0_#262626]' : 'hover:bg-neutral-50'}`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={pilihMassal.has(m.id)}
+                          onChange={() => togglePilih(m.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          disabled={isBusy || massalBusy}
+                          aria-label="Select line"
+                          className="shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-medium text-neutral-900">{m.description}</p>
                           <p className="text-[11px] text-neutral-500">
                             {m.date} · {m.bankAccount} · {m.credit ? 'In (Sales / other)' : 'Out (Purchase / other)'}
@@ -742,6 +915,7 @@ export default function ReconciliationPage() {
                         }
                         if (auto || adjCand) return null;
                         if (pilihan.length === 0) {
+                          if (!selected) return null;
                           return (
                             <p onClick={(e) => e.stopPropagation()} className="mt-2 text-[11px] text-neutral-500">
                               Transfer between accounts needs a second bank or cash account for this client (add it in Chart of Accounts).
@@ -749,7 +923,7 @@ export default function ReconciliationPage() {
                           );
                         }
                         return (
-                          <div onClick={(e) => e.stopPropagation()} className="mt-2 flex flex-wrap items-center gap-2">
+                          <div onClick={(e) => e.stopPropagation()} className={`mt-2 flex-wrap items-center gap-2 ${selected || akunTransfer[m.id] ? 'flex' : 'hidden group-hover:flex group-focus-within:flex'}`}>
                             <select
                               value={akunTransfer[m.id] ?? ''}
                               onChange={(e) => setAkunTransfer((prev) => ({ ...prev, [m.id]: e.target.value }))}
@@ -813,7 +987,7 @@ export default function ReconciliationPage() {
                           )}
                         </div>
                       )}
-                      <div className="mt-1.5 flex items-center justify-end gap-3">
+                      <div className={`mt-1 items-center justify-end gap-3 ${selected ? 'flex' : 'hidden group-hover:flex group-focus-within:flex'}`}>
                         {!auto && !adjCand && !aturanPerMutasi[m.id] && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setSelectedMutation(m.id); setPermintaanAturan((n) => n + 1); }}
@@ -882,8 +1056,8 @@ export default function ReconciliationPage() {
               )}
               <div className="mt-3 flex w-fit items-center gap-1 rounded-lg border border-neutral-300 bg-neutral-100 p-1">
                 {([
-                  ['payment', `Cash Payment (${purchase.rows.length})`],
-                  ['receipt', `Cash Receipt (${sales.rows.length})`],
+                  ['payment', `Cash Payment (${purchase.rows.filter((x) => x.outstanding > 0.005).length})`],
+                  ['receipt', `Cash Receipt (${sales.rows.filter((x) => x.outstanding > 0.005).length})`],
                 ] as const).map(([k, label]) => (
                   <button
                     key={k}
@@ -896,6 +1070,24 @@ export default function ReconciliationPage() {
                   </button>
                 ))}
               </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="relative min-w-[200px] flex-1">
+                  <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+                  <input
+                    value={cariInvoice}
+                    onChange={(e) => setCariInvoice(e.target.value)}
+                    placeholder="Search invoice no., party, date or amount…"
+                    className="w-full rounded-md border border-neutral-300 bg-white py-1.5 pl-8 pr-2 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none"
+                  />
+                </div>
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-700">
+                  <input type="checkbox" checked={tampilLunas} onChange={(e) => setTampilLunas(e.target.checked)} />
+                  Show paid invoices
+                </label>
+              </div>
+              {mutasiTerpilih && sisiBarisSesuai && (
+                <p className="mt-2 text-[11px] text-neutral-500">Sorted by best match to the selected line (suggested, exact amount, invoice no. / party name in the description).</p>
+              )}
             </div>
             {mutasiTerpilih && (
               <div className="border-b border-neutral-200 p-3">
@@ -919,9 +1111,15 @@ export default function ReconciliationPage() {
                   ? 'No posted Purchase invoices for this company yet.'
                   : 'No posted Sales invoices for this company yet.'}
               </p>
+            ) : invoiceTampil.length === 0 ? (
+              <p className="px-6 py-10 text-center text-xs text-neutral-500">
+                {cariInvoice.trim()
+                  ? `No invoices match “${cariInvoice}”.`
+                  : jumlahTerbuka === 0 ? 'All invoices on this side are paid. Tick “Show paid invoices” to see them.' : 'Nothing to show.'}
+              </p>
             ) : (
               <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-200 overflow-y-auto">
-                {daftarInvoice.map((r) => {
+                {invoiceTampil.map(({ r, info }) => {
                   const nominalTerpilih = mutasiTerpilih ? mutasiTerpilih.credit || mutasiTerpilih.debit : 0;
                   const sisiSesuai = mutasiTerpilih ? (mutasiTerpilih.credit ? 'receipt' : 'payment') === sisiInvoice : false;
                   const tersedia = Math.max(r.sisa - r.dalamProses, 0);
@@ -956,7 +1154,18 @@ export default function ReconciliationPage() {
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-blue-700">{r.no || '—'}</p>
+                        <p className="flex items-center gap-1.5 truncate text-xs font-medium text-blue-700">
+                          <span className="truncate">{r.no || '—'}</span>
+                          {info.saran && (
+                            <span className={`${PILL} shrink-0 !py-0 border-emerald-300 bg-emerald-100 text-emerald-800`}><Sparkles size={10} /> Suggested</span>
+                          )}
+                          {!info.saran && info.pas && (
+                            <span className={`${PILL} shrink-0 !py-0 border-sky-300 bg-sky-100 text-sky-800`}>Exact amount</span>
+                          )}
+                          {!info.saran && !info.pas && info.refHit && (
+                            <span className={`${PILL} shrink-0 !py-0 border-neutral-300 bg-neutral-100 text-neutral-700`}>No. in description</span>
+                          )}
+                        </p>
                         <p className="truncate text-[11px] text-neutral-500">
                           {r.pihak || '—'} · {r.tanggal}
                           {r.jatuhTempo ? ` · due ${r.jatuhTempo}` : ''}
