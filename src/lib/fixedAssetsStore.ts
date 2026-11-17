@@ -90,8 +90,10 @@ export interface FixedAsset {
   disposal_date: string | null;
   disposal_value: number | null;
   issues: string[];
+  is_draft: boolean;
   created_at: string | null;
   created_by_name: string | null;
+  edited_at: string | null;
 }
 
 export interface Journal {
@@ -321,6 +323,8 @@ export interface AssetInput {
   expense_coa_id?: string | null;
   post_acquisition: boolean;
   acquisition_credit_coa_id?: string | null;
+  /** Simpan sebagai draft (tab Draft) -- belum masuk register. */
+  is_draft?: boolean;
 }
 
 export interface DisposalInput {
@@ -353,6 +357,18 @@ export const fetchOverview = (clientId: string, asOf: string, months = 12, signa
   api.get<Overview>('/overview', { ...c(clientId), as_of: asOf, months }, signal);
 export const fetchRegister = (clientId: string, asOf: string, signal?: AbortSignal) =>
   api.get<Register>('/assets', { ...c(clientId), as_of: asOf }, signal);
+export const fetchDrafts = (clientId: string, signal?: AbortSignal) =>
+  api.get<Register>('/assets', { ...c(clientId), draft: true }, signal);
+/** Body PUT dari data aset yang sudah ada (mis. tombol Register di tab Draft). */
+export const assetToInput = (a: FixedAsset, isDraft: boolean): AssetInput => ({
+  asset_code: a.asset_code, name: a.name, description: a.description, category_id: a.category_id ?? '',
+  acquisition_date: a.acquisition_date ?? '', depreciation_start_date: a.depreciation_start_date, cost: a.original_cost,
+  residual_value: a.residual_value, useful_life_months: a.life_override, depreciation_method: a.method_override,
+  opening_accumulated_depreciation: a.opening_accumulated_depreciation, location: a.location, branch: a.branch,
+  department: a.department, custodian: a.custodian, serial_number: a.serial_number, supplier: a.supplier, reference: a.reference,
+  status: a.status === 'disposed' ? 'active' : a.status, asset_coa_id: a.asset_coa_override, accum_coa_id: a.accum_coa_override,
+  expense_coa_id: a.expense_coa_override, post_acquisition: false, is_draft: isDraft,
+});
 export const fetchAssetDetail = (clientId: string, id: string, asOf: string, signal?: AbortSignal) =>
   api.get<AssetDetail>(`/assets/${id}`, { ...c(clientId), as_of: asOf }, signal);
 export const saveAsset = (clientId: string, body: AssetInput, id?: string) =>

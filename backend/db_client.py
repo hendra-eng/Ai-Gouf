@@ -3020,6 +3020,8 @@ class FixedAsset(Base):
     edited_by = Column(PG_UUID(as_uuid=False), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    # [migration 59] Draft: belum masuk register (tidak disusutkan, tidak di KPI/laporan, tanpa jurnal).
+    is_draft = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
 
 class FixedAssetDepreciationRun(Base):

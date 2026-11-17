@@ -15,6 +15,7 @@ import { formatIDR } from '../lib/formatMoney';
 import type { AkunLawan } from '../lib/useBankReconciliation';
 import type { BcAutoRule, BcAutoRuleInput, BcAutoRuleKind, BcAutoRuleSuggestion, BcAutoSettings } from '@/lib/bankCashStore';
 import { kodeAkun } from '@/lib/accountCode';
+import { FilterSelect } from './sourceUi';
 
 const CARD = 'relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm';
 const LABEL = 'min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600';
@@ -504,10 +505,15 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="sm:col-span-3">
                   <label className={FIELD_LABEL}>What should this rule do?</label>
-                  <select className={INPUT} value={form.kind} onChange={(e) => set({ kind: e.target.value as BcAutoRuleKind, autoApprove: false })}>
-                    <option value="account">Record the line to an account — no invoice (bank fee, interest, tax, …)</option>
-                    <option value="invoice">Match the line to an AR/AP invoice (customer or vendor payments)</option>
-                  </select>
+                  <FilterSelect
+                    value={form.kind}
+                    onChange={(v) => set({ kind: v as BcAutoRuleKind, autoApprove: false })}
+                    size="sm" className="w-full !text-xs" menuMaxWidth={640}
+                    options={[
+                      { value: 'account', label: 'Record the line to an account — no invoice (bank fee, interest, tax, …)' },
+                      { value: 'invoice', label: 'Match the line to an AR/AP invoice (customer or vendor payments)' },
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className={FIELD_LABEL}>Rule name</label>
@@ -515,17 +521,24 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                 </div>
                 <div>
                   <label className={FIELD_LABEL}>Direction</label>
-                  <select className={INPUT} value={form.direction} onChange={(e) => set({ direction: e.target.value as 'payment' | 'receipt' })}>
-                    <option value="payment">{form.kind === 'invoice' ? 'Money out (debit) — Purchase invoices' : 'Money out (debit) — fees, tax'}</option>
-                    <option value="receipt">{form.kind === 'invoice' ? 'Money in (credit) — Sales invoices' : 'Money in (credit) — interest'}</option>
-                  </select>
+                  <FilterSelect
+                    value={form.direction}
+                    onChange={(v) => set({ direction: v as 'payment' | 'receipt' })}
+                    size="sm" className="w-full !text-xs" menuMaxWidth={520}
+                    options={[
+                      { value: 'payment', label: form.kind === 'invoice' ? 'Money out (debit) — Purchase invoices' : 'Money out (debit) — fees, tax' },
+                      { value: 'receipt', label: form.kind === 'invoice' ? 'Money in (credit) — Sales invoices' : 'Money in (credit) — interest' },
+                    ]}
+                  />
                 </div>
                 <div>
                   <label className={FIELD_LABEL}>Only for bank account (optional)</label>
-                  <select className={INPUT} value={form.bankCoaId} onChange={(e) => set({ bankCoaId: e.target.value })}>
-                    <option value="">All bank accounts</option>
-                    {akunBank.map((a) => <option key={a.id} value={a.id}>{label(a)}</option>)}
-                  </select>
+                  <FilterSelect
+                    value={form.bankCoaId}
+                    onChange={(v) => set({ bankCoaId: v })}
+                    size="sm" className="w-full !text-xs" menuMaxWidth={460}
+                    options={[{ value: '', label: 'All bank accounts' }, ...akunBank.map((a) => ({ value: a.id, label: label(a) }))]}
+                  />
                 </div>
               </div>
 
@@ -540,10 +553,15 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                   </div>
                   <div>
                     <label className={FIELD_LABEL}>Keyword match</label>
-                    <select className={INPUT} value={form.keywordMode} onChange={(e) => set({ keywordMode: e.target.value as 'any' | 'all' })}>
-                      <option value="any">Any keyword is enough</option>
-                      <option value="all">All keywords must appear</option>
-                    </select>
+                    <FilterSelect
+                      value={form.keywordMode}
+                      onChange={(v) => set({ keywordMode: v as 'any' | 'all' })}
+                      size="sm" className="w-full !text-xs"
+                      options={[
+                        { value: 'any', label: 'Any keyword is enough' },
+                        { value: 'all', label: 'All keywords must appear' },
+                      ]}
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className={FIELD_LABEL}>
@@ -583,10 +601,12 @@ export default function AutoRulesPanel({ aturan, saran, akun, autoSetelahUpload,
                     <>
                       <div className="sm:col-span-2">
                         <label className={FIELD_LABEL}>Record to account</label>
-                        <select className={INPUT} value={form.counterCoaId} onChange={(e) => set({ counterCoaId: e.target.value })}>
-                          <option value="">Select account…</option>
-                          {akunLawan.map((a) => <option key={a.id} value={a.id}>{label(a)}</option>)}
-                        </select>
+                        <FilterSelect
+                          value={form.counterCoaId}
+                          onChange={(v) => set({ counterCoaId: v })}
+                          size="sm" className="w-full !text-xs" menuMaxWidth={520}
+                          options={[{ value: '', label: 'Select account…' }, ...akunLawan.map((a) => ({ value: a.id, label: label(a) }))]}
+                        />
                       </div>
                       <div>
                         <label className={FIELD_LABEL}>Category</label>

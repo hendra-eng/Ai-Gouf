@@ -39,6 +39,7 @@ export default function AssetFormDrawer({ clientId, asset, onClose, onManageCate
     asset_coa_id: asset?.asset_coa_override ?? null as string | null, accum_coa_id: asset?.accum_coa_override ?? null as string | null,
     expense_coa_id: asset?.expense_coa_override ?? null as string | null,
     post_acquisition: false, acquisition_credit_coa_id: null as string | null,
+    is_draft: asset?.is_draft ?? false,
   });
   const [akunTerbuka, setAkunTerbuka] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -60,7 +61,7 @@ export default function AssetFormDrawer({ clientId, asset, onClose, onManageCate
       toast.error('Name, category, acquisition date and cost are required.');
       return;
     }
-    if (f.post_acquisition && !f.acquisition_credit_coa_id) {
+    if (!f.is_draft && f.post_acquisition && !f.acquisition_credit_coa_id) {
       toast.error('Choose the credit account for the acquisition journal.');
       return;
     }
@@ -76,7 +77,8 @@ export default function AssetFormDrawer({ clientId, asset, onClose, onManageCate
         location: kosong(f.location), branch: kosong(f.branch), department: kosong(f.department), custodian: kosong(f.custodian),
         serial_number: kosong(f.serial_number), supplier: kosong(f.supplier), reference: kosong(f.reference), status: f.status,
         asset_coa_id: f.asset_coa_id, accum_coa_id: f.accum_coa_id, expense_coa_id: f.expense_coa_id,
-        post_acquisition: f.post_acquisition, acquisition_credit_coa_id: f.acquisition_credit_coa_id,
+        post_acquisition: !f.is_draft && f.post_acquisition, acquisition_credit_coa_id: f.acquisition_credit_coa_id,
+        is_draft: f.is_draft,
       };
       const r = await saveAsset(clientId, body, asset?.id);
       toast.success(r.message);
@@ -88,15 +90,27 @@ export default function AssetFormDrawer({ clientId, asset, onClose, onManageCate
     }
   };
 
-  const bolehJurnal = !asset?.acquisition_journal_id;
+  const bolehJurnal = !asset?.acquisition_journal_id && !f.is_draft;
+  // Aset register yang sudah punya jurnal tidak bisa dikembalikan ke draft (dicek juga di backend).
+  const bolehDraft = !edit || asset!.is_draft || !asset!.acquisition_journal_id;
 
   return (
-    <Drawer open onClose={onClose} title={edit ? `Edit ${asset!.asset_code}` : 'Add Asset'}
+    <Drawer open onClose={onClose} title={edit ? `Edit ${asset!.asset_code}${asset!.is_draft ? ' (Draft)' : ''}` : 'Add Asset'}
       subtitle={edit ? asset!.name : 'Register a new fixed asset'}
       footer={<>
+        {bolehDraft && (
+          <label className="mr-auto flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground" title="Draft assets are kept in the Draft tab and excluded from the register, depreciation and reports.">
+            <input type="checkbox" checked={f.is_draft} onChange={e => set('is_draft', e.target.checked)} className="h-4 w-4 accent-[#0F7D4E]" />
+            Draft
+          </label>
+        )}
         <button type="button" onClick={onClose} className={btnOutline}>Cancel</button>
-        <button type="button" onClick={simpan} disabled={busy} className={btnPrimary}>{busy && <Loader2 size={14} className="animate-spin" />} Save Asset</button>
+        <button type="button" onClick={simpan} disabled={busy} className={btnPrimary}>{busy && <Loader2 size={14} className="animate-spin" />} {f.is_draft ? 'Save Draft' : 'Save Asset'}</button>
       </>}>
+      {f.is_draft && (
+        <p className="flex gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800"><Info size={14} className="shrink-0" />
+          Saved as draft: the asset appears only in the Draft tab and is excluded from the register, depreciation, disposal and reports until you uncheck Draft.</p>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <FormField label="Asset Code" hint="Leave empty to auto-number (FA-0001)">
           <input value={f.asset_code} onChange={e => set('asset_code', e.target.value)} className={inputCls} placeholder="Auto" maxLength={50} />
