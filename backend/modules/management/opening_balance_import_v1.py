@@ -2435,7 +2435,7 @@ def _terapkan_aset(session, b: Any, user: Dict[str, Any]) -> str:
     akun_kat = {c.id: _akun_kategori(c, mapping) for c in kategori.values()}
     akun_fa = {a for v in akun_kat.values() for a in (v["asset"], v["accum"]) if a}
     saldo: Dict[str, Decimal] = {}
-    for a in session.query(FA).filter(FA.client_id == kid, FA.deleted_at.is_(None)).all():
+    for a in session.query(FA).filter(FA.client_id == kid, FA.deleted_at.is_(None), FA.is_draft.is_(False)).all():
         akun_aset = a.coa_id or akun_kat.get(a.category_id, {}).get("asset")
         akun_akum = a.accum_coa_id or akun_kat.get(a.category_id, {}).get("accum")
         akun_fa.update(x for x in (akun_aset, akun_akum) if x)

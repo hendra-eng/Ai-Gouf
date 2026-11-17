@@ -2,13 +2,13 @@
 
 // Halaman Fixed Assets (layout dataset/picture/Template UI/Fix Assets/1-6.jpeg):
 // judul + tombol aksi per tab, tab Overview, Asset Register, Depreciation,
-// Disposal, Reports, Posted. Backend: modules/assets_and_equity/fixed_assets_v1.py.
+// Draft (aset is_draft), Disposal, Reports, Posted. Backend: modules/assets_and_equity/fixed_assets_v1.py.
 
 import React, { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeftRight, BookOpen, CalendarDays, ChevronDown, CircleCheck, Clock, FileSpreadsheet, FileText, Layers, LayoutDashboard,
+  ArrowLeftRight, BookOpen, CalendarDays, ChevronDown, CircleCheck, Clock, FilePen, FileSpreadsheet, FileText, Layers, LayoutDashboard,
   Play, Plus, RefreshCcw, ScrollText, Download,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -23,13 +23,14 @@ import DepreciationTab from './DepreciationTab';
 import DisposalTab from './DisposalTab';
 import ReportsTab from './ReportsTab';
 import PostedTab from './PostedTab';
+import DraftTab from './DraftTab';
 import AssetFormDrawer from './AssetFormDrawer';
 import CategoriesDrawer from './CategoriesDrawer';
 import AssetDetailDrawer from './AssetDetailDrawer';
 import RunDepreciationModal from './RunDepreciationModal';
 import DisposalFormDrawer from './DisposalFormDrawer';
 
-export type FaTab = 'overview' | 'register' | 'depreciation' | 'disposal' | 'reports' | 'posted';
+export type FaTab = 'overview' | 'register' | 'draft' | 'depreciation' | 'disposal' | 'reports' | 'posted';
 
 export interface FaActions {
   addAsset: () => void;
@@ -45,6 +46,7 @@ export interface FaActions {
 const TABS: { id: FaTab; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'register', label: 'Asset Register', icon: ScrollText },
+  { id: 'draft', label: 'Draft', icon: FilePen },
   { id: 'depreciation', label: 'Depreciation', icon: Clock },
   { id: 'disposal', label: 'Disposal', icon: ArrowLeftRight },
   { id: 'reports', label: 'Reports', icon: FileText },
@@ -174,6 +176,7 @@ function FixedAssetsWorkspace() {
 
         {kid && tab === 'overview' && <OverviewTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'register' && <RegisterTab clientId={kid} clientName={activeClientName ?? ''} asOf={asOf} actions={actions} />}
+        {kid && tab === 'draft' && <DraftTab clientId={kid} actions={actions} />}
         {kid && tab === 'depreciation' && <DepreciationTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'disposal' && <DisposalTab clientId={kid} asOf={asOf} actions={actions} />}
         {kid && tab === 'reports' && <ReportsTab clientId={kid} clientName={activeClientName ?? ''} asOf={asOf} exportSignal={reportExport} />}
