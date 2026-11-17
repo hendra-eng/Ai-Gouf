@@ -57,6 +57,13 @@ export interface ArApDoc {
   account_name: string;
   description: string | null;
   last_payment_date: string | null;
+  /** Dokumen valas (Fase 2 kurs): nominal utama di atas tetap IDR; angka valas = informasi tambahan. */
+  currency?: string;
+  exchange_rate?: number;
+  foreign_total?: number | null;
+  foreign_paid?: number | null;
+  foreign_in_process?: number | null;
+  foreign_outstanding?: number | null;
 }
 
 export interface ArApKpi {
@@ -149,6 +156,11 @@ export interface SettlementLine {
   debit: number;
   credit: number;
   amount: number;
+  /** Pelunasan dokumen valas: nominal valas yang dilunasi + kurs pelunasan. */
+  fx_amount?: number | null;
+  fx_rate?: number | null;
+  /** Baris otomatis selisih kurs terealisasi (akun FX Gain/Loss). */
+  is_fx_difference?: boolean;
 }
 
 export interface Settlement {
@@ -184,6 +196,8 @@ export interface Settlement {
   journal: { line_no: number; account_code: string; account_name: string; description: string | null; debit: number; credit: number }[];
   allocated: number;
   unapplied: number;
+  /** Selisih kurs terealisasi (+ untung / - rugi); 0 untuk transaksi IDR. */
+  fx_difference?: number;
   /** Bisa diubah/dihapus dari menu ini (dibuat di sini & belum diposting). */
   editable: boolean;
 }
@@ -199,7 +213,10 @@ export interface SettlementInput {
   reference?: string | null;
   reference_date?: string | null;
   notes?: string | null;
-  allocations: { invoice_id: string; amount: number }[];
+  /** Dokumen valas: kirim fx_amount (+ fx_rate); `amount` (IDR) boleh kosong. */
+  allocations: { invoice_id: string; amount?: number | null; fx_amount?: number | null; fx_rate?: number | null }[];
+  /** Kurs pelunasan default untuk semua alokasi valas (IDR per 1 unit). */
+  fx_rate?: number | null;
   unapplied_amount?: number;
   unapplied_coa_id?: string | null;
   submit: boolean;
@@ -367,6 +384,8 @@ export interface InvoiceEntryInput {
   due_date?: string | null;
   payment_terms: string;
   currency: string;
+  /** Invoice valas: IDR per 1 unit pada tanggal invoice (kosong = kurs master). */
+  exchange_rate?: number | null;
   branch: string;
   project?: string | null;
   customer_id?: string | null;
@@ -403,6 +422,11 @@ export interface InvoiceEntry {
   customer_npwp: string | null;
   billing_address: string | null;
   currency: string;
+  exchange_rate?: number;
+  /** Invoice valas: total / DPP / pajak dalam mata uang invoice (item & subtotal juga valas; dpp/tax_total/total = IDR). */
+  foreign_total?: number | null;
+  foreign_dpp?: number | null;
+  foreign_tax?: number | null;
   tax_type: TaxCode;
   tax_inclusive: boolean;
   notes: string | null;
@@ -809,6 +833,14 @@ const fmtAngka = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2, mini
 export const rupiah = (n: number | null | undefined) => {
   const v = n || 0;
   return `${v < 0 ? '-' : ''}Rp ${fmtAngka.format(Math.abs(v))}`;
+};
+
+/** Nominal dalam mata uang tertentu: IDR -> "Rp 1.000"; lainnya -> "USD 1,234.56". */
+export const money = (n: number | null | undefined, currency?: string | null) => {
+  const mu = (currency || 'IDR').toUpperCase();
+  if (mu === 'IDR') return rupiah(n);
+  const v = n || 0;
+  return `${v < 0 ? '-' : ''}${mu} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(v))}`;
 };
 
 /** "Rp 1,28 M" / "Rp 450 jt" -> versi English: "Rp 1.28B" / "Rp 450M". */

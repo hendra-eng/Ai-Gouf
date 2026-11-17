@@ -3,17 +3,16 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { Plus } from 'lucide-react';
 import CashBankTransactionModal from './CashBankTransactionModal';
 import { LayoutDashboard, ArrowUpRight, ArrowDownLeft, Database, Scale, Eye, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import TabNav from '@/components/ui/TabNav';
 
 interface Tab {
   id: string;
   label: string;
   href: string;
   description: string;
-  icon: React.ComponentType<{ size?: number | string; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>;
 }
 
 // Tab Cash & Bank + tombol "Transaksi Baru" (input manual kas/bank tanpa
@@ -25,6 +24,13 @@ const tabs: Tab[] = [
     label: 'Overview',
     href: '/transactions/bank-cash/overview',
     description: 'Cash flow summary, balance per account & reconciliation status',
+  },
+  {
+    id: 'tab-bank-feed',
+    icon: Database,
+    label: 'Source Data',
+    href: '/transactions/bank-cash/source-data',
+    description: 'Import bank statements (saved permanently) to match against the books',
   },
   {
     id: 'tab-cash-payment',
@@ -39,13 +45,6 @@ const tabs: Tab[] = [
     label: 'Cash Receipt',
     href: '/transactions/bank-cash/cash-receipt',
     description: 'Posted Sales invoices & their receipt status',
-  },
-  {
-    id: 'tab-bank-feed',
-    icon: Database,
-    label: 'Source Data',
-    href: '/transactions/bank-cash/source-data',
-    description: 'Import bank statements (saved permanently) to match against the books',
   },
   {
     id: 'tab-reconciliation',
@@ -77,6 +76,13 @@ const tabs: Tab[] = [
   },
 ];
 
+// Gaya tab disamakan dengan halaman Sales -- tema elegant monokrom (garis bawah hitam,
+// ikon garis tipis, tombol aksi hitam).
+const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between';
+const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
+const tabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
+
 export default function CashBankTabs() {
   const pathname = usePathname();
 
@@ -87,25 +93,32 @@ export default function CashBankTabs() {
 
   return (
     <div className="mb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Cash & Bank</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{activeTab.description}</p>
-        </div>
-        <button
-          onClick={() => setFormBaru(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-        >
-          <PlusIcon className="w-4 h-4" /> New Transaction
-        </button>
+      <div className="mb-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Cash & Bank</h1>
+        <p className="mt-1 text-sm font-medium text-neutral-500">{activeTab.description}</p>
       </div>
       <CashBankTransactionModal open={formBaru} onClose={() => setFormBaru(false)} />
 
-      <TabNav
-        className="mt-4"
-        activeKey={activeTab.id}
-        items={tabs.map(t => ({ key: t.id, label: t.label, href: t.href, icon: t.icon }))}
-      />
+      <div className={tabBarCls}>
+        <nav className={tabListCls}>
+          {tabs.map((tab) => {
+            const active = tab.id === activeTab.id;
+            return (
+              <Link key={tab.id} href={tab.href} className={tabCls(active)} aria-current={active ? 'page' : undefined}>
+                <tab.icon size={16} strokeWidth={active ? 2 : 1.5} /> {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="flex items-center justify-end pb-2 lg:pb-0">
+          <button
+            onClick={() => setFormBaru(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+          >
+            <Plus size={13} /> New Transaction
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

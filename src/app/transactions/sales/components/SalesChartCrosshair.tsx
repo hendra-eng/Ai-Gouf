@@ -44,15 +44,17 @@ interface Props {
   dragPreview: { index: number; value: number } | null;
   estimatedLabel: string;
   salesLabel: string;
+  /** Opsional: format angka di label harga & legenda. Default = Rupiah (formatIDR). */
+  formatValue?: (n: number) => string;
 }
 
 const CHIP = 'absolute rounded px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white whitespace-nowrap shadow-sm';
-const CHIP_BG = '#0E2F26'; // hijau sidebar (--nav)
-const LINE = '#94a3b8';
+const CHIP_BG = '#262626'; // hijau sidebar (--nav)
+const LINE = '#a3a3a3';
 const DATE_CHIP_HALF = 80; // setengah lebar perkiraan label tanggal, supaya tidak keluar dari grafik
 
 export default function SalesChartCrosshair({
-  wrapRef, geometry, view, gran, yMin, yMax, trend, pointLabel, bucketOf, labelOf, extraOf, dragPreview, estimatedLabel, salesLabel,
+  wrapRef, geometry, view, gran, yMin, yMax, trend, pointLabel, bucketOf, labelOf, extraOf, dragPreview, estimatedLabel, salesLabel, formatValue = formatIDR,
 }: Props) {
   const [pos, setPos] = useState<{ x: number; y: number; w: number } | null>(null);
   const { plotLeft, plotRightMargin, plotTop, plotBottom } = geometry;
@@ -104,7 +106,7 @@ export default function SalesChartCrosshair({
 
       {/* Harga di posisi kursor — menempel di sumbu Y */}
       <div className={CHIP} style={{ background: CHIP_BG, right: pos.w - plotLeft + 4, top: pos.y - 10 }}>
-        {formatIDR(Math.round(price))}
+        {formatValue(Math.round(price))}
       </div>
 
       {/* Tanggal di posisi kursor — menempel di sumbu X */}
@@ -119,7 +121,7 @@ export default function SalesChartCrosshair({
       >
         <span className="font-semibold">{dateText}</span>
         <span className="text-yellow-600">
-          {' · '}{salesLabel}: {dragged ? `${estimatedLabel} · ` : ''}{formatIDR(bucketValue)}
+          {' · '}{salesLabel}: {dragged ? `${estimatedLabel} · ` : ''}{formatValue(bucketValue)}
         </span>
         {extra && <span className="text-slate-500">{' · '}{extra}</span>}
       </div>

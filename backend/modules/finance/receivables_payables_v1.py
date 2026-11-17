@@ -48,7 +48,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func
 
 import db_client as dbc
@@ -120,6 +120,8 @@ class Dok:
     lain: Decimal = NOL                      # lunas di luar Cash & Bank (dianggap di tanggal dokumen)
     pelunasan: List[Pelunasan] = field(default_factory=list)
     pending: Decimal = NOL                   # alokasi draft/approved (belum mengubah saldo)
+    fx: Optional[Tuple[str, Decimal, Decimal]] = None      # (mata uang, kurs pencatatan, total valas) kalau dokumen valas
+    asing: Dict[str, Decimal] = field(default_factory=dict)  # alokasi valas {'posted', 'pending'}
 
     def dibayar(self, per: date) -> Decimal:
         n = self.lain if self.tanggal <= per else NOL
@@ -204,6 +206,19 @@ def _muat_pelunasan(session, kid: str, sisi: Sisi, docs: Dict[str, Dok], kecuali
         d.pelunasan.append(Pelunasan(tgl, nilai, str(tx_id), nomor, status, tgl_balik if status == "reversed" else None))
 
 
+def _muat_valas(session, kid: str, sisi: Sisi, docs: Dict[str, Dok], fx_per_dok: Dict[str, Any],
+                kecuali_tx: Optional[str]) -> None:
+    """Isi info valas dokumen (mata uang, kurs pencatatan, nominal valas yang sudah/sedang dilunasi).
+    Saldo & aging tetap IDR; ini hanya informasi tambahan untuk tampilan."""
+    ada = [i for i, fx in fx_per_dok.items() if fx is not None and i in docs]
+    if not ada:
+        return
+    alok = bc._alokasi_asing(session, kid, sisi.kolom, ada, kecuali_tx)
+    for i in ada:
+        docs[i].fx = fx_per_dok[i]
+        docs[i].asing = alok.get(i, {})
+
+
 def _muat_dokumen(session, kid: str, sisi: Sisi, kecuali_tx: Optional[str] = None) -> List[Dok]:
     hasil: Dict[str, Dok] = {}
     if sisi.kode == "ar":
@@ -233,6 +248,7 @@ def _muat_dokumen(session, kid: str, sisi: Sisi, kecuali_tx: Optional[str] = Non
                 total=bc._dec(r.gross_amount), akun_kode=akun[0], akun_nama=akun[1], keterangan=r.description,
             )
         _muat_pelunasan(session, kid, sisi, hasil, kecuali_tx)
+        _muat_valas(session, kid, sisi, hasil, {str(r.id): bc._fx_sales(r) for r in rows}, kecuali_tx)
         paid = {str(r.id): bc._dec(r.paid_amount) for r in rows}
         for d in hasil.values():
             via_kas = sum((p.nilai for p in d.pelunasan if p.status == "posted"), NOL)
@@ -264,6 +280,7 @@ def _muat_dokumen(session, kid: str, sisi: Sisi, kecuali_tx: Optional[str] = Non
                     hasil[str(r.id)].total = bc._dec(r.total)
                     bayar_awal[str(r.id)] = awal
         _muat_pelunasan(session, kid, sisi, hasil, kecuali_tx)
+        _muat_valas(session, kid, sisi, hasil, {str(r.id): bc._fx_purchase(r) for r in rows}, kecuali_tx)
         for d in hasil.values():
             via_kas = sum((p.nilai for p in d.pelunasan if p.status == "posted"), NOL)
             if status_bayar[d.id] == "paid" and via_kas < d.total - TOL:
@@ -288,6 +305,7 @@ def _dok_dict(d: Dok, per: date) -> Dict[str, Any]:
         "days_overdue": max(hari, 0) if sisa > 0 else 0, "bucket": _bucket(hari) if sisa > 0 else None,
         "status": _status(d, per), "account_code": d.akun_kode, "account_name": d.akun_nama,
         "description": d.keterangan, "last_payment_date": d.bayar_terakhir(per),
+        **bc._info_fx_dict(d.fx, d.asing, d.total, d.dibayar(per), d.pending),
     }
 
 
@@ -330,10 +348,13 @@ def _rekap_pihak(docs: List[Dok], per: date, termasuk_nol: bool, dengan_detail: 
 def _settle_dict(session, tx: Any, baris: Optional[List[Any]] = None, sisi: Optional[Sisi] = None) -> Dict[str, Any]:
     d = bc._tx_dict(session, tx, baris)
     alokasi = [l for l in d["lines"] if l["line_type"] in ("sales_invoice", "purchase")]
-    lain = [l for l in d["lines"] if l["line_type"] == "account"]
+    lain = [l for l in d["lines"] if l["line_type"] == "account" and not l.get("is_adjustment")
+            and not l.get("is_fx_difference")]
+    selisih_kurs = [l for l in d["lines"] if l.get("is_fx_difference")]
     d.update({
         "payment_method": tx.payment_method, "reference_date": tx.reference_date, "currency": tx.currency or "IDR",
         "allocated": bc._f(sum(l["amount"] for l in alokasi)), "unapplied": bc._f(sum(l["amount"] for l in lain)),
+        "fx_difference": bc._f(sum(l["credit"] - l["debit"] for l in selisih_kurs)) if selisih_kurs else 0.0,
         "editable": bool(sisi and tx.source == sisi.kode and tx.status in ("draft", "approved")),
     })
     return d
@@ -439,7 +460,18 @@ def _submit(session, kid: str, tx: Any, user: Dict[str, Any]) -> str:
 
 class AlokasiIn(BaseModel):
     invoice_id: UUID
-    amount: float = Field(..., gt=0)
+    # IDR. Untuk dokumen valas boleh dikosongkan kalau fx_amount diisi (nilai tercatat dihitung server).
+    amount: Optional[float] = Field(None, gt=0)
+    # Dokumen VALAS: nominal valas yang dilunasi + kurs pelunasan (IDR per 1 unit). fx_rate kosong -> pakai
+    # `fx_rate` di level request, lalu kurs master pada tanggal transaksi.
+    fx_amount: Optional[float] = Field(None, gt=0)
+    fx_rate: Optional[float] = Field(None, gt=0)
+
+    @model_validator(mode="after")
+    def _nominal_wajib(self):
+        if self.amount is None and self.fx_amount is None:
+            raise ValueError("Enter the amount (IDR) or the foreign amount.")
+        return self
 
 
 class SettlementRequest(BaseModel):
@@ -449,13 +481,18 @@ class SettlementRequest(BaseModel):
     party: str = Field(..., min_length=1, max_length=255)
     bank_coa_id: UUID
     payment_method: str = Field("bank_transfer", max_length=30)
-    currency: str = Field("IDR", max_length=10)
+    currency: str = Field("IDR", max_length=10)   # IDR atau mata uang dokumen valas yang dilunasi
+    fx_rate: Optional[float] = Field(None, gt=0)  # kurs pelunasan default untuk semua alokasi valas
     reference: Optional[str] = Field(None, max_length=255)
     reference_date: Optional[date] = None
     notes: Optional[str] = Field(None, max_length=500)
     allocations: List[AlokasiIn] = Field(default_factory=list, max_length=500)
     unapplied_amount: float = Field(0, ge=0)
     unapplied_coa_id: Optional[UUID] = None
+    # Nominal yang BENAR-BENAR masuk/keluar di bank. Kosong = sama dengan total alokasi (+ unapplied).
+    # Kalau beda <= batas per match (Settings), selisihnya ditutup lewat `adjustment` (biaya admin/diskon/pembulatan).
+    received_amount: Optional[float] = Field(None, gt=0)
+    adjustment: Optional[bc.AdjustmentIn] = None
     submit: bool = False
 
 
@@ -697,8 +734,7 @@ def _buat_router(sisi: Sisi, prefix: str, tag: str) -> APIRouter:
         return bc._respon(lambda s: _settle_dict(s, _ambil_settle(s, kid, sisi, tx_id, harus_milik=False), sisi=sisi))
 
     def _isi(session, kid: str, payload: SettlementRequest, user: Dict[str, Any], tx: Any = None) -> Tuple[Any, str]:
-        if payload.currency.upper() != "IDR":
-            raise _Gagal("Only IDR is supported for now (the ledger is kept in IDR).")
+        mu_req = payload.currency.strip().upper() or "IDR"
         metode = payload.payment_method.strip().lower()
         if metode not in METODE_BAYAR:
             raise _Gagal(f"Unknown payment method '{payload.payment_method}'.")
@@ -715,7 +751,15 @@ def _buat_router(sisi: Sisi, prefix: str, tag: str) -> APIRouter:
                 raise _Gagal(f"The selected {D} is not posted or does not belong to this client.", kode="NOT_FOUND", status_code=404)
             if d.pihak != pihak:
                 raise _Gagal(f"{D.capitalize()} {d.no} belongs to {d.pihak}, not {pihak}.")
-        baris_in = [bc.BarisIn(type=sisi.line_type, invoice_id=a.invoice_id, amount=a.amount) for a in payload.allocations]
+        for a in payload.allocations:
+            d = docs[str(a.invoice_id)]
+            if d.fx is None and mu_req != "IDR":
+                raise _Gagal(f"{D.capitalize()} {d.no} is in IDR; it cannot be settled in {mu_req}.")
+            if d.fx is not None and mu_req != d.fx[0]:
+                raise _Gagal(f"{D.capitalize()} {d.no} is in {d.fx[0]}; set the currency to {d.fx[0]}.")
+        baris_in = [bc.BarisIn(type=sisi.line_type, invoice_id=a.invoice_id, amount=a.amount, fx_amount=a.fx_amount,
+                               fx_rate=a.fx_rate if a.fx_rate is not None else payload.fx_rate)
+                    for a in payload.allocations]
         if payload.unapplied_amount > 0:
             if not payload.unapplied_coa_id:
                 raise _Gagal("Choose the account for the unapplied amount (e.g. customer deposits / vendor advances).")
@@ -725,7 +769,14 @@ def _buat_router(sisi: Sisi, prefix: str, tag: str) -> APIRouter:
             baris_in.append(bc.BarisIn(type="account", coa_id=payload.unapplied_coa_id, amount=payload.unapplied_amount,
                                        description=f"Unapplied {sisi.aksi.lower()} - {pihak}"))
         akun_bank = bc._akun_kas(session, kid, str(payload.bank_coa_id))
-        baris, nominal, jenis, _ = bc._susun_baris(session, kid, sisi.arah, baris_in, kecuali_tx=tx.id if tx is not None else None)
+        baris, nominal, jenis, _ = bc._susun_baris(session, kid, sisi.arah, baris_in, kecuali_tx=tx.id if tx is not None else None,
+                                                   tgl=payload.tx_date)
+        if payload.received_amount is not None:
+            nominal_bank = bc._dec(payload.received_amount)
+            baris = bc._tambah_adjustment(session, kid, sisi.arah, baris, nominal, nominal_bank, payload.adjustment, jenis)
+            nominal = nominal_bank
+        elif payload.adjustment is not None:
+            raise _Gagal(f"Enter the amount actually {'received' if sisi.kode == 'ar' else 'paid'} to use an adjustment.")
 
         nomor = (payload.number or "").strip() or None
         if tx is None or (nomor and nomor != tx.tx_number):
@@ -740,7 +791,7 @@ def _buat_router(sisi: Sisi, prefix: str, tag: str) -> APIRouter:
             category=bc.KATEGORI_INVOICE[sisi.arah] if jenis == "invoice" else "Advance", counterparty=pihak,
             description=catatan or f"{sisi.aksi} {('from' if sisi.kode == 'ar' else 'to')} {pihak}",
             reference=(payload.reference or "").strip() or None, reference_date=payload.reference_date,
-            payment_method=metode, currency="IDR",
+            payment_method=metode, currency=bc.mata_uang_transaksi(session, baris),
         )
         if tx is None:
             tx = TX(client_id=kid, tx_number=nomor, direction=sisi.arah, source=sisi.kode, status="draft",

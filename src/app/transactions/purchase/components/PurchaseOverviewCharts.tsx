@@ -13,10 +13,11 @@ import {
   type TimeRange, type TickInfo, type Granularity, type IntervalId, type IntervalDef,
 } from '../../sales/components/salesTrendTime';
 import SalesChartCrosshair from '../../sales/components/SalesChartCrosshair';
+import { salesFont } from '../../sales/components/salesFont';
 import SalesCandleLayer, { type SalesChartType } from '../../sales/components/SalesCandleLayer';
 
 // Kartu "Purchase Volume Trend" & "Purchase Status" di tab Overview Purchase.
-// Desain & fungsi disalin 1:1 dari kartu "Tren Sales Bulanan" & "Sales per Branch" di
+// Desain (tema elegant monokrom) & fungsi disalin 1:1 dari kartu "Tren Sales Bulanan" & "Sales per Branch" di
 // Sales Overview (timeframe, bentuk grafik, zoom/geser sumbu, crosshair, drag titik,
 // donut interaktif). Sumber datanya tetap milik Purchase -- lihat page.tsx.
 
@@ -33,13 +34,13 @@ const SALES_PLOT_RIGHT = 10;      // margin.right AreaChart
 const SALES_CHART_HEIGHT = 220;
 const SALES_PLOT_TOP = 5;         // margin.top AreaChart
 const SALES_TIME_ZOOM_PX = 220;   // jarak tarik (px) untuk melebarkan/menyempitkan jendela ~2,7x
-const SALES_AXIS_BORDER = '#0E2F26'; // hijau sidebar (--nav) untuk garis tepi sumbu harga & bulan
-const SALES_LINE_COLOR = '#EAB308';  // kuning garis chart
+const SALES_AXIS_BORDER = '#404040'; // abu gelap untuk garis tepi sumbu harga & bulan
+const SALES_LINE_COLOR = '#2563EB';  // biru garis chart (sama dengan chart Tren Sales)
 const salesEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 
 // Dropdown filter kustom -- sama dengan FilterSelect di tab Sales Transaction
-// & Posted: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih hijau brand.
+// & Posted: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih abu netral.
 interface FilterOption { value: string; label: string; short?: string }
 
 function FilterSelect({ value, onChange, options, searchable: searchableProp, title }: {
@@ -80,13 +81,13 @@ function FilterSelect({ value, onChange, options, searchable: searchableProp, ti
         aria-haspopup="listbox"
         aria-expanded={open}
         title={title}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
       >
         <span className="truncate max-w-[170px]">{current?.short ?? current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-neutral-300 bg-white shadow-xl">
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -94,12 +95,12 @@ function FilterSelect({ value, onChange, options, searchable: searchableProp, ti
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Cari..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-neutral-500">Tidak ditemukan</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -107,7 +108,7 @@ function FilterSelect({ value, onChange, options, searchable: searchableProp, ti
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -151,7 +152,7 @@ function SalesYTick({ x, y, payload }: { x?: number; y?: number; payload?: { val
   if (x == null || y == null || !payload) return null;
   return (
     <g>
-      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#94a3b8">{salesYLabel(payload.value)}</text>
+      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#8a8a8a">{salesYLabel(payload.value)}</text>
     </g>
   );
 }
@@ -163,11 +164,11 @@ function SalesXTick({ x, y, payload, info }: { x?: number; y?: number; payload?:
   const strong = tick.kind !== 'day';
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={strong ? 600 : 400} fill={strong ? '#64748b' : '#94a3b8'}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={strong ? 600 : 400} fill={strong ? '#525252' : '#8a8a8a'}>
         {tick.label}
       </text>
       {tick.sub && (
-        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#475569">
+        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#404040">
           {tick.sub}
         </text>
       )}
@@ -204,12 +205,12 @@ function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
   return (
     <div className="mb-4 flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200">
           <Icon size={17} />
         </span>
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-bold text-foreground">{title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+          <h2 className="truncate text-sm font-semibold text-neutral-900">{title}</h2>
+          <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>
         </div>
       </div>
       {right}
@@ -299,11 +300,15 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
       : buildSeries(trendIndex, view.from, view.to, gran, pointLabel)),
     [trendIndex, view.from, view.to, gran, pointLabel, intervalDef, intervalLabel]
   );
+  // Jumlah label sumbu waktu maksimum yang muat di lebar chart (~70px per label), supaya label
+  // tidak menumpuk saat jendela waktu ditarik/di-zoom out -- sama seperti TradingView.
+  const [wrapPx, setWrapPx] = useState(900);
+  const maxXTicks = Math.max(3, Math.floor((wrapPx - 90) / 70));
   const xTicks = useMemo(
     () => (intervalDef && isIntraday(intervalDef)
-      ? buildIntradayTicks(view.from, view.to, tickFormatters)
-      : buildTicks(view.from, view.to, gran, tickFormatters)),
-    [view.from, view.to, gran, tickFormatters, intervalDef]
+      ? buildIntradayTicks(view.from, view.to, tickFormatters, maxXTicks)
+      : buildTicks(view.from, view.to, gran, tickFormatters, maxXTicks)),
+    [view.from, view.to, gran, tickFormatters, intervalDef, maxXTicks]
   );
   // Lebar tiap batang/candle = jarak ke awal periode berikutnya; teks Open -> Close untuk crosshair.
   const bucketEnd = useCallback(
@@ -359,7 +364,7 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
     const measure = () => {
       const ctx = document.createElement('canvas').getContext('2d');
       if (!ctx) return;
-      ctx.font = `10px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.font = `10px ${salesFont.style.fontFamily}`;
       const widest = Math.max(0, ...labels.map((l) => ctx.measureText(l).width));
       const next = Math.ceil(widest) + SALES_AXIS_GAP;
       setSalesAxisWidth((prev) => (prev === next ? prev : next));
@@ -543,6 +548,16 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
   //    Titik yang diklik tetap di tempatnya saat zoom.
   //  - Tarik di grafik: geser periode kiri/kanan. Klik dua kali di label = kembali ke satu tahun penuh.
   const chartWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const measure = () => setWrapPx((prev) => (Math.abs(prev - el.clientWidth) < 2 ? prev : el.clientWidth));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasAnyPurchase]);
   const [panning, setPanning] = useState(false);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -611,11 +626,11 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
   };
 
   return (
-    <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
+    <div className={`${salesFont.className} lg:col-span-2 card-elevated-md rounded-xl p-5`}>
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-foreground">{t('Purchase Volume Trend')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('Based on purchase date, gross amount')}</p>
+              <h2 className="text-sm font-semibold text-neutral-900">{t('Purchase Volume Trend')}</h2>
+              <p className="text-xs text-neutral-500 mt-0.5">{t('Based on purchase date, gross amount')}</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {/* Timeframe (5m ... 1Y) + bentuk grafik ala TradingView */}
@@ -637,7 +652,7 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
                 <button
                   type="button"
                   onClick={() => { setRange(null); setIntervalId(null); setSalesYShift(0); setSalesPriceZoom(1); }}
-                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground hover:bg-muted"
+                  className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-card text-neutral-900 hover:bg-neutral-100"
                 >
                   {t('Reset')}
                 </button>
@@ -646,7 +661,7 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
                 <select
                   value={trendYear}
                   onChange={(e) => { setPickedYear(Number(e.target.value)); setRange(null); }}
-                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground"
+                  className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-card text-neutral-900"
                 >
                   {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
@@ -666,11 +681,11 @@ export function PurchaseTrendCard({ records, loading = false }: { records: Purch
                 <AreaChart data={salesDisplayTrend} margin={{ top: SALES_PLOT_TOP, right: SALES_PLOT_RIGHT, left: SALES_PLOT_LEFT, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gradPurchaseMain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.65} />
-                      <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.12} />
+                      <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.30} />
+                      <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
                   <XAxis
                     dataKey="t"
                     type="number"
@@ -800,7 +815,7 @@ export function PurchaseStatusDonutCard({ data }: { data: { name: string; value:
   const toggle = (i: number) => setActive((prev) => (prev === i ? null : i));
 
   return (
-    <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
+    <div className={`${salesFont.className} card-elevated-md flex h-full flex-col rounded-xl p-5`}>
       <SalesCardHeader icon={ShoppingBag} title={t('Purchase Status')} subtitle={t('Current distribution')} />
       {segs.length === 0 || total <= 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
@@ -827,12 +842,12 @@ export function PurchaseStatusDonutCard({ data }: { data: { name: string; value:
               <li
                 key={`legend-${a.name}-${i}`}
                 onClick={() => toggle(i)}
-                className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
+                className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}
               >
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
                 <span className={`min-w-0 flex-1 truncate ${active === i ? 'font-bold' : 'font-medium'} text-foreground`} title={a.name}>{a.name}</span>
                 <span className="font-semibold tabular-nums text-foreground">{shownCounts[i]}</span>
-                <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
+                <span className="w-10 shrink-0 rounded-full bg-neutral-100 py-0.5 text-center text-[10px] font-semibold tabular-nums text-neutral-600">
                   {pctLabel(shownPcts[i], shownValues[i])}
                 </span>
               </li>

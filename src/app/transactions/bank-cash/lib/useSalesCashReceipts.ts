@@ -90,7 +90,12 @@ export function useCashReceiptsFromSales(): {
  * tetapi tidak berasal dari rekonsiliasi (mis. diinput manual di halaman) belum punya tanggal
  * bayar, jadi dihitung pada tanggal invoice.
  */
-export function trenBulananDiterima(rows: CashReceiptRow[]): { month: string; total: number; count: number }[] {
+/**
+ * Daftar kejadian penerimaan (tanggal + nominal) -- dasar tren bulanan & chart ala Sales.
+ * Pembayaran hasil rekonsiliasi yang sudah diposting dihitung pada tanggal bayarnya; sisa nominal
+ * di invoice yang tidak berasal dari rekonsiliasi dihitung pada tanggal invoice.
+ */
+export function kejadianDiterima(rows: CashReceiptRow[]): { tanggal: string; nominal: number }[] {
   const kejadian: { tanggal: string; nominal: number }[] = [];
   rows.forEach(r => {
     let dijelaskan = 0;
@@ -101,6 +106,11 @@ export function trenBulananDiterima(rows: CashReceiptRow[]): { month: string; to
     const sisa = r.received - dijelaskan;
     if (sisa > 0.005) kejadian.push({ tanggal: r.date, nominal: sisa });
   });
+  return kejadian;
+}
+
+export function trenBulananDiterima(rows: CashReceiptRow[]): { month: string; total: number; count: number }[] {
+  const kejadian = kejadianDiterima(rows);
   const tahunTerbaru = kejadian.reduce((maks, k) => {
     const y = new Date(k.tanggal).getFullYear();
     return Number.isFinite(y) && y > maks ? y : maks;
@@ -122,8 +132,14 @@ export function rincianPerKategori(rows: CashReceiptRow[]): { name: string; valu
   return Array.from(peta.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 }
 
-export function customerTerbesar(rows: CashReceiptRow[], limit = 5): { name: string; amount: number }[] {
-  const peta = new Map<string, number>();
-  rows.forEach(r => peta.set(r.customer || '—', (peta.get(r.customer || '—') || 0) + r.total));
-  return Array.from(peta.entries()).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, limit);
+export function customerTerbesar(rows: CashReceiptRow[], limit = 5): { name: string; amount: number; count: number }[] {
+  const peta = new Map<string, { amount: number; count: number }>();
+  rows.forEach(r => {
+    const key = r.customer || '—';
+    const cur = peta.get(key) ?? { amount: 0, count: 0 };
+    cur.amount += r.total;
+    cur.count += 1;
+    peta.set(key, cur);
+  });
+  return Array.from(peta.entries()).map(([name, v]) => ({ name, amount: v.amount, count: v.count })).sort((a, b) => b.amount - a.amount).slice(0, limit);
 }

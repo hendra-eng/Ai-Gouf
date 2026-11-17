@@ -1,86 +1,61 @@
 'use client';
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import KpiCard from '@/components/shared/KpiCard';
-import DataTable from '@/components/shared/DataTable';
-import Pagination from '@/components/shared/Pagination';
-import { formatIDR, formatDate, CHART_COLORS } from '../../lib/groupAnalytics';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getNiceTicksFromZero } from '@/lib/chartTicks';
-import StatusBadge from '@/components/ui/StatusBadge';
+import React, { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Search, Info, ArrowDownLeft, Landmark, FileText, Calculator, AlertTriangle, Trophy, Layers } from 'lucide-react';
+import { formatIDR } from '../lib/formatMoney';
+import { useLanguage } from '@/lib/language';
+import { formatTanggalSingkat } from '@/lib/salesStore';
 import CashBankTabs from '../components/CashBankTabs';
 import { MutasiBankCell, JurnalCell, DalamProsesBadge } from '../components/RekonInfoCells';
+import CashReceiptTrendChart from '../components/CashReceiptTrendChart';
+import {
+  OverviewKpiTile, FilterSelect, BreakdownDonutCard, TopPartyCard,
+  pctOf, buildPageItems, NAV_BTN,
+} from '../components/salesStyleKit';
 import {
   useCashReceiptsFromSales,
-  trenBulananDiterima,
+  kejadianDiterima,
   rincianPerKategori,
   customerTerbesar,
   type CashReceiptRow,
 } from '../lib/useSalesCashReceipts';
 
-// ── Lebar overlay drag-zoom sumbu Y (sama pola dengan chart Sales/Purchase/Cash Payment). ──
-const RECEIPT_AXIS_WIDTH = 65;
-const RECEIPT_AXIS_OVERLAY_WIDTH = RECEIPT_AXIS_WIDTH + 10;
-const RECEIPT_SPRING_MS = 380;
-const receiptEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
-
-interface ReceiptDragPreview {
-  index: number;
-  value: number;
-}
-
-function ReceiptTrendTooltip({
-  active,
-  payload,
-  label,
-  dragPreview,
-}: {
-  active?: boolean;
-  payload?: { value: number; name: string; color: string; payload: { month: string } }[];
-  label?: string;
-  dragPreview?: ReceiptDragPreview | null;
-}) {
-  if (!active || !payload || !payload.length) return null;
-  const entry = payload[0];
-  const isDragged = !!dragPreview;
-  const value = isDragged ? dragPreview!.value : entry.value;
-  return (
-    <div style={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} className="bg-white p-3">
-      <p className="font-semibold text-slate-800 mb-1">{label}</p>
-      <p className="text-blue-600">
-        {entry.name}: {isDragged ? 'Estimate · ' : ''}
-        {formatIDR(value)}
-      </p>
-    </div>
-  );
-}
-
-const PAGE_SIZE = 8;
-
-const RECEIPT_STATUS_LABEL: Record<string, string> = {
-  paid: 'Paid', partial: 'Partially Paid', unpaid: 'Unpaid',
+// Warna status: sama dengan pill status di tabel Sales Overview (tint -100, teks -800, garis -300).
+const STATUS_STYLE: Record<string, { pill: string; dot: string; label: string }> = {
+  paid: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600', label: 'Paid' },
+  partial: { pill: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-600', label: 'Partially Paid' },
+  unpaid: { pill: 'bg-slate-200 text-slate-800 border-slate-400', dot: 'bg-slate-500', label: 'Unpaid' },
+  overdue: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600', label: 'Overdue' },
 };
-const RECEIPT_STATUS_VARIANT: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  paid: 'positive', partial: 'warning', unpaid: 'neutral',
-};
+
+const NUMERIC_COLS = ['Total', 'Received', 'Outstanding'];
+const HEADERS = ['Date', 'Invoice No.', 'Customer', 'Description', 'Type', 'Due Date', 'Total', 'Received', 'Outstanding', 'Bank Line', 'Journal', 'Status'];
 
 // Cash Receipt = penerimaan pembayaran dari customer. Sumber data: invoice Sales
 // (lihat lib/useSalesCashReceipts.ts) -- TIDAK membaca tabel Cash & Bank lagi.
+// Tampilan (KPI, kartu, chart tren, tabel, tombol) disamakan dengan tab Sales > Overview.
 export default function CashReceiptPage() {
+  const { t } = useLanguage();
   const { rows, loading, error, refresh } = useCashReceiptsFromSales();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
+  const totalInvoiced = useMemo(() => rows.reduce((s, r) => s + r.total, 0), [rows]);
   const totalReceived = useMemo(() => rows.reduce((s, r) => s + r.received, 0), [rows]);
   const totalOutstanding = useMemo(() => rows.reduce((s, r) => s + r.outstanding, 0), [rows]);
   const txCount = rows.length;
-  const avgTxValue = txCount > 0 ? rows.reduce((s, r) => s + r.total, 0) / txCount : 0;
-  const overdueCount = useMemo(() => rows.filter(r => r.isOverdue).length, [rows]);
+  const avgTxValue = txCount > 0 ? totalInvoiced / txCount : 0;
+  const maxInvoice = useMemo(() => rows.reduce((m, r) => Math.max(m, r.total), 0), [rows]);
+  const paidCount = useMemo(() => rows.filter(r => r.receiptStatus === 'paid').length, [rows]);
+  const overdueRows = useMemo(() => rows.filter(r => r.isOverdue), [rows]);
+  const overdueCount = overdueRows.length;
+  const overdueTotal = useMemo(() => overdueRows.reduce((s, r) => s + r.outstanding, 0), [overdueRows]);
   const totalDalamProses = useMemo(() => rows.reduce((s, r) => s + r.dalamProses, 0), [rows]);
 
-  const trend = useMemo(() => trenBulananDiterima(rows), [rows]);
+  const trendEvents = useMemo(() => kejadianDiterima(rows).map(k => ({ date: k.tanggal, amount: k.nominal })), [rows]);
   const byCategory = useMemo(() => rincianPerKategori(rows).slice(0, 6), [rows]);
   const topCustomers = useMemo(() => customerTerbesar(rows, 5), [rows]);
 
@@ -93,374 +68,218 @@ export default function CashReceiptPage() {
     });
   }, [rows, search, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
-  const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const paged = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
-  // ── Zoom skala harga (drag vertikal di sumbu Y) — sama pola dengan chart
-  // Sales / Purchase / Financial Overview. ──
-  const receiptBaseMax = useMemo(() => Math.max(1, ...trend.map((d) => d.total)) * 1.08, [trend]);
-  const [receiptPriceZoom, setReceiptPriceZoom] = useState(1);
-  const receiptZoomDragRef = useRef<{ startY: number; startZoom: number } | null>(null);
-
-  const { ticks: receiptYTicks } = useMemo(
-    () => getNiceTicksFromZero(receiptBaseMax / receiptPriceZoom, 5),
-    [receiptBaseMax, receiptPriceZoom]
+  const kpiLabel = (txt: string) => (
+    <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
+      <span className="h-3.5 w-1 rounded-full bg-neutral-800" />{txt}
+    </p>
   );
-  const receiptYDomain = useMemo<[number, number]>(
-    () => [0, receiptBaseMax / receiptPriceZoom],
-    [receiptBaseMax, receiptPriceZoom]
-  );
-  const receiptYDomainRef = useRef(receiptYDomain);
-  receiptYDomainRef.current = receiptYDomain;
-
-  const handleReceiptAxisMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    receiptZoomDragRef.current = { startY: e.clientY, startZoom: receiptPriceZoom };
-    const onMove = (ev: MouseEvent) => {
-      if (!receiptZoomDragRef.current) return;
-      const deltaY = receiptZoomDragRef.current.startY - ev.clientY; // tarik ke atas = zoom in
-      const factor = Math.exp(deltaY / 150);
-      const next = Math.min(6, Math.max(0.25, receiptZoomDragRef.current.startZoom * factor));
-      setReceiptPriceZoom(next);
-    };
-    const onUp = () => {
-      receiptZoomDragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-  const resetReceiptZoom = () => setReceiptPriceZoom(1);
-
-  // ── Drag titik data (tarik nilai "total" bulan tertentu) — kalibrasi
-  // piksel<->nilai dari titik lain, live preview, spring-back saat dilepas. ──
-  const receiptDotsRef = useRef<{ value: number; cy: number }[]>([]);
-  const [receiptDragPreview, setReceiptDragPreview] = useState<ReceiptDragPreview | null>(null);
-  const receiptDragStateRef = useRef<{
-    index: number;
-    originalValue: number;
-    currentValue: number;
-    startClientY: number;
-    pxPerUnit: number;
-  } | null>(null);
-  const receiptAnimRef = useRef<number | null>(null);
-
-  const stopReceiptSpring = () => {
-    if (receiptAnimRef.current) cancelAnimationFrame(receiptAnimRef.current);
-    receiptAnimRef.current = null;
-  };
-
-  useEffect(() => {
-    stopReceiptSpring();
-    receiptDragStateRef.current = null;
-    setReceiptDragPreview(null);
-    receiptDotsRef.current = [];
-  }, [trend]);
-
-  useEffect(() => stopReceiptSpring, []);
-
-  const springBackReceipt = useCallback(() => {
-    const drag = receiptDragStateRef.current;
-    if (!drag) return;
-    stopReceiptSpring();
-    const from = drag.currentValue;
-    const target = drag.originalValue;
-    const { index } = drag;
-    const start = performance.now();
-    const step = (now: number) => {
-      const elapsed = Math.min(1, (now - start) / RECEIPT_SPRING_MS);
-      const eased = receiptEaseOutQuint(elapsed);
-      const next = from + (target - from) * eased;
-      if (receiptDragStateRef.current) receiptDragStateRef.current.currentValue = next;
-      setReceiptDragPreview({ index, value: next });
-      if (elapsed < 1) {
-        receiptAnimRef.current = requestAnimationFrame(step);
-      } else {
-        receiptDragStateRef.current = null;
-        receiptAnimRef.current = null;
-        setReceiptDragPreview(null);
-      }
-    };
-    receiptAnimRef.current = requestAnimationFrame(step);
-  }, []);
-
-  const handleReceiptDotPointerDown = useCallback((e: React.PointerEvent, index: number, originalValue: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    stopReceiptSpring();
-
-    const samples = receiptDotsRef.current.filter((pt, i) => i !== index && Number.isFinite(pt?.cy));
-    let pxPerUnit = -1;
-    if (samples.length >= 2) {
-      const a = samples[0];
-      const b = samples[samples.length - 1];
-      if (b.value !== a.value) pxPerUnit = (b.cy - a.cy) / (b.value - a.value);
-    }
-    if (!Number.isFinite(pxPerUnit) || pxPerUnit === 0) {
-      const [dMin, dMax] = receiptYDomainRef.current;
-      pxPerUnit = -160 / (dMax - dMin || 1);
-    }
-
-    receiptDragStateRef.current = {
-      index,
-      originalValue,
-      currentValue: originalValue,
-      startClientY: e.clientY,
-      pxPerUnit,
-    };
-    setReceiptDragPreview({ index, value: originalValue });
-  }, []);
-
-  useEffect(() => {
-    const handleMove = (e: PointerEvent) => {
-      const drag = receiptDragStateRef.current;
-      if (!drag) return;
-      const deltaY = e.clientY - drag.startClientY;
-      const [, dMax] = receiptYDomainRef.current;
-      const maxValue = dMax * 1.4;
-      const value = Math.max(0, Math.min(maxValue, drag.originalValue + deltaY / drag.pxPerUnit));
-      drag.currentValue = value;
-      setReceiptDragPreview({ index: drag.index, value });
-    };
-    const handleUp = () => {
-      if (receiptDragStateRef.current) springBackReceipt();
-    };
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-    window.addEventListener('pointercancel', handleUp);
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-      window.removeEventListener('pointercancel', handleUp);
-    };
-  }, [springBackReceipt]);
-
-  const receiptDisplayTrend = useMemo(() => {
-    if (!receiptDragPreview) return trend;
-    return trend.map((d, i) => (i === receiptDragPreview.index ? { ...d, total: receiptDragPreview.value } : d));
-  }, [trend, receiptDragPreview]);
-
-  // Dot tak terlihat: cuma merekam posisi piksel & nilai asli tiap titik, buat kalibrasi drag.
-  const renderReceiptCalibrationDot = (props: any) => {
-    const { cx, cy, index, payload } = props;
-    receiptDotsRef.current[index] = { value: payload.total, cy };
-    return <circle key={`receipt-cal-${index}`} cx={cx} cy={cy} r={0} fill="transparent" />;
-  };
-
-  // Dot terlihat + target genggam (hit-area) lebih besar di atasnya, biar mudah ditarik.
-  const renderReceiptActiveDot = (props: any) => {
-    const { cx, cy, index, payload } = props;
-    if (cx == null || cy == null) return null;
-    const isDraggingThis = receiptDragPreview?.index === index;
-    return (
-      <g key={`receipt-pt-${index}`}>
-        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill="#3b82f6" stroke="#fff" strokeWidth={1.5} />
-        <circle
-          cx={cx}
-          cy={cy}
-          r={12}
-          fill="transparent"
-          style={{ cursor: 'ns-resize', touchAction: 'none' }}
-          onPointerDown={(e) => handleReceiptDotPointerDown(e, index, payload.total)}
-        />
-      </g>
-    );
-  };
-
-  const columns = [
-    { key: 'date', label: 'Date', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{formatDate(r.date)}</span> },
-    { key: 'invoiceNo', label: 'Invoice No.', render: (r: CashReceiptRow) => <span className="font-mono text-xs text-teal-600">{r.invoiceNo}</span> },
-    { key: 'customer', label: 'Customer', render: (r: CashReceiptRow) => <span className="font-medium text-xs">{r.customer}</span> },
-    { key: 'description', label: 'Description', render: (r: CashReceiptRow) => <span className="text-xs text-muted-foreground max-w-xs truncate block">{r.description || '—'}</span> },
-    { key: 'category', label: 'Type', render: (r: CashReceiptRow) => <span className="badge badge-neutral">{r.category}</span> },
-    { key: 'dueDate', label: 'Due Date', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{r.dueDate ? formatDate(r.dueDate) : '—'}</span> },
-    { key: 'total', label: 'Total', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{formatIDR(r.total, true)}</span> },
-    { key: 'received', label: 'Received', render: (r: CashReceiptRow) => <span className="font-mono text-xs font-semibold text-blue-700">{r.received ? formatIDR(r.received, true) : '—'}</span> },
-    { key: 'outstanding', label: 'Outstanding', render: (r: CashReceiptRow) => <span className="font-mono text-xs">{r.outstanding ? formatIDR(r.outstanding, true) : '—'}</span> },
-    { key: 'receiptStatus', label: 'Status', render: (r: CashReceiptRow) => (
-      <div>
-        <StatusBadge variant={r.isOverdue ? 'negative' : (RECEIPT_STATUS_VARIANT[r.receiptStatus] || 'neutral')}
-          label={r.isOverdue ? 'Overdue' : (RECEIPT_STATUS_LABEL[r.receiptStatus] || r.receiptStatus)} dot />
-        <DalamProsesBadge nominal={r.dalamProses} />
-      </div>
-    ) },
-    { key: 'mutasi', label: 'Bank Line', render: (r: CashReceiptRow) => <MutasiBankCell items={r.rekon} /> },
-    { key: 'jurnal', label: 'Journal', render: (r: CashReceiptRow) => <JurnalCell items={r.rekon} /> },
-  ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <CashBankTabs />
 
       {error && (
         <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
-          <span className="font-semibold">Failed to load Sales data:</span>
+          <span className="font-semibold">{t('Failed to load Sales data:')}</span>
           <span>{error}</span>
-          <button onClick={refresh} className="underline font-medium ml-auto">Retry</button>
+          <button onClick={refresh} className="ml-auto font-medium underline">{t('Retry')}</button>
         </div>
       )}
 
       {overdueCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">Attention:</span>
-          <span>{overdueCount} customer invoices are past due and still unpaid (total receivables across all unpaid invoices: {formatIDR(totalOutstanding, true)}).</span>
+        <div className="flex items-start gap-3 rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-4 py-3 text-xs text-neutral-700">
+          <Info size={15} className="mt-px shrink-0 text-neutral-700" />
+          <p className="leading-relaxed">
+            <span className="font-semibold text-neutral-900">{t('Attention:')}</span>{' '}
+            {overdueCount} {t('customer invoices are past due and still unpaid (total receivables across all unpaid invoices:')} {formatIDR(totalOutstanding, true)}).
+          </p>
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard title="Total Received" value={totalReceived} icon="ArrowDownCircleIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Unreceived (Receivables)" value={totalOutstanding} icon="BuildingLibraryIcon" iconColor="text-slate-600" iconBg="bg-slate-100" subLabel={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} in process (awaiting posting)` : undefined} />
-        <KpiCard title="Number of Invoices" value={String(txCount)} icon="DocumentTextIcon" iconColor="text-blue-600" iconBg="bg-blue-50" />
-        <KpiCard title="Average / Invoice" value={avgTxValue} icon="CalculatorIcon" iconColor="text-purple-600" iconBg="bg-purple-50" />
-        <KpiCard title="Overdue" value={String(overdueCount)} icon="ReceiptPercentIcon" iconColor="text-amber-600" iconBg="bg-amber-50" />
+      {/* KPI Cards -- desain sama dengan KPI di Sales Overview */}
+      <div>
+        {kpiLabel(t('Receipt Performance'))}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+          <OverviewKpiTile
+            label={t('Total Received')} value={formatIDR(totalReceived)} tone="green" icon={ArrowDownLeft}
+            sub={totalDalamProses > 0 ? `${formatIDR(totalDalamProses, true)} ${t('in process')}` : undefined}
+            pct={pctOf(totalReceived, totalInvoiced)} pctLabel={t('of invoices received')}
+          />
+          <OverviewKpiTile
+            label={t('Unreceived (Receivables)')} value={formatIDR(totalOutstanding)} tone={totalOutstanding > 0 ? 'warn' : 'amber'} icon={Landmark}
+            pct={pctOf(totalOutstanding, totalInvoiced)} pctLabel={t('of invoiced amount')}
+          />
+          <OverviewKpiTile
+            label={t('Number of Invoices')} value={String(txCount)} tone="slate" icon={FileText}
+            sub={`${paidCount} ${t('paid')}`}
+            pct={pctOf(paidCount, txCount)} pctLabel={t('of invoices paid')}
+          />
+          <OverviewKpiTile
+            label={t('Average / Invoice')} value={formatIDR(avgTxValue)} tone="sky" icon={Calculator}
+            sub={maxInvoice > 0 ? `${t('Largest')} ${formatIDR(maxInvoice, true)}` : undefined}
+            pct={pctOf(avgTxValue, maxInvoice)} pctLabel={t('of largest invoice')}
+          />
+          <OverviewKpiTile
+            label={t('Overdue')} value={String(overdueCount)} tone={overdueCount > 0 ? 'danger' : 'sky'} icon={AlertTriangle}
+            sub={overdueCount > 0 ? `${t('Worth')} ${formatIDR(overdueTotal, true)}` : undefined}
+            pct={pctOf(overdueCount, txCount)} pctLabel={t('of all invoices')}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
-          <div className="mb-4">
-            <h2 className="text-sm font-bold text-foreground">Monthly Cash Receipt Trend</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Amount received per month: posted Cash &amp; Bank transaction date, or the invoice date for receipts recorded outside Cash &amp; Bank</p>
-          </div>
-          {trend.every(t => t.total === 0) ? (
-            <p className="text-xs text-muted-foreground py-10 text-center">No Cash Receipt transactions to show yet.</p>
-          ) : (
-            <div className="relative">
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={receiptDisplayTrend} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradReceiptMain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tickFormatter={v => formatIDR(v, true)}
-                    tick={{ fontSize: 10, fill: '#94a3b8' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={RECEIPT_AXIS_WIDTH}
-                    ticks={receiptYTicks}
-                    domain={receiptYDomain}
-                    allowDataOverflow
-                  />
-                  <Tooltip content={<ReceiptTrendTooltip dragPreview={receiptDragPreview} />} cursor={false} />
-                  <Area
-                    type="monotone"
-                    dataKey="total"
-                    name="Cash Receipt"
-                    stroke="#3b82f6"
-                    strokeWidth={2.5}
-                    fill="url(#gradReceiptMain)"
-                    dot={renderReceiptCalibrationDot as any}
-                    activeDot={renderReceiptActiveDot as any}
-                    isAnimationActive={!receiptDragPreview}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-              {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
-              <div
-                onMouseDown={handleReceiptAxisMouseDown}
-                onDoubleClick={resetReceiptZoom}
-                title="Drag to zoom the value scale · double-click to reset"
-                className="absolute top-0 left-0 h-full cursor-ns-resize"
-                style={{ width: RECEIPT_AXIS_OVERLAY_WIDTH }}
-              />
-            </div>
-          )}
+      {/* Charts */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <CashReceiptTrendChart
+          events={trendEvents}
+          loading={loading}
+          title={t('Monthly Cash Receipt Trend')}
+          subtitle={t('Amount received: posted Cash & Bank transaction date, or the invoice date for receipts recorded outside Cash & Bank')}
+          emptyText={t('No Cash Receipt transactions to show yet.')}
+          seriesLabel={t('Cash Receipt')}
+        />
+        <BreakdownDonutCard
+          items={byCategory}
+          total={totalInvoiced}
+          icon={Layers}
+          title={t('Receipt by Type')}
+          subtitle={t('Total invoices per Sales transaction type')}
+          centerSubLabel={t('Total Invoices')}
+          emptyLabel={t('No data yet.')}
+          othersLabel={t('Others')}
+        />
+      </div>
+
+      {/* Top Customer -- leaderboard lebar penuh */}
+      <TopPartyCard
+        parties={topCustomers}
+        total={totalInvoiced}
+        icon={Trophy}
+        title={t('Top Customer')}
+        subtitle={t('By total invoice amount')}
+        shareLabel={t('of total invoices')}
+        countLabel={t('invoices')}
+        emptyLabel={t('No data yet.')}
+      />
+
+      {/* Tabel invoice -- desain sama dengan tabel di Sales Overview */}
+      <div className="card overflow-hidden">
+        <div className="border-b border-border px-0 py-3">
+          <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Customer Invoices (from Sales)')}</h3>
+          <p className="mt-0.5 text-sm text-neutral-500">
+            {filtered.length === 0
+              ? t('Showing 0 of 0 invoices')
+              : `${t('Showing')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('of')} ${filtered.length} ${t('invoices')}`}
+            {' · '}
+            {t('Posted Sales invoices only. Received and outstanding change once the Cash & Bank transaction is posted; until then the invoice is marked “In process”.')}
+          </p>
         </div>
 
-        <div className="card-elevated-md rounded-xl p-5">
-          <h2 className="text-sm font-bold text-foreground mb-1">Receipt by Type</h2>
-          <p className="text-xs text-muted-foreground mb-3">Total invoices per Sales transaction type</p>
-          {byCategory.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">No data yet.</p>
-          ) : (
-            <div className="space-y-2.5">
-              {byCategory.map((cat, i) => {
-                const total = byCategory.reduce((s, c) => s + c.value, 0);
-                const pct = total > 0 ? (cat.value / total) * 100 : 0;
+        <div className="flex flex-wrap items-center gap-2 border-b border-border py-3">
+          <FilterSelect
+            neutral
+            searchable={false}
+            value={statusFilter}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
+            options={[
+              { value: 'all', label: t('All statuses') },
+              { value: 'unpaid', label: t('Unpaid') },
+              { value: 'partial', label: t('Partially Paid') },
+              { value: 'paid', label: t('Paid') },
+            ]}
+          />
+          <div className="relative ml-auto w-full sm:w-[400px]">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder={t('Search invoice no., customer, description...')}
+              className="w-full rounded-lg border border-neutral-300 bg-card py-1.5 pl-9 pr-3 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+            />
+          </div>
+        </div>
+
+        <div className="scrollbar-thin overflow-x-auto">
+          <table className="w-full min-w-[1500px] select-text border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-neutral-300">
+                {HEADERS.map((h) => (
+                  <th key={h} className={`whitespace-nowrap border-b border-t border-neutral-800 px-2 py-2 text-xs font-bold text-black ${NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && paged.length === 0 && (
+                <tr><td colSpan={HEADERS.length} className="px-2 py-2 text-center text-xs text-muted-foreground">{t('Loading...')}</td></tr>
+              )}
+              {!loading && paged.length === 0 && (
+                <tr>
+                  <td colSpan={HEADERS.length} className="px-2 py-2 text-center text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('No posted Sales invoices yet.')}</span>
+                  </td>
+                </tr>
+              )}
+              {paged.map((r: CashReceiptRow) => {
+                const st = STATUS_STYLE[r.isOverdue ? 'overdue' : r.receiptStatus] || STATUS_STYLE.unpaid;
                 return (
-                  <div key={cat.name}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground truncate flex-1">{cat.name}</span>
-                      <span className="text-xs font-semibold font-mono ml-2">{formatIDR(cat.value, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    </div>
-                  </div>
+                  <tr key={r.id} className="text-xs [&:hover>td]:bg-neutral-200 [&>td]:align-top [&>td]:shadow-[inset_0_-1px_0_#b4b4b4]">
+                    <td className="whitespace-nowrap px-2 py-2 text-foreground">{formatTanggalSingkat(r.date)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 font-medium text-blue-700">{r.invoiceNo}</td>
+                    <td className="whitespace-nowrap px-2 py-2 font-medium text-neutral-900">{r.customer}</td>
+                    <td className="max-w-xs truncate px-2 py-2 text-neutral-600" title={r.description}>{r.description || '—'}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.category}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{r.dueDate ? formatTanggalSingkat(r.dueDate) : '—'}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{formatIDR(r.total)}</td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums font-semibold">{r.received ? formatIDR(r.received) : '—'}</td>
+                    <td className={`whitespace-nowrap px-2 py-2 text-right tabular-nums ${r.outstanding > 0 ? 'font-semibold' : ''}`}>{r.outstanding ? formatIDR(r.outstanding) : '—'}</td>
+                    <td className="px-2 py-2"><MutasiBankCell items={r.rekon} /></td>
+                    <td className="px-2 py-2"><JurnalCell items={r.rekon} /></td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${st.pill}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{t(st.label)}
+                      </span>
+                      <DalamProsesBadge nominal={r.dalamProses} />
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <div className="card-elevated-md rounded-xl p-5 mb-6">
-        <h2 className="text-sm font-bold text-foreground mb-1">Top Customer</h2>
-        <p className="text-xs text-muted-foreground mb-4">By total invoice amount</p>
-        {topCustomers.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">No data yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {topCustomers.map((c, i) => {
-              const max = topCustomers[0].amount || 1;
-              return (
-                <div key={c.name} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-text-muted w-4">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-foreground truncate">{c.name}</span>
-                      <span className="text-xs font-semibold font-mono text-blue-600 ml-2">{formatIDR(c.amount, true)}</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full">
-                      <div className="h-full rounded-full bg-blue-400" style={{ width: `${(c.amount / max) * 100}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-0 py-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2">
+              <span>{t('Rows per page')}</span>
+              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="rounded-lg border border-border bg-card px-2 py-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <span className="hidden text-slate-300 sm:inline">|</span>
+            <span>
+              <span className="font-semibold text-foreground">
+                {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
+              </span>{' '}
+              {t('of')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('invoices')}
+            </span>
           </div>
-        )}
-      </div>
-
-      <div className="card-elevated-md rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
-          <h2 className="text-sm font-bold text-foreground">Customer Invoices (from Sales)</h2>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search invoice no., customer..."
-              className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground w-64"
-            />
-            <select
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground"
-            >
-              <option value="all">All statuses</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partially Paid</option>
-              <option value="paid">Paid</option>
-            </select>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setPage(pageSafe - 1)} disabled={pageSafe <= 1} aria-label={t('Previous page')} className={NAV_BTN}><ChevronLeft size={16} /></button>
+            {buildPageItems(pageSafe, totalPages).map((p, idx) =>
+              p === '…' ? (
+                <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
+              ) : (
+                <button key={p} onClick={() => setPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
+              )
+            )}
+            <button onClick={() => setPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Next page')} className={NAV_BTN}><ChevronRight size={16} /></button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Posted Sales invoices only. Received and outstanding change once the Cash &amp; Bank transaction is posted; until then the invoice is marked &ldquo;In process&rdquo;.
-        </p>
-        <DataTable
-          columns={columns}
-          data={paged}
-          loading={loading}
-          emptyMessage="No posted Sales invoices yet."
-        />
-        <Pagination page={pageSafe} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
       </div>
     </div>
   );

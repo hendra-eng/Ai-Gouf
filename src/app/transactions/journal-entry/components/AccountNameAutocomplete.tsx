@@ -149,7 +149,7 @@ export default function AccountNameAutocomplete({
               aria-selected={i === highlight}
               onMouseEnter={() => setHighlight(i)}
               onClick={() => pilih(a)}
-              className={`px-3 py-1.5 cursor-pointer flex items-baseline gap-2 ${i === highlight ? 'bg-primary/10' : ''}`}
+              className={`px-3 py-1.5 cursor-pointer flex items-baseline gap-2 ${i === highlight ? 'bg-neutral-300' : ''}`}
             >
               <span className="font-mono text-muted-foreground shrink-0">{kodeAkun(a.acc_no)}</span>
               <span className="text-foreground truncate flex-1">{a.account_name}</span>

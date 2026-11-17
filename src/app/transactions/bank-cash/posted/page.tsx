@@ -17,7 +17,7 @@ import {
 import KpiCard from '@/components/shared/KpiCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useActiveClient } from '@/lib/activeClient';
-import { formatIDR } from '../../lib/groupAnalytics';
+import { formatIDR } from '../lib/formatMoney';
 import CashBankTabs from '../components/CashBankTabs';
 import { usePostedJurnalRekon, type CashBankTxReal } from '../lib/useBankCashRekon';
 import { toast } from 'sonner';
@@ -293,21 +293,21 @@ export default function CashBankPostedPage() {
       <div className="card-elevated-md rounded-xl p-4 mb-6">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search journal no., counterparty, invoice, or account..."
-              className="w-full text-xs border border-border rounded-lg pl-9 pr-3 py-2 bg-card text-foreground"
+              className="w-full text-xs border border-border rounded-lg pl-9 pr-3 py-2 bg-card text-neutral-900"
             />
           </div>
           <div className="flex gap-2 flex-wrap items-center">
-            <FunnelIcon className="w-4 h-4 text-muted-foreground" />
+            <FunnelIcon className="w-4 h-4 text-neutral-500" />
             <select
               value={arahFilter}
               onChange={(e) => setArahFilter(e.target.value as typeof arahFilter)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
             >
               <option value="all">All Directions</option>
               <option value="Cash Payment">Cash Payment</option>
@@ -316,7 +316,7 @@ export default function CashBankPostedPage() {
             <select
               value={periodeFilter}
               onChange={(e) => setPeriodeFilter(e.target.value)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
             >
               <option value="all">All Periods</option>
               {periodeList.map((p) => (
@@ -326,7 +326,7 @@ export default function CashBankPostedPage() {
             <select
               value={bankFilter}
               onChange={(e) => setBankFilter(e.target.value)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground max-w-[220px]"
+              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900 max-w-[220px]"
             >
               <option value="all">All Accounts</option>
               {bankList.map((b) => (
@@ -336,7 +336,7 @@ export default function CashBankPostedPage() {
             <button
               onClick={() => eksporCsv(filtered)}
               disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 text-xs font-semibold border border-border rounded-lg px-3 py-2 bg-card text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 text-xs font-semibold border border-border rounded-lg px-3 py-2 bg-card text-neutral-900 hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
               Export CSV
@@ -344,11 +344,11 @@ export default function CashBankPostedPage() {
           </div>
         </div>
         <div className="flex items-center justify-between gap-3 flex-wrap mt-2">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-neutral-500">
             {filtered.length} of {posted.length} {tampilDibalik ? 'journals' : 'posted journals'}
           </p>
           {jumlahDibalik > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer select-none">
               <input type="checkbox" checked={tampilDibalik} onChange={(e) => setTampilDibalik(e.target.checked)} />
               Show reversed ({jumlahDibalik})
             </label>
@@ -366,9 +366,9 @@ export default function CashBankPostedPage() {
                   <th
                     key={col.label}
                     onClick={col.field ? () => handleSort(col.field!) : undefined}
-                    className={`px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap select-none ${
+                    className={`px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-neutral-500 whitespace-nowrap select-none ${
                       col.align === 'right' ? 'text-right' : 'text-left'
-                    } ${col.field ? 'cursor-pointer hover:text-foreground' : ''}`}
+                    } ${col.field ? 'cursor-pointer hover:text-neutral-900' : ''}`}
                   >
                     <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
                       {col.label}
@@ -381,7 +381,7 @@ export default function CashBankPostedPage() {
             <tbody>
               {paged.length === 0 ? (
                 <tr>
-                  <td colSpan={KOLOM.length} className="px-4 py-12 text-center text-xs text-muted-foreground">
+                  <td colSpan={KOLOM.length} className="px-4 py-12 text-center text-xs text-neutral-500">
                     {loading
                       ? 'Loading data...'
                       : adaFilter
@@ -400,30 +400,30 @@ export default function CashBankPostedPage() {
                   return (
                     <React.Fragment key={row.id}>
                       <tr className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${row.reversal ? 'opacity-60' : ''}`}>
-                        <td className="px-4 py-3 font-mono text-xs font-semibold text-primary whitespace-nowrap">
+                        <td className="px-4 py-3 tabular-nums text-xs font-semibold text-neutral-900 whitespace-nowrap">
                           {row.tx_no}
                           {row.reversal && (
-                            <span className="ml-2 align-middle rounded-full bg-amber-100 px-2 py-0.5 font-sans text-[10px] font-bold text-amber-700">
+                            <span className="ml-2 align-middle rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
                               Reversed
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatTanggal(row.tx_date)}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{formatTanggal(row.tx_date)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <StatusBadge label={row.direction} variant={isReceipt ? 'positive' : 'negative'} />
                         </td>
-                        <td className="px-4 py-3 text-xs font-medium text-foreground max-w-[200px] truncate">{row.counterparty}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-foreground max-w-[180px] truncate">{row.linkedInvoice?.no ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px] truncate">{row.bank_account || '—'}</td>
-                        <td className={`px-4 py-3 text-xs font-mono font-semibold text-right whitespace-nowrap ${isReceipt ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        <td className="px-4 py-3 text-xs font-medium text-neutral-900 max-w-[200px] truncate">{row.counterparty}</td>
+                        <td className="px-4 py-3 tabular-nums text-xs text-neutral-900 max-w-[180px] truncate">{row.linkedInvoice?.no ?? '—'}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500 max-w-[200px] truncate">{row.bank_account || '—'}</td>
+                        <td className={`px-4 py-3 text-xs tabular-nums font-semibold text-right whitespace-nowrap ${isReceipt ? 'text-emerald-600' : 'text-rose-600'}`}>
                           {formatIDR(row.amount)}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{row.postedBy || '—'}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatWaktu(row.postedAt)}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{row.postedBy || '—'}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{formatWaktu(row.postedAt)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <button
                             onClick={() => setExpandedId(terbuka ? null : row.id)}
-                            className="text-xs text-primary hover:underline flex items-center gap-0.5"
+                            className="text-xs text-neutral-900 hover:underline flex items-center gap-0.5"
                           >
                             {terbuka ? <ChevronUpIcon className="w-3.5 h-3.5" /> : <ChevronDownIcon className="w-3.5 h-3.5" />}
                             {terbuka ? 'Close' : 'Detail'}
@@ -443,8 +443,8 @@ export default function CashBankPostedPage() {
                                   { label: 'Counter Account', value: row.linkedInvoice?.counterpartyAccount ?? ((row.realLines || []).slice(1).map((l) => `${kodeAkun(l.code)} - ${l.name}`).join(', ') || '—') },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
-                                    <p className="text-xs text-muted-foreground">{item.label}</p>
-                                    <p className="text-xs font-semibold text-foreground mt-0.5 break-words">{item.value}</p>
+                                    <p className="text-xs text-neutral-500">{item.label}</p>
+                                    <p className="text-xs font-semibold text-neutral-900 mt-0.5 break-words">{item.value}</p>
                                   </div>
                                 ))}
                               </div>
@@ -457,8 +457,8 @@ export default function CashBankPostedPage() {
                                   { label: 'Bank Line Ref', value: row.mutationRef || '—', mono: true },
                                 ].map((item) => (
                                   <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
-                                    <p className="text-xs text-muted-foreground">{item.label}</p>
-                                    <p className={`text-xs font-semibold text-foreground mt-0.5 break-words ${item.mono ? 'font-mono' : ''}`}>{item.value}</p>
+                                    <p className="text-xs text-neutral-500">{item.label}</p>
+                                    <p className={`text-xs font-semibold text-neutral-900 mt-0.5 break-words ${item.mono ? 'tabular-nums' : ''}`}>{item.value}</p>
                                   </div>
                                 ))}
                               </div>
@@ -466,29 +466,29 @@ export default function CashBankPostedPage() {
                               {/* Baris jurnal */}
                               <div className="bg-card rounded-lg border border-border overflow-hidden">
                                 <div className="px-3 py-2 bg-muted/30 border-b border-border">
-                                  <p className="text-xs font-semibold text-foreground">Journal Lines</p>
+                                  <p className="text-xs font-semibold text-neutral-900">Journal Lines</p>
                                 </div>
                                 {baris.length === 0 ? (
-                                  <p className="px-3 py-4 text-xs text-muted-foreground">Journal lines not available.</p>
+                                  <p className="px-3 py-4 text-xs text-neutral-500">Journal lines not available.</p>
                                 ) : (
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="border-b border-border">
-                                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground w-10">No</th>
-                                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Account</th>
-                                        <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Debit</th>
-                                        <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Credit</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-neutral-500 w-10">No</th>
+                                        <th className="px-3 py-2 text-left font-semibold text-neutral-500">Account</th>
+                                        <th className="px-3 py-2 text-right font-semibold text-neutral-500">Debit</th>
+                                        <th className="px-3 py-2 text-right font-semibold text-neutral-500">Credit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border">
                                       {baris.map((l) => (
                                         <tr key={l.no}>
-                                          <td className="px-3 py-2 text-muted-foreground">{l.no}</td>
-                                          <td className="px-3 py-2 text-foreground">
-                                            <span className="font-mono">{kodeAkun(l.code)}</span> · {l.name}
+                                          <td className="px-3 py-2 text-neutral-500">{l.no}</td>
+                                          <td className="px-3 py-2 text-neutral-900">
+                                            <span className="tabular-nums">{kodeAkun(l.code)}</span> · {l.name}
                                           </td>
-                                          <td className="px-3 py-2 text-right font-mono tabular-nums">{l.debit > 0 ? formatIDR(l.debit) : '—'}</td>
-                                          <td className="px-3 py-2 text-right font-mono tabular-nums">{l.credit > 0 ? formatIDR(l.credit) : '—'}</td>
+                                          <td className="px-3 py-2 text-right tabular-nums tabular-nums">{l.debit > 0 ? formatIDR(l.debit) : '—'}</td>
+                                          <td className="px-3 py-2 text-right tabular-nums tabular-nums">{l.credit > 0 ? formatIDR(l.credit) : '—'}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -497,10 +497,10 @@ export default function CashBankPostedPage() {
                                         <td colSpan={2} className={`px-3 py-2 text-right font-bold ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
                                           Total {seimbang ? '· Balanced' : '· Not balanced'}
                                         </td>
-                                        <td className={`px-3 py-2 text-right font-bold font-mono tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                        <td className={`px-3 py-2 text-right font-bold tabular-nums tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
                                           {formatIDR(totalDebit)}
                                         </td>
-                                        <td className={`px-3 py-2 text-right font-bold font-mono tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                        <td className={`px-3 py-2 text-right font-bold tabular-nums tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
                                           {formatIDR(totalKredit)}
                                         </td>
                                       </tr>
@@ -515,7 +515,7 @@ export default function CashBankPostedPage() {
                                   <ArrowUturnLeftIcon className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <div className="text-xs text-amber-800 space-y-0.5">
                                     <p className="font-semibold">
-                                      This journal was reversed by <span className="font-mono">{row.reversal.journalNo}</span>
+                                      This journal was reversed by <span className="tabular-nums">{row.reversal.journalNo}</span>
                                       {row.reversal.date ? ` (dated ${formatTanggal(row.reversal.date)})` : ''}.
                                     </p>
                                     <p>Reversed by {row.reversal.by || '—'} on {formatWaktu(row.reversal.at)}.</p>
@@ -547,7 +547,7 @@ export default function CashBankPostedPage() {
                                       </button>
                                     </div>
                                   ) : (
-                                    <p className="text-[11px] text-muted-foreground text-right">
+                                    <p className="text-[11px] text-neutral-500 text-right">
                                       Only Manager or above can reverse a posted journal.
                                     </p>
                                   )}
@@ -567,26 +567,26 @@ export default function CashBankPostedPage() {
 
         {filtered.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-            <p className="text-xs text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{dariItem}–{sampaiItem}</span> of{' '}
-              <span className="font-medium text-foreground">{filtered.length}</span> journals
+            <p className="text-xs text-neutral-500">
+              Showing <span className="font-medium text-neutral-900">{dariItem}–{sampaiItem}</span> of{' '}
+              <span className="font-medium text-neutral-900">{filtered.length}</span> journals
             </p>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setPage(pageSafe - 1)}
                 disabled={pageSafe <= 1}
-                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg border border-border text-neutral-500 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 aria-label="Previous page"
               >
                 <ChevronLeftIcon className="w-4 h-4" />
               </button>
-              <span className="text-xs text-muted-foreground px-2">
+              <span className="text-xs text-neutral-500 px-2">
                 {pageSafe} / {totalPages}
               </span>
               <button
                 onClick={() => setPage(pageSafe + 1)}
                 disabled={pageSafe >= totalPages}
-                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1.5 rounded-lg border border-border text-neutral-500 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 aria-label="Next page"
               >
                 <ChevronRightIcon className="w-4 h-4" />
@@ -608,15 +608,15 @@ export default function CashBankPostedPage() {
           <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
               <div>
-                <h2 id="judul-balik-jurnal" className="text-base font-bold text-foreground">Reverse Journal</h2>
-                <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                <h2 id="judul-balik-jurnal" className="text-base font-bold text-neutral-900">Reverse Journal</h2>
+                <p className="text-xs text-neutral-500 mt-0.5 tabular-nums">
                   {balikTarget.tx_no} · {formatIDR(balikTarget.amount)}
                 </p>
               </div>
               <button
                 onClick={tutupDialogBalik}
                 disabled={membalik}
-                className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                className="text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
                 aria-label="Close"
               >
                 <XMarkIcon className="w-5 h-5" />
@@ -641,7 +641,7 @@ export default function CashBankPostedPage() {
               </div>
 
               <div>
-                <label htmlFor="balik-alasan" className="block text-xs font-semibold text-foreground mb-1">
+                <label htmlFor="balik-alasan" className="block text-xs font-semibold text-neutral-900 mb-1">
                   Reversal reason <span className="text-rose-600">*</span>
                 </label>
                 <textarea
@@ -652,13 +652,13 @@ export default function CashBankPostedPage() {
                   rows={3}
                   disabled={membalik}
                   placeholder="E.g. matched to the wrong invoice, should be another one"
-                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
                 />
-                <p className="text-[11px] text-muted-foreground mt-0.5">At least 5 characters. The reason is stored on the reversal journal.</p>
+                <p className="text-[11px] text-neutral-500 mt-0.5">At least 5 characters. The reason is stored on the reversal journal.</p>
               </div>
 
               <div>
-                <label htmlFor="balik-tanggal" className="block text-xs font-semibold text-foreground mb-1">
+                <label htmlFor="balik-tanggal" className="block text-xs font-semibold text-neutral-900 mb-1">
                   Reversal journal date
                 </label>
                 <input
@@ -668,9 +668,9 @@ export default function CashBankPostedPage() {
                   min={balikTarget.tx_date}
                   onChange={(e) => setBalikTanggal(e.target.value)}
                   disabled={membalik}
-                  className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-foreground"
+                  className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
                 />
-                <p className="text-[11px] text-muted-foreground mt-0.5">
+                <p className="text-[11px] text-neutral-500 mt-0.5">
                   Cannot be earlier than the original journal date ({formatTanggal(balikTarget.tx_date)}).
                 </p>
               </div>
@@ -680,7 +680,7 @@ export default function CashBankPostedPage() {
               <button
                 onClick={tutupDialogBalik}
                 disabled={membalik}
-                className="text-xs font-semibold border border-border rounded-lg px-4 py-2 bg-card text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+                className="text-xs font-semibold border border-border rounded-lg px-4 py-2 bg-card text-neutral-900 hover:bg-muted transition-colors disabled:opacity-40"
               >
                 Cancel
               </button>

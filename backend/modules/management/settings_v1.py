@@ -466,6 +466,19 @@ ACCOUNT_MAPPING_GROUPS: List[Tuple[str, str, List[Tuple[str, str]]]] = [
         ("account_receivable", "Account Receivable"),
         ("account_payable", "Account Payable"),
     ]),
+    ("bank_cash", "Bank & Cash", [
+        ("bank_adjustment_expense", "Bank Adjustment Expense"),
+        ("bank_adjustment_income", "Bank Adjustment Income"),
+        ("bank_adjustment_bank_fee", "Bank Adjustment - Admin Fee"),
+        ("bank_adjustment_discount", "Bank Adjustment - Discount"),
+        ("bank_adjustment_rounding", "Bank Adjustment - Rounding"),
+    ]),
+    ("foreign_exchange", "Foreign Exchange", [
+        ("fx_gain_realized", "Realized FX Gain"),
+        ("fx_loss_realized", "Realized FX Loss"),
+        ("fx_gain_unrealized", "Unrealized FX Gain"),
+        ("fx_loss_unrealized", "Unrealized FX Loss"),
+    ]),
     ("inventory", "Inventory", [
         ("inventory", "Inventory"),
         ("inventory_general", "Inventory General"),
@@ -493,6 +506,15 @@ ACCOUNT_MAPPING_DIPAKAI: Dict[str, str] = {
     "account_payable": "Purchase journal (accounts payable)",
     "purchase_tax_receivable": "Purchase journal (input VAT)",
     "opening_balance_equity": "Opening balance suspense account (default)",
+    "bank_adjustment_expense": "Bank reconciliation: small difference booked as expense (bank fee, discount given, rounding loss)",
+    "bank_adjustment_income": "Bank reconciliation: small difference booked as income (rounding gain, discount received)",
+    "bank_adjustment_bank_fee": "Bank reconciliation: account for 'Bank admin fee' differences (optional; falls back to Bank Adjustment Expense)",
+    "bank_adjustment_discount": "Bank reconciliation: account for 'Discount' differences (optional; falls back to Bank Adjustment Expense/Income)",
+    "bank_adjustment_rounding": "Bank reconciliation: account for 'Rounding' differences (optional; falls back to Bank Adjustment Expense/Income)",
+    "fx_gain_realized": "Receipt / Payment of foreign-currency invoices: exchange gain when the settlement rate beats the booking rate",
+    "fx_loss_realized": "Receipt / Payment of foreign-currency invoices: exchange loss when the settlement rate is worse than the booking rate",
+    "fx_gain_unrealized": "FX Revaluation: unrealized exchange gain on open foreign-currency invoices/bills at period end (reversed automatically the next day)",
+    "fx_loss_unrealized": "FX Revaluation: unrealized exchange loss on open foreign-currency invoices/bills at period end (reversed automatically the next day)",
 }
 
 
@@ -541,6 +563,28 @@ ACCOUNT_MAPPING_SARAN: Dict[str, List[_Kriteria]] = {
     "account_payable": _std("std_liability_current_payable_trade", "=hutang usaha", "=utang usaha", "=accounts payable", "=account payable",
                             "hutang usaha", "utang usaha", "payable")
                        + _nama("LIABILITY", "hutang usaha", "utang usaha", "account payable", "accounts payable"),
+    "bank_adjustment_expense": _nama("OTHER EXPENSE", "administrasi bank", "biaya bank", "bank charge", "bank fee", "pembulatan", "selisih")
+                               + _nama("EXPENSE", "administrasi bank", "biaya bank", "bank charge", "bank fee", "pembulatan", "selisih"),
+    "bank_adjustment_income": _nama("OTHER INCOME", "pembulatan", "selisih", "pendapatan lain", "other income")
+                              + _nama("REVENUE", "pembulatan", "selisih"),
+    "bank_adjustment_bank_fee": _nama("OTHER EXPENSE", "administrasi bank", "biaya admin", "bank charge", "bank fee")
+                                + _nama("EXPENSE", "administrasi bank", "biaya admin", "bank charge", "bank fee"),
+    "bank_adjustment_discount": _nama("OTHER EXPENSE", "diskon", "discount", "potongan")
+                                + _nama("EXPENSE", "diskon", "discount", "potongan"),
+    "bank_adjustment_rounding": _nama("OTHER EXPENSE", "pembulatan", "rounding", "selisih")
+                                + _nama("EXPENSE", "pembulatan", "rounding", "selisih"),
+    "fx_gain_realized": _nama("OTHER INCOME", "selisih kurs", "laba selisih kurs", "keuntungan selisih kurs", "foreign exchange gain",
+                              "exchange gain", "fx gain", "kurs")
+                       + _nama("REVENUE", "selisih kurs", "foreign exchange gain", "exchange gain", "fx gain"),
+    "fx_loss_realized": _nama("OTHER EXPENSE", "rugi selisih kurs", "kerugian selisih kurs", "foreign exchange loss",
+                              "exchange loss", "fx loss", "selisih kurs", "kurs")
+                       + _nama("EXPENSE", "rugi selisih kurs", "foreign exchange loss", "exchange loss", "fx loss", "selisih kurs"),
+    "fx_gain_unrealized": _nama("OTHER INCOME", "belum terealisasi", "unrealized", "laba selisih kurs belum", "unrealized exchange gain",
+                                "unrealized fx gain")
+                         + _nama("REVENUE", "belum terealisasi", "unrealized"),
+    "fx_loss_unrealized": _nama("OTHER EXPENSE", "belum terealisasi", "unrealized", "rugi selisih kurs belum", "unrealized exchange loss",
+                                "unrealized fx loss")
+                         + _nama("EXPENSE", "belum terealisasi", "unrealized"),
     "inventory": _std("std_asset_current_inventory", "=persediaan", "=inventory", "=persediaan barang dagang", "barang dagang"),
     "inventory_general": _nama("ASSET", "persediaan umum", "inventory general", "general inventory")
                          + _std("std_asset_current_inventory", "=persediaan", "=inventory"),

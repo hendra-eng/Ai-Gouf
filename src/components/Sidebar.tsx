@@ -62,6 +62,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       },
       { id: 'nav-ar', label: 'Accounts Receivable', icon: DollarSign, href: '/accounts-receivable', badge: '3', badgeVariant: 'warning' },
       { id: 'nav-ap', label: 'Accounts Payable', icon: CreditCard, href: '/accounts-payable' },
+      { id: 'nav-fx-revaluation', label: 'FX Revaluation', icon: RefreshCcw, href: '/fx-revaluation' },
     ],
   },
   {
@@ -95,6 +96,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-clients', label: 'Clients', icon: Building2, href: '/clients' },
       { id: 'nav-coa', label: 'Chart of Accounts', icon: ListTree, href: '/coa' },
       { id: 'nav-year-end-closing', label: 'Year-End Closing', icon: CalendarCheck, href: '/year-end-closing' },
+      { id: 'nav-exchange-rates', label: 'Exchange Rates', icon: DollarSign, href: '/exchange-rates' },
       { id: 'nav-documents', label: 'Documents', icon: FolderOpen, href: '/documents' },
       { id: 'nav-settings', label: 'Settings', icon: Settings, href: '/settings' },
       { id: 'nav-payroll', label: 'Payroll', icon: Banknote, href: '/payroll' },

@@ -23,13 +23,14 @@ import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import {
   computeInvoiceLine, createInvoiceEntry, deleteInvoiceEntry, fetchArCustomers, fetchInvoiceEntry, fetchInvoiceFormOptions, fmtDate,
-  LEVEL_INPUT, roleLevel, rupiah, TAX_LABEL, TAX_RATE, todayIso, updateInvoiceEntry, useArApData,
+  LEVEL_INPUT, money, roleLevel, rupiah, TAX_LABEL, TAX_RATE, todayIso, updateInvoiceEntry, useArApData,
   type ArCustomer, type DiscountType, type InvoiceEntry, type InvoiceEntryInput, type InvoiceFormOptions, type InvoiceProductOption,
   type TaxCode,
 } from '@/lib/receivablesPayablesStore';
 import { btnOutline, btnPrimary, btnSmall, inputCls, Menu, MenuItem } from './arapUi';
 import { Label, MoneyInput } from './SettlementForm';
 import CustomerModal from './CustomerModal';
+import { CurrencySelect, InfoKursTeks, RateInput, useMasterRate } from './CurrencyRateFields';
 
 const TERMIN_DEFAULT = ['Due on Receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
 const MAKS_CATATAN = 500;
@@ -235,9 +236,10 @@ function hitungRingkasan(lines: Baris[], inklusif: boolean): Ringkasan {
 
 function PreviewModal({ data, ring, clientName, onClose }: {
   data: { nomor: string; tanggal: string; jatuhTempo: string; termin: string; customer: string; npwp: string; kode: string | null;
-    alamat: string; cabang: string; proyek: string; catatan: string; inklusif: boolean; status: string };
+    alamat: string; cabang: string; proyek: string; catatan: string; inklusif: boolean; mataUang: string; kurs: number; status: string };
   ring: Ringkasan; clientName: string; onClose: () => void;
 }) {
+  const fm = (n: number) => money(n, data.mataUang);
   const cetak = () => {
     const el = document.getElementById('invoice-preview-doc');
     if (!el) return;
@@ -307,20 +309,21 @@ function PreviewModal({ data, ring, clientName, onClose }: {
                     <td className="px-2 py-1.5">{i + 1}</td>
                     <td className="px-2 py-1.5"><b>{x.b.product_name || '—'}</b>{x.b.description && <div className="muted text-slate-500">{x.b.description}</div>}</td>
                     <td className="r px-2 py-1.5 text-right">{x.b.quantity}{x.b.unit ? ` ${x.b.unit}` : ''}</td>
-                    <td className="r px-2 py-1.5 text-right">{rupiah(x.b.unit_price)}</td>
-                    <td className="r px-2 py-1.5 text-right">{x.discount ? rupiah(x.discount) : '—'}</td>
+                    <td className="r px-2 py-1.5 text-right">{fm(x.b.unit_price)}</td>
+                    <td className="r px-2 py-1.5 text-right">{x.discount ? fm(x.discount) : '—'}</td>
                     <td className="px-2 py-1.5">{TAX_LABEL[x.b.tax_code]}</td>
-                    <td className="r px-2 py-1.5 text-right">{rupiah(x.amount)}</td>
+                    <td className="r px-2 py-1.5 text-right">{fm(x.amount)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <table className="tot ml-auto mt-3 w-72 text-xs" style={{ width: 300, marginLeft: 'auto', marginTop: 12 }}>
               <tbody>
-                <tr><td>Subtotal{data.inklusif ? ' (incl. tax)' : ''}</td><td className="r text-right">{rupiah(ring.subtotal)}</td></tr>
-                {data.inklusif && <tr><td>Tax Base (DPP)</td><td className="r text-right">{rupiah(ring.dpp)}</td></tr>}
-                {ring.perPajak.map(([k, v]) => <tr key={k}><td>{TAX_LABEL[k]}{data.inklusif ? ' (included)' : ''}</td><td className="r text-right">{rupiah(v)}</td></tr>)}
-                <tr className="grand text-sm font-bold"><td className="border-t-2 border-[#0F7D4E] pt-1">Grand Total</td><td className="r border-t-2 border-[#0F7D4E] pt-1 text-right">{rupiah(ring.total)}</td></tr>
+                <tr><td>Subtotal{data.inklusif ? ' (incl. tax)' : ''}</td><td className="r text-right">{fm(ring.subtotal)}</td></tr>
+                {data.inklusif && <tr><td>Tax Base (DPP)</td><td className="r text-right">{fm(ring.dpp)}</td></tr>}
+                {ring.perPajak.map(([k, v]) => <tr key={k}><td>{TAX_LABEL[k]}{data.inklusif ? ' (included)' : ''}</td><td className="r text-right">{fm(v)}</td></tr>)}
+                <tr className="grand text-sm font-bold"><td className="border-t-2 border-[#0F7D4E] pt-1">Grand Total</td><td className="r border-t-2 border-[#0F7D4E] pt-1 text-right">{fm(ring.total)}</td></tr>
+                {data.mataUang !== 'IDR' && data.kurs > 0 && <tr><td className="muted text-slate-500">IDR equivalent @ {data.kurs.toLocaleString('id-ID', { maximumFractionDigits: 6 })}</td><td className="r text-right">{rupiah(Math.round(ring.total * data.kurs))}</td></tr>}
               </tbody>
             </table>
             {data.catatan && <p className="mt-6 whitespace-pre-line text-xs text-slate-600"><b>Notes:</b> {data.catatan}</p>}
@@ -353,6 +356,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
   const [tempoManual, setTempoManual] = useState(false);
   const [termin, setTermin] = useState('Net 30');
   const [mataUang, setMataUang] = useState('IDR');
+  const [kurs, setKurs] = useState(0);
   const [cabang, setCabang] = useState('Head Office');
   const [proyek, setProyek] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -391,7 +395,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
       setAsal(e);
       setNomor(e.invoice_no); setNomorManual(true);
       setTanggal(e.invoice_date); setJatuhTempo(e.due_date ?? e.invoice_date); setTempoManual(true);
-      setTermin(e.payment_terms || 'Net 30'); setMataUang(e.currency || 'IDR');
+      setTermin(e.payment_terms || 'Net 30'); setMataUang(e.currency || 'IDR'); setKurs(Number(e.exchange_rate) > 0 && (e.currency || 'IDR') !== 'IDR' ? Number(e.exchange_rate) : 0);
       setCabang(e.branch ?? ''); setProyek(e.project ?? '');
       setCustomerId(e.customer_id); setCustomerNama(e.customer_name); setNpwp(e.customer_npwp ?? ''); setAlamat(e.billing_address ?? '');
       setPajak(e.tax_type); setInklusif(e.tax_inclusive); setCatatan(e.notes ?? '');
@@ -434,6 +438,13 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
   ]);
 
   const ring = useMemo(() => hitungRingkasan(baris, inklusif), [baris, inklusif]);
+  const valas = mataUang !== 'IDR';
+  const fm = (n: number) => money(n, mataUang);
+  // Kurs dari master saat mata uang / tanggal berubah; invoice tersimpan tidak ditimpa saat pertama dibuka.
+  const infoKurs = useMasterRate({
+    currency: mataUang, date: tanggal, enabled: !memuat && !terkunci && (!editId || !!asal), preserveInitial: !!editId, onRate: setKurs,
+  });
+  const gantiMataUang = (c: string) => { setMataUang(c); if (c === 'IDR') setKurs(0); };
 
   const validasi = (): string[] => {
     const e: string[] = [];
@@ -441,6 +452,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
     if (!nomor.trim()) e.push('Enter the invoice number.');
     if (!tanggal) e.push('Enter the invoice date.');
     if (jatuhTempo && tanggal && jatuhTempo < tanggal) e.push('The due date cannot be earlier than the invoice date.');
+    if (valas && !(kurs > 0)) e.push(`Enter the exchange rate for ${mataUang}.`);
     if (!cabang.trim()) e.push('Choose the branch.');
     const isi = baris.filter(isiBaris);
     if (!isi.length) e.push('Add at least one invoice item.');
@@ -461,7 +473,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
     if (e.length) { toast.error(e[0]); return; }
     const input: InvoiceEntryInput = {
       client_id: kid, invoice_no: nomor.trim(), invoice_date: tanggal, due_date: jatuhTempo || null, payment_terms: termin,
-      currency: mataUang, branch: cabang.trim(), project: proyek.trim() || null, customer_id: customerId,
+      currency: mataUang, exchange_rate: valas ? kurs : null, branch: cabang.trim(), project: proyek.trim() || null, customer_id: customerId,
       customer_name: customerNama.trim(), customer_npwp: npwp.trim() || null, billing_address: alamat.trim() || null,
       tax_type: pajak, tax_inclusive: inklusif, notes: catatan.trim() || null, submit,
       lines: baris.filter(isiBaris).map(b => ({
@@ -640,10 +652,15 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
               </div>
               <div>
                 <Label wajib>Currency</Label>
-                <select value={mataUang} disabled={nonaktif} onChange={e => setMataUang(e.target.value)} className={inputCls}>
-                  <option value="IDR">IDR - Indonesian Rupiah</option>
-                </select>
+                <CurrencySelect value={mataUang} disabled={nonaktif || (!!asal && asal.currency !== mataUang)} onChange={gantiMataUang} />
               </div>
+              {valas && (
+                <div className="sm:col-span-2">
+                  <Label wajib>Exchange Rate</Label>
+                  <RateInput value={kurs} currency={mataUang} disabled={nonaktif} onChange={setKurs} />
+                  <InfoKursTeks info={infoKurs} />
+                </div>
+              )}
               <div>
                 <Label wajib>Branch</Label>
                 <input list="ar-branches" value={cabang} disabled={nonaktif} maxLength={100} onChange={e => setCabang(e.target.value)}
@@ -724,10 +741,10 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
                   <th className="w-[200px] px-2 py-2.5 text-left font-medium">Product / Service <span className="text-rose-500">*</span></th>
                   <th className="px-2 py-2.5 text-left font-medium">Description</th>
                   <th className="w-[80px] px-2 py-2.5 text-left font-medium">Qty <span className="text-rose-500">*</span></th>
-                  <th className="w-[150px] px-2 py-2.5 text-left font-medium">Unit Price (IDR) <span className="text-rose-500">*</span></th>
+                  <th className="w-[150px] px-2 py-2.5 text-left font-medium">Unit Price ({mataUang}) <span className="text-rose-500">*</span></th>
                   <th className="w-[140px] px-2 py-2.5 text-left font-medium">Discount</th>
                   <th className="w-[120px] px-2 py-2.5 text-left font-medium">Tax</th>
-                  <th className="w-[140px] px-2 py-2.5 text-right font-medium">Amount (IDR)</th>
+                  <th className="w-[140px] px-2 py-2.5 text-right font-medium">Amount ({mataUang})</th>
                   <th className="w-14 px-2 py-2.5 text-center font-medium">Actions</th>
                 </tr>
               </thead>
@@ -752,7 +769,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
                           className="mt-1 w-full rounded-lg border border-transparent bg-transparent px-1 text-[11px] text-muted-foreground hover:border-border focus:border-border focus:outline-none" />
                       </td>
                       <td className="px-2 py-2">
-                        <MoneyInput value={b.unit_price} disabled={nonaktif} onChange={n => ubahBaris(b.key, { unit_price: n })} className="py-0.5" />
+                        <MoneyInput value={b.unit_price} disabled={nonaktif} prefix={valas ? mataUang : 'Rp'} onChange={n => ubahBaris(b.key, { unit_price: n })} className="py-0.5" />
                       </td>
                       <td className="px-2 py-2">
                         <div className="flex">
@@ -762,17 +779,17 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
                           <select value={b.discount_type} disabled={nonaktif} onChange={e => ubahBaris(b.key, { discount_type: e.target.value as DiscountType })}
                             className="rounded-r-lg border border-l-0 border-border bg-card px-1 text-xs">
                             <option value="percent">%</option>
-                            <option value="amount">Rp</option>
+                            <option value="amount">{valas ? mataUang : 'Rp'}</option>
                           </select>
                         </div>
-                        {h.discount > 0 && <p className="mt-1 text-right text-[11px] text-muted-foreground">-{rupiah(h.discount)}</p>}
+                        {h.discount > 0 && <p className="mt-1 text-right text-[11px] text-muted-foreground">-{fm(h.discount)}</p>}
                       </td>
                       <td className="px-2 py-2">
                         <select value={b.tax_code} disabled={nonaktif} onChange={e => ubahBaris(b.key, { tax_code: e.target.value as TaxCode })} className={`${inputCls} py-2`}>
                           {(Object.keys(TAX_LABEL) as TaxCode[]).map(t => <option key={t} value={t}>{TAX_LABEL[t]}</option>)}
                         </select>
                       </td>
-                      <td className="px-2 py-2 pt-4 text-right font-semibold text-foreground">{rupiah(h.amount)}</td>
+                      <td className="px-2 py-2 pt-4 text-right font-semibold text-foreground">{fm(h.amount)}</td>
                       <td className="px-2 py-2 pt-3 text-center">
                         <button type="button" disabled={nonaktif} aria-label="Remove item"
                           onClick={() => setBaris(bs => (bs.length > 1 ? bs.filter(x => x.key !== b.key) : [barisKosong(pajak)]))}
@@ -794,17 +811,23 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
               </span>
             </button>
             <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
-              <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Subtotal{inklusif ? ' (incl. tax)' : ''}</span><span>{rupiah(ring.subtotal)}</span></div>
-              {ring.discount > 0 && <div className="flex justify-between py-0.5 text-xs"><span className="text-muted-foreground">Discount included</span><span>-{rupiah(ring.discount)}</span></div>}
-              {inklusif && <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Tax Base (DPP)</span><span>{rupiah(ring.dpp)}</span></div>}
-              {ring.perPajak.length === 0 && <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Tax</span><span>{rupiah(0)}</span></div>}
+              <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Subtotal{inklusif ? ' (incl. tax)' : ''}</span><span>{fm(ring.subtotal)}</span></div>
+              {ring.discount > 0 && <div className="flex justify-between py-0.5 text-xs"><span className="text-muted-foreground">Discount included</span><span>-{fm(ring.discount)}</span></div>}
+              {inklusif && <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Tax Base (DPP)</span><span>{fm(ring.dpp)}</span></div>}
+              {ring.perPajak.length === 0 && <div className="flex justify-between py-0.5"><span className="text-muted-foreground">Tax</span><span>{fm(0)}</span></div>}
               {ring.perPajak.map(([k, v]) => (
-                <div key={k} className="flex justify-between py-0.5"><span className="text-muted-foreground">{TAX_LABEL[k]}{inklusif ? ' (included)' : ''}</span><span>{rupiah(v)}</span></div>
+                <div key={k} className="flex justify-between py-0.5"><span className="text-muted-foreground">{TAX_LABEL[k]}{inklusif ? ' (included)' : ''}</span><span>{fm(v)}</span></div>
               ))}
               <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
                 <span className="text-base font-bold text-foreground">Grand Total</span>
-                <span className="text-xl font-bold text-foreground">{rupiah(ring.total)}</span>
+                <span className="text-xl font-bold text-foreground">{fm(ring.total)}</span>
               </div>
+              {valas && (
+                <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>IDR equivalent{kurs > 0 ? ` @ ${kurs.toLocaleString('id-ID', { maximumFractionDigits: 6 })}` : ''}</span>
+                  <span className="font-semibold text-foreground">{kurs > 0 ? rupiah(Math.round(ring.total * kurs)) : '—'}</span>
+                </div>
+              )}
               {TAX_RATE[pajak] > 0 && ring.tax === 0 && ring.baris.length > 0 && <p className="mt-1 text-[11px] text-amber-700">No tax is charged on any item.</p>}
             </div>
           </div>
@@ -823,7 +846,7 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
       {preview && (
         <PreviewModal ring={ring} clientName={activeClientName ?? ''} onClose={() => setPreview(false)} data={{
           nomor, tanggal, jatuhTempo, termin, customer: customerNama, npwp: npwp || dipilih?.npwp || '', kode: dipilih?.code ?? null,
-          alamat, cabang, proyek, catatan, inklusif, status: asal ? (asal.status === 'Review' ? 'Awaiting Approval' : asal.status) : 'Draft (not saved)',
+          alamat, cabang, proyek, catatan, inklusif, mataUang, kurs, status: asal ? (asal.status === 'Review' ? 'Awaiting Approval' : asal.status) : 'Draft (not saved)',
         }} />
       )}
     </div>

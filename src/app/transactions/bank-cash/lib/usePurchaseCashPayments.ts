@@ -98,7 +98,12 @@ export function useCashPaymentsFromPurchase(): {
  * tetapi tidak berasal dari rekonsiliasi (mis. diinput manual di halaman) belum punya tanggal
  * bayar, jadi dihitung pada tanggal invoice.
  */
-export function trenBulananDibayar(rows: CashPaymentRow[]): { month: string; total: number; count: number }[] {
+/**
+ * Daftar kejadian pembayaran (tanggal + nominal) -- dasar tren bulanan & chart ala Sales.
+ * Pembayaran hasil rekonsiliasi yang sudah diposting dihitung pada tanggal bayarnya; sisa nominal
+ * di invoice yang tidak berasal dari rekonsiliasi dihitung pada tanggal invoice.
+ */
+export function kejadianDibayar(rows: CashPaymentRow[]): { tanggal: string; nominal: number }[] {
   const kejadian: { tanggal: string; nominal: number }[] = [];
   rows.forEach(r => {
     let dijelaskan = 0;
@@ -109,6 +114,11 @@ export function trenBulananDibayar(rows: CashPaymentRow[]): { month: string; tot
     const sisa = r.paid - dijelaskan;
     if (sisa > 0.005) kejadian.push({ tanggal: r.date, nominal: sisa });
   });
+  return kejadian;
+}
+
+export function trenBulananDibayar(rows: CashPaymentRow[]): { month: string; total: number; count: number }[] {
+  const kejadian = kejadianDibayar(rows);
   const tahunTerbaru = kejadian.reduce((maks, k) => {
     const y = new Date(k.tanggal).getFullYear();
     return Number.isFinite(y) && y > maks ? y : maks;
@@ -130,8 +140,14 @@ export function rincianPerKategori(rows: CashPaymentRow[]): { name: string; valu
   return Array.from(peta.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 }
 
-export function vendorTerbesar(rows: CashPaymentRow[], limit = 5): { name: string; amount: number }[] {
-  const peta = new Map<string, number>();
-  rows.forEach(r => peta.set(r.vendor || '—', (peta.get(r.vendor || '—') || 0) + r.total));
-  return Array.from(peta.entries()).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount).slice(0, limit);
+export function vendorTerbesar(rows: CashPaymentRow[], limit = 5): { name: string; amount: number; count: number }[] {
+  const peta = new Map<string, { amount: number; count: number }>();
+  rows.forEach(r => {
+    const key = r.vendor || '—';
+    const cur = peta.get(key) ?? { amount: 0, count: 0 };
+    cur.amount += r.total;
+    cur.count += 1;
+    peta.set(key, cur);
+  });
+  return Array.from(peta.entries()).map(([name, v]) => ({ name, amount: v.amount, count: v.count })).sort((x, y) => y.amount - x.amount).slice(0, limit);
 }

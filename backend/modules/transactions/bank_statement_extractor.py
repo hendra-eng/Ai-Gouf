@@ -67,6 +67,9 @@ METODE = ("grid", "words", "ocr", "table", "recipe")   # recipe = parser khusus 
 OCR_DPI = 300
 OCR_WORKER_MAKS = int(os.environ.get("BANK_STATEMENT_OCR_WORKER_MAKS", "4"))
 OCR_CONF_RENDAH = 75.0
+# Satu mutasi di atas ini (Rp 10 triliun) hampir pasti salah baca kolom (mis. nomor rekening / referensi
+# terbaca sebagai nominal): baris ditandai 'low' supaya wajib direview dan dilewati auto-match.
+NOMINAL_WAJAR_MAKS = Decimal("10000000000000")
 MIN_KATA_LAPISAN_TEKS = 8   # halaman dengan kata lebih sedikit dari ini dianggap hasil scan
 
 _CACHE_MAKS = 6
@@ -249,6 +252,12 @@ def parse_angka(teks: Any, fmt: str = "en") -> Tuple[Optional[Decimal], Optional
         kode = m.group(1)
         arah = "debit" if kode in _FLAG_DEBIT else "credit"
         s = s[: m.start()]
+    # Sel berisi BEBERAPA angka/bagian (mis. "2010 2026 0800 0003 50" atau "31,319,800.00 0.00") bukan 1 nominal.
+    # Dulu spasinya dibuang sehingga digitnya menyatu jadi 1 angka raksasa (Rp 201.020.260.800.000.350).
+    # Spasi hanya boleh sebagai pemisah ribuan gaya "1 234 567,89".
+    kasar = s.replace("RP", "").replace("IDR", "").strip()
+    if re.search(r"\d\s+\d", kasar) and not re.fullmatch(r"[-+(]?\s*\d{1,3}(?:\s\d{3})+(?:[.,]\d{1,2})?\s*\)?-?", kasar):
+        return None, None
     s = s.replace("RP", "").replace("IDR", "").replace(" ", "")
     if s.startswith("(") and s.endswith(")"):
         arah, s = "debit", s[1:-1]
@@ -271,6 +280,8 @@ def parse_angka(teks: Any, fmt: str = "en") -> Tuple[Optional[Decimal], Optional
         else:
             s = s.replace(",", "")
     if s.count(".") > 1 or not re.fullmatch(r"\d+(\.\d+)?", s):
+        return None, None
+    if len(s.split(".")[0]) > 15:   # >= Rp 1 kuadriliun: pasti bukan nominal (nomor referensi/rekening terbaca)
         return None, None
     try:
         return Decimal(s).quantize(Decimal("0.01")), arah
@@ -1482,6 +1493,12 @@ def validasi(baris: List[Baris], ringkasan: Dict[str, Any]) -> Dict[str, Any]:
     if opening is not None and closing is not None:
         _cek("Closing balance (opening + credit - debit)", closing, opening + total_credit - total_debit)
     total_ok = bool(cek) and all(c["ok"] for c in cek)
+
+    for b in baris:
+        if max(b.debit, b.credit) > NOMINAL_WAJAR_MAKS:
+            b.confidence = "low"
+            b.catatan.append(
+                f"Amount {float(max(b.debit, b.credit)):,.2f} is unrealistically large - a wrong column was probably read. Correct it in Source Data.")
 
     id_tanpa_jangkar = {id(x) for x in tanpa_jangkar}
     for b in baris:

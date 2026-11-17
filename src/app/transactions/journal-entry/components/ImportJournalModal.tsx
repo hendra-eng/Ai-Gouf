@@ -211,7 +211,7 @@ export default function ImportJournalModal({
         if (hasil.template_matched) {
           setResults(hasil.drafts);
           setResultMessage(
-            `This file's column pattern is already recognized (template) -- ${hasil.created} of ${hasil.groups_detected} journal entries imported directly.`,
+            `This file's column pattern is recognized (template) -- ${hasil.groups_detected} journal entries were extracted and added to Source Data. Open the file there and click Create Journal to create them.`,
           );
           setStep('result');
           return;

@@ -3,8 +3,8 @@
 // Dropdown "Switch Company" di header (Topbar) -- versi autocomplete.
 //
 // Daftar di dropdown TIDAK lagi diambil dari seluruh client di context,
-// tapi dari GET /api/v1/management/clients?q=&limit=10:
-//   - saat dibuka (input kosong) -> 10 client teratas,
+// tapi dari GET /api/v1/management/clients?q=&limit=100:
+//   - saat dibuka (input kosong) -> semua client (maks. 100),
 //   - saat mengetik -> dicari di backend setelah user berhenti mengetik
 //     DEBOUNCE_MS (debounce), request lama dibatalkan (AbortController)
 //     supaya hasil yang basi tidak menimpa hasil terbaru.
@@ -14,9 +14,12 @@ import { useRouter } from 'next/navigation';
 import { ChevronDown, Building2, Check, Search, Loader2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { searchClients, type Client } from '@/lib/clientsStore';
+import { pisahBadanUsaha } from '@/lib/companyName';
 
 const DEBOUNCE_MS = 300;
-const LIMIT = 10;
+// Maksimum yang diizinkan backend = 100 (le=100). Semua client harus muncul di dropdown;
+// daftar sudah bisa di-scroll (max-h-80), jadi desain dropdown tidak berubah.
+const LIMIT = 100;
 
 // Indonesian legal-entity prefixes to skip when generating a short 2–3 letter
 // code for the company switcher (e.g. "PT Nusantara Teknologi" -> "NT").
@@ -140,7 +143,7 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
           <Building2 size={12} className="text-primary" />
         </div>
         <span className="font-semibold text-foreground truncate max-w-[160px] hidden lg:block">
-          {activeName || 'No clients yet'}
+          {activeName ? pisahBadanUsaha(activeName).nama : 'No clients yet'}
         </span>
         <span className="font-semibold text-foreground lg:hidden">
           {activeName ? companyShortCode(activeName) : '—'}
@@ -194,7 +197,10 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
                     {searching ? 'Searching…' : query.trim() ? `No companies match "${query.trim()}"` : 'No companies found'}
                   </p>
                 ) : (
-                  results.map((co, i) => (
+                  results.map((co, i) => {
+                    // PT / CV tampil di lingkaran hijau, nama di sebelahnya tanpa awalan PT/CV.
+                    const { badan, nama } = pisahBadanUsaha(co.companyName);
+                    return (
                     <button
                       key={co.id}
                       data-index={i}
@@ -205,17 +211,18 @@ export default function CompanySwitcher({ open, onOpenChange }: CompanySwitcherP
                       className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${i === highlight ? 'bg-muted' : ''}`}
                     >
                       <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-[10px] font-bold text-primary">{companyShortCode(co.companyName)}</span>
+                        <span className="text-[10px] font-bold text-primary">{badan}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{co.companyName}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{nama}</p>
                         {co.clientCode && co.clientCode !== '-' && (
                           <p className="text-[11px] text-muted-foreground truncate">{co.clientCode}</p>
                         )}
                       </div>
                       {co.id === activeClientId && <Check size={14} className="text-primary flex-shrink-0" />}
                     </button>
-                  ))
+                    );
+                  })
                 )}
               </div>
 

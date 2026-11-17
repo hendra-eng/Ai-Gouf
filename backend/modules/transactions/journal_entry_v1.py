@@ -377,6 +377,128 @@ def hapus_source_record(
 
 
 # ============================================================
+# ENDPOINTS -- 1b) Source Files & Source Rows (file hasil upload di tab Source Data)
+# Diisi oleh POST /import/upload (journal_entry_import_v1.py); journal entry baru
+# dibuat HANYA lewat promote-to-journals ("Create Journal").
+# ============================================================
+
+class JeSourceFileUpdateRequest(BaseModel):
+    file_name: Optional[str] = Field(None, max_length=255)
+    period_label: Optional[str] = Field(None, max_length=50)
+    status_ekstraksi: Optional[str] = Field(None, max_length=20)
+    status_mapping: Optional[str] = Field(None, max_length=20)
+    confidence_score: Optional[float] = None
+    mapping_rules: Optional[Dict[str, Any]] = None
+
+
+@router.get(
+    "/source-files",
+    summary="Daftar file hasil upload (tab Source Data)",
+    responses={200: {"description": "OK."}, 401: {"description": "Token tidak dikirim / tidak valid."}},
+)
+def daftar_source_file(
+    management_client_id: Optional[str] = Query(None, description="Filter company (management_clients.id)."),
+    termasuk_nonaktif: bool = Query(False, description="Sertakan yang sudah di-soft-delete."),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = dbc.list_je_source_files(management_client_id=management_client_id, termasuk_nonaktif=termasuk_nonaktif)
+    return sukses(data=data, message="OK")
+
+
+@router.get(
+    "/source-files/{source_file_id}",
+    summary="Detail 1 file hasil upload",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 404: {"description": "Tidak ditemukan."}},
+)
+def detail_source_file(
+    source_file_id: str,
+    termasuk_nonaktif: bool = Query(False),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = dbc.get_je_source_file_by_id(source_file_id, termasuk_nonaktif=termasuk_nonaktif)
+    if data is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=data, message="OK")
+
+
+@router.put(
+    "/source-files/{source_file_id}",
+    summary="Update file hasil upload (khusus Supervisor ke atas)",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."}},
+)
+def update_source_file(
+    source_file_id: str,
+    payload: JeSourceFileUpdateRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    diupdate = dbc.update_je_source_file(source_file_id, payload.model_dump(exclude_unset=True), updated_by=current_user.get("id"))
+    if diupdate is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(data=diupdate, message="Source file updated successfully.")
+
+
+@router.delete(
+    "/source-files/{source_file_id}",
+    summary="Nonaktifkan (soft-delete) file hasil upload -- draft yang sudah dibuat dari file ini TIDAK ikut terhapus",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}, 403: {"description": "Forbidden."}, 404: {"description": "Tidak ditemukan."}},
+)
+def hapus_source_file(
+    source_file_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    berhasil = dbc.soft_delete_je_source_file(source_file_id, deleted_by=current_user.get("id"))
+    if not berhasil:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    return sukses(message="Source file deactivated successfully.")
+
+
+@router.get(
+    "/source-rows",
+    summary="Daftar baris staging (1 baris = 1 journal entry/voucher) milik 1 file",
+    responses={200: {"description": "OK."}, 401: {"description": "Unauthorized."}},
+)
+def daftar_source_row(
+    source_file_id: str = Query(..., description="ID file sumber (wajib)."),
+    dengan_payload: bool = Query(False, description="Sertakan JSON baris debit/kredit (berat)."),
+    termasuk_nonaktif: bool = Query(False),
+    _current_user: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    data = dbc.list_je_source_rows(source_file_id=source_file_id, termasuk_nonaktif=termasuk_nonaktif, dengan_payload=dengan_payload)
+    return sukses(data=data, message="OK")
+
+
+@router.post(
+    "/source-files/{source_file_id}/promote-to-journals",
+    summary='"Create Journal": naikkan baris valid file jadi draft Journal Entry (khusus Supervisor ke atas)',
+    responses={
+        200: {"description": "Selesai diproses -- lihat ringkasan created/skipped."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden."},
+        404: {"description": "Source file tidak ditemukan."},
+    },
+)
+def promote_source_file_to_journals(
+    source_file_id: str,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    if dbc.get_je_source_file_by_id(source_file_id) is None:
+        return gagal(message="Source file not found.", errors={"code": "NOT_FOUND"}, status_code=404)
+    hasil = dbc.promote_je_rows_to_drafts(
+        source_file_id,
+        client_id=current_user.get("id"),
+        created_by_name=current_user.get("nama") or current_user.get("username"),
+    )
+    return sukses(
+        data=hasil,
+        message=(
+            f"{hasil['journals_created']} journal entries created from {hasil['total_rows']} rows "
+            f"({hasil['skipped_invalid']} invalid, {hasil['skipped_already_promoted']} already created, "
+            f"{hasil['skipped_number_conflict']} number conflicts)."
+        ),
+    )
+
+
+# ============================================================
 # ENDPOINTS -- 2) Drafts (entitas inti: JE Transaction / Journal Preview /
 # Exceptions (via query status) / Posted)
 # ============================================================

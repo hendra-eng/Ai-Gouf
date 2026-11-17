@@ -8,8 +8,8 @@
 // Hasilnya jurnal DRAFT yang lanjut ke Approve -> Post di Journal Preview.
 
 import React, { useMemo, useState } from 'react';
-import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
-import { formatIDR } from '../../lib/groupAnalytics';
+import { Plus, Trash2 } from 'lucide-react';
+import { formatIDR } from '../lib/formatMoney';
 import type { AkunLawan, BarisLawanInput } from '../lib/useBankReconciliation';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -95,29 +95,29 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
     return (
       <button
         onClick={() => setBuka(true)}
-        className="w-full text-left rounded-lg border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
+        className="w-full rounded-lg border border-dashed border-neutral-400 px-3 py-2.5 text-left text-xs text-neutral-600 transition-colors hover:border-neutral-700 hover:bg-neutral-50 hover:text-neutral-900"
       >
-        <span className="font-semibold text-foreground">Not an invoice settlement?</span> Record it as bank charges, interest,
+        <span className="font-semibold text-neutral-900">Not an invoice settlement?</span> Record it as bank charges, interest,
         inter-bank transfer, etc.
       </button>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+    <div className="space-y-3 rounded-[10px] border border-neutral-300 bg-neutral-50 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-foreground">Journal without invoice</p>
-        <button onClick={() => setBuka(false)} className="text-[11px] text-muted-foreground hover:text-foreground">
+        <p className="text-xs font-bold text-neutral-900">Journal without invoice</p>
+        <button onClick={() => setBuka(false)} className="rounded-md border border-neutral-300 bg-card px-2 py-0.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900">
           Close
         </button>
       </div>
 
       <label className="block">
-        <span className="text-[11px] text-muted-foreground">Transaction type</span>
+        <span className="text-[11px] text-neutral-500">Transaction type</span>
         <select
           value={kategori}
           onChange={(e) => setKategori(e.target.value)}
-          className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs"
+          className="mt-1 w-full rounded-lg border border-neutral-300 bg-card px-2 py-1.5 text-xs text-neutral-900 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
         >
           {KATEGORI.map((k) => (
             <option key={k} value={k}>{k}</option>
@@ -125,9 +125,9 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
         </select>
       </label>
 
-      <div className="rounded-md bg-card border border-border px-2.5 py-2 text-[11px] text-muted-foreground flex justify-between">
+      <div className="flex justify-between rounded-lg border border-neutral-300 bg-card px-2.5 py-2 text-[11px] text-neutral-600">
         <span>{masuk ? 'Debit — Bank (money in)' : 'Credit — Bank (money out)'}</span>
-        <span className="font-mono font-semibold text-foreground">{formatIDR(nominal, true)}</span>
+        <span className="tabular-nums font-semibold text-neutral-900">{formatIDR(nominal, true)}</span>
       </div>
 
       {baris.map((b) => {
@@ -136,17 +136,17 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
           (a) => a.id === b.coaId || !q || `${a.no_akun} ${kodeAkun(a.no_akun)} ${a.nama_akun}`.toLowerCase().includes(q),
         ).slice(0, 60);
         return (
-          <div key={b.key} className="rounded-md border border-border bg-card p-2 space-y-1.5">
+          <div key={b.key} className="space-y-1.5 rounded-lg border border-neutral-300 bg-card p-2">
             <input
               value={b.cari}
               onChange={(e) => ubah(b.key, { cari: e.target.value })}
               placeholder="Search account (no. or name)…"
-              className="w-full rounded-md border border-border px-2 py-1 text-xs"
+              className="w-full rounded-lg border border-neutral-300 px-2 py-1 text-xs placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
             />
             <select
               value={b.coaId}
               onChange={(e) => ubah(b.key, { coaId: e.target.value })}
-              className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs"
+              className="w-full rounded-lg border border-neutral-300 bg-card px-2 py-1.5 text-xs focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
             >
               <option value="">— select account —</option>
               {pilihan.map((a) => (
@@ -157,7 +157,7 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
               <select
                 value={b.side}
                 onChange={(e) => ubah(b.key, { side: e.target.value as 'debit' | 'credit' })}
-                className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+                className="rounded-lg border border-neutral-300 bg-card px-2 py-1 text-xs focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
               >
                 <option value="debit">Debit</option>
                 <option value="credit">Credit</option>
@@ -168,15 +168,15 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
                 step="0.01"
                 value={b.amount}
                 onChange={(e) => ubah(b.key, { amount: e.target.value })}
-                className="flex-1 min-w-0 rounded-md border border-border px-2 py-1 text-xs font-mono text-right"
+                className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 py-1 text-right text-xs tabular-nums focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
               {baris.length > 1 && (
                 <button
                   onClick={() => setBaris((prev) => prev.filter((x) => x.key !== b.key))}
-                  className="p-1 text-muted-foreground hover:text-rose-600"
+                  className="p-1 text-neutral-500 transition-colors hover:text-red-600"
                   title="Delete line"
                 >
-                  <TrashIcon className="w-3.5 h-3.5" />
+                  <Trash2 size={13} />
                 </button>
               )}
             </div>
@@ -184,23 +184,23 @@ export default function NonInvoiceForm({ nominal, masuk, akun, busy, onSubmit }:
         );
       })}
 
-      <button onClick={tambah} className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline">
-        <PlusIcon className="w-3 h-3" /> Add line (e.g. tax)
+      <button onClick={tambah} className="flex items-center gap-1 text-[11px] font-semibold text-neutral-900 hover:underline">
+        <Plus size={12} /> Add line (e.g. tax)
       </button>
 
-      <div className={`flex justify-between rounded-md px-2.5 py-1.5 text-[11px] font-mono ${
-        Math.abs(ringkas.selisih) < 0.005 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+      <div className={`flex justify-between rounded-md px-2.5 py-1.5 text-[11px] tabular-nums ${
+        Math.abs(ringkas.selisih) < 0.005 ? 'border border-emerald-300 bg-emerald-100 text-emerald-800' : 'border border-amber-300 bg-amber-100 text-amber-900'
       }`}>
         <span>Debit {formatIDR(ringkas.debit, true)} · Credit {formatIDR(ringkas.kredit, true)}</span>
         <span>{Math.abs(ringkas.selisih) < 0.005 ? 'Balanced' : `Difference ${formatIDR(ringkas.selisih, true)}`}</span>
       </div>
 
-      {pesan && <p className="text-[11px] text-rose-700">{pesan}</p>}
+      {pesan && <p className="text-[11px] text-red-700">{pesan}</p>}
 
       <button
         onClick={kirim}
         disabled={busy}
-        className="w-full rounded-lg bg-primary text-primary-foreground px-3 py-2 text-xs font-semibold disabled:opacity-50"
+        className="w-full rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? 'Saving…' : 'Create DRAFT journal'}
       </button>

@@ -14,10 +14,10 @@ import type { CrosshairGeometry } from './SalesChartCrosshair';
 // terpisah: high/low = max/min dari open dan close.
 export type SalesChartType = 'area' | 'line' | 'column' | 'candle' | 'ohlc';
 
-const UP = '#0F7D4E';
-const DOWN = '#EF4444';
-const FLAT = '#94a3b8';
-const COLUMN = '#EAB308';
+const UP = '#2563EB';
+const DOWN = '#F97316';
+const FLAT = '#bdbdbd';
+const COLUMN = '#2563EB';
 const CLIP_ID = 'sales-candle-clip';
 
 interface Props {

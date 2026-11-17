@@ -7,6 +7,7 @@ import {
   X, Edit, CheckCircle, MoreHorizontal, Eye, Calendar,
   FileText, AlertTriangle, Receipt, Gauge, Copy,
 } from 'lucide-react';
+import { salesFont } from './salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
@@ -18,63 +19,65 @@ import {
 type Priority = 'High' | 'Medium' | 'Low';
 type ExceptionStatus = 'Open' | 'In Review' | 'Resolved';
 
-const PRIORITY_STYLE: Record<Priority, string> = {
-  High: 'bg-red-100 text-red-700',
-  Medium: 'bg-amber-100 text-amber-700',
-  Low: 'bg-emerald-100 text-emerald-700',
+type PillStyle = { pill: string; dot: string };
+
+// Pill bergaris + titik berwarna -- gaya sama dengan STATUS_STYLE di tab Sales Transaction & Source Data.
+const PRIORITY_STYLE: Record<Priority, PillStyle> = {
+  High: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
+  Medium: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  Low: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
 };
 
-const STATUS_STYLE: Record<ExceptionStatus, string> = {
-  Open: 'bg-blue-100 text-blue-700',
-  'In Review': 'bg-amber-100 text-amber-700',
-  Resolved: 'bg-emerald-100 text-emerald-700',
+const STATUS_STYLE: Record<ExceptionStatus, PillStyle> = {
+  Open: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600' },
+  'In Review': { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  Resolved: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
 };
+const PILL_FALLBACK: PillStyle = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
+
+function Pill({ style, label }: { style?: PillStyle; label: string }) {
+  const st = style || PILL_FALLBACK;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{label}
+    </span>
+  );
+}
+
+// Gaya tombol netral (putih bergaris abu = sekunder, hitam = utama) -- sama dengan tab Sales Transaction.
+const BTN_SECONDARY = 'border border-neutral-300 bg-white rounded-lg text-xs font-semibold text-neutral-800 shadow-sm hover:border-neutral-700 hover:bg-neutral-50 transition-colors';
+const BTN_PRIMARY = 'bg-neutral-800 text-white rounded-lg text-xs font-semibold shadow-sm hover:bg-neutral-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+const INPUT_CLS = 'w-full text-xs border border-neutral-300 rounded-lg px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300';
 
 // ---------------------------------------------------------------------------
 // Komponen tampilan -- disamakan dengan tab Sales Transaction & Source Data:
 // kartu KPI, dropdown filter kustom, nomor halaman ringkas.
 // ---------------------------------------------------------------------------
-type KpiTone = 'slate' | 'amber' | 'green' | 'sky' | 'forest';
-const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
-  // Semua nada memakai keluarga hijau brand aplikasi, dari terang ke tua.
-  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
-  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
-  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
-  forest: { strip: 'bg-[#064E3B]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#064E3B]', bar: 'bg-[#064E3B]', glow: 'bg-[#064E3B]' },
-};
-
-function ExceptionKpiTile({ label, count, detail, detailUnit, pct, pctLabel, tone, icon: Icon }: {
+function ExceptionKpiTile({ label, count, detail, detailUnit, pct, pctLabel, icon: Icon }: {
   label: string;
   count: number;
   detail: string;
   detailUnit: string;
   pct: number;
   pctLabel: string;
-  tone: KpiTone;
   icon: React.ElementType;
 }) {
-  const c = KPI_TONE[tone];
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-28 w-28 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
-          <p className="mt-2 text-4xl font-extrabold leading-none tabular-nums text-[#064E3B]">{count.toLocaleString('id-ID')}</p>
-        </div>
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white ${c.iconBg}`}>
-          <Icon size={24} className={c.iconText} />
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
         </span>
       </div>
-      <p className="relative mt-3 truncate text-lg font-bold text-slate-900">
-        {detail} <span className="text-xs font-semibold text-slate-500">{detailUnit}</span>
-      </p>
-      <div className="relative mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${count > 0 ? Math.max(pct, 3) : 0}%` }} />
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{count.toLocaleString('id-ID')}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{detail} {detailUnit}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="relative mt-1.5 text-xs font-semibold text-slate-600">{pct}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
   );
 }
@@ -118,13 +121,13 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
       >
         <span className="truncate max-w-[170px]">{current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-neutral-300 bg-white shadow-xl">
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -132,12 +135,12 @@ function FilterSelect({ value, onChange, options }: {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Cari..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-neutral-500">Tidak ditemukan</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -145,7 +148,7 @@ function FilterSelect({ value, onChange, options }: {
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -341,7 +344,7 @@ export default function SalesExceptions() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className={`${salesFont.className} space-y-4`}>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
           <span>{error}</span>
@@ -360,12 +363,12 @@ export default function SalesExceptions() {
           const lowConf = exceptions.filter(e => (e.ai_confidence ?? 0) < 40);
           const dup = exceptions.filter(e => e.exception_type === 'Duplicate invoice');
           const pctLabel = t('dari total exception');
-          const tiles: { label: string; rows: typeof exceptions; tone: KpiTone; icon: React.ElementType }[] = [
-            { label: 'Total Exceptions', rows: exceptions, tone: 'slate', icon: FileText },
-            { label: 'High Risk', rows: high, tone: 'amber', icon: AlertTriangle },
-            { label: 'Missing Tax Info', rows: tax, tone: 'green', icon: Receipt },
-            { label: 'Low Confidence', rows: lowConf, tone: 'sky', icon: Gauge },
-            { label: 'Duplicate Invoice', rows: dup, tone: 'forest', icon: Copy },
+          const tiles: { label: string; rows: typeof exceptions; icon: React.ElementType }[] = [
+            { label: 'Total Exceptions', rows: exceptions, icon: FileText },
+            { label: 'High Risk', rows: high, icon: AlertTriangle },
+            { label: 'Missing Tax Info', rows: tax, icon: Receipt },
+            { label: 'Low Confidence', rows: lowConf, icon: Gauge },
+            { label: 'Duplicate Invoice', rows: dup, icon: Copy },
           ];
           return tiles.map(k => (
             <ExceptionKpiTile
@@ -376,7 +379,6 @@ export default function SalesExceptions() {
               detailUnit={t('belum selesai')}
               pct={pctOf(k.rows.length)}
               pctLabel={pctLabel}
-              tone={k.tone}
               icon={k.icon}
             />
           ));
@@ -384,28 +386,28 @@ export default function SalesExceptions() {
       </div>
 
       {/* Filters -- gaya sama dengan tab Sales Transaction */}
-      <div className="card p-3 relative">
+      <div className="card relative px-0 pb-0 pt-3">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}>
-              <Calendar size={12} className="text-muted-foreground" />
-              <span className="text-muted-foreground">{t('Periode Tanggal')}</span>
-              <span className="font-medium text-foreground">
+            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+              <Calendar size={12} className="text-neutral-500" />
+              <span className="text-neutral-500">{t('Periode Tanggal')}</span>
+              <span className="font-medium text-neutral-900">
                 {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
-              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
+              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Dari')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-2 bg-primary text-primary-foreground rounded-[6px] font-semibold hover:opacity-90">
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
                   {t('Terapkan')}
                 </button>
               </div>
@@ -445,20 +447,6 @@ export default function SalesExceptions() {
             ]}
           />
 
-          <div className="relative ml-auto w-full sm:w-[400px]">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
-            <input
-              type="text"
-              value={search}
-              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-              placeholder={t('Cari ID, nama pelanggan, atau masalah...')}
-              className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          <div className="flex w-full items-center justify-end gap-2">
-            <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
-          </div>
         </div>
       </div>
 
@@ -466,10 +454,10 @@ export default function SalesExceptions() {
       <div className="flex gap-4">
         {/* Table */}
         <div className="card overflow-hidden flex-1 min-w-0">
-          <div className="px-0 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
             <div>
-              <h3 className="text-2xl font-bold text-foreground">{t('Daftar Exception')}</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar Exception')}</h3>
+              <p className="text-sm text-neutral-500 mt-0.5">
                 {loading
                   ? t('Memuat...')
                   : filtered.length === 0
@@ -477,66 +465,81 @@ export default function SalesExceptions() {
                   : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('exception')}`}
               </p>
             </div>
+            <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
+              </div>
+              <div className="relative w-full sm:w-[400px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+                  placeholder={t('Cari ID, nama pelanggan, atau masalah...')}
+                  className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
+                />
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[800px]">
+            <table className="w-full min-w-[800px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="bg-[#8FE3B5]">
-                  <th className="py-3 px-3 w-8 border-t-2 border-b border-[#0A4A32]">
-                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
+                <tr className="bg-neutral-300">
+                  <th className="py-2 px-3 w-8 border-t border-b border-neutral-800">
+                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-neutral-400 accent-neutral-800" />
                   </th>
                   {['Priority', 'Tanggal', 'Transaction/File ID', 'Customer', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
-                    <th key={h} className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">{t(h)}</th>
+                    <th key={h} className="text-left py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800">{t(h)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada exception yang cocok dengan filter.')}</td>
+                    <td colSpan={10} className="py-2 px-2 text-center text-xs text-neutral-500"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada exception yang cocok dengan filter.')}</span></td>
                   </tr>
                 )}
                 {paginated.map(e => (
                   <tr
                     key={e.id}
                     onClick={() => openDetail(e)}
-                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selected?.id === e.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selected?.id === e.id ? '[&>td]:bg-neutral-100' : ''}`}
                   >
                     <td className="py-2 px-3" onClick={ev => { ev.stopPropagation(); toggleRow(e.id); }}>
-                      <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-border" />
+                      <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-neutral-400 accent-neutral-800" />
                     </td>
                     <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(e.priority)}</span>
+                      <Pill style={PRIORITY_STYLE[e.priority as Priority]} label={t(e.priority)} />
                     </td>
-                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
-                    <td className="py-2 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
-                    <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
-                    <td className="py-2 px-2 text-muted-foreground">{t(e.exception_type)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{e.date}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{e.displayId}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-neutral-900">{e.customer}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{t(e.exception_type)}</td>
                     <td className="py-2 px-2">
                       <div className="flex items-center gap-1.5">
                         <span className={`font-semibold ${(e.ai_confidence ?? 0) < 40 ? 'text-red-600' : (e.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence ?? 0}%</span>
                       </div>
                     </td>
-                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{e.assigned_to ? (e.assigned_to === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
                     <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
+                      <Pill style={STATUS_STYLE[e.status as ExceptionStatus]} label={t(e.status)} />
                     </td>
                     <td className="py-2 px-2 relative" onClick={ev => ev.stopPropagation()}>
                       <button
                         onClick={() => setOpenMenuId(prev => (prev === e.id ? null : e.id))}
-                        className="p-1 hover:bg-muted rounded"
+                        className="p-1 hover:bg-neutral-300 rounded transition-colors"
                       >
-                        <MoreHorizontal size={14} />
+                        <MoreHorizontal size={13} className="text-neutral-600" />
                       </button>
                       {openMenuId === e.id && (
-                        <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
-                          <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                        <div className="absolute z-20 right-2 top-full mt-1 w-40 rounded-lg border border-neutral-300 bg-white p-1 shadow-lg">
+                          <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 rounded-md">
                             <Eye size={12} /> {t('Lihat Detail')}
                           </button>
-                          <button onClick={() => { openDetail(e); startEdit(); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                          <button onClick={() => { openDetail(e); startEdit(); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 rounded-md">
                             <Edit size={12} /> {t('Edit')}
                           </button>
-                          <button onClick={() => resolveException(e.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50 rounded-md">
+                          <button onClick={() => resolveException(e.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-800 hover:bg-neutral-100 rounded-md">
                             <CheckCircle size={12} /> {t('Tandai Resolved')}
                           </button>
                         </div>
@@ -544,14 +547,22 @@ export default function SalesExceptions() {
                     </td>
                   </tr>
                 ))}
+                {/* Baris kosong pengisi: tinggi tabel selalu = "Baris per halaman", supaya layar tidak bergeser. */}
+                {Array.from({ length: Math.max(0, pageSize - (paginated.length > 0 ? paginated.length : (!loading ? 1 : 0))) }).map((_, i) => (
+                  <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
+                    <td colSpan={10} className="py-2 px-2 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2">
                 <span>{t('Baris per halaman')}</span>
-                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs font-medium text-neutral-900 bg-card focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300">
                   <option value={10}>10</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>
@@ -559,10 +570,10 @@ export default function SalesExceptions() {
               </label>
               <span className="hidden sm:inline text-slate-300">|</span>
               <span>
-                <span className="font-semibold text-foreground">
+                <span className="font-semibold text-neutral-900">
                   {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
                 </span>{' '}
-                {t('dari')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('exception')}
+                {t('dari')} <span className="font-semibold text-neutral-900">{filtered.length}</span> {t('exception')}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -571,7 +582,7 @@ export default function SalesExceptions() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>
@@ -581,18 +592,19 @@ export default function SalesExceptions() {
 
         {/* Detail Drawer */}
         {selected && (
-          <div className="w-80 flex-shrink-0 card p-4 space-y-3 self-start sticky top-4">
+          <div className="relative w-80 flex-shrink-0 self-start sticky top-4 space-y-3 overflow-hidden rounded-xl border border-neutral-300 bg-white p-4 pt-5 shadow-sm">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">{t('Detail Exception')}</h3>
-              <button onClick={() => { setSelectedId(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
+              <h3 className="text-sm font-semibold text-neutral-900">{t('Detail Exception')}</h3>
+              <button onClick={() => { setSelectedId(null); setIsEditing(false); }} className="p-1 hover:bg-neutral-100 rounded"><X size={14} /></button>
             </div>
             <div className="flex items-center justify-between">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(selected.priority)} {t('Priority')}</span>
-              <span className="text-xs text-muted-foreground">ID: {selected.displayId}</span>
+              <Pill style={PRIORITY_STYLE[selected.priority as Priority]} label={`${t(selected.priority)} ${t('Priority')}`} />
+              <span className="text-xs text-neutral-500">ID: {selected.displayId}</span>
             </div>
             <div>
-              <h4 className="text-sm font-bold text-foreground">{t(selected.exception_type)}</h4>
-              {selected.ai_suggestion && <p className="text-xs text-muted-foreground mt-0.5">{selected.ai_suggestion}</p>}
+              <h4 className="text-sm font-semibold text-neutral-900">{t(selected.exception_type)}</h4>
+              {selected.ai_suggestion && <p className="text-xs text-neutral-500 mt-0.5">{selected.ai_suggestion}</p>}
             </div>
 
             {!isEditing && (
@@ -601,12 +613,12 @@ export default function SalesExceptions() {
                   ['Tanggal', selected.date],
                   ['Customer', selected.customer],
                   ['Transaction ID', selected.displayId],
-                  ['AI Confidence', <span key="c" className={`font-bold ${(selected.ai_confidence ?? 0) < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence ?? 0}%</span>],
-                  ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(selected.status)}</span>],
+                  ['AI Confidence', <span key="c" className={`font-semibold ${(selected.ai_confidence ?? 0) < 40 ? 'text-red-600' : (selected.ai_confidence ?? 0) < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{selected.ai_confidence ?? 0}%</span>],
+                  ['Status', <Pill key="s" style={STATUS_STYLE[selected.status as ExceptionStatus]} label={t(selected.status)} />],
                 ].map(([k, v]) => (
-                  <div key={String(k)} className="flex justify-between">
-                    <span className="text-muted-foreground">{t(k as string)}</span>
-                    <span className="font-medium text-foreground text-right">{v}</span>
+                  <div key={String(k)} className="flex items-center justify-between">
+                    <span className="text-neutral-500">{t(k as string)}</span>
+                    <span className="font-medium text-neutral-900 text-right">{v}</span>
                   </div>
                 ))}
               </div>
@@ -615,24 +627,24 @@ export default function SalesExceptions() {
             {isEditing && (
               <div className="space-y-2 text-xs">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Exception Type')}</label>
-                  <input value={editType} onChange={ev => setEditType(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Exception Type')}</label>
+                  <input value={editType} onChange={ev => setEditType(ev.target.value)} className={INPUT_CLS} />
                 </div>
-                <label className="flex items-center gap-2 text-xs text-foreground">
-                  <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-border" />
+                <label className="flex items-center gap-2 text-xs text-neutral-900">
+                  <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-neutral-400 accent-neutral-800" />
                   {t('Tugaskan ke saya')}
                 </label>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Status')}</label>
-                  <select value={editStatus} onChange={ev => setEditStatus(ev.target.value as ExceptionStatus)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
+                  <label className="text-[11px] text-neutral-500">{t('Status')}</label>
+                  <select value={editStatus} onChange={ev => setEditStatus(ev.target.value as ExceptionStatus)} className={INPUT_CLS}>
                     <option value="Open">{t('Open')}</option>
                     <option value="In Review">{t('In Review')}</option>
                     <option value="Resolved">{t('Resolved')}</option>
                   </select>
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => setIsEditing(false)} className="flex-1 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">{t('Batal')}</button>
-                  <button onClick={saveEdit} disabled={saving} className="flex-1 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:opacity-90 transition-colors disabled:opacity-50">{saving ? t('Menyimpan...') : t('Simpan')}</button>
+                  <button onClick={() => setIsEditing(false)} className={`flex-1 py-1.5 ${BTN_SECONDARY}`}>{t('Batal')}</button>
+                  <button onClick={saveEdit} disabled={saving} className={`flex-1 py-1.5 ${BTN_PRIMARY}`}>{saving ? t('Menyimpan...') : t('Simpan')}</button>
                 </div>
               </div>
             )}
@@ -641,7 +653,7 @@ export default function SalesExceptions() {
               <>
                 <div className="flex gap-1 border-b border-border pb-2">
                   {['source', 'ai', 'history'].map(tabKey => (
-                    <button key={tabKey} onClick={() => setDrawerTab(tabKey)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === tabKey ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                    <button key={tabKey} onClick={() => setDrawerTab(tabKey)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === tabKey ? 'bg-neutral-800 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>
                       {tabKey === 'source' ? t('Source Data') : tabKey === 'ai' ? t('AI Suggestion') : t('History')}
                     </button>
                   ))}
@@ -650,41 +662,41 @@ export default function SalesExceptions() {
                 {drawerTab === 'source' && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold text-foreground">{t('Cuplikan Data Sumber')}</p>
-                      <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('Lihat File Asli ↗')}</button>
+                      <p className="text-xs font-semibold text-neutral-900">{t('Cuplikan Data Sumber')}</p>
+                      <button onClick={viewOriginalFile} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Lihat File Asli ↗')}</button>
                     </div>
-                    <div className="bg-muted/40 rounded-lg p-3 font-mono text-[11px] text-foreground space-y-0.5">
+                    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 font-mono text-[11px] text-neutral-900 space-y-0.5">
                       {selected.source_snippet ? (
                         Object.entries(selected.source_snippet).map(([k, v]) => (
                           <p key={k}>{k}: {String(v)}</p>
                         ))
                       ) : (
-                        <p className="text-muted-foreground">{t('Belum ada cuplikan data sumber untuk exception ini.')}</p>
+                        <p className="text-neutral-500">{t('Belum ada cuplikan data sumber untuk exception ini.')}</p>
                       )}
                     </div>
                   </div>
                 )}
                 {drawerTab === 'ai' && (
-                  <div className="text-xs text-muted-foreground space-y-2">
-                    <p className="font-semibold text-foreground">{t('Saran AI')}</p>
+                  <div className="text-xs text-neutral-500 space-y-2">
+                    <p className="font-semibold text-neutral-900">{t('Saran AI')}</p>
                     <p>{selected.ai_suggestion || t('Belum ada saran AI untuk exception ini.')}</p>
                   </div>
                 )}
                 {drawerTab === 'history' && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-neutral-500">
                     <p>{selected.resolved_at ? `${t('Diselesaikan pada')} ${formatTanggalSingkat(selected.resolved_at)}` : t('Belum ada riwayat perubahan.')}</p>
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-2 border-t border-border">
-                  <button onClick={startEdit} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-border rounded-lg text-xs hover:bg-muted transition-colors">
+                <div className="flex gap-2 pt-2 border-t border-neutral-200">
+                  <button onClick={startEdit} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 ${BTN_SECONDARY}`}>
                     <Edit size={12} /> {t('Edit')}
                   </button>
-                  <button onClick={() => acceptSuggestion(selected.id)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 border border-emerald-500 text-emerald-600 rounded-lg text-xs font-medium hover:bg-emerald-50 transition-colors">
+                  <button onClick={() => acceptSuggestion(selected.id)} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 ${BTN_SECONDARY}`}>
                     <CheckCircle size={12} /> {t('Accept Suggestion')}
                   </button>
                 </div>
-                <button onClick={() => resolveException(selected.id)} className="w-full py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5">
+                <button onClick={() => resolveException(selected.id)} className={`w-full py-1.5 flex items-center justify-center gap-1.5 ${BTN_PRIMARY}`}>
                   <CheckCircle size={12} /> {t('Resolve')}
                 </button>
               </>

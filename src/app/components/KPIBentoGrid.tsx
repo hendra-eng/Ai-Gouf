@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import MetricCard from '@/components/ui/MetricCard';
 import { KPICardSkeleton } from '@/components/ui/LoadingSkeleton';
-import { formatMoney, useCurrency } from '@/lib/currency';
+import { formatMoney, formatMoneyFull, useCurrency } from '@/lib/currency';
 import { useLanguage } from '@/lib/language';
 import { useActiveClient } from '@/lib/activeClient';
 import { ambilKpiBento, ambilFinancialBudget } from '@/app/zafeb-ai/lib/api';
@@ -316,7 +316,7 @@ export default function KPIBentoGrid({
           <MetricCard
             id={cfg.id}
             label={t(label)}
-            value={isPendingOverride ? '—' : formatMoney(displayNilai, currency)}
+            value={isPendingOverride ? '—' : label === 'Cash & Bank' ? formatMoneyFull(displayNilai, currency) : formatMoney(displayNilai, currency)}
             change={isPendingOverride ? 0 : displayPerubahan}
             changePeriod={changePeriod}
             sparkline={sparklinePoints}

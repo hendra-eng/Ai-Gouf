@@ -39,7 +39,7 @@ const STATUS_STYLE: Record<ExceptionStatus, string> = {
 };
 
 const SOURCE_STYLE: Record<CashBankExceptionSource, string> = {
-  Reconciliation: 'bg-indigo-100 text-indigo-700',
+  Reconciliation: 'bg-indigo-100 text-neutral-700',
   Classification: 'bg-orange-100 text-orange-700',
 };
 const SOURCE_LABEL: Record<CashBankExceptionSource, string> = {
@@ -229,8 +229,8 @@ export default function CashBankExceptions() {
           { label: 'Low Confidence', value: String(exceptions.filter(e => e.ai_confidence != null && e.ai_confidence < 40).length) },
         ].map(k => (
           <div key={k.label} className="card p-4">
-            <p className="text-xs text-muted-foreground">{t(k.label)}</p>
-            <p className="number-display text-xl font-bold text-foreground leading-none mt-1">{k.value}</p>
+            <p className="text-xs text-neutral-500">{t(k.label)}</p>
+            <p className="tabular-nums tracking-tight text-xl font-bold text-neutral-900 leading-none mt-1">{k.value}</p>
           </div>
         ))}
       </div>
@@ -239,20 +239,20 @@ export default function CashBankExceptions() {
       <div className="card p-3 relative">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[180px]">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">🔍</span>
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">🔍</span>
             <input
               type="text"
               value={search}
               onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
               placeholder={t('Search ID, counterparty, or issue...')}
-              className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-1.5 bg-card text-foreground"
+              className="w-full text-xs border border-border rounded-lg pl-7 pr-3 py-1.5 bg-card text-neutral-900"
             />
           </div>
 
           <select
             value={severity}
             onChange={ev => { setSeverity(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-neutral-900"
           >
             <option value="all">{t('All (Severity)')}</option>
             <option value="High">{t('High')}</option>
@@ -263,7 +263,7 @@ export default function CashBankExceptions() {
           <select
             value={typeFilter}
             onChange={ev => { setTypeFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-neutral-900"
           >
             <option value="all">{t('All (Exception Type)')}</option>
             {EXCEPTION_TYPES.map(type => (
@@ -274,7 +274,7 @@ export default function CashBankExceptions() {
           <select
             value={sourceFilter}
             onChange={ev => { setSourceFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-neutral-900"
           >
             <option value="all">{t('All (Source)')}</option>
             <option value="Reconciliation">{t('Reconciliation')}</option>
@@ -284,7 +284,7 @@ export default function CashBankExceptions() {
           <select
             value={customerFilter}
             onChange={ev => { setCustomerFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-neutral-900"
           >
             <option value="all">{t('All Counterparties')}</option>
             {CUSTOMERS.map(c => (
@@ -297,8 +297,8 @@ export default function CashBankExceptions() {
               onClick={() => setShowDatePicker(v => !v)}
               className="flex items-center gap-1.5 text-xs border border-border rounded-lg px-3 py-1.5 bg-card hover:bg-muted transition-colors"
             >
-              <Calendar size={12} className="text-muted-foreground" />
-              <span className="text-foreground">
+              <Calendar size={12} className="text-neutral-500" />
+              <span className="text-neutral-900">
                 {dateStart ? formatTanggalSingkat(dateStart) : t('All dates')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
@@ -306,12 +306,12 @@ export default function CashBankExceptions() {
             {showDatePicker && (
               <div className="absolute z-20 top-full mt-1 right-0 card p-3 w-64 space-y-2 shadow-card">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('From')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('From')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-neutral-900 mt-0.5" />
                 </div>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('To')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('To')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-border rounded-lg px-2 py-1 bg-card text-neutral-900 mt-0.5" />
                 </div>
                 <button
                   onClick={() => { setCurrentPage(1); setShowDatePicker(false); }}
@@ -326,14 +326,14 @@ export default function CashBankExceptions() {
           <select
             value={assignedFilter}
             onChange={ev => { setAssignedFilter(ev.target.value); setCurrentPage(1); }}
-            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-foreground"
+            className="text-xs border border-border rounded-lg px-3 py-1.5 bg-card text-neutral-900"
           >
             <option value="all">{t('All (Assigned To)')}</option>
             <option value="unassigned">{t('Unassigned')}</option>
             <option value="me">{t('Assigned to Me')}</option>
           </select>
 
-          <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
+          <button onClick={resetFilters} className="text-xs text-neutral-900 hover:underline">{t('Reset')}</button>
         </div>
       </div>
 
@@ -342,7 +342,7 @@ export default function CashBankExceptions() {
         {/* Table */}
         <div className="card overflow-hidden flex-1 min-w-0">
           <div className="p-3 border-b border-border">
-            <h3 className="text-sm font-semibold text-foreground">{t('Exception List')} ({filtered.length})</h3>
+            <h3 className="text-sm font-semibold text-neutral-900">{t('Exception List')} ({filtered.length})</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
@@ -352,14 +352,14 @@ export default function CashBankExceptions() {
                     <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border" />
                   </th>
                   {['Priority', 'Source', 'Date', 'Transaction/File ID', 'Counterparty', 'Exception Type', 'AI Confidence', 'Assigned To', 'Status', 'Action'].map(h => (
-                    <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground whitespace-nowrap">{t(h)}</th>
+                    <th key={h} className="text-left py-2.5 px-2 text-xs font-semibold text-neutral-500 whitespace-nowrap">{t(h)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-xs text-muted-foreground">{t('No exceptions match the filter.')}</td>
+                    <td colSpan={10} className="py-8 text-center text-xs text-neutral-500">{t('No exceptions match the filter.')}</td>
                   </tr>
                 )}
                 {paginated.map(e => (
@@ -372,23 +372,23 @@ export default function CashBankExceptions() {
                       <input type="checkbox" checked={selectedRows.has(e.id)} onChange={() => toggleRow(e.id)} className="rounded border-border" />
                     </td>
                     <td className="py-2.5 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(e.priority)}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[e.priority as Priority] || 'bg-muted text-neutral-500'}`}>{t(e.priority)}</span>
                     </td>
                     <td className="py-2.5 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[e.source] || 'bg-muted text-muted-foreground'}`}>{t(SOURCE_LABEL[e.source] || e.source)}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[e.source] || 'bg-muted text-neutral-500'}`}>{t(SOURCE_LABEL[e.source] || e.source)}</span>
                     </td>
-                    <td className="py-2.5 px-2 text-muted-foreground whitespace-nowrap">{e.date}</td>
-                    <td className="py-2.5 px-2 text-primary font-medium whitespace-nowrap">{e.displayId}</td>
-                    <td className="py-2.5 px-2 font-medium text-foreground whitespace-nowrap">{e.customer}</td>
-                    <td className="py-2.5 px-2 text-muted-foreground">{t(e.exception_type)}</td>
+                    <td className="py-2.5 px-2 text-neutral-500 whitespace-nowrap">{e.date}</td>
+                    <td className="py-2.5 px-2 text-neutral-900 font-medium whitespace-nowrap">{e.displayId}</td>
+                    <td className="py-2.5 px-2 font-medium text-neutral-900 whitespace-nowrap">{e.customer}</td>
+                    <td className="py-2.5 px-2 text-neutral-500">{t(e.exception_type)}</td>
                     <td className="py-2.5 px-2">
                       <div className="flex items-center gap-1.5">
-                        {e.ai_confidence == null ? <span className="text-muted-foreground">—</span> : <span className={`font-semibold ${e.ai_confidence < 40 ? 'text-red-600' : e.ai_confidence < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence}%</span>}
+                        {e.ai_confidence == null ? <span className="text-neutral-500">—</span> : <span className={`font-semibold ${e.ai_confidence < 40 ? 'text-red-600' : e.ai_confidence < 60 ? 'text-amber-600' : 'text-emerald-600'}`}>{e.ai_confidence}%</span>}
                       </div>
                     </td>
-                    <td className="py-2.5 px-2 text-foreground whitespace-nowrap">{e.assigned_to ? (e.assigned_to === ME ? (user?.nama || user?.username) : t('Another user')) : '—'}</td>
+                    <td className="py-2.5 px-2 text-neutral-900 whitespace-nowrap">{e.assigned_to ? (e.assigned_to === ME ? (user?.nama || user?.username) : t('Another user')) : '—'}</td>
                     <td className="py-2.5 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(e.status)}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[e.status as ExceptionStatus] || 'bg-muted text-neutral-500'}`}>{t(e.status)}</span>
                     </td>
                     <td className="py-2.5 px-2 relative" onClick={ev => ev.stopPropagation()}>
                       <button
@@ -399,10 +399,10 @@ export default function CashBankExceptions() {
                       </button>
                       {openMenuId === e.id && (
                         <div className="absolute z-20 right-2 top-full mt-1 w-40 card p-1 shadow-card">
-                          <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                          <button onClick={() => openDetail(e)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-muted rounded-md">
                             <Eye size={12} /> {t('View Detail')}
                           </button>
-                          <button onClick={() => { openDetail(e); startEdit(); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-foreground hover:bg-muted rounded-md">
+                          <button onClick={() => { openDetail(e); startEdit(); }} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-neutral-900 hover:bg-muted rounded-md">
                             <Edit size={12} /> {t('Edit')}
                           </button>
                           <button onClick={() => resolveException(e.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50 rounded-md">
@@ -416,7 +416,7 @@ export default function CashBankExceptions() {
               </tbody>
             </table>
           </div>
-          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+          <div className="p-3 border-t border-border flex items-center justify-between text-xs text-neutral-500">
             <span>
               {filtered.length === 0
                 ? t('Showing 0 of 0 exceptions')
@@ -446,19 +446,19 @@ export default function CashBankExceptions() {
         {selected && (
           <div className="w-80 flex-shrink-0 card p-4 space-y-3 self-start sticky top-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">{t('Detail Exception')}</h3>
+              <h3 className="text-sm font-semibold text-neutral-900">{t('Detail Exception')}</h3>
               <button onClick={() => { setSelectedId(null); setIsEditing(false); }} className="p-1 hover:bg-muted rounded"><X size={14} /></button>
             </div>
             <div className="flex items-center justify-between">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority as Priority] || 'bg-muted text-muted-foreground'}`}>{t(selected.priority)} {t('Priority')}</span>
-              <span className="text-xs text-muted-foreground">ID: {selected.displayId}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_STYLE[selected.priority as Priority] || 'bg-muted text-neutral-500'}`}>{t(selected.priority)} {t('Priority')}</span>
+              <span className="text-xs text-neutral-500">ID: {selected.displayId}</span>
             </div>
-            <span className={`inline-block w-fit text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[selected.source] || 'bg-muted text-muted-foreground'}`}>
+            <span className={`inline-block w-fit text-[11px] px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[selected.source] || 'bg-muted text-neutral-500'}`}>
               {t(SOURCE_LABEL[selected.source] || selected.source)}
             </span>
             <div>
-              <h4 className="text-sm font-bold text-foreground">{t(selected.exception_type)}</h4>
-              {selected.ai_suggestion && <p className="text-xs text-muted-foreground mt-0.5">{selected.ai_suggestion}</p>}
+              <h4 className="text-sm font-bold text-neutral-900">{t(selected.exception_type)}</h4>
+              {selected.ai_suggestion && <p className="text-xs text-neutral-500 mt-0.5">{selected.ai_suggestion}</p>}
             </div>
 
             {!isEditing && (
@@ -468,11 +468,11 @@ export default function CashBankExceptions() {
                   ['Counterparty', selected.customer],
                   ['Transaction ID', selected.displayId],
                   ['AI Confidence', selected.ai_confidence == null ? '—' : <span key="c" className={`font-bold ${selected.ai_confidence < 40 ? 'text-red-600' : 'text-amber-600'}`}>{selected.ai_confidence}%</span>],
-                  ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status as ExceptionStatus] || 'bg-muted text-muted-foreground'}`}>{t(selected.status)}</span>],
+                  ['Status', <span key="s" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[selected.status as ExceptionStatus] || 'bg-muted text-neutral-500'}`}>{t(selected.status)}</span>],
                 ].map(([k, v]) => (
                   <div key={String(k)} className="flex justify-between">
-                    <span className="text-muted-foreground">{t(k as string)}</span>
-                    <span className="font-medium text-foreground text-right">{v}</span>
+                    <span className="text-neutral-500">{t(k as string)}</span>
+                    <span className="font-medium text-neutral-900 text-right">{v}</span>
                   </div>
                 ))}
               </div>
@@ -481,16 +481,16 @@ export default function CashBankExceptions() {
             {isEditing && (
               <div className="space-y-2 text-xs">
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Exception Type')}</label>
-                  <input value={selected.exception_type} readOnly disabled className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-muted text-muted-foreground mt-0.5" />
+                  <label className="text-[11px] text-neutral-500">{t('Exception Type')}</label>
+                  <input value={selected.exception_type} readOnly disabled className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-muted text-neutral-500 mt-0.5" />
                 </div>
-                <label className="flex items-center gap-2 text-xs text-foreground">
+                <label className="flex items-center gap-2 text-xs text-neutral-900">
                   <input type="checkbox" checked={editAssignToMe} onChange={ev => setEditAssignToMe(ev.target.checked)} className="rounded border-border" />
                   {t('Assign to me')}
                 </label>
                 <div>
-                  <label className="text-[11px] text-muted-foreground">{t('Status')}</label>
-                  <select value={editStatus} onChange={ev => setEditStatus(ev.target.value as ExceptionStatus)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground mt-0.5">
+                  <label className="text-[11px] text-neutral-500">{t('Status')}</label>
+                  <select value={editStatus} onChange={ev => setEditStatus(ev.target.value as ExceptionStatus)} className="w-full text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-neutral-900 mt-0.5">
                     <option value="Open">{t('Open')}</option>
                     <option value="In Review">{t('In Review')}</option>
                     <option value="Resolved">{t('Resolved')}</option>
@@ -507,7 +507,7 @@ export default function CashBankExceptions() {
               <>
                 <div className="flex gap-1 border-b border-border pb-2">
                   {['source', 'ai', 'history'].map(tabKey => (
-                    <button key={tabKey} onClick={() => setDrawerTab(tabKey)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === tabKey ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+                    <button key={tabKey} onClick={() => setDrawerTab(tabKey)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === tabKey ? 'bg-primary/10 text-neutral-900' : 'text-neutral-500 hover:text-neutral-900'}`}>
                       {tabKey === 'source' ? t('Source Data') : tabKey === 'ai' ? t('AI Suggestion') : t('History')}
                     </button>
                   ))}
@@ -516,28 +516,28 @@ export default function CashBankExceptions() {
                 {drawerTab === 'source' && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold text-foreground">{t('Source Data Snippet')}</p>
-                      <button onClick={viewOriginalFile} className="text-xs text-primary hover:underline">{t('View Original File ↗')}</button>
+                      <p className="text-xs font-semibold text-neutral-900">{t('Source Data Snippet')}</p>
+                      <button onClick={viewOriginalFile} className="text-xs text-neutral-900 hover:underline">{t('View Original File ↗')}</button>
                     </div>
-                    <div className="bg-muted/40 rounded-lg p-3 font-mono text-[11px] text-foreground space-y-0.5">
+                    <div className="bg-muted/40 rounded-lg p-3 tabular-nums text-[11px] text-neutral-900 space-y-0.5">
                       {selected.source_snippet ? (
                         Object.entries(selected.source_snippet).map(([k, v]) => (
                           <p key={k}>{k}: {String(v)}</p>
                         ))
                       ) : (
-                        <p className="text-muted-foreground">{t('No source data snippet for this exception yet.')}</p>
+                        <p className="text-neutral-500">{t('No source data snippet for this exception yet.')}</p>
                       )}
                     </div>
                   </div>
                 )}
                 {drawerTab === 'ai' && (
-                  <div className="text-xs text-muted-foreground space-y-2">
-                    <p className="font-semibold text-foreground">{t('AI Suggestion')}</p>
+                  <div className="text-xs text-neutral-500 space-y-2">
+                    <p className="font-semibold text-neutral-900">{t('AI Suggestion')}</p>
                     <p>{selected.ai_suggestion || t('No AI suggestion for this exception yet.')}</p>
                   </div>
                 )}
                 {drawerTab === 'history' && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-neutral-500">
                     <p>{selected.resolved_at ? `${t('Resolved on')} ${formatTanggalSingkat(selected.resolved_at)}` : t('No change history yet.')}</p>
                   </div>
                 )}

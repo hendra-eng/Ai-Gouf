@@ -52,6 +52,7 @@ from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from ..management.clients_v1 import _require_level_v1
 from ..transactions import bank_cash_helpers as bc
+from ..transactions.bank_cash_willi import _kurs_master   # kurs master 'middle' terakhir (maks 10 hari) -- Fase 2 valas
 from . import receivables_payables_v1 as rp
 
 logger = get_module_logger("finance_receivables_ar_v1")
@@ -183,6 +184,9 @@ class InvoiceEntryRequest(BaseModel):
     due_date: Optional[date] = None
     payment_terms: str = Field(..., min_length=1, max_length=50)
     currency: str = Field("IDR", max_length=10)
+    # Invoice valas: harga item diisi dalam mata uang invoice; exchange_rate = IDR per 1 unit pada tanggal invoice
+    # (kosong -> kurs master 'middle' terakhir, maks 10 hari). Header (DPP/PPN/total) disimpan dalam IDR.
+    exchange_rate: Optional[float] = Field(None, gt=0)
     branch: str = Field(..., min_length=1, max_length=100)
     project: Optional[str] = Field(None, max_length=255)
     customer_id: Optional[UUID] = None
@@ -252,7 +256,11 @@ def _entry_dict(session, inv: Any, det: Any = None, baris: Optional[List[Any]] =
         "customer_id": det.customer_id if det is not None else None, "customer_code": kode,
         "customer_name": inv.customer_name, "customer_npwp": inv.customer_npwp,
         "billing_address": det.billing_address if det is not None else None,
-        "currency": det.currency if det is not None else "IDR",
+        "currency": (inv.currency or "IDR").upper(),
+        "exchange_rate": float(inv.exchange_rate or 1),
+        "foreign_total": None if inv.foreign_amount is None else bc._f(inv.foreign_amount),
+        "foreign_dpp": None if inv.foreign_amount is None else bc._f(sum((l.dpp for l in baris), NOL)),
+        "foreign_tax": None if inv.foreign_amount is None else bc._f(det.tax_total if det is not None else 0),
         "tax_type": det.tax_type if det is not None else ("ppn_11" if bc._dec(inv.ppn) > 0 else "non_ppn"),
         "tax_inclusive": bool(det.tax_inclusive) if det is not None else False,
         "notes": inv.description, "status": status,
@@ -285,8 +293,15 @@ def _ambil_invoice(session, kid: str, invoice_id: Any) -> Any:
 
 
 def _simpan_invoice(session, kid: str, p: InvoiceEntryRequest, user: Dict[str, Any], inv: Any = None) -> Any:
-    if p.currency.upper() != "IDR":
-        raise _Gagal("Only IDR is supported for now (the ledger is kept in IDR).")
+    mu = (p.currency or "IDR").strip().upper() or "IDR"
+    valas = mu != "IDR"
+    kurs = Decimal("1")
+    if valas:
+        kurs = Decimal(str(p.exchange_rate)) if p.exchange_rate is not None else _kurs_master(session, mu, p.invoice_date)
+        if kurs is None or kurs <= 0:
+            raise _Gagal(f"Enter the exchange rate for {mu}: no recent rate is on file for {p.invoice_date:%d %b %Y}.",
+                         kode="FX_RATE_REQUIRED", status_code=422)
+        kurs = kurs.quantize(Decimal("0.000001"))
 
     # Customer: pakai master yang dipilih, atau buat master baru dari nama yang diketik.
     nama = rp._norm_pihak(p.customer_name)
@@ -316,6 +331,13 @@ def _simpan_invoice(session, kid: str, p: InvoiceEntryRequest, user: Dict[str, A
     total = dpp + pajak
     if total <= 0:
         raise _Gagal("The invoice total must be greater than zero.")
+    # Valas: angka di atas dalam mata uang invoice -> header dalam IDR = valas x kurs (pembulatan per komponen,
+    # supaya DPP + PPN = total persis dan jurnal Sales seimbang).
+    asing_total, pajak_asing = None, pajak
+    if valas:
+        asing_total = total
+        dpp, pajak = _bulat(dpp * kurs), _bulat(pajak * kurs)
+        total = dpp + pajak
 
     nomor = _teks(p.invoice_no)
     if inv is None or (nomor and nomor != inv.invoice_no):
@@ -331,6 +353,7 @@ def _simpan_invoice(session, kid: str, p: InvoiceEntryRequest, user: Dict[str, A
         customer_name=nama, customer_npwp=_teks(p.customer_npwp) or c.npwp, description=_teks(p.notes),
         transaction_type="Invoice", project_name=_teks(p.project), term_of_payment=p.payment_terms,
         cabang=p.branch.strip(), dpp=dpp, ppn=pajak, pph=NOL, gross_amount=total,
+        currency=mu, exchange_rate=kurs, foreign_amount=asing_total,
     )
     waktu = bc._sekarang()
     if inv is None:
@@ -350,9 +373,9 @@ def _simpan_invoice(session, kid: str, p: InvoiceEntryRequest, user: Dict[str, A
         det = session.query(DET).filter(DET.invoice_id == inv.id).first()
         det.edited_at, det.edited_by = waktu, user.get("id")
         session.query(LN).filter(LN.invoice_id == inv.id).delete(synchronize_session=False)
-    det.customer_id, det.currency, det.billing_address = c.id, "IDR", _teks(p.billing_address)
+    det.customer_id, det.currency, det.billing_address = c.id, mu, _teks(p.billing_address)
     det.tax_type, det.tax_inclusive = p.tax_type, p.tax_inclusive
-    det.subtotal, det.discount_total, det.tax_total = subtotal, diskon, pajak
+    det.subtotal, det.discount_total, det.tax_total = subtotal, diskon, pajak_asing   # dalam mata uang invoice
     if p.submit:
         inv.posting_status = "Review"
         det.submitted_at, det.submitted_by_name = waktu, bc._nama(user)

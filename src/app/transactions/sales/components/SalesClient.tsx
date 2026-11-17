@@ -2,27 +2,35 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, CalendarDays, ChevronDown, CircleCheck, Database, Eye, FileText, LayoutGrid, Plus } from 'lucide-react';
-import { tabBadgeCls, tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { BadgeCheck, CalendarDays, ChevronDown, Layers, LayoutDashboard, Plus, ReceiptText, ScanSearch, ShieldAlert } from 'lucide-react';
 import SalesOverview from './SalesOverview';
 import SalesSourceData from './SalesSourceData';
 import SalesTransaction from './SalesTransaction';
 import SalesJournalPreview from './SalesJournalPreview';
 import SalesExceptions from './SalesExceptions';
 import SalesPosted from './SalesPosted';
+import { salesFont } from './salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { useSalesExceptions } from '@/lib/salesStore';
 
 const TABS: { key: string; label: string; icon: React.ElementType }[] = [
-  { key: 'overview', label: 'Overview', icon: LayoutGrid },
-  { key: 'source-data', label: 'Source Data', icon: Database },
-  { key: 'sales-transaction', label: 'Sales Transaction', icon: FileText },
-  { key: 'journal-preview', label: 'Journal Preview', icon: Eye },
-  { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
-  { key: 'posted', label: 'Posted', icon: CircleCheck },
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'source-data', label: 'Source Data', icon: Layers },
+  { key: 'sales-transaction', label: 'Sales Transaction', icon: ReceiptText },
+  { key: 'journal-preview', label: 'Journal Preview', icon: ScanSearch },
+  { key: 'exceptions', label: 'Exceptions', icon: ShieldAlert },
+  { key: 'posted', label: 'Posted', icon: BadgeCheck },
 ];
+
+// Gaya tab halaman Sales -- tema elegant monokrom (garis bawah hitam, ikon garis tipis),
+// serasi dengan kartu, tabel, dan tombol di tiap tab. Khusus Sales, tidak mengubah tab modul lain.
+const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between';
+const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
+const tabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
+const tabBadgeCls = 'inline-flex min-w-[18px] items-center justify-center rounded-full bg-neutral-800 px-1.5 py-px text-[10px] font-semibold text-white';
 
 export default function SalesClient() {
   const { t } = useLanguage();
@@ -47,10 +55,10 @@ export default function SalesClient() {
   return (
     <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0">
       {/* Header */}
-      <div className="flex items-start justify-between mb-4">
+      <div className={`${salesFont.className} flex items-start justify-between mb-4`}>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('Sales')}</h1>
-          <p className="text-xs font-bold text-muted-foreground mt-0.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Sales')}</h1>
+          <p className="mt-1 text-sm font-medium text-neutral-500">
             {activeTab === 'overview' && t('Ringkasan performa penjualan dan metrik utama.')}
             {activeTab === 'source-data' && t('Kelola dan proses data sumber penjualan sebelum dilakukan penjurnalan.')}
             {activeTab === 'sales-transaction' && t('Workspace transaksi penjualan yang detail dan terintegrasi dengan jurnal akuntansi.')}
@@ -60,29 +68,24 @@ export default function SalesClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {activeTab === 'sales-transaction' && (
-            <Link href="/transactions/sales/invoice/new" className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-              <Plus size={14} /> {t('Tambah Transaksi')}
-            </Link>
-          )}
-          <button className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors">
-            <CalendarDays size={14} className="text-muted-foreground" />
-            <span className="text-foreground font-medium">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
-            <ChevronDown size={14} className="text-muted-foreground" />
+          <button className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
+            <CalendarDays size={14} className="text-neutral-500" />
+            <span className="font-medium text-neutral-900">{`01 Jan ${new Date().getFullYear()} – 31 Dec ${new Date().getFullYear()}`}</span>
+            <ChevronDown size={14} className="text-neutral-500" />
           </button>
         </div>
       </div>
 
       {/* Tabs — gaya underline bersama (tabCls, acuan Transactions > Other). */}
       <div className={tabBarCls}>
-        <nav className={tabListCls}>
+        <nav className={`${salesFont.className} ${tabListCls}`}>
           {TABS?.map(tab => (
             <button
               key={tab?.key}
               onClick={() => setActiveTab(tab?.key)}
               className={tabCls(activeTab === tab?.key)}
             >
-              <tab.icon size={16} /> {t(tab?.label)}
+              <tab.icon size={16} strokeWidth={activeTab === tab?.key ? 2 : 1.5} /> {t(tab?.label)}
               {tab?.key === 'exceptions' && openExceptionCount > 0 && (
                 <span className={tabBadgeCls}>{openExceptionCount}</span>
               )}
@@ -90,6 +93,16 @@ export default function SalesClient() {
           ))}
         </nav>
         {(activeTab === 'source-data' || activeTab === 'posted') && <div ref={setActionSlot} className="flex items-center" />}
+        {activeTab === 'sales-transaction' && (
+          <div className={`${salesFont.className} flex items-center justify-end pb-2 lg:pb-0`}>
+            <Link
+              href="/transactions/sales/invoice/new"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+            >
+              <Plus size={13} /> {t('Tambah Transaksi')}
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Tab Content */}

@@ -11,6 +11,8 @@ import { useAuth } from '@/lib/auth';
 import { useJeDrafts, useJeDraftLines, mapJeDraftToUi, mapJeDraftLineToUi, type JeUiStatus } from '@/lib/journalEntryStore';
 import { PreviewSection, FieldList, JournalTable, PickerPagination, PREVIEW_CARD } from '@/app/transactions/components/PreviewLayout';
 import { JE_PAGE_SIZE } from '@/app/transactions/journal-entry/components/JePagination';
+import SalesLoading from '@/app/transactions/sales/components/SalesLoading';
+import { JeErrorBanner } from '@/app/transactions/journal-entry/components/JeNotice';
 
 type JEStatus = JeUiStatus;
 
@@ -37,7 +39,7 @@ const statusLabels: Record<JEStatus, string> = {
 export default function JournalPreviewPage() {
   const { user } = useAuth();
   const clientId = user?.id ?? null;
-  const { drafts: backendDrafts, loading } = useJeDrafts(clientId);
+  const { drafts: backendDrafts, loading, error, refresh } = useJeDrafts(clientId);
   const journalEntries = useMemo(() => backendDrafts.map(mapJeDraftToUi), [backendDrafts]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,7 +63,8 @@ export default function JournalPreviewPage() {
     return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="preview" />
-        <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>Loading journal entries…</div>
+        {error && <JeErrorBanner message={error} onRetry={refresh} />}
+        <SalesLoading loading message="Loading journal entries…" />
       </div>
     );
   }
@@ -70,7 +73,8 @@ export default function JournalPreviewPage() {
     return (
       <div className="space-y-6 fade-in">
         <JournalEntryTabs activeTab="preview" />
-        <div className={`${PREVIEW_CARD} p-12 text-center text-sm text-muted-foreground`}>No journal entries to preview yet.</div>
+        {error && <JeErrorBanner message={error} onRetry={refresh} />}
+        <SalesLoading loading={false} message="No journal entries to preview yet." />
       </div>
     );
   }

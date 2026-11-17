@@ -10,7 +10,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { formatIDR } from '../../lib/groupAnalytics';
+import { formatIDR } from '../lib/formatMoney';
 import { useActiveClient } from '@/lib/activeClient';
 import {
   createBcTransaction,
@@ -179,17 +179,17 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
   };
 
   if (!open) return null;
-  const input = 'w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground disabled:bg-muted/40 disabled:text-muted-foreground';
+  const input = 'w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-neutral-900 disabled:bg-muted/40 disabled:text-neutral-500';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-card border border-border rounded-xl shadow-lg w-full max-w-3xl max-h-[92vh] overflow-y-auto scrollbar-thin p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-semibold text-foreground">
+            <h3 className="text-base font-semibold text-neutral-900">
               {initial ? `Edit ${initial.tx_number}` : 'New Cash & Bank Transaction'}
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-neutral-500 mt-0.5">
               {dariBankFeed
                 ? 'From a Source Data line — direction, date & bank account follow the line.'
                 : 'Saved as DRAFT, then Approve → Post in the Journal Preview tab.'}
@@ -205,7 +205,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
               onClick={() => gantiArah(d)}
               disabled={dariBankFeed && d !== direction}
               className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 ${
-                direction === d ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground hover:text-foreground'
+                direction === d ? 'bg-card text-neutral-900 shadow-card' : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
               {d === 'receipt' ? 'Cash Receipt (money in)' : 'Cash Payment (money out)'}
@@ -215,11 +215,11 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Date</span>
+            <span className="text-[11px] text-neutral-500">Date</span>
             <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} disabled={dariBankFeed} className={`mt-1 ${input}`} />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Cash / bank account</span>
+            <span className="text-[11px] text-neutral-500">Cash / bank account</span>
             <select value={bankCoaId} onChange={(e) => setBankCoaId(e.target.value)} disabled={dariBankFeed} className={`mt-1 ${input}`}>
               {akunKas.length === 0 && <option value="">No cash/bank account in the COA yet</option>}
               {akunKas.map((a) => (
@@ -228,28 +228,28 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
             </select>
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Category</span>
+            <span className="text-[11px] text-neutral-500">Category</span>
             <input list={`kategori-${direction}`} value={kategori} onChange={(e) => setKategori(e.target.value)} placeholder="Select or type…" className={`mt-1 ${input}`} />
             <datalist id={`kategori-${direction}`}>
               {KATEGORI[direction].map((k) => <option key={k} value={k} />)}
             </datalist>
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Party (customer / vendor / other)</span>
+            <span className="text-[11px] text-neutral-500">Party (customer / vendor / other)</span>
             <input value={pihak} onChange={(e) => setPihak(e.target.value)} placeholder="Taken from the invoice if left empty" className={`mt-1 ${input}`} />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Reference (voucher / slip no.)</span>
+            <span className="text-[11px] text-neutral-500">Reference (voucher / slip no.)</span>
             <input value={referensi} onChange={(e) => setReferensi(e.target.value)} className={`mt-1 ${input}`} />
           </label>
           <label className="block">
-            <span className="text-[11px] text-muted-foreground">Description</span>
+            <span className="text-[11px] text-neutral-500">Description</span>
             <input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} className={`mt-1 ${input}`} />
           </label>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-foreground">Counter lines</p>
+          <p className="text-xs font-semibold text-neutral-900">Counter lines</p>
           {baris.map((b) => {
             const q = b.cari.trim().toLowerCase();
             const pilihanAkun = akunLawan.filter((a) => a.id === b.coaId || !q || `${a.code} ${kodeAkun(a.code)} ${a.name}`.toLowerCase().includes(q)).slice(0, 80);
@@ -267,7 +267,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
                   </select>
                   <div className="flex-1" />
                   {baris.length > 1 && (
-                    <button onClick={() => setBaris((prev) => prev.filter((x) => x.key !== b.key))} className="p-1 text-muted-foreground hover:text-rose-600" title="Delete line">
+                    <button onClick={() => setBaris((prev) => prev.filter((x) => x.key !== b.key))} className="p-1 text-neutral-500 hover:text-rose-600" title="Delete line">
                       <TrashIcon className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -312,7 +312,7 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
                     type="number" min="0" step="0.01" value={b.amount}
                     onChange={(e) => ubah(b.key, { amount: e.target.value })}
                     placeholder="Amount"
-                    className="w-44 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-mono text-right"
+                    className="w-44 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs tabular-nums text-right"
                   />
                   <input value={b.description} onChange={(e) => ubah(b.key, { description: e.target.value })} placeholder="Line description (optional)" className={input} />
                 </div>
@@ -333,11 +333,11 @@ export default function CashBankTransactionModal({ open, onClose, initial, onSav
         </div>
 
         <div className="flex items-center justify-between rounded-lg bg-slate-50 border border-border px-4 py-3">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-neutral-500">
             {direction === 'receipt' ? 'Debit cash/bank account (money in)' : 'Credit cash/bank account (money out)'}
             {dariBankFeed ? ` · must be ${formatIDR(initial!.amount)}` : ''}
           </span>
-          <span className={`text-sm font-bold font-mono ${nominal > 0 ? 'text-foreground' : 'text-rose-600'}`}>{formatIDR(nominal)}</span>
+          <span className={`text-sm font-bold tabular-nums ${nominal > 0 ? 'text-neutral-900' : 'text-rose-600'}`}>{formatIDR(nominal)}</span>
         </div>
 
         {pesan && <p className="text-xs text-rose-700">{pesan}</p>}

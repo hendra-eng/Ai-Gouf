@@ -8,6 +8,7 @@ import {
   X, Eye, Printer, Copy, FileSpreadsheet, BookOpen,
   FileText, CalendarDays, ShieldCheck, CheckCircle, Clock, LayoutGrid, Check, Search,
 } from 'lucide-react';
+import { salesFont } from './salesFont';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
@@ -26,30 +27,45 @@ function payStatusDari(inv: BackendSalesInvoice): PayStatus {
   return 'Unpaid';
 }
 
-const PAY_STATUS_STYLE: Record<PayStatus, string> = {
-  Paid: 'bg-emerald-100 text-emerald-700',
-  Partial: 'bg-amber-100 text-amber-700',
-  Unpaid: 'bg-red-100 text-red-700',
+type PillStyle = { pill: string; dot: string };
+
+// Pill bergaris + titik berwarna -- gaya sama dengan StatusPill di tab Sales Transaction & Source Data.
+const PAY_STATUS_STYLE: Record<PayStatus, PillStyle> = {
+  Paid: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
+  Partial: { pill: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-600' },
+  Unpaid: { pill: 'bg-red-100 text-red-800 border-red-300', dot: 'bg-red-600' },
 };
 
-const RECONCILE_STYLE: Record<string, string> = {
-  Reconciled: 'bg-emerald-100 text-emerald-700',
-  Unreconciled: 'bg-gray-100 text-gray-600',
+const RECONCILE_STYLE: Record<string, PillStyle> = {
+  Reconciled: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
+  Unreconciled: { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' },
 };
 
-const POSTING_STATUS_STYLE: Record<string, string> = {
-  Posted: 'bg-blue-100 text-blue-700',
-  Partial: 'bg-amber-100 text-amber-700',
-  Paid: 'bg-emerald-100 text-emerald-700',
+const POSTING_STATUS_STYLE: Record<string, PillStyle> = {
+  Posted: { pill: 'bg-teal-100 text-teal-800 border-teal-300', dot: 'bg-teal-600' },
+  Partial: { pill: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-600' },
+  Paid: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
 };
+const PILL_FALLBACK: PillStyle = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
 
-// Gaya kontrol (select / input / tombol tanggal) -- disamakan dengan tombol &
-// kontrol di tab Source Data: sudut rounded-xl, border hijau brand, fokus ring.
-const BTN_SECONDARY = 'btn-secondary text-xs py-1.5 gap-1.5 rounded-xl border-primary/60 hover:border-primary';
+function Pill({ style, label }: { style?: PillStyle; label: string }) {
+  const st = style || PILL_FALLBACK;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{label}
+    </span>
+  );
+}
+
+// Gaya tombol netral -- sama dengan tab Sales Transaction & Source Data.
+const ACTION_BTN_BASE = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50';
+const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-700 hover:bg-neutral-50`;
+const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} border border-neutral-800 bg-neutral-800 text-white hover:bg-neutral-700`;
+const PANEL_ICON_CHIP = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200';
 const NAV_BTN = 'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card';
 
 // Dropdown filter kustom -- sama persis dengan FilterSelect di tab Sales
-// Transaction: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih hijau brand.
+// Transaction: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih abu netral.
 interface FilterOption { value: string; label: string }
 
 function FilterSelect({ value, onChange, options }: {
@@ -87,13 +103,13 @@ function FilterSelect({ value, onChange, options }: {
         onClick={() => { setOpen(v => !v); setQ(''); }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-neutral-900 transition-colors ${open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}
       >
         <span className="truncate max-w-[170px]">{current?.label}</span>
-        <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-slate-300 bg-card shadow-xl">
+        <div className="absolute left-0 top-full z-30 mt-1 w-max min-w-full max-w-[320px] rounded-[6px] border border-neutral-300 bg-white shadow-xl">
           {searchable && (
             <div className="border-b border-border p-2">
               <input
@@ -101,12 +117,12 @@ function FilterSelect({ value, onChange, options }: {
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Cari..."
-                className="w-full rounded-md border border-border px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           )}
           <ul role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {shown.length === 0 && <li className="px-4 py-2 text-sm text-muted-foreground">Tidak ditemukan</li>}
+            {shown.length === 0 && <li className="px-4 py-2 text-sm text-neutral-500">Tidak ditemukan</li>}
             {shown.map(o => {
               const selected = o.value === value;
               return (
@@ -114,7 +130,7 @@ function FilterSelect({ value, onChange, options }: {
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -129,51 +145,37 @@ function FilterSelect({ value, onChange, options }: {
   );
 }
 
-// Kartu KPI Posted -- desain sama dengan SourceKpiTile di Source Data (garis
-// aksen atas, gradasi hijau lembut, kilau di sudut, ikon, bar proporsi).
-// UKURAN sengaja tidak diubah: label/angka/keterangan tetap sekecil sebelumnya
-// supaya 6 kartu masih muat sebaris.
-type KpiTone = 'slate' | 'amber' | 'green' | 'sky';
-const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string }> = {
-  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]' },
-  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]' },
-  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]' },
-};
-
-function PostedKpiTile({ label, value, sub, pct, pctLabel, tone, icon: Icon }: {
+// Kartu KPI Posted -- desain sama dengan SourceKpiTile di Source Data / tab Sales
+// Transaction (garis aksen hitam tipis di atas, ikon netral, bar proporsi netral).
+function PostedKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: {
   label: string;
   value: string;
   sub?: string;
   pct: number;
   pctLabel: string;
-  tone: KpiTone;
   icon: React.ElementType;
 }) {
-  const c = KPI_TONE[tone];
-  const p = Math.min(100, Math.max(0, Math.round(pct)));
+  const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-primary/60 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
+    <div className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
       <div className="relative flex items-start justify-between gap-2">
-        <p className="min-w-0 truncate text-xs font-extrabold uppercase tracking-wide text-slate-700">{label}</p>
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm ring-1 ring-white ${c.iconBg}`}>
-          <Icon size={16} className={c.iconText} />
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
         </span>
       </div>
-      <p className="relative mt-1 truncate text-lg font-extrabold tabular-nums text-[#064E3B]">{value}</p>
-      {sub && <p className="relative truncate text-[11px] font-semibold text-slate-500">{sub}</p>}
-      <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{value}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? ''}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="relative mt-1 truncate text-[11px] font-semibold text-slate-600">{p}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
   );
 }
 
-// Panel putih dengan header terpisah garis -- sama dengan SourcePanel di
-// Source Data (File Preview / AI Extraction Summary / Data Quality Check).
+// Panel putih dengan garis aksen hitam & header abu -- sama dengan SourcePanel di Source Data.
 function PostedPanel({ title, leading, action, children, className = '' }: {
   title: string;
   leading?: React.ReactNode;
@@ -182,11 +184,12 @@ function PostedPanel({ title, leading, action, children, className = '' }: {
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm ${className}`}>
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-slate-50/70 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+    <div className={`relative flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white shadow-sm ${className}`}>
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-300 bg-neutral-50 px-4 pb-3 pt-4">
+        <div className="flex min-w-0 items-center gap-3">
           {leading}
-          <h3 className="truncate text-lg font-bold text-foreground">{title}</h3>
+          <h3 className="truncate text-sm font-semibold text-neutral-900">{title}</h3>
         </div>
         {action}
       </div>
@@ -196,8 +199,11 @@ function PostedPanel({ title, leading, action, children, className = '' }: {
 }
 
 const iconBadge = (node: React.ReactNode) => (
-  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D1FAE5] text-[#065F46]">{node}</span>
+  <span className={PANEL_ICON_CHIP}>{node}</span>
 );
+
+// Kolom nominal (header rata kanan), sama dengan isi selnya.
+const POSTED_NUMERIC_COLS = ['DPP (Rp)', 'PPN (Rp)', 'Nilai Gross (Rp)', 'AR (Rp)'];
 
 function buildPageItems(current: number, total: number): (number | '…')[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
@@ -387,15 +393,15 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
   // Tombol aksi -- dipindah ke baris yang sama dengan nama tab (via portal ke
   // slot di SalesClient), gaya tombol sama dengan Source Data.
   const actionBar = (
-    <div className="flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0">
-      <button onClick={() => exportCSV(filtered, t('Semua data (sesuai filter)'))} className={BTN_SECONDARY}>
+    <div className={`${salesFont.className} flex flex-wrap items-center justify-end gap-2 pb-2 lg:pb-0`}>
+      <button onClick={() => exportCSV(filtered, t('Semua data (sesuai filter)'))} className={ACTION_BTN_SECONDARY}>
         <FileSpreadsheet size={13} /> {t('Export')}
       </button>
-      <button onClick={printList} className={BTN_SECONDARY}>
+      <button onClick={printList} className={ACTION_BTN_SECONDARY}>
         <Printer size={13} /> {t('Cetak Daftar')}
       </button>
       {selectedRows.size > 0 && (
-        <button onClick={exportSelected} className="btn-primary text-xs py-1.5 gap-1.5">
+        <button onClick={exportSelected} className={ACTION_BTN_PRIMARY}>
           <Download size={13} /> {t('Export Terpilih')} ({selectedRows.size})
         </button>
       )}
@@ -411,7 +417,7 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
   ];
 
   return (
-    <div className="space-y-5">
+    <div className={`${salesFont.className} space-y-4`}>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700 flex items-center justify-between">
           <span>{error}</span>
@@ -421,39 +427,39 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
 
       {actionSlot === undefined ? actionBar : actionSlot ? createPortal(actionBar, actionSlot) : null}
 
-      {/* KPI Cards -- desain sama dengan Source Data, ukuran tetap */}
-      <div className="!mt-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <PostedKpiTile label={t('Total Posted')} value={String(totalPosted)} pct={pctOf(totalPosted, allInvoices.length)} pctLabel={t('dari semua invoice')} tone="slate" icon={FileText} />
-        <PostedKpiTile label={t('Nilai Terposting')} value={formatIDR(totalPostedValue)} pct={pctOf(totalPostedValue - outstandingAR, totalPostedValue)} pctLabel={t('sudah terbayar')} tone="green" icon={BookOpen} />
-        <PostedKpiTile label={t('Posted Hari Ini')} value={String(postedToday)} pct={pctOf(postedToday, totalPosted)} pctLabel={t('dari total posted')} tone="amber" icon={CalendarDays} />
-        <PostedKpiTile label={t('Journal Synced')} value={String(journalSynced)} pct={pctOf(journalSynced, totalPosted)} pctLabel={t('dari total posted')} tone="sky" icon={ShieldCheck} />
-        <PostedKpiTile label={t('Fully Paid')} value={String(fullyPaid)} pct={pctOf(fullyPaid, totalPosted)} pctLabel={t('dari total transaksi')} tone="green" icon={CheckCircle} />
-        <PostedKpiTile label={t('Outstanding AR')} value={formatIDR(outstandingAR)} sub={`${outstandingCount} ${t('transaksi')}`} pct={pctOf(outstandingAR, totalPostedValue)} pctLabel={t('dari nilai terposting')} tone="sky" icon={Clock} />
+      {/* KPI Cards -- desain sama dengan tab Sales Transaction & Source Data */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <PostedKpiTile label={t('Total Posted')} value={String(totalPosted)} pct={pctOf(totalPosted, allInvoices.length)} pctLabel={t('dari semua invoice')} icon={FileText} />
+        <PostedKpiTile label={t('Nilai Terposting')} value={formatIDR(totalPostedValue)} pct={pctOf(totalPostedValue - outstandingAR, totalPostedValue)} pctLabel={t('sudah terbayar')} icon={BookOpen} />
+        <PostedKpiTile label={t('Posted Hari Ini')} value={String(postedToday)} pct={pctOf(postedToday, totalPosted)} pctLabel={t('dari total posted')} icon={CalendarDays} />
+        <PostedKpiTile label={t('Journal Synced')} value={String(journalSynced)} pct={pctOf(journalSynced, totalPosted)} pctLabel={t('dari total posted')} icon={ShieldCheck} />
+        <PostedKpiTile label={t('Fully Paid')} value={String(fullyPaid)} pct={pctOf(fullyPaid, totalPosted)} pctLabel={t('dari total transaksi')} icon={CheckCircle} />
+        <PostedKpiTile label={t('Outstanding AR')} value={formatIDR(outstandingAR)} sub={`${outstandingCount} ${t('transaksi')}`} pct={pctOf(outstandingAR, totalPostedValue)} pctLabel={t('dari nilai terposting')} icon={Clock} />
       </div>
 
       {/* Filters -- desain sama dengan filter di tab Sales Transaction */}
-      <div className="card p-3 relative">
+      <div className="card relative px-0 pb-0 pt-3">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}>
-              <CalendarDays size={12} className="text-muted-foreground" />
-              <span className="text-muted-foreground">{t('Periode Posting')}</span>
-              <span className="font-medium text-foreground">
+            <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+              <CalendarDays size={12} className="text-neutral-500" />
+              <span className="text-neutral-500">{t('Periode Posting')}</span>
+              <span className="font-medium text-neutral-900">
                 {dateStart ? formatTanggalSingkat(dateStart) : t('Semua')}
                 {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
               </span>
             </button>
             {showDatePicker && (
-              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-slate-300 bg-white p-3 shadow-xl">
+              <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Dari')}</label>
-                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Dari')}</label>
+                  <input type="date" value={dateStart} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
                 <div>
-                  <label className="text-[11px] font-medium text-muted-foreground">{t('Sampai')}</label>
-                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-slate-300 rounded-[6px] px-2 py-1.5 bg-white text-foreground mt-0.5 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                  <label className="text-[11px] font-medium text-neutral-500">{t('Sampai')}</label>
+                  <input type="date" value={dateEnd} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
                 </div>
-                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full text-xs py-2 bg-primary text-primary-foreground rounded-[6px] font-semibold hover:opacity-90">
+                <button onClick={() => { setCurrentPage(1); setShowDatePicker(false); }} className="w-full rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
                   {t('Terapkan')}
                 </button>
               </div>
@@ -490,32 +496,17 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
             ]}
           />
 
-          <div className="relative ml-auto w-full sm:w-[400px]">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
-            <input
-              type="text"
-              value={search}
-              onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
-              placeholder={t('Cari invoice, pelanggan, atau no jurnal...')}
-              className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-
-          {/* Baris kedua: aksi Reset (rata kanan), sama seperti Sales Transaction */}
-          <div className="flex w-full items-center justify-end gap-2">
-            <button onClick={resetFilters} className="text-xs text-primary hover:underline">{t('Reset')}</button>
-          </div>
         </div>
       </div>
 
       {/* Table + Drawer */}
-      <div className="flex gap-4 items-start">
+      <div className="flex gap-4 items-start !mt-1">
         {/* Table */}
         <div className="card overflow-hidden flex-1 min-w-0">
-          <div className="px-0 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-0 pb-3 pt-1 border-b border-border">
             <div>
-              <h3 className="text-2xl font-bold text-foreground">{t('Daftar Transaksi Penjualan (Posted)')}</h3>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar Transaksi Penjualan (Posted)')}</h3>
+              <p className="text-sm text-neutral-500 mt-0.5">
                 {loading
                   ? t('Memuat...')
                   : filtered.length === 0
@@ -523,73 +514,88 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
                   : `${t('Menampilkan')} ${(pageSafe - 1) * pageSize + 1} - ${Math.min(pageSafe * pageSize, filtered.length)} ${t('dari')} ${filtered.length} ${t('transaksi')}`}
               </p>
             </div>
+            <div className="ml-auto flex w-full flex-col items-end gap-1.5 sm:w-auto">
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={resetFilters} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">{t('Reset')}</button>
+              </div>
+              <div className="relative w-full sm:w-[400px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
+                  placeholder={t('Cari invoice, pelanggan, atau no jurnal...')}
+                  className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
+                />
+              </div>
+            </div>
           </div>
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[1200px]">
+            <table className="w-full min-w-[1200px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="bg-[#8FE3B5]">
-                  <th className="py-3 px-3 w-8 border-t-2 border-b border-[#0A4A32]">
-                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="rounded border-border accent-[#0F7D4E]" />
+                <tr className="bg-neutral-300">
+                  <th className="py-2 px-3 w-8 leading-none border-t border-b border-neutral-800">
+                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} className="block rounded border-neutral-400 accent-neutral-800" />
                   </th>
                   {['Tanggal Posting', 'Invoice', 'Pelanggan', 'Cabang', 'DPP (Rp)', 'PPN (Rp)', 'Nilai Gross (Rp)', 'No. Jurnal', 'AR (Rp)', 'Status Pembayaran', 'Rekonsiliasi', 'Diposting Oleh', 'Status', 'Aksi'].map(h => (
-                    <th key={h} className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">{t(h)}</th>
+                    <th key={h} className={`py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 ${POSTED_NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {!loading && paginated.length === 0 && (
                   <tr>
-                    <td colSpan={15} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td>
+                    <td colSpan={15} className="py-2 px-2 text-center text-xs text-neutral-500"><span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada transaksi yang cocok dengan filter.')}</span></td>
                   </tr>
                 )}
                 {paginated.map(row => (
                   <tr
                     key={row.id}
-                    className={`border-b border-slate-400/80 cursor-pointer transition-colors text-xs ${selectedInvoiceNo === row.invoice_no ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                    className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedInvoiceNo === row.invoice_no ? '[&>td]:bg-neutral-100' : ''}`}
                     onClick={() => openDetail(row)}
                   >
                     <td className="py-2 px-3" onClick={ev => ev.stopPropagation()}>
-                      <input type="checkbox" checked={selectedRows.has(row.invoice_no)} onChange={() => toggleRow(row.invoice_no)} className="rounded border-border accent-[#0F7D4E]" />
+                      <input type="checkbox" checked={selectedRows.has(row.invoice_no)} onChange={() => toggleRow(row.invoice_no)} className="rounded border-neutral-400 accent-neutral-800" />
                     </td>
-                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalSingkat(row.posted_at)}</td>
-                    <td className="py-2 px-2 text-primary font-medium whitespace-nowrap">{row.invoice_no}</td>
-                    <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{row.customer_name}</td>
-                    <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{row.cabang || '—'}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{formatTanggalSingkat(row.posted_at)}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.invoice_no}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-neutral-900">{row.customer_name}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-600">{row.cabang || '—'}</td>
                     <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{formatIDR(row.dpp)}</td>
                     <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{formatIDR(row.ppn)}</td>
                     <td className="py-2 px-2 text-right font-semibold tabular-nums whitespace-nowrap">{formatIDR(row.gross_amount)}</td>
-                    <td className="py-2 px-2 text-primary font-medium whitespace-nowrap">{row.journal_entry_id ? `JE-${row.journal_entry_id}` : '—'}</td>
+                    <td className="py-2 px-2 whitespace-nowrap font-medium text-blue-700">{row.journal_entry_id ? `JE-${row.journal_entry_id}` : '—'}</td>
                     <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">{row.outstanding_amount > 0 ? formatIDR(row.outstanding_amount) : 'Rp 0'}</td>
                     <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_STATUS_STYLE[row.payStatus]}`}>{t(row.payStatus)}</span>
+                      <Pill style={PAY_STATUS_STYLE[row.payStatus]} label={t(row.payStatus)} />
                     </td>
                     <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${RECONCILE_STYLE[row.reconcile_status] || 'bg-muted text-muted-foreground'}`}>{t(row.reconcile_status)}</span>
+                      <Pill style={RECONCILE_STYLE[row.reconcile_status]} label={t(row.reconcile_status)} />
                     </td>
-                    <td className="py-2 px-2 text-foreground whitespace-nowrap">{row.posted_by ? (row.posted_by === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
+                    <td className="py-2 px-2 whitespace-nowrap text-neutral-900">{row.posted_by ? (row.posted_by === userId ? (user?.nama || user?.username) : t('User lain')) : '—'}</td>
                     <td className="py-2 px-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${POSTING_STATUS_STYLE[row.posting_status] || 'bg-blue-100 text-blue-700'}`}>{t(row.posting_status)}</span>
+                      <Pill style={POSTING_STATUS_STYLE[row.posting_status]} label={t(row.posting_status)} />
                     </td>
                     <td className="py-2 px-2" onClick={ev => ev.stopPropagation()}>
                       <div className="relative flex items-center gap-1">
-                        <button onClick={() => openDetail(row)} className="text-xs font-semibold text-primary hover:underline">{t('Lihat')}</button>
-                        <button onClick={() => setOpenMenuId(prev => (prev === row.invoice_no ? null : row.invoice_no))} className="p-1 hover:bg-muted rounded transition-colors">
-                          <MoreHorizontal size={14} className="text-muted-foreground" />
+                        <button onClick={() => openDetail(row)} className="text-xs font-semibold text-neutral-800 hover:text-neutral-900 hover:underline">{t('Lihat')}</button>
+                        <button onClick={() => setOpenMenuId(prev => (prev === row.invoice_no ? null : row.invoice_no))} className="p-1 hover:bg-neutral-300 rounded transition-colors">
+                          <MoreHorizontal size={13} className="text-neutral-600" />
                         </button>
                         {openMenuId === row.invoice_no && (
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                            <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-border bg-card shadow-lg py-1">
-                              <button onClick={() => openDetail(row)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left">
+                            <div className="absolute right-0 top-full mt-1 z-20 min-w-[180px] rounded-lg border border-neutral-300 bg-white shadow-lg py-1">
+                              <button onClick={() => openDetail(row)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 text-left">
                                 <Eye size={12} /> {t('Lihat Detail')}
                               </button>
-                              <button onClick={() => copyJournal(row.journal_entry_id ? `JE-${row.journal_entry_id}` : '-')} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left">
+                              <button onClick={() => copyJournal(row.journal_entry_id ? `JE-${row.journal_entry_id}` : '-')} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 text-left">
                                 <Copy size={12} /> {t('Salin No. Jurnal')}
                               </button>
-                              <button onClick={() => openGeneralLedger(row)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left">
+                              <button onClick={() => openGeneralLedger(row)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 text-left">
                                 <BookOpen size={12} /> {t('Lihat di General Ledger')}
                               </button>
-                              <button onClick={downloadProof} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-muted text-left">
+                              <button onClick={downloadProof} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-900 hover:bg-neutral-100 text-left">
                                 <Download size={12} /> {t('Download Bukti')}
                               </button>
                             </div>
@@ -602,11 +608,11 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
               </tbody>
             </table>
           </div>
-          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2">
                 <span>{t('Baris per halaman')}</span>
-                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <select value={pageSize} onChange={ev => { setPageSize(Number(ev.target.value)); setCurrentPage(1); }} className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs font-medium text-neutral-900 bg-card focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300">
                   <option value={5}>5</option>
                   <option value={10}>10</option>
                   <option value={25}>25</option>
@@ -615,10 +621,10 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
               </label>
               <span className="hidden sm:inline text-slate-300">|</span>
               <span>
-                <span className="font-semibold text-foreground">
+                <span className="font-semibold text-neutral-900">
                   {filtered.length === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, filtered.length)}
                 </span>{' '}
-                {t('dari')} <span className="font-semibold text-foreground">{filtered.length}</span> {t('transaksi')}
+                {t('dari')} <span className="font-semibold text-neutral-900">{filtered.length}</span> {t('transaksi')}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -627,7 +633,7 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                  <button key={p} onClick={() => goToPage(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => goToPage(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label={t('Halaman berikutnya')} className={NAV_BTN}><ChevronRight size={16} /></button>
@@ -635,7 +641,7 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
           </div>
         </div>
 
-        {/* Detail Drawer -- gaya panel & ringkasan seperti AI Extraction Summary */}
+        {/* Detail Drawer -- gaya panel & ringkasan seperti AI Extraction Summary di Source Data */}
         {selected && (() => {
           const paidAmount = Math.max(0, selected.gross_amount - selected.outstanding_amount);
           const paidPct = selected.gross_amount > 0 ? Math.min(100, Math.round((paidAmount / selected.gross_amount) * 100)) : 0;
@@ -647,54 +653,54 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
             ['No. Jurnal', selected.journal_entry_id ? `JE-${selected.journal_entry_id}` : '—'],
             ['Status Jurnal', selected.journal_sync_status === 'Synced' ? t('Synced') : t('Pending')],
             ['AR Outstanding', selected.outstanding_amount > 0 ? formatIDR(selected.outstanding_amount) : 'Rp 0'],
-            ['Status Pembayaran', <span key="p" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${PAY_STATUS_STYLE[selected.payStatus]}`}>{t(selected.payStatus)}</span>],
-            ['Rekonsiliasi', <span key="r" className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${RECONCILE_STYLE[selected.reconcile_status] || 'bg-muted text-muted-foreground'}`}>{t(selected.reconcile_status)}</span>],
+            ['Status Pembayaran', <Pill key="p" style={PAY_STATUS_STYLE[selected.payStatus]} label={t(selected.payStatus)} />],
+            ['Rekonsiliasi', <Pill key="r" style={RECONCILE_STYLE[selected.reconcile_status]} label={t(selected.reconcile_status)} />],
           ];
           return (
             <PostedPanel
               className="w-80 flex-shrink-0 sticky top-4"
               title={t('Detail Transaksi')}
               leading={iconBadge(<FileText size={17} />)}
-              action={<button onClick={() => setSelectedInvoiceNo(null)} className="p-1 hover:bg-muted rounded transition-colors"><X size={16} className="text-muted-foreground" /></button>}
+              action={<button onClick={() => setSelectedInvoiceNo(null)} className="p-1 hover:bg-neutral-100 rounded transition-colors"><X size={16} className="text-neutral-500" /></button>}
             >
-              <div className="mb-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D1FAE5] text-[11px] font-extrabold text-[#065F46] shadow-sm ring-1 ring-white">INV</div>
+              <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-[11px] font-bold uppercase tracking-wider text-white">INV</div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-foreground">{selected.invoice_no}</p>
-                  <p className="truncate text-xs font-medium text-slate-600">{selected.customer_name}</p>
+                  <p className="truncate text-sm font-semibold text-neutral-900">{selected.invoice_no}</p>
+                  <p className="truncate text-xs font-medium text-neutral-500">{selected.customer_name}</p>
                 </div>
-                <span className={`ml-auto shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium ${POSTING_STATUS_STYLE[selected.posting_status] || 'bg-blue-100 text-blue-700'}`}>{t(selected.posting_status)}</span>
+                <span className="ml-auto shrink-0"><Pill style={POSTING_STATUS_STYLE[selected.posting_status]} label={t(selected.posting_status)} /></span>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                <p className="truncate text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-500">{t('Nilai Gross')}</p>
-                <p className="mt-1.5 truncate text-xl font-extrabold leading-none tabular-nums text-[#064E3B]">{formatIDR(selected.gross_amount)}</p>
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+                <p className="truncate text-[10px] font-semibold uppercase leading-tight tracking-wide text-neutral-500">{t('Nilai Gross')}</p>
+                <p className="mt-1.5 truncate text-lg font-semibold leading-none tabular-nums tracking-tight text-neutral-900">{formatIDR(selected.gross_amount)}</p>
               </div>
               <div className="mt-3">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-[#0F7D4E]" style={{ width: `${paidPct > 0 ? Math.max(paidPct, 3) : 0}%` }} />
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+                  <div className="h-full rounded-full bg-neutral-800" style={{ width: `${paidPct > 0 ? Math.max(paidPct, 3) : 0}%` }} />
                 </div>
-                <p className="mt-1.5 text-xs font-semibold text-slate-600">{paidPct}% {t('sudah terbayar')}</p>
+                <p className="mt-1 text-[11px] font-medium text-neutral-600">{paidPct}% {t('sudah terbayar')}</p>
               </div>
 
-              <div className="mt-3 divide-y divide-slate-200 text-xs">
+              <div className="mt-3 divide-y divide-neutral-200 text-xs">
                 {rows.map(([k, v]) => (
                   <div key={k} className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-muted-foreground">{t(k)}</span>
-                    <span className="text-sm font-bold tabular-nums text-slate-900 text-right">{v}</span>
+                    <span className="text-neutral-500">{t(k)}</span>
+                    <span className="text-sm font-semibold tabular-nums text-neutral-900 text-right">{v}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-3 flex gap-2 border-t border-border pt-3">
-                <button onClick={() => copyJournal(selected.journal_entry_id ? `JE-${selected.journal_entry_id}` : '-')} className={`${BTN_SECONDARY} flex-1 justify-center`}>
+              <div className="mt-3 flex gap-2 border-t border-neutral-200 pt-3">
+                <button onClick={() => copyJournal(selected.journal_entry_id ? `JE-${selected.journal_entry_id}` : '-')} className={`${ACTION_BTN_SECONDARY} flex-1 justify-center`}>
                   <Copy size={12} /> {t('Salin Jurnal')}
                 </button>
-                <button onClick={() => openGeneralLedger(selected)} className={`${BTN_SECONDARY} flex-1 justify-center`}>
+                <button onClick={() => openGeneralLedger(selected)} className={`${ACTION_BTN_SECONDARY} flex-1 justify-center`}>
                   <BookOpen size={12} /> {t('General Ledger')}
                 </button>
               </div>
-              <button onClick={printList} className="btn-primary mt-2 w-full justify-center text-xs py-1.5 gap-1.5">
+              <button onClick={printList} className={`${ACTION_BTN_PRIMARY} mt-2 w-full justify-center`}>
                 <Printer size={12} /> {t('Cetak')}
               </button>
             </PostedPanel>
@@ -703,31 +709,31 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
       </div>
 
       {/* Bottom Section -- panel sama dengan panel bawah Source Data */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 items-start xl:grid-cols-2 gap-4">
         {/* Recent Activity */}
         <PostedPanel
           title={t('Aktivitas Posting Terbaru')}
           leading={iconBadge(<Clock size={17} />)}
           action={activityLogs.length > 5 ? (
-            <button onClick={() => setShowAllActivity(v => !v)} className="text-xs font-semibold text-primary hover:underline">
+            <button onClick={() => setShowAllActivity(v => !v)} className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline">
               {showAllActivity ? t('Sembunyikan') : t('Lihat Semua')}
             </button>
           ) : undefined}
         >
           <div className="space-y-2">
             {recentActivity.length === 0 && (
-              <p className="py-6 text-center text-xs text-muted-foreground">{t('Belum ada aktivitas posting.')}</p>
+              <p className="py-6 text-center text-xs text-neutral-500">{t('Belum ada aktivitas posting.')}</p>
             )}
             {recentActivity.map((a) => (
-              <div key={a.id} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${a.performed_by === 'System' ? 'bg-[#CCFBF1] text-[#0F766E]' : 'bg-[#D1FAE5] text-[#065F46]'}`}>
+              <div key={a.id} className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200">
                   {a.performed_by === 'System' ? <ShieldCheck size={15} /> : <FileText size={15} />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-foreground">{t(a.description)}</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                  <p className="text-xs font-semibold text-neutral-900">{t(a.description)}</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-neutral-500">
                     <span>{formatTanggalWaktu(a.created_at)}</span>
-                    {a.reference_no && <span className="font-semibold text-primary">{a.reference_no}</span>}
+                    {a.reference_no && <span className="font-semibold text-blue-700">{a.reference_no}</span>}
                     <span>{a.performed_by}</span>
                   </div>
                 </div>
@@ -743,14 +749,14 @@ export default function SalesPosted({ actionSlot }: { actionSlot?: HTMLElement |
               <button
                 key={a.label}
                 onClick={a.onClick}
-                className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-left transition-all hover:-translate-y-0.5 hover:border-primary/60 hover:bg-[#F0FDF7] hover:shadow-sm"
+                className="group flex items-center gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-2.5 text-left transition-colors hover:border-neutral-700 hover:bg-neutral-100"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D1FAE5] text-[#065F46] shadow-sm ring-1 ring-white transition-colors group-hover:bg-[#A7F3D0]">
-                  <a.icon size={18} />
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-neutral-700 ring-1 ring-neutral-200">
+                  <a.icon size={16} />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-foreground">{t(a.label)}</p>
-                  <p className="truncate text-xs font-medium text-slate-600">{t(a.sub)}</p>
+                  <p className="truncate text-sm font-semibold text-neutral-900">{t(a.label)}</p>
+                  <p className="truncate text-xs font-medium text-neutral-500">{t(a.sub)}</p>
                 </div>
               </button>
             ))}

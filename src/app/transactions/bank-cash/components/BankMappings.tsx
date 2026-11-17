@@ -10,7 +10,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDownIcon, PencilSquareIcon, PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ChevronDown, Landmark, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import {
   createBcBankMapping,
@@ -23,6 +23,10 @@ import {
   type BcBankMappingInput,
 } from '@/lib/bankCashStore';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import {
+  ACTION_BTN_PRIMARY, ACTION_BTN_SECONDARY, CHECKBOX_CLS, FIELD_CLS, FilterSelect, FIELD_LABEL_CLS, ICON_BTN, ICON_BTN_DANGER,
+  ModalShell, PANEL_ICON_CHIP, SourcePanel, StatusPill, TD_CLS, TH_CLS, TR_CLS,
+} from './sourceUi';
 
 const KOSONG: BcBankMappingInput = { bank_name: '', bank_coa_id: '', account_number: '', match_keyword: '', template_id: '', notes: '', is_active: true };
 
@@ -67,67 +71,71 @@ function MappingForm({ clientId, awal, onClose }: { clientId: string; awal: BcBa
     }
   };
 
-  const kelasInput = 'w-full px-3 py-2 text-xs bg-card border border-border rounded-lg focus:outline-none text-foreground';
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-card border border-border rounded-xl shadow-lg w-full max-w-lg">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="text-sm font-semibold text-foreground">{awal ? 'Edit bank mapping' : 'Add bank mapping'}</h3>
-          <button onClick={onClose} disabled={busy} className="p-1 hover:bg-muted rounded disabled:opacity-40"><XMarkIcon className="w-4 h-4" /></button>
+    <ModalShell
+      title={awal ? 'Edit bank mapping' : 'Add bank mapping'}
+      subtitle="Route uploaded statements to the right cash / bank account automatically."
+      icon={<Landmark size={17} />}
+      onClose={onClose}
+      closeDisabled={busy}
+      footer={
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={onClose} disabled={busy} className={ACTION_BTN_SECONDARY}>Cancel</button>
+          <button onClick={simpan} disabled={busy} className={ACTION_BTN_PRIMARY}>{busy ? 'Saving...' : 'Save'}</button>
         </div>
-        <div className="px-5 py-4 space-y-3">
-          <label className="block text-xs">
-            <span className="font-semibold text-foreground">Bank / source name</span>
-            <input value={isi.bank_name} onChange={(e) => ubah('bank_name', e.target.value)} placeholder="e.g. BCA, Mandiri, Kas Kasir" className={`${kelasInput} mt-1`} />
+      }
+    >
+      <div className="space-y-3">
+        <label className="block">
+          <span className={FIELD_LABEL_CLS}>Bank / source name</span>
+          <input value={isi.bank_name} onChange={(e) => ubah('bank_name', e.target.value)} placeholder="e.g. BCA, Mandiri, Kas Kasir" className={FIELD_CLS} />
+        </label>
+        <label className="block">
+          <span className={FIELD_LABEL_CLS}>Target account (COA)</span>
+          <FilterSelect
+            value={isi.bank_coa_id}
+            onChange={(v) => ubah('bank_coa_id', v)}
+            placeholder="Select account..."
+            className="w-full"
+            options={akunKas.map((a) => ({ value: a.id, label: `${kodeAkun(a.code)} - ${a.name}` }))}
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className={FIELD_LABEL_CLS}>Account number</span>
+            <input value={isi.account_number ?? ''} onChange={(e) => ubah('account_number', e.target.value)} placeholder="Printed on the statement" className={`${FIELD_CLS} tabular-nums`} />
           </label>
-          <label className="block text-xs">
-            <span className="font-semibold text-foreground">Target account (COA)</span>
-            <select value={isi.bank_coa_id} onChange={(e) => ubah('bank_coa_id', e.target.value)} className={`${kelasInput} mt-1`}>
-              <option value="">Select account...</option>
-              {akunKas.map((a) => <option key={a.id} value={a.id}>{kodeAkun(a.code)} - {a.name}</option>)}
-            </select>
+          <label className="block">
+            <span className={FIELD_LABEL_CLS}>Title keyword</span>
+            <input value={isi.match_keyword ?? ''} onChange={(e) => ubah('match_keyword', e.target.value)} placeholder="e.g. LAPORAN KAS KASIR" className={FIELD_CLS} />
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs">
-              <span className="font-semibold text-foreground">Account number</span>
-              <input value={isi.account_number ?? ''} onChange={(e) => ubah('account_number', e.target.value)} placeholder="Printed on the statement" className={`${kelasInput} mt-1 font-mono`} />
-            </label>
-            <label className="block text-xs">
-              <span className="font-semibold text-foreground">Title keyword</span>
-              <input value={isi.match_keyword ?? ''} onChange={(e) => ubah('match_keyword', e.target.value)} placeholder="e.g. LAPORAN KAS KASIR" className={`${kelasInput} mt-1`} />
-            </label>
-          </div>
-          <label className="block text-xs">
-            <span className="font-semibold text-foreground">Extraction template (optional)</span>
-            <select value={isi.template_id ?? ''} onChange={(e) => ubah('template_id', e.target.value)} className={`${kelasInput} mt-1`}>
-              <option value="">— None —</option>
-              {templates.filter((t) => t.is_active || t.id === isi.template_id).map((t) => (
-                <option key={t.id} value={t.id}>{t.template_name || t.id} ({t.file_type})</option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs">
-            <span className="font-semibold text-foreground">Notes</span>
-            <input value={isi.notes ?? ''} onChange={(e) => ubah('notes', e.target.value)} className={`${kelasInput} mt-1`} />
-          </label>
-          <label className="flex items-center gap-2 text-xs text-foreground">
-            <input type="checkbox" checked={isi.is_active ?? true} onChange={(e) => ubah('is_active', e.target.checked)} className="rounded border-border" />
-            Active
-          </label>
-          <p className="text-[11px] text-muted-foreground">
-            Files are matched by account number first, then title keyword, then extraction template, then bank name
-            (only when this is the company&apos;s only mapping for that bank).
-          </p>
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
-          <button onClick={onClose} disabled={busy} className="px-3 py-2 text-xs font-semibold rounded-lg border border-border hover:bg-muted disabled:opacity-40">Cancel</button>
-          <button onClick={simpan} disabled={busy} className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">
-            {busy ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+        <label className="block">
+          <span className={FIELD_LABEL_CLS}>Extraction template (optional)</span>
+          <FilterSelect
+            value={isi.template_id ?? ''}
+            onChange={(v) => ubah('template_id', v)}
+            className="w-full"
+            options={[
+              { value: '', label: '— None —' },
+              ...templates.filter((t) => t.is_active || t.id === isi.template_id).map((t) => ({ value: t.id, label: `${t.template_name || t.id} (${t.file_type})` })),
+            ]}
+          />
+        </label>
+        <label className="block">
+          <span className={FIELD_LABEL_CLS}>Notes</span>
+          <input value={isi.notes ?? ''} onChange={(e) => ubah('notes', e.target.value)} className={FIELD_CLS} />
+        </label>
+        <label className="flex items-center gap-2 text-xs font-medium text-neutral-900">
+          <input type="checkbox" checked={isi.is_active ?? true} onChange={(e) => ubah('is_active', e.target.checked)} className={CHECKBOX_CLS} />
+          Active
+        </label>
+        <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-[11px] font-medium text-neutral-500">
+          Files are matched by account number first, then title keyword, then extraction template, then bank name
+          (only when this is the company&apos;s only mapping for that bank).
+        </p>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -162,74 +170,79 @@ export default function BankMappings() {
   const aktif = mappings.filter((m) => m.is_active).length;
 
   return (
-    <div className="card-elevated-md rounded-xl overflow-hidden mb-6">
-      <div className="flex items-center gap-3 px-5 py-4">
-        <button onClick={() => setBuka((b) => !b)} className="flex-1 flex items-center gap-3 text-left min-w-0">
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-foreground">Bank Mapping</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {loading && mappings.length === 0
-                ? 'Loading...'
-                : `${aktif} active mapping(s) — uploads with “Auto-detect” are posted to the account mapped to the bank / account number in the file.`}
-            </p>
+    <>
+      <SourcePanel
+        title="Bank Mapping"
+        subtitle={
+          loading && mappings.length === 0
+            ? 'Loading...'
+            : `${aktif} active mapping(s) — uploads with “Auto-detect” are posted to the account mapped to the bank / account number in the file.`
+        }
+        leading={<span className={PANEL_ICON_CHIP}><Landmark size={17} /></span>}
+        open={buka}
+        onHeaderClick={() => setBuka((b) => !b)}
+        flush
+        action={
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={() => setForm({ awal: null })} className={ACTION_BTN_PRIMARY}>
+              <Plus size={13} /> Add
+            </button>
+            <button onClick={() => setBuka((b) => !b)} aria-label={buka ? 'Collapse' : 'Expand'} className={ICON_BTN}>
+              <ChevronDown size={16} className={`transition-transform ${buka ? 'rotate-180' : ''}`} />
+            </button>
           </div>
-          <ChevronDownIcon className={`w-4 h-4 ml-auto shrink-0 text-muted-foreground transition-transform ${buka ? 'rotate-180' : ''}`} />
-        </button>
-        <button
-          onClick={() => setForm({ awal: null })}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border hover:bg-muted text-foreground shrink-0"
-        >
-          <PlusIcon className="w-3.5 h-3.5" /> Add
-        </button>
-      </div>
-      {buka && (
-        mappings.length === 0 ? (
-          <p className="text-xs text-muted-foreground px-5 pb-5">
+        }
+      >
+        {mappings.length === 0 ? (
+          <p className="px-4 py-8 text-center text-xs font-medium text-neutral-500">
             No bank mapping yet. Add one, or import a statement with the account selected — the mapping is saved automatically.
           </p>
         ) : (
-          <div className="overflow-x-auto border-t border-border">
-            <table className="w-full text-sm">
+          <div className="scrollbar-thin overflow-x-auto">
+            <table className="w-full min-w-[900px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="border-b border-border bg-muted/20">
-                  {['Bank / Source', 'Account No.', 'Title Keyword', 'Target Account', 'Template', 'Used', 'Active', ''].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-[11px] font-700 uppercase tracking-wider text-muted-foreground whitespace-nowrap">{h}</th>
+                <tr className="bg-neutral-300">
+                  {['Bank / Source', 'Account No.', 'Title Keyword', 'Target Account', 'Template', 'Used', 'Status', ''].map((h, i) => (
+                    <th key={`${h}-${i}`} className={`${TH_CLS} text-left`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {mappings.map((m) => (
-                  <tr key={m.id} className={`border-b border-border/50 ${m.is_active ? '' : 'opacity-60'}`}>
-                    <td className="px-4 py-3 text-xs">
-                      <span className="font-semibold text-foreground">{m.bank_name}</span>
-                      {m.notes && <span className="block text-[11px] text-muted-foreground max-w-[260px] truncate" title={m.notes}>{m.notes}</span>}
+                  <tr key={m.id} className={`${TR_CLS} ${m.is_active ? '' : 'opacity-60'}`}>
+                    <td className="px-2 py-2">
+                      <span className="font-semibold text-neutral-900">{m.bank_name}</span>
+                      {m.notes && <span className="block max-w-[260px] truncate text-[11px] text-neutral-500" title={m.notes}>{m.notes}</span>}
                     </td>
-                    <td className="px-4 py-3 text-xs font-mono whitespace-nowrap">{m.account_number || '—'}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap">{m.match_keyword || '—'}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap">{kodeAkun(m.bank_account_code)} - {m.bank_account_name}</td>
-                    <td className="px-4 py-3 text-[11px] text-muted-foreground max-w-[220px] truncate" title={m.template_name || undefined}>{m.template_name || '—'}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                    <td className={`${TD_CLS} tabular-nums`}>{m.account_number || '—'}</td>
+                    <td className={TD_CLS}>{m.match_keyword || '—'}</td>
+                    <td className={`${TD_CLS} font-medium`}>{kodeAkun(m.bank_account_code)} - {m.bank_account_name}</td>
+                    <td className="max-w-[220px] truncate px-2 py-2 text-[11px] text-neutral-500" title={m.template_name || undefined}>{m.template_name || '—'}</td>
+                    <td className={`${TD_CLS} tabular-nums`}>
                       {m.usage_count}×
-                      {m.last_used_at && <span className="block text-[11px] text-muted-foreground">{m.last_used_at.slice(0, 10)}</span>}
+                      {m.last_used_at && <span className="block text-[11px] text-neutral-500">{m.last_used_at.slice(0, 10)}</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={m.is_active}
-                        disabled={busy === m.id}
-                        onChange={(e) => jalankan(m.id, () => updateBcBankMapping(clientId, m.id, {
-                          bank_name: m.bank_name, bank_coa_id: m.bank_coa_id, account_number: m.account_number, match_keyword: m.match_keyword,
-                          template_id: m.template_id, notes: m.notes, is_active: e.target.checked,
-                        }), e.target.checked ? 'Bank mapping activated.' : 'Bank mapping deactivated.')}
-                        className="rounded border-border"
-                      />
+                    <td className={TD_CLS}>
+                      <label className="inline-flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={m.is_active}
+                          disabled={busy === m.id}
+                          onChange={(e) => jalankan(m.id, () => updateBcBankMapping(clientId, m.id, {
+                            bank_name: m.bank_name, bank_coa_id: m.bank_coa_id, account_number: m.account_number, match_keyword: m.match_keyword,
+                            template_id: m.template_id, notes: m.notes, is_active: e.target.checked,
+                          }), e.target.checked ? 'Bank mapping activated.' : 'Bank mapping deactivated.')}
+                          className={CHECKBOX_CLS}
+                        />
+                        <StatusPill tone={m.is_active ? 'emerald' : 'neutral'} label={m.is_active ? 'Active' : 'Inactive'} />
+                      </label>
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button onClick={() => setForm({ awal: m })} disabled={busy === m.id} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40" title="Edit">
-                        <PencilSquareIcon className="w-3.5 h-3.5" />
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      <button onClick={() => setForm({ awal: m })} disabled={busy === m.id} className={ICON_BTN} title="Edit" aria-label="Edit mapping">
+                        <Pencil size={14} />
                       </button>
-                      <button onClick={() => hapus(m)} disabled={busy === m.id} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-rose-600 disabled:opacity-40" title="Delete mapping">
-                        <TrashIcon className="w-3.5 h-3.5" />
+                      <button onClick={() => hapus(m)} disabled={busy === m.id} className={ICON_BTN_DANGER} title="Delete mapping" aria-label="Delete mapping">
+                        <Trash2 size={14} />
                       </button>
                     </td>
                   </tr>
@@ -237,9 +250,9 @@ export default function BankMappings() {
               </tbody>
             </table>
           </div>
-        )
-      )}
+        )}
+      </SourcePanel>
       {form && <MappingForm clientId={clientId} awal={form.awal} onClose={() => setForm(null)} />}
-    </div>
+    </>
   );
 }

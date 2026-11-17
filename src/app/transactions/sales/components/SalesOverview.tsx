@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, Store, Trophy, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Check, Search, Store, Trophy, ShoppingCart, FileText, Calculator, Clock, CheckCircle, Scale, Percent, Landmark, CreditCard, Banknote, AlertTriangle, Info } from 'lucide-react';
 import { formatIDR } from '../../lib/groupAnalytics';
 import InteractiveDonutChart, { type DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
@@ -15,6 +15,8 @@ import {
   type TimeRange, type TickInfo, type Granularity, type IntervalId, type IntervalDef,
 } from './salesTrendTime';
 import SalesChartCrosshair from './SalesChartCrosshair';
+import { salesFont } from './salesFont';
+import SalesLoading from './SalesLoading';
 import SalesCandleLayer, { type SalesChartType } from './SalesCandleLayer';
 
 // ── Sumbu Y: lebarnya dihitung otomatis dari label harga terlebar (lihat salesAxisWidth di
@@ -30,8 +32,8 @@ const SALES_PLOT_RIGHT = 10;      // margin.right AreaChart
 const SALES_CHART_HEIGHT = 220;
 const SALES_PLOT_TOP = 5;         // margin.top AreaChart
 const SALES_TIME_ZOOM_PX = 220;   // jarak tarik (px) untuk melebarkan/menyempitkan jendela ~2,7x
-const SALES_AXIS_BORDER = '#0E2F26'; // hijau sidebar (--nav) untuk garis tepi sumbu harga & bulan
-const SALES_LINE_COLOR = '#EAB308';  // kuning garis chart
+const SALES_AXIS_BORDER = '#404040'; // abu gelap untuk garis tepi sumbu harga & bulan
+const SALES_LINE_COLOR = '#2563EB';  // biru garis chart (sama dengan warna nomor invoice)
 const salesEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 
 // Kartu KPI Overview -- desain sama dengan kartu KPI di tab Source Data, Sales
@@ -40,12 +42,12 @@ const salesEaseOutQuint = (t: number) => 1 - Math.pow(1 - t, 5);
 // peringatan (belum diposting, piutang, jatuh tempo).
 type KpiTone = 'slate' | 'amber' | 'green' | 'sky' | 'warn' | 'danger';
 const KPI_TONE: Record<KpiTone, { strip: string; iconBg: string; iconText: string; bar: string; glow: string; border: string }> = {
-  slate: { strip: 'bg-[#6EE7B7]', iconBg: 'bg-[#ECFDF5]', iconText: 'text-[#047857]', bar: 'bg-[#6EE7B7]', glow: 'bg-[#6EE7B7]', border: 'border-primary/60' },
-  amber: { strip: 'bg-[#22C55E]', iconBg: 'bg-[#DCFCE7]', iconText: 'text-[#15803D]', bar: 'bg-[#22C55E]', glow: 'bg-[#22C55E]', border: 'border-primary/60' },
-  green: { strip: 'bg-[#0F7D4E]', iconBg: 'bg-[#D1FAE5]', iconText: 'text-[#065F46]', bar: 'bg-[#0F7D4E]', glow: 'bg-[#0F7D4E]', border: 'border-primary/60' },
-  sky: { strip: 'bg-[#0B5E5C]', iconBg: 'bg-[#CCFBF1]', iconText: 'text-[#0F766E]', bar: 'bg-[#0B5E5C]', glow: 'bg-[#0B5E5C]', border: 'border-primary/60' },
-  warn: { strip: 'bg-[#F59E0B]', iconBg: 'bg-[#FEF3C7]', iconText: 'text-[#B45309]', bar: 'bg-[#F59E0B]', glow: 'bg-[#F59E0B]', border: 'border-amber-300' },
-  danger: { strip: 'bg-[#EF4444]', iconBg: 'bg-[#FEE2E2]', iconText: 'text-[#DC2626]', bar: 'bg-[#EF4444]', glow: 'bg-[#EF4444]', border: 'border-red-300' },
+  slate: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  amber: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  green: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  sky: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  warn: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
+  danger: { strip: 'bg-neutral-800', iconBg: 'bg-neutral-100', iconText: 'text-neutral-700', bar: 'bg-neutral-800', glow: '', border: 'border-neutral-300' },
 };
 
 function OverviewKpiTile({ label, value, sub, pct, pctLabel, tone, icon: Icon }: {
@@ -60,21 +62,20 @@ function OverviewKpiTile({ label, value, sub, pct, pctLabel, tone, icon: Icon }:
   const c = KPI_TONE[tone];
   const p = Math.min(100, Math.max(0, Math.round(Number.isFinite(pct) ? pct : 0)));
   return (
-    <div className={`relative overflow-hidden rounded-[10px] border ${c.border} bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 pt-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}>
-      <span className={`absolute inset-x-0 top-0 h-1 ${c.strip}`} />
-      <span className={`pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full opacity-[0.12] blur-xl ${c.glow}`} />
+    <div className={`relative overflow-hidden rounded-[10px] border ${c.border} bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700`}>
+      <span className={`absolute inset-x-0 top-0 h-0.5 ${c.strip}`} />
       <div className="relative flex items-start justify-between gap-2">
-        <p className="min-w-0 truncate text-xs font-extrabold uppercase tracking-wide text-slate-700" title={label}>{label}</p>
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-sm ring-1 ring-white ${c.iconBg}`}>
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-neutral-200 ${c.iconBg}`}>
           <Icon size={16} className={c.iconText} />
         </span>
       </div>
-      <p className="relative mt-1 truncate text-lg font-extrabold tabular-nums text-[#064E3B]" title={value}>{value}</p>
-      <p className="relative h-4 truncate text-[11px] font-semibold text-slate-500">{sub ?? '\u00A0'}</p>
-      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={value}>{value}</p>
+      <p className="relative h-4 truncate text-[11px] font-medium text-neutral-500">{sub ?? '\u00A0'}</p>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
         <div className={`h-full rounded-full ${c.bar}`} style={{ width: `${p > 0 ? Math.max(p, 3) : 0}%` }} />
       </div>
-      <p className="relative mt-1 truncate text-[11px] font-semibold text-slate-600">{p}% {pctLabel}</p>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{p}% {pctLabel}</p>
     </div>
   );
 }
@@ -85,12 +86,13 @@ const pctOf = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
 // & Posted: selalu terbuka ke bawah, bisa di-scroll, hover/terpilih hijau brand.
 interface FilterOption { value: string; label: string; short?: string }
 
-function FilterSelect({ value, onChange, options, searchable: searchableProp, title }: {
+function FilterSelect({ value, onChange, options, searchable: searchableProp, title, neutral }: {
   value: string;
   onChange: (v: string) => void;
   options: FilterOption[];
   searchable?: boolean;
   title?: string;
+  neutral?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -123,7 +125,7 @@ function FilterSelect({ value, onChange, options, searchable: searchableProp, ti
         aria-haspopup="listbox"
         aria-expanded={open}
         title={title}
-        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50'}`}
+        className={`flex items-center gap-2 text-xs border rounded-[6px] px-3 py-1.5 bg-card text-foreground transition-colors ${neutral ? (open ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50') : (open ? 'border-primary ring-2 ring-primary/20' : 'border-primary/60 hover:border-primary hover:bg-slate-50')}`}
       >
         <span className="truncate max-w-[170px]">{current?.short ?? current?.label}</span>
         <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -150,7 +152,7 @@ function FilterSelect({ value, onChange, options, searchable: searchableProp, ti
                   <button
                     type="button"
                     onClick={() => { onChange(o.value); setOpen(false); }}
-                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-[#6EE7B7] hover:text-[#064E3B] ${selected ? 'bg-[#D1FAE5] font-semibold text-[#065F46]' : 'text-foreground'}`}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-300 hover:text-neutral-900 ${selected ? 'bg-neutral-200 font-semibold text-neutral-900' : 'text-neutral-700'}`}
                   >
                     <span className="truncate">{o.label}</span>
                     {selected && <Check size={14} className="shrink-0" />}
@@ -192,16 +194,18 @@ function buildPageItems(current: number, total: number): (number | '…')[] {
   return items;
 }
 
-const STATUS_PILL: Record<string, string> = {
-  positive: 'bg-emerald-100 text-emerald-700',
-  info: 'bg-blue-100 text-blue-700',
-  warning: 'bg-amber-100 text-amber-700',
-  negative: 'bg-red-100 text-red-700',
-  neutral: 'bg-muted text-muted-foreground',
+// Warna status invoice: lembut (tint -50, teks -700, garis -200) supaya tetap elegan.
+// Draft abu (belum diproses) -> Review kuning (perlu dicek) -> Approved biru (siap posting)
+// -> Posted teal (sudah masuk jurnal) -> Partial oranye (baru dibayar sebagian) -> Paid hijau (lunas).
+const STATUS_STYLE: Record<string, { pill: string; dot: string }> = {
+  Draft: { pill: 'bg-slate-200 text-slate-800 border-slate-400', dot: 'bg-slate-500' },
+  Review: { pill: 'bg-amber-100 text-amber-900 border-amber-300', dot: 'bg-amber-600' },
+  Approved: { pill: 'bg-blue-100 text-blue-800 border-blue-300', dot: 'bg-blue-600' },
+  Posted: { pill: 'bg-teal-100 text-teal-800 border-teal-300', dot: 'bg-teal-600' },
+  Partial: { pill: 'bg-orange-100 text-orange-800 border-orange-300', dot: 'bg-orange-600' },
+  Paid: { pill: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-600' },
 };
-const STATUS_DOT: Record<string, string> = {
-  positive: 'bg-emerald-500', info: 'bg-blue-500', warning: 'bg-amber-500', negative: 'bg-red-500', neutral: 'bg-slate-400',
-};
+const STATUS_STYLE_FALLBACK = { pill: 'bg-neutral-100 text-neutral-600 border-neutral-300', dot: 'bg-neutral-400' };
 const NAV_BTN = 'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card';
 
 interface SalesDragPreview {
@@ -219,7 +223,7 @@ function SalesYTick({ x, y, payload }: { x?: number; y?: number; payload?: { val
   if (x == null || y == null || !payload) return null;
   return (
     <g>
-      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#94a3b8">{salesYLabel(payload.value)}</text>
+      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#8a8a8a">{salesYLabel(payload.value)}</text>
     </g>
   );
 }
@@ -231,11 +235,11 @@ function SalesXTick({ x, y, payload, info }: { x?: number; y?: number; payload?:
   const strong = tick.kind !== 'day';
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={strong ? 600 : 400} fill={strong ? '#64748b' : '#94a3b8'}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={strong ? 600 : 400} fill={strong ? '#525252' : '#8a8a8a'}>
         {tick.label}
       </text>
       {tick.sub && (
-        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#475569">
+        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#404040">
           {tick.sub}
         </text>
       )}
@@ -246,7 +250,7 @@ function SalesXTick({ x, y, payload, info }: { x?: number; y?: number; payload?:
 // ── Kartu Sales per Branch (donut) & Top Customer (leaderboard) ──
 // Desain mengikuti kartu KPI di atas: palet hijau brand, strip aksen, glow
 // mint lembut, ikon dalam chip, angka tabular.
-const BRANCH_COLORS = ['#0F7D4E', '#14B8A6', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4'];
+const BRANCH_COLORS = ['#2563EB', '#0EA5E9', '#6366F1', '#14B8A6', '#F59E0B', '#EC4899'];
 const BRANCH_OTHERS_COLOR = '#CBD5E1';
 
 const fmtPct = (p: number) => `${p > 0 && p < 10 ? p.toFixed(1) : p.toFixed(0)}%`;
@@ -296,21 +300,22 @@ const initialsOf = (name: string) => {
   return out.toUpperCase();
 };
 
-function SalesCardHeader({ icon: Icon, title, subtitle, right }: {
+function SalesCardHeader({ icon: Icon, title, subtitle, right, neutral }: {
   icon: React.ElementType;
   title: string;
   subtitle: string;
   right?: React.ReactNode;
+  neutral?: boolean;
 }) {
   return (
     <div className="mb-4 flex items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${neutral ? 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200' : 'bg-[#ECFDF5] text-[#047857] shadow-sm ring-1 ring-white'}`}>
           <Icon size={17} />
         </span>
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-bold text-foreground">{title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+          <h2 className={`truncate text-sm ${neutral ? 'font-semibold text-neutral-900' : 'font-bold text-foreground'}`}>{title}</h2>
+          <p className={`mt-0.5 text-xs ${neutral ? 'text-neutral-500' : 'text-muted-foreground'}`}>{subtitle}</p>
         </div>
       </div>
       {right}
@@ -350,7 +355,7 @@ function BranchDonutCard({ branches, total }: { branches: { name: string; value:
 
   return (
     <div className="card-elevated-md flex h-full flex-col rounded-xl p-5">
-      <SalesCardHeader icon={Store} title={t('Sales per Branch')} subtitle={t('Gross sales by branch')} />
+      <SalesCardHeader neutral icon={Store} title={t('Sales per Branch')} subtitle={t('Gross sales by branch')} />
       {segs.length === 0 || total <= 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
       ) : (
@@ -377,12 +382,12 @@ function BranchDonutCard({ branches, total }: { branches: { name: string; value:
                 <li
                   key={`legend-${a.name}-${i}`}
                   onClick={() => toggle(i)}
-                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-[#ECFDF5]' : 'hover:bg-slate-50'}`}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}
                 >
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
                   <span className={`min-w-0 flex-1 truncate ${active === i ? 'font-bold' : 'font-medium'} text-foreground`} title={a.name}>{a.name}</span>
                   <span className="font-semibold tabular-nums text-foreground">{shownMoney[i]}</span>
-                  <span className="w-10 shrink-0 rounded-full bg-slate-100 py-0.5 text-center text-[10px] font-bold tabular-nums text-slate-600">
+                  <span className="w-10 shrink-0 rounded-full bg-neutral-100 py-0.5 text-center text-[10px] font-semibold tabular-nums text-neutral-600">
                     {pctLabel(shownPcts[i], shownValues[i])}
                   </span>
                 </li>
@@ -403,11 +408,12 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
   return (
     <div className="card-elevated-md rounded-xl p-5">
       <SalesCardHeader
+        neutral
         icon={Trophy}
         title={t('Top Customer')}
         subtitle={t('Berdasarkan kontribusi nominal')}
         right={customers.length > 0 ? (
-          <span className="shrink-0 rounded-full bg-[#ECFDF5] px-3 py-1 text-[11px] font-bold text-[#047857] ring-1 ring-[#A7F3D0]">
+          <span className="shrink-0 rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-semibold text-neutral-700 ring-1 ring-neutral-300">
             Top {customers.length} · {fmtPct(topShare)} {t('of total sales')}
           </span>
         ) : undefined}
@@ -419,37 +425,35 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
           {customers.map((c, i) => {
             const first = i === 0;
             const share = total > 0 ? (c.amount / total) * 100 : 0;
-            const badge = i === 0 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 1 ? 'bg-[#D1FAE5] text-[#065F46]' : i === 2 ? 'bg-[#ECFDF5] text-[#047857]' : 'bg-slate-100 text-slate-600';
+            const badge = first ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-700';
             return (
               <div
                 key={`top-customer-${c.name}`}
-                className="group relative overflow-hidden rounded-[10px] border border-primary/30 bg-gradient-to-br from-white via-white to-[#F0FDF7] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-transparent hover:shadow-md"
+                className="rounded-[10px] border border-neutral-300 bg-white p-4 transition-colors duration-200 hover:border-neutral-500 hover:bg-neutral-50"
               >
-                <span className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#0F7D4E] to-[#0B5E5C] opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100" />
-                <span className="pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full bg-[#6EE7B7] opacity-[0.15] blur-xl transition-all duration-300 group-hover:bg-white group-hover:opacity-10" />
-                <div className="relative flex items-center justify-between">
-                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-extrabold transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white ${badge}`}>
+                <div className="flex items-center justify-between">
+                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-semibold ${badge}`}>
                     {first ? <Trophy size={12} /> : null}#{i + 1}
                   </span>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-slate-600 transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white">
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-neutral-600">
                     {fmtPct(share)}
                   </span>
                 </div>
-                <div className="relative mt-3 flex items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ECFDF5] text-xs font-extrabold text-[#047857] ring-1 ring-white transition-colors duration-300 group-hover:bg-white/20 group-hover:text-white group-hover:ring-white/30">
+                <div className="mt-3 flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-700 ring-1 ring-neutral-200">
                     {initialsOf(c.name)}
                   </span>
-                  <p className="min-w-0 truncate text-sm font-bold text-foreground transition-colors duration-300 group-hover:text-white" title={c.name}>{c.name}</p>
+                  <p className="min-w-0 truncate text-sm font-semibold text-neutral-900" title={c.name}>{c.name}</p>
                 </div>
-                <p className="relative mt-3 truncate text-lg font-extrabold tabular-nums text-[#064E3B] transition-colors duration-300 group-hover:text-white" title={formatIDR(c.amount)}>
+                <p className="mt-3 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={formatIDR(c.amount)}>
                   {formatIDR(c.amount)}
                 </p>
-                <p className="relative text-[11px] font-semibold text-slate-500 transition-colors duration-300 group-hover:text-white/75">
+                <p className="text-[11px] font-medium text-neutral-500">
                   {c.count} {t('invoices')}
                 </p>
-                <div className="relative mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 transition-colors duration-300 group-hover:bg-white/20">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
                   <div
-                    className="h-full rounded-full bg-[#0F7D4E] transition-colors duration-300 group-hover:bg-white"
+                    className="h-full rounded-full bg-neutral-800"
                     style={{ width: `${Math.max(3, (c.amount / max) * 100)}%` }}
                   />
                 </div>
@@ -467,9 +471,6 @@ function TopCustomerCard({ customers, total }: { customers: { name: string; amou
 const POSTED_STATUSES = ['Posted', 'Partial', 'Paid'];
 const isPosted = (inv: BackendSalesInvoice) => POSTED_STATUSES.includes(inv.posting_status);
 
-const statusVariant: Record<string, 'positive' | 'info' | 'warning' | 'neutral' | 'negative'> = {
-  Draft: 'warning', Review: 'warning', Approved: 'info', Posted: 'info', Partial: 'warning', Paid: 'positive',
-};
 
 const num = (v: unknown) => Number(v) || 0;
 const sumBy = (rows: BackendSalesInvoice[], pick: (r: BackendSalesInvoice) => unknown) => rows.reduce((s, r) => s + num(pick(r)), 0);
@@ -595,11 +596,15 @@ export default function SalesOverview() {
       : buildSeries(trendIndex, view.from, view.to, gran, pointLabel)),
     [trendIndex, view.from, view.to, gran, pointLabel, intervalDef, intervalLabel]
   );
+  // Jumlah label sumbu waktu maksimum yang muat di lebar chart (~70px per label), supaya label
+  // tidak menumpuk saat jendela waktu ditarik/di-zoom out -- sama seperti TradingView.
+  const [wrapPx, setWrapPx] = useState(900);
+  const maxXTicks = Math.max(3, Math.floor((wrapPx - 90) / 70));
   const xTicks = useMemo(
     () => (intervalDef && isIntraday(intervalDef)
-      ? buildIntradayTicks(view.from, view.to, tickFormatters)
-      : buildTicks(view.from, view.to, gran, tickFormatters)),
-    [view.from, view.to, gran, tickFormatters, intervalDef]
+      ? buildIntradayTicks(view.from, view.to, tickFormatters, maxXTicks)
+      : buildTicks(view.from, view.to, gran, tickFormatters, maxXTicks)),
+    [view.from, view.to, gran, tickFormatters, intervalDef, maxXTicks]
   );
   // Lebar tiap batang/candle = jarak ke awal periode berikutnya; teks Open -> Close untuk crosshair.
   const bucketEnd = useCallback(
@@ -691,7 +696,7 @@ export default function SalesOverview() {
   const salesYTicks = useMemo(() => niceTicksRange(salesYDomain[0], salesYDomain[1], 5), [salesYDomain]);
 
   // Lebar sumbu Y = label harga terlebar + jarak ke garis sumbu. Diukur dengan canvas memakai font
-  // halaman (diukur ulang setelah font selesai dimuat); tebakan awal dipakai untuk render pertama.
+  // Inter milik tab Sales (diukur ulang setelah font selesai dimuat); tebakan awal dipakai untuk render pertama.
   const [salesAxisWidth, setSalesAxisWidth] = useState(() =>
     Math.ceil(Math.max(...salesYTicks.map((v) => salesYLabel(v).length)) * 6.8) + SALES_AXIS_GAP
   );
@@ -700,7 +705,7 @@ export default function SalesOverview() {
     const measure = () => {
       const ctx = document.createElement('canvas').getContext('2d');
       if (!ctx) return;
-      ctx.font = `10px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.font = `10px ${salesFont.style.fontFamily}`;
       const widest = Math.max(0, ...labels.map((l) => ctx.measureText(l).width));
       const next = Math.ceil(widest) + SALES_AXIS_GAP;
       setSalesAxisWidth((prev) => (prev === next ? prev : next));
@@ -884,6 +889,16 @@ export default function SalesOverview() {
   //    Titik yang diklik tetap di tempatnya saat zoom.
   //  - Tarik di grafik: geser periode kiri/kanan. Klik dua kali di label = kembali ke satu tahun penuh.
   const chartWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const measure = () => setWrapPx((prev) => (Math.abs(prev - el.clientWidth) < 2 ? prev : el.clientWidth));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasAnySales]);
   const [panning, setPanning] = useState(false);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -952,7 +967,7 @@ export default function SalesOverview() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className={`${salesFont.className} space-y-6`}>
       {error && (
         <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
           <span className="font-semibold">{t('Error:')}</span>
@@ -963,11 +978,12 @@ export default function SalesOverview() {
       {/* Invoice yang belum diposting tetap dihitung di Total Sales, tapi
           diberi peringatan supaya jelas mana yang belum resmi masuk jurnal. */}
       {pendingCount > 0 && (
-        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          <span className="font-semibold">{t('Perhatian:')}</span>
-          <span>
+        <div className="flex items-start gap-3 rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-4 py-3 text-xs text-neutral-700">
+          <Info size={15} className="mt-px shrink-0 text-neutral-700" />
+          <p className="leading-relaxed">
+            <span className="font-semibold text-neutral-900">{t('Perhatian:')}</span>{' '}
             {pendingCount} {t('invoices worth')} {formatIDR(pendingTotal, true)} {t('are not posted yet (Draft / Review / Approved) — they are included in Total Sales, but not in Paid, Accounts Receivable, or Overdue.')}
-          </span>
+          </p>
         </div>
       )}
 
@@ -975,8 +991,8 @@ export default function SalesOverview() {
       {(() => {
         const maxGross = invoices.reduce((m, i) => Math.max(m, num(i.gross_amount)), 0);
         const label = (txt: string) => (
-          <p className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
-            <span className="h-3.5 w-1 rounded-full bg-[#0F7D4E]" />{txt}
+          <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
+            <span className="h-3.5 w-1 rounded-full bg-neutral-800" />{txt}
           </p>
         );
         return (
@@ -1051,12 +1067,13 @@ export default function SalesOverview() {
         <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-foreground">{t('Tren Sales Bulanan')}</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('Based on invoice date, gross amount')}</p>
+              <h2 className="text-sm font-semibold text-neutral-900">{t('Tren Sales Bulanan')}</h2>
+              <p className="text-xs text-neutral-500 mt-0.5">{t('Based on invoice date, gross amount')}</p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {/* Timeframe (5m ... 1Y) + bentuk grafik ala TradingView */}
               <FilterSelect
+                neutral
                 title="Timeframe"
                 searchable={false}
                 value={intervalId ?? 'auto'}
@@ -1064,6 +1081,7 @@ export default function SalesOverview() {
                 options={INTERVAL_OPTIONS}
               />
               <FilterSelect
+                neutral
                 title="Bentuk grafik"
                 searchable={false}
                 value={chartType}
@@ -1074,7 +1092,7 @@ export default function SalesOverview() {
                 <button
                   type="button"
                   onClick={() => { setRange(null); setIntervalId(null); setSalesYShift(0); setSalesPriceZoom(1); }}
-                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground hover:bg-muted"
+                  className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-card text-neutral-900 hover:bg-neutral-100"
                 >
                   {t('Reset')}
                 </button>
@@ -1083,7 +1101,7 @@ export default function SalesOverview() {
                 <select
                   value={trendYear}
                   onChange={(e) => { setPickedYear(Number(e.target.value)); setRange(null); }}
-                  className="text-xs border border-border rounded-lg px-2 py-1 bg-card text-foreground"
+                  className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-card text-neutral-900"
                 >
                   {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
                 </select>
@@ -1103,11 +1121,11 @@ export default function SalesOverview() {
                 <AreaChart data={salesDisplayTrend} margin={{ top: SALES_PLOT_TOP, right: SALES_PLOT_RIGHT, left: SALES_PLOT_LEFT, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gradSalesMain" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.65} />
-                      <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.12} />
+                      <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.30} />
+                      <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
                   <XAxis
                     dataKey="t"
                     type="number"
@@ -1214,14 +1232,18 @@ export default function SalesOverview() {
 
       {/* Tabel invoice Sales (read-only ringkasan -- edit/approve/posting ada di tab Sales Transaction) */}
       {invoices.length === 0 ? (
-        <div className="card p-8 text-center text-xs text-muted-foreground">
-          {loading ? t('Loading...') : t('No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.')}
-        </div>
+        loading ? (
+          <SalesLoading loading message={t('Memuat...')} />
+        ) : (
+          <div className="card p-8 text-center text-xs text-muted-foreground">
+            {t('No sales invoices yet. Upload a file in Source Data and create invoices, or add one in Sales Transaction.')}
+          </div>
+        )
       ) : (
         <div className="card overflow-hidden">
           <div className="px-0 py-3 border-b border-border">
-            <h3 className="text-2xl font-bold text-foreground">{t('Daftar Invoice Penjualan')}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h3 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Daftar Invoice Penjualan')}</h3>
+            <p className="text-sm text-neutral-500 mt-0.5">
               {tableRows.length === 0
                 ? t('Menampilkan 0 dari 0 transaksi')
                 : `${t('Menampilkan')} ${(tablePageSafe - 1) * tablePageSize + 1} - ${Math.min(tablePageSafe * tablePageSize, tableRows.length)} ${t('dari')} ${tableRows.length} ${t('transaksi')}`}
@@ -1231,63 +1253,75 @@ export default function SalesOverview() {
           {/* Filter -- desain sama dengan filter di Sales Transaction */}
           <div className="py-3 flex flex-wrap items-center gap-2 border-b border-border">
             <FilterSelect
+              neutral
               value={branchFilter}
               onChange={(v) => { setBranchFilter(v); setTablePage(1); }}
               options={[{ value: 'all', label: t('All Branches') }, ...branches.map((b) => ({ value: b, label: b }))]}
             />
             <div className="relative ml-auto w-full sm:w-[400px]">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
               <input
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setTablePage(1); }}
                 placeholder={t('Cari Invoice, deskripsi, customer, no. jurnal...')}
-                className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-card text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           </div>
 
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full min-w-[1300px] select-text">
+            <table className="w-full min-w-[1300px] select-text border-separate border-spacing-0">
               <thead>
-                <tr className="bg-[#8FE3B5]">
+                <tr className="bg-neutral-300">
                   {['Date', 'Invoice', 'Customer', 'Cabang', 'DPP', 'PPN', 'PPh', 'Gross', 'Paid', 'Outstanding', 'Due Date', 'Journal', 'Status'].map((h) => (
-                    <th key={h} className={`py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32] ${NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
+                    <th key={h} className={`py-2 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800 ${NUMERIC_COLS.includes(h) ? 'text-right' : 'text-left'}`}>{t(h)}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {pagedRows.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="py-8 text-center text-xs text-muted-foreground">{t('Tidak ada transaksi yang cocok dengan filter.')}</td>
+                    <td colSpan={13} className="py-2 px-2 text-center text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-xs">{t('Tidak ada transaksi yang cocok dengan filter.')}</span>
+                    </td>
                   </tr>
                 )}
                 {pagedRows.map((r) => {
-                  const variant = statusVariant[r.posting_status] || 'neutral';
+                  const st = STATUS_STYLE[r.posting_status] || STATUS_STYLE_FALLBACK;
                   const money = (v: unknown, extra = '') => (
-                    <td className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${num(v) < 0 ? 'text-red-600' : ''} ${extra}`}>{formatIDR(num(v))}</td>
+                    <td className={`py-2 px-2 text-right tabular-nums whitespace-nowrap ${extra}`}>{formatIDR(num(v))}</td>
                   );
                   return (
-                    <tr key={r.id} className="border-b border-slate-400/80 hover:bg-slate-200/70 transition-colors text-xs">
+                    <tr key={r.id} className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs">
                       <td className="py-2 px-2 text-foreground whitespace-nowrap">{formatTanggalSingkat(r.invoice_date)}</td>
-                      <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{r.invoice_no}</td>
-                      <td className="py-2 px-2 font-medium text-foreground whitespace-nowrap">{r.customer_name}</td>
-                      <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{r.cabang || '—'}</td>
+                      <td className="py-2 px-2 font-medium text-blue-700 whitespace-nowrap">{r.invoice_no}</td>
+                      <td className="py-2 px-2 font-medium text-neutral-900 whitespace-nowrap">{r.customer_name}</td>
+                      <td className="py-2 px-2 text-neutral-600 whitespace-nowrap">{r.cabang || '—'}</td>
                       {money(r.dpp)}
                       {money(r.ppn)}
                       {money(r.pph)}
                       {money(r.gross_amount, 'font-semibold')}
                       {money(r.paid_amount)}
-                      {money(r.outstanding_amount, isPosted(r) && num(r.outstanding_amount) > 0 ? '!text-amber-600 font-semibold' : '')}
-                      <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">{r.due_date ? formatTanggalSingkat(r.due_date) : '—'}</td>
-                      <td className="py-2 px-2 font-medium text-primary whitespace-nowrap">{r.journal_entry_id ? `JE-${r.journal_entry_id}` : '—'}</td>
+                      {money(r.outstanding_amount, isPosted(r) && num(r.outstanding_amount) > 0 ? 'font-semibold' : '')}
+                      <td className="py-2 px-2 text-neutral-600 whitespace-nowrap">{r.due_date ? formatTanggalSingkat(r.due_date) : '—'}</td>
+                      <td className="py-2 px-2 font-medium text-blue-700 whitespace-nowrap">{r.journal_entry_id ? `JE-${r.journal_entry_id}` : '—'}</td>
                       <td className="py-2 px-2 whitespace-nowrap">
-                        <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_PILL[variant]}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[variant]}`} />{t(r.posting_status)}
+                        <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium border ${st.pill}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />{t(r.posting_status)}
                         </span>
                       </td>
                     </tr>
                   );
                 })}
+                {/* Baris kosong pengisi: tinggi tabel selalu = jumlah "Baris per halaman",
+                    jadi layar tidak bergeser saat filter/halaman menampilkan lebih sedikit baris. */}
+                {Array.from({ length: Math.max(0, tablePageSize - Math.max(pagedRows.length, 1)) }).map((_, i) => (
+                  <tr key={`pad-${i}`} aria-hidden="true" className="invisible text-xs">
+                    <td colSpan={13} className="py-2 px-2 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2 py-0.5 text-[11px] font-medium">&nbsp;</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -1316,7 +1350,7 @@ export default function SalesOverview() {
                 p === '…' ? (
                   <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
                 ) : (
-                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+                  <button key={p} onClick={() => setTablePage(p)} aria-current={p === tablePageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === tablePageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'}`}>{p}</button>
                 )
               )}
               <button onClick={() => setTablePage(tablePageSafe + 1)} disabled={tablePageSafe >= tableTotalPages} aria-label={t('Halaman berikutnya')} className={NAV_BTN}><ChevronRight size={16} /></button>
