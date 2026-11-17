@@ -272,9 +272,11 @@ class Buku:
         return {a.id: a for a in self.aset}
 
 
-def _muat(session, kid: str) -> Buku:
+def _muat(session, kid: str, draft: bool = False) -> Buku:
+    """Register aset. Default hanya aset final; draft=True -> hanya aset draft (tab Draft)."""
     kategori = {c.id: c for c in session.query(CAT).filter(CAT.client_id == kid).all()}
-    baris = session.query(FA).filter(FA.client_id == kid, FA.deleted_at.is_(None)).order_by(FA.asset_code).all()
+    baris = session.query(FA).filter(FA.client_id == kid, FA.deleted_at.is_(None),
+                                     FA.is_draft.is_(bool(draft))).order_by(FA.asset_code).all()
     aset = [Aset(row=r, kategori=kategori.get(r.category_id)) for r in baris]
     per_id = {a.id: a for a in aset}
     jurnal: List[Jurnal] = []
@@ -353,8 +355,9 @@ def _aset_dict(b: Buku, a: Aset, per: date) -> Dict[str, Any]:
         "asset_coa_override": r.coa_id, "accum_coa_override": r.accum_coa_id, "expense_coa_override": r.expense_coa_id,
         "acquisition_journal_id": r.acquisition_journal_id,
         "disposal_date": r.disposal_date, "disposal_value": _f(r.disposal_value) if r.disposal_value is not None else None,
-        "issues": _masalah(a, per),
+        "issues": _masalah(a, per), "is_draft": bool(r.is_draft),
         "created_at": r.created_at, "created_by_name": r.created_by_name,
+        "edited_at": r.updated_at,
     }
 
 
@@ -639,10 +642,13 @@ def _kode_aset_berikut(session, kid: str) -> str:
     return f"FA-{urut + 1:04d}"
 
 
-def _ambil_aset(session, kid: str, asset_id: Any) -> Any:
+def _ambil_aset(session, kid: str, asset_id: Any, boleh_draft: bool = False) -> Any:
     r = session.get(FA, str(asset_id))
     if r is None or r.deleted_at is not None or str(r.client_id) != kid:
         raise _Gagal("Asset not found.", kode="NOT_FOUND", status_code=404)
+    if r.is_draft and not boleh_draft:
+        raise _Gagal("This asset is still a draft. Uncheck Draft and save it to the register first.",
+                     kode="CONFLICT", status_code=409)
     return r
 
 
@@ -667,12 +673,13 @@ def _kpi_register(b: Buku, per: date) -> Dict[str, Any]:
 
 @router.get("/assets", summary="Asset Register: semua aset + nilai per tanggal + KPI")
 def daftar_aset(client_id: UUID = Query(...), as_of: Optional[date] = Query(None),
+                draft: bool = Query(False, description="true = hanya aset draft (tab Draft)"),
                 _u: Dict[str, Any] = Depends(get_current_user_v1)):
     kid = str(client_id)
     per = as_of or date.today()
 
     def aksi(session):
-        b = _muat(session, kid)
+        b = _muat(session, kid, draft=draft)
         return {"as_of": per, "kpi": _kpi_register(b, per), "assets": [_aset_dict(b, a, per) for a in b.aset],
                 "next_code": _kode_aset_berikut(session, kid)}
     return _respon(aksi)
@@ -704,8 +711,8 @@ def detail_aset(asset_id: UUID, client_id: UUID = Query(...), as_of: Optional[da
     per = as_of or date.today()
 
     def aksi(session):
-        r = _ambil_aset(session, kid, asset_id)
-        b = _muat(session, kid)
+        r = _ambil_aset(session, kid, asset_id, boleh_draft=True)
+        b = _muat(session, kid, draft=bool(r.is_draft))
         a = b.per_id()[r.id]
         jurnal = session.query(JR).filter(JR.client_id == kid, JR.asset_id == r.id).order_by(JR.journal_date, JR.journal_no).all()
         lepas = session.query(DSP).filter(DSP.asset_id == r.id, DSP.deleted_at.is_(None)).order_by(DSP.created_at.desc()).all()
@@ -741,6 +748,8 @@ class AsetRequest(BaseModel):
     # Jurnal perolehan (Manager+): Dr akun aset / Cr akun lawan.
     post_acquisition: bool = False
     acquisition_credit_coa_id: Optional[UUID] = None
+    # Draft: disimpan di tab Draft, belum masuk register (tanpa jurnal / penyusutan).
+    is_draft: bool = False
 
 
 def _ada_jurnal_efektif(session, asset_id: str, jenis: Optional[Tuple[str, ...]] = None) -> bool:
@@ -785,12 +794,17 @@ def _isi_aset(session, kid: str, p: AsetRequest, user: Dict[str, Any], r: Any = 
     # Angka yang membentuk nilai buku hanya boleh diubah selama belum ada jurnal (penyusutan/perolehan/disposal).
     angka = dict(purchase_date=p.acquisition_date, depreciation_start_date=mulai, cost=biaya,
                  opening_accumulated_depreciation=Decimal(str(p.opening_accumulated_depreciation)))
+    if p.is_draft and p.post_acquisition:
+        raise _Gagal("A draft asset cannot post the acquisition journal. Uncheck Draft first.")
     if r is None:
-        r = FA(client_id=kid, created_by=user.get("id"), created_by_name=_nama(user), **nilai, **angka)
+        r = FA(client_id=kid, created_by=user.get("id"), created_by_name=_nama(user), is_draft=p.is_draft, **nilai, **angka)
         session.add(r)
     else:
         if r.status == "disposed":
             raise _Gagal("A disposed asset cannot be edited.", kode="CONFLICT", status_code=409)
+        if p.is_draft and not r.is_draft:
+            _cek_bisa_draft(session, r)
+        r.is_draft = p.is_draft
         terkunci = _ada_jurnal_efektif(session, r.id)
         for k, v in angka.items():
             lama = getattr(r, k)
@@ -807,6 +821,18 @@ def _isi_aset(session, kid: str, p: AsetRequest, user: Dict[str, Any], r: Any = 
         r.updated_at, r.edited_by = _sekarang(), user.get("id")
     session.flush()
     return r
+
+
+def _cek_bisa_draft(session, r: Any) -> None:
+    """Aset register hanya boleh dikembalikan ke draft kalau belum punya jurnal, batch, atau disposal."""
+    if session.query(JR).filter(JR.asset_id == r.id).first() is not None:
+        raise _Gagal("This asset already has journals, so it cannot be moved back to draft.", kode="CONFLICT", status_code=409)
+    if session.query(RL).join(RUN, RUN.id == RL.run_id).filter(
+            RL.asset_id == r.id, RUN.deleted_at.is_(None), RUN.status != "reversed").first() is not None:
+        raise _Gagal("This asset is included in a depreciation batch, so it cannot be moved back to draft.",
+                     kode="CONFLICT", status_code=409)
+    if session.query(DSP).filter(DSP.asset_id == r.id, DSP.deleted_at.is_(None)).first() is not None:
+        raise _Gagal("This asset has a disposal record, so it cannot be moved back to draft.", kode="CONFLICT", status_code=409)
 
 
 def _posting_perolehan(session, kid: str, r: Any, kredit_id: Any, user: Dict[str, Any]) -> Any:
@@ -849,9 +875,9 @@ def buat_aset(payload: AsetRequest, current_user: Dict[str, Any] = Depends(_requ
         if payload.post_acquisition:
             _cek_level(current_user, LEVEL_POST, "Posting the acquisition journal")
             _posting_perolehan(session, kid, r, payload.acquisition_credit_coa_id, current_user)
-        b = _muat(session, kid)
+        b = _muat(session, kid, draft=bool(r.is_draft))
         return _aset_dict(b, b.per_id()[r.id], date.today())
-    return _respon(aksi, "Asset added.")
+    return _respon(aksi, "Asset saved as draft." if payload.is_draft else "Asset added.")
 
 
 @router.put("/assets/{asset_id}", summary="Ubah aset (Supervisor+)")
@@ -860,13 +886,13 @@ def ubah_aset(asset_id: UUID, payload: AsetRequest, current_user: Dict[str, Any]
 
     def aksi(session):
         _kunci_klien(session, kid)
-        r = _isi_aset(session, kid, payload, current_user, _ambil_aset(session, kid, asset_id))
+        r = _isi_aset(session, kid, payload, current_user, _ambil_aset(session, kid, asset_id, boleh_draft=True))
         if payload.post_acquisition and not r.acquisition_journal_id:
             _cek_level(current_user, LEVEL_POST, "Posting the acquisition journal")
             _posting_perolehan(session, kid, r, payload.acquisition_credit_coa_id, current_user)
-        b = _muat(session, kid)
+        b = _muat(session, kid, draft=bool(r.is_draft))
         return _aset_dict(b, b.per_id()[r.id], date.today())
-    return _respon(aksi, "Asset updated.")
+    return _respon(aksi, "Draft updated." if payload.is_draft else "Asset updated.")
 
 
 @router.delete("/assets/{asset_id}", summary="Hapus aset yang belum punya jurnal posted (Supervisor+)")
@@ -875,7 +901,7 @@ def hapus_aset(asset_id: UUID, client_id: UUID = Query(...), current_user: Dict[
 
     def aksi(session):
         _kunci_klien(session, kid)
-        r = _ambil_aset(session, kid, asset_id)
+        r = _ambil_aset(session, kid, asset_id, boleh_draft=True)
         if _ada_jurnal_efektif(session, r.id):
             raise _Gagal("This asset has posted journals. Reverse them or record a disposal instead of deleting.",
                          kode="CONFLICT", status_code=409)
