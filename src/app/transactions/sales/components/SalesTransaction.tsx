@@ -6,14 +6,14 @@ import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintColumn, type PrintFormat, type PrintReport } from '@/lib/printExport';
 import {
   Settings, ChevronLeft, ChevronRight, MoreHorizontal, X, Eye, Edit,
-  Calendar, CheckCircle, Send, Trash2, ChevronDown, Check, Search, FileText, Clock, Banknote,
+  Calendar, CheckCircle, Send, Trash2, ChevronDown, Check, Search, FileText, Clock, Banknote, Loader2,
 } from 'lucide-react';
 import { useLanguage } from '@/lib/language';
 import { useAuth } from '@/lib/auth';
 import { useActiveClient } from '@/lib/activeClient';
 import { salesFont } from './salesFont';
 import {
-  useSalesInvoices, updateSalesInvoice, deleteSalesInvoice,
+  useSalesInvoices, updateSalesInvoice, deleteSalesInvoice, bulkPostSalesInvoices,
   createSalesActivityLog, formatTanggalSingkat, type BackendSalesInvoice,
 } from '@/lib/salesStore';
 
@@ -480,6 +480,42 @@ export default function SalesTransaction() {
     setOpenMenuId(null);
   };
 
+  // Post massal: invoice yang dicentang & belum posted (Posted/Partial/Paid dilewati).
+  const [bulkPosting, setBulkPosting] = useState(false);
+  const bisaDipostSelected = useMemo(
+    () => transactions.filter(r => selectedRows.has(r.uuid) && !['Posted', 'Partial', 'Paid'].includes(r.status)),
+    [transactions, selectedRows],
+  );
+  const postSelected = async () => {
+    const target = bisaDipostSelected;
+    if (target.length === 0 || bulkPosting) return;
+    if (!window.confirm(`Post ${target.length} selected invoice(s) to the journal?`)) return;
+    setBulkPosting(true);
+    try {
+      const res = await bulkPostSalesInvoices(target.map(r => r.uuid));
+      // Yang berhasil / dilewati dilepas dari centang; yang gagal tetap dicentang supaya mudah diperbaiki.
+      const gagal = new Set(res.failed.map(f => f.id));
+      setSelectedRows(prev => new Set([...prev].filter(id => gagal.has(id))));
+      if (res.posted.length) {
+        toast.success(`${res.posted.length} invoice(s) posted`, {
+          description: res.skipped.length ? `${res.skipped.length} already posted, skipped.` : undefined,
+        });
+      }
+      if (res.failed.length) {
+        const contoh = res.failed.slice(0, 3).map(f => `${f.invoice_no ?? f.id}: ${f.reason}`).join('\n');
+        toast.error(`${res.failed.length} invoice(s) could not be posted (still selected)`, {
+          description: contoh + (res.failed.length > 3 ? `\n…and ${res.failed.length - 3} more` : ''),
+          duration: 12000,
+        });
+      }
+      if (!res.posted.length && !res.failed.length) toast.info('All selected invoices were already posted.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to post the selected invoices.');
+    } finally {
+      setBulkPosting(false);
+    }
+  };
+
   const deleteTrx = async (uuid: string, invoiceNo: string) => {
     try {
       await deleteSalesInvoice(uuid);
@@ -657,6 +693,25 @@ export default function SalesTransaction() {
               </div>
             </div>
           </div>
+          {selectedRows.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-border bg-neutral-50 px-3 py-2 text-xs">
+              <span className="font-semibold text-neutral-900">{selectedRows.size} selected</span>
+              {bisaDipostSelected.length < selectedRows.size && (
+                <span className="text-neutral-500">({selectedRows.size - bisaDipostSelected.length} already posted, will be skipped)</span>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={() => setSelectedRows(new Set())} disabled={bulkPosting}
+                  className="rounded-lg px-2.5 py-1.5 font-semibold text-neutral-700 hover:bg-neutral-200 disabled:opacity-50">
+                  Clear selection
+                </button>
+                <button onClick={postSelected} disabled={bulkPosting || bisaDipostSelected.length === 0}
+                  className="flex items-center gap-1.5 rounded-lg bg-neutral-800 px-3 py-1.5 font-semibold text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {bulkPosting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                  {bulkPosting ? 'Posting...' : `Post selected (${bisaDipostSelected.length})`}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full min-w-[1100px] select-text border-separate border-spacing-0">
               <thead>

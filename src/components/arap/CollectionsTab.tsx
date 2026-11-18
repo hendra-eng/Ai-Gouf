@@ -24,10 +24,11 @@ import {
 } from '@/lib/receivablesPayablesStore';
 import {
   AgingBadge, btnPrimary, btnSmall, Card, DocStatusLabel, Drawer, EmptyRow, inputCls, Menu, MenuItem, NumberPager, sortRows, SortTh, useSort,
-} from './arapUi';
+} from './arapSalesUi';
 import { MoneyInput } from './SettlementForm';
 import SettlementsTab from './SettlementsTab';
 import type { TabId } from './ArApWorkspace';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 const STATUS: CollectionStatus[] = ['to_contact', 'promised', 'escalated', 'resolved'];
 const PRIORITAS: CollectionPriority[] = ['high', 'medium', 'low'];
@@ -54,7 +55,7 @@ type Kunci = 'party' | 'last_contact_date' | 'outstanding' | 'next_follow_up_dat
 function Delta({ now, prev, goodWhenDown, unit = 'pct' }: { now: number | null; prev: number | null; goodWhenDown: boolean; unit?: 'pct' | 'abs' }) {
   if (now === null || prev === null) return null;
   const d = unit === 'pct' ? pctChange(now, prev) : now - prev;
-  if (d === null || Math.abs(d) < 0.5) return <span className="text-[11px] text-muted-foreground">No change vs last month</span>;
+  if (d === null || Math.abs(d) < 0.5) return <span className="text-[11px] text-neutral-500">No change vs last month</span>;
   const naik = d > 0;
   const Ikon = naik ? ArrowUp : ArrowDown;
   return (
@@ -62,7 +63,7 @@ function Delta({ now, prev, goodWhenDown, unit = 'pct' }: { now: number | null; 
       <span className={`inline-flex items-center gap-0.5 font-semibold ${naik !== goodWhenDown ? 'text-emerald-600' : 'text-rose-600'}`}>
         <Ikon size={11} /> {unit === 'pct' ? `${Math.abs(d).toFixed(0)}%` : `${Math.abs(Math.round(d))} days`}
       </span>
-      <span className="text-muted-foreground">vs last month</span>
+      <span className="text-neutral-500">vs last month</span>
     </span>
   );
 }
@@ -148,16 +149,16 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
 
   const kartuPerf = [
     {
-      label: 'Collected This Month', value: rupiah(perf?.collected), icon: Wallet, tone: 'bg-emerald-50 text-emerald-600',
+      label: 'Collected This Month', value: rupiah(perf?.collected), icon: Wallet, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       sub: <Delta now={perf?.collected ?? null} prev={perf?.collected_prev ?? null} goodWhenDown={false} />,
     },
     {
-      label: 'Promise to Pay', value: rupiah(perf?.promise_to_pay), icon: Handshake, tone: 'bg-sky-50 text-sky-600',
-      sub: <span className="text-[11px]"><b className="text-sky-700">{perf?.promise_count ?? 0} account{perf?.promise_count === 1 ? '' : 's'}</b> <span className="text-muted-foreground">in commitment</span></span>,
+      label: 'Promise to Pay', value: rupiah(perf?.promise_to_pay), icon: Handshake, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
+      sub: <span className="text-[11px]"><b className="text-sky-700">{perf?.promise_count ?? 0} account{perf?.promise_count === 1 ? '' : 's'}</b> <span className="text-neutral-500">in commitment</span></span>,
     },
     {
-      label: 'High Priority Accounts', value: `${perf?.high_priority_count ?? 0} customer${perf?.high_priority_count === 1 ? '' : 's'}`, icon: UserRound, tone: 'bg-rose-50 text-rose-600',
-      sub: <span className="text-[11px]"><b className="text-rose-600">{(perf?.high_priority_pct ?? 0).toFixed(0)}%</b> <span className="text-muted-foreground">of total receivables</span></span>,
+      label: 'High Priority Accounts', value: `${perf?.high_priority_count ?? 0} customer${perf?.high_priority_count === 1 ? '' : 's'}`, icon: UserRound, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
+      sub: <span className="text-[11px]"><b className="text-rose-600">{(perf?.high_priority_pct ?? 0).toFixed(0)}%</b> <span className="text-neutral-500">of total receivables</span></span>,
     },
     {
       label: 'Avg. Days to Collect', value: perf?.avg_days_to_collect != null ? `${Math.round(perf.avg_days_to_collect)} days` : '—', icon: Clock, tone: 'bg-violet-50 text-violet-600',
@@ -167,24 +168,28 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
 
   return (
     <div className="space-y-5">
-      {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+      {error && <p className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.6fr_1fr]">
         <Card title="Collection Performance" subtitle="Collection performance summary for the selected period."
           action={
-            <select value={month} onChange={e => onMonth(e.target.value)} className="rounded-xl border border-border bg-card px-3 py-2 text-sm">
-              {bulan.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-            </select>
+            <FilterSelect
+              variant="elegant"
+              ariaLabel="Collection period"
+              value={month}
+              onChange={onMonth}
+              options={bulan.map(b => ({ value: b.value, label: b.label }))}
+            />
           }>
           <div className="grid grid-cols-1 gap-3 px-5 pb-5 sm:grid-cols-2 2xl:grid-cols-4">
             {kartuPerf.map(k => {
               const Ikon = k.icon;
               return (
-                <div key={k.label} className="rounded-xl border border-border p-3">
+                <div key={k.label} className="rounded-lg border border-neutral-300 p-3">
                   <div className="flex items-start gap-3">
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${k.tone}`}><Ikon size={18} /></span>
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${k.tone}`}><Ikon size={18} /></span>
                     <div className="min-w-0">
-                      <p className="truncate text-xs text-muted-foreground">{k.label}</p>
-                      {loading && !report ? <div className="mt-1 h-5 w-24 animate-pulse rounded bg-slate-100" /> : <p className="truncate text-base font-bold text-foreground">{k.value}</p>}
+                      <p className="truncate text-xs text-neutral-500">{k.label}</p>
+                      {loading && !report ? <div className="mt-1 h-5 w-24 animate-pulse rounded bg-neutral-100" /> : <p className="truncate text-base font-semibold text-neutral-900">{k.value}</p>}
                     </div>
                   </div>
                   <div className="mt-2">{k.sub}</div>
@@ -204,10 +209,10 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
               const p = totalAkun ? (n / totalAkun) * 100 : 0;
               return (
                 <button key={s} type="button" onClick={() => setFStatus(fStatus === s ? 'all' : s)}
-                  className={`rounded-xl p-3 text-left transition ${t.tone} ${fStatus === s ? 'ring-2 ring-offset-1 ring-current' : 'hover:brightness-95'}`}>
+                  className={`rounded-lg p-3 text-left transition ${t.tone} ${fStatus === s ? 'ring-2 ring-offset-1 ring-current' : 'hover:brightness-95'}`}>
                   <Ikon size={18} />
-                  <p className="mt-2 text-xs text-slate-600">{COLLECTION_STATUS_LABEL[s]}</p>
-                  <p className="text-xl font-bold text-foreground">{n}</p>
+                  <p className="mt-2 text-xs text-neutral-600">{COLLECTION_STATUS_LABEL[s]}</p>
+                  <p className="text-xl font-semibold text-neutral-900">{n}</p>
                   <p className="text-[11px]">{p.toFixed(0)}%</p>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/80"><div className={`h-full rounded-full ${t.bar}`} style={{ width: `${p}%` }} /></div>
                 </button>
@@ -219,46 +224,51 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
 
       <Card title="Collection Queue" subtitle="Customers with a receivable balance that need follow-up."
         action={<>
-          <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-72">
-            <Search size={14} className="text-muted-foreground" />
+          <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 sm:w-72">
+            <Search size={14} className="text-neutral-500" />
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search customer, invoice number..."
-              className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+              className="w-full bg-transparent text-sm placeholder:text-neutral-400 focus:outline-none" />
           </label>
           <Menu width="w-64" button={open => (
-            <button type="button" className={`${btnSmall} py-2 ${adaFilter ? 'border-[#0F7D4E] text-[#0F7D4E]' : ''}`}>
+            <button type="button" className={`${btnSmall} py-2 ${adaFilter ? 'border-neutral-800 text-neutral-900' : ''}`}>
               <Filter size={13} /> Filter <ChevronDown size={13} className={open ? 'rotate-180 transition' : 'transition'} />
             </button>
           )}>
             {() => (
               <div className="space-y-2 p-2 text-xs">
-                <label className="block text-muted-foreground">Status
-                  <select value={fStatus} onChange={e => setFStatus(e.target.value as 'all' | CollectionStatus)} className="mt-1 w-full rounded-lg border border-border bg-card px-2 py-1.5 text-foreground">
-                    <option value="all">All statuses</option>
-                    {STATUS.map(s => <option key={s} value={s}>{COLLECTION_STATUS_LABEL[s]}</option>)}
-                  </select>
-                </label>
-                <label className="block text-muted-foreground">Priority
-                  <select value={fPrioritas} onChange={e => setFPrioritas(e.target.value as 'all' | CollectionPriority)} className="mt-1 w-full rounded-lg border border-border bg-card px-2 py-1.5 text-foreground">
-                    <option value="all">All priorities</option>
-                    {PRIORITAS.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
-                  </select>
-                </label>
-                <label className="block text-muted-foreground">Collector
-                  <select value={fKolektor} onChange={e => setFKolektor(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-card px-2 py-1.5 text-foreground">
-                    <option value="">All collectors</option>
-                    <option value="-">Unassigned</option>
-                    {(report?.collectors ?? []).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </label>
-                <label className="flex items-center gap-2 pt-1 text-foreground">
-                  <input type="checkbox" checked={fJatuh} onChange={e => setFJatuh(e.target.checked)} className="accent-[#0F7D4E]" /> Follow-up due today or earlier
+                <div className="block text-neutral-500">Status
+                  <FilterSelect
+                    variant="elegant" block className="mt-1" ariaLabel="Status"
+                    value={fStatus}
+                    onChange={v => setFStatus(v as 'all' | CollectionStatus)}
+                    options={[{ value: 'all', label: 'All statuses' }, ...STATUS.map(s => ({ value: s, label: COLLECTION_STATUS_LABEL[s] }))]}
+                  />
+                </div>
+                <div className="block text-neutral-500">Priority
+                  <FilterSelect
+                    variant="elegant" block className="mt-1" ariaLabel="Priority"
+                    value={fPrioritas}
+                    onChange={v => setFPrioritas(v as 'all' | CollectionPriority)}
+                    options={[{ value: 'all', label: 'All priorities' }, ...PRIORITAS.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))]}
+                  />
+                </div>
+                <div className="block text-neutral-500">Collector
+                  <FilterSelect
+                    variant="elegant" block className="mt-1" ariaLabel="Collector"
+                    value={fKolektor}
+                    onChange={setFKolektor}
+                    options={[{ value: '', label: 'All collectors' }, { value: '-', label: 'Unassigned' }, ...(report?.collectors ?? []).map(c => ({ value: c, label: c }))]}
+                  />
+                </div>
+                <label className="flex items-center gap-2 pt-1 text-neutral-900">
+                  <input type="checkbox" checked={fJatuh} onChange={e => setFJatuh(e.target.checked)} className="accent-neutral-800" /> Follow-up due today or earlier
                 </label>
               </div>
             )}
           </Menu>
         </>}>
         {pilih.size > 0 && (
-          <div className="mx-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ECFDF5] px-4 py-2 text-xs text-[#0B5E5C]">
+          <div className="mx-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neutral-100 px-4 py-2 text-xs text-[#0B5E5C]">
             <span><b>{pilih.size}</b> selected</span>
             <div className="flex flex-wrap gap-2">
               <button type="button" className={btnSmall} onClick={() => tanyaKolektor(null, n => massal({ collector_name: n }))}><UserRound size={13} /> Assign collector</button>
@@ -278,11 +288,11 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
           </div>
         )}
         <div className="overflow-x-auto px-5">
-          <table className="w-full min-w-[1200px] text-sm">
+          <table className="w-full min-w-[1200px] text-xs">
             <thead>
-              <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+              <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                 <th className="w-10 px-3 py-2.5">
-                  <input type="checkbox" aria-label="Select page" className="accent-[#0F7D4E]" checked={semuaHalaman}
+                  <input type="checkbox" aria-label="Select page" className="accent-neutral-800" checked={semuaHalaman}
                     onChange={() => setPilih(s => { const n = new Set(s); halaman.forEach(a => (semuaHalaman ? n.delete(a.party) : n.add(a.party))); return n; })} />
                 </th>
                 <SortTh label="Customer" k="party" sort={sort} onSort={onSort} />
@@ -296,31 +306,31 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
                 <th className="px-3 py-2.5 text-left font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-neutral-300">
               {(loading && !report) || halaman.length === 0 ? (
                 <EmptyRow cols={10} loading={loading && !report} text={queue.length ? 'No matching accounts.' : 'No customers with an outstanding balance.'} />
               ) : halaman.map(a => {
                 const IkonKontak = a.last_contact_method ? IKON_METODE[a.last_contact_method] : null;
                 const jatuh = a.next_follow_up_date && a.next_follow_up_date <= hariIni && a.status !== 'resolved';
                 return (
-                  <tr key={a.party} className={`hover:bg-slate-50/60 ${pilih.has(a.party) ? 'bg-[#ECFDF5]/50' : ''}`}>
+                  <tr key={a.party} className={`hover:bg-neutral-200 ${pilih.has(a.party) ? 'bg-neutral-100/50' : ''}`}>
                     <td className="px-3 py-2.5">
-                      <input type="checkbox" aria-label={`Select ${a.party}`} className="accent-[#0F7D4E]" checked={pilih.has(a.party)}
+                      <input type="checkbox" aria-label={`Select ${a.party}`} className="accent-neutral-800" checked={pilih.has(a.party)}
                         onChange={() => setPilih(s => { const n = new Set(s); if (n.has(a.party)) n.delete(a.party); else n.add(a.party); return n; })} />
                     </td>
                     <td className="max-w-[230px] px-3 py-2.5">
-                      <button type="button" onClick={() => setLihat(a.party)} className="block max-w-full truncate text-left font-medium text-foreground hover:underline" title={a.party}>{a.party}</button>
-                      <span className="text-[11px] text-muted-foreground">{a.customer_code ?? '—'} · {a.open_count} open</span>
+                      <button type="button" onClick={() => setLihat(a.party)} className="block max-w-full truncate text-left font-medium text-neutral-900 hover:underline" title={a.party}>{a.party}</button>
+                      <span className="text-[11px] text-neutral-500">{a.customer_code ?? '—'} · {a.open_count} open</span>
                     </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">
+                    <td className="px-3 py-2.5 text-neutral-500">
                       {a.last_contact_date ? (
                         <span className="inline-flex items-center gap-1.5" title={a.last_contact_method ? CONTACT_METHOD_LABEL[a.last_contact_method] : ''}>
                           {IkonKontak && <IkonKontak size={13} />} {fmtDate(a.last_contact_date)}
                         </span>
                       ) : <span className="text-xs">Never</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-semibold text-foreground">{rupiah(a.outstanding)}</td>
-                    <td className={`px-3 py-2.5 ${jatuh ? 'font-medium text-rose-600' : 'text-muted-foreground'}`}>
+                    <td className="px-3 py-2.5 text-right font-semibold text-neutral-900">{rupiah(a.outstanding)}</td>
+                    <td className={`px-3 py-2.5 ${jatuh ? 'font-medium text-rose-600' : 'text-neutral-500'}`}>
                       {a.next_follow_up_date ? <span className="inline-flex items-center gap-1.5"><CalendarDays size={13} /> {fmtDate(a.next_follow_up_date)}</span> : '—'}
                     </td>
                     <td className="px-3 py-2.5">
@@ -332,11 +342,11 @@ export default function CollectionsTab({ cfg, clientId, asOf, month, onMonth, re
                     <td className="px-3 py-2.5"><AgingBadge bucket={a.bucket} /></td>
                     <td className="px-3 py-2.5">
                       {a.collector_name ? (
-                        <span className="inline-flex items-center gap-2 text-foreground">
-                          <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${warnaNama(a.collector_name)}`}>{inisial(a.collector_name)}</span>
+                        <span className="inline-flex items-center gap-2 text-neutral-900">
+                          <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold ${warnaNama(a.collector_name)}`}>{inisial(a.collector_name)}</span>
                           <span className="max-w-[120px] truncate">{a.collector_name}</span>
                         </span>
-                      ) : <span className="text-xs text-muted-foreground">Unassigned</span>}
+                      ) : <span className="text-xs text-neutral-500">Unassigned</span>}
                     </td>
                     <td className="px-3 py-2.5">
                       <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium ${COLLECTION_STATUS_TEXT[a.status]}`}>
@@ -426,75 +436,87 @@ function CollectionDrawer({ cfg, clientId, akun, docs, collectors, logOpen, onLo
       footer={<>
         <button type="button" onClick={() => onLogOpen(!logOpen)} className={btnSmall}><Phone size={13} /> Log Follow-up</button>
         {akun.outstanding > 0 && (
-          <Link href={`${cfg.basePath}/receipts/new?party=${encodeURIComponent(akun.party)}`} className={`${btnSmall} border-transparent bg-[#0F7D4E] text-white hover:bg-[#0c6a42]`}>
+          <Link href={`${cfg.basePath}/receipts/new?party=${encodeURIComponent(akun.party)}`} className={`${btnSmall} border-transparent bg-neutral-800 text-white hover:bg-neutral-700`}>
             Record Receipt
           </Link>
         )}
       </>}>
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl bg-slate-50 px-3 py-2.5"><p className="text-[11px] text-muted-foreground">Outstanding</p><p className="text-base font-bold">{rupiah(akun.outstanding)}</p></div>
-        <div className="rounded-xl bg-rose-50/60 px-3 py-2.5"><p className="text-[11px] text-muted-foreground">Overdue</p><p className="text-base font-bold text-rose-600">{rupiah(akun.overdue)}</p></div>
+        <div className="rounded-lg bg-neutral-50 px-3 py-2.5"><p className="text-[11px] text-neutral-500">Outstanding</p><p className="text-base font-semibold">{rupiah(akun.outstanding)}</p></div>
+        <div className="rounded-lg bg-rose-50/60 px-3 py-2.5"><p className="text-[11px] text-neutral-500">Overdue</p><p className="text-base font-semibold text-rose-600">{rupiah(akun.overdue)}</p></div>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <label className="text-muted-foreground">Status
-          <select value={akun.stored_status ?? 'to_contact'} disabled={akun.outstanding <= 0} onChange={e => ubah({ status: e.target.value as CollectionStatus })} className={`${inputCls} mt-1 py-2`}>
-            {STATUS.map(s => <option key={s} value={s}>{COLLECTION_STATUS_LABEL[s]}</option>)}
-          </select>
-        </label>
-        <label className="text-muted-foreground">Priority
-          <select value={akun.priority_overridden ? akun.priority : 'auto'} onChange={e => ubah({ priority: e.target.value as CollectionPriority | 'auto' })} className={`${inputCls} mt-1 py-2`}>
-            <option value="auto">Automatic ({PRIORITY_LABEL[akun.priority_auto]})</option>
-            {PRIORITAS.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
-          </select>
-        </label>
-        <label className="text-muted-foreground">Collector
+        <div className="text-neutral-500">Status
+          <FilterSelect
+            variant="elegant" block size="md" className="mt-1" ariaLabel="Status"
+            disabled={akun.outstanding <= 0}
+            value={akun.stored_status ?? 'to_contact'}
+            onChange={v => ubah({ status: v as CollectionStatus })}
+            options={STATUS.map(s => ({ value: s, label: COLLECTION_STATUS_LABEL[s] }))}
+          />
+        </div>
+        <div className="text-neutral-500">Priority
+          <FilterSelect
+            variant="elegant" block size="md" className="mt-1" ariaLabel="Priority"
+            value={akun.priority_overridden ? akun.priority : 'auto'}
+            onChange={v => ubah({ priority: v as CollectionPriority | 'auto' })}
+            options={[{ value: 'auto', label: `Automatic (${PRIORITY_LABEL[akun.priority_auto]})` }, ...PRIORITAS.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))]}
+          />
+        </div>
+        <label className="text-neutral-500">Collector
           <input list="ar-collectors" defaultValue={akun.collector_name ?? ''} key={akun.collector_name ?? ''} placeholder="Unassigned"
             onBlur={e => { if ((e.target.value.trim() || null) !== akun.collector_name) ubah({ collector_name: e.target.value }); }} className={`${inputCls} mt-1 py-2`} />
         </label>
-        <label className="text-muted-foreground">Next follow-up
+        <label className="text-neutral-500">Next follow-up
           <input type="date" value={akun.next_follow_up_date ?? ''} onChange={e => ubah(e.target.value ? { next_follow_up_date: e.target.value } : { clear_next_follow_up: true })} className={`${inputCls} mt-1 py-2`} />
         </label>
       </div>
       <datalist id="ar-collectors">{collectors.map(c => <option key={c} value={c} />)}</datalist>
       {akun.status === 'promised' && akun.promise_amount !== null && (
-        <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Promised {rupiah(akun.promise_amount)} by {fmtDate(akun.promise_date)}.</p>
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Promised {rupiah(akun.promise_amount)} by {fmtDate(akun.promise_date)}.</p>
       )}
-      {akun.outstanding <= 0 && <p className="rounded-xl bg-violet-50 px-3 py-2 text-xs text-violet-800">No outstanding balance — this account is resolved.</p>}
+      {akun.outstanding <= 0 && <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-800">No outstanding balance — this account is resolved.</p>}
 
       {logOpen && (
-        <div className="space-y-3 rounded-xl border border-[#22C55E]/40 bg-[#ECFDF5]/40 p-4">
-          <h4 className="text-sm font-semibold text-foreground">Log Follow-up</h4>
+        <div className="space-y-3 rounded-lg border border-neutral-300 bg-neutral-100/40 p-4">
+          <h4 className="text-sm font-semibold text-neutral-900">Log Follow-up</h4>
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <label className="text-muted-foreground">Contact date
+            <label className="text-neutral-500">Contact date
               <input type="date" value={tgl} max={todayIso()} onChange={e => setTgl(e.target.value)} className={`${inputCls} mt-1 py-2`} />
             </label>
-            <label className="text-muted-foreground">Method
-              <select value={metode} onChange={e => setMetode(e.target.value as ContactMethod)} className={`${inputCls} mt-1 py-2`}>
-                {METODE.map(m => <option key={m} value={m}>{CONTACT_METHOD_LABEL[m]}</option>)}
-              </select>
-            </label>
-            <label className="text-muted-foreground">Status after contact
-              <select value={statusSesudah} onChange={e => setStatusSesudah(e.target.value as CollectionStatus)} className={`${inputCls} mt-1 py-2`}>
-                {STATUS.map(s => <option key={s} value={s}>{COLLECTION_STATUS_LABEL[s]}</option>)}
-              </select>
-            </label>
-            <label className="text-muted-foreground">Next follow-up
+            <div className="text-neutral-500">Method
+              <FilterSelect
+                variant="elegant" block size="md" className="mt-1" ariaLabel="Contact method"
+                value={metode}
+                onChange={v => setMetode(v as ContactMethod)}
+                options={METODE.map(m => ({ value: m, label: CONTACT_METHOD_LABEL[m] }))}
+              />
+            </div>
+            <div className="text-neutral-500">Status after contact
+              <FilterSelect
+                variant="elegant" block size="md" className="mt-1" ariaLabel="Status after contact"
+                value={statusSesudah}
+                onChange={v => setStatusSesudah(v as CollectionStatus)}
+                options={STATUS.map(s => ({ value: s, label: COLLECTION_STATUS_LABEL[s] }))}
+              />
+            </div>
+            <label className="text-neutral-500">Next follow-up
               <input type="date" value={berikut} min={tgl} onChange={e => setBerikut(e.target.value)} className={`${inputCls} mt-1 py-2`} />
             </label>
             {statusSesudah === 'promised' && (
               <>
-                <label className="text-muted-foreground">Promised amount
+                <label className="text-neutral-500">Promised amount
                   <MoneyInput value={janji} onChange={setJanji} className="mt-1 py-1" />
                 </label>
-                <label className="text-muted-foreground">Promised payment date
+                <label className="text-neutral-500">Promised payment date
                   <input type="date" value={tglJanji} min={tgl} onChange={e => setTglJanji(e.target.value)} className={`${inputCls} mt-1 py-2`} />
                 </label>
               </>
             )}
-            <label className="col-span-2 text-muted-foreground">Collector
+            <label className="col-span-2 text-neutral-500">Collector
               <input list="ar-collectors" value={kolektor} onChange={e => setKolektor(e.target.value)} className={`${inputCls} mt-1 py-2`} />
             </label>
-            <label className="col-span-2 text-muted-foreground">Notes
+            <label className="col-span-2 text-neutral-500">Notes
               <textarea value={catatan} onChange={e => setCatatan(e.target.value)} rows={3} maxLength={2000} placeholder="What was discussed?" className={`${inputCls} mt-1`} />
             </label>
           </div>
@@ -508,14 +530,14 @@ function CollectionDrawer({ cfg, clientId, akun, docs, collectors, logOpen, onLo
       )}
 
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-foreground">Open Invoices ({docs.length})</h4>
-        {docs.length === 0 ? <p className="text-xs text-muted-foreground">None.</p> : (
-          <div className="divide-y divide-border rounded-xl border border-border">
+        <h4 className="mb-2 text-sm font-semibold text-neutral-900">Open Invoices ({docs.length})</h4>
+        {docs.length === 0 ? <p className="text-xs text-neutral-500">None.</p> : (
+          <div className="divide-y divide-neutral-300 rounded-lg border border-neutral-300">
             {docs.map(d => (
               <div key={d.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
                 <div className="min-w-0">
-                  <p className="font-medium text-foreground">{d.no}</p>
-                  <p className="text-muted-foreground">due {fmtDate(d.due_date)}{d.days_overdue ? ` · ${d.days_overdue} days overdue` : ''}</p>
+                  <p className="font-medium text-neutral-900">{d.no}</p>
+                  <p className="text-neutral-500">due {fmtDate(d.due_date)}{d.days_overdue ? ` · ${d.days_overdue} days overdue` : ''}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <DocStatusLabel status={d.status} />
@@ -528,30 +550,30 @@ function CollectionDrawer({ cfg, clientId, akun, docs, collectors, logOpen, onLo
       </div>
 
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-foreground">Follow-up History</h4>
-        {riwayat.loading && !riwayat.data.length ? <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
+        <h4 className="mb-2 text-sm font-semibold text-neutral-900">Follow-up History</h4>
+        {riwayat.loading && !riwayat.data.length ? <div className="h-10 animate-pulse rounded-lg bg-neutral-100" />
           : riwayat.data.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">No follow-ups recorded yet.</p>
+            <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-6 text-center text-xs text-neutral-500">No follow-ups recorded yet.</p>
           ) : (
-            <ol className="space-y-3 border-l-2 border-slate-100 pl-4">
+            <ol className="space-y-3 border-l-2 border-neutral-100 pl-4">
               {riwayat.data.map(r => {
                 const Ikon = IKON_METODE[r.method];
                 return (
                   <li key={r.id} className="relative text-xs">
-                    <span className="absolute -left-[23px] top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-slate-200"><Ikon size={9} /></span>
-                    <p className="font-medium text-foreground">
+                    <span className="absolute -left-[23px] top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-2 ring-neutral-200"><Ikon size={9} /></span>
+                    <p className="font-medium text-neutral-900">
                       {fmtDate(r.activity_date)} · {CONTACT_METHOD_LABEL[r.method]} → <span className={COLLECTION_STATUS_TEXT[r.status_after]}>{COLLECTION_STATUS_LABEL[r.status_after]}</span>
                     </p>
                     {r.promise_amount !== null && <p className="text-emerald-700">Promised {rupiah(r.promise_amount)} by {fmtDate(r.promise_date)}</p>}
-                    {r.notes && <p className="whitespace-pre-line text-muted-foreground">{r.notes}</p>}
-                    <p className="text-[10px] text-muted-foreground">{r.created_by_name || '—'} · {fmtDateTime(r.created_at)}{r.next_follow_up_date ? ` · next ${fmtDate(r.next_follow_up_date)}` : ''}</p>
+                    {r.notes && <p className="whitespace-pre-line text-neutral-500">{r.notes}</p>}
+                    <p className="text-[10px] text-neutral-500">{r.created_by_name || '—'} · {fmtDateTime(r.created_at)}{r.next_follow_up_date ? ` · next ${fmtDate(r.next_follow_up_date)}` : ''}</p>
                   </li>
                 );
               })}
             </ol>
           )}
       </div>
-      <p className="text-[11px] text-muted-foreground">Aging bucket: {akun.bucket ? BUCKET_LABEL[akun.bucket] : '—'} · Last payment: {fmtDate(akun.last_payment_date)}</p>
+      <p className="text-[11px] text-neutral-500">Aging bucket: {akun.bucket ? BUCKET_LABEL[akun.bucket] : '—'} · Last payment: {fmtDate(akun.last_payment_date)}</p>
     </Drawer>
   );
 }

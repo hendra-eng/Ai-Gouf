@@ -24,14 +24,14 @@ type JEStatus = JeUiStatus;
 
 const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
-// Warna badge status -- keluarga warna yang sama dengan STATUS_STYLE di Sales Transaction.
+// Warna badge status -- sama dengan STATUS_STYLE (Overview / Posted / Source Data).
 const statusColors: Record<JEStatus, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  pending: 'bg-orange-100 text-orange-700',
-  approved: 'bg-purple-100 text-purple-700',
-  posted: 'bg-blue-100 text-blue-700',
-  rejected: 'bg-red-100 text-red-700',
-  exception: 'bg-amber-100 text-amber-700',
+  draft: 'bg-slate-200 text-slate-800 border-slate-400',
+  pending: 'bg-amber-100 text-amber-900 border-amber-300',
+  approved: 'bg-blue-100 text-blue-800 border-blue-300',
+  posted: 'bg-teal-100 text-teal-800 border-teal-300',
+  rejected: 'bg-red-100 text-red-800 border-red-300',
+  exception: 'bg-orange-100 text-orange-800 border-orange-300',
 };
 
 const statusLabels: Record<JEStatus, string> = {
@@ -174,14 +174,14 @@ export default function JournalEntryTransactionPage() {
           <>
             <button
               onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50"
             >
-              <Upload size={14} className="text-muted-foreground" />
-              <span className="text-foreground font-medium">Import</span>
+              <Upload size={14} />
+              Import
             </button>
             <button
               onClick={() => setShowNewModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
             >
               <Plus size={14} /> New Journal Entry
             </button>
@@ -226,19 +226,19 @@ export default function JournalEntryTransactionPage() {
             />
 
             <div className="relative ml-auto w-full sm:w-[400px]">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-primary" />
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-700" />
               <input
                 type="text"
                 value={search}
                 onChange={ev => { setSearch(ev.target.value); setCurrentPage(1); }}
                 placeholder="Search JE number, description, or source…"
-                className="w-full text-xs border border-primary/60 rounded-lg pl-9 pr-3 py-1.5 bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full text-xs border border-neutral-300 rounded-lg pl-9 pr-3 py-1.5 bg-white text-neutral-900 placeholder:text-neutral-500 focus:outline-none focus:border-neutral-700 focus:ring-1 focus:ring-neutral-700"
               />
             </div>
 
             {/* Baris kedua: aksi Reset, Print All (rata kanan) */}
             <div className="flex w-full items-center justify-end gap-2">
-              <button onClick={resetFilters} className="text-xs text-primary hover:underline">Reset</button>
+              <button onClick={resetFilters} className="text-xs font-medium text-neutral-700 hover:underline">Reset</button>
               <PrintMenu onPrint={printList} label="Print All" disabled={loading || filtered.length === 0} />
             </div>
           </div>
@@ -262,23 +262,23 @@ export default function JournalEntryTransactionPage() {
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full min-w-[1100px]">
                 <thead>
-                  <tr className="bg-[#8FE3B5]">
+                  <tr>
                     {TABLE_COLUMNS.map((col, i) => (
                       <th
                         key={col.field}
-                        className={`py-3 ${i === 0 ? 'pl-3 pr-2' : 'px-2'} ${col.align === 'right' ? 'text-right' : 'text-left'} text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]`}
+                        className={`py-3 ${i === 0 ? 'pl-3 pr-2' : 'px-2'} ${col.align === 'right' ? 'text-right' : 'text-left'} text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800`}
                       >
                         <button
                           type="button"
                           onClick={() => handleSort(col.field)}
-                          className={`inline-flex items-center gap-1 select-none hover:text-[#064E3B] ${col.align === 'right' ? 'flex-row-reverse' : ''}`}
+                          className={`inline-flex items-center gap-1 select-none hover:text-neutral-600 ${col.align === 'right' ? 'flex-row-reverse' : ''}`}
                         >
                           {col.label}
                           <ArrowUpDown size={11} className={sortField === col.field ? 'opacity-100' : 'opacity-50'} />
                         </button>
                       </th>
                     ))}
-                    <th className="text-left py-3 px-2 text-xs font-bold text-[#065F46] whitespace-nowrap border-t-2 border-b border-[#0A4A32]">Actions</th>
+                    <th className="text-left py-3 px-2 text-xs font-bold text-black whitespace-nowrap border-t border-b border-neutral-800">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -292,16 +292,16 @@ export default function JournalEntryTransactionPage() {
                     <tr
                       key={row.id}
                       onClick={() => openDetail(row)}
-                      className={`border-b border-slate-300/70 cursor-pointer transition-colors text-xs ${selectedRow?.id === row.id ? 'bg-primary/5' : 'hover:bg-slate-200/70'}`}
+                      className={`cursor-pointer [&>td]:shadow-[inset_0_-1px_0_#b4b4b4] [&:hover>td]:bg-neutral-200 text-xs ${selectedRow?.id === row.id ? '[&>td]:bg-neutral-100' : ''}`}
                     >
-                      <td className="py-2 pl-3 pr-2 whitespace-nowrap text-primary font-medium">{row.jeNumber}</td>
+                      <td className="py-2 pl-3 pr-2 whitespace-nowrap text-blue-700 font-medium">{row.jeNumber}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.date}</td>
                       <td className="py-2 px-2 max-w-[200px] truncate text-muted-foreground" title={row.description}>{row.description}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.sourceType}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-right">{fmt(row.totalDebit)}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-right">{fmt(row.totalCredit)}</td>
                       <td className="py-2 px-2">
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${statusColors[row.status] || 'bg-muted text-muted-foreground'}`}>{statusLabels[row.status] || row.status}</span>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusColors[row.status] || 'bg-neutral-100 text-neutral-600 border-neutral-300'}`}>{statusLabels[row.status] || row.status}</span>
                       </td>
                       <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.period}</td>
                       <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{row.createdBy}</td>
@@ -342,7 +342,7 @@ export default function JournalEntryTransactionPage() {
                   { key: 'detail', label: 'Detail' },
                   { key: 'lines', label: 'Journal Lines' },
                 ] as const).map(dt => (
-                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>{dt.label}</button>
+                  <button key={dt.key} onClick={() => setDrawerTab(dt.key)} className={`flex-1 py-1 text-[11px] font-medium rounded transition-colors ${drawerTab === dt.key ? 'bg-neutral-900 text-white' : 'text-neutral-500 hover:text-neutral-900'}`}>{dt.label}</button>
                 ))}
               </div>
 
@@ -376,8 +376,8 @@ export default function JournalEntryTransactionPage() {
                     </div>
                   </div>
                   {selectedRow.notes && (
-                    <div className="bg-amber-50 rounded-lg px-3 py-2">
-                      <p className="text-xs text-amber-700">{selectedRow.notes}</p>
+                    <div className="bg-neutral-100 border border-neutral-300 rounded-lg px-3 py-2">
+                      <p className="text-xs text-neutral-700">{selectedRow.notes}</p>
                     </div>
                   )}
                 </div>

@@ -46,9 +46,9 @@ export default function JournalActivityChart() {
         <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
         <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
         <Tooltip content={<CustomTooltip />} />
-        <Bar dataKey="posted" fill="var(--primary)" radius={[3, 3, 0, 0]} stackId="a" />
-        <Bar dataKey="pending" fill="#F59E0B" radius={[0, 0, 0, 0]} stackId="a" />
-        <Bar dataKey="rejected" fill="#EF4444" radius={[3, 3, 0, 0]} stackId="a" />
+        <Bar dataKey="posted" fill="#171717" radius={[3, 3, 0, 0]} stackId="a" />
+        <Bar dataKey="pending" fill="#737373" radius={[0, 0, 0, 0]} stackId="a" />
+        <Bar dataKey="rejected" fill="#d4d4d4" radius={[3, 3, 0, 0]} stackId="a" />
       </BarChart>
     </ResponsiveContainer>
   );

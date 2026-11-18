@@ -33,24 +33,24 @@ export default function JeTablePagination({ page, pageSize, total, onPageChange,
   const goTo = (p: number) => onPageChange(Math.min(Math.max(1, p), totalPages));
 
   return (
-    <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+    <div className="px-0 py-3 border-t border-border flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500">
       <div className="flex items-center gap-3">
         <label className="flex items-center gap-2">
           <span>Rows per page</span>
           <select
             value={pageSize}
             onChange={ev => onPageSizeChange(Number(ev.target.value))}
-            className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="border border-neutral-300 rounded-lg px-2 py-1.5 text-xs font-medium text-neutral-900 bg-card focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
           >
             {pageSizeOptions.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <span className="hidden sm:inline text-slate-300">|</span>
         <span>
-          <span className="font-semibold text-foreground">
+          <span className="font-semibold text-neutral-900">
             {total === 0 ? 0 : (pageSafe - 1) * pageSize + 1}–{Math.min(pageSafe * pageSize, total)}
           </span>{' '}
-          of <span className="font-semibold text-foreground">{total}</span> {itemLabel}
+          of <span className="font-semibold text-neutral-900">{total}</span> {itemLabel}
         </span>
       </div>
       <div className="flex items-center gap-1">
@@ -59,7 +59,7 @@ export default function JeTablePagination({ page, pageSize, total, onPageChange,
           p === '…' ? (
             <span key={`gap-${idx}`} className="flex h-8 w-6 items-center justify-center text-slate-400">…</span>
           ) : (
-            <button key={p} onClick={() => goTo(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-primary font-semibold text-primary-foreground shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
+            <button key={p} onClick={() => goTo(p)} aria-current={p === pageSafe ? 'page' : undefined} className={`h-8 min-w-[2rem] rounded-lg px-2 text-sm transition-colors ${p === pageSafe ? 'bg-neutral-800 font-semibold text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>{p}</button>
           )
         )}
         <button onClick={() => goTo(pageSafe + 1)} disabled={pageSafe >= totalPages} aria-label="Next page" className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card"><ChevronRight size={16} /></button>

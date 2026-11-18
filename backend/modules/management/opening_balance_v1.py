@@ -47,6 +47,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, text
+from sqlalchemy.exc import IntegrityError
 
 import db_client as dbc
 from ..auth.v1 import get_current_user_v1
@@ -303,6 +304,15 @@ def _jalankan(fn):
         return hasil
     except _Gagal:
         session.rollback()
+        raise
+    except IntegrityError as e:
+        session.rollback()
+        if "uq_je_drafts" in str(e):
+            # Nomor jurnal OB-/RV- sudah dipakai jurnal lain klien ini -> 409, bukan 500.
+            raise _Gagal("The journal number for this opening balance is already used by another journal of this "
+                         "client. Delete or renumber that journal in Journal Entry, then try again.",
+                         kode="DUPLICATE_JE_NUMBER", status_code=409) from e
+        logger.exception("Gagal memproses opening balance")
         raise
     except Exception:
         session.rollback()

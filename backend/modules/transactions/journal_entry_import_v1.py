@@ -788,7 +788,7 @@ async def upload_journal_entry_import(
             no = (g.get("je_number") or "").strip()
             tgl = g.get("entry_date")
             catatan = list(g.get("errors") or [])
-            dobel = bool(no) and (no in di_file or dbc.get_je_draft_by_client_and_number(client_id, no) is not None)
+            dobel = bool(no) and (no in di_file or dbc.get_je_draft_by_client_and_number(client_id, no, management_client_id) is not None)
             if no:
                 di_file.add(no)
             if dobel:

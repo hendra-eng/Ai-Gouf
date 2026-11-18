@@ -19,12 +19,12 @@ type JEStatus = JeUiStatus;
 const fmt = (n: number) => 'Rp ' + n.toLocaleString('id-ID');
 
 const statusColors: Record<JEStatus, string> = {
-  draft: 'bg-slate-100 text-slate-700',
-  pending: 'bg-amber-100 text-amber-700',
-  approved: 'bg-blue-100 text-blue-700',
-  posted: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  exception: 'bg-orange-100 text-orange-700',
+  draft: 'bg-slate-200 text-slate-800 border border-slate-400',
+  pending: 'bg-amber-100 text-amber-900 border border-amber-300',
+  approved: 'bg-blue-100 text-blue-800 border border-blue-300',
+  posted: 'bg-teal-100 text-teal-800 border border-teal-300',
+  rejected: 'bg-red-100 text-red-800 border border-red-300',
+  exception: 'bg-orange-100 text-orange-800 border border-orange-300',
 };
 
 const statusLabels: Record<JEStatus, string> = {
@@ -93,16 +93,16 @@ export default function JournalPreviewPage() {
                   key={t.id}
                   onClick={() => setSelectedId(t.id)}
                   className={`w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs ${
-                    selectedId === t.id ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground'
+                    selectedId === t.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-900'
                   }`}
                 >
                   <p className="font-mono font-semibold">{t.jeNumber}</p>
-                  <p className={`truncate mt-0.5 ${selectedId === t.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{t.description}</p>
+                  <p className={`truncate mt-0.5 ${selectedId === t.id ? 'text-white/80' : 'text-neutral-500'}`}>{t.description}</p>
                   <div className="flex items-center justify-between mt-1">
                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${selectedId === t.id ? 'bg-white/20 text-white' : statusColors[t.status]}`}>
                       {statusLabels[t.status]}
                     </span>
-                    <span className={`font-semibold tabular-nums ${selectedId === t.id ? 'text-primary-foreground' : ''}`}>{fmt(t.totalDebit)}</span>
+                    <span className={`font-semibold tabular-nums ${selectedId === t.id ? 'text-white' : ''}`}>{fmt(t.totalDebit)}</span>
                   </div>
                 </button>
               ))}
@@ -123,14 +123,14 @@ export default function JournalPreviewPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <DocumentTextIcon className="w-5 h-5 text-primary" />
+                    <DocumentTextIcon className="w-5 h-5 text-neutral-800" />
                     <h2 className="text-lg font-bold text-foreground">Journal Entry Preview</h2>
                   </div>
                   <p className="text-sm text-muted-foreground">{je.description}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2 flex-shrink-0">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[je.status]}`}>{statusLabels[je.status]}</span>
-                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${isBalanced ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${isBalanced ? 'bg-neutral-100 text-neutral-800 ring-1 ring-neutral-300' : 'bg-red-50 text-red-700 ring-1 ring-red-200'}`}>
                     {isBalanced ? <CheckCircleIcon className="w-3.5 h-3.5" /> : <ExclamationTriangleIcon className="w-3.5 h-3.5" />}
                     {isBalanced ? 'Balanced' : 'Unbalanced'}
                   </span>
@@ -139,7 +139,7 @@ export default function JournalPreviewPage() {
             </div>
 
             {/* 1. Reference */}
-            <PreviewSection step={1} stepColor="blue" title="Reference">
+            <PreviewSection step={1} stepColor="neutral" title="Reference">
               <FieldList rows={[
                 { label: 'JE Number', value: <span className="font-mono">{je.jeNumber}</span> },
                 { label: 'Source Type', value: je.sourceType || '—' },
@@ -148,7 +148,7 @@ export default function JournalPreviewPage() {
             </PreviewSection>
 
             {/* 2. Dates */}
-            <PreviewSection step={2} stepColor="purple" title="Dates">
+            <PreviewSection step={2} stepColor="neutral" title="Dates">
               <FieldList rows={[
                 { label: 'Entry Date', value: je.date || '—' },
                 { label: 'Posting Date', value: je.postingDate || '—' },
@@ -157,7 +157,7 @@ export default function JournalPreviewPage() {
             </PreviewSection>
 
             {/* 3. Workflow */}
-            <PreviewSection step={3} stepColor="emerald" title="Workflow">
+            <PreviewSection step={3} stepColor="neutral" title="Workflow">
               <FieldList rows={[
                 { label: 'Created by', value: je.createdBy || '—' },
                 { label: 'Reviewed by', value: je.reviewedBy || '— Pending —' },
@@ -166,7 +166,7 @@ export default function JournalPreviewPage() {
             </PreviewSection>
 
             {/* 4. Journal Lines */}
-            <PreviewSection step={4} stepColor="amber" title="Journal Lines" flush>
+            <PreviewSection step={4} stepColor="neutral" title="Journal Lines" flush>
               <JournalTable
                 lines={lines.map(l => ({
                   key: l.id, code: l.accountCode, name: l.accountName,
@@ -177,12 +177,13 @@ export default function JournalPreviewPage() {
                 formatAmount={fmt}
                 showDescription
                 showCostCenter
+                mono
               />
             </PreviewSection>
 
             {je.notes && (
-              <div className="rounded-xl border border-amber-200 p-4 bg-amber-50">
-                <p className="text-xs text-amber-700">{je.notes}</p>
+              <div className="rounded-xl border border-neutral-300 p-4 bg-neutral-100">
+                <p className="text-xs text-neutral-700">{je.notes}</p>
               </div>
             )}
           </div>

@@ -11,8 +11,9 @@ import {
 } from '@/lib/receivablesPayablesStore';
 import {
   btnSmall, Card, EmptyRow, Menu, MenuItem, Pager, ReverseModal, SettlementBadge, SettlementDrawer, sortRows, SortTh, useSort,
-} from './arapUi';
+} from './arapSalesUi';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 // Tab Collections / Payments (mode "all": semua status, aksi edit/submit/hapus/balik)
 // dan tab Posted (mode "posted": posted + reversed beserta jurnalnya).
@@ -87,22 +88,25 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
         ? `${cfg.settle}s posted to the general ledger (Cash & Bank journal) and their reversals.`
         : `${cfg.settle}s recorded against ${cfg.docs.toLowerCase()} — from this menu or matched in Cash & Bank. Draft and approved ${cfg.settle.toLowerCase()}s do not reduce the balance until posted.`}
       action={<>
-        <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-64">
-          <Search size={14} className="text-muted-foreground" />
+        <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 sm:w-64">
+          <Search size={14} className="text-neutral-500" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search number, ${cfg.party.toLowerCase()}, ${cfg.doc.toLowerCase()}...`}
-            className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+            className="w-full bg-transparent text-sm placeholder:text-neutral-400 focus:outline-none" />
         </label>
-        <select value={status} onChange={e => setStatus(e.target.value as 'all' | SettlementStatus)} className="rounded-xl border border-border bg-card px-3 py-2 text-sm">
-          <option value="all">All statuses</option>
-          {pilihanStatus.map(s => <option key={s} value={s}>{SETTLEMENT_STATUS_LABEL[s]}</option>)}
-        </select>
-        {mode === 'all' && <Link href={formPath} className={`${btnSmall} border-transparent bg-[#0F7D4E] py-2 text-white hover:bg-[#0c6a42]`}>Record {cfg.settle}</Link>}
+        <FilterSelect
+          variant="elegant"
+          ariaLabel="Filter by status"
+          value={status}
+          onChange={v => setStatus(v as 'all' | SettlementStatus)}
+          options={[{ value: 'all', label: 'All statuses' }, ...pilihanStatus.map(s => ({ value: s, label: SETTLEMENT_STATUS_LABEL[s] }))]}
+        />
+        {mode === 'all' && <Link href={formPath} className={`${btnSmall} border-transparent bg-neutral-800 py-2 text-white hover:bg-neutral-700`}>Record {cfg.settle}</Link>}
       </>}
     >
       <div className="overflow-x-auto px-5">
-        <table className="w-full min-w-[1040px] text-sm">
+        <table className="w-full min-w-[1040px] text-xs">
           <thead>
-            <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+            <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
               <SortTh label="Number" k="tx_number" sort={sort} onSort={onSort} />
               <SortTh label="Date" k="tx_date" sort={sort} onSort={onSort} />
               <SortTh label={cfg.party} k="counterparty" sort={sort} onSort={onSort} />
@@ -113,35 +117,35 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
               <th className="px-3 py-2.5 text-left font-medium">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody className="divide-y divide-neutral-300">
             {loading || halaman.length === 0 ? (
               <EmptyRow cols={8} loading={loading} text={dasar.length ? 'No matching items.' : `No ${cfg.settle.toLowerCase()}s recorded yet.`} />
             ) : halaman.map(s => {
               const docs = s.lines.filter(l => l.invoice_no).map(l => l.invoice_no!);
               return (
-                <tr key={s.id} className="hover:bg-slate-50/60">
+                <tr key={s.id} className="hover:bg-neutral-200">
                   <td className="px-3 py-2.5">
-                    <button type="button" onClick={() => setLihat(s)} className="font-medium text-[#0F7D4E] hover:underline">{s.tx_number}</button>
-                    {s.source !== cfg.side && <span className="block text-[10px] text-muted-foreground">{SOURCE_LABEL[s.source]}</span>}
+                    <button type="button" onClick={() => setLihat(s)} className="font-medium text-blue-700 hover:underline">{s.tx_number}</button>
+                    {s.source !== cfg.side && <span className="block text-[10px] text-neutral-500">{SOURCE_LABEL[s.source]}</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(s.tx_date)}</td>
-                  <td className="max-w-[200px] truncate px-3 py-2.5 text-foreground" title={s.counterparty ?? ''}>{s.counterparty || '—'}</td>
-                  <td className="max-w-[220px] truncate px-3 py-2.5 text-xs text-muted-foreground" title={docs.join(', ')}>
+                  <td className="px-3 py-2.5 text-neutral-500">{fmtDate(s.tx_date)}</td>
+                  <td className="max-w-[200px] truncate px-3 py-2.5 text-neutral-900" title={s.counterparty ?? ''}>{s.counterparty || '—'}</td>
+                  <td className="max-w-[220px] truncate px-3 py-2.5 text-xs text-neutral-500" title={docs.join(', ')}>
                     {docs.length ? docs.join(', ') : (s.unapplied ? 'Unapplied' : '—')}
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                  <td className="px-3 py-2.5 text-xs text-neutral-500">
                     {s.payment_method ? PAYMENT_METHOD_LABEL[s.payment_method] : '—'}
                     <span className="block">{kodeAkun(s.bank_account_code)} · {s.bank_account_name}</span>
                   </td>
-                  <td className={`px-3 py-2.5 text-right font-semibold ${s.status === 'reversed' ? 'text-muted-foreground line-through' : ''}`}>{rupiah(s.amount)}</td>
+                  <td className={`px-3 py-2.5 text-right font-semibold ${s.status === 'reversed' ? 'text-neutral-500 line-through' : ''}`}>{rupiah(s.amount)}</td>
                   <td className="px-3 py-2.5">
                     <SettlementBadge status={s.status} />
-                    {s.status === 'reversed' && <span className="block text-[10px] text-muted-foreground">on {fmtDate(s.reversal_date)}</span>}
+                    {s.status === 'reversed' && <span className="block text-[10px] text-neutral-500">on {fmtDate(s.reversal_date)}</span>}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <button type="button" onClick={() => setLihat(s)} className={btnSmall}>View</button>
-                      {busy === s.id ? <Loader2 size={14} className="animate-spin text-muted-foreground" /> : (
+                      {busy === s.id ? <Loader2 size={14} className="animate-spin text-neutral-500" /> : (
                         <Menu width="w-48" button={() => <button type="button" className={`${btnSmall} px-2`} aria-label="More actions"><MoreHorizontal size={14} /></button>}>
                           {close => (
                             <>
@@ -163,7 +167,7 @@ export default function SettlementsTab({ cfg, clientId, mode, data, loading }: {
           </tbody>
           {tersaring.length > 0 && (
             <tfoot>
-              <tr className="border-t-2 border-border bg-slate-50 text-sm font-semibold">
+              <tr className="border-t-2 border-neutral-300 bg-neutral-50 text-sm font-semibold">
                 <td className="px-3 py-2.5" colSpan={5}>Total excl. reversed ({tersaring.length})</td>
                 <td className="px-3 py-2.5 text-right">{rupiah(total)}</td>
                 <td colSpan={2} />

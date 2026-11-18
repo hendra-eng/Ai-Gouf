@@ -111,8 +111,8 @@ export default function JournalEntryTable() {
     <span className="inline-flex flex-col ml-1">
       {sortField === field ? (
         sortDir === 'asc'
-          ? <ChevronUp size={12} className="text-primary" />
-          : <ChevronDown size={12} className="text-primary" />
+          ? <ChevronUp size={12} className="text-neutral-800" />
+          : <ChevronDown size={12} className="text-neutral-800" />
       ) : (
         <ChevronDown size={12} className="text-muted-foreground opacity-40" />
       )}
@@ -150,7 +150,7 @@ export default function JournalEntryTable() {
             placeholder="Search JE number, description…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-primary transition-colors"
+            className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-neutral-700/30 focus:border-neutral-700 transition-colors"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -161,7 +161,7 @@ export default function JournalEntryTable() {
         <select
           value={periodFilter}
           onChange={(e) => { setPeriodFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-700/30"
         >
           <option value="all">All Periods</option>
           <option value="Sep 2026">Sep 2026</option>
@@ -171,7 +171,7 @@ export default function JournalEntryTable() {
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-700/30"
         >
           <option value="all">All Posting</option>
           <option value="posted">Posted</option>
@@ -182,7 +182,7 @@ export default function JournalEntryTable() {
         <select
           value={reviewFilter}
           onChange={(e) => { setReviewFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-700/30"
         >
           <option value="all">All Reviews</option>
           <option value="approved">Approved</option>
@@ -194,7 +194,7 @@ export default function JournalEntryTable() {
         <select
           value={balanceFilter}
           onChange={(e) => { setBalanceFilter(e.target.value); setPage(1); }}
-          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-700/30"
         >
           <option value="all">All Balance</option>
           <option value="balanced">Balanced</option>
@@ -213,17 +213,17 @@ export default function JournalEntryTable() {
 
       {/* Bulk action bar */}
       {selectedRows.size > 0 && (
-        <div className="animate-slide-up px-5 py-2.5 bg-primary/5 border-b border-primary/20 flex items-center gap-3">
-          <span className="text-sm font-medium text-primary">{selectedRows.size} selected</span>
+        <div className="animate-slide-up px-5 py-2.5 bg-neutral-100 border-b border-neutral-300 flex items-center gap-3">
+          <span className="text-sm font-medium text-neutral-800">{selectedRows.size} selected</span>
           <button
             onClick={() => { toast.success(`${selectedRows.size} entry/entries submitted for review`); setSelectedRows(new Set()); }}
-            className="text-sm font-medium text-primary hover:underline"
+            className="text-sm font-medium text-neutral-800 hover:underline"
           >
             Submit for Review
           </button>
           <button
             onClick={() => { toast.success(`${selectedRows.size} entry/entries posted to GL`); setSelectedRows(new Set()); }}
-            className="text-sm font-medium text-primary hover:underline"
+            className="text-sm font-medium text-neutral-800 hover:underline"
           >
             Post to GL
           </button>
@@ -282,7 +282,7 @@ export default function JournalEntryTable() {
                     <p className="text-sm font-medium text-muted-foreground">No journal entries match your filters</p>
                     <button
                       onClick={() => { setSearch(''); setStatusFilter('all'); setReviewFilter('all'); setBalanceFilter('all'); setPeriodFilter('all'); }}
-                      className="text-xs text-primary hover:underline"
+                      className="text-xs text-neutral-800 hover:underline"
                     >
                       Clear all filters
                     </button>
@@ -294,8 +294,8 @@ export default function JournalEntryTable() {
                 <React.Fragment key={`je-row-${row.id}`}>
                   <tr
                     className={`border-b border-border transition-colors duration-100 cursor-pointer ${
-                      selectedId === row.id ? 'bg-primary/5' : 'hover:bg-muted/40'
-                    } ${selectedRows.has(row.id) ? 'bg-primary/5' : ''} ${
+                      selectedId === row.id ? 'bg-neutral-100' : 'hover:bg-muted/40'
+                    } ${selectedRows.has(row.id) ? 'bg-neutral-100' : ''} ${
                       row.balanceStatus === 'unbalanced' ? 'border-l-2 border-l-red-400' : ''
                     }`}
                     onClick={() => setSelectedId(selectedId === row.id ? null : row.id)}
@@ -308,7 +308,7 @@ export default function JournalEntryTable() {
                         className="rounded border-border"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium text-primary tabular-nums whitespace-nowrap">
+                    <td className="px-4 py-3 font-medium text-neutral-800 tabular-nums whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         {row.balanceStatus === 'unbalanced' && (
                           <AlertTriangle size={12} className="text-red-500 shrink-0" />
@@ -330,14 +330,14 @@ export default function JournalEntryTable() {
                         {row.accountingPeriod}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium text-blue-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-neutral-700 whitespace-nowrap">
                       ${row.totalDebit.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums font-medium text-emerald-600 whitespace-nowrap">
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-neutral-900 whitespace-nowrap">
                       ${row.totalCredit.toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
-                      <span className={`font-bold ${row.difference === 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <span className={`font-bold ${row.difference === 0 ? 'text-neutral-900' : 'text-red-600'}`}>
                         {row.difference === 0 ? '$0' : `$${Math.abs(row.difference).toLocaleString()}`}
                       </span>
                     </td>
@@ -360,7 +360,7 @@ export default function JournalEntryTable() {
                         <button
                           onClick={() => setSelectedId(selectedId === row.id ? null : row.id)}
                           title="View journal lines"
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
                         >
                           <Eye size={14} />
                         </button>
@@ -414,7 +414,7 @@ export default function JournalEntryTable() {
               onClick={() => setPage(p)}
               className={`w-7 h-7 text-xs rounded-md font-medium transition-colors ${
                 page === p
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-neutral-800 text-white'
                   : 'border border-border text-muted-foreground hover:bg-muted'
               }`}
             >

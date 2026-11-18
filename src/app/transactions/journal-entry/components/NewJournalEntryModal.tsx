@@ -234,7 +234,7 @@ export default function NewJournalEntryModal({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-foreground">Journal Lines</label>
-            <button onClick={addLine} type="button" className="text-xs text-primary font-medium hover:underline flex items-center gap-1">
+            <button onClick={addLine} type="button" className="text-xs text-neutral-800 font-medium hover:underline flex items-center gap-1">
               <PlusIcon className="w-3.5 h-3.5" /> Add Line
             </button>
           </div>
@@ -280,12 +280,12 @@ export default function NewJournalEntryModal({
                 ))}
               </tbody>
               <tfoot>
-                <tr className={`border-t ${totals.balanced ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                  <td colSpan={4} className={`px-2 py-2 text-right font-semibold ${totals.balanced ? 'text-green-700' : 'text-red-700'}`}>
+                <tr className={`border-t ${totals.balanced ? 'bg-neutral-100 border-neutral-300' : 'bg-red-50 border-red-200'}`}>
+                  <td colSpan={4} className={`px-2 py-2 text-right font-semibold ${totals.balanced ? 'text-neutral-900' : 'text-red-700'}`}>
                     {totals.balanced ? 'Balanced' : 'Not balanced'}
                   </td>
-                  <td className={`px-2 py-2 text-right font-bold tabular-nums ${totals.balanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totals.debit)}</td>
-                  <td className={`px-2 py-2 text-right font-bold tabular-nums ${totals.balanced ? 'text-green-700' : 'text-red-700'}`}>{fmt(totals.credit)}</td>
+                  <td className={`px-2 py-2 text-right font-bold tabular-nums ${totals.balanced ? 'text-neutral-900' : 'text-red-700'}`}>{fmt(totals.debit)}</td>
+                  <td className={`px-2 py-2 text-right font-bold tabular-nums ${totals.balanced ? 'text-neutral-900' : 'text-red-700'}`}>{fmt(totals.credit)}</td>
                   <td />
                 </tr>
               </tfoot>
@@ -313,7 +313,7 @@ export default function NewJournalEntryModal({
             onClick={submit}
             type="button"
             disabled={submitting}
-            className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:opacity-90 transition-colors disabled:opacity-50"
+            className="flex-1 py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50"
           >
             {submitting ? 'Saving…' : 'Save Journal Entry'}
           </button>

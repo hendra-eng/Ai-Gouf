@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Loader2, X } from 'lucide-react';
 import { createArCustomer, updateArCustomer, type ArCustomer } from '@/lib/receivablesPayablesStore';
 import { btnOutline, btnPrimary, inputCls } from './arapUi';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 export default function CustomerModal({ clientId, customer, terms, onClose, onSaved }: {
   clientId: string;
@@ -70,13 +71,15 @@ export default function CustomerModal({ clientId, customer, terms, onClose, onSa
             Phone
             <input value={f.phone} onChange={ubah('phone')} maxLength={50} className={`${inputCls} mt-1`} />
           </label>
-          <label className="text-xs font-medium text-foreground">
+          <div className="text-xs font-medium text-foreground">
             Default Terms
-            <select value={f.payment_terms} onChange={ubah('payment_terms')} className={`${inputCls} mt-1`}>
-              <option value="">—</option>
-              {terms.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </label>
+            <FilterSelect
+              variant="elegant" block tall className="mt-1" ariaLabel="Default terms"
+              value={f.payment_terms}
+              onChange={v => setF(s => ({ ...s, payment_terms: v }))}
+              options={[{ value: '', label: '—' }, ...terms.map(t => ({ value: t, label: t }))]}
+            />
+          </div>
           <label className="text-xs font-medium text-foreground sm:col-span-2">
             Email
             <input type="email" value={f.email} onChange={ubah('email')} maxLength={255} placeholder="finance@customer.co.id" className={`${inputCls} mt-1`} />
