@@ -101,8 +101,8 @@ export default function FxRevaluationClient() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">FX Revaluation</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Period-end revaluation of open foreign-currency invoices and bills at the closing rate. The unrealized gain or loss is posted on the period-end date and
-            reversed automatically the next day, so settlements keep using the invoice rate.
+            Period-end revaluation of open foreign-currency invoices, bills and foreign-currency bank balances at the closing rate. The unrealized gain or loss is posted on the period-end date and
+            reversed automatically the next day, so settlements keep using the invoice rate. Foreign-currency bank accounts are set up on the FX Transfers page.
           </p>
         </div>
 
@@ -156,14 +156,14 @@ export default function FxRevaluationClient() {
 
             <section className="rounded-2xl border border-border bg-card shadow-sm">
               <div className="px-5 pb-3 pt-5">
-                <h2 className="text-lg font-bold text-foreground">Open foreign-currency documents</h2>
-                <p className="text-xs text-muted-foreground">{hasil.totals.document_count} document{hasil.totals.document_count === 1 ? '' : 's'} open on {tgl(hasil.as_of)}. Outstanding is counted as of that date.</p>
+                <h2 className="text-lg font-bold text-foreground">Open foreign-currency items</h2>
+                <p className="text-xs text-muted-foreground">{hasil.totals.document_count} item{hasil.totals.document_count === 1 ? '' : 's'} open on {tgl(hasil.as_of)}. Balances are counted as of that date.</p>
               </div>
               <div className="overflow-x-auto px-5 pb-4">
                 <table className="w-full min-w-[980px] text-sm">
                   <thead>
                     <tr className="border-y border-border bg-slate-50 text-left text-xs font-medium text-slate-600">
-                      <th className="px-3 py-2.5">Type</th><th className="px-3 py-2.5">Document</th><th className="px-3 py-2.5">Party</th>
+                      <th className="px-3 py-2.5">Type</th><th className="px-3 py-2.5">Document / account</th><th className="px-3 py-2.5">Party</th>
                       <th className="px-3 py-2.5 text-right">Outstanding (FX)</th><th className="px-3 py-2.5 text-right">Booking rate</th>
                       <th className="px-3 py-2.5 text-right">Carried (IDR)</th><th className="px-3 py-2.5 text-right">Closing rate</th>
                       <th className="px-3 py-2.5 text-right">Revalued (IDR)</th><th className="px-3 py-2.5 text-right">Difference</th>
@@ -171,10 +171,10 @@ export default function FxRevaluationClient() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {hasil.documents.length === 0 ? (
-                      <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-muted-foreground">No open foreign-currency invoice or bill on this date.</td></tr>
+                      <tr><td colSpan={9} className="px-3 py-10 text-center text-xs text-muted-foreground">No open foreign-currency invoice, bill or bank balance on this date.</td></tr>
                     ) : hasil.documents.map(d => (
                       <tr key={`${d.type}:${d.id}`} className="hover:bg-slate-50/60">
-                        <td className="px-3 py-2.5"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{d.type === 'ar' ? 'AR' : 'AP'}</span></td>
+                        <td className="px-3 py-2.5"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">{d.type === 'ar' ? 'AR' : d.type === 'ap' ? 'AP' : 'Bank'}</span></td>
                         <td className="px-3 py-2.5 whitespace-nowrap font-medium">{d.no}</td>
                         <td className="px-3 py-2.5">{d.party}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{d.currency} {valas(d.foreign_outstanding)}</td>

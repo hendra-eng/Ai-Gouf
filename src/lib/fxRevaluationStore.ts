@@ -15,7 +15,7 @@ export const useFxRevaluationData = <T,>(key: string | null, fn: (signal: AbortS
 
 export interface RevalRate { currency: string; rate: number; rate_date: string | null; source: 'master' | 'manual' }
 export interface RevalDocument {
-  type: 'ar' | 'ap'; id: string; no: string; party: string; date: string; currency: string;
+  type: 'ar' | 'ap' | 'bank'; id: string; no: string; party: string; date: string; currency: string;
   foreign_outstanding: number; booking_rate: number; carried_idr: number; closing_rate: number; revalued_idr: number;
   difference: number; effect: 'gain' | 'loss' | null; account_code: string; account_name: string;
 }
