@@ -518,9 +518,9 @@ def buat_draft(
     payload: JeDraftCreateRequest,
     current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
 ):
-    if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number):
+    if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number, payload.management_client_id):
         return gagal(
-            message="This je_number is already used for this client_id.",
+            message="This JE number is already used for this client.",
             errors={"code": "DUPLICATE_JE_NUMBER", "field": "je_number"},
             status_code=409,
         )
@@ -551,9 +551,9 @@ def buat_draft_dengan_baris(
     "Created" dalam SATU transaksi database (lihat
     dbc.create_je_draft_with_lines), supaya tidak ada draft "yatim" tanpa
     baris kalau salah satu insert baris gagal di tengah jalan."""
-    if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number):
+    if dbc.get_je_draft_by_client_and_number(payload.client_id, payload.je_number, payload.management_client_id):
         return gagal(
-            message="This je_number is already used for this client_id.",
+            message="This JE number is already used for this client.",
             errors={"code": "DUPLICATE_JE_NUMBER", "field": "je_number"},
             status_code=409,
         )

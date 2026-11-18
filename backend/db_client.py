@@ -716,7 +716,10 @@ class JournalEntryDraft(Base):
     query), dan Posted."""
     __tablename__ = "financial_transaction_journal_entry_drafts"
     __table_args__ = (
-        UniqueConstraint("client_id", "je_number", name="uq_je_drafts_client_number"),
+        # Nomor jurnal unik PER KLIEN (migration 61). Dulu UNIQUE (client_id, je_number), padahal
+        # client_id = id user yang login -> 1 user posting OB-<FY>-HO di 2 klien bentrok (500).
+        Index("uq_je_drafts_mclient_number", "management_client_id", "je_number", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
         Index("idx_je_drafts_client_status", "client_id", "status"),
         Index("idx_je_drafts_client_date", "client_id", "entry_date"),
         Index("idx_je_drafts_source_record", "source_record_id"),
@@ -6176,12 +6179,16 @@ def create_je_draft(data: Dict[str, Any], created_by: Optional[str] = None) -> O
 def get_je_draft_by_id(draft_id: str, termasuk_nonaktif: bool = False) -> Optional[Dict[str, Any]]:
     return _je_crud_get_by_id(JournalEntryDraft, CRUD_FIELDS_JE_DRAFT, draft_id, termasuk_nonaktif)
 
-def get_je_draft_by_client_and_number(client_id: Optional[str], je_number: str) -> Optional[Dict[str, Any]]:
-    """Pre-check UniqueConstraint(client_id, je_number) sebelum insert."""
+def get_je_draft_by_client_and_number(client_id: Optional[str], je_number: str,
+                                      management_client_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Pre-check unique index (management_client_id, je_number) sebelum insert (migration 61).
+    Kalau management_client_id tidak diberikan, fallback ke client_id (perilaku lama)."""
     session = SessionLocal()
     try:
+        pemilik = (JournalEntryDraft.management_client_id == management_client_id if management_client_id
+                   else JournalEntryDraft.client_id == client_id)
         obj = session.query(JournalEntryDraft).filter(
-            JournalEntryDraft.client_id == client_id,
+            pemilik,
             JournalEntryDraft.je_number == je_number,
             JournalEntryDraft.deleted_at.is_(None),
         ).first()
@@ -6417,7 +6424,7 @@ def promote_je_rows_to_drafts(source_file_id: str, client_id: Optional[str], cre
         if not r.get("is_valid") or not no or tgl is None or len(lines) < 2:
             tidak_valid += 1
             continue
-        if get_je_draft_by_client_and_number(client_id, no):
+        if get_je_draft_by_client_and_number(client_id, no, file_row.get("management_client_id")):
             bentrok += 1
             continue
         draft_data = {
