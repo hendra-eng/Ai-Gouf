@@ -347,6 +347,16 @@ export async function updateSalesInvoice(id: string, payload: Partial<BackendSal
   return row;
 }
 
+export interface BulkPostItem { id: string; invoice_no: string | null; reason?: string }
+export interface BulkPostResult { posted: BulkPostItem[]; skipped: BulkPostItem[]; failed: BulkPostItem[] }
+
+/** Post banyak invoice sekaligus (1 request, validasi sama dengan post per invoice). */
+export async function bulkPostSalesInvoices(invoiceIds: string[]): Promise<BulkPostResult> {
+  const res = await post<BulkPostResult>(`${SALES_BASE_URL}/invoices/bulk-post`, { invoice_ids: invoiceIds });
+  notifySalesChanged();
+  return res;
+}
+
 export async function deleteSalesInvoice(id: string): Promise<void> {
   await del(`${SALES_BASE_URL}/invoices/${id}`);
   notifySalesChanged();

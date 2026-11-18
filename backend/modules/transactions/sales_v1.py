@@ -591,6 +591,77 @@ def update_invoice(
     return sukses(data=diupdate, message=pesan)
 
 
+class SalesBulkPostRequest(BaseModel):
+    invoice_ids: List[str] = Field(..., min_length=1, max_length=1000)
+
+
+@router.post(
+    "/invoices/bulk-post",
+    summary="Post banyak invoice sekaligus (checkbox di tab Sales Transaction; khusus Supervisor ke atas)",
+    responses={200: {"description": "OK -- ringkasan posted / skipped / failed per invoice."}},
+)
+def bulk_post_invoices(
+    payload: SalesBulkPostRequest,
+    current_user: Dict[str, Any] = Depends(_require_level_v1(3)),
+):
+    """Aturan sama persis dengan PUT /invoices/{id} posting_status=Posted (mapping otomatis dari
+    akun default klien + validasi_posting_sales). Diproses per invoice: yang gagal validasi
+    dilaporkan, sisanya tetap diposting. Auto-match bank dijalankan SEKALI per klien di akhir."""
+    uid = current_user.get("id")
+    nama = current_user.get("nama") or current_user.get("username") or "System"
+    posted: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
+    klien_diposting: set = set()
+    for invoice_id in dict.fromkeys(payload.invoice_ids):  # buang id dobel, urutan tetap
+        lama = dbc.get_sales_invoice_by_id(invoice_id)
+        if lama is None:
+            failed.append({"id": invoice_id, "invoice_no": None, "reason": "Invoice not found."})
+            continue
+        no = lama.get("invoice_no")
+        if lama.get("posting_status") in ("Posted", "Partial", "Paid"):
+            skipped.append({"id": invoice_id, "invoice_no": no, "reason": "Already posted."})
+            continue
+        try:
+            dbc.pastikan_mapping_sales(invoice_id, dibuat_oleh=uid)
+            alasan = dbc.validasi_posting_sales(invoice_id)
+            if alasan:
+                failed.append({"id": invoice_id, "invoice_no": no, "reason": " ".join(alasan)})
+                continue
+            diupdate = dbc.update_sales_invoice(invoice_id, {
+                "posting_status": "Posted", "journal_sync_status": "Synced",
+                "posted_at": datetime.now(), "posted_by": uid,
+            }, updated_by=uid)
+            if diupdate is None:
+                failed.append({"id": invoice_id, "invoice_no": no, "reason": "Failed to update the invoice."})
+                continue
+        except Exception as e:  # 1 invoice bermasalah tidak menghentikan sisanya
+            logger.exception("Bulk post sales gagal untuk invoice %s", invoice_id)
+            failed.append({"id": invoice_id, "invoice_no": no, "reason": str(e)[:300] or "Unexpected error."})
+            continue
+        dbc.create_sales_activity_log({
+            "client_id": uid, "invoice_id": invoice_id, "event_type": "POSTING",
+            "description": "Sales invoice posted (bulk post)", "reference_no": no, "performed_by": nama,
+        }, created_by=uid)
+        posted.append({"id": invoice_id, "invoice_no": no})
+        klien_diposting.add(diupdate.get("management_client_id") or lama.get("management_client_id"))
+
+    pesan = f"{len(posted)} invoice(s) posted"
+    if skipped:
+        pesan += f", {len(skipped)} skipped (already posted)"
+    if failed:
+        pesan += f", {len(failed)} failed"
+    pesan += "."
+    if posted:
+        from . import bank_cash_willi as bc
+        for kid in filter(None, klien_diposting):
+            try:
+                pesan += bc.pesan_auto_match_ringkas(bc.auto_match_setelah_invoice_posted(kid, current_user))
+            except Exception:  # auto-match tidak pernah menggagalkan posting
+                logger.exception("Auto-match setelah bulk post gagal (klien %s)", kid)
+    return sukses(data={"posted": posted, "skipped": skipped, "failed": failed}, message=pesan)
+
+
 @router.delete(
     "/invoices/{invoice_id}",
     summary="Nonaktifkan (soft-delete) invoice (khusus Supervisor ke atas)",
