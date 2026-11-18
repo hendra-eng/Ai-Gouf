@@ -2,23 +2,22 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  MagnifyingGlassIcon,
-  FunnelIcon,
   ArrowsUpDownIcon,
   ArrowDownTrayIcon,
   CheckBadgeIcon,
   ArrowUturnLeftIcon,
-  XMarkIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
-import KpiCard from '@/components/shared/KpiCard';
-import StatusBadge from '@/components/ui/StatusBadge';
+import { BookOpen, ArrowDownCircle, ArrowUpCircle, Scale, Search } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { formatIDR } from '../lib/formatMoney';
 import CashBankTabs from '../components/CashBankTabs';
+import {
+  PostedKpiTile, SourcePanel, StatusPill, TablePagination, FilterSelect, ModalShell,
+  ACTION_BTN_SECONDARY, CHECKBOX_CLS, FIELD_CLS, FIELD_LABEL_CLS,
+  PANEL_ICON_CHIP, TD_CLS, TH_CLS, TR_CLS,
+} from '../components/sourceUi';
 import { usePostedJurnalRekon, type CashBankTxReal } from '../lib/useBankCashRekon';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
@@ -34,7 +33,6 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // dicocokkan ulang. Transaksi yang dibalik disembunyikan dari daftar & ringkasan, bisa ditampilkan
 // lewat kotak centang di bawah filter.
 
-const PAGE_SIZE = 10;
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 type SortField = 'tx_date' | 'tx_no' | 'counterparty' | 'amount';
@@ -123,6 +121,7 @@ const KOLOM: { label: string; field?: SortField; align?: 'right' }[] = [
   { label: 'Amount', field: 'amount', align: 'right' },
   { label: 'Posted By' },
   { label: 'Posted At' },
+  { label: 'Status' },
   { label: 'Detail' },
 ];
 
@@ -149,6 +148,7 @@ export default function CashBankPostedPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Dialog Balik Jurnal
   const [balikTarget, setBalikTarget] = useState<CashBankTxReal | null>(null);
@@ -224,20 +224,36 @@ export default function CashBankPostedPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, arahFilter, periodeFilter, bankFilter, sortField, sortDir]);
+  }, [search, arahFilter, periodeFilter, bankFilter, sortField, sortDir, pageSize]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(page, totalPages);
-  const paged = filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
-  const dariItem = filtered.length === 0 ? 0 : (pageSafe - 1) * PAGE_SIZE + 1;
-  const sampaiItem = Math.min(pageSafe * PAGE_SIZE, filtered.length);
+  const paged = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
 
+  // Angka KPI hanya menghitung jurnal yang masih berlaku (aktif). Persentase = porsi untuk bar proporsi
+  // di kartu (desain sama dengan KPI Sales Posted).
   const ringkasan = useMemo(() => {
-    const cashIn = aktif.filter((x) => x.direction === 'Cash Receipt').reduce((n, x) => n + x.amount, 0);
-    const cashOut = aktif.filter((x) => x.direction === 'Cash Payment').reduce((n, x) => n + x.amount, 0);
+    const receipts = aktif.filter((x) => x.direction === 'Cash Receipt');
+    const payments = aktif.filter((x) => x.direction === 'Cash Payment');
+    const cashIn = receipts.reduce((n, x) => n + x.amount, 0);
+    const cashOut = payments.reduce((n, x) => n + x.amount, 0);
     const periode = new Set(aktif.map((x) => periodeDari(x.tx_date)).filter(Boolean)).size;
-    return { total: aktif.length, cashIn, cashOut, net: cashIn - cashOut, periode };
-  }, [aktif]);
+    const arus = cashIn + cashOut;
+    const pctOf = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
+    return {
+      total: aktif.length,
+      cashIn,
+      cashOut,
+      net: cashIn - cashOut,
+      periode,
+      jumlahIn: receipts.length,
+      jumlahOut: payments.length,
+      pctAktif: pctOf(aktif.length, semuaPosted.length),
+      pctIn: pctOf(cashIn, arus),
+      pctOut: pctOf(cashOut, arus),
+      pctNet: pctOf(Math.max(cashIn - cashOut, 0), cashIn),
+    };
+  }, [aktif, semuaPosted]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -254,7 +270,7 @@ export default function CashBankPostedPage() {
       <CashBankTabs />
 
       {error && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700 mb-6">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">
           <span>{error}</span>
           <button onClick={refresh} className="font-semibold underline hover:no-underline shrink-0">
             Retry
@@ -263,112 +279,123 @@ export default function CashBankPostedPage() {
       )}
 
       {!activeClientId && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 mb-6">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
           No active company — select one via Switch Company in the top bar.
         </div>
       )}
 
-      {/* Ringkasan */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KpiCard
-          title="Posted Journals"
-          value={String(ringkasan.total)}
-          icon="CheckBadgeIcon"
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-50"
-          subLabel={`${ringkasan.periode} accounting periods`}
+      {/* KPI Cards -- desain sama dengan KPI Sales Posted (PostedKpiTile) */}
+      <div className="!mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <PostedKpiTile
+          label="Posted Journals"
+          value={ringkasan.total.toLocaleString('id-ID')}
+          sub={`${ringkasan.periode} accounting periods`}
+          pct={ringkasan.pctAktif}
+          pctLabel="of all posted journals active"
+          icon={BookOpen}
         />
-        <KpiCard title="Total Cash In" value={ringkasan.cashIn} icon="ArrowDownCircleIcon" iconColor="text-emerald-600" iconBg="bg-emerald-50" />
-        <KpiCard title="Total Cash Out" value={ringkasan.cashOut} icon="ArrowUpCircleIcon" iconColor="text-rose-600" iconBg="bg-rose-50" />
-        <KpiCard
-          title="Net Cash Flow"
-          value={ringkasan.net}
-          icon="ScaleIcon"
-          iconColor={ringkasan.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}
-          iconBg={ringkasan.net >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}
+        <PostedKpiTile
+          label="Total Cash In"
+          value={formatIDR(ringkasan.cashIn)}
+          sub={`${ringkasan.jumlahIn.toLocaleString('id-ID')} receipts`}
+          pct={ringkasan.pctIn}
+          pctLabel="of total cash movement"
+          icon={ArrowDownCircle}
+        />
+        <PostedKpiTile
+          label="Total Cash Out"
+          value={formatIDR(ringkasan.cashOut)}
+          sub={`${ringkasan.jumlahOut.toLocaleString('id-ID')} payments`}
+          pct={ringkasan.pctOut}
+          pctLabel="of total cash movement"
+          icon={ArrowUpCircle}
+        />
+        <PostedKpiTile
+          label="Net Cash Flow"
+          value={formatIDR(ringkasan.net)}
+          sub={ringkasan.net >= 0 ? 'Surplus' : 'Deficit'}
+          pct={ringkasan.pctNet}
+          pctLabel="of cash in retained"
+          icon={Scale}
         />
       </div>
 
-      {/* Filter */}
-      <div className="card-elevated-md rounded-xl p-4 mb-6">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="relative flex-1">
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search journal no., counterparty, invoice, or account..."
-              className="w-full text-xs border border-border rounded-lg pl-9 pr-3 py-2 bg-card text-neutral-900"
-            />
-          </div>
-          <div className="flex gap-2 flex-wrap items-center">
-            <FunnelIcon className="w-4 h-4 text-neutral-500" />
-            <select
-              value={arahFilter}
-              onChange={(e) => setArahFilter(e.target.value as typeof arahFilter)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
-            >
-              <option value="all">All Directions</option>
-              <option value="Cash Payment">Cash Payment</option>
-              <option value="Cash Receipt">Cash Receipt</option>
-            </select>
-            <select
-              value={periodeFilter}
-              onChange={(e) => setPeriodeFilter(e.target.value)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
-            >
-              <option value="all">All Periods</option>
-              {periodeList.map((p) => (
-                <option key={p} value={p}>{labelPeriode(p)}</option>
-              ))}
-            </select>
-            <select
-              value={bankFilter}
-              onChange={(e) => setBankFilter(e.target.value)}
-              className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900 max-w-[220px]"
-            >
-              <option value="all">All Accounts</option>
-              {bankList.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
+      {/* Filter -- desain sama dengan filter Sales Posted (dropdown netral, tanpa kartu) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <FilterSelect
+          value={arahFilter}
+          onChange={(v) => setArahFilter(v as typeof arahFilter)}
+          options={[
+            { value: 'all', label: 'All Directions' },
+            { value: 'Cash Payment', label: 'Cash Payment' },
+            { value: 'Cash Receipt', label: 'Cash Receipt' },
+          ]}
+        />
+        <FilterSelect
+          value={periodeFilter}
+          onChange={setPeriodeFilter}
+          options={[{ value: 'all', label: 'All Periods' }, ...periodeList.map((p) => ({ value: p, label: labelPeriode(p) }))]}
+        />
+        <FilterSelect
+          value={bankFilter}
+          onChange={setBankFilter}
+          className="max-w-[240px]"
+          options={[{ value: 'all', label: 'All Accounts' }, ...bankList.map((b) => ({ value: b, label: b }))]}
+        />
+        {adaFilter && (
+          <button
+            onClick={() => { setSearch(''); setArahFilter('all'); setPeriodeFilter('all'); setBankFilter('all'); }}
+            className="text-xs font-semibold text-neutral-700 hover:text-neutral-900 hover:underline"
+          >
+            Reset
+          </button>
+        )}
+        {jumlahDibalik > 0 && (
+          <label className="ml-auto flex cursor-pointer select-none items-center gap-1.5 text-xs font-medium text-neutral-600">
+            <input type="checkbox" className={CHECKBOX_CLS} checked={tampilDibalik} onChange={(e) => setTampilDibalik(e.target.checked)} />
+            Show reversed ({jumlahDibalik})
+          </label>
+        )}
+      </div>
+
+      {/* Tabel */}
+      <SourcePanel
+        title="Posted Journal List"
+        subtitle={`${filtered.length.toLocaleString('id-ID')} of ${posted.length.toLocaleString('id-ID')} ${tampilDibalik ? 'journals' : 'posted journals'}`}
+        leading={<span className={PANEL_ICON_CHIP}><BookOpen size={17} /></span>}
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="relative w-full sm:w-[320px]">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search journal no., counterparty, invoice, or account..."
+                className="w-full rounded-lg border border-neutral-300 bg-white py-1.5 pl-9 pr-3 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
+              />
+            </div>
             <button
               onClick={() => eksporCsv(filtered)}
               disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 text-xs font-semibold border border-border rounded-lg px-3 py-2 bg-card text-neutral-900 hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={ACTION_BTN_SECONDARY}
             >
               <ArrowDownTrayIcon className="w-3.5 h-3.5" />
               Export CSV
             </button>
           </div>
-        </div>
-        <div className="flex items-center justify-between gap-3 flex-wrap mt-2">
-          <p className="text-xs text-neutral-500">
-            {filtered.length} of {posted.length} {tampilDibalik ? 'journals' : 'posted journals'}
-          </p>
-          {jumlahDibalik > 0 && (
-            <label className="flex items-center gap-1.5 text-xs text-neutral-500 cursor-pointer select-none">
-              <input type="checkbox" checked={tampilDibalik} onChange={(e) => setTampilDibalik(e.target.checked)} />
-              Show reversed ({jumlahDibalik})
-            </label>
-          )}
-        </div>
-      </div>
-
-      {/* Tabel */}
-      <div className="card-elevated-md rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        }
+        flush
+      >
+        <div className="scrollbar-thin overflow-x-auto">
+          <table className="w-full min-w-[1200px] select-text border-separate border-spacing-0">
             <thead>
-              <tr className="border-b border-border bg-muted/20">
+              <tr className="bg-neutral-300">
                 {KOLOM.map((col) => (
                   <th
                     key={col.label}
                     onClick={col.field ? () => handleSort(col.field!) : undefined}
-                    className={`px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-neutral-500 whitespace-nowrap select-none ${
-                      col.align === 'right' ? 'text-right' : 'text-left'
-                    } ${col.field ? 'cursor-pointer hover:text-neutral-900' : ''}`}
+                    className={`${TH_CLS} select-none ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.field ? 'cursor-pointer hover:text-neutral-700' : ''}`}
                   >
                     <span className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : ''}`}>
                       {col.label}
@@ -381,7 +408,7 @@ export default function CashBankPostedPage() {
             <tbody>
               {paged.length === 0 ? (
                 <tr>
-                  <td colSpan={KOLOM.length} className="px-4 py-12 text-center text-xs text-neutral-500">
+                  <td colSpan={KOLOM.length} className="px-2 py-10 text-center text-xs text-neutral-500">
                     {loading
                       ? 'Loading data...'
                       : adaFilter
@@ -399,31 +426,25 @@ export default function CashBankPostedPage() {
                   const seimbang = Math.abs(totalDebit - totalKredit) < 0.5;
                   return (
                     <React.Fragment key={row.id}>
-                      <tr className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${row.reversal ? 'opacity-60' : ''}`}>
-                        <td className="px-4 py-3 tabular-nums text-xs font-semibold text-neutral-900 whitespace-nowrap">
-                          {row.tx_no}
-                          {row.reversal && (
-                            <span className="ml-2 align-middle rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                              Reversed
-                            </span>
-                          )}
+                      <tr className={`${TR_CLS} ${row.reversal ? 'opacity-60' : ''}`}>
+                        <td className={`${TD_CLS} font-medium text-blue-700`}>{row.tx_no}</td>
+                        <td className={`${TD_CLS} text-neutral-900`}>{formatTanggal(row.tx_date)}</td>
+                        <td className={TD_CLS}>
+                          <StatusPill tone={isReceipt ? 'emerald' : 'red'} label={row.direction} />
                         </td>
-                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{formatTanggal(row.tx_date)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <StatusBadge label={row.direction} variant={isReceipt ? 'positive' : 'negative'} />
+                        <td className={`${TD_CLS} max-w-[200px] truncate font-medium text-neutral-900`}>{row.counterparty}</td>
+                        <td className={`${TD_CLS} max-w-[180px] truncate tabular-nums text-neutral-900`}>{row.linkedInvoice?.no ?? '—'}</td>
+                        <td className={`${TD_CLS} max-w-[200px] truncate text-neutral-600`}>{row.bank_account || '—'}</td>
+                        <td className={`${TD_CLS} text-right font-semibold tabular-nums text-neutral-900`}>{formatIDR(row.amount)}</td>
+                        <td className={`${TD_CLS} text-neutral-900`}>{row.postedBy || '—'}</td>
+                        <td className={`${TD_CLS} text-neutral-600`}>{formatWaktu(row.postedAt)}</td>
+                        <td className={TD_CLS}>
+                          <StatusPill tone={row.reversal ? 'amber' : 'emerald'} label={row.reversal ? 'Reversed' : 'Posted'} />
                         </td>
-                        <td className="px-4 py-3 text-xs font-medium text-neutral-900 max-w-[200px] truncate">{row.counterparty}</td>
-                        <td className="px-4 py-3 tabular-nums text-xs text-neutral-900 max-w-[180px] truncate">{row.linkedInvoice?.no ?? '—'}</td>
-                        <td className="px-4 py-3 text-xs text-neutral-500 max-w-[200px] truncate">{row.bank_account || '—'}</td>
-                        <td className={`px-4 py-3 text-xs tabular-nums font-semibold text-right whitespace-nowrap ${isReceipt ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {formatIDR(row.amount)}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{row.postedBy || '—'}</td>
-                        <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">{formatWaktu(row.postedAt)}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className={TD_CLS}>
                           <button
                             onClick={() => setExpandedId(terbuka ? null : row.id)}
-                            className="text-xs text-neutral-900 hover:underline flex items-center gap-0.5"
+                            className="flex items-center gap-0.5 text-xs font-semibold text-neutral-800 hover:text-neutral-900 hover:underline"
                           >
                             {terbuka ? <ChevronUpIcon className="w-3.5 h-3.5" /> : <ChevronDownIcon className="w-3.5 h-3.5" />}
                             {terbuka ? 'Close' : 'Detail'}
@@ -432,8 +453,8 @@ export default function CashBankPostedPage() {
                       </tr>
 
                       {terbuka && (
-                        <tr className="border-b border-border/50">
-                          <td colSpan={KOLOM.length} className="px-4 py-0 bg-muted/20">
+                        <tr className="[&>td]:shadow-[inset_0_-1px_0_#b4b4b4]">
+                          <td colSpan={KOLOM.length} className="bg-neutral-100 px-4 py-0">
                             <div className="py-4 space-y-3">
                               {/* Info jurnal & invoice */}
                               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -442,8 +463,8 @@ export default function CashBankPostedPage() {
                                   { label: 'Invoice Type', value: row.linkedInvoice?.type ?? 'No invoice' },
                                   { label: 'Counter Account', value: row.linkedInvoice?.counterpartyAccount ?? ((row.realLines || []).slice(1).map((l) => `${kodeAkun(l.code)} - ${l.name}`).join(', ') || '—') },
                                 ].map((item) => (
-                                  <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
-                                    <p className="text-xs text-neutral-500">{item.label}</p>
+                                  <div key={item.label} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600">{item.label}</p>
                                     <p className="text-xs font-semibold text-neutral-900 mt-0.5 break-words">{item.value}</p>
                                   </div>
                                 ))}
@@ -456,16 +477,16 @@ export default function CashBankPostedPage() {
                                   { label: 'Bank Line Description', value: row.mutationDescription || '—', mono: false },
                                   { label: 'Bank Line Ref', value: row.mutationRef || '—', mono: true },
                                 ].map((item) => (
-                                  <div key={item.label} className="bg-card rounded-lg px-3 py-2 border border-border">
-                                    <p className="text-xs text-neutral-500">{item.label}</p>
+                                  <div key={item.label} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 shadow-sm">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600">{item.label}</p>
                                     <p className={`text-xs font-semibold text-neutral-900 mt-0.5 break-words ${item.mono ? 'tabular-nums' : ''}`}>{item.value}</p>
                                   </div>
                                 ))}
                               </div>
 
                               {/* Baris jurnal */}
-                              <div className="bg-card rounded-lg border border-border overflow-hidden">
-                                <div className="px-3 py-2 bg-muted/30 border-b border-border">
+                              <div className="overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-sm">
+                                <div className="border-b border-neutral-300 bg-neutral-50 px-3 py-2">
                                   <p className="text-xs font-semibold text-neutral-900">Journal Lines</p>
                                 </div>
                                 {baris.length === 0 ? (
@@ -473,34 +494,34 @@ export default function CashBankPostedPage() {
                                 ) : (
                                   <table className="w-full text-xs">
                                     <thead>
-                                      <tr className="border-b border-border">
-                                        <th className="px-3 py-2 text-left font-semibold text-neutral-500 w-10">No</th>
-                                        <th className="px-3 py-2 text-left font-semibold text-neutral-500">Account</th>
-                                        <th className="px-3 py-2 text-right font-semibold text-neutral-500">Debit</th>
-                                        <th className="px-3 py-2 text-right font-semibold text-neutral-500">Credit</th>
+                                      <tr className="border-b border-neutral-300 bg-neutral-100">
+                                        <th className="px-3 py-2 text-left font-bold text-neutral-700 w-10">No</th>
+                                        <th className="px-3 py-2 text-left font-bold text-neutral-700">Account</th>
+                                        <th className="px-3 py-2 text-right font-bold text-neutral-700">Debit</th>
+                                        <th className="px-3 py-2 text-right font-bold text-neutral-700">Credit</th>
                                       </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-border">
+                                    <tbody className="divide-y divide-neutral-200">
                                       {baris.map((l) => (
                                         <tr key={l.no}>
                                           <td className="px-3 py-2 text-neutral-500">{l.no}</td>
                                           <td className="px-3 py-2 text-neutral-900">
                                             <span className="tabular-nums">{kodeAkun(l.code)}</span> · {l.name}
                                           </td>
-                                          <td className="px-3 py-2 text-right tabular-nums tabular-nums">{l.debit > 0 ? formatIDR(l.debit) : '—'}</td>
-                                          <td className="px-3 py-2 text-right tabular-nums tabular-nums">{l.credit > 0 ? formatIDR(l.credit) : '—'}</td>
+                                          <td className="px-3 py-2 text-right tabular-nums">{l.debit > 0 ? formatIDR(l.debit) : '—'}</td>
+                                          <td className="px-3 py-2 text-right tabular-nums">{l.credit > 0 ? formatIDR(l.credit) : '—'}</td>
                                         </tr>
                                       ))}
                                     </tbody>
                                     <tfoot>
-                                      <tr className={`border-t ${seimbang ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
-                                        <td colSpan={2} className={`px-3 py-2 text-right font-bold ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                      <tr className={`border-t ${seimbang ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
+                                        <td colSpan={2} className={`px-3 py-2 text-right font-bold ${seimbang ? 'text-emerald-800' : 'text-red-800'}`}>
                                           Total {seimbang ? '· Balanced' : '· Not balanced'}
                                         </td>
-                                        <td className={`px-3 py-2 text-right font-bold tabular-nums tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                        <td className={`px-3 py-2 text-right font-bold tabular-nums ${seimbang ? 'text-emerald-800' : 'text-red-800'}`}>
                                           {formatIDR(totalDebit)}
                                         </td>
-                                        <td className={`px-3 py-2 text-right font-bold tabular-nums tabular-nums ${seimbang ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                        <td className={`px-3 py-2 text-right font-bold tabular-nums ${seimbang ? 'text-emerald-800' : 'text-red-800'}`}>
                                           {formatIDR(totalKredit)}
                                         </td>
                                       </tr>
@@ -511,7 +532,7 @@ export default function CashBankPostedPage() {
 
                               {row.reversal ? (
                                 /* Sudah dibalik */
-                                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                                <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5">
                                   <ArrowUturnLeftIcon className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <div className="text-xs text-amber-800 space-y-0.5">
                                     <p className="font-semibold">
@@ -529,9 +550,9 @@ export default function CashBankPostedPage() {
                               ) : (
                                 <>
                                   {/* Indikator posted */}
-                                  <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-4 py-2.5">
+                                  <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5">
                                     <CheckBadgeIcon className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                                    <p className="text-xs text-emerald-700 font-medium">
+                                    <p className="text-xs text-emerald-800 font-medium">
                                       This journal has been posted to the ledger
                                       {row.linkedInvoice ? ` and the outstanding of invoice ${row.linkedInvoice.no} has been updated.` : '.'}
                                     </p>
@@ -540,7 +561,7 @@ export default function CashBankPostedPage() {
                                     <div className="flex justify-end">
                                       <button
                                         onClick={() => bukaDialogBalik(row)}
-                                        className="flex items-center gap-1.5 text-xs font-semibold border border-rose-200 text-rose-700 rounded-lg px-3 py-2 bg-card hover:bg-rose-50 transition-colors"
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 shadow-sm transition-colors hover:border-red-600 hover:bg-red-50"
                                       >
                                         <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
                                         Reverse Journal
@@ -565,135 +586,92 @@ export default function CashBankPostedPage() {
           </table>
         </div>
 
-        {filtered.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-            <p className="text-xs text-neutral-500">
-              Showing <span className="font-medium text-neutral-900">{dariItem}–{sampaiItem}</span> of{' '}
-              <span className="font-medium text-neutral-900">{filtered.length}</span> journals
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(pageSafe - 1)}
-                disabled={pageSafe <= 1}
-                className="p-1.5 rounded-lg border border-border text-neutral-500 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                aria-label="Previous page"
-              >
-                <ChevronLeftIcon className="w-4 h-4" />
-              </button>
-              <span className="text-xs text-neutral-500 px-2">
-                {pageSafe} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage(pageSafe + 1)}
-                disabled={pageSafe >= totalPages}
-                className="p-1.5 rounded-lg border border-border text-neutral-500 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                aria-label="Next page"
-              >
-                <ChevronRightIcon className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+        <TablePagination
+          total={filtered.length}
+          page={pageSafe}
+          pageSize={pageSize}
+          onPage={(p) => setPage(Math.min(Math.max(1, p), totalPages))}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+          unit="journals"
+        />
+      </SourcePanel>
 
-      {/* Dialog Balik Jurnal */}
+      {/* Dialog Balik Jurnal -- cangkang modal sama dengan modal lain di Cash & Bank */}
       {balikTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={tutupDialogBalik}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="judul-balik-jurnal"
-        >
-          <div className="w-full max-w-lg rounded-xl bg-card border border-border shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
-              <div>
-                <h2 id="judul-balik-jurnal" className="text-base font-bold text-neutral-900">Reverse Journal</h2>
-                <p className="text-xs text-neutral-500 mt-0.5 tabular-nums">
-                  {balikTarget.tx_no} · {formatIDR(balikTarget.amount)}
-                </p>
-              </div>
-              <button
-                onClick={tutupDialogBalik}
-                disabled={membalik}
-                className="text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
-                aria-label="Close"
-              >
-                <XMarkIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
-                <p className="font-semibold">What will happen:</p>
-                <ul className="list-disc pl-4 space-y-0.5">
-                  <li>A reversal journal (debit and credit swapped) is created and posted immediately. The original journal is not changed or deleted.</li>
-                  {balikTarget.linkedInvoice ? (
-                    <li>
-                      The payment to invoice {balikTarget.linkedInvoice.no} is cancelled, so the invoice outstanding goes back to
-                      what it was before this payment.
-                    </li>
-                  ) : (
-                    <li>This journal has no invoice, so no Purchase/Sales outstanding changes.</li>
-                  )}
-                  {balikTarget.mutationRef && <li>Its Source Data line returns to Unmatched and can be matched again in the Reconciliation tab.</li>}
-                </ul>
-              </div>
-
-              <div>
-                <label htmlFor="balik-alasan" className="block text-xs font-semibold text-neutral-900 mb-1">
-                  Reversal reason <span className="text-rose-600">*</span>
-                </label>
-                <textarea
-                  id="balik-alasan"
-                  value={balikAlasan}
-                  onChange={(e) => setBalikAlasan(e.target.value)}
-                  maxLength={300}
-                  rows={3}
-                  disabled={membalik}
-                  placeholder="E.g. matched to the wrong invoice, should be another one"
-                  className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
-                />
-                <p className="text-[11px] text-neutral-500 mt-0.5">At least 5 characters. The reason is stored on the reversal journal.</p>
-              </div>
-
-              <div>
-                <label htmlFor="balik-tanggal" className="block text-xs font-semibold text-neutral-900 mb-1">
-                  Reversal journal date
-                </label>
-                <input
-                  id="balik-tanggal"
-                  type="date"
-                  value={balikTanggal}
-                  min={balikTarget.tx_date}
-                  onChange={(e) => setBalikTanggal(e.target.value)}
-                  disabled={membalik}
-                  className="text-xs border border-border rounded-lg px-3 py-2 bg-card text-neutral-900"
-                />
-                <p className="text-[11px] text-neutral-500 mt-0.5">
-                  Cannot be earlier than the original journal date ({formatTanggal(balikTarget.tx_date)}).
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 px-5 py-4 border-t border-border">
-              <button
-                onClick={tutupDialogBalik}
-                disabled={membalik}
-                className="text-xs font-semibold border border-border rounded-lg px-4 py-2 bg-card text-neutral-900 hover:bg-muted transition-colors disabled:opacity-40"
-              >
+        <ModalShell
+          title="Reverse Journal"
+          subtitle={<span className="tabular-nums">{balikTarget.tx_no} · {formatIDR(balikTarget.amount)}</span>}
+          icon={<ArrowUturnLeftIcon className="w-[17px] h-[17px]" />}
+          onClose={tutupDialogBalik}
+          closeDisabled={membalik}
+          footer={
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={tutupDialogBalik} disabled={membalik} className={ACTION_BTN_SECONDARY}>
                 Cancel
               </button>
               <button
                 onClick={konfirmasiBalik}
                 disabled={membalik || balikAlasan.trim().length < 5}
-                className="text-xs font-semibold rounded-lg px-4 py-2 bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-700 bg-red-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {membalik ? 'Reversing...' : 'Reverse Journal'}
               </button>
             </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+              <p className="font-semibold">What will happen:</p>
+              <ul className="list-disc space-y-0.5 pl-4">
+                <li>A reversal journal (debit and credit swapped) is created and posted immediately. The original journal is not changed or deleted.</li>
+                {balikTarget.linkedInvoice ? (
+                  <li>
+                    The payment to invoice {balikTarget.linkedInvoice.no} is cancelled, so the invoice outstanding goes back to
+                    what it was before this payment.
+                  </li>
+                ) : (
+                  <li>This journal has no invoice, so no Purchase/Sales outstanding changes.</li>
+                )}
+                {balikTarget.mutationRef && <li>Its Source Data line returns to Unmatched and can be matched again in the Reconciliation tab.</li>}
+              </ul>
+            </div>
+
+            <div>
+              <label htmlFor="balik-alasan" className={FIELD_LABEL_CLS}>
+                Reversal reason <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                id="balik-alasan"
+                value={balikAlasan}
+                onChange={(e) => setBalikAlasan(e.target.value)}
+                maxLength={300}
+                rows={3}
+                disabled={membalik}
+                placeholder="E.g. matched to the wrong invoice, should be another one"
+                className={FIELD_CLS}
+              />
+              <p className="mt-1 text-[11px] font-medium text-neutral-500">At least 5 characters. The reason is stored on the reversal journal.</p>
+            </div>
+
+            <div>
+              <label htmlFor="balik-tanggal" className={FIELD_LABEL_CLS}>
+                Reversal journal date
+              </label>
+              <input
+                id="balik-tanggal"
+                type="date"
+                value={balikTanggal}
+                min={balikTarget.tx_date}
+                onChange={(e) => setBalikTanggal(e.target.value)}
+                disabled={membalik}
+                className={`${FIELD_CLS} sm:w-auto`}
+              />
+              <p className="mt-1 text-[11px] font-medium text-neutral-500">
+                Cannot be earlier than the original journal date ({formatTanggal(balikTarget.tx_date)}).
+              </p>
+            </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

@@ -63,6 +63,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { id: 'nav-ar', label: 'Accounts Receivable', icon: DollarSign, href: '/accounts-receivable', badge: '3', badgeVariant: 'warning' },
       { id: 'nav-ap', label: 'Accounts Payable', icon: CreditCard, href: '/accounts-payable' },
       { id: 'nav-fx-revaluation', label: 'FX Revaluation', icon: RefreshCcw, href: '/fx-revaluation' },
+      { id: 'nav-fx-transfers', label: 'FX Transfers', icon: ArrowLeftRight, href: '/fx-transfers' },
     ],
   },
   {

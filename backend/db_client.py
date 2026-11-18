@@ -1729,6 +1729,10 @@ class BankCashTransaction(Base):
     payment_method = Column(String(30), nullable=True)           # bank_transfer / cash / cheque / giro / ...
     reference_date = Column(Date, nullable=True)
     currency = Column(String(10), nullable=False, default="IDR", server_default=text("'IDR'"))
+    # [migration 59] Nominal VALAS yang bergerak di rekening kas/bank valas (finance_fx_bank_accounts) + kurs pencatatannya.
+    # Kosong = diturunkan dari baris pelunasan invoice valas (fx_amount) atau belum dikonversi (lihat fx_bank_v1).
+    fx_amount = Column(Numeric(24, 2), nullable=True)
+    fx_rate = Column(Numeric(24, 6), nullable=True)
     source = Column(String(20), nullable=False, default="manual", server_default=text("'manual'"))  # bank_feed / manual / ar / ap
     mutation_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_bank_cash_mutations.id"), nullable=True)
     status = Column(String(20), nullable=False, default="draft", server_default=text("'draft'"))
@@ -4034,6 +4038,76 @@ class FxRevaluationRun(Base):
     cancelled_by = Column(PG_UUID(as_uuid=False), nullable=True)
     cancelled_by_name = Column(String(255), nullable=True)
     cancel_reason = Column(Text, nullable=True)
+
+
+class FxBankAccount(Base):
+    """[BARU - migration 59] Penanda rekening kas/bank VALAS milik klien (Fase 3B kurs, modul
+    modules/finance/fx_bank_v1.py). Akun COA-nya tetap satu (nilai buku dalam IDR); tabel ini menambah
+    mata uang rekening, tanggal mulai pelacakan saldo valas, dan saldo valas awal (sebelum tanggal itu)."""
+    __tablename__ = "finance_fx_bank_accounts"
+    __table_args__ = (
+        UniqueConstraint("client_id", "coa_id", name="uq_fx_bank_accounts_client_coa"),
+        CheckConstraint("currency <> 'IDR' AND char_length(currency) = 3", name="ck_fx_bank_accounts_currency"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    currency = Column(String(3), nullable=False)
+    tracking_start = Column(Date, nullable=False)                 # transaksi mulai tanggal ini dihitung ke saldo valas
+    opening_foreign = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))  # saldo valas sebelum tracking_start
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    edited_by_name = Column(String(255), nullable=True)
+
+
+class FxTransfer(Base):
+    """[BARU - migration 59] Transfer antar rekening kas/bank BEDA MATA UANG (Fase 3C kurs), modul
+    modules/finance/fx_bank_v1.py. 1 baris = 1 transfer: jurnal POSTED di financial_transaction_journal_entry_drafts
+    (source_type 'FxTransfer'): Dr rekening tujuan (nilai_masuk) ; Cr rekening asal (nilai_keluar, biaya rata-rata untuk
+    rekening valas) ; selisihnya ke akun FX Gain/Loss terealisasi. status: posted / reversed (jurnal pembalik RV-<nomor>)."""
+    __tablename__ = "finance_fx_transfers"
+    __table_args__ = (
+        UniqueConstraint("client_id", "transfer_no", name="uq_fx_transfers_client_no"),
+        CheckConstraint("status IN ('posted', 'reversed')", name="ck_fx_transfers_status"),
+        CheckConstraint("from_amount > 0 AND to_amount > 0", name="ck_fx_transfers_amount"),
+        Index("idx_fx_transfers_client_date", "client_id", "transfer_date"),
+    )
+
+    id = Column(PG_UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_clients.id"), nullable=False)
+    transfer_no = Column(String(50), nullable=False)              # FXT-2611-0001
+    transfer_date = Column(Date, nullable=False)
+    from_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    from_account_code = Column(String(50), nullable=False)
+    from_account_name = Column(String(255), nullable=False)
+    from_currency = Column(String(3), nullable=False)
+    from_amount = Column(Numeric(24, 2), nullable=False)          # nominal keluar, dalam mata uang rekening asal
+    to_coa_id = Column(PG_UUID(as_uuid=False), ForeignKey("management_client_coa.id"), nullable=False)
+    to_account_code = Column(String(50), nullable=False)
+    to_account_name = Column(String(255), nullable=False)
+    to_currency = Column(String(3), nullable=False)
+    to_amount = Column(Numeric(24, 2), nullable=False)            # nominal masuk, dalam mata uang rekening tujuan
+    rate_in = Column(Numeric(24, 6), nullable=True)               # kurs penilaian sisi masuk (IDR per 1 unit), NULL kalau tujuan IDR / sama mata uang
+    value_out_idr = Column(Numeric(24, 2), nullable=False)
+    value_in_idr = Column(Numeric(24, 2), nullable=False)
+    fx_difference = Column(Numeric(24, 2), nullable=False, default=0, server_default=text("0"))  # > 0 untung, < 0 rugi
+    status = Column(String(20), nullable=False, default="posted", server_default=text("'posted'"))
+    journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    reversal_journal_id = Column(PG_UUID(as_uuid=False), ForeignKey("financial_transaction_journal_entry_drafts.id"), nullable=True)
+    reversal_date = Column(Date, nullable=True)
+    reversal_reason = Column(Text, nullable=True)
+    reference = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"), nullable=False)
+    created_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    created_by_name = Column(String(255), nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(PG_UUID(as_uuid=False), nullable=True)
+    reversed_by_name = Column(String(255), nullable=True)
 
 
 class FinanceTransactionBankCashException(Base):
@@ -7550,12 +7624,27 @@ def baris_jurnal_kas_bank(tx: "BankCashTransaction", lines: List["BankCashTransa
     return hasil
 
 
-def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+# Status yang TIDAK pernah masuk GL walau mode "termasuk belum posted" aktif
+# (ditolak / dibatalkan / void / dihapus).
+_STATUS_DIKECUALIKAN_GL = ("rejected", "void", "voided", "cancelled", "canceled", "ditolak", "dibatalkan", "deleted")
+
+
+def _syarat_status_gl(kolom, posted_values: tuple, termasuk_belum_posted: bool):
+    """Syarat status baris GL. Default: hanya status posted (+reversed). Mode
+    termasuk_belum_posted (dipakai halaman General Ledger): semua status KECUALI
+    rejected/void/cancelled/dihapus, jadi transaksi di Journal Preview (draft,
+    pending, approved) sudah langsung masuk GL tanpa menunggu Post."""
+    if termasuk_belum_posted:
+        return ~func.lower(kolom).in_(_STATUS_DIKECUALIKAN_GL)
+    return func.lower(kolom).in_(posted_values)
+
+
+def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optional[date], termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Transaksi Cash & Bank posted/reversed -> baris GL. Reversed = jurnal
     asal (tx_date) + jurnal pembalik RV-<no> (reversal_date, sisi dibalik)."""
     q = session.query(BankCashTransaction).filter(
         BankCashTransaction.client_id == management_client_id,
-        BankCashTransaction.status.in_(("posted", "reversed")),
+        _syarat_status_gl(BankCashTransaction.status, ("posted", "reversed"), termasuk_belum_posted),
         BankCashTransaction.deleted_at.is_(None),
     )
     if sampai_tanggal:
@@ -7590,10 +7679,11 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
 
 
 def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
-                           sampai_tanggal: Optional[date], kolom_pihak: str = "reference") -> List[Dict[str, Any]]:
+                           sampai_tanggal: Optional[date], kolom_pihak: str = "reference",
+                           termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
     -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
-    q = session.query(model).filter(model.client_id == management_client_id, model.status.in_(("posted", "reversed")))
+    q = session.query(model).filter(model.client_id == management_client_id, _syarat_status_gl(model.status, ("posted", "reversed"), termasuk_belum_posted))
     if sampai_tanggal:
         q = q.filter(model.journal_date <= sampai_tanggal)
     jurnal = q.order_by(model.journal_date, model.journal_no).all()
@@ -7619,21 +7709,24 @@ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_
     return hasil
 
 
-def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Optional[date], termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Jurnal Inventory posted/reversed -> baris GL (sumber "inventory")."""
-    return _baris_gl_jurnal_modul(session, InventoryJournal, InventoryJournalLine, "inventory", management_client_id, sampai_tanggal)
+    return _baris_gl_jurnal_modul(session, InventoryJournal, InventoryJournalLine, "inventory", management_client_id, sampai_tanggal,
+                                  termasuk_belum_posted=termasuk_belum_posted)
 
 
 
-def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date]) -> List[Dict[str, Any]]:
+def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date], termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Jurnal Fixed Assets posted/reversed -> baris GL (sumber "fixed_asset")."""
-    return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal)
+    return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal,
+                                  termasuk_belum_posted=termasuk_belum_posted)
 
 
 def ambil_baris_jurnal_posted_transaksi(
     client_id: Optional[str] = None,
     sampai_tanggal: Optional[date] = None,
     management_client_id: Optional[str] = None,
+    termasuk_belum_posted: bool = False,
 ) -> List[Dict[str, Any]]:
     """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
@@ -7642,7 +7735,12 @@ def ambil_baris_jurnal_posted_transaksi(
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
-    Purchase belum punya dimensi)."""
+    Purchase belum punya dimensi).
+
+    `termasuk_belum_posted=True` (HANYA dipakai halaman General Ledger): semua
+    transaksi yang sudah masuk Journal Preview (draft/pending/approved) ikut
+    dibaca; yang rejected/void/cancelled/dihapus tetap dikeluarkan. Default False
+    = perilaku lama (hanya posted) untuk COA, Financial Statements, dll."""
     if not client_id and not management_client_id:
         raise ValueError("client_id atau management_client_id wajib diisi.")
 
@@ -7662,7 +7760,7 @@ def ambil_baris_jurnal_posted_transaksi(
             JournalEntryDraftLine, JournalEntryDraftLine.draft_id == JournalEntryDraft.id
         ).filter(
             *_filter_pemilik(JournalEntryDraft),
-            func.lower(JournalEntryDraft.status) == "posted",
+            _syarat_status_gl(JournalEntryDraft.status, ("posted",), termasuk_belum_posted),
             JournalEntryDraft.deleted_at.is_(None),
             JournalEntryDraftLine.deleted_at.is_(None),
         )
@@ -7690,7 +7788,7 @@ def ambil_baris_jurnal_posted_transaksi(
             (SalesAccountMapping.invoice_id == SalesInvoice.id) & SalesAccountMapping.deleted_at.is_(None),
         ).filter(
             *_filter_pemilik(SalesInvoice),
-            func.lower(SalesInvoice.posting_status) == "posted",
+            _syarat_status_gl(SalesInvoice.posting_status, ("posted",), termasuk_belum_posted),
             SalesInvoice.deleted_at.is_(None),
             # Invoice saldo awal (import Opening AR) sudah diwakili jurnal opening balance.
             SalesInvoice.is_opening_balance.is_(False),
@@ -7729,7 +7827,7 @@ def ambil_baris_jurnal_posted_transaksi(
         # --- 3) Purchase ---
         q = session.query(PurchaseTransaction).filter(
             *_filter_pemilik(PurchaseTransaction),
-            func.lower(PurchaseTransaction.status) == "posted",
+            _syarat_status_gl(PurchaseTransaction.status, ("posted",), termasuk_belum_posted),
             PurchaseTransaction.deleted_at.is_(None),
             # Bill saldo awal (import Opening AP) sudah diwakili jurnal opening balance.
             PurchaseTransaction.is_opening_balance.is_(False),
@@ -7771,15 +7869,16 @@ def ambil_baris_jurnal_posted_transaksi(
         # --- 4) Cash & Bank --- client_id tabel ini = management_clients,
         # jadi hanya ikut kalau difilter per klien (management_client_id).
         if management_client_id:
-            hasil.extend(_baris_gl_kas_bank(session, management_client_id, sampai_tanggal))
+            hasil.extend(_baris_gl_kas_bank(session, management_client_id, sampai_tanggal, termasuk_belum_posted))
             # --- 5) Fixed Assets (jurnal FA-..., sama: client_id = management_clients) ---
-            hasil.extend(_baris_gl_aset_tetap(session, management_client_id, sampai_tanggal))
+            hasil.extend(_baris_gl_aset_tetap(session, management_client_id, sampai_tanggal, termasuk_belum_posted))
             # --- 6) Inventory (jurnal INV-... penyesuaian / HPP / penerimaan) ---
-            hasil.extend(_baris_gl_persediaan(session, management_client_id, sampai_tanggal))
+            hasil.extend(_baris_gl_persediaan(session, management_client_id, sampai_tanggal, termasuk_belum_posted))
             # --- 7) Other Transactions (OT-..., asset_other_transactions; jurnal OTH- lama
             #        sudah disalin ke tabel ini oleh migration 48) ---
             hasil.extend(_baris_gl_jurnal_modul(session, OtherTransaction, OtherTransactionLine, "other", management_client_id,
-                                                sampai_tanggal, kolom_pihak="counterparty"))
+                                                sampai_tanggal, kolom_pihak="counterparty",
+                                                termasuk_belum_posted=termasuk_belum_posted))
 
         return hasil
     except Exception as e:

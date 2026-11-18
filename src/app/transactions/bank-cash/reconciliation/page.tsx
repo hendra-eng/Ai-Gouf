@@ -821,7 +821,7 @@ export default function ReconciliationPage() {
             ) : mutasiTampil.length === 0 ? (
               <p className="py-10 text-center text-xs text-neutral-500">No lines match “{cariMutasi}”.</p>
             ) : (
-              <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-200 overflow-y-auto">
+              <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-400 overflow-y-auto">
                 {mutasiTampil.map((m) => {
                   const s = saran[m.id];
                   const auto = s?.auto_match ? s.candidates[0] : null;
@@ -1118,7 +1118,7 @@ export default function ReconciliationPage() {
                   : jumlahTerbuka === 0 ? 'All invoices on this side are paid. Tick “Show paid invoices” to see them.' : 'Nothing to show.'}
               </p>
             ) : (
-              <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-200 overflow-y-auto">
+              <div className="scrollbar-thin max-h-[520px] divide-y divide-neutral-400 overflow-y-auto">
                 {invoiceTampil.map(({ r, info }) => {
                   const nominalTerpilih = mutasiTerpilih ? mutasiTerpilih.credit || mutasiTerpilih.debit : 0;
                   const sisiSesuai = mutasiTerpilih ? (mutasiTerpilih.credit ? 'receipt' : 'payment') === sisiInvoice : false;

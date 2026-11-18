@@ -113,6 +113,7 @@ from modules.management import opening_balance_import_v1 as management_opening_b
 from modules.management import year_end_closing_v1 as management_year_end_closing_v1  # [BARU] /api/v1/management/year-end-closing/...
 # [DITAHAN SEMENTARA] from modules.finance import bank_reconciliation_v1 as finance_bank_reconciliation_v1  # [BARU] /api/v1/finance/bank-reconciliation/suggest|match|auto-match|unmatch|payments|journal-preview  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
 from modules.management import exchange_rates_v1 as management_exchange_rates_v1  # [BARU] master kurs: /api/v1/management/exchange-rates/... (migration 56)
+from modules.finance import fx_bank_v1 as finance_fx_bank_v1  # [BARU] rekening bank valas + transfer antar mata uang: /api/v1/finance/fx-bank/... (migration 59)
 from modules.finance import fx_revaluation_v1 as finance_fx_revaluation_v1  # [BARU] revaluasi AR/AP valas: /api/v1/finance/fx-revaluation/... (migration 58)
 from modules.management import clients_v1 as management_clients_v1  # [BARU] CRUD management_clients: /api/v1/management/clients/...
 from modules.management import coa_v1 as management_coa_v1  # [BARU] master COA per klien: /api/v1/management/coa/...
@@ -391,6 +392,7 @@ app.include_router(finance_receivables_ar_v1.statement_router_ar)  # [BARU] /api
 app.include_router(finance_receivables_ar_v1.statement_router_ap)  # [BARU] /api/v1/finance/payables/statements
 # [DITAHAN SEMENTARA] app.include_router(finance_bank_reconciliation_v1.router)  # [BARU] prefix sudah di router-nya sendiri  -- tunggu pemegang database memastikan trigger fn_bcp_apply/fn_bcp_validate ada
 app.include_router(management_exchange_rates_v1.router)  # [BARU] /api/v1/management/exchange-rates/... -- master kurs, tarik kurs otomatis
+app.include_router(finance_fx_bank_v1.router)  # [BARU] /api/v1/finance/fx-bank/... -- rekening valas, transfer antar mata uang
 app.include_router(finance_fx_revaluation_v1.router)  # [BARU] /api/v1/finance/fx-revaluation/... -- revaluasi akhir periode AR/AP valas + jurnal pembalik otomatis
 app.include_router(management_clients_v1.router)  # [BARU] /api/v1/management/clients/... -- prefix sudah di router-nya sendiri
 app.include_router(management_coa_v1.router)  # [BARU] /api/v1/management/coa/... -- prefix sudah di router-nya sendiri

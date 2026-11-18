@@ -635,7 +635,7 @@ export default function GeneralLedgerClient() {
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
           <p className={`text-xs ${validation && hydrated ? 'text-amber-600' : 'text-muted-foreground'}`}>
-            {hydrated && validation ? validation : 'Only posted transactions are included (Journal Entry, Sales, Purchase, Cash & Bank).'}
+            {hydrated && validation ? validation : 'All transactions in Journal Preview are included (Journal Entry, Sales, Purchase, Cash & Bank, Fixed Assets, Inventory, Other). Rejected and voided are excluded.'}
           </p>
           <div className="flex items-center gap-2">
             <button type="button" onClick={reset} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-sm font-medium text-foreground bg-card hover:bg-slate-50">
@@ -710,7 +710,7 @@ export default function GeneralLedgerClient() {
             <div className="bg-card border border-dashed border-border rounded-xl p-10 text-center">
               <p className="text-sm font-semibold text-foreground">No accounts to show</p>
               <p className="text-xs text-muted-foreground mt-1">
-                {search ? 'No account matches your search.' : 'There are no posted transactions for this filter.'}
+                {search ? 'No account matches your search.' : 'There are no transactions for this filter.'}
               </p>
             </div>
           ) : (

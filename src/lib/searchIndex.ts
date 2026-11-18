@@ -17,6 +17,7 @@ export const searchIndex: SearchIndexItem[] = [
   { label: 'Accounts Receivable', href: '/accounts-receivable', group: 'Financial' },
   { label: 'Accounts Payable', href: '/accounts-payable', group: 'Financial' },
   { label: 'FX Revaluation', href: '/fx-revaluation', group: 'Financial' },
+  { label: 'FX Transfers', href: '/fx-transfers', group: 'Financial' },
   { label: 'Fixed Assets', href: '/assets', group: 'Assets & Equity' },
   { label: 'Inventory', href: '/inventory', group: 'Assets & Equity' },
   { label: 'Liabilities', href: '/liabilities', group: 'Assets & Equity' },

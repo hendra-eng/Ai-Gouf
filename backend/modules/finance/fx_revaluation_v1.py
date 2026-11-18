@@ -34,7 +34,10 @@ Endpoint:
     GET  /runs/{id}               detail 1 run (snapshot per dokumen + jurnal)
     POST /runs/{id}/cancel        batalkan run (kedua jurnal di-soft-delete)    -- Manager+
 
-Batasan yang disengaja: hanya AR/AP valas. Rekening bank valas & transfer antar mata uang = Fase 3B/3C.
+Fase 3B: saldo REKENING KAS/BANK VALAS (fx_bank_v1.posisi_bank_valas) ikut dalam run yang sama (type 'bank'):
+    saldo valas x kurs penutup - nilai buku IDR akun itu (GL tanpa jurnal revaluasi); selisih > 0 = untung (Dr Bank).
+Rekening valas yang saldo valasnya belum bisa dipastikan (transaksi tanpa nominal valas) menahan run: lihat issues.
+Transfer antar mata uang (Fase 3C) ada di fx_bank_v1.py.
 Kalau ada pelunasan baru bertanggal <= as_of dimasukkan SETELAH run dibuat, saldo berubah: batalkan run lalu
 buat ulang (pratinjau selalu menampilkan run aktif di tanggal itu lewat `existing_run`).
 """
@@ -54,6 +57,7 @@ import db_client as dbc
 from ..auth.v1 import get_current_user_v1
 from ..logging_config import get_module_logger
 from ..transactions import bank_cash_willi as bc
+from . import fx_bank_v1 as fb
 from . import receivables_payables_v1 as rp
 
 logger = get_module_logger("finance_fx_revaluation_v1")
@@ -168,10 +172,34 @@ def _hitung(session, kid: str, per: date, rates: Optional[Dict[str, float]]) -> 
                 "_selisih": selisih, "_untung": untung,
             })
 
-    total_untung = sum((x["_selisih"] if x["type"] == "ar" else -x["_selisih"] for x in dokumen if x["effect"] == "gain"), NOL)
-    total_rugi = sum((-x["_selisih"] if x["type"] == "ar" else x["_selisih"] for x in dokumen if x["effect"] == "loss"), NOL)
+    masalah_bank: List[str] = []
+    for pos in fb.posisi_bank_valas(session, kid, per):
+        masalah_bank.extend(pos["issues"])
+        asing, buku = pos["foreign_balance"], pos["carrying_idr"]
+        if asing == NOL and buku == NOL:
+            continue
+        mu = pos["currency"]
+        kurs = kurs_untuk(mu)
+        if kurs is None:
+            kurang_kurs.add(mu)
+            continue
+        nilai_baru = bc._bulat(asing * kurs[0])
+        selisih = nilai_baru - buku
+        dokumen.append({
+            "type": "bank", "id": pos["coa_id"], "no": pos["account_code"], "party": pos["account_name"], "date": per,
+            "currency": mu, "foreign_outstanding": bc._f(asing),
+            "booking_rate": float(pos["average_rate"]) if pos["average_rate"] is not None else 0.0,
+            "carried_idr": bc._f(buku), "closing_rate": float(kurs[0]), "revalued_idr": bc._f(nilai_baru),
+            "difference": bc._f(selisih), "effect": None if selisih == NOL else ("gain" if selisih > NOL else "loss"),
+            "account_code": pos["account_code"], "account_name": pos["account_name"],
+            "_selisih": selisih, "_untung": selisih > NOL,
+        })
+
+    # AR dan rekening bank = aset (naik = untung); AP = kewajiban (naik = rugi).
+    total_untung = sum((x["_selisih"] if x["type"] != "ap" else -x["_selisih"] for x in dokumen if x["effect"] == "gain"), NOL)
+    total_rugi = sum((-x["_selisih"] if x["type"] != "ap" else x["_selisih"] for x in dokumen if x["effect"] == "loss"), NOL)
     return {
-        "dokumen": dokumen, "kurang_kurs": sorted(kurang_kurs), "total_untung": total_untung,
+        "dokumen": dokumen, "kurang_kurs": sorted(kurang_kurs), "masalah_bank": masalah_bank, "total_untung": total_untung,
         "total_rugi": total_rugi,
         "kurs": {mu: {"currency": mu, "rate": float(v[0]), "rate_date": v[1], "source": v[2]}
                  for mu, v in kurs_cache.items() if v is not None},
@@ -184,7 +212,7 @@ def _susun_baris_jurnal(session, kid: str, hit: Dict[str, Any]) -> List[Dict[str
     for x in hit["dokumen"]:
         if x["_selisih"] == NOL:
             continue
-        net_debit = x["_selisih"] if x["type"] == "ar" else -x["_selisih"]      # Dr kontrol (+) / Cr kontrol (-)
+        net_debit = x["_selisih"] if x["type"] != "ap" else -x["_selisih"]      # Dr kontrol/bank (+) / Cr (-)
         k = (x["account_code"], x["account_name"] or "")
         per_akun[k] = per_akun.get(k, NOL) + net_debit
     baris: List[Dict[str, Any]] = []
@@ -236,27 +264,9 @@ def _run_aktif(session, kid: str, per: date) -> Optional[Any]:
 
 def _tulis_jurnal(session, kid: str, user: Dict[str, Any], *, je_number: str, tgl: date, description: str,
                   reference: str, baris: List[Dict[str, Any]]) -> Any:
-    """Insert 1 jurnal POSTED + barisnya (pola sama dgn opening_balance_v1._tulis_jurnal). TIDAK commit."""
-    nama = bc._nama(user)
-    je = dbc.JournalEntryDraft(
-        client_id=user.get("id"), management_client_id=kid, je_number=je_number[:100],
-        entry_date=tgl, posting_date=tgl, period_label=f"{_BULAN[tgl.month - 1]} {tgl.year}",
-        description=description[:2000], source_type=SOURCE_TYPE_JURNAL, source_reference=reference[:100],
-        total_debit=sum((b["debit"] for b in baris), NOL), total_credit=sum((b["credit"] for b in baris), NOL),
-        currency="IDR", status="posted", created_by=user.get("id"), created_by_name=nama, approved_by_name=nama,
-        posted_at=datetime.now(), posted_by=user.get("id"),
-    )
-    session.add(je)
-    session.flush()
-    for no, b in enumerate(baris, 1):
-        session.add(dbc.JournalEntryDraftLine(
-            draft_id=je.id, client_id=user.get("id"), line_no=no, account_code=b["account_code"],
-            account_name=(b["account_name"] or "")[:200], description=(b.get("description") or "")[:2000],
-            debit=b["debit"], credit=b["credit"], created_by=user.get("id"),
-        ))
-    session.flush()
-    dbc._log_je(session, je, "Posted", f"Journal {je.je_number} posted to the general ledger (FX revaluation).", nama, user.get("id"))
-    return je
+    """Insert 1 jurnal POSTED + barisnya (source_type 'Revaluation'). TIDAK commit."""
+    return fb.tulis_jurnal(session, kid, user, source_type=SOURCE_TYPE_JURNAL, je_number=je_number, tgl=tgl,
+                           description=description, reference=reference, baris=baris, log="FX revaluation")
 
 
 def _nomor_dasar(session, kid: str, per: date) -> str:
@@ -329,16 +339,19 @@ def preview(payload: HitungRequest, user: Dict[str, Any] = Depends(get_current_u
         masalah: List[str] = []
         if hit["kurang_kurs"]:
             masalah.append("No closing rate on file for: " + ", ".join(hit["kurang_kurs"]) + ".")
+        if hit["masalah_bank"]:
+            siap = False
+            masalah.extend(hit["masalah_bank"])
         try:
             journal = _baris_dict(_susun_baris_jurnal(session, kid, hit))
         except _Gagal as e:
             siap = False
             masalah.append(e.message)
         if not hit["dokumen"]:
-            masalah.append("No open foreign-currency invoice or bill on this date.")
+            masalah.append("No open foreign-currency invoice, bill or bank balance on this date.")
         elif not any(x["_selisih"] != NOL for x in hit["dokumen"]):
             siap = False
-            masalah.append("Every open document is already stated at the closing rate: nothing to revalue.")
+            masalah.append("Every open item is already stated at the closing rate: nothing to revalue.")
         existing = _run_aktif(session, kid, payload.as_of)
         if existing is not None:
             siap = False
@@ -372,6 +385,9 @@ def jalankan(payload: RunRequest, user: Dict[str, Any] = Depends(get_current_use
             raise _Gagal("Enter the closing rate for: " + ", ".join(hit["kurang_kurs"])
                          + " (no recent rate is on file for " + f"{per:%d %b %Y}).",
                          kode="FX_RATE_REQUIRED", status_code=422, data={"currencies": hit["kurang_kurs"]})
+        if hit["masalah_bank"]:
+            raise _Gagal("A foreign-currency bank account cannot be revalued yet: " + hit["masalah_bank"][0],
+                         kode="FX_BANK_UNCONVERTED", status_code=422, data={"issues": hit["masalah_bank"]})
         if not any(x["_selisih"] != NOL for x in hit["dokumen"]):
             raise _Gagal("Nothing to revalue: no open foreign-currency document differs from its closing-rate value.",
                          kode="NOTHING_TO_REVALUE", status_code=422)

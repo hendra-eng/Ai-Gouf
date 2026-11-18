@@ -5,10 +5,13 @@ Report "General Ledger" (Buku Besar) -- halaman src/app/reports/general-ledger:
 
     GET /api/v1/reports/general-ledger
 
-Sumber data SAMA PERSIS dengan Financial Statements & saldo di halaman COA:
-db_client.ambil_baris_jurnal_posted_transaksi (Journal Entry termasuk Opening
-Balance & jurnal Cash & Bank, Sales, Purchase -- hanya yang POSTED). Jadi saldo
-akhir tiap akun di sini selalu cocok dengan Trial Balance.
+Sumber data: db_client.ambil_baris_jurnal_posted_transaksi dengan
+termasuk_belum_posted=True -- SEMUA transaksi yang sudah masuk Journal Preview
+(draft/pending/approved/posted: Journal Entry termasuk Opening Balance, Cash &
+Bank, Sales, Purchase, Fixed Assets, Inventory, Other) langsung masuk GL tanpa
+menunggu Post. Yang rejected/void/cancelled/dihapus tetap tidak ikut.
+CATATAN: COA, Financial Statements & Trial Balance TETAP hanya membaca POSTED,
+jadi saldo GL bisa berbeda dari Trial Balance selama masih ada yang belum posted.
 
 Aturan saldo (rule user 2026-10-07), jenis akun ditentukan KEPALA kode akun
 (digit pertama, sama dengan core.klasifikasi_akun):
@@ -263,7 +266,7 @@ def general_ledger(
     if error is not None:
         return error
     try:
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=end_date, **filter_)
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=end_date, termasuk_belum_posted=True, **filter_)
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca transaksi posted untuk general ledger: %s", e)
         return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
