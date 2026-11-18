@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CURRENCIES } from '@/lib/currency';
 import { fmtRate, lookupRate, parseAngkaKurs, type RateLookup } from '@/lib/exchangeRateStore';
 import { fmtDate } from '@/lib/receivablesPayablesStore';
-import { inputCls } from './arapUi';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 const NAMA_MATA_UANG: Record<string, string> = {
   IDR: 'IDR - Indonesian Rupiah', USD: 'USD - US Dollar', SGD: 'SGD - Singapore Dollar',
@@ -85,8 +85,13 @@ export function RateInput({ value, onChange, disabled, currency, className = '' 
 export function CurrencySelect({ value, onChange, disabled }: { value: string; onChange: (c: string) => void; disabled?: boolean }) {
   const daftar = CURRENCIES.includes(value as never) ? CURRENCIES : [...CURRENCIES, value as never];
   return (
-    <select value={value} disabled={disabled} onChange={e => onChange(e.target.value)} className={inputCls}>
-      {daftar.map(c => <option key={c} value={c}>{NAMA_MATA_UANG[c] ?? c}</option>)}
-    </select>
+    <FilterSelect
+      variant="elegant" block tall
+      ariaLabel="Currency"
+      disabled={disabled}
+      value={value}
+      onChange={onChange}
+      options={daftar.map(c => ({ value: c, label: NAMA_MATA_UANG[c] ?? c }))}
+    />
   );
 }

@@ -6,7 +6,10 @@ import { useSearchParams } from 'next/navigation';
 import {
   ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown,
   Download, FileSpreadsheet, FileText, Filter, Loader2, RotateCcw, Search, X,
+  Layers, Receipt, ArrowDownToLine, ArrowUpFromLine,
 } from 'lucide-react';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { KpiSectionLabel, PurchaseKpiTile } from '@/app/transactions/purchase/components/PurchaseKpiTile';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import { useClientCoa } from '@/lib/coaStore';
@@ -119,13 +122,8 @@ function openingLabel(a: GlAccount): string {
     : 'Opening Balance';
 }
 
-const CLASS_TONE: Record<string, string> = {
-  ASSET: 'bg-blue-50 text-blue-700',
-  LIABILITY: 'bg-amber-50 text-amber-700',
-  EQUITY: 'bg-violet-50 text-violet-700',
-  REVENUE: 'bg-emerald-50 text-emerald-700',
-  'OTHER INCOME': 'bg-emerald-50 text-emerald-700',
-};
+// Chip klasifikasi akun: monokrom (sama dengan chip/pill netral di Purchase & Sales).
+const CLASS_CHIP = 'rounded-full border border-neutral-300 bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-700';
 
 // ── Export ───────────────────────────────────────────────────────────
 
@@ -178,6 +176,60 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
   };
 }
 
+const inputClass = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm transition-colors focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300';
+
+// ── Dropdown monokrom (pengganti <select> bawaan browser yang sorotnya biru) ──
+
+function NeutralSelect<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: { id: T; label: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const current = options.find(o => o.id === value);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className={`${inputClass} flex items-center justify-between gap-2 text-left hover:border-neutral-700`}
+      >
+        <span className="truncate">{current?.label ?? ''}</span>
+        <ChevronDown size={16} className={`shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div role="listbox" className="absolute left-0 z-30 mt-1 w-full min-w-max overflow-hidden rounded-lg border border-neutral-300 bg-white py-1 shadow-lg">
+          {options.map(o => {
+            const active = o.id === value;
+            return (
+              <button
+                key={o.id}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => { onChange(o.id); setOpen(false); }}
+                className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-neutral-200 hover:text-neutral-900 ${active ? 'bg-neutral-100 font-semibold text-neutral-900' : 'font-medium text-neutral-700'}`}
+              >
+                {o.label}
+                {active && <Check size={14} className="shrink-0 text-neutral-800" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Account picker (Include Account = Selected accounts) ─────────────
 
 function AccountPicker({ clientId, value, onChange }: {
@@ -212,11 +264,11 @@ function AccountPicker({ clientId, value, onChange }: {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full min-h-[42px] flex items-center flex-wrap gap-1.5 text-left bg-card border border-border rounded-lg pl-3 pr-9 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+        className="w-full min-h-[42px] flex items-center flex-wrap gap-1.5 text-left bg-white border border-neutral-300 rounded-lg pl-3 pr-9 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-300 focus:border-neutral-700"
       >
-        {value.length === 0 && <span className="text-muted-foreground py-1">Choose accounts…</span>}
+        {value.length === 0 && <span className="text-neutral-500 py-1">Choose accounts…</span>}
         {value.map(code => (
-          <span key={code} className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 rounded-md px-2 py-0.5 text-xs font-medium">
+          <span key={code} className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-800 ring-1 ring-neutral-300">
             {kodeAkun(code)}
             <span
               role="button"
@@ -224,32 +276,32 @@ function AccountPicker({ clientId, value, onChange }: {
               aria-label={`Remove ${kodeAkun(code)}`}
               onClick={e => { e.stopPropagation(); toggle(code); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); toggle(code); } }}
-              className="hover:text-blue-900"
+              className="hover:text-neutral-900"
             >
               <X size={12} />
             </span>
           </span>
         ))}
-        <ChevronDown size={16} className="absolute right-3 top-3 text-muted-foreground pointer-events-none" />
+        <ChevronDown size={16} className="absolute right-3 top-3 text-neutral-500 pointer-events-none" />
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-full min-w-[22rem] bg-card border border-border rounded-xl shadow-lg overflow-hidden">
-          <div className="p-2 border-b border-border">
+        <div className="absolute z-30 mt-1 w-full min-w-[22rem] bg-white border border-neutral-300 rounded-[10px] shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-neutral-300">
             <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
               <input
                 autoFocus
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search code or name"
-                className="w-full pl-8 pr-2 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100"
+                className="w-full pl-8 pr-2 py-2 text-sm border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-300"
               />
             </div>
           </div>
           <div className="max-h-72 overflow-y-auto scrollbar-thin py-1">
-            {loading && <p className="px-3 py-3 text-sm text-muted-foreground">Loading accounts…</p>}
-            {!loading && filtered.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No accounts found.</p>}
+            {loading && <p className="px-3 py-3 text-sm text-neutral-500">Loading accounts…</p>}
+            {!loading && filtered.length === 0 && <p className="px-3 py-3 text-sm text-neutral-500">No accounts found.</p>}
             {filtered.map(a => {
               const checked = value.includes(a.acc_no);
               return (
@@ -257,21 +309,21 @@ function AccountPicker({ clientId, value, onChange }: {
                   key={a.id}
                   type="button"
                   onClick={() => toggle(a.acc_no)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-slate-50 ${checked ? 'bg-blue-50' : ''}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-neutral-50 ${checked ? 'bg-neutral-100' : ''}`}
                 >
-                  <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${checked ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                  <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${checked ? 'bg-neutral-800 border-neutral-800' : 'border-neutral-300'}`}>
                     {checked && <Check size={12} className="text-white" />}
                   </span>
-                  <span className="font-mono text-xs text-muted-foreground w-24 flex-shrink-0">{kodeAkun(a.acc_no)}</span>
-                  <span className="truncate text-foreground">{a.account_name}</span>
+                  <span className="font-mono text-xs text-neutral-500 w-24 flex-shrink-0">{kodeAkun(a.acc_no)}</span>
+                  <span className="truncate text-neutral-900">{a.account_name}</span>
                 </button>
               );
             })}
           </div>
           {value.length > 0 && (
-            <div className="flex items-center justify-between px-3 py-2 border-t border-border text-xs">
-              <span className="text-muted-foreground truncate" title={value.map(c => `${c} ${nameOf(c)}`).join(', ')}>{value.length} selected</span>
-              <button type="button" onClick={() => onChange([])} className="text-blue-700 font-medium hover:underline">Clear</button>
+            <div className="flex items-center justify-between px-3 py-2 border-t border-neutral-300 text-xs">
+              <span className="text-neutral-500 truncate" title={value.map(c => `${c} ${nameOf(c)}`).join(', ')}>{value.length} selected</span>
+              <button type="button" onClick={() => onChange([])} className="text-neutral-800 font-medium hover:underline">Clear</button>
             </div>
           )}
         </div>
@@ -284,26 +336,25 @@ function AccountPicker({ clientId, value, onChange }: {
 
 function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; expanded: boolean; onToggle: () => void }) {
   const hasLines = account.line_count > 0;
-  const tone = CLASS_TONE[account.classification ?? ''] ?? 'bg-slate-100 text-slate-600';
   return (
-    <div className="border border-border rounded-xl bg-card overflow-hidden">
+    <div className="overflow-hidden rounded-[10px] border border-neutral-300 bg-white shadow-sm transition-colors duration-200 hover:border-neutral-500">
       <button
         type="button"
         onClick={hasLines ? onToggle : undefined}
         disabled={!hasLines}
         aria-expanded={hasLines ? expanded : undefined}
         className={`w-full grid grid-cols-[1.25rem_minmax(0,1fr)] lg:grid-cols-[1.25rem_minmax(0,1fr)_9rem_9rem_9rem_10rem] items-center gap-x-4 gap-y-2 px-4 py-3.5 text-left ${
-          hasLines ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'
-        } ${expanded ? 'bg-slate-50 border-b border-border' : ''}`}
+          hasLines ? 'hover:bg-neutral-50 cursor-pointer' : 'cursor-default'
+        } ${expanded ? 'bg-neutral-50 border-b border-neutral-300' : ''}`}
       >
-        <span className="text-muted-foreground">
+        <span className="text-neutral-500">
           {hasLines ? (expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />) : null}
         </span>
         <span className="min-w-0 flex items-center gap-2.5 flex-wrap">
-          <span className="font-mono text-sm font-semibold text-foreground">{kodeAkun(account.account_code)}</span>
-          <span className="text-sm font-semibold text-foreground truncate">{account.account_name}</span>
-          {account.classification && <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${tone}`}>{account.classification}</span>}
-          <span className="text-xs text-muted-foreground">
+          <span className="font-mono text-sm font-semibold text-neutral-900">{kodeAkun(account.account_code)}</span>
+          <span className="text-sm font-semibold text-neutral-900 truncate">{account.account_name}</span>
+          {account.classification && <span className={CLASS_CHIP}>{account.classification}</span>}
+          <span className="text-xs text-neutral-500">
             {hasLines ? `${account.line_count} transaction${account.line_count > 1 ? 's' : ''}` : 'No transactions'}
             {' · '}
             {account.balance_basis === 'ytd' && account.accumulated_from
@@ -319,38 +370,38 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
 
       {expanded && hasLines && (
         <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full text-sm min-w-[860px]">
+          <table className="w-full text-xs min-w-[860px]">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-muted-foreground bg-white">
-                <th className="text-left font-semibold px-4 py-2.5 w-32">Date</th>
-                <th className="text-left font-semibold px-3 py-2.5 w-32">Source</th>
-                <th className="text-left font-semibold px-3 py-2.5 w-48">Ref No.</th>
-                <th className="text-left font-semibold px-3 py-2.5">Description</th>
-                <th className="text-right font-semibold px-3 py-2.5 w-36">Debit</th>
-                <th className="text-right font-semibold px-3 py-2.5 w-36">Credit</th>
-                <th className="text-right font-semibold px-4 py-2.5 w-40">Balance</th>
+              <tr className="bg-neutral-300 text-xs uppercase tracking-wide text-black">
+                <th className="text-left font-bold border-t border-b border-neutral-800 px-4 py-2.5 w-32">Date</th>
+                <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-32">Source</th>
+                <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-48">Ref No.</th>
+                <th className="text-left font-bold border-t border-b border-neutral-800 px-3 py-2.5">Description</th>
+                <th className="text-right font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-36">Debit</th>
+                <th className="text-right font-bold border-t border-b border-neutral-800 px-3 py-2.5 w-36">Credit</th>
+                <th className="text-right font-bold border-t border-b border-neutral-800 px-4 py-2.5 w-40">Balance</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-t border-border bg-slate-50/60">
-                <td className="px-4 py-2 text-muted-foreground" colSpan={6}><span className="italic">{openingLabel(account)}</span></td>
+              <tr className="border-t border-neutral-200 bg-neutral-50">
+                <td className="px-4 py-2 text-neutral-500" colSpan={6}><span className="italic">{openingLabel(account)}</span></td>
                 <td className="px-4 py-2 text-right tabular-nums font-medium">{fmtBalance(account.opening_balance)}</td>
               </tr>
               {detailRows(account).map((r, i) => {
                 if (r.kind === 'month') {
                   return (
-                    <tr key={`m-${r.month.month}`} className="border-t border-border bg-blue-50/60 text-sm">
-                      <td className="px-4 py-2 font-semibold text-blue-800" colSpan={4}>Balance end of {fmtMonth(r.month.month)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-blue-800">{fmtAmount(r.month.debit)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-blue-800">{fmtAmount(r.month.credit)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-blue-800">{fmtBalance(r.month.closing_balance)}</td>
+                    <tr key={`m-${r.month.month}`} className="border-t border-neutral-300 bg-neutral-100 text-xs">
+                      <td className="px-4 py-2 font-semibold text-neutral-900" colSpan={4}>Balance end of {fmtMonth(r.month.month)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmtAmount(r.month.debit)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-neutral-900">{fmtAmount(r.month.credit)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-neutral-900">{fmtBalance(r.month.closing_balance)}</td>
                     </tr>
                   );
                 }
                 if (r.kind === 'year') {
                   return (
-                    <tr key={`y-${r.year}`} className="border-t border-border bg-amber-50">
-                      <td className="px-4 py-2 text-xs font-semibold text-amber-800" colSpan={7}>
+                    <tr key={`y-${r.year}`} className="border-t border-neutral-300 bg-neutral-200">
+                      <td className="px-4 py-2 text-xs font-semibold text-neutral-800" colSpan={7}>
                         Fiscal year {r.year} — P&amp;L balance starts from 0
                       </td>
                     </tr>
@@ -358,22 +409,22 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
                 }
                 const l = r.line;
                 return (
-                  <tr key={`${l.number}-${i}`} className="border-t border-border hover:bg-slate-50">
-                    <td className="px-4 py-2 whitespace-nowrap text-foreground">{fmtDate(l.date)}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{l.source}</td>
-                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-foreground">{l.number || '–'}</td>
-                    <td className="px-3 py-2 text-foreground">{l.description || '–'}</td>
+                  <tr key={`${l.number}-${i}`} className="border-t border-neutral-200 transition-colors hover:bg-neutral-50">
+                    <td className="px-4 py-2 whitespace-nowrap text-neutral-900">{fmtDate(l.date)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-neutral-500">{l.source}</td>
+                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-neutral-900">{l.number || '–'}</td>
+                    <td className="px-3 py-2 text-neutral-900">{l.description || '–'}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(l.debit)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(l.credit)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-foreground">{fmtBalance(l.balance)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-neutral-900">{fmtBalance(l.balance)}</td>
                   </tr>
                 );
               })}
-              <tr className="border-t-2 border-border bg-slate-50 font-semibold">
-                <td className="px-4 py-2.5 text-foreground" colSpan={4}>Closing Balance</td>
+              <tr className="border-t-2 border-neutral-800 bg-neutral-50 font-semibold">
+                <td className="px-4 py-2.5 text-neutral-900" colSpan={4}>Closing Balance</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmtAmount(account.total_debit)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmtAmount(account.total_credit)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-foreground">{fmtBalance(account.closing_balance)}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums text-neutral-900">{fmtBalance(account.closing_balance)}</td>
               </tr>
             </tbody>
           </table>
@@ -386,8 +437,8 @@ function AccountGroup({ account, expanded, onToggle }: { account: GlAccount; exp
 function Figure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <span className="col-start-2 lg:col-start-auto flex lg:block items-baseline justify-between lg:text-right">
-      <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className={`block tabular-nums text-sm ${strong ? 'font-bold text-foreground' : 'font-medium text-foreground/90'}`}>{value}</span>
+      <span className="block text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{label}</span>
+      <span className={`block tabular-nums text-sm ${strong ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-800'}`}>{value}</span>
     </span>
   );
 }
@@ -535,24 +586,24 @@ export default function GeneralLedgerClient() {
     }
   };
 
-  const inputClass = 'w-full bg-card border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400';
-  const selectClass = `${inputClass} appearance-none pr-9`;
+  const withLines = data ? data.accounts.filter(a => a.line_count > 0).length : 0;
+  const balanced = data ? Math.abs(data.totals.debit - data.totals.credit) < 0.005 : true;
 
   return (
-    <div className="space-y-5 fade-in">
+    <div className={`${salesFont.className} px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-5 fade-in`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <Link href="/reports" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-blue-700 mb-2">
+          <Link href="/reports" className="mb-2 inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-neutral-900">
             <ArrowLeft size={15} /> Reports
           </Link>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
-              <BookOpen size={22} className="text-orange-500" />
+          <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-neutral-900">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-neutral-100 ring-1 ring-neutral-200">
+              <BookOpen size={22} className="text-neutral-700" />
             </span>
             General Ledger
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="mt-1 text-sm font-medium text-neutral-500">
             Account-level postings with opening, running, and closing balances{companyName ? ` · ${companyName}` : ''}.
           </p>
         </div>
@@ -562,23 +613,23 @@ export default function GeneralLedgerClient() {
             type="button"
             onClick={() => setDownloadOpen(o => !o)}
             disabled={!data || data.accounts.length === 0 || downloading !== null}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-800 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             Download <ChevronDown size={15} />
           </button>
           {downloadOpen && (
-            <div className="absolute right-0 z-30 mt-1 w-48 bg-card border border-border rounded-xl shadow-lg py-1">
+            <div className="absolute right-0 z-30 mt-1 w-48 rounded-lg border border-neutral-300 bg-white py-1 shadow-lg">
               {([
-                ['pdf', 'PDF', FileText, 'text-rose-500'],
-                ['csv', 'CSV', FileText, 'text-slate-500'],
-                ['excel', 'Excel (XLSX)', FileSpreadsheet, 'text-blue-600'],
+                ['pdf', 'PDF', FileText, 'text-neutral-600'],
+                ['csv', 'CSV', FileText, 'text-neutral-600'],
+                ['excel', 'Excel (XLSX)', FileSpreadsheet, 'text-neutral-600'],
               ] as const).map(([fmt, label, Icon, color]) => (
                 <button
                   key={fmt}
                   type="button"
                   onClick={() => download(fmt)}
-                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm text-foreground hover:bg-slate-50"
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200"
                 >
                   <Icon size={16} className={color} /> {label}
                 </button>
@@ -591,42 +642,31 @@ export default function GeneralLedgerClient() {
       {/* Filter */}
       <form
         onSubmit={e => { e.preventDefault(); apply(); }}
-        className="bg-card border border-border rounded-xl shadow-sm p-5 space-y-4"
+        className="relative space-y-4 rounded-[10px] border border-neutral-300 bg-white p-5 pt-6 shadow-sm"
       >
-        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Filter size={16} className="text-blue-600" /> Filters
-        </div>
+        <span className="absolute inset-x-0 top-0 h-0.5 rounded-t-[10px] bg-neutral-800" />
+        <KpiSectionLabel><Filter size={14} className="text-neutral-700" /> Filters</KpiSectionLabel>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[12rem_11rem_11rem_minmax(0,1fr)] gap-4">
           <label className="block">
-            <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Period</span>
-            <div className="relative">
-              <select value={period} onChange={e => changePeriod(e.target.value as PeriodId)} className={selectClass}>
-                {PERIODS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            </div>
+            <span className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">Period</span>
+            <NeutralSelect value={period} onChange={changePeriod} options={PERIODS} />
           </label>
           <label className="block">
-            <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Start Date</span>
+            <span className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">Start Date</span>
             <input type="date" value={startDate} max={endDate || undefined} onChange={e => { setStartDate(e.target.value); setPeriod('custom'); }} className={inputClass} required />
           </label>
           <label className="block">
-            <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">End Date</span>
+            <span className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">End Date</span>
             <input type="date" value={endDate} min={startDate || undefined} onChange={e => { setEndDate(e.target.value); setPeriod('custom'); }} className={inputClass} required />
           </label>
           <div className="grid grid-cols-1 lg:grid-cols-[16rem_minmax(0,1fr)] gap-4 sm:col-span-2 xl:col-span-1">
             <label className="block">
-              <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Include Account</span>
-              <div className="relative">
-                <select value={include} onChange={e => setInclude(e.target.value as GlInclude)} className={selectClass}>
-                  {INCLUDE_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                </select>
-                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              </div>
+              <span className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">Include Account</span>
+              <NeutralSelect value={include} onChange={setInclude} options={INCLUDE_OPTIONS} />
             </label>
             {include === 'selected' && (
               <div className="block">
-                <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Accounts</span>
+                <span className="block text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">Accounts</span>
                 <AccountPicker clientId={activeClientId} value={accountCodes} onChange={setAccountCodes} />
               </div>
             )}
@@ -634,17 +674,17 @@ export default function GeneralLedgerClient() {
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-          <p className={`text-xs ${validation && hydrated ? 'text-amber-600' : 'text-muted-foreground'}`}>
+          <p className={`text-xs font-medium ${validation && hydrated ? 'text-amber-700' : 'text-neutral-500'}`}>
             {hydrated && validation ? validation : 'All transactions in Journal Preview are included (Journal Entry, Sales, Purchase, Cash & Bank, Fixed Assets, Inventory, Other). Rejected and voided are excluded.'}
           </p>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={reset} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-sm font-medium text-foreground bg-card hover:bg-slate-50">
+            <button type="button" onClick={reset} className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
               <RotateCcw size={15} /> Reset
             </button>
             <button
               type="submit"
               disabled={!!validation || loading}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-800 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Filter size={15} />} Apply Filter
             </button>
@@ -654,51 +694,70 @@ export default function GeneralLedgerClient() {
 
       {/* Hasil */}
       {error && (
-        <div className="border border-rose-200 bg-rose-50 text-rose-700 rounded-xl px-4 py-3 text-sm">{error}</div>
+        <div className="border border-neutral-800 bg-neutral-100 text-neutral-900 rounded-[10px] px-4 py-3 text-sm">{error}</div>
       )}
 
       {!data && !loading && !error && (
-        <div className="bg-card border border-dashed border-border rounded-xl p-12 text-center">
-          <BookOpen size={30} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-sm font-semibold text-foreground">Set your filters to view the general ledger</p>
-          <p className="text-xs text-muted-foreground mt-1">Choose a period or date range and which accounts to include, then click <b>Apply Filter</b>.</p>
+        <div className="bg-white border border-dashed border-neutral-300 rounded-[10px] p-12 text-center">
+          <BookOpen size={30} className="mx-auto text-neutral-300 mb-3" />
+          <p className="text-sm font-semibold text-neutral-900">Set your filters to view the general ledger</p>
+          <p className="text-xs text-neutral-500 mt-1">Choose a period or date range and which accounts to include, then click <b>Apply Filter</b>.</p>
         </div>
       )}
 
       {loading && !data && (
         <div className="space-y-2">
-          {[0, 1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />)}
+          {[0, 1, 2, 3].map(i => <div key={i} className="h-16 rounded-[10px] bg-neutral-100 animate-pulse" />)}
         </div>
       )}
 
       {data && (
         <div className={`space-y-4 ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Accounts" value={data.totals.accounts.toLocaleString('id-ID')} />
-            <Stat label="Transactions" value={data.totals.lines.toLocaleString('id-ID')} />
-            <Stat label="Total Debit" value={fmtNumber(data.totals.debit)} />
-            <Stat label="Total Credit" value={fmtNumber(data.totals.credit)} />
+          <div>
+            <KpiSectionLabel>Ledger Summary</KpiSectionLabel>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <PurchaseKpiTile
+                label="Accounts" value={data.totals.accounts.toLocaleString('id-ID')} icon={Layers}
+                sub={`${withLines.toLocaleString('id-ID')} with transactions`}
+                pct={data.totals.accounts > 0 ? (withLines / data.totals.accounts) * 100 : 0} pctLabel="of accounts have transactions"
+              />
+              <PurchaseKpiTile
+                label="Transactions" value={data.totals.lines.toLocaleString('id-ID')} icon={Receipt}
+                sub={`Across ${withLines.toLocaleString('id-ID')} accounts`}
+                pct={data.totals.lines > 0 ? 100 : 0} pctLabel="of ledger lines"
+              />
+              <PurchaseKpiTile
+                label="Total Debit" value={fmtNumber(data.totals.debit)} icon={ArrowDownToLine}
+                sub={balanced ? 'Balanced with credit' : `Difference ${fmtNumber(data.totals.debit - data.totals.credit)}`}
+                pct={data.totals.credit > 0 ? (data.totals.debit / data.totals.credit) * 100 : data.totals.debit > 0 ? 100 : 0} pctLabel="of total credit"
+              />
+              <PurchaseKpiTile
+                label="Total Credit" value={fmtNumber(data.totals.credit)} icon={ArrowUpFromLine}
+                sub={balanced ? 'Balanced with debit' : `Difference ${fmtNumber(data.totals.credit - data.totals.debit)}`}
+                pct={data.totals.debit > 0 ? (data.totals.credit / data.totals.debit) * 100 : data.totals.credit > 0 ? 100 : 0} pctLabel="of total debit"
+              />
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-neutral-500">
               {fmtDate(data.filter.start_date)} – {fmtDate(data.filter.end_date)} · {INCLUDE_OPTIONS.find(o => o.id === data.filter.include)?.label}
             </p>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Find account"
-                  className="w-56 pl-8 pr-3 py-2 text-sm bg-card border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                  className="w-56 rounded-lg border border-neutral-300 bg-white py-2 pl-8 pr-3 text-sm text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => setExpanded(allExpanded ? new Set() : new Set(expandable.map(a => a.account_code)))}
                 disabled={expandable.length === 0}
-                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-border text-sm font-medium text-foreground bg-card hover:bg-slate-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
               >
                 {allExpanded ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
                 {allExpanded ? 'Collapse all' : 'Expand all'}
@@ -707,9 +766,9 @@ export default function GeneralLedgerClient() {
           </div>
 
           {visibleAccounts.length === 0 ? (
-            <div className="bg-card border border-dashed border-border rounded-xl p-10 text-center">
-              <p className="text-sm font-semibold text-foreground">No accounts to show</p>
-              <p className="text-xs text-muted-foreground mt-1">
+            <div className="bg-white border border-dashed border-neutral-300 rounded-[10px] p-10 text-center">
+              <p className="text-sm font-semibold text-neutral-900">No accounts to show</p>
+              <p className="text-xs text-neutral-500 mt-1">
                 {search ? 'No account matches your search.' : 'There are no transactions for this filter.'}
               </p>
             </div>
@@ -722,15 +781,6 @@ export default function GeneralLedgerClient() {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-card border border-border rounded-xl px-4 py-3">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-lg font-bold text-foreground tabular-nums mt-0.5">{value}</p>
     </div>
   );
 }

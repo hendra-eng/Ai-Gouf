@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  CalendarDays, ChevronDown, Download, Eye, FileSpreadsheet, FileText, Filter, Loader2, Mail, MapPin, MoreHorizontal, Phone, Printer,
+  CalendarDays, Download, Eye, FileSpreadsheet, FileText, Filter, Loader2, Mail, MapPin, MoreHorizontal, Phone, Printer,
   Search, Trash2, X,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -14,7 +14,8 @@ import {
   type ArApParty, type ArCustomer, type PartyStatement, type SideConfig, type StatementLog,
 } from '@/lib/receivablesPayablesStore';
 import { buildStatementPdf, downloadStatementXlsx, type ReportHeader } from './arapExport';
-import { btnOutline, btnPrimary, btnSmall, Card, EmptyRow, inputCls, Menu, MenuItem, NumberPager } from './arapUi';
+import { btnOutline, btnPrimary, btnSmall, Card, EmptyRow, inputCls, Menu, MenuItem, NumberPager } from './arapSalesUi';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 // Tab Customer / Vendor Statements (dataset/picture/Template UI/Account
 // Receivable/5.jpeg): form Generate Statement (pihak, periode, mata uang,
@@ -36,7 +37,7 @@ export function useReportHeader(): ReportHeader {
 }
 
 const DELIVERY: Record<StatementLog['delivery_status'], { label: string; cls: string }> = {
-  generated: { label: 'Generated', cls: 'bg-slate-100 text-slate-700' },
+  generated: { label: 'Generated', cls: 'bg-neutral-100 text-neutral-700' },
   sent: { label: 'Sent', cls: 'bg-emerald-50 text-emerald-700' },
   downloaded: { label: 'Downloaded', cls: 'bg-sky-50 text-sky-700' },
   failed: { label: 'Failed', cls: 'bg-rose-50 text-rose-700' },
@@ -60,7 +61,6 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
 }) {
   const header = useReportHeader();
   const [party, setParty] = useState(initialParty);
-  const [cariPihak, setCariPihak] = useState('');
   const [dari, setDari] = useState(awalBulan(asOf));
   const [sampai, setSampai] = useState(asOf);
   const [terbuka, setTerbuka] = useState(false);
@@ -159,7 +159,6 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
     }
   };
 
-  const daftarPihak = urut.filter(p => !cariPihak.trim() || p.name.toLowerCase().includes(cariPihak.trim().toLowerCase()));
   const logTersaring = useMemo(() => {
     const kata = q.trim().toLowerCase();
     return logs.data.filter(l => (fStatus === 'all' || l.delivery_status === fStatus)
@@ -176,41 +175,31 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
         <Card title={`Generate ${cfg.party} Statement`} subtitle={`Choose a ${cfg.party.toLowerCase()} and period to build a ${cfg.side === 'ar' ? 'receivable' : 'payable'} statement.`}>
           <div className="space-y-4 px-5 pb-5">
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">{cfg.party} <span className="text-rose-500">*</span></label>
-              <Menu align="left" width="w-full" button={open => (
-                <button type="button" className={`${inputCls} flex items-center gap-2 text-left`}>
-                  <Search size={14} className="text-muted-foreground" />
-                  <span className={`flex-1 truncate ${party ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {party ? `${party}${kontak(party)?.code ? ` (${kontak(party)!.code})` : ''}` : parties.loading ? 'Loading...' : `Select ${cfg.party.toLowerCase()}`}
-                  </span>
-                  <ChevronDown size={14} className={`text-muted-foreground ${open ? 'rotate-180' : ''}`} />
-                </button>
-              )}>
-                {close => (
-                  <div>
-                    <input autoFocus value={cariPihak} onChange={e => setCariPihak(e.target.value)} placeholder={`Search ${cfg.party.toLowerCase()}...`}
-                      className="mb-1 w-full rounded-lg border border-border px-2.5 py-1.5 text-sm focus:outline-none" />
-                    <div className="max-h-64 overflow-y-auto">
-                      {daftarPihak.length === 0 && <p className="px-3 py-3 text-xs text-muted-foreground">No {cfg.parties.toLowerCase()} found.</p>}
-                      {daftarPihak.map(p => (
-                        <MenuItem key={p.name} onClick={() => { setParty(p.name); setCariPihak(''); close(); }}>
-                          <span className="min-w-0 flex-1 truncate">{p.name}{kontak(p.name)?.code ? ` (${kontak(p.name)!.code})` : ''}</span>
-                          <span className="shrink-0 text-muted-foreground">{p.outstanding ? rupiah(p.outstanding) : 'no balance'}</span>
-                        </MenuItem>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </Menu>
+              <label className="mb-1 block text-sm font-medium text-neutral-900">{cfg.party} <span className="text-rose-500">*</span></label>
+              <FilterSelect
+                variant="elegant" block searchable
+                icon={<Search size={14} />}
+                ariaLabel={cfg.party}
+                value={party}
+                onChange={setParty}
+                placeholder={parties.loading ? 'Loading...' : `Select ${cfg.party.toLowerCase()}`}
+                searchPlaceholder={`Search ${cfg.party.toLowerCase()}...`}
+                emptyText={`No ${cfg.parties.toLowerCase()} found.`}
+                options={urut.map(p => ({
+                  value: p.name,
+                  label: `${p.name}${kontak(p.name)?.code ? ` (${kontak(p.name)!.code})` : ''}`,
+                  meta: p.outstanding ? rupiah(p.outstanding) : 'no balance',
+                }))}
+              />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Statement Period <span className="text-rose-500">*</span></label>
+              <label className="mb-1 block text-sm font-medium text-neutral-900">Statement Period <span className="text-rose-500">*</span></label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <CalendarDays size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <CalendarDays size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
                   <input type="date" value={dari} max={sampai} onChange={e => setDari(e.target.value)} className={`${inputCls} pl-8`} aria-label="Period start" />
                 </div>
-                <span className="text-xs text-muted-foreground">to</span>
+                <span className="text-xs text-neutral-500">to</span>
                 <input type="date" value={sampai} min={dari} onChange={e => setSampai(e.target.value)} className={`${inputCls} flex-1`} aria-label="Period end" />
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
@@ -220,23 +209,23 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                   ['Year to date', `${asOf.slice(0, 4)}-01-01`, asOf],
                 ].map(([l, a, b]) => (
                   <button key={l} type="button" onClick={() => { setDari(a); setSampai(b); }}
-                    className={`rounded-full border px-2 py-0.5 ${dari === a && sampai === b ? 'border-[#0F7D4E] bg-[#ECFDF5] text-[#0F7D4E]' : 'border-border text-muted-foreground hover:text-foreground'}`}>{l}</button>
+                    className={`rounded-full border px-2 py-0.5 ${dari === a && sampai === b ? 'border-neutral-800 bg-neutral-100 text-neutral-900' : 'border-neutral-300 text-neutral-500 hover:text-neutral-900'}`}>{l}</button>
                 ))}
               </div>
               {dari > sampai && <p className="mt-1 text-xs text-rose-600">The start date must not be after the end date.</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Currency</label>
-              <select className={inputCls} value="IDR" onChange={() => {}}><option value="IDR">IDR - Indonesian Rupiah</option></select>
+              <label className="mb-1 block text-sm font-medium text-neutral-900">Currency</label>
+              <FilterSelect variant="elegant" block ariaLabel="Currency" value="IDR" onChange={() => undefined} options={[{ value: 'IDR', label: 'IDR - Indonesian Rupiah' }]} />
             </div>
             <div className="flex items-start gap-3">
               <button type="button" role="switch" aria-checked={terbuka} onClick={() => setTerbuka(v => !v)}
-                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${terbuka ? 'bg-[#0F7D4E]' : 'bg-slate-200'}`}>
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${terbuka ? 'bg-neutral-800' : 'bg-neutral-200'}`}>
                 <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${terbuka ? 'translate-x-5' : 'translate-x-0.5'}`} />
               </button>
               <div>
-                <p className="text-sm font-medium text-foreground">Open Items Only</p>
-                <p className="text-xs text-muted-foreground">Show only {cfg.docs.toLowerCase()} that are still open as of the end date.</p>
+                <p className="text-sm font-medium text-neutral-900">Open Items Only</p>
+                <p className="text-xs text-neutral-500">Show only {cfg.docs.toLowerCase()} that are still open as of the end date.</p>
               </div>
             </div>
             <button type="button" onClick={() => generate()} disabled={!valid || !!busy || !!logAktif} className={`${btnPrimary} w-full`}>
@@ -247,7 +236,7 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
 
         <Card title={`${cfg.party} Statement Preview`} subtitle={`Summary of ${cfg.side === 'ar' ? 'receivable' : 'payable'} activity for the selected period.`}
           action={<>
-            <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${logAktif ? 'bg-[#ECFDF5] text-[#0F7D4E]' : 'bg-slate-100 text-slate-600'}`}>{logAktif ? 'Generated' : 'Preview'}</span>
+            <span className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${logAktif ? 'bg-neutral-100 text-neutral-900' : 'bg-neutral-100 text-neutral-600'}`}>{logAktif ? 'Generated' : 'Preview'}</span>
             <button type="button" className={btnSmall} disabled={!s || !!busy} onClick={() => bukaEmail(null)}><Mail size={13} /> Email</button>
             <button type="button" className={btnSmall} disabled={!s || !!busy} onClick={() => unduh(null)}>
               {busy === 'dl' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} PDF
@@ -255,13 +244,13 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
             <button type="button" className={btnSmall} disabled={!s} onClick={() => s && downloadStatementXlsx(cfg, header.clientName, s)}><FileSpreadsheet size={13} /> Excel</button>
             <button type="button" className={btnSmall} disabled={!s || !!busy} onClick={cetak}><Printer size={13} /> Print</button>
           </>}>
-          {st.error && <p className="mx-5 mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">{st.error}</p>}
-          <div className="mx-5 mb-4 flex flex-col gap-3 rounded-xl border border-border bg-slate-50/60 p-4 sm:flex-row sm:items-start sm:justify-between">
+          {st.error && <p className="mx-5 mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{st.error}</p>}
+          <div className="mx-5 mb-4 flex flex-col gap-3 rounded-lg border border-neutral-300 bg-neutral-50/60 p-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-2 text-lg font-bold text-foreground">
+              <p className="flex flex-wrap items-center gap-2 text-lg font-semibold text-neutral-900">
                 {party || '—'}{k?.code && <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">{k.code}</span>}
               </p>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
                 {k?.billing_address && <span className="inline-flex items-center gap-1"><MapPin size={12} /> {k.billing_address.replace(/\s*\n\s*/g, ', ')}</span>}
                 {k?.phone && <span className="inline-flex items-center gap-1"><Phone size={12} /> {k.phone}</span>}
                 {k?.email && <span className="inline-flex items-center gap-1"><Mail size={12} /> {k.email}</span>}
@@ -269,16 +258,16 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                 {cfg.side === 'ar' && party && !k?.billing_address && !k?.email && <span className="italic">No address or email yet — add them in Create Invoice &gt; customer details.</span>}
               </div>
             </div>
-            <div className="shrink-0 text-xs sm:border-l sm:border-border sm:pl-4">
-              <p className="text-muted-foreground">Statement Period</p>
-              <p className="inline-flex items-center gap-1 font-semibold text-foreground"><CalendarDays size={12} /> {fmtDate(dari)} - {fmtDate(sampai)}</p>
+            <div className="shrink-0 text-xs sm:border-l sm:border-neutral-300 sm:pl-4">
+              <p className="text-neutral-500">Statement Period</p>
+              <p className="inline-flex items-center gap-1 font-semibold text-neutral-900"><CalendarDays size={12} /> {fmtDate(dari)} - {fmtDate(sampai)}</p>
             </div>
           </div>
           <div className="overflow-x-auto px-5">
             {terbuka ? (
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full min-w-[720px] text-xs">
                 <thead>
-                  <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+                  <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                     <th className="px-3 py-2.5 text-left font-medium">Date</th>
                     <th className="px-3 py-2.5 text-left font-medium">Reference</th>
                     <th className="px-3 py-2.5 text-left font-medium">Due Date</th>
@@ -287,14 +276,14 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                     <th className="px-3 py-2.5 text-right font-medium">Outstanding (Rp)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-neutral-300">
                   {!s ? <EmptyRow cols={6} loading={st.loading} text={`Choose a ${cfg.party.toLowerCase()} and period.`} />
-                    : terbukaRows.length === 0 ? <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">No open {cfg.docs.toLowerCase()} as of {fmtDate(sampai)}.</td></tr>
+                    : terbukaRows.length === 0 ? <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-neutral-500">No open {cfg.docs.toLowerCase()} as of {fmtDate(sampai)}.</td></tr>
                       : terbukaRows.map(d => (
                         <tr key={d.id}>
-                          <td className="px-3 py-2 text-muted-foreground">{fmtDate(d.date)}</td>
-                          <td className="px-3 py-2 text-foreground">{d.no}</td>
-                          <td className={`px-3 py-2 ${d.days_overdue ? 'text-rose-600' : 'text-muted-foreground'}`}>{fmtDate(d.due_date)}{d.days_overdue ? ` (${d.days_overdue}d)` : ''}</td>
+                          <td className="px-3 py-2 text-neutral-500">{fmtDate(d.date)}</td>
+                          <td className="px-3 py-2 text-neutral-900">{d.no}</td>
+                          <td className={`px-3 py-2 ${d.days_overdue ? 'text-rose-600' : 'text-neutral-500'}`}>{fmtDate(d.due_date)}{d.days_overdue ? ` (${d.days_overdue}d)` : ''}</td>
                           <td className="px-3 py-2 text-right">{rupiah(d.total)}</td>
                           <td className="px-3 py-2 text-right text-emerald-700">{d.paid ? rupiah(d.paid) : '-'}</td>
                           <td className="px-3 py-2 text-right font-medium">{rupiah(d.outstanding)}</td>
@@ -303,9 +292,9 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                 </tbody>
               </table>
             ) : (
-              <table className="w-full min-w-[720px] text-sm">
+              <table className="w-full min-w-[720px] text-xs">
                 <thead>
-                  <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+                  <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                     <th className="px-3 py-2.5 text-left font-medium">Date</th>
                     <th className="px-3 py-2.5 text-left font-medium">Description</th>
                     <th className="px-3 py-2.5 text-left font-medium">Reference</th>
@@ -314,10 +303,10 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                     <th className="px-3 py-2.5 text-right font-medium">Balance (Rp)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-neutral-300">
                   {!s ? <EmptyRow cols={6} loading={st.loading} text={`Choose a ${cfg.party.toLowerCase()} and period.`} /> : (
                     <>
-                      <tr className="font-semibold text-[#0F7D4E]">
+                      <tr className="font-semibold text-neutral-900">
                         <td className="px-3 py-2">{fmtDate(sehariSebelum(s.date_from))}</td>
                         <td className="px-3 py-2">Beginning Balance</td>
                         <td className="px-3 py-2" />
@@ -325,15 +314,15 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                         <td className="px-3 py-2 text-right">-</td>
                         <td className="px-3 py-2 text-right">{rupiah(s.opening_balance).replace('Rp ', '')}</td>
                       </tr>
-                      {s.lines.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">No activity in this period.</td></tr>}
+                      {s.lines.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-neutral-500">No activity in this period.</td></tr>}
                       {s.lines.map((l, i) => {
                         // AR: invoice = debit, pelunasan = kredit. AP: kebalikannya dari sisi vendor, tetap ditampilkan charge/settlement.
                         const tipe: Record<string, string> = { invoice: 'Invoice', bill: 'Bill', settlement: cfg.settle, reversal: 'Reversal', settled_outside: 'Settled' };
                         return (
-                          <tr key={`${l.number}-${i}`} className="hover:bg-slate-50/60">
-                            <td className="px-3 py-2 text-muted-foreground">{fmtDate(l.date)}</td>
-                            <td className="px-3 py-2 text-foreground" title={l.description}>{tipe[l.type] ?? l.type}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{l.number}</td>
+                          <tr key={`${l.number}-${i}`} className="hover:bg-neutral-200">
+                            <td className="px-3 py-2 text-neutral-500">{fmtDate(l.date)}</td>
+                            <td className="px-3 py-2 text-neutral-900" title={l.description}>{tipe[l.type] ?? l.type}</td>
+                            <td className="px-3 py-2 text-neutral-500">{l.number}</td>
                             <td className="px-3 py-2 text-right">{l.charge ? rupiah(l.charge).replace('Rp ', '') : '-'}</td>
                             <td className="px-3 py-2 text-right">{l.settlement ? rupiah(l.settlement).replace('Rp ', '') : '-'}</td>
                             <td className="px-3 py-2 text-right">{rupiah(l.balance).replace('Rp ', '')}</td>
@@ -347,9 +336,9 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
             )}
           </div>
           {s && (
-            <div className="mx-5 mb-5 mt-3 flex items-center justify-between rounded-xl bg-[#ECFDF5] px-4 py-3">
-              <span className="text-sm font-semibold text-foreground">Outstanding Balance as of {fmtDateLong(s.date_to)}</span>
-              <span className="text-lg font-bold text-foreground">{rupiah(s.closing_balance)}</span>
+            <div className="mx-5 mb-5 mt-3 flex items-center justify-between rounded-lg bg-neutral-100 px-4 py-3">
+              <span className="text-sm font-semibold text-neutral-900">Outstanding Balance as of {fmtDateLong(s.date_to)}</span>
+              <span className="text-lg font-semibold text-neutral-900">{rupiah(s.closing_balance)}</span>
             </div>
           )}
         </Card>
@@ -357,30 +346,24 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
 
       <Card title={`Recent ${cfg.party} Statements`} subtitle={`${cfg.parties} that already have a generated statement.`}
         action={<>
-          <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-72">
-            <Search size={14} className="text-muted-foreground" />
+          <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 sm:w-72">
+            <Search size={14} className="text-neutral-500" />
             <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${cfg.party.toLowerCase()}, period...`}
-              className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+              className="w-full bg-transparent text-sm placeholder:text-neutral-400 focus:outline-none" />
           </label>
-          <Menu width="w-48" button={open => (
-            <button type="button" className={`${btnSmall} py-2 ${fStatus !== 'all' ? 'border-[#0F7D4E] text-[#0F7D4E]' : ''}`}>
-              <Filter size={13} /> {fStatus === 'all' ? 'Filter' : DELIVERY[fStatus].label} <ChevronDown size={13} className={open ? 'rotate-180' : ''} />
-            </button>
-          )}>
-            {close => (
-              <>
-                <MenuItem onClick={() => { setFStatus('all'); close(); }}>All deliveries</MenuItem>
-                {(Object.keys(DELIVERY) as StatementLog['delivery_status'][]).map(d => (
-                  <MenuItem key={d} onClick={() => { setFStatus(d); close(); }}>{DELIVERY[d].label}</MenuItem>
-                ))}
-              </>
-            )}
-          </Menu>
+          <FilterSelect
+            variant="elegant"
+            icon={<Filter size={13} />}
+            ariaLabel="Filter by delivery status"
+            value={fStatus}
+            onChange={v => setFStatus(v as 'all' | StatementLog['delivery_status'])}
+            options={[{ value: 'all', label: 'All deliveries' }, ...(Object.keys(DELIVERY) as StatementLog['delivery_status'][]).map(d => ({ value: d, label: DELIVERY[d].label }))]}
+          />
         </>}>
         <div className="overflow-x-auto px-5">
-          <table className="w-full min-w-[1100px] text-sm">
+          <table className="w-full min-w-[1100px] text-xs">
             <thead>
-              <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+              <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                 <th className="px-3 py-2.5 text-left font-medium">{cfg.party}</th>
                 <th className="px-3 py-2.5 text-left font-medium">Period</th>
                 <th className="px-3 py-2.5 text-right font-medium">Balance (Rp)</th>
@@ -389,29 +372,29 @@ export default function StatementsTab({ cfg, clientId, asOf, initialParty }: {
                 <th className="px-3 py-2.5 text-left font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-neutral-300">
               {(logs.loading && !logs.data.length) || halamanLog.length === 0 ? (
                 <EmptyRow cols={6} loading={logs.loading && !logs.data.length} text={logs.data.length ? 'No matching statements.' : 'No statements generated yet.'} />
               ) : halamanLog.map(l => (
-                <tr key={l.id} className="hover:bg-slate-50/60">
+                <tr key={l.id} className="hover:bg-neutral-200">
                   <td className="px-3 py-2.5">
-                    <span className="font-medium text-foreground">{l.party}</span>
-                    {l.party_code && <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{l.party_code}</span>}
+                    <span className="font-medium text-neutral-900">{l.party}</span>
+                    {l.party_code && <span className="ml-2 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold text-neutral-600">{l.party_code}</span>}
                     {l.open_items_only && <span className="ml-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">Open items</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(l.date_from)} - {fmtDate(l.date_to)}</td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-foreground">{rupiah(l.closing_balance)}</td>
+                  <td className="px-3 py-2.5 text-neutral-500">{fmtDate(l.date_from)} - {fmtDate(l.date_to)}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-neutral-900">{rupiah(l.closing_balance)}</td>
                   <td className="px-3 py-2.5 text-xs">
-                    <span className="text-foreground">{fmtDateTime(l.generated_at)}</span>
-                    <span className="block text-muted-foreground">by {l.generated_by_name || '—'}</span>
+                    <span className="text-neutral-900">{fmtDateTime(l.generated_at)}</span>
+                    <span className="block text-neutral-500">by {l.generated_by_name || '—'}</span>
                   </td>
                   <td className="px-3 py-2.5 text-xs">
                     <span className="inline-flex items-center gap-2">
-                      {l.delivery_method === 'email' ? <Mail size={13} className="text-sky-600" /> : l.delivery_method === 'download' ? <Download size={13} className="text-sky-600" /> : <FileText size={13} className="text-muted-foreground" />}
-                      <span className="text-foreground">{l.delivery_method === 'email' ? 'Email' : l.delivery_method === 'download' ? 'Download' : '—'}</span>
+                      {l.delivery_method === 'email' ? <Mail size={13} className="text-sky-600" /> : l.delivery_method === 'download' ? <Download size={13} className="text-sky-600" /> : <FileText size={13} className="text-neutral-500" />}
+                      <span className="text-neutral-900">{l.delivery_method === 'email' ? 'Email' : l.delivery_method === 'download' ? 'Download' : '—'}</span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${DELIVERY[l.delivery_status].cls}`}>{DELIVERY[l.delivery_status].label}</span>
                     </span>
-                    {l.recipient_email && <span className="block truncate text-[11px] text-muted-foreground" title={l.recipient_email}>{l.recipient_email}</span>}
+                    {l.recipient_email && <span className="block truncate text-[11px] text-neutral-500" title={l.recipient_email}>{l.recipient_email}</span>}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -487,36 +470,36 @@ function EmailModal({ cfg, clientId, log, defaultTo, canSaveEmail, clientName, f
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/30 p-4" onClick={onClose}>
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold text-foreground">Email Statement</h3>
-            <p className="text-xs text-muted-foreground">{log.party} · {periode} · PDF attached</p>
+            <h3 className="text-lg font-semibold text-neutral-900">Email Statement</h3>
+            <p className="text-xs text-neutral-500">{log.party} · {periode} · PDF attached</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-slate-100" aria-label="Close"><X size={18} /></button>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100" aria-label="Close"><X size={18} /></button>
         </div>
         <div className="mt-4 space-y-3 text-xs">
-          <label className="block font-medium text-foreground">To <span className="text-rose-500">*</span>
+          <label className="block font-medium text-neutral-900">To <span className="text-rose-500">*</span>
             <input value={to} onChange={e => setTo(e.target.value)} placeholder="finance@customer.co.id" className={`${inputCls} mt-1`} />
           </label>
           {canSaveEmail && (
-            <label className="flex items-center gap-2 text-muted-foreground">
-              <input type="checkbox" checked={simpanEmail} onChange={e => setSimpanEmail(e.target.checked)} className="accent-[#0F7D4E]" /> Save as this customer&apos;s email
+            <label className="flex items-center gap-2 text-neutral-500">
+              <input type="checkbox" checked={simpanEmail} onChange={e => setSimpanEmail(e.target.checked)} className="accent-neutral-800" /> Save as this customer&apos;s email
             </label>
           )}
-          <label className="block font-medium text-foreground">Cc
+          <label className="block font-medium text-neutral-900">Cc
             <input value={cc} onChange={e => setCc(e.target.value)} placeholder="Separate multiple addresses with commas" className={`${inputCls} mt-1`} />
           </label>
-          <label className="block font-medium text-foreground">Subject
+          <label className="block font-medium text-neutral-900">Subject
             <input value={subjek} onChange={e => setSubjek(e.target.value)} maxLength={255} className={`${inputCls} mt-1`} />
           </label>
-          <label className="block font-medium text-foreground">Message
+          <label className="block font-medium text-neutral-900">Message
             <textarea value={pesan} onChange={e => setPesan(e.target.value)} rows={8} maxLength={5000} className={`${inputCls} mt-1`} />
           </label>
         </div>
         {gagal && (
-          <div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">
             {gagal}
             <button type="button" onClick={unduhManual} className="mt-1 block font-semibold underline">Download the PDF and open my email app instead</button>
           </div>

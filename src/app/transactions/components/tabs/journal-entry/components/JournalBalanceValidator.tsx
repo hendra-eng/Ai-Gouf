@@ -24,18 +24,18 @@ export default function JournalBalanceValidator() {
         <h3 className="text-sm font-semibold text-foreground mb-1">Debit / Credit Validator</h3>
         <p className="text-xs text-muted-foreground mb-4">Current period balance check — Sep 2026</p>
 
-        <div className={`rounded-lg border p-4 mb-4 ${isBalanced ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+        <div className={`rounded-lg border p-4 mb-4 ${isBalanced ? 'bg-neutral-100 border-neutral-300' : 'bg-red-50 border-red-200'}`}>
           <div className="flex items-center gap-2 mb-2">
             {isBalanced ? (
-              <CheckCircle size={16} className="text-emerald-600" />
+              <CheckCircle size={16} className="text-neutral-900" />
             ) : (
               <AlertTriangle size={16} className="text-red-600" />
             )}
-            <span className={`text-sm font-bold ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
+            <span className={`text-sm font-bold ${isBalanced ? 'text-neutral-900' : 'text-red-700'}`}>
               {isBalanced ? 'Period is Balanced' : 'Period is Unbalanced'}
             </span>
           </div>
-          <p className={`text-xs ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+          <p className={`text-xs ${isBalanced ? 'text-neutral-900' : 'text-red-600'}`}>
             {isBalanced
               ? 'All journal entries for Sep 2026 are balanced. Total DR = Total CR.'
               : `Difference of $${Math.abs(diff).toLocaleString()} detected. Review unbalanced entries.`}
@@ -45,7 +45,7 @@ export default function JournalBalanceValidator() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-5 text-[10px] font-bold text-blue-600 bg-blue-50 rounded px-1 py-0.5 text-center">DR</span>
+              <span className="w-5 text-[10px] font-bold text-neutral-700 bg-neutral-200 rounded px-1 py-0.5 text-center">DR</span>
               <span className="text-sm text-muted-foreground">Total Debit</span>
             </div>
             <span className="text-sm font-bold tabular-nums text-foreground">
@@ -54,7 +54,7 @@ export default function JournalBalanceValidator() {
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-5 text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded px-1 py-0.5 text-center">CR</span>
+              <span className="w-5 text-[10px] font-bold text-neutral-900 bg-neutral-100 rounded px-1 py-0.5 text-center">CR</span>
               <span className="text-sm text-muted-foreground">Total Credit</span>
             </div>
             <span className="text-sm font-bold tabular-nums text-foreground">
@@ -63,7 +63,7 @@ export default function JournalBalanceValidator() {
           </div>
           <div className="border-t border-border pt-3 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Difference</span>
-            <span className={`text-sm font-bold tabular-nums ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+            <span className={`text-sm font-bold tabular-nums ${isBalanced ? 'text-neutral-900' : 'text-red-600'}`}>
               ${diff.toLocaleString()}
             </span>
           </div>
@@ -77,7 +77,7 @@ export default function JournalBalanceValidator() {
                 <span className="text-muted-foreground">{p.period}</span>
                 <div className="flex items-center gap-2">
                   <span className="tabular-nums text-foreground">${p.totalDebit.toLocaleString()}</span>
-                  <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+                  <span className="flex items-center gap-1 text-neutral-900 bg-neutral-100 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
                     <CheckCircle size={9} /> Balanced
                   </span>
                 </div>
@@ -96,15 +96,15 @@ export default function JournalBalanceValidator() {
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-primary inline-block" />
+              <span className="w-2.5 h-2.5 rounded-sm bg-neutral-800 inline-block" />
               Posted
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-sm bg-neutral-500 inline-block" />
               Pending
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" />
+              <span className="w-2.5 h-2.5 rounded-sm bg-neutral-300 inline-block" />
               Rejected
             </span>
           </div>

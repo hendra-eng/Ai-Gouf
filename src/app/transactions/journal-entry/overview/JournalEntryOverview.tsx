@@ -24,7 +24,7 @@ import {
 } from './jeOverviewUi';
 
 // Palet donut sama dengan "Sales per Branch" di Sales Overview.
-const DONUT_COLORS = ['#2563EB', '#0EA5E9', '#6366F1', '#14B8A6', '#F59E0B', '#EC4899'];
+const DONUT_COLORS = ['#171717', '#404040', '#737373', '#a3a3a3', '#d4d4d4', '#e5e5e5'];
 
 const STATUS_LABEL: Record<string, string> = {
   posted: 'Posted',
@@ -481,7 +481,7 @@ export default function JournalEntryOverview() {
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2">
                 <span>Rows per page</span>
-                <select value={tablePageSize} onChange={(e) => { setTablePageSize(Number(e.target.value)); setTablePage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-primary/30">
+                <select value={tablePageSize} onChange={(e) => { setTablePageSize(Number(e.target.value)); setTablePage(1); }} className="border border-border rounded-lg px-2 py-1.5 text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-neutral-700/30">
                   <option value={10}>10</option>
                   <option value={25}>25</option>
                   <option value={50}>50</option>

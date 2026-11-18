@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, CreditCard, FileText, Filter, Landmark,
+  ArrowLeft, Building2, CalendarDays, Check, CheckCircle2, ChevronRight, CreditCard, FileText, Filter, Landmark,
   Loader2, Printer, RotateCcw, Save, Search, Wallet,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
@@ -27,6 +27,7 @@ import { buildVoucherPdf } from './arapExport';
 import { btnOutline, btnPrimary, inputCls, SettlementBadge } from './arapUi';
 import { useReportHeader } from './StatementsTab';
 import { CurrencySelect, InfoKursTeks, RateInput, useMasterRate } from './CurrencyRateFields';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
 const angka = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
@@ -68,56 +69,35 @@ export function Label({ children, wajib }: { children: React.ReactNode; wajib?: 
   return <label className="mb-1 block text-sm font-medium text-foreground">{children}{wajib && <span className="ml-0.5 text-rose-500">*</span>}</label>;
 }
 
-/** Combobox pihak (customer / vendor) dengan pencarian. */
+/** Combobox pihak (customer / vendor) dengan pencarian -- tampilan sama dengan dropdown filter Purchase. */
 function PartyPicker({ side, parties, value, onChange, disabled }: {
   side: ArApSide; parties: ArApParty[]; value: string; onChange: (p: string) => void; disabled?: boolean;
 }) {
   const cfg = SIDE_CONFIG[side];
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const tutup = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', tutup);
-    return () => document.removeEventListener('mousedown', tutup);
-  }, [open]);
   const pilih = parties.find(p => p.name === value);
-  const daftar = parties.filter(p => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => b.outstanding - a.outstanding);
+  const opsi = [...parties].sort((a, b) => b.outstanding - a.outstanding).map(p => ({
+    value: p.name,
+    label: p.name,
+    sub: `${p.open_count} open · ${p.invoice_count} total${p.tax_id ? ` · ${p.tax_id}` : ''}`,
+    meta: rupiah(p.outstanding),
+  }));
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-left disabled:bg-slate-50">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ECFDF5] text-[#0F7D4E]"><Building2 size={18} /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-foreground">{value || `Select ${cfg.party.toLowerCase()}...`}</span>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            {pilih ? `${pilih.open_count} open ${pilih.open_count === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()} · ${rupiah(pilih.outstanding)}${pilih.tax_id ? ` · ${side === 'ar' ? 'NPWP' : 'Code'}: ${pilih.tax_id}` : ''}` : `${cfg.parties} with posted ${cfg.docs.toLowerCase()}`}
-          </span>
-        </span>
-        {!disabled && <ChevronDown size={16} className="text-muted-foreground" />}
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-card p-2 shadow-lg">
-          <label className="mb-1 flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
-            <Search size={14} className="text-muted-foreground" />
-            <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${cfg.party.toLowerCase()}...`} className="w-full bg-transparent text-sm focus:outline-none" />
-          </label>
-          <div className="max-h-72 overflow-y-auto">
-            {daftar.length === 0 && <p className="px-3 py-4 text-center text-xs text-muted-foreground">No {cfg.parties.toLowerCase()} found.</p>}
-            {daftar.map(p => (
-              <button key={p.name} type="button" onClick={() => { onChange(p.name); setOpen(false); setQ(''); }}
-                className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50 ${p.name === value ? 'bg-[#ECFDF5]' : ''}`}>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm text-foreground">{p.name}</span>
-                  <span className="block text-[11px] text-muted-foreground">{p.open_count} open · {p.invoice_count} total{p.tax_id ? ` · ${p.tax_id}` : ''}</span>
-                </span>
-                <span className={`shrink-0 text-xs font-semibold ${p.overdue ? 'text-rose-600' : 'text-foreground'}`}>{rupiah(p.outstanding)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+    <div>
+      <FilterSelect
+        variant="elegant" block tall searchable
+        icon={<Building2 size={14} />}
+        ariaLabel={cfg.party}
+        disabled={disabled}
+        value={value}
+        onChange={onChange}
+        placeholder={`Select ${cfg.party.toLowerCase()}...`}
+        searchPlaceholder={`Search ${cfg.party.toLowerCase()}...`}
+        emptyText={`No ${cfg.parties.toLowerCase()} found.`}
+        options={opsi}
+      />
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">
+        {pilih ? `${pilih.open_count} open ${pilih.open_count === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()} · ${rupiah(pilih.outstanding)}${pilih.tax_id ? ` · ${side === 'ar' ? 'NPWP' : 'Code'}: ${pilih.tax_id}` : ''}` : `${cfg.parties} with posted ${cfg.docs.toLowerCase()}`}
+      </p>
     </div>
   );
 }
@@ -418,22 +398,28 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
 
             <div className="lg:col-span-4">
               <Label wajib>Payment Method</Label>
-              <div className="relative">
-                <CreditCard size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <select value={metode} disabled={terkunci} onChange={e => setMetode(e.target.value as PaymentMethod)} className={`${inputCls} pl-9`}>
-                  {Object.entries(PAYMENT_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </div>
+              <FilterSelect
+                variant="elegant" block tall
+                icon={<CreditCard size={14} />}
+                ariaLabel="Payment method"
+                disabled={terkunci}
+                value={metode}
+                onChange={v => setMetode(v as PaymentMethod)}
+                options={Object.entries(PAYMENT_METHOD_LABEL).map(([k, v]) => ({ value: k, label: v }))}
+              />
             </div>
             <div className="lg:col-span-4">
               <Label wajib>{metode === 'cash' ? 'Cash Account' : 'Bank Account'}</Label>
-              <div className="relative">
-                <Landmark size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <select value={bankId} disabled={terkunci} onChange={e => setBankId(e.target.value)} className={`${inputCls} pl-9`}>
-                  {!akunKas.length && <option value="">{accounts.loading ? 'Loading...' : 'No cash / bank accounts in the COA'}</option>}
-                  {akunKas.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}</option>)}
-                </select>
-              </div>
+              <FilterSelect
+                variant="elegant" block tall
+                icon={<Landmark size={14} />}
+                ariaLabel={metode === 'cash' ? 'Cash account' : 'Bank account'}
+                disabled={terkunci}
+                value={bankId}
+                onChange={setBankId}
+                placeholder={accounts.loading ? 'Loading...' : 'No cash / bank accounts in the COA'}
+                options={akunKas.map(a => ({ value: a.id, label: `${kodeAkun(a.code)} · ${a.name}` }))}
+              />
             </div>
             <div className="lg:col-span-4">
               <Label wajib>Currency</Label>
@@ -564,10 +550,14 @@ function SettlementFormInner({ side }: { side: ArApSide }) {
               {pakaiSisa && (
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr]">
                   <MoneyInput value={sisa} onChange={setSisa} disabled={terkunci} className="py-1" />
-                  <select value={akunSisa} disabled={terkunci} onChange={e => setAkunSisa(e.target.value)} className={inputCls}>
-                    <option value="">Select account...</option>
-                    {akunLain.map(a => <option key={a.id} value={a.id}>{kodeAkun(a.code)} · {a.name}{a.classification ? ` (${a.classification})` : ''}</option>)}
-                  </select>
+                  <FilterSelect
+                    variant="elegant" block tall
+                    ariaLabel="Account for the remaining amount"
+                    disabled={terkunci}
+                    value={akunSisa}
+                    onChange={setAkunSisa}
+                    options={[{ value: '', label: 'Select account...' }, ...akunLain.map(a => ({ value: a.id, label: `${kodeAkun(a.code)} · ${a.name}${a.classification ? ` (${a.classification})` : ''}` }))]}
+                  />
                 </div>
               )}
             </div>

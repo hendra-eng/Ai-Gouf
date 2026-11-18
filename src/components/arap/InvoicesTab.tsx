@@ -14,7 +14,8 @@ import {
 import { downloadDocsCsv, downloadDocsXlsx } from './arapExport';
 import {
   AgingBadge, btnSmall, Card, DocDrawer, DocStatusLabel, EmptyRow, Menu, MenuItem, NumberPager, sortRows, SortTh, useSort,
-} from './arapUi';
+} from './arapSalesUi';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 import type { TabId } from './ArApWorkspace';
 
 // Tab Invoices / Bills (dataset/picture/Template UI/Account Receivable/8.jpeg):
@@ -43,7 +44,6 @@ function rentang(p: Periode, asOf: string, dari: string, sampai: string): [strin
   }
 }
 
-const selectCls = 'w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground';
 
 export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loading, settlements, initialParty, goTab }: {
   cfg: SideConfig; clientId: string; clientName: string; asOf: string; docs: ArApDoc[]; loading: boolean; settlements: Settlement[];
@@ -118,16 +118,16 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
   };
 
   const kartu = [
-    { label: `Total ${cfg.docs}`, value: ring.total, n: ring.totalN, icon: FileText, tone: 'bg-slate-100 text-slate-600', pct: null as number | null, danger: false },
-    { label: `Open ${cfg.docs}`, value: ring.open, n: ring.openN, icon: Clock, tone: 'bg-sky-50 text-sky-600', pct: pct(ring.open), danger: false },
-    { label: `Overdue ${cfg.docs}`, value: ring.overdue, n: ring.overdueN, icon: Timer, tone: 'bg-rose-50 text-rose-600', pct: pct(ring.overdue), danger: true },
-    { label: `${cfg.settled} Amount`, value: ring.paid, n: ring.paidN, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600', pct: pct(ring.paid), danger: false },
+    { label: `Total ${cfg.docs}`, value: ring.total, n: ring.totalN, icon: FileText, tone: 'bg-neutral-100 text-neutral-600', pct: null as number | null, danger: false },
+    { label: `Open ${cfg.docs}`, value: ring.open, n: ring.openN, icon: Clock, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200', pct: pct(ring.open), danger: false },
+    { label: `Overdue ${cfg.docs}`, value: ring.overdue, n: ring.overdueN, icon: Timer, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200', pct: pct(ring.overdue), danger: true },
+    { label: `${cfg.settled} Amount`, value: ring.paid, n: ring.paidN, icon: CheckCircle2, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200', pct: pct(ring.paid), danger: false },
   ];
 
   return (
     <div className="space-y-5">
       {cfg.side === 'ar' && pending.data.length > 0 && (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-sky-900">
+        <div className="rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-sky-900">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span>
               <b>{pending.data.length}</b> invoice{pending.data.length === 1 ? ' is' : 's are'} not posted yet
@@ -139,21 +139,21 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
             </button>
           </div>
           {pendingBuka && (
-            <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-sky-100 bg-white">
+            <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-sky-100 bg-white">
               <table className="w-full text-xs">
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-neutral-100">
                   {pending.data.map(p => (
                     <tr key={p.id}>
-                      <td className="px-3 py-2 font-medium text-foreground">{p.invoice_no}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{p.customer_name}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{fmtDate(p.invoice_date)}</td>
+                      <td className="px-3 py-2 font-medium text-neutral-900">{p.invoice_no}</td>
+                      <td className="px-3 py-2 text-neutral-500">{p.customer_name}</td>
+                      <td className="px-3 py-2 text-neutral-500">{fmtDate(p.invoice_date)}</td>
                       <td className="px-3 py-2 text-right">{rupiah(p.total)}</td>
-                      <td className="px-3 py-2"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">{p.status === 'Review' ? 'Awaiting Approval' : p.status}</span></td>
+                      <td className="px-3 py-2"><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700">{p.status === 'Review' ? 'Awaiting Approval' : p.status}</span></td>
                       <td className="px-3 py-2 text-right">
                         {p.editable ? (
-                          <Link href={`${cfg.basePath}/invoices/new?id=${p.id}`} className="inline-flex items-center gap-1 font-medium text-[#0F7D4E] hover:underline"><Pencil size={12} /> Edit</Link>
+                          <Link href={`${cfg.basePath}/invoices/new?id=${p.id}`} className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline"><Pencil size={12} /> Edit</Link>
                         ) : (
-                          <Link href="/transactions/sales?tab=journal-preview" className="font-medium text-[#0F7D4E] hover:underline">Journal Preview</Link>
+                          <Link href="/transactions/sales?tab=journal-preview" className="font-medium text-blue-700 hover:underline">Journal Preview</Link>
                         )}
                       </td>
                     </tr>
@@ -169,10 +169,10 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
         title={`${cfg.side === 'ar' ? 'Receivable Invoice' : 'Payable Bill'} List`}
         subtitle={`Manage and monitor every ${cfg.sourceModule.toLowerCase()} ${cfg.doc.toLowerCase()} ${cfg.side === 'ar' ? 'issued to customers' : 'received from vendors'} (as of ${fmtDate(asOf)}).`}
         action={<>
-          <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-80">
-            <Search size={14} className="text-muted-foreground" />
+          <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 sm:w-80">
+            <Search size={14} className="text-neutral-500" />
             <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${cfg.party.toLowerCase()}, ${cfg.doc.toLowerCase()} number or description...`}
-              className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+              className="w-full bg-transparent text-sm placeholder:text-neutral-400 focus:outline-none" />
           </label>
           <button type="button" onClick={() => setFilterBuka(o => !o)} className={`${btnSmall} py-2`}>
             <Filter size={13} /> Filter <ChevronDown size={13} className={filterBuka ? 'rotate-180 transition' : 'transition'} />
@@ -181,52 +181,58 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
       >
         {filterBuka && (
           <div className="grid grid-cols-1 gap-3 px-5 pb-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end">
-            <label className="text-xs font-medium text-foreground">
+            <div className="text-xs font-medium text-neutral-900">
               {cfg.doc} Date
-              <div className="relative mt-1">
-                <CalendarDays size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <select value={periode} onChange={e => setPeriode(e.target.value as Periode)} className={`${selectCls} pl-8`}>
-                  {(Object.keys(PERIODE_LABEL) as Periode[]).map(p => <option key={p} value={p}>{PERIODE_LABEL[p]}</option>)}
-                </select>
-              </div>
-            </label>
-            <label className="text-xs font-medium text-foreground">
+              <FilterSelect
+                variant="elegant" block className="mt-1" ariaLabel={`${cfg.doc} date period`}
+                icon={<CalendarDays size={14} />}
+                value={periode}
+                onChange={v => setPeriode(v as Periode)}
+                options={(Object.keys(PERIODE_LABEL) as Periode[]).map(p => ({ value: p, label: PERIODE_LABEL[p] }))}
+              />
+            </div>
+            <div className="text-xs font-medium text-neutral-900">
               {cfg.party}
-              <select value={party} onChange={e => setParty(e.target.value)} className={`${selectCls} mt-1`}>
-                <option value="">All {cfg.parties.toLowerCase()}</option>
-                {daftarPihak.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-foreground">
+              <FilterSelect
+                variant="elegant" block className="mt-1" ariaLabel={cfg.party}
+                value={party}
+                onChange={setParty}
+                options={[{ value: '', label: `All ${cfg.parties.toLowerCase()}` }, ...daftarPihak.map(p => ({ value: p, label: p }))]}
+              />
+            </div>
+            <div className="text-xs font-medium text-neutral-900">
               Status
-              <select value={status} onChange={e => setStatus(e.target.value as 'all' | DocStatus)} className={`${selectCls} mt-1`}>
-                <option value="all">All statuses</option>
-                {STATUS.map(s => <option key={s} value={s}>{DOC_STATUS_LABEL[s]}</option>)}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-foreground">
+              <FilterSelect
+                variant="elegant" block className="mt-1" ariaLabel="Status"
+                value={status}
+                onChange={v => setStatus(v as 'all' | DocStatus)}
+                options={[{ value: 'all', label: 'All statuses' }, ...STATUS.map(s => ({ value: s, label: DOC_STATUS_LABEL[s] }))]}
+              />
+            </div>
+            <div className="text-xs font-medium text-neutral-900">
               Aging
-              <select value={aging} onChange={e => setAging(e.target.value as 'all' | AgingBucket | 'paid')} className={`${selectCls} mt-1`}>
-                <option value="all">All</option>
-                {BUCKETS.map(b => <option key={b} value={b}>{BUCKET_LABEL[b]}</option>)}
-                <option value="paid">Paid</option>
-              </select>
-            </label>
+              <FilterSelect
+                variant="elegant" block className="mt-1" ariaLabel="Aging"
+                value={aging}
+                onChange={v => setAging(v as 'all' | AgingBucket | 'paid')}
+                options={[{ value: 'all', label: 'All' }, ...BUCKETS.map(b => ({ value: b, label: BUCKET_LABEL[b] })), { value: 'paid', label: 'Paid' }]}
+              />
+            </div>
             <button type="button" onClick={reset} disabled={!adaFilter}
               className="inline-flex items-center gap-1.5 justify-self-start py-2 text-xs font-semibold text-sky-700 hover:underline disabled:opacity-40">
               <RotateCcw size={13} /> Reset Filter
             </button>
             {periode === 'custom' && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:col-span-2 lg:col-span-5">
-                From <input type="date" value={dari} onChange={e => setDari(e.target.value)} className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground" />
-                to <input type="date" value={sampai} onChange={e => setSampai(e.target.value)} className="rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground" />
+              <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500 sm:col-span-2 lg:col-span-5">
+                From <input type="date" value={dari} onChange={e => setDari(e.target.value)} className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900" />
+                to <input type="date" value={sampai} onChange={e => setSampai(e.target.value)} className="rounded-lg border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900" />
               </div>
             )}
           </div>
         )}
 
         {pilih.size > 0 && (
-          <div className="mx-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#ECFDF5] px-4 py-2 text-xs text-[#0B5E5C]">
+          <div className="mx-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neutral-100 px-4 py-2 text-xs text-[#0B5E5C]">
             <span><b>{pilih.size}</b> selected · Outstanding {rupiah(dipilih.reduce((n, d) => n + d.outstanding, 0))}</span>
             <div className="flex flex-wrap gap-2">
               {bisaTerima && (
@@ -241,11 +247,11 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
         )}
 
         <div className="overflow-x-auto px-5">
-          <table className="w-full min-w-[1180px] text-sm">
+          <table className="w-full min-w-[1180px] text-xs">
             <thead>
-              <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+              <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                 <th className="w-10 px-3 py-2.5">
-                  <input type="checkbox" aria-label="Select page" className="accent-[#0F7D4E]" checked={semuaHalaman} onChange={toggleHalaman} />
+                  <input type="checkbox" aria-label="Select page" className="accent-neutral-800" checked={semuaHalaman} onChange={toggleHalaman} />
                 </th>
                 <SortTh label={cfg.party} k="party" sort={sort} onSort={onSort} />
                 <SortTh label={`${cfg.doc} No.`} k="no" sort={sort} onSort={onSort} />
@@ -258,22 +264,22 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
                 <th className="px-3 py-2.5 text-left font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-neutral-300">
               {loading || halaman.length === 0 ? (
                 <EmptyRow cols={10} loading={loading} text={docs.length ? 'No matching items.' : `No posted ${cfg.sourceModule} ${cfg.docs.toLowerCase()} yet.`} />
               ) : halaman.map(d => (
-                <tr key={d.id} className={`hover:bg-slate-50/60 ${pilih.has(d.id) ? 'bg-[#ECFDF5]/50' : ''}`}>
+                <tr key={d.id} className={`hover:bg-neutral-200 ${pilih.has(d.id) ? 'bg-neutral-100/50' : ''}`}>
                   <td className="px-3 py-2.5">
-                    <input type="checkbox" aria-label={`Select ${d.no}`} className="accent-[#0F7D4E]" checked={pilih.has(d.id)} onChange={() => togglePilih(d.id)} />
+                    <input type="checkbox" aria-label={`Select ${d.no}`} className="accent-neutral-800" checked={pilih.has(d.id)} onChange={() => togglePilih(d.id)} />
                   </td>
-                  <td className="max-w-[220px] truncate px-3 py-2.5 font-medium text-foreground" title={d.party}>{d.party}</td>
+                  <td className="max-w-[220px] truncate px-3 py-2.5 font-medium text-neutral-900" title={d.party}>{d.party}</td>
                   <td className="px-3 py-2.5">
                     <button type="button" onClick={() => setLihat(d)} className="text-sky-700 hover:underline">{d.no}</button>
-                    {d.ref_no && d.ref_no !== d.no && <span className="block text-[11px] text-muted-foreground">{d.ref_no}</span>}
+                    {d.ref_no && d.ref_no !== d.no && <span className="block text-[11px] text-neutral-500">{d.ref_no}</span>}
                   </td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(d.date)}</td>
-                  <td className={`px-3 py-2.5 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-muted-foreground'}`}>
-                    {fmtDate(d.due_date)}{d.due_date_estimated && <span className="ml-1 text-[10px] text-muted-foreground" title="Estimated from payment terms">*</span>}
+                  <td className="px-3 py-2.5 text-neutral-500">{fmtDate(d.date)}</td>
+                  <td className={`px-3 py-2.5 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-neutral-500'}`}>
+                    {fmtDate(d.due_date)}{d.due_date_estimated && <span className="ml-1 text-[10px] text-neutral-500" title="Estimated from payment terms">*</span>}
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     {rupiah(d.total)}
@@ -319,23 +325,23 @@ export default function InvoicesTab({ cfg, clientId, clientName, asOf, docs, loa
           </table>
         </div>
         <NumberPager page={page} pageSize={size} total={tersaring.length} onPage={setPage} onPageSize={setSize} noun={cfg.docs.toLowerCase()} />
-        <p className="px-5 pb-4 text-[11px] text-muted-foreground">* Due date estimated from the payment terms because the {cfg.doc.toLowerCase()} has no due date.</p>
+        <p className="px-5 pb-4 text-[11px] text-neutral-500">* Due date estimated from the payment terms because the {cfg.doc.toLowerCase()} has no due date.</p>
         <DocDrawer cfg={cfg} doc={lihat} settlements={settlements} onClose={() => setLihat(null)} />
       </Card>
 
-      <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-0 overflow-hidden relative rounded-xl border border-neutral-300 bg-white before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:rounded-t-xl before:bg-neutral-800 shadow-sm sm:grid-cols-2 xl:grid-cols-4">
         {kartu.map((k, i) => {
           const Ikon = k.icon;
           return (
-            <div key={k.label} className={`flex items-center gap-4 px-5 py-4 ${i ? 'border-t border-border sm:border-l sm:border-t-0' : ''}`}>
-              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${k.tone}`}><Ikon size={20} /></span>
+            <div key={k.label} className={`flex items-center gap-4 px-5 py-4 ${i ? 'border-t border-neutral-300 sm:border-l sm:border-t-0' : ''}`}>
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${k.tone}`}><Ikon size={20} /></span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">{k.label}</p>
-                <p className={`truncate text-lg font-bold ${k.danger && k.value > 0 ? 'text-rose-600' : 'text-foreground'}`}>{rupiah(k.value)}</p>
-                <p className="text-[11px] text-muted-foreground">{k.n} {k.n === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()}</p>
+                <p className="text-xs text-neutral-500">{k.label}</p>
+                <p className={`truncate text-lg font-semibold ${k.danger && k.value > 0 ? 'text-rose-600' : 'text-neutral-900'}`}>{rupiah(k.value)}</p>
+                <p className="text-[11px] text-neutral-500">{k.n} {k.n === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()}</p>
               </div>
               {k.pct !== null && (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${k.danger ? 'bg-rose-50 text-rose-600' : i === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>{k.pct}%</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${k.danger ? 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200' : i === 3 ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>{k.pct}%</span>
               )}
             </div>
           );

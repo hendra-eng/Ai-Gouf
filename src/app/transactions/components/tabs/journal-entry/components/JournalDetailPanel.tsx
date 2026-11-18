@@ -18,7 +18,7 @@ export default function JournalDetailPanel({ entry, onClose }: Props) {
     <div className="p-5 bg-muted/20">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-wrap">
-          <BookOpen size={18} className="text-primary" />
+          <BookOpen size={18} className="text-neutral-800" />
           <div>
             <h4 className="text-sm font-bold text-foreground">{entry.jeNumber}</h4>
             <p className="text-xs text-muted-foreground">{entry.sourceReference} · {entry.source}</p>
@@ -72,18 +72,18 @@ export default function JournalDetailPanel({ entry, onClose }: Props) {
       </div>
 
       {/* Balance summary */}
-      <div className={`rounded-lg border p-3 mb-4 flex items-center gap-4 flex-wrap ${isBalanced ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+      <div className={`rounded-lg border p-3 mb-4 flex items-center gap-4 flex-wrap ${isBalanced ? 'bg-neutral-100 border-neutral-300' : 'bg-red-50 border-red-200'}`}>
         {isBalanced
-          ? <CheckCircle size={14} className="text-emerald-600 shrink-0" />
+          ? <CheckCircle size={14} className="text-neutral-900 shrink-0" />
           : <AlertTriangle size={14} className="text-red-600 shrink-0" />
         }
-        <span className={`text-xs font-semibold ${isBalanced ? 'text-emerald-700' : 'text-red-700'}`}>
+        <span className={`text-xs font-semibold ${isBalanced ? 'text-neutral-900' : 'text-red-700'}`}>
           {isBalanced ? 'Entry is balanced — Total DR = Total CR' : `Entry is unbalanced — Difference: $${Math.abs(entry.difference).toLocaleString()}`}
         </span>
         <div className="flex items-center gap-4 ml-auto text-xs">
-          <span className="text-blue-600 font-semibold tabular-nums">DR: ${entry.totalDebit.toLocaleString()}</span>
-          <span className="text-emerald-600 font-semibold tabular-nums">CR: ${entry.totalCredit.toLocaleString()}</span>
-          <span className={`font-bold tabular-nums ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+          <span className="text-neutral-700 font-semibold tabular-nums">DR: ${entry.totalDebit.toLocaleString()}</span>
+          <span className="text-neutral-900 font-semibold tabular-nums">CR: ${entry.totalCredit.toLocaleString()}</span>
+          <span className={`font-bold tabular-nums ${isBalanced ? 'text-neutral-900' : 'text-red-600'}`}>
             Diff: ${entry.difference.toLocaleString()}
           </span>
         </div>
@@ -108,19 +108,19 @@ export default function JournalDetailPanel({ entry, onClose }: Props) {
             <tbody>
               {entry.lines.map((line) => (
                 <tr key={`jline-${line.id}`} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-2.5 tabular-nums font-medium text-primary text-xs">{kodeAkun(line.accountCode)}</td>
+                  <td className="px-4 py-2.5 tabular-nums font-medium text-neutral-800 text-xs">{kodeAkun(line.accountCode)}</td>
                   <td className="px-4 py-2.5 font-medium text-foreground text-xs">{line.accountName}</td>
                   <td className="px-4 py-2.5 text-muted-foreground text-xs">{line.description}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-xs">
                     {line.debit > 0 ? (
-                      <span className="font-semibold text-blue-600">${line.debit.toLocaleString()}</span>
+                      <span className="font-semibold text-neutral-700">${line.debit.toLocaleString()}</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-xs">
                     {line.credit > 0 ? (
-                      <span className="font-semibold text-emerald-600">${line.credit.toLocaleString()}</span>
+                      <span className="font-semibold text-neutral-900">${line.credit.toLocaleString()}</span>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
@@ -130,10 +130,10 @@ export default function JournalDetailPanel({ entry, onClose }: Props) {
               {/* Totals row */}
               <tr className="bg-muted/30 border-t-2 border-border">
                 <td colSpan={3} className="px-4 py-2.5 text-xs font-bold text-foreground">Totals</td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-blue-600 text-xs">
+                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-neutral-700 text-xs">
                   ${entry.totalDebit.toLocaleString()}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-emerald-600 text-xs">
+                <td className="px-4 py-2.5 text-right tabular-nums font-bold text-neutral-900 text-xs">
                   ${entry.totalCredit.toLocaleString()}
                 </td>
               </tr>

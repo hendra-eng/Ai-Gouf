@@ -24,6 +24,7 @@ import {
 } from './arapExport';
 import { btnOutline, btnPrimary, inputCls } from './arapUi';
 import { useReportHeader } from './StatementsTab';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 type ReportType = 'aging' | 'open_list' | 'statement';
 const SEMUA = '__all__';
@@ -168,24 +169,32 @@ function ExportPreviewInner({ side }: { side: ArApSide }) {
             <h2 className="text-lg font-bold text-foreground">Export Settings</h2>
             <div>
               <label className="mb-1 block text-sm text-foreground">Report Type</label>
-              <select value={jenis} onChange={e => setJenis(e.target.value as ReportType)} className={inputCls}>
-                <option value="aging">{cfg.title} Aging Report</option>
-                <option value="open_list">Open {cfg.docs} List</option>
-                <option value="statement">{cfg.party} Statement</option>
-              </select>
+              <FilterSelect
+                variant="elegant" block tall
+                ariaLabel="Report type"
+                value={jenis}
+                onChange={v => setJenis(v as ReportType)}
+                options={[
+                  { value: 'aging', label: `${cfg.title} Aging Report` },
+                  { value: 'open_list', label: `Open ${cfg.docs} List` },
+                  { value: 'statement', label: `${cfg.party} Statement` },
+                ]}
+              />
             </div>
             <div>
               <label className="mb-1 block text-sm text-foreground">Client / Company</label>
-              <div className="relative">
-                <Building2 size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <select value={kid ?? ''} onChange={e => {
-                  const c = clients.find(x => String(x.id) === e.target.value);
-                  setActiveClient(e.target.value || null, c?.companyName ?? null);
+              <FilterSelect
+                variant="elegant" block tall
+                icon={<Building2 size={14} />}
+                ariaLabel="Client / company"
+                value={kid ?? ''}
+                onChange={v => {
+                  const c = clients.find(x => String(x.id) === v);
+                  setActiveClient(v || null, c?.companyName ?? null);
                   setGrup(SEMUA);
-                }} className={`${inputCls} pl-9`}>
-                  {clients.map(c => <option key={c.id} value={String(c.id)}>{c.companyName}</option>)}
-                </select>
-              </div>
+                }}
+                options={clients.map(c => ({ value: String(c.id), label: c.companyName }))}
+              />
             </div>
             <div>
               <label className="mb-1 block text-sm text-foreground">Period</label>
@@ -203,25 +212,34 @@ function ExportPreviewInner({ side }: { side: ArApSide }) {
             </div>
             <div>
               <label className="mb-1 block text-sm text-foreground">{cfg.party} Group</label>
-              <div className="relative">
-                <Users size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <select value={grup} onChange={e => setGrup(e.target.value)} className={`${inputCls} pl-9`}>
-                  {jenis !== 'statement' && <option value={SEMUA}>All {cfg.parties}</option>}
-                  {jenis !== 'statement' && <option value={TELAT}>{cfg.parties} with Overdue Balance</option>}
-                  {daftarPihak.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                </select>
-              </div>
+              <FilterSelect
+                variant="elegant" block tall
+                icon={<Users size={14} />}
+                ariaLabel={`${cfg.party} group`}
+                value={grup}
+                onChange={setGrup}
+                options={[
+                  ...(jenis !== 'statement' ? [{ value: SEMUA, label: `All ${cfg.parties}` }, { value: TELAT, label: `${cfg.parties} with Overdue Balance` }] : []),
+                  ...daftarPihak.map(p => ({ value: p.name, label: p.name })),
+                ]}
+              />
             </div>
             <Toggle checked={ringkasan} onChange={setRingkasan} label="Include Aging Summary" hint="Show the summary by aging bucket" disabled={jenis === 'open_list'} />
             <Toggle checked={nol} onChange={setNol} label={`Include Zero Balance ${cfg.parties}`} hint={`List ${cfg.parties.toLowerCase()} whose balance is fully settled`} disabled={jenis !== 'aging' || grup !== SEMUA} />
             <Toggle checked={detail} onChange={setDetail} label={`Include ${cfg.doc} Details`} hint={`List the open ${cfg.docs.toLowerCase()} under each ${cfg.party.toLowerCase()}`} disabled={jenis !== 'aging'} />
             <div>
               <label className="mb-1 block text-sm text-foreground">Paper Size</label>
-              <select value={kertas} onChange={e => setKertas(e.target.value as PaperSize)} className={inputCls}>
-                <option value="a4">A4 (210 x 297 mm)</option>
-                <option value="letter">Letter (216 x 279 mm)</option>
-                <option value="legal">Legal (216 x 356 mm)</option>
-              </select>
+              <FilterSelect
+                variant="elegant" block tall
+                ariaLabel="Paper size"
+                value={kertas}
+                onChange={v => setKertas(v as PaperSize)}
+                options={[
+                  { value: 'a4', label: 'A4 (210 x 297 mm)' },
+                  { value: 'letter', label: 'Letter (216 x 279 mm)' },
+                  { value: 'legal', label: 'Legal (216 x 356 mm)' },
+                ]}
+              />
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-foreground">Orientation</span>

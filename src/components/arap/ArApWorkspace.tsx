@@ -21,8 +21,8 @@ import {
   type ArApDoc, type ArApOverview, type ArApSide, type CollectionsReport, type Settlement,
 } from '@/lib/receivablesPayablesStore';
 import { downloadAgingXlsx, downloadDocsCsv, downloadDocsXlsx } from './arapExport';
-import { btnOutline, btnPrimary, Menu, MenuItem } from './arapUi';
-import { tabBadgeCls, tabBarCls, tabCls, tabListCls } from '@/components/shared/moduleUi';
+import { btnOutline, btnPrimary, Menu, MenuItem, tabBadgeCls, tabBarCls, tabCls, tabListCls } from './arapSalesUi';
+import PageHeading from '@/components/shared/PageHeading';
 import OverviewTab from './OverviewTab';
 import InvoicesTab from './InvoicesTab';
 import AgingTab from './AgingTab';
@@ -92,13 +92,12 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
 
   return (
     <div className="min-h-screen bg-background pb-16">
-      <div className="mx-auto max-w-screen-2xl space-y-5 px-4 py-6 sm:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{cfg.title}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{cfg.subtitle}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="mx-auto max-w-screen-2xl space-y-5 px-6 py-5 lg:px-8 xl:px-10">
+        <PageHeading
+          title={cfg.title}
+          description={cfg.subtitle}
+          actions={(
+            <>
             <Link href={cfg.createDocHref} className={btnPrimary}><Plus size={16} /> {cfg.createDocLabel}</Link>
             <Link href={settlePath} className={btnOutline}><CreditCard size={16} /> Record {cfg.settle}</Link>
             <Menu width="w-64" button={open => (
@@ -115,12 +114,13 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
                 </>
               )}
             </Menu>
-          </div>
-        </div>
+            </>
+          )}
+        />
 
-        {!kid && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
+        {!kid && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Select a client first (Switch Company in the top bar).</div>}
         {error && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             <span>{error}</span>
             <button type="button" onClick={refreshAll} className="font-semibold underline hover:no-underline">Retry</button>
           </div>
@@ -145,15 +145,15 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
             })}
           </nav>
           <div className="flex items-center gap-2 pb-2 lg:pb-0">
-            <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-500">
               <CalendarDays size={14} /> As of
               <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
-                className="bg-transparent text-xs font-medium text-foreground focus:outline-none" />
+                className="bg-transparent text-xs font-medium text-neutral-900 focus:outline-none" />
             </label>
             {asOf !== todayIso() && (
-              <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-[#0F7D4E] hover:underline">Today</button>
+              <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-blue-700 hover:underline">Today</button>
             )}
-            <button type="button" onClick={refreshAll} title="Refresh" className="rounded-lg p-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+            <button type="button" onClick={refreshAll} title="Refresh" className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">
               <RefreshCcw size={15} className={overview.loading || docs.loading ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -190,10 +190,10 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
 function Delta({ now, prev, goodWhenDown, unit = 'pct', suffix }: {
   now: number | null; prev: number | null; goodWhenDown: boolean; unit?: 'pct' | 'abs'; suffix: string;
 }) {
-  if (now === null || prev === null) return <span className="text-[11px] text-muted-foreground">{suffix}</span>;
+  if (now === null || prev === null) return <span className="text-[11px] text-neutral-500">{suffix}</span>;
   const selisih = unit === 'pct' ? pctChange(now, prev) : now - prev;
   if (selisih === null || Math.abs(selisih) < 0.05) {
-    return <span className="text-[11px] text-muted-foreground">{suffix.startsWith('vs') ? `No change ${suffix}` : suffix}</span>;
+    return <span className="text-[11px] text-neutral-500">{suffix.startsWith('vs') ? `No change ${suffix}` : suffix}</span>;
   }
   const naik = selisih > 0;
   const baik = goodWhenDown ? !naik : naik;
@@ -202,7 +202,7 @@ function Delta({ now, prev, goodWhenDown, unit = 'pct', suffix }: {
   return (
     <span className="inline-flex items-center gap-2 text-[11px]">
       <span className={`inline-flex items-center gap-0.5 font-semibold ${baik ? 'text-emerald-600' : 'text-rose-600'}`}><Ikon size={12} /> {teks}</span>
-      <span className="text-muted-foreground">{suffix}</span>
+      <span className="text-neutral-500">{suffix}</span>
     </span>
   );
 }
@@ -215,17 +215,16 @@ function KartuGrid({ kartu, loading }: { kartu: Kartu[]; loading: boolean }) {
       {kartu.map(c => {
         const Ikon = c.icon;
         return (
-          <div key={c.label} className={`rounded-2xl border p-4 shadow-sm ${c.danger ? 'border-rose-100 bg-rose-50/40' : 'border-border bg-card'}`}>
-            <div className="flex items-start gap-3">
-              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${c.tone}`}><Ikon size={20} /></span>
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{c.label}</p>
-                {loading ? <div className="mt-1 h-6 w-28 animate-pulse rounded bg-slate-100" /> : (
-                  <p className={`mt-0.5 truncate text-lg font-bold ${c.danger ? 'text-rose-600' : 'text-foreground'}`}>{c.value}</p>
-                )}
-                <div className="mt-1">{c.delta}</div>
-              </div>
+          <div key={c.label} className="relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={c.label}>{c.label}</p>
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200"><Ikon size={16} /></span>
             </div>
+            {loading ? <div className="mt-2 h-6 w-28 animate-pulse rounded bg-neutral-100" /> : (
+              <p className={`mt-1 truncate text-lg font-semibold tabular-nums tracking-tight ${c.danger ? 'text-rose-600' : 'text-neutral-900'}`}>{c.value}</p>
+            )}
+            <div className="mt-1 min-h-4">{c.delta}</div>
           </div>
         );
       })}
@@ -238,21 +237,21 @@ function CollectionKpiRow({ ov, col, loading }: { ov: ArApOverview | null; col: 
   const p = col?.performance;
   const kartu: Kartu[] = [
     {
-      label: 'Total Receivables', value: rupiah(k?.total_outstanding), icon: Wallet, tone: 'bg-sky-50 text-sky-600',
+      label: 'Total Receivables', value: rupiah(k?.total_outstanding), icon: Wallet, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={k?.total_outstanding ?? null} prev={k?.total_outstanding_prev ?? null} goodWhenDown suffix="vs last month-end" />,
     },
     {
-      label: 'Collected This Month', value: rupiah(p?.collected), icon: History, tone: 'bg-emerald-50 text-emerald-600',
+      label: 'Collected This Month', value: rupiah(p?.collected), icon: History, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={p?.collected ?? null} prev={p?.collected_prev ?? null} goodWhenDown={false} suffix="vs last month" />,
     },
     {
-      label: 'Promise to Pay', value: rupiah(p?.promise_to_pay), icon: Handshake, tone: 'bg-indigo-50 text-indigo-600',
-      delta: <span className="text-[11px] text-muted-foreground"><b className="text-sky-700">{p?.promise_count ?? 0} accounts</b> in commitment</span>,
+      label: 'Promise to Pay', value: rupiah(p?.promise_to_pay), icon: Handshake, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
+      delta: <span className="text-[11px] text-neutral-500"><b className="text-sky-700">{p?.promise_count ?? 0} accounts</b> in commitment</span>,
     },
     {
-      label: 'High Priority Accounts', value: `${p?.high_priority_count ?? 0} customers`, icon: UserRound, tone: 'bg-rose-50 text-rose-600',
+      label: 'High Priority Accounts', value: `${p?.high_priority_count ?? 0} customers`, icon: UserRound, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       danger: (p?.high_priority_count ?? 0) > 0,
-      delta: <span className="text-[11px] text-muted-foreground">{rupiah(p?.high_priority_amount)} · {(p?.high_priority_pct ?? 0).toFixed(0)}% of receivables</span>,
+      delta: <span className="text-[11px] text-neutral-500">{rupiah(p?.high_priority_amount)} · {(p?.high_priority_pct ?? 0).toFixed(0)}% of receivables</span>,
     },
   ];
   return <KartuGrid kartu={kartu} loading={loading} />;
@@ -263,26 +262,26 @@ function KpiRow({ side, ov, loading, variant }: { side: ArApSide; ov: ArApOvervi
   const k = ov?.kpi;
   const kartu: Kartu[] = [
     {
-      label: cfg.kpi.total, value: rupiah(k?.total_outstanding), icon: Wallet, tone: 'bg-sky-50 text-sky-600',
+      label: cfg.kpi.total, value: rupiah(k?.total_outstanding), icon: Wallet, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={k?.total_outstanding ?? null} prev={k?.total_outstanding_prev ?? null} goodWhenDown suffix="vs last month-end" />,
     },
     {
-      label: cfg.kpi.overdue, value: rupiah(k?.overdue), icon: Timer, tone: 'bg-rose-50 text-rose-600', danger: (k?.overdue ?? 0) > 0,
+      label: cfg.kpi.overdue, value: rupiah(k?.overdue), icon: Timer, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200', danger: (k?.overdue ?? 0) > 0,
       delta: <Delta now={k?.overdue ?? null} prev={k?.overdue_prev ?? null} goodWhenDown suffix={`${k?.overdue_count ?? 0} ${(k?.overdue_count ?? 0) === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()} overdue`} />,
     },
     variant === 'invoices' ? {
-      label: `Open ${cfg.docs} (Not Yet Due)`, value: rupiah((k?.total_outstanding ?? 0) - (k?.overdue ?? 0)), icon: FileText, tone: 'bg-emerald-50 text-emerald-600',
-      delta: <span className="text-[11px] text-muted-foreground">{(k?.open_count ?? 0) - (k?.overdue_count ?? 0)} {cfg.docs.toLowerCase()} not yet due</span>,
+      label: `Open ${cfg.docs} (Not Yet Due)`, value: rupiah((k?.total_outstanding ?? 0) - (k?.overdue ?? 0)), icon: FileText, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
+      delta: <span className="text-[11px] text-neutral-500">{(k?.open_count ?? 0) - (k?.overdue_count ?? 0)} {cfg.docs.toLowerCase()} not yet due</span>,
     } : {
-      label: cfg.kpi.month, value: rupiah(k?.collected_month), icon: History, tone: 'bg-emerald-50 text-emerald-600',
+      label: cfg.kpi.month, value: rupiah(k?.collected_month), icon: History, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={k?.collected_month ?? null} prev={k?.collected_prev_month ?? null} goodWhenDown={false} suffix="vs last month" />,
     },
     {
-      label: cfg.kpi.avgDays, value: k?.avg_days_to_settle != null ? `${Math.round(k.avg_days_to_settle)} days` : '—', icon: ListChecks, tone: 'bg-amber-50 text-amber-600',
+      label: cfg.kpi.avgDays, value: k?.avg_days_to_settle != null ? `${Math.round(k.avg_days_to_settle)} days` : '—', icon: ListChecks, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={k?.avg_days_to_settle ?? null} prev={k?.avg_days_to_settle_prev ?? null} goodWhenDown={side === 'ar'} unit="abs" suffix="vs last month" />,
     },
     {
-      label: cfg.kpi.parties, value: String(k?.parties_with_balance ?? 0), icon: Users, tone: 'bg-indigo-50 text-indigo-600',
+      label: cfg.kpi.parties, value: String(k?.parties_with_balance ?? 0), icon: Users, tone: 'bg-neutral-100 text-neutral-700 ring-1 ring-neutral-200',
       delta: <Delta now={k?.parties_with_balance ?? null} prev={k?.parties_with_balance_prev ?? null} goodWhenDown unit="abs" suffix="vs last month-end" />,
     },
   ];
@@ -292,9 +291,8 @@ function KpiRow({ side, ov, loading, variant }: { side: ArApSide; ov: ArApOvervi
 /** Pembungkus <Suspense> untuk halaman (useSearchParams). */
 export function ArApWorkspacePage({ side }: { side: ArApSide }) {
   return (
-    <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+    <React.Suspense fallback={<div className="p-6 text-sm text-neutral-500">Loading...</div>}>
       <ArApWorkspace side={side} />
     </React.Suspense>
   );
 }
-

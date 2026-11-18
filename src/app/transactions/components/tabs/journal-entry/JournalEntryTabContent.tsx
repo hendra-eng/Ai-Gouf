@@ -47,7 +47,7 @@ export default function JournalEntryTabContent() {
           onExportPDF={handleExportPDF}
           onExportGLSnapshot={handleExportGLSnapshot}
         />
-        <button className="px-3 py-1.5 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95">
+        <button className="px-3 py-1.5 text-sm font-semibold bg-neutral-800 text-white rounded-lg hover:opacity-90 transition-opacity duration-150 active:scale-95">
           + New Journal Entry
         </button>
       </div>

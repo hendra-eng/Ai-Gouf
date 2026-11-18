@@ -31,6 +31,7 @@ import { btnOutline, btnPrimary, btnSmall, inputCls, Menu, MenuItem } from './ar
 import { Label, MoneyInput } from './SettlementForm';
 import CustomerModal from './CustomerModal';
 import { CurrencySelect, InfoKursTeks, RateInput, useMasterRate } from './CurrencyRateFields';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 const TERMIN_DEFAULT = ['Due on Receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 45', 'Net 60', 'Net 90'];
 const MAKS_CATATAN = 500;
@@ -646,9 +647,13 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
               </div>
               <div>
                 <Label wajib>Payment Terms</Label>
-                <select value={termin} disabled={nonaktif} onChange={e => { setTermin(e.target.value); setTempoManual(false); }} className={inputCls}>
-                  {terminList.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                <FilterSelect
+                  variant="elegant" block tall ariaLabel="Payment terms"
+                  disabled={nonaktif}
+                  value={termin}
+                  onChange={v => { setTermin(v); setTempoManual(false); }}
+                  options={terminList.map(t => ({ value: t, label: t }))}
+                />
               </div>
               <div>
                 <Label wajib>Currency</Label>
@@ -697,9 +702,13 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label wajib>Tax Type</Label>
-                <select value={pajak} disabled={nonaktif} onChange={e => gantiPajak(e.target.value as TaxCode)} className={inputCls}>
-                  {(Object.keys(TAX_LABEL) as TaxCode[]).map(t => <option key={t} value={t}>{TAX_LABEL[t]}</option>)}
-                </select>
+                <FilterSelect
+                  variant="elegant" block tall ariaLabel="Tax type"
+                  disabled={nonaktif}
+                  value={pajak}
+                  onChange={v => gantiPajak(v as TaxCode)}
+                  options={(Object.keys(TAX_LABEL) as TaxCode[]).map(t => ({ value: t, label: TAX_LABEL[t] }))}
+                />
               </div>
               <div>
                 <Label>Tax Inclusive</Label>
@@ -772,22 +781,28 @@ function CreateInvoiceInner({ context }: { context: InvoiceFormContext }) {
                         <MoneyInput value={b.unit_price} disabled={nonaktif} prefix={valas ? mataUang : 'Rp'} onChange={n => ubahBaris(b.key, { unit_price: n })} className="py-0.5" />
                       </td>
                       <td className="px-2 py-2">
-                        <div className="flex">
+                        <div className="flex items-center gap-1.5">
                           <input type="number" min={0} step="any" value={b.discount_value || ''} disabled={nonaktif} placeholder="0"
                             onChange={e => ubahBaris(b.key, { discount_value: Number(e.target.value) })}
-                            className="w-full min-w-0 rounded-l-lg border border-border bg-card px-2 py-2 text-right text-sm focus:outline-none" />
-                          <select value={b.discount_type} disabled={nonaktif} onChange={e => ubahBaris(b.key, { discount_type: e.target.value as DiscountType })}
-                            className="rounded-r-lg border border-l-0 border-border bg-card px-1 text-xs">
-                            <option value="percent">%</option>
-                            <option value="amount">{valas ? mataUang : 'Rp'}</option>
-                          </select>
+                            className="w-full min-w-0 rounded-lg border border-border bg-card px-2 py-2 text-right text-sm focus:outline-none" />
+                          <FilterSelect
+                            variant="elegant" size="md" ariaLabel="Discount type"
+                            disabled={nonaktif}
+                            value={b.discount_type}
+                            onChange={v => ubahBaris(b.key, { discount_type: v as DiscountType })}
+                            options={[{ value: 'percent', label: '%' }, { value: 'amount', label: valas ? mataUang : 'Rp' }]}
+                          />
                         </div>
                         {h.discount > 0 && <p className="mt-1 text-right text-[11px] text-muted-foreground">-{fm(h.discount)}</p>}
                       </td>
                       <td className="px-2 py-2">
-                        <select value={b.tax_code} disabled={nonaktif} onChange={e => ubahBaris(b.key, { tax_code: e.target.value as TaxCode })} className={`${inputCls} py-2`}>
-                          {(Object.keys(TAX_LABEL) as TaxCode[]).map(t => <option key={t} value={t}>{TAX_LABEL[t]}</option>)}
-                        </select>
+                        <FilterSelect
+                          variant="elegant" block size="md" ariaLabel="Tax"
+                          disabled={nonaktif}
+                          value={b.tax_code}
+                          onChange={v => ubahBaris(b.key, { tax_code: v as TaxCode })}
+                          options={(Object.keys(TAX_LABEL) as TaxCode[]).map(t => ({ value: t, label: TAX_LABEL[t] }))}
+                        />
                       </td>
                       <td className="px-2 py-2 pt-4 text-right font-semibold text-foreground">{fm(h.amount)}</td>
                       <td className="px-2 py-2 pt-3 text-center">

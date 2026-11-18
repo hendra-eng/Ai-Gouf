@@ -11,8 +11,9 @@ import {
 import { REPORT_GROUPS } from './arapExport';
 import {
   AgingBadge, btnSmall, Card, DocDrawer, DocStatusLabel, EmptyRow, Menu, MenuItem, Pager, sortRows, SortTh, useSort,
-} from './arapUi';
+} from './arapSalesUi';
 import type { TabId } from './ArApWorkspace';
+import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 
 type Kunci = 'party' | 'no' | 'date' | 'due_date' | 'outstanding' | 'days_overdue' | 'status';
 
@@ -50,26 +51,30 @@ export default function OverviewTab({ cfg, asOf, ov, docs, loading, settlements,
         title={`${cfg.side === 'ar' ? 'Receivable' : 'Payable'} ${cfg.docs}`}
         subtitle={`${cfg.sourceModule} ${cfg.docs.toLowerCase()} with an outstanding balance, their status and aging as of ${fmtDate(asOf)}.`}
         action={<>
-          <label className="flex w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 sm:w-72">
-            <Search size={14} className="text-muted-foreground" />
+          <label className="flex w-full items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 sm:w-72">
+            <Search size={14} className="text-neutral-500" />
             <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${cfg.party.toLowerCase()}, ${cfg.doc.toLowerCase()} number...`}
-              className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none" />
+              className="w-full bg-transparent text-sm placeholder:text-neutral-400 focus:outline-none" />
           </label>
-          <label className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm">
-            <Filter size={14} className="text-muted-foreground" />
-            <select value={status} onChange={e => setStatus(e.target.value as 'all' | DocStatus)} className="bg-transparent text-sm focus:outline-none">
-              <option value="all">All open</option>
-              <option value="overdue">Overdue</option>
-              <option value="partial">Partially paid</option>
-              <option value="open">Not yet due</option>
-            </select>
-          </label>
+          <FilterSelect
+            variant="elegant"
+            icon={<Filter size={14} />}
+            ariaLabel="Filter by status"
+            value={status}
+            onChange={v => setStatus(v as 'all' | DocStatus)}
+            options={[
+              { value: 'all', label: 'All open' },
+              { value: 'overdue', label: 'Overdue' },
+              { value: 'partial', label: 'Partially paid' },
+              { value: 'open', label: 'Not yet due' },
+            ]}
+          />
         </>}
       >
         <div className="overflow-x-auto px-5">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[980px] text-xs">
             <thead>
-              <tr className="border-y border-border bg-slate-50 text-xs text-slate-600">
+              <tr className="bg-neutral-300 text-left text-xs text-black [&>th]:border-y [&>th]:border-neutral-800 [&>th]:py-2 [&>th]:font-bold">
                 <SortTh label={cfg.party} k="party" sort={sort} onSort={onSort} />
                 <SortTh label={`${cfg.doc} No.`} k="no" sort={sort} onSort={onSort} />
                 <SortTh label={`${cfg.doc} Date`} k="date" sort={sort} onSort={onSort} />
@@ -80,16 +85,16 @@ export default function OverviewTab({ cfg, asOf, ov, docs, loading, settlements,
                 <th className="px-3 py-2.5 text-left font-medium">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody className="divide-y divide-neutral-300">
               {loading || halaman.length === 0 ? (
                 <EmptyRow cols={8} loading={loading} text={terbuka.length ? 'No matching items.' : `No outstanding ${cfg.docs.toLowerCase()} as of ${fmtDate(asOf)}. Only posted ${cfg.sourceModule} transactions appear here.`} />
               ) : halaman.map(d => (
-                <tr key={d.id} className="hover:bg-slate-50/60">
-                  <td className="max-w-[220px] truncate px-3 py-2.5 font-medium text-foreground" title={d.party}>{d.party}</td>
-                  <td className="px-3 py-2.5 text-foreground">{d.no}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(d.date)}</td>
-                  <td className={`px-3 py-2.5 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-muted-foreground'}`}>{fmtDate(d.due_date)}</td>
-                  <td className="px-3 py-2.5 font-semibold text-foreground">{rupiah(d.outstanding)}</td>
+                <tr key={d.id} className="hover:bg-neutral-200">
+                  <td className="max-w-[220px] truncate px-3 py-2.5 font-medium text-neutral-900" title={d.party}>{d.party}</td>
+                  <td className="px-3 py-2.5 text-neutral-900">{d.no}</td>
+                  <td className="px-3 py-2.5 text-neutral-500">{fmtDate(d.date)}</td>
+                  <td className={`px-3 py-2.5 ${d.days_overdue > 0 ? 'text-rose-600' : 'text-neutral-500'}`}>{fmtDate(d.due_date)}</td>
+                  <td className="px-3 py-2.5 font-semibold text-neutral-900">{rupiah(d.outstanding)}</td>
                   <td className="px-3 py-2.5"><AgingBadge bucket={d.bucket} /></td>
                   <td className="px-3 py-2.5"><DocStatusLabel status={d.status} /></td>
                   <td className="px-3 py-2.5">
@@ -116,42 +121,42 @@ export default function OverviewTab({ cfg, asOf, ov, docs, loading, settlements,
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card title="Aging Summary" subtitle="Outstanding balance by age (based on due date)."
-          action={<Link href={`${cfg.basePath}/export?as_of=${asOf}`} className={`${btnSmall} text-[#0F7D4E]`}><FileText size={13} /> View Aging Report</Link>}>
+          action={<Link href={`${cfg.basePath}/export?as_of=${asOf}`} className={`${btnSmall} text-neutral-900`}><FileText size={13} /> View Aging Report</Link>}>
           <div className="space-y-3 px-5 pb-5">
             {ringkas.map(({ g, amount }) => {
               const p = totalAging ? (amount / totalAging) * 100 : 0;
               return (
                 <div key={g.key} className="grid grid-cols-[90px_1fr_80px_42px] items-center gap-3 text-sm">
-                  <span className="text-muted-foreground">{g.label}</span>
-                  <span className="text-right font-semibold text-foreground">{rupiah(amount)}</span>
-                  <span className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <span className="text-neutral-500">{g.label}</span>
+                  <span className="text-right font-semibold text-neutral-900">{rupiah(amount)}</span>
+                  <span className="h-2 overflow-hidden rounded-full bg-neutral-100">
                     <span className="block h-full rounded-full" style={{ width: `${p}%`, background: g.color }} />
                   </span>
-                  <span className="text-right text-xs text-muted-foreground">{p.toFixed(0)}%</span>
+                  <span className="text-right text-xs text-neutral-500">{p.toFixed(0)}%</span>
                 </div>
               );
             })}
-            <div className="mt-2 flex items-center justify-between rounded-xl bg-[#ECFDF5] px-4 py-3">
-              <span className="text-sm font-semibold text-foreground">Total {cfg.side === 'ar' ? 'Receivables' : 'Payables'}</span>
-              <span className="text-lg font-bold text-foreground">{rupiah(totalAging)}</span>
+            <div className="mt-2 flex items-center justify-between rounded-lg bg-neutral-100 px-4 py-3">
+              <span className="text-sm font-semibold text-neutral-900">Total {cfg.side === 'ar' ? 'Receivables' : 'Payables'}</span>
+              <span className="text-lg font-semibold text-neutral-900">{rupiah(totalAging)}</span>
             </div>
           </div>
         </Card>
 
         <Card title={`Top Overdue ${cfg.parties}`} subtitle={`${cfg.parties} with the largest overdue balance.`}
-          action={<button type="button" onClick={() => goTab('aging')} className="text-xs font-medium text-[#0F7D4E] hover:underline">See all</button>}>
+          action={<button type="button" onClick={() => goTab('aging')} className="text-xs font-medium text-blue-700 hover:underline">See all</button>}>
           <div className="px-5 pb-5">
             {(ov?.top_overdue ?? []).length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">Nothing overdue as of {fmtDate(asOf)}.</p>
+              <p className="rounded-lg border border-dashed border-neutral-300 px-4 py-10 text-center text-xs text-neutral-500">Nothing overdue as of {fmtDate(asOf)}.</p>
             ) : (
-              <ol className="divide-y divide-border">
+              <ol className="divide-y divide-neutral-300">
                 {ov!.top_overdue.map((t, i) => (
                   <li key={t.party} className="flex items-center gap-3 py-2.5">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-xs font-semibold text-muted-foreground">{i + 1}</span>
-                    <button type="button" onClick={() => goTab('statements', { party: t.party })} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-foreground hover:underline" title={t.party}>{t.party}</button>
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-neutral-300 text-xs font-semibold text-neutral-500">{i + 1}</span>
+                    <button type="button" onClick={() => goTab('statements', { party: t.party })} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-neutral-900 hover:underline" title={t.party}>{t.party}</button>
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-foreground">{rupiah(t.amount)}</p>
-                      <p className="text-[11px] text-muted-foreground">{t.count} {t.count === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()}</p>
+                      <p className="text-sm font-semibold text-neutral-900">{rupiah(t.amount)}</p>
+                      <p className="text-[11px] text-neutral-500">{t.count} {t.count === 1 ? cfg.doc.toLowerCase() : cfg.docs.toLowerCase()}</p>
                     </div>
                     <span className={`inline-flex w-[88px] shrink-0 items-center justify-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${BUCKET_STYLE[t.bucket]}`}>
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: BUCKET_COLOR[t.bucket] }} />
@@ -166,14 +171,17 @@ export default function OverviewTab({ cfg, asOf, ov, docs, loading, settlements,
 
         <Card title={`${cfg.side === 'ar' ? 'Collection' : 'Payment'} Trend`} subtitle={`${cfg.trend.invoiced}, ${cfg.trend.settled.toLowerCase()} and ${cfg.trend.balance.toLowerCase()} per month.`}
           action={
-            <select value={trendMonths} onChange={e => onTrendMonths(Number(e.target.value))} className="rounded-lg border border-border bg-card px-2 py-1 text-xs">
-              <option value={6}>Last 6 months</option>
-              <option value={12}>Last 12 months</option>
-            </select>
+            <FilterSelect
+              variant="elegant"
+              ariaLabel="Trend period"
+              value={String(trendMonths)}
+              onChange={v => onTrendMonths(Number(v))}
+              options={[{ value: '6', label: 'Last 6 months' }, { value: '12', label: 'Last 12 months' }]}
+            />
           }>
           <div className="px-3 pb-4">
             {tren.every(t => !t.invoiced && !t.collected && !t.balance) ? (
-              <p className="px-2 py-14 text-center text-xs text-muted-foreground">No activity in this period.</p>
+              <p className="px-2 py-14 text-center text-xs text-neutral-500">No activity in this period.</p>
             ) : (
               <ResponsiveContainer width="100%" height={230}>
                 <ComposedChart data={tren} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
@@ -182,14 +190,14 @@ export default function OverviewTab({ cfg, asOf, ov, docs, loading, settlements,
                   <YAxis tickFormatter={v => rupiahShort(v)} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={62} />
                   <Tooltip formatter={(v: number) => rupiah(v)} />
                   <Bar dataKey="invoiced" name={cfg.trend.invoiced} fill="#A7F3D0" radius={[4, 4, 0, 0]} maxBarSize={18} />
-                  <Bar dataKey="collected" name={cfg.trend.settled} fill="#0F7D4E" radius={[4, 4, 0, 0]} maxBarSize={18} />
+                  <Bar dataKey="collected" name={cfg.trend.settled} fill="#262626" radius={[4, 4, 0, 0]} maxBarSize={18} />
                   <Line dataKey="balance" name={cfg.trend.balance} stroke="#F59E0B" strokeWidth={2} dot={{ r: 3 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
-            <div className="flex flex-wrap justify-center gap-4 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap justify-center gap-4 text-[11px] text-neutral-500">
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#A7F3D0]" /> {cfg.trend.invoiced}</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#0F7D4E]" /> {cfg.trend.settled}</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-neutral-800" /> {cfg.trend.settled}</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#F59E0B]" /> {cfg.trend.balance}</span>
             </div>
           </div>

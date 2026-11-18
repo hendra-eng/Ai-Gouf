@@ -322,7 +322,7 @@ export default function ImportJournalModal({
                 <span>Required columns not found in file: <strong>{missingColumns.join(', ')}</strong>. At minimum you need JE Number, Date, and Account Code.</span>
               </div>
             )}
-            <button onClick={unduhTemplate} type="button" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+            <button onClick={unduhTemplate} type="button" className="flex items-center gap-1.5 text-xs text-neutral-800 hover:underline">
               <DocumentArrowDownIcon className="w-3.5 h-3.5" /> Download template CSV
             </button>
             <p className="text-xs text-muted-foreground">
@@ -335,7 +335,7 @@ export default function ImportJournalModal({
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
               File <strong className="text-foreground">{fileName}</strong>: {groups.length} journal entries read &mdash;{' '}
-              <span className="text-green-700 font-medium">{balancedGroups.length} ready to import</span>
+              <span className="text-neutral-900 font-medium">{balancedGroups.length} ready to import</span>
               {invalidGroups.length > 0 && <span className="text-red-700 font-medium">, {invalidGroups.length} problematic (skipped)</span>}.
             </p>
             <div className="border border-border rounded-lg overflow-hidden max-h-[420px] overflow-y-auto scrollbar-thin">
@@ -354,7 +354,7 @@ export default function ImportJournalModal({
                 <tbody className="divide-y divide-border">
                   {groups.map(g => (
                     <tr key={g.je_number}>
-                      <td className="px-3 py-2 font-mono text-primary font-medium whitespace-nowrap">{g.je_number}</td>
+                      <td className="px-3 py-2 font-mono text-blue-700 font-medium whitespace-nowrap">{g.je_number}</td>
                       <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{g.entry_date || '-'}</td>
                       <td className="px-3 py-2 max-w-[220px] truncate" title={g.description}>{g.description || '-'}</td>
                       <td className="px-3 py-2 text-center tabular-nums">{g.lines.length}</td>
@@ -362,7 +362,7 @@ export default function ImportJournalModal({
                       <td className="px-3 py-2 text-right tabular-nums">{fmt(g.totalCredit)}</td>
                       <td className="px-3 py-2">
                         {g.balanced ? (
-                          <span className="inline-flex items-center gap-1 text-green-700"><CheckCircleIcon className="w-3.5 h-3.5" /> Ready</span>
+                          <span className="inline-flex items-center gap-1 text-neutral-900"><CheckCircleIcon className="w-3.5 h-3.5" /> Ready</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-red-700" title={g.errors.join(' ')}><XCircleIcon className="w-3.5 h-3.5" /> {g.errors[0]}</span>
                         )}
@@ -378,7 +378,7 @@ export default function ImportJournalModal({
                 onClick={runImport}
                 type="button"
                 disabled={importing || balancedGroups.length === 0}
-                className="flex-1 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:opacity-90 transition-colors disabled:opacity-50"
+                className="flex-1 py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors disabled:opacity-50"
               >
                 {importing ? 'Importing…' : `Import ${balancedGroups.length} Journal Entries`}
               </button>
@@ -388,7 +388,7 @@ export default function ImportJournalModal({
 
         {step === 'result' && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+            <div className="flex items-center gap-2 bg-neutral-100 border border-neutral-300 rounded-lg p-3 text-sm text-neutral-900">
               <CheckCircleIcon className="w-5 h-5 flex-shrink-0" />
               {resultMessage || `${successCount} of ${results.length} journal entries imported successfully.`}
             </div>
@@ -404,10 +404,10 @@ export default function ImportJournalModal({
                 <tbody className="divide-y divide-border">
                   {results.map(r => (
                     <tr key={r.je_number}>
-                      <td className="px-3 py-2 font-mono text-primary font-medium whitespace-nowrap">{r.je_number}</td>
+                      <td className="px-3 py-2 font-mono text-blue-700 font-medium whitespace-nowrap">{r.je_number}</td>
                       <td className="px-3 py-2">
                         {r.ok ? (
-                          <span className="inline-flex items-center gap-1 text-green-700"><CheckCircleIcon className="w-3.5 h-3.5" /> Success</span>
+                          <span className="inline-flex items-center gap-1 text-neutral-900"><CheckCircleIcon className="w-3.5 h-3.5" /> Success</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-red-700"><XCircleIcon className="w-3.5 h-3.5" /> Failed</span>
                         )}
@@ -418,7 +418,7 @@ export default function ImportJournalModal({
                 </tbody>
               </table>
             </div>
-            <button onClick={onClose} type="button" className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:opacity-90 transition-colors">Done</button>
+            <button onClick={onClose} type="button" className="w-full py-2 bg-neutral-800 text-white rounded-lg text-xs font-semibold hover:bg-neutral-700 transition-colors">Done</button>
           </div>
         )}
       </div>
