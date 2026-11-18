@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Link2, X, Zap, EyeOff, Database, FileText, Info, Scale, Wand2, Search, Sparkles } from 'lucide-react';
 import CashBankTabs from '../components/CashBankTabs';
 import NonInvoiceForm from '../components/NonInvoiceForm';
+import BookMatchPanel from '../components/BookMatchPanel';
 import AutoRulesPanel from '../components/AutoRulesPanel';
 import { SalesCardHeader } from '../components/salesStyleKit';
 import { formatIDR } from '../lib/formatMoney';
@@ -326,7 +327,7 @@ export default function ReconciliationPage() {
   const { overview } = useBcOverview(activeClientId ? String(activeClientId) : null);
   const {
     saran, saranSelisih, pengaturanAdjustment, applying, pembayaran, loading, error, busy, autoRunning,
-    cocokkan, catatNonInvoice, transfer, pasangkanTransfer, transferMenunggu, akunLawan, batalkan, autoCocokkan, terapkanSelisih, simpanPengaturanAdjustment, muatUlang,
+    cocokkan, catatNonInvoice, transfer, pasangkanTransfer, tautkanTransaksi, transferMenunggu, akunLawan, batalkan, autoCocokkan, terapkanSelisih, simpanPengaturanAdjustment, muatUlang,
     aturan, saranAturan, aturanPerMutasi, autoSetelahUpload, simpanAturan, hapusAturan, simpanAutoSetelahUpload,
     autoSettings, simpanAutoSettings,
   } = useBankReconciliation();
@@ -584,6 +585,19 @@ export default function ReconciliationPage() {
       toast.success('Paired with the transfer. No new journal was created.');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to pair the transfer.');
+    }
+  };
+
+  // Rekonsiliasi manual ke transaksi buku yang sudah dicatat (tanpa jurnal baru).
+  const handleTautkan = async (mutationId: string, transactionId: string, txNumber: string) => {
+    const m = mutations.find((x) => x.id === mutationId);
+    if (!m) return;
+    try {
+      await tautkanTransaksi(m, transactionId);
+      toast.success(`Reconciled with ${txNumber}. No new journal was created.`);
+      setSelectedMutation(null);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to reconcile the bank line.');
     }
   };
 
@@ -1090,7 +1104,15 @@ export default function ReconciliationPage() {
               )}
             </div>
             {mutasiTerpilih && (
-              <div className="border-b border-neutral-200 p-3">
+              <div className="space-y-3 border-b border-neutral-200 p-3">
+                <BookMatchPanel
+                  key={`book-${mutasiTerpilih.id}`}
+                  clientId={activeClientId ? String(activeClientId) : null}
+                  mutationId={mutasiTerpilih.id}
+                  nominal={mutasiTerpilih.credit || mutasiTerpilih.debit}
+                  busy={busy.has(mutasiTerpilih.id)}
+                  onLink={(txId, txNo) => handleTautkan(mutasiTerpilih.id, txId, txNo)}
+                />
                 <NonInvoiceForm
                   key={mutasiTerpilih.id}
                   nominal={mutasiTerpilih.credit || mutasiTerpilih.debit}

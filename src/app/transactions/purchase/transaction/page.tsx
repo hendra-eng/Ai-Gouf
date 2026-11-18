@@ -6,7 +6,8 @@ import PurchaseTabs from '@/app/transactions/purchase/components/PurchaseTabs';
 import { runPurchaseStatusAction } from '@/app/transactions/purchase/components/purchaseStatusActions';
 import type { PurchaseStatus, PaymentStatus } from '@/data/purchaseData';
 import { buildPurchaseListReport, buildPurchaseDetailReport } from '@/app/transactions/purchase/components/purchasePrintReports';
-import { Search, ShoppingBag, Clock, CheckCircle, FileCheck, AlertTriangle, CircleDollarSign, MoreHorizontal, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, FileText, Eye, Edit, Plus } from 'lucide-react';
+import { Search, ShoppingBag, Clock, CheckCircle, FileCheck, AlertTriangle, CircleDollarSign, MoreHorizontal, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, FileText, Eye, Edit, Plus, Calendar } from 'lucide-react';
+import { formatTanggalSingkat } from '@/lib/salesStore';
 import FilterSelect from '@/app/transactions/purchase/components/FilterSelect';
 import PrintMenu from '@/components/shared/PrintMenu';
 import { printReport, type PrintFormat } from '@/lib/printExport';
@@ -169,6 +170,10 @@ export default function PurchaseTransactionPage() {
   const [paymentFilter, setPaymentFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [vendorFilter, setVendorFilter] = useState('All');
+  // Filter periode tanggal (sama dengan Sales Transaction). Kosong = semua tanggal.
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [sortField, setSortField] = useState('purchaseDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedRow, setSelectedRow] = useState<typeof purchaseTransactions[0] | null>(null);
@@ -200,6 +205,9 @@ export default function PurchaseTransactionPage() {
     if (paymentFilter !== 'All') data = data.filter(r => r.paymentStatus === paymentFilter);
     if (categoryFilter !== 'All') data = data.filter(r => r.category === categoryFilter);
     if (vendorFilter !== 'All') data = data.filter(r => r.vendor === vendorFilter);
+    // purchaseDate = 'YYYY-MM-DD' (bisa kosong untuk transaksi tanpa tanggal -> ikut tersaring kalau periode diisi).
+    if (dateStart) data = data.filter(r => !!r.purchaseDate && r.purchaseDate.slice(0, 10) >= dateStart);
+    if (dateEnd) data = data.filter(r => !!r.purchaseDate && r.purchaseDate.slice(0, 10) <= dateEnd);
     data.sort((a, b) => {
       const av = (a as unknown as Record<string, unknown>)[sortField] as string | number;
       const bv = (b as unknown as Record<string, unknown>)[sortField] as string | number;
@@ -208,12 +216,12 @@ export default function PurchaseTransactionPage() {
       return 0;
     });
     return data;
-  }, [purchaseTransactions, search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  }, [purchaseTransactions, search, statusFilter, paymentFilter, categoryFilter, vendorFilter, dateStart, dateEnd, sortField, sortDir]);
   // Paging gaya tab Purchase Source Data (pilih baris per halaman 10/25/50). Kembali ke hal. 1 tiap filter/sort berubah.
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [menuRowId, setMenuRowId] = useState<string | number | null>(null);
-  useEffect(() => { setCurrentPage(1); }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, sortField, sortDir]);
+  useEffect(() => { setCurrentPage(1); }, [search, statusFilter, paymentFilter, categoryFilter, vendorFilter, dateStart, dateEnd, sortField, sortDir]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageSafe = Math.min(currentPage, totalPages);
   const paginated = filtered.slice((pageSafe - 1) * pageSize, pageSafe * pageSize);
@@ -339,6 +347,38 @@ export default function PurchaseTransactionPage() {
         {/* Filters -- baris terpisah di atas tabel, sama dengan Sales Transaction */}
         <div className="card relative px-0 pb-0 pt-3">
           <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <button onClick={() => setShowDatePicker(v => !v)} className={`flex items-center gap-1.5 text-xs border rounded-[6px] px-3 py-1.5 bg-card transition-colors ${showDatePicker ? 'border-neutral-700 ring-2 ring-neutral-300' : 'border-neutral-300 hover:border-neutral-500 hover:bg-neutral-50'}`}>
+                <Calendar size={12} className="text-neutral-500" />
+                <span className="text-neutral-500">Date Period</span>
+                <span className="font-medium text-neutral-900">
+                  {dateStart ? formatTanggalSingkat(dateStart) : 'All'}
+                  {dateEnd ? ` – ${formatTanggalSingkat(dateEnd)}` : ''}
+                </span>
+              </button>
+              {showDatePicker && (
+                <div className="absolute z-30 top-full mt-1 left-0 w-64 space-y-2 rounded-[6px] border border-neutral-300 bg-white p-3 shadow-xl">
+                  <div>
+                    <label className="text-[11px] font-medium text-neutral-500">From</label>
+                    <input type="date" value={dateStart} max={dateEnd || undefined} onChange={ev => setDateStart(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-neutral-500">To</label>
+                    <input type="date" value={dateEnd} min={dateStart || undefined} onChange={ev => setDateEnd(ev.target.value)} className="w-full text-xs border border-neutral-300 rounded-[6px] px-2 py-1.5 bg-white text-neutral-900 mt-0.5 focus:outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-300" />
+                  </div>
+                  <div className="flex gap-2">
+                    {(dateStart || dateEnd) && (
+                      <button onClick={() => { setDateStart(''); setDateEnd(''); setShowDatePicker(false); }} className="flex-1 rounded-[6px] border border-neutral-300 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+                        Clear
+                      </button>
+                    )}
+                    <button onClick={() => setShowDatePicker(false)} className="flex-1 rounded-[6px] bg-neutral-800 py-2 text-xs font-semibold text-white transition-colors hover:bg-neutral-700">
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <FilterSelect
               variant="elegant"
               value={statusFilter}

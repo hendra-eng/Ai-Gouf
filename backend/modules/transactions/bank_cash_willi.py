@@ -2914,6 +2914,85 @@ def pasangkan_transfer(mutation_id: UUID, payload: PasangkanTransferRequest,
     return _respon(aksi, "Transfer paired with the bank line.")
 
 
+# ------------------------------------------------------------
+# [BARU 2026-11-18] Rekonsiliasi manual ke transaksi BUKU yang sudah ada.
+# Transaksi Cash & Bank yang dicatat manual (Cash Receipt / Cash Payment, AR receipt, AP payment)
+# ditautkan ke baris mutasi bank TANPA membuat jurnal baru -- mencegah jurnal dobel kalau user
+# sudah membukukan transaksinya sebelum rekening koran di-upload. Unmatch hanya melepas tautan.
+# ------------------------------------------------------------
+
+def _tx_tertaut(session, tx: Any) -> bool:
+    """True kalau transaksi sudah punya mutasi bank (dibuat dari mutasi, atau sudah ditautkan)."""
+    if tx.mutation_id:
+        return True
+    return session.query(MU.id).filter(MU.transaction_id == tx.id, MU.deleted_at.is_(None)).first() is not None
+
+
+@router.get("/mutations/{mutation_id}/book-candidates",
+            summary="Transaksi buku (Cash & Bank manual) yang bisa ditautkan ke mutasi ini -- tidak menulis apa pun")
+def kandidat_buku(mutation_id: UUID, client_id: UUID = Query(...), _u: Dict[str, Any] = Depends(get_current_user_v1)):
+    kid = str(client_id)
+
+    def aksi(session):
+        m = _ambil_mutasi(session, kid, mutation_id)
+        arah = "payment" if _dec(m.debit) > 0 else "receipt"
+        nominal = _nominal_mutasi(m)
+        txs = session.query(TX).filter(
+            TX.client_id == kid, TX.deleted_at.is_(None), TX.bank_coa_id == m.bank_coa_id, TX.direction == arah,
+            TX.status.in_(("draft", "approved", "posted")), TX.mutation_id.is_(None),
+        ).order_by(TX.tx_date.desc()).limit(300).all()
+        hasil = []
+        for t in txs:
+            if _tx_tertaut(session, t):
+                continue
+            selisih = abs(_dec(t.amount) - nominal)
+            hasil.append({
+                "transaction_id": t.id, "tx_number": t.tx_number, "tx_date": t.tx_date.isoformat() if t.tx_date else None,
+                "amount": float(_dec(t.amount)), "status": t.status, "kind": t.kind, "category": t.category,
+                "counterparty": t.counterparty, "description": t.description, "reference": t.reference, "source": t.source,
+                "exact_amount": selisih <= Decimal("0.005"),
+                "days_apart": abs((t.tx_date - m.mutation_date).days) if t.tx_date and m.mutation_date else None,
+            })
+        # Nominal sama dulu, lalu tanggal terdekat.
+        hasil.sort(key=lambda x: (not x["exact_amount"], x["days_apart"] if x["days_apart"] is not None else 9999))
+        return hasil[:100]
+    return _respon(aksi)
+
+
+class TautkanTransaksiRequest(BaseModel):
+    client_id: UUID
+    transaction_id: UUID
+
+
+@router.post("/mutations/{mutation_id}/link-transaction",
+             summary="Rekonsiliasi manual: tautkan mutasi ke transaksi Cash & Bank yang sudah dicatat (tanpa jurnal baru)")
+def tautkan_transaksi(mutation_id: UUID, payload: TautkanTransaksiRequest,
+                      current_user: Dict[str, Any] = Depends(_require_level_v1(LEVEL_INPUT))):
+    kid = str(payload.client_id)
+
+    def aksi(session):
+        _kunci_klien(session, kid)
+        m = _ambil_mutasi(session, kid, mutation_id)
+        if m.status != "unmatched":
+            raise _Gagal("This bank line is already matched or ignored.", kode="CONFLICT", status_code=409)
+        tx = _ambil_tx(session, kid, payload.transaction_id)
+        if tx.status not in ("draft", "approved", "posted"):
+            raise _Gagal(f"{tx.tx_number} is {tx.status} and cannot be reconciled.")
+        if str(tx.bank_coa_id) != str(m.bank_coa_id):
+            raise _Gagal(f"{tx.tx_number} is recorded on another bank/cash account.")
+        arah = "payment" if _dec(m.debit) > 0 else "receipt"
+        if tx.direction != arah:
+            raise _Gagal(f"{tx.tx_number} is a {tx.direction}, but this bank line is money {'out' if arah == 'payment' else 'in'}.")
+        if abs(_dec(tx.amount) - _nominal_mutasi(m)) > Decimal("0.005"):
+            raise _Gagal(f"Amount differs: {tx.tx_number} is {_f(tx.amount):,.2f}, the bank line is {_f(_nominal_mutasi(m)):,.2f}.")
+        if _tx_tertaut(session, tx):
+            raise _Gagal(f"{tx.tx_number} is already reconciled with another bank line.", kode="CONFLICT", status_code=409)
+        _pasangkan(m, tx, current_user)
+        session.flush()
+        return _tx_dict(session, tx, mutasi=m)
+    return _respon(aksi, "Bank line reconciled with the existing transaction (no new journal).")
+
+
 @router.get("/transfers/pending", summary="Transfer yang sudah dicatat dari akun lawan dan menunggu mutasi di akun ini (saran pasangan)")
 def transfer_menunggu(client_id: UUID = Query(...), bank_coa_id: Optional[UUID] = Query(None),
                       _u: Dict[str, Any] = Depends(get_current_user_v1)):
@@ -2955,7 +3034,9 @@ def batal_cocok(mutation_id: UUID, payload: KlienRequest, current_user: Dict[str
             raise _Gagal("This mutation is not matched.")
         tx = session.get(TX, m.transaction_id)
         # [BARU] Sisi pasangan sebuah transfer (bukan pemilik transaksi): cukup dilepas, jurnal transfer tetap.
-        if tx is not None and tx.deleted_at is None and tx.mutation_id and tx.mutation_id != m.id:
+        # [BARU 2026-11-18] Sama untuk transaksi buku yang ditautkan manual (bukan dibuat dari Bank Feed).
+        if tx is not None and tx.deleted_at is None and (
+                (tx.mutation_id and tx.mutation_id != m.id) or (not tx.mutation_id and tx.source != "bank_feed")):
             m.status, m.transaction_id, m.auto_rule_skip = "unmatched", None, True
             m.edited_at, m.edited_by = _sekarang(), current_user.get("id")
             return {"id": m.id, "status": m.status}

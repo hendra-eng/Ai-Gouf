@@ -61,6 +61,32 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine)
 
 
+# ------------------------------------------------------------
+# Kunci periode (Year-End Closing). Trigger DB (migrations/33-*.py) menolak
+# perubahan transaksi POSTED di periode yang sudah ditutup dengan pesan
+# berawalan "PERIOD_LOCKED:". Banyak fungsi CRUD di file ini menelan error
+# DB (return None -> endpoint menjawab "not found"), jadi pesannya dicatat di
+# sini & middleware di main.py mengganti respon request itu jadi 409 yang
+# jelas. `WADAH_KUNCI_PERIODE` diisi dict baru per request oleh middleware.
+# (Dipulihkan 2026-11-18: sempat hilang di merge hendra; pesan_periode_terkunci
+# sendiri didefinisikan lebih bawah -- dipanggil saat runtime, bukan saat import.)
+# ------------------------------------------------------------
+import contextvars
+from sqlalchemy import event as _sa_event
+
+WADAH_KUNCI_PERIODE: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("wadah_kunci_periode", default=None)
+
+
+@_sa_event.listens_for(engine, "handle_error")
+def _catat_periode_terkunci(ctx):
+    wadah = WADAH_KUNCI_PERIODE.get()
+    if wadah is None:
+        return
+    pesan = pesan_periode_terkunci(ctx.original_exception)
+    if pesan:
+        wadah["pesan"] = pesan
+
+
 # ============================================================
 # [FIX -- POINT 4] BULK UPSERT HELPER (dialect-aware)
 # ============================================================
@@ -7734,6 +7760,7 @@ def ambil_baris_jurnal_posted_transaksi(
     sampai_tanggal: Optional[date] = None,
     management_client_id: Optional[str] = None,
     termasuk_belum_posted: bool = False,
+    termasuk_penutup: bool = False,
 ) -> List[Dict[str, Any]]:
     """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
@@ -7747,7 +7774,13 @@ def ambil_baris_jurnal_posted_transaksi(
     `termasuk_belum_posted=True` (HANYA dipakai halaman General Ledger): semua
     transaksi yang sudah masuk Journal Preview (draft/pending/approved) ikut
     dibaca; yang rejected/void/cancelled/dihapus tetap dikeluarkan. Default False
-    = perilaku lama (hanya posted) untuk COA, Financial Statements, dll."""
+    = perilaku lama (hanya posted) untuk COA, Financial Statements, dll.
+
+    Jurnal penutup tahun buku (source_type SOURCE_TYPE_TUTUP_BUKU) hanya ikut
+    kalau `termasuk_penutup=True` (General Ledger) -- Financial Statements
+    menghitung laba ditahan dari akun P&L, jadi jurnal itu tidak dibaca agar
+    laba tidak terhitung dua kali & P&L tahun yang ditutup tidak jadi nol.
+    (Dipulihkan 2026-11-18: sempat hilang di merge c0b5121.)"""
     if not client_id and not management_client_id:
         raise ValueError("client_id atau management_client_id wajib diisi.")
 
@@ -7773,9 +7806,11 @@ def ambil_baris_jurnal_posted_transaksi(
         )
         if sampai_tanggal:
             q = q.filter(JournalEntryDraft.entry_date <= sampai_tanggal)
+        if not termasuk_penutup:
+            q = q.filter(JournalEntryDraft.source_type != SOURCE_TYPE_TUTUP_BUKU)
         for draft, line in q.order_by(JournalEntryDraft.entry_date, JournalEntryDraftLine.line_no).all():
             hasil.append({
-                "sumber": "journal_entry",
+                "sumber": "year_end_closing" if draft.source_type == SOURCE_TYPE_TUTUP_BUKU else "journal_entry",
                 "jurnal_id": f"je:{draft.id}",
                 "nomor": draft.je_number,
                 "tanggal": draft.entry_date,

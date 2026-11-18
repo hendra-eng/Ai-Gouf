@@ -21,6 +21,13 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // yang sama tahun lalu, ringkasan varians (waterfall), trend 12 bulan & insight.
 
 const CUR = 0, PREV = 1, LY = 2;
+
+/** "2026-01-01" -> "2025-12-31" (tanggal lokal, tanpa geser zona waktu). */
+function dayBefore(d: string): string {
+  const [y, m, dd] = parts(d);
+  const t = new Date(y, m - 1, dd - 1);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+}
 const TREND_START = 3; // index 3..13 = 11 akhir bulan sebelumnya, lalu CUR
 
 type Metric = 'assets' | 'liabilities' | 'equity';
@@ -32,36 +39,70 @@ const METRICS: { id: Metric; label: string; sections: string[] }[] = [
 
 export default function BsDefaultView({ clientId, companyName, printedBy }: ViewProps) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
-  const [asOf, setAsOf] = useState(todayIso());
+  // Mode "As of": posisi per tanggal vs akhir bulan lalu. Mode "Date range": posisi per tanggal
+  // akhir vs saldo awal periode (sehari sebelum tanggal awal) -- permintaan user 2026-11-18.
+  const [mode, setMode] = useState<'as_of' | 'range'>('as_of');
+  const [asOfInput, setAsOfInput] = useState(todayIso());
+  const [from, setFrom] = useState(startOfYear(todayIso()));
+  const [to, setTo] = useState(todayIso());
+  const isRange = mode === 'range';
+  const rangeValid = !isRange || from <= to;
+  const asOf = isRange ? to : asOfInput;
+  const opening = useMemo(() => dayBefore(from), [from]);
   const dates = useMemo(() => {
     const [y, m] = parts(asOf);
     const trend = Array.from({ length: 11 }, (_, i) => monthEnd(y, m - 11 + i));
-    return [asOf, prevMonthEnd(asOf), shiftYear(asOf), ...trend];
-  }, [asOf]);
-  const { data, merged: m, loading, error } = useBsSeries(clientId, dates);
+    return [asOf, isRange ? opening : prevMonthEnd(asOf), shiftYear(asOf), ...trend];
+  }, [asOf, isRange, opening]);
+  const { data, merged: m, loading, error } = useBsSeries(clientId, dates, rangeValid);
   const snap = data?.snapshots.find(s => s.as_of === asOf);
   const company = data?.client.company_name ?? companyName;
 
-  const prevLbl = monthLabel(dates[PREV]);
+  const prevLbl = isRange ? `Opening ${fmtDate(opening)}` : monthLabel(dates[PREV]);
   const lyLbl = monthLabel(dates[LY]);
 
   return (
     <div className="space-y-5">
       <BsToolbar
         filters={
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            As of
-            <input type="date" value={asOf} max="9999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)} className={`${inputCls} w-44`} />
-          </label>
+          <>
+            <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs font-semibold">
+              {([['as_of', 'As of'], ['range', 'Date range']] as const).map(([k, lbl]) => (
+                <button key={k} type="button" onClick={() => setMode(k)}
+                  className={`rounded-md px-3 py-1.5 transition-colors ${mode === k ? 'bg-emerald-50 text-emerald-700' : 'text-muted-foreground hover:text-foreground'}`}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            {isRange ? (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                From
+                <input type="date" value={from} max={to || '9999-12-31'} onChange={e => e.target.value && setFrom(e.target.value)} className={`${inputCls} w-44`} />
+                to
+                <input type="date" value={to} min={from} max="9999-12-31" onChange={e => e.target.value && setTo(e.target.value)} className={`${inputCls} w-44`} />
+              </label>
+            ) : (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                As of
+                <input type="date" value={asOfInput} max="9999-12-31" onChange={e => e.target.value && setAsOfInput(e.target.value)} className={`${inputCls} w-44`} />
+              </label>
+            )}
+          </>
         }
         loading={loading}
-        exportReady={!!m}
-        buildExport={() => bsTemplateReport(m!, [CUR], ['Amount (IDR)'], {
-          title: 'Statement of Financial Position (Balance Sheet)', fileBase: `Balance-Sheet-${asOf}`, companyName: company ?? '',
-          subtitle: `As of ${fmtLongDate(asOf)}`, printedBy,
-        })}
+        exportReady={!!m && rangeValid}
+        buildExport={() => isRange
+          ? bsTemplateReport(m!, [CUR, PREV], [fmtDate(to), `Opening ${fmtDate(opening)}`], {
+              title: 'Statement of Financial Position (Balance Sheet)', fileBase: `Balance-Sheet-${from}_to_${to}`, companyName: company ?? '',
+              subtitle: `For the period ${fmtLongDate(from)} – ${fmtLongDate(to)}`, printedBy,
+            })
+          : bsTemplateReport(m!, [CUR], ['Amount (IDR)'], {
+              title: 'Statement of Financial Position (Balance Sheet)', fileBase: `Balance-Sheet-${asOf}`, companyName: company ?? '',
+              subtitle: `As of ${fmtLongDate(asOf)}`, printedBy,
+            })}
       />
 
+      {!rangeValid && <ErrorBlock message="The start date must be on or before the end date." />}
       {error && <ErrorBlock message={error} />}
       {loading && !m && <LoadingBlock />}
       {m && (
@@ -88,7 +129,7 @@ export default function BsDefaultView({ clientId, companyName, printedBy }: View
           {data && <WarningsPanel warnings={data.warnings} />}
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
-            <DefaultTable m={m} labels={[fmtDate(asOf), prevLbl, lyLbl]} glRange={{ start: startOfYear(asOf), end: asOf }} />
+            <DefaultTable m={m} labels={[fmtDate(asOf), prevLbl, lyLbl]} glRange={{ start: isRange ? from : startOfYear(asOf), end: asOf }} />
             <div className="space-y-5">
               <VarianceSummary m={m} prevLbl={prevLbl} lyLbl={lyLbl} curLbl={monthLabel(asOf)} />
               <AssetsTrend m={m} dates={dates} lyLbl={lyLbl} />

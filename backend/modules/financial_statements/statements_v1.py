@@ -4,9 +4,12 @@ modules/financial_statements/statements_v1.py
 Financial Statements berbasis mapping COA (Task Plan 16-20):
 
     GET  /api/v1/reports/financial-statements/balance-sheet
+    GET  /api/v1/reports/financial-statements/balance-sheet/series   (banyak tanggal: trend/comparison)
     GET  /api/v1/reports/financial-statements/profit-loss
+    GET  /api/v1/reports/financial-statements/profit-loss/series   (banyak periode: trend/comparison)
     GET  /api/v1/reports/financial-statements/changes-in-equity
     GET  /api/v1/reports/financial-statements/cash-flow
+    GET  /api/v1/reports/financial-statements/cash-flow/series   (direct + indirect, banyak periode)
     GET  /api/v1/reports/financial-statements/segments
     GET  /api/v1/reports/financial-statements/notes
     GET  /api/v1/reports/financial-statements/notes/export.docx
@@ -259,6 +262,50 @@ def balance_sheet(
     return sukses(data=data)
 
 
+MAKS_TANGGAL_SERI = 40
+
+
+@router.get("/balance-sheet/series", summary="Balance Sheet di banyak tanggal sekaligus (trend / comparison / dashboard)")
+def balance_sheet_series(
+    management_client_id: str = Query(...),
+    dates: str = Query(..., description="Daftar tanggal ISO dipisah koma, mis. 2026-01-31,2026-02-28"),
+    show_zero: bool = Query(False),
+    _u: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    """Satu snapshot neraca (bentuk sama dengan /balance-sheet tanpa pembanding)
+    per tanggal. Buku dibangun SEKALI, jadi jauh lebih murah daripada FE
+    memanggil /balance-sheet berulang untuk 12-24 titik."""
+    try:
+        kid = _klien(management_client_id)
+        tanggal = []
+        for s in dates.split(","):
+            s = s.strip()
+            if not s:
+                continue
+            try:
+                tanggal.append(date.fromisoformat(s))
+            except ValueError:
+                raise GagalValidasi(f"Tanggal tidak valid: {s}", "INVALID_DATE")
+        tanggal = sorted(set(tanggal))
+        if not tanggal:
+            raise GagalValidasi("dates wajib diisi.", "INVALID_DATE")
+        if len(tanggal) > MAKS_TANGGAL_SERI:
+            raise GagalValidasi(f"Maksimal {MAKS_TANGGAL_SERI} tanggal per permintaan.", "TOO_MANY_DATES")
+        buku = _buku(kid)
+    except GagalValidasi as e:
+        return _respon_gagal(e)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Gagal menyusun seri balance sheet: %s", e)
+        return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
+    snapshots = []
+    warnings = []
+    for t in tanggal:
+        snap = mapped.susun_neraca(buku, t, None, show_zero)
+        warnings = snap.pop("warnings")
+        snapshots.append(snap)
+    return sukses(data={"snapshots": snapshots, "warnings": warnings, "client": _meta_klien(kid, buku)})
+
+
 @router.get("/profit-loss", summary="Profit & Loss dari GL + mapping COA")
 def profit_loss(
     management_client_id: str = Query(...),
@@ -286,6 +333,61 @@ def profit_loss(
     data["period_info"] = _info_periode(jenis, dari, sampai, pemb)
     data["client"] = _meta_klien(kid, buku)
     return sukses(data=data)
+
+
+@router.get("/profit-loss/series", summary="Profit & Loss untuk banyak periode sekaligus (default / trend / comparison)")
+def profit_loss_series(
+    management_client_id: str = Query(...),
+    periods: str = Query(..., description="Daftar periode start:end (ISO) dipisah koma, mis. 2026-01-01:2026-01-31,2026-02-01:2026-02-28"),
+    segment_type: Optional[str] = Query(None, description="branch | department | cost_center | project | business_unit"),
+    segment_value: Optional[str] = Query(None),
+    _u: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    """Satu laporan laba rugi (bentuk sama dengan /profit-loss tanpa pembanding)
+    per periode. Buku dibangun SEKALI untuk semua periode."""
+    try:
+        kid = _klien(management_client_id)
+        segmen = None
+        if segment_type and segment_value:
+            if segment_type not in dict(SEGMEN):
+                raise GagalValidasi("segment_type tidak valid.", "INVALID_SEGMENT")
+            segmen = (segment_type, segment_value)
+        rentang = []
+        for s in periods.split(","):
+            s = s.strip()
+            if not s:
+                continue
+            try:
+                a, b = s.split(":")
+                dari, sampai = date.fromisoformat(a.strip()), date.fromisoformat(b.strip())
+            except ValueError:
+                raise GagalValidasi(f"Periode tidak valid: {s}", "INVALID_PERIOD")
+            if sampai < dari:
+                raise GagalValidasi(f"Tanggal akhir sebelum tanggal awal: {s}", "INVALID_PERIOD")
+            rentang.append((dari, sampai))
+        rentang = sorted(set(rentang))
+        if not rentang:
+            raise GagalValidasi("periods wajib diisi.", "INVALID_PERIOD")
+        if len(rentang) > MAKS_TANGGAL_SERI:
+            raise GagalValidasi(f"Maksimal {MAKS_TANGGAL_SERI} periode per permintaan.", "TOO_MANY_PERIODS")
+        buku = _buku(kid)
+    except GagalValidasi as e:
+        return _respon_gagal(e)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Gagal menyusun seri profit & loss: %s", e)
+        return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
+    reports = []
+    warnings = []
+    for dari, sampai in rentang:
+        r = mapped.susun_laba_rugi(buku, dari, sampai, None, segmen, False)
+        warnings = r.pop("warnings")
+        r.pop("compare_period", None)
+        r.pop("months", None)
+        reports.append(r)
+    return sukses(data={
+        "reports": reports, "warnings": warnings, "client": _meta_klien(kid, buku),
+        "segment": {"type": segmen[0], "value": segmen[1]} if segmen else None,
+    })
 
 
 @router.get("/changes-in-equity", summary="Statement of Changes in Equity")
@@ -330,6 +432,68 @@ def cash_flow(
     data["period_info"] = _info_periode(jenis, dari, sampai, pemb)
     data["client"] = _meta_klien(kid, buku)
     return sukses(data=data)
+
+
+def _rentang_dari_query(periods: str):
+    """'a:b,c:d' -> daftar (date, date) unik terurut, dengan validasi."""
+    rentang = []
+    for s in periods.split(","):
+        s = s.strip()
+        if not s:
+            continue
+        try:
+            a, b = s.split(":")
+            dari, sampai = date.fromisoformat(a.strip()), date.fromisoformat(b.strip())
+        except ValueError:
+            raise GagalValidasi(f"Periode tidak valid: {s}", "INVALID_PERIOD")
+        if sampai < dari:
+            raise GagalValidasi(f"Tanggal akhir sebelum tanggal awal: {s}", "INVALID_PERIOD")
+        rentang.append((dari, sampai))
+    rentang = sorted(set(rentang))
+    if not rentang:
+        raise GagalValidasi("periods wajib diisi.", "INVALID_PERIOD")
+    if len(rentang) > MAKS_TANGGAL_SERI:
+        raise GagalValidasi(f"Maksimal {MAKS_TANGGAL_SERI} periode per permintaan.", "TOO_MANY_PERIODS")
+    return rentang
+
+
+@router.get("/cash-flow/series", summary="Cash Flow (direct + indirect) untuk banyak periode sekaligus")
+def cash_flow_series(
+    management_client_id: str = Query(...),
+    periods: str = Query(..., description="Daftar periode start:end (ISO) dipisah koma"),
+    _u: Dict[str, Any] = Depends(get_current_user_v1),
+):
+    """Per periode: arus kas metode tidak langsung (`indirect`, bentuk sama
+    dengan /cash-flow tanpa daftar akun), metode langsung (`direct`) dan total
+    pendapatan (untuk tampilan % of revenue). Buku dibangun SEKALI."""
+    try:
+        kid = _klien(management_client_id)
+        rentang = _rentang_dari_query(periods)
+        buku = _buku(kid)
+    except GagalValidasi as e:
+        return _respon_gagal(e)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Gagal menyusun seri arus kas: %s", e)
+        return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
+    hasil = []
+    for dari, sampai in rentang:
+        tl = mapped.susun_arus_kas(buku, dari, sampai)
+        tl.pop("unmapped_accounts", None)
+        tl.pop("cash_accounts", None)
+        hasil.append({
+            "period": {"start": dari.isoformat(), "end": sampai.isoformat()},
+            "indirect": tl,
+            "direct": mapped.susun_arus_kas_langsung(buku, dari, sampai),
+            "revenue": mapped.pendapatan(buku, dari, sampai),
+        })
+    # Daftar akun kas & akun tanpa mapping untuk rentang keseluruhan.
+    semua = mapped.susun_arus_kas(buku, min(r[0] for r in rentang), max(r[1] for r in rentang))
+    return sukses(data={
+        "periods": hasil,
+        "cash_accounts": semua["cash_accounts"],
+        "unmapped_accounts": semua["unmapped_accounts"],
+        "client": _meta_klien(kid, buku),
+    })
 
 
 @router.get("/segments", summary="Dimensi segment yang tersedia di transaksi posted klien")
