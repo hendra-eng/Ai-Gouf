@@ -18,8 +18,8 @@ const tabCls = (active: boolean) =>
 // antar laporan + slot aksi (download, dsb).
 
 export const FS_TABS = [
-  { href: '/financial-statements/balance-sheet', label: 'Balance Sheet', icon: Scale },
   { href: '/financial-statements/profit-loss', label: 'Profit & Loss', icon: TrendingUp },
+  { href: '/financial-statements/balance-sheet', label: 'Balance Sheet', icon: Scale },
   { href: '/financial-statements/changes-in-equity', label: 'Changes in Equity', icon: RefreshCcw },
   { href: '/financial-statements/cash-flow', label: 'Cash Flow', icon: Activity },
   { href: '/financial-statements/notes', label: 'Notes (CALK)', icon: NotebookText },
@@ -65,7 +65,7 @@ export default function FsShell({ title, subtitle, actions, children }: {
         </nav>
       </div>
 
-      <div className="pt-5 space-y-5">{children}</div>
+      <div className={`${salesFont.className} pt-5 space-y-5`}>{children}</div>
     </div>
   );
 }
@@ -80,7 +80,7 @@ function ClosedBadge() {
     <Link
       href="/year-end-closing"
       title={`Transactions up to ${formatDate(last.period_end)} are locked${last.closed_by_name ? ` · closed by ${last.closed_by_name}` : ''}`}
-      className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 ring-1 ring-inset ring-blue-600/20 hover:bg-blue-100"
+      className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-0.5 text-[11px] font-semibold text-neutral-700 ring-1 ring-inset ring-neutral-300 transition-colors hover:bg-neutral-200"
     >
       <Lock size={11} /> FY {last.fiscal_year} closed · locked through {formatDate(last.period_end)}
     </Link>
@@ -89,9 +89,9 @@ function ClosedBadge() {
 
 export function NoClient() {
   return (
-    <div className="bg-card border border-dashed border-border rounded-xl p-12 text-center">
-      <p className="text-sm font-semibold text-foreground">Select a company first</p>
-      <p className="text-xs text-muted-foreground mt-1">Use the company switcher in the top bar.</p>
+    <div className="rounded-[10px] border border-dashed border-neutral-300 bg-white p-12 text-center">
+      <p className="text-sm font-semibold text-neutral-900">Select a company first</p>
+      <p className="mt-1 text-xs font-medium text-neutral-500">Use the company switcher in the top bar.</p>
     </div>
   );
 }
@@ -99,11 +99,11 @@ export function NoClient() {
 export function LoadingBlock() {
   return (
     <div className="space-y-2">
-      {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-12 rounded-xl bg-slate-100 animate-pulse" />)}
+      {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-12 rounded-[10px] bg-neutral-200 animate-pulse" />)}
     </div>
   );
 }
 
 export function ErrorBlock({ message }: { message: string }) {
-  return <div className="border border-rose-200 bg-rose-50 text-rose-700 rounded-xl px-4 py-3 text-sm">{message}</div>;
+  return <div className="rounded-lg border border-red-200 border-l-[3px] border-l-red-700 bg-red-50 px-4 py-3 text-xs font-medium text-red-800">{message}</div>;
 }

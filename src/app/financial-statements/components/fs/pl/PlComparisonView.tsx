@@ -4,13 +4,11 @@ import React, { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, Database, FileText, Percent } from 'lucide-react';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
-import { Select } from '../PeriodPicker';
 import { fmtAmount, todayIso } from '../fsFormat';
 import { fmtCompact, pctChange } from '../bs/bsData';
-import { ChartTooltip, Delta, EmptyData, KpiCard, KpiRow, Legend, Panel } from '../bs/BsUi';
-import { BsToolbar } from '../bs/BsToolbar';
-import { PL_COLORS, quarterPeriod, usePlSeries, type Period, type PlMerged, type ViewProps } from './plData';
-import { Num, PlTable, type CellCtx } from './PlUi';
+import { BsToolbar, ChartTooltip, EmptyData, Legend, Panel, Select, thCls, thRowCls } from '../bs/BsMono';
+import { PL_COLORS, margin, quarterPeriod, usePlSeries, type Period, type PlMerged, type ViewProps } from './plData';
+import { KpiDelta, Num, PlKpiRow, PlKpiTile, PlTable, ratioPct, type CellCtx } from './PlUi';
 import { plTemplateReport, todayLong } from '../statementTemplate';
 
 // (c) Profit & Loss Comparison -- per kuartal dalam 1 tahun buku, grafik
@@ -55,11 +53,11 @@ export default function PlComparisonView({ clientId, segment, printedBy, filters
       <BsToolbar
         filters={
           <>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-2 text-xs font-medium text-neutral-600">
               Fiscal Year
               <div className="w-28"><Select value={year} onChange={v => setYear(Number(v))}>{years.map(y => <option key={y} value={y}>{y}</option>)}</Select></div>
             </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-2 text-xs font-medium text-neutral-600">
               Comparison Basis
               <div className="w-56"><Select value={basis} onChange={v => setBasis(v as Basis)}>{BASES.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</Select></div>
             </label>
@@ -95,7 +93,8 @@ function ComparisonBody({ m, qn, B, labels, basisLabel, year, glRange }: {
   const sum = (v: number[], from: number, count: number) => v.slice(from, from + count).reduce((t, x) => t + x, 0);
   const ytd = (v: number[]) => sum(v, 0, qn);
   const lyYtd = (v: number[]) => sum(v, qn, qn); // kuartal yang sama tahun lalu
-  const sfx = qn === 4 ? `vs FY${year - 1}` : `vs Q1–Q${qn} ${year - 1}`;
+  const lyLbl = qn === 4 ? `FY${year - 1}` : `Q1–Q${qn} ${year - 1}`;
+  const sfx = `vs ${lyLbl}`;
   const dNp = m.netProfit[L] - m.netProfit[B];
 
   const chart = labels.map((l, i) => ({
@@ -112,31 +111,38 @@ function ComparisonBody({ m, qn, B, labels, basisLabel, year, glRange }: {
 
   return (
     <div className="space-y-5">
-      <KpiRow>
-        <KpiCard label={`Total Revenue${qn < 4 ? ' (YTD)' : ''}`} icon={Database} tone="brand" value={`IDR ${fmtAmount(ytd(m.revenue))}`} delta={<Delta pct={pctChange(ytd(m.revenue), lyYtd(m.revenue))} suffix={sfx} />} />
-        <KpiCard label={`Gross Profit${qn < 4 ? ' (YTD)' : ''}`} icon={FileText} tone="rose" value={`IDR ${fmtAmount(ytd(m.grossProfit))}`} delta={<Delta pct={pctChange(ytd(m.grossProfit), lyYtd(m.grossProfit))} suffix={sfx} />} />
-        <KpiCard label={`Operating Profit${qn < 4 ? ' (YTD)' : ''}`} icon={BarChart3} tone="sky" value={`IDR ${fmtAmount(ytd(m.operatingProfit))}`} delta={<Delta pct={pctChange(ytd(m.operatingProfit), lyYtd(m.operatingProfit))} suffix={sfx} />} />
-        <KpiCard label={`Net Profit Change Q${qn} vs ${basisLabel}`} icon={Percent} tone="violet" value={`${dNp >= 0 ? '+' : '-'}IDR ${fmtAmount(Math.abs(dNp))}`}
-          delta={<Delta pct={pctChange(m.netProfit[L], m.netProfit[B])} suffix={`vs ${basisLabel}`} />} />
-      </KpiRow>
+      <PlKpiRow>
+        <PlKpiTile label={`Total Revenue${qn < 4 ? ' (YTD)' : ''}`} icon={Database} value={`IDR ${fmtAmount(ytd(m.revenue))}`}
+          sub={<KpiDelta pct={pctChange(ytd(m.revenue), lyYtd(m.revenue))} suffix={sfx} />}
+          pct={ratioPct(ytd(m.revenue), lyYtd(m.revenue))} pctLabel={`of ${lyLbl}`} />
+        <PlKpiTile label={`Gross Profit${qn < 4 ? ' (YTD)' : ''}`} icon={FileText} value={`IDR ${fmtAmount(ytd(m.grossProfit))}`}
+          sub={<KpiDelta pct={pctChange(ytd(m.grossProfit), lyYtd(m.grossProfit))} suffix={sfx} />}
+          pct={margin(ytd(m.grossProfit), ytd(m.revenue))} pctLabel="of revenue" />
+        <PlKpiTile label={`Operating Profit${qn < 4 ? ' (YTD)' : ''}`} icon={BarChart3} value={`IDR ${fmtAmount(ytd(m.operatingProfit))}`}
+          sub={<KpiDelta pct={pctChange(ytd(m.operatingProfit), lyYtd(m.operatingProfit))} suffix={sfx} />}
+          pct={margin(ytd(m.operatingProfit), ytd(m.revenue))} pctLabel="of revenue" />
+        <PlKpiTile label={`Net Profit Change Q${qn} vs ${basisLabel}`} icon={Percent} value={`${dNp >= 0 ? '+' : '-'}IDR ${fmtAmount(Math.abs(dNp))}`}
+          sub={<KpiDelta pct={pctChange(m.netProfit[L], m.netProfit[B])} suffix={`vs ${basisLabel}`} />}
+          pct={margin(m.netProfit[L], m.revenue[L])} pctLabel={`of Q${qn} revenue`} />
+      </PlKpiRow>
 
       <Panel title="Quarterly Profit & Loss Trend" icon={BarChart3} right={<Legend items={series.map(s => ({ label: s.key, color: s.color }))} />}>
         <div className="h-60">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chart} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barGap={6} barCategoryGap="22%">
-              <CartesianGrid stroke="#EEF2F7" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => fmtCompact(v, 0)} />
-              <Tooltip cursor={{ fill: '#F8FAFC' }} content={<ChartTooltip fmt={v => fmtAmount(v)} />} />
+              <CartesianGrid stroke="#E5E5E5" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#525252' }} tickLine={false} axisLine={{ stroke: '#D4D4D4' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#737373' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => fmtCompact(v, 0)} />
+              <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => fmtAmount(v)} />} />
               {series.map(s => (
                 <Bar key={s.key} dataKey={s.key} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false}>
-                  <LabelList dataKey={s.key} position="top" formatter={(v: number) => fmtCompact(v, 1)} style={{ fontSize: 11, fontWeight: 600, fill: '#334155' }} />
+                  <LabelList dataKey={s.key} position="top" formatter={(v: number) => fmtCompact(v, 1)} style={{ fontSize: 11, fontWeight: 600, fill: '#262626' }} />
                 </Bar>
               ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-1">Expenses / Cost Base = Cost of Sales + Operating Expenses + Other Expenses + Income Tax.</p>
+        <p className="text-[11px] text-neutral-500 mt-1">Expenses / Cost Base = Cost of Sales + Operating Expenses + Other Expenses + Income Tax.</p>
       </Panel>
 
       <PlTable
@@ -146,17 +152,17 @@ function ComparisonBody({ m, qn, B, labels, basisLabel, year, glRange }: {
         compact
         glRange={glRange}
         head={
-          <tr className="border-b border-border">
-            <th className="text-left font-bold text-foreground px-3 py-3">Account Group</th>
+          <tr className={thRowCls}>
+            <th className={`${thCls} py-3 text-left`}>Account Group</th>
             {labels.map(l => (
-              <th key={l} className="text-right px-3 py-3 whitespace-nowrap">
-                <span className="block font-bold text-foreground">{l}</span>
-                <span className="block text-[11px] font-normal text-muted-foreground">(IDR)</span>
+              <th key={l} className={`${thCls} py-3 text-right`}>
+                <span className="block">{l}</span>
+                <span className="block text-[10px] font-medium text-neutral-700">(IDR)</span>
               </th>
             ))}
-            <th className="text-right px-3 py-3 whitespace-nowrap">
-              <span className="block font-bold text-foreground">Variance</span>
-              <span className="block text-[11px] font-normal text-muted-foreground">Q{qn} vs {basisLabel}</span>
+            <th className={`${thCls} py-3 text-right`}>
+              <span className="block">Variance</span>
+              <span className="block text-[10px] font-medium text-neutral-700">Q{qn} vs {basisLabel}</span>
             </th>
           </tr>
         }
@@ -167,13 +173,13 @@ function ComparisonBody({ m, qn, B, labels, basisLabel, year, glRange }: {
 }
 
 function QuarterCells({ v, c, qn, B }: { v: number[]; c: CellCtx; qn: number; B: number }) {
-  const cls = c.level === 'account' ? 'py-1 text-muted-foreground' : c.level === 'line' ? 'py-1.5 text-foreground/85' : c.level === 'subtotal' ? 'text-blue-800' : 'text-foreground';
+  const cls = c.level === 'account' ? 'py-1 text-neutral-500' : c.level === 'line' ? 'py-1.5 text-neutral-800' : 'text-neutral-900';
   const p = pctChange(v[qn - 1], v[B]);
   const good = p !== null && (p >= 0) === c.upIsGood;
   return (
     <>
       {Array.from({ length: qn }, (_, i) => <Num key={i} v={v[i]} bold={c.bold} className={cls} />)}
-      <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${c.bold ? 'font-bold' : 'font-medium text-xs'} ${p === null || Math.abs(p) < 0.05 ? 'text-muted-foreground' : good ? 'text-emerald-600' : 'text-rose-600'}`}>
+      <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${c.bold ? 'font-bold' : 'font-medium'} ${p === null || Math.abs(p) < 0.05 ? 'text-neutral-500' : good ? 'text-neutral-900' : 'text-red-700'}`}>
         {p === null ? '–' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`}
       </td>
     </>

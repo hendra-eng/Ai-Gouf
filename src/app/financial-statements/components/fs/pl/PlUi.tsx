@@ -5,22 +5,23 @@ import Link from 'next/link';
 import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, ExternalLink } from 'lucide-react';
 import { fetchSegments, type SegmentType } from '@/lib/fsStore';
-import { Select } from '../PeriodPicker';
 import { fmtAmount, glHref } from '../fsFormat';
 import { fmtCompact, pctChange, type MLine, type MSection } from '../bs/bsData';
 import { PL_COLORS, PL_LAYOUT, type PlMerged, type Segment } from './plData';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { Select, trCls } from '../bs/BsMono';
 
 // Potongan UI bersama tampilan Profit & Loss: tabel laporan yang bisa
 // dibuka per seksi -> baris -> akun, waterfall bridge, filter segment.
-// Warna mengikuti tema hijau ([[project-green-theme]]): blue-* = brand hijau.
+// Tema elegant monokrom (neutral-*) disamakan dengan halaman Sales; merah hanya untuk nilai negatif.
 
 // ── Sel angka ────────────────────────────────────────────────────────
 
 export function Num({ v, bold, className = '' }: { v: number | null; bold?: boolean; className?: string }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   return (
-    <td className={`px-3 py-2 text-right tabular-nums whitespace-nowrap ${bold ? 'font-semibold' : ''} ${v !== null && v < -0.004 ? 'text-rose-600' : ''} ${className}`}>
+    <td className={`px-3 py-1.5 text-right tabular-nums whitespace-nowrap ${bold ? 'font-semibold text-neutral-900' : 'text-neutral-800'} ${v !== null && v < -0.004 ? 'text-red-700' : ''} ${className}`}>
       {fmtAmount(v)}
     </td>
   );
@@ -30,10 +31,10 @@ export function Num({ v, bold, className = '' }: { v: number | null; bold?: bool
 export function PctCell({ cur, prev, upIsGood = true, className = '' }: { cur: number; prev: number; upIsGood?: boolean; className?: string }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const p = pctChange(cur, prev);
-  if (p === null || Math.abs(p) < 0.05) return <td className={`px-3 py-2 text-right text-xs tabular-nums text-muted-foreground ${className}`}>{p === null ? '–' : '0.0%'}</td>;
+  if (p === null || Math.abs(p) < 0.05) return <td className={`px-3 py-1.5 text-right text-xs tabular-nums text-neutral-500 ${className}`}>{p === null ? '–' : '0.0%'}</td>;
   const good = (p > 0) === upIsGood;
   return (
-    <td className={`px-3 py-2 text-right text-xs font-medium tabular-nums whitespace-nowrap ${good ? 'text-emerald-600' : 'text-rose-600'} ${className}`}>
+    <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${good ? 'text-neutral-900' : 'text-red-700'} ${className}`}>
       {p > 0 ? '▲' : '▼'} {Math.abs(p).toFixed(1)}%
     </td>
   );
@@ -69,30 +70,30 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
   const sections = PL_LAYOUT.filter(x => x.kind === 'section').map(x => m.sec(x.key));
   const allLineKeys = sections.flatMap(s => s.lines.map(l => `${s.key}:${l.key}`));
   const allOpen = openLines.size > 0 && openLines.size >= allLineKeys.length;
-  const py = compact ? 'py-1.5' : 'py-2.5';
+  const py = compact ? 'py-2' : 'py-2.5';
 
   const lineRow = (s: MSection, l: MLine, upIsGood: boolean) => {
     const k = `${s.key}:${l.key}`;
     const open = openLines.has(k);
     return (
       <React.Fragment key={k}>
-        <tr className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer text-[13px]" onClick={() => toggle(setOpenLines, k)}>
-          <td className="pl-10 pr-3 py-1.5 text-foreground/85">
+        <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setOpenLines, k)}>
+          <td className="pl-9 pr-3 py-1.5 text-neutral-800">
             <span className="inline-flex items-center gap-1">
-              {open ? <ChevronDown size={13} className="text-muted-foreground" /> : <ChevronRight size={13} className="text-muted-foreground" />}
+              {open ? <ChevronDown size={13} className="text-neutral-500" /> : <ChevronRight size={13} className="text-neutral-500" />}
               {l.label}
             </span>
           </td>
           {cells(l.v, { bold: false, upIsGood, level: 'line' })}
         </tr>
         {open && l.accounts.map((a, i) => (
-          <tr key={`${a.code ?? 'calc'}-${i}`} className="text-[12px] hover:bg-slate-50">
-            <td className="pl-16 pr-3 py-1">
-              <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
-                {a.code && <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span>}
+          <tr key={`${a.code ?? 'calc'}-${i}`} className={trCls}>
+            <td className="pl-14 pr-3 py-1">
+              <span className="inline-flex items-center gap-2 min-w-0 text-neutral-500">
+                {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="rounded bg-neutral-200 px-1.5 text-[10px] font-semibold uppercase text-neutral-700">Auto</span>}
                 <span className="truncate">{a.name}</span>
                 {a.code && (
-                  <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" onClick={e => e.stopPropagation()} className="hover:text-blue-700">
+                  <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" onClick={e => e.stopPropagation()} className="hover:text-neutral-900">
                     <ExternalLink size={12} />
                   </Link>
                 )}
@@ -106,23 +107,23 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
   };
 
   return (
-    <section className="bg-white border border-border rounded-2xl shadow-sm">
-      <div className="flex items-center gap-3 px-5 pt-4 pb-1">
+    <section className={`card-elevated-md rounded-xl ${salesFont.className}`}>
+      <header className="flex items-center gap-3 px-5 pt-4 pb-1">
         {title}
         <button type="button" onClick={() => setOpenLines(allOpen ? new Set() : new Set(allLineKeys))}
-          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-slate-50 print:hidden">
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50 print:hidden">
           {allOpen ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />} {allOpen ? 'Collapse accounts' : 'Expand accounts'}
         </button>
-      </div>
+      </header>
       <div className="overflow-x-auto scrollbar-thin p-3 pt-2">
-        <table className="w-full text-sm" style={{ minWidth }}>
+        <table className="w-full border-separate border-spacing-0 text-xs" style={{ minWidth }}>
           <thead>{head}</thead>
           <tbody>
             {PL_LAYOUT.map(item => {
               if (item.kind === 'subtotal') {
                 return (
-                  <tr key={item.key} className="bg-blue-50/80 border-t border-white">
-                    <td className={`px-3 ${py} font-bold text-blue-800 rounded-l-lg`}>{item.label}</td>
+                  <tr key={item.key} className="text-xs [&>td]:bg-neutral-200 [&>td]:shadow-[inset_0_-1px_0_#171717,inset_0_1px_0_#171717]">
+                    <td className={`px-3 ${py} font-bold text-neutral-900`}>{item.label}</td>
                     {cells(m.sub(item.key), { bold: true, upIsGood: true, level: 'subtotal' })}
                   </tr>
                 );
@@ -131,14 +132,14 @@ export function PlTable({ m, head, cells, colCount, glRange, title, minWidth = 8
               const open = !closed.has(item.key);
               return (
                 <React.Fragment key={item.key}>
-                  <tr className="border-t border-slate-200 cursor-pointer hover:bg-slate-50" onClick={() => toggle(setClosed, item.key)}>
-                    <td className={`px-3 ${py} font-semibold text-foreground`}>
-                      <span className="inline-flex items-center gap-1.5">{open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}{item.label}</span>
+                  <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setClosed, item.key)}>
+                    <td className={`px-3 ${py} font-semibold text-neutral-900`}>
+                      <span className="inline-flex items-center gap-1.5">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{item.label}</span>
                     </td>
                     {cells(s.v, { bold: true, upIsGood: item.upIsGood, level: 'section' })}
                   </tr>
                   {open && s.lines.length === 0 && (
-                    <tr><td colSpan={colCount + 1} className="pl-10 py-1.5 text-xs italic text-muted-foreground">No transactions</td></tr>
+                    <tr><td colSpan={colCount + 1} className="pl-12 py-1.5 text-xs italic text-neutral-500">No transactions</td></tr>
                   )}
                   {open && s.lines.map(l => lineRow(s, l, item.upIsGood))}
                 </React.Fragment>
@@ -164,7 +165,7 @@ export function Bridge({ startLabel, start, steps, endLabel, end, height = 190 }
   const bars = [{ name: startLabel, base: Math.min(0, start), value: Math.abs(start), fill: PL_COLORS.muted, label: fmtCompact(start, 1) }];
   steps.filter(s => Math.abs(s.delta) >= 0.5).forEach(s => {
     const lo = s.delta >= 0 ? run : run + s.delta;
-    bars.push({ name: s.name, base: lo, value: Math.abs(s.delta), fill: s.delta >= 0 ? PL_COLORS.revenue : PL_COLORS.expense, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
+    bars.push({ name: s.name, base: lo, value: Math.abs(s.delta), fill: s.delta >= 0 ? PL_COLORS.profit : PL_COLORS.expense, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
     run += s.delta;
   });
   bars.push({ name: endLabel, base: Math.min(0, end), value: Math.abs(end), fill: PL_COLORS.brand, label: fmtCompact(end, 1) });
@@ -181,13 +182,13 @@ export function Bridge({ startLabel, start, steps, endLabel, end, height = 190 }
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 18, right: 4, left: 4, bottom: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} interval={0} tickLine={false} axisLine={false}
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#737373' }} interval={0} tickLine={false} axisLine={false}
             tickFormatter={(s: string) => (s.length > 16 ? `${s.slice(0, 15)}…` : s)} />
           <YAxis hide domain={[floor, hi + shift + pad * 0.4]} allowDataOverflow />
           <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
           <Bar dataKey="value" stackId="w" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {data.map((b, i) => <Cell key={i} fill={b.fill} />)}
-            <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#334155' }} />
+            <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#262626' }} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -222,8 +223,8 @@ export function NumberedInsights({ items }: { items: string[] }) {
   return (
     <ol className="space-y-3">
       {items.map((t, i) => (
-        <li key={i} className="flex gap-3 text-sm text-foreground/90 leading-snug">
-          <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
+        <li key={i} className="flex gap-3 text-sm font-medium leading-snug text-neutral-800">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">{i + 1}</span>
           <span>{t}</span>
         </li>
       ))}
@@ -247,7 +248,7 @@ export function SegmentFilter({ clientId, value, onChange }: { clientId: string;
   const values = types.find(t => t.key === type)?.values ?? [];
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground">Segment</span>
+      <span className="text-xs font-medium text-neutral-600">Segment</span>
       <div className="w-40">
         <Select value={type} onChange={v => { setType(v); if (!v) onChange(null); }}>
           <option value="">All segments</option>
@@ -262,6 +263,49 @@ export function SegmentFilter({ clientId, value, onChange }: { clientId: string;
           </Select>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Kartu KPI ────────────────────────────────────────────────────────
+// Desain sama dengan kartu KPI di Sales Overview (OverviewKpiTile): garis
+// aksen atas, label kapital, kotak ikon, nilai, baris sub (badge perubahan),
+// progress bar proporsi + keterangan persen. Monokrom, hover border gelap.
+
+export { Delta as KpiDelta } from '../bs/BsMono';
+
+/** n / d dalam persen; null kalau pembanding tidak positif. */
+export const ratioPct = (n: number, d: number): number | null => (d > 0.004 ? (n / d) * 100 : null);
+
+export function PlKpiRow({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{children}</div>;
+}
+
+export function PlKpiTile({ label, value, sub, pct, pctLabel, icon: Icon }: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  pct: number | null;
+  pctLabel: string;
+  icon: React.ElementType;
+}) {
+  const raw = pct !== null && Number.isFinite(pct) ? pct : 0;
+  const bar = Math.min(100, Math.max(0, Math.round(raw)));
+  return (
+    <div className="relative min-w-0 overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>{label}</p>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 ring-1 ring-neutral-200">
+          <Icon size={16} className="text-neutral-700" />
+        </span>
+      </div>
+      <p className="relative mt-1 truncate text-lg font-semibold tabular-nums tracking-tight text-neutral-900" title={typeof value === 'string' ? value : undefined}>{value}</p>
+      <div className="relative flex h-4 items-center overflow-hidden whitespace-nowrap">{sub ?? '\u00A0'}</div>
+      <div className="relative mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+        <div className="h-full rounded-full bg-neutral-800" style={{ width: `${bar > 0 ? Math.max(bar, 3) : 0}%` }} />
+      </div>
+      <p className="relative mt-1 truncate text-[11px] font-medium text-neutral-600">{pct === null ? '–' : `${Math.round(raw)}%`} {pctLabel}</p>
     </div>
   );
 }

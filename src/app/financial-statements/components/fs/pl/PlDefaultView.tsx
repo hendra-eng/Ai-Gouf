@@ -5,13 +5,11 @@ import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from 'rechar
 import { BarChart3, Database, FileText, Lightbulb, PieChart } from 'lucide-react';
 import { WarningsPanel } from '../CheckBanner';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
-import { inputCls } from '../PeriodPicker';
 import { fmtAmount, fmtDate, todayIso } from '../fsFormat';
 import { fmtCompact, pctChange } from '../bs/bsData';
-import { ChartTooltip, Delta, KpiCard, KpiRow, Panel } from '../bs/BsUi';
-import { BsToolbar } from '../bs/BsToolbar';
-import { PL_COLORS, monthName, monthPeriod, plMovers, usePlSeries, ym, type PlMerged, type ViewProps } from './plData';
-import { Bridge, NumberedInsights, Num, PctCell, PlTable, profitSteps, type CellCtx } from './PlUi';
+import { BsDropdown, BsToolbar, ChartTooltip, Delta, Panel, filterLabelCls, inputCls, thCls, thRowCls } from '../bs/BsMono';
+import { PL_COLORS, margin, monthName, monthPeriod, plMovers, usePlSeries, ym, type PlMerged, type ViewProps } from './plData';
+import { Bridge, KpiDelta, NumberedInsights, Num, PctCell, PlKpiRow, PlKpiTile, PlTable, profitSteps, ratioPct, type CellCtx } from './PlUi';
 import { fmtLongDate, plTemplateReport, todayLong } from '../statementTemplate';
 
 // (a) Profit & Loss default -- 1 bulan vs bulan lalu & bulan yang sama tahun
@@ -46,12 +44,12 @@ export default function PlDefaultView({ clientId, segment, printedBy, filters }:
       <BsToolbar
         filters={
           <>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className={filterLabelCls}>
               Month
               <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} className={`${inputCls} w-44`} />
             </label>
             {filters}
-            <span className="text-sm text-muted-foreground">For the month ended {fmtDate(curEnd)}</span>
+            <span className="text-xs font-medium text-neutral-500">For the month ended {fmtDate(curEnd)}</span>
           </>
         }
         loading={loading}
@@ -67,35 +65,41 @@ export default function PlDefaultView({ clientId, segment, printedBy, filters }:
       {loading && !m && <LoadingBlock />}
       {m && (
         <div className={`space-y-5 ${loading ? 'opacity-60' : ''}`}>
-          <KpiRow>
-            <KpiCard label="Total Revenue" icon={Database} tone="brand" value={`IDR ${fmtAmount(m.revenue[CUR])}`}
-              delta={<Delta pct={pctChange(m.revenue[CUR], m.revenue[PREV])} suffix={`vs ${lbl(PREV)}`} />} />
-            <KpiCard label="Gross Profit" icon={FileText} tone="rose" value={`IDR ${fmtAmount(m.grossProfit[CUR])}`}
-              delta={<Delta pct={pctChange(m.grossProfit[CUR], m.grossProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />} />
-            <KpiCard label="Operating Profit" icon={BarChart3} tone="sky" value={`IDR ${fmtAmount(m.operatingProfit[CUR])}`}
-              delta={<Delta pct={pctChange(m.operatingProfit[CUR], m.operatingProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />} />
-            <KpiCard label="Net Profit" icon={PieChart} tone="violet" value={`IDR ${fmtAmount(m.netProfit[CUR])}`}
-              delta={<Delta pct={pctChange(m.netProfit[CUR], m.netProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />} />
-          </KpiRow>
+          <PlKpiRow>
+            <PlKpiTile label="Total Revenue" icon={Database} value={`IDR ${fmtAmount(m.revenue[CUR])}`}
+              sub={<KpiDelta pct={pctChange(m.revenue[CUR], m.revenue[PREV])} suffix={`vs ${lbl(PREV)}`} />}
+              pct={ratioPct(m.revenue[CUR], m.revenue[PREV])} pctLabel={`of ${lbl(PREV)}`} />
+            <PlKpiTile label="Gross Profit" icon={FileText} value={`IDR ${fmtAmount(m.grossProfit[CUR])}`}
+              sub={<KpiDelta pct={pctChange(m.grossProfit[CUR], m.grossProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />}
+              pct={margin(m.grossProfit[CUR], m.revenue[CUR])} pctLabel="of revenue" />
+            <PlKpiTile label="Operating Profit" icon={BarChart3} value={`IDR ${fmtAmount(m.operatingProfit[CUR])}`}
+              sub={<KpiDelta pct={pctChange(m.operatingProfit[CUR], m.operatingProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />}
+              pct={margin(m.operatingProfit[CUR], m.revenue[CUR])} pctLabel="of revenue" />
+            <PlKpiTile label="Net Profit" icon={PieChart} value={`IDR ${fmtAmount(m.netProfit[CUR])}`}
+              sub={<KpiDelta pct={pctChange(m.netProfit[CUR], m.netProfit[PREV])} suffix={`vs ${lbl(PREV)}`} />}
+              pct={margin(m.netProfit[CUR], m.revenue[CUR])} pctLabel="of revenue" />
+          </PlKpiRow>
 
-          {data && <WarningsPanel warnings={data.warnings} />}
+          {data && <WarningsPanel mono warnings={data.warnings} />}
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
             <PlTable
               m={m}
-              title={<h2 className="text-lg font-bold text-foreground">Profit &amp; Loss</h2>}
+              title={<h2 className="text-sm font-semibold text-neutral-900">Profit &amp; Loss</h2>}
               colCount={7}
               glRange={periods[CUR]}
               head={
-                <tr className="text-[11px] text-muted-foreground">
-                  <th className="text-left font-semibold px-3 py-2" />
+                <tr className={thRowCls}>
+                  <th className={`${thCls} text-left`} />
                   {[
                     [fmtDate(periods[CUR].end), 'Amount (IDR)'], [fmtDate(periods[PREV].end), 'Amount (IDR)'], ['Change', '(IDR)'], ['Change %', ''],
                     [fmtDate(periods[LY].end), 'Amount (IDR)'], ['YoY Change', '(IDR)'], ['YoY %', ''],
                   ].map(([a, b], i) => (
-                    <th key={i} className={`text-right font-semibold px-3 py-2 whitespace-nowrap align-bottom ${i === 4 ? 'border-l border-slate-200' : ''}`}>
-                      <span className="block text-foreground">{a}</span>
-                      {b && <span className="block font-normal">{b}</span>}
+                    <th key={i} className={`${thCls} text-right align-middle`}>
+                      <span className="inline-flex items-baseline justify-end gap-1.5 whitespace-nowrap">
+                        <span>{a}</span>
+                        {b && <span className="text-[10px] font-medium text-neutral-700">{b}</span>}
+                      </span>
                     </th>
                   ))}
                 </tr>
@@ -117,14 +121,14 @@ export default function PlDefaultView({ clientId, segment, printedBy, filters }:
 }
 
 function ValueCells({ v, c }: { v: number[]; c: CellCtx }) {
-  const cls = c.level === 'account' ? 'py-1 text-muted-foreground' : c.level === 'line' ? 'py-1.5 text-foreground/85' : c.level === 'subtotal' ? 'text-blue-800' : 'text-foreground';
+  const cls = c.level === 'account' ? 'py-1 text-neutral-500' : c.level === 'line' ? 'py-1.5 text-neutral-800' : 'text-neutral-900';
   return (
     <>
       <Num v={v[CUR]} bold={c.bold} className={`${cls} font-semibold`} />
       <Num v={v[PREV]} bold={c.bold} className={cls} />
       <Num v={v[CUR] - v[PREV]} bold={c.bold} className={cls} />
       <PctCell cur={v[CUR]} prev={v[PREV]} upIsGood={c.upIsGood} className={c.level === 'account' ? 'py-1' : ''} />
-      <Num v={v[LY]} bold={c.bold} className={`${cls} border-l border-slate-100`} />
+      <Num v={v[LY]} bold={c.bold} className={cls} />
       <Num v={v[CUR] - v[LY]} bold={c.bold} className={cls} />
       <PctCell cur={v[CUR]} prev={v[LY]} upIsGood={c.upIsGood} className={c.level === 'account' ? 'py-1' : ''} />
     </>
@@ -150,24 +154,22 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: PlMerged; prevLbl: 
     <Panel
       title="Variance Summary"
       right={
-        <select value={metric} onChange={e => setMetric(e.target.value as Metric)} className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white">
-          {METRICS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </select>
+        <BsDropdown align="right" value={metric} onChange={x => setMetric(x as Metric)} options={METRICS.map(x => ({ value: x.id, label: x.label }))} />
       }
     >
       <div className="grid grid-cols-2 gap-3">
         {[{ lbl: prevLbl, i: PREV }, { lbl: lyLbl, i: LY }].map(c => {
           const d = v[CUR] - v[c.i];
           return (
-            <div key={c.i} className="rounded-xl bg-slate-50 p-3 text-center">
-              <p className="text-xs text-muted-foreground">vs {c.lbl}</p>
-              <p className={`text-lg font-bold tabular-nums ${d >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{d >= 0 ? '+' : '-'}IDR {fmtCompact(Math.abs(d))}</p>
+            <div key={c.i} className="rounded-[10px] border border-neutral-300 bg-white p-3 text-center">
+              <p className="text-xs font-medium text-neutral-500">vs {c.lbl}</p>
+              <p className={`text-lg font-semibold tracking-tight tabular-nums ${d >= 0 ? 'text-neutral-900' : 'text-red-700'}`}>{d >= 0 ? '+' : '-'}IDR {fmtCompact(Math.abs(d))}</p>
               <Delta pct={pctChange(v[CUR], v[c.i])} />
             </div>
           );
         })}
       </div>
-      <p className="text-sm font-semibold text-foreground mt-4">{label} Bridge <span className="font-normal text-muted-foreground">({prevLbl} → {curLbl})</span></p>
+      <p className="text-sm font-semibold text-neutral-900 mt-4">{label} Bridge <span className="font-normal text-neutral-500">({prevLbl} → {curLbl})</span></p>
       <Bridge startLabel={`${prevLbl}`} start={v[PREV]} steps={steps} endLabel={`${curLbl}`} end={v[CUR]} />
     </Panel>
   );
@@ -179,16 +181,16 @@ function RevenueTrend({ m, periods, lyLbl }: { m: PlMerged; periods: { start: st
   return (
     <Panel title="Revenue Trend" icon={BarChart3}>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-xl font-bold text-foreground">IDR {fmtCompact(m.revenue[CUR])}</span>
+        <span className="text-xl font-semibold tracking-tight tabular-nums text-neutral-900">IDR {fmtCompact(m.revenue[CUR])}</span>
         <Delta pct={pctChange(m.revenue[CUR], m.revenue[LY])} suffix={`vs ${lyLbl}`} />
       </div>
       <div className="h-32 mt-2">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748B' }} interval={0} tickLine={false} axisLine={false} tickFormatter={(s: string) => s.split(' ')[0]} />
-            <Tooltip cursor={{ fill: '#F1F5F9' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
+            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#737373' }} interval={0} tickLine={false} axisLine={false} tickFormatter={(s: string) => s.split(' ')[0]} />
+            <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
             <Bar dataKey="value" name="Revenue" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-              {data.map((d, i) => <Cell key={i} fill={d.last ? PL_COLORS.brand : '#BBF7D0'} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.last ? PL_COLORS.brand : '#D4D4D4'} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

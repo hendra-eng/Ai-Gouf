@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, LayoutGrid } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import FsShell, { LoadingBlock, NoClient } from './FsShell';
@@ -10,6 +10,7 @@ import PlTrendView from './pl/PlTrendView';
 import PlComparisonView from './pl/PlComparisonView';
 import PlGrossNetView from './pl/PlGrossNetView';
 import { SegmentFilter } from './pl/PlUi';
+import { BsDropdown } from './bs/BsMono';
 import type { Segment } from './pl/plData';
 
 // Task Plan 17 -- Profit & Loss dari posted GL + mapping COA, dengan 4
@@ -61,18 +62,7 @@ export default function ProfitLossClient() {
       title={cur.title}
       subtitle={<>{cur.subtitle} · built from posted General Ledger and the client COA mapping</>}
       actions={
-        <label className="relative inline-flex items-center">
-          <LayoutGrid size={16} className="absolute left-3 text-blue-700 pointer-events-none" />
-          <select
-            value={view}
-            onChange={e => choose(e.target.value as View)}
-            aria-label="View"
-            className="appearance-none pl-9 pr-9 py-2.5 rounded-lg border border-border bg-white text-sm font-medium text-foreground hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100 cursor-pointer"
-          >
-            {VIEWS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </select>
-          <ChevronDown size={15} className="absolute right-3 text-muted-foreground pointer-events-none" />
-        </label>
+        <BsDropdown icon={LayoutGrid} align="right" value={view} onChange={v => choose(v as View)} options={VIEWS.map(v => ({ value: v.id, label: v.label }))} />
       }
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (

@@ -9,7 +9,7 @@ import { iso, monthEnd, parts, type MAccount, type MLine, type MSection } from '
 // /profit-loss/series (banyak periode), lalu laporannya digabung jadi
 // struktur seksi -> baris -> akun dengan nilai per kolom (index = urutan periode).
 
-export const PL_COLORS = { revenue: '#22C55E', brand: '#0F7D4E', expense: '#F43F5E', profit: '#8B5CF6', amber: '#F59E0B', sky: '#0EA5E9', muted: '#94A3B8' };
+export const PL_COLORS = { revenue: '#171717', brand: '#171717', expense: '#A3A3A3', profit: '#525252', amber: '#737373', sky: '#404040', muted: '#D4D4D4' };
 
 export interface Period { start: string; end: string }
 export interface Segment { type: string; value: string }

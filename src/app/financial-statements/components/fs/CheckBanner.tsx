@@ -70,9 +70,9 @@ export function WarningsPanel({ warnings, mono = false }: { warnings: FsWarning[
       ? 'rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-4 py-3 text-xs text-neutral-800'
       : 'border border-amber-200 bg-amber-50 text-amber-900 rounded-xl px-4 py-2.5 text-sm'}>
       <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 text-left">
-        <AlertTriangle size={16} className="text-amber-500" />
+        <AlertTriangle size={16} className={mono ? 'text-neutral-700' : 'text-amber-500'} />
         <span className="font-medium">{warnings.length} account mapping warning{warnings.length > 1 ? 's' : ''}</span>
-        <span className="text-xs text-amber-700">— review in the Mapping tab</span>
+        <span className={`text-xs ${mono ? 'text-neutral-500' : 'text-amber-700'}`}>— review in the Mapping tab</span>
         <span className="ml-auto">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
       {open && (
