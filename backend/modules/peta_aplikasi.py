@@ -27,8 +27,12 @@ logger = logging.getLogger(__name__)
 PATH_JSON = Path(__file__).resolve().parent.parent / "data" / "peta_aplikasi.json"
 MAKS_HALAMAN_DETAIL = 3
 MAKS_KARAKTER_DETAIL = 24000
+PATH_ALUR = Path(__file__).resolve().parent.parent / "data" / "alur_aplikasi.md"
+MAKS_ALUR = 2
+MAKS_KARAKTER_ALUR = 12000
 
 _cache: Dict[str, Any] = {"mtime": None, "data": None}
+_cache_alur: Dict[str, Any] = {"mtime": None, "data": []}
 
 # Padanan istilah sehari-hari (Indonesia) -> kata yang ada di nama menu/route.
 SINONIM = {
@@ -236,13 +240,90 @@ def pilih_halaman(d: Dict[str, Any], pesan: str, halaman_aktif: Optional[str] = 
     return [h for _, h in skor[:maks]]
 
 
+# --------------------------------------------------------------------------- alur proses
+def _parse_alur(teks: str) -> List[Dict[str, Any]]:
+    """Pecah alur_aplikasi.md per '## ALUR: <judul>' (baris 'Rute:' dan 'Kata kunci:' jadi metadata)."""
+    hasil: List[Dict[str, Any]] = []
+    for bagian in re.split(r"(?m)^## ALUR:\s*", teks.replace("\r\n", "\n"))[1:]:
+        judul, _, sisa = bagian.partition("\n")
+        rute: List[str] = []
+        kata: List[str] = []
+        isi: List[str] = []
+        for baris in sisa.split("\n"):
+            if baris.startswith("Rute:"):
+                rute = [r.strip().rstrip("/") for r in baris[5:].split(",") if r.strip()]
+            elif baris.startswith("Kata kunci:"):
+                kata = [k.strip().lower() for k in baris[11:].split(",") if k.strip()]
+            else:
+                isi.append(baris)
+        hasil.append({"judul": judul.strip(), "rute": rute, "kata": kata, "isi": "\n".join(isi).strip()})
+    return hasil
+
+
+def muat_alur() -> List[Dict[str, Any]]:
+    """Baca data/alur_aplikasi.md (di-cache; otomatis dibaca ulang kalau file berubah)."""
+    try:
+        mtime = PATH_ALUR.stat().st_mtime
+    except OSError:
+        return []
+    if _cache_alur["mtime"] != mtime:
+        try:
+            _cache_alur["data"] = _parse_alur(PATH_ALUR.read_text(encoding="utf-8"))
+            _cache_alur["mtime"] = mtime
+        except Exception:  # noqa: BLE001
+            logger.warning("Gagal membaca %s", PATH_ALUR, exc_info=True)
+            return []
+    return _cache_alur["data"]
+
+
+def pilih_alur(pesan: str, halaman: Optional[str] = None, riwayat: Optional[List[Dict[str, str]]] = None,
+               maks: int = MAKS_ALUR) -> List[Dict[str, Any]]:
+    """Alur yang relevan: kata kunci ada di pertanyaan (skor 3 per kata kunci; riwayat user terakhir skor 1)
+    + halaman yang sedang dibuka termasuk rute alur itu (skor 2)."""
+    daftar = muat_alur()
+    if not daftar:
+        return []
+    q = pesan.lower()
+    q_lama = " ".join(m.get("content", "") for m in (riwayat or [])[-2:] if m.get("role") == "user").lower()
+    path = (halaman or "").split("?")[0].split("#")[0].rstrip("/")
+    skor: List[Tuple[float, Dict[str, Any]]] = []
+    for a in daftar:
+        s = 0.0
+        for k in a["kata"]:
+            if k in q:
+                s += 3
+            elif k in q_lama:
+                s += 1
+        if path and any(path == r or path.startswith(r + "/") for r in a["rute"]):
+            s += 2
+        if s > 0:
+            skor.append((s, a))
+    skor.sort(key=lambda x: -x[0])
+    return [a for _, a in skor[:maks]]
+
+
+def teks_alur(terpilih: List[Dict[str, Any]]) -> str:
+    bagian, total = [], 0
+    for a in terpilih:
+        t = f"### Alur: {a['judul']}\n{a['isi']}"
+        if total + len(t) > MAKS_KARAKTER_ALUR and bagian:
+            break
+        bagian.append(t)
+        total += len(t)
+    if not bagian:
+        return ""
+    return "ALUR PROSES APLIKASI yang relevan (sumber kebenaran untuk pertanyaan 'bagaimana alurnya / harus ngapain / datanya ke mana'):\n\n" + "\n\n".join(bagian)
+
+
 # --------------------------------------------------------------------------- publik
 def bangun_konteks(pesan: str, halaman_aktif: Optional[str] = None,
                    riwayat: Optional[List[Dict[str, str]]] = None) -> Tuple[str, str]:
     """Return (indeks_statis, detail_dinamis). Keduanya string kosong kalau peta belum dibuat."""
+    halaman_mentah = halaman_aktif
+    alur_teks = teks_alur(pilih_alur(pesan, halaman_mentah, riwayat))
     d = muat()
     if not d:
-        return "", ""
+        return "", alur_teks
     halaman_aktif = cocokkan_rute(d, halaman_aktif)
     statis = teks_indeks(d)
     terpilih = pilih_halaman(d, pesan, halaman_aktif, riwayat)
@@ -258,6 +339,8 @@ def bangun_konteks(pesan: str, halaman_aktif: Optional[str] = None,
         dinamis += f"Halaman yang sedang dibuka pengguna: `{halaman_aktif}`.\n"
     if detail:
         dinamis += "DETAIL LENGKAP halaman yang relevan dengan pertanyaan ini:\n\n" + "\n\n".join(detail)
+    if alur_teks:
+        dinamis += ("\n\n" if dinamis else "") + alur_teks
     return statis, dinamis
 
 
@@ -275,5 +358,10 @@ ATURAN_PETA = (
     "- Tombol bernama 'Post', 'Reverse', 'Submit', 'Delete', dsb. bisa nonaktif/tersembunyi tergantung role "
     "pengguna (lihat 'Hak akses per role'). Backend tetap penentu akhir izin. Jelaskan fungsi tombol dari "
     "nama, tujuan navigasi, dan konteks halamannya; jika fungsinya tidak jelas dari peta, katakan terus terang.\n"
+    "- Untuk pertanyaan ALUR proses (mis. 'setelah upload file sales harus ngapain', 'datanya masuk ke mana', \n"
+    "kenapa gagal posting), jawab dari bagian 'ALUR PROSES APLIKASI' bila ada: urutkan langkah sesuai alur, sebut nama \n"
+    "tab/tombol/status persis seperti tertulis, dan jangan menambah langkah yang tidak tertulis. Kalau alurnya belum \n"
+    "tertulis di sana, katakan terus terang bahwa kamu belum punya penjelasan alur untuk bagian itu, lalu bantu dengan \n"
+    "daftar tab/tombol dari peta.\n"
     "- Kalau pertanyaan di luar isi peta (mis. data keuangan perusahaan), ikuti aturan data di atas."
 )

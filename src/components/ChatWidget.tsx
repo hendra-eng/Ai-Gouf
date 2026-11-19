@@ -350,12 +350,11 @@ export default function ChatWidget() {
     setDaftar([]);
   }, [activeClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tinggi textarea mengikuti isi (maks 120px).
+  // Tinggi textarea TETAP satu baris -- tidak mengembang. Teks panjang digulir di dalam (tanpa scrollbar).
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    el.style.height = '28px';
   }, [input]);
 
   const updateById = (id: string, fn: (p: Pesan) => Pesan) =>
@@ -716,7 +715,7 @@ export default function ChatWidget() {
                 <ul className="divide-y divide-neutral-800/80">
                   {daftar.map((c) => {
                     const aktif = percakapanIdRef.current != null && String(percakapanIdRef.current) === String(c.id);
-                    const judul = c.judul && c.judul !== 'Percakapan Baru' ? c.judul : 'Obrolan baru';
+                    const judul = 'Zake'; // nama AI selalu tetap, bukan judul hasil percakapan
                     const konfirm = konfirmHapus === c.id;
                     return (
                       <li key={String(c.id)} className="group relative">
@@ -738,7 +737,7 @@ export default function ChatWidget() {
                               </span>
                             </span>
                             <span className="mt-0.5 block truncate text-[12.5px] text-neutral-500">
-                              {c.cuplikan || (aktif ? 'Percakapan saat ini' : 'Ketuk untuk membuka')}
+                              {c.cuplikan ? c.cuplikan.replace(/\*\*|`/g, '') : (aktif ? 'Percakapan saat ini' : 'Ketuk untuk membuka')}
                             </span>
                           </span>
                         </button>
@@ -969,7 +968,7 @@ export default function ChatWidget() {
               }}
               rows={1}
               placeholder={lampiran.length ? 'Tanya soal gambar ini...' : 'Tulis pertanyaanmu...'}
-              className="flex-1 resize-none bg-transparent outline-none text-[13.5px] text-neutral-100 placeholder:text-neutral-500 py-1 max-h-[120px]"
+              className="flex-1 resize-none bg-transparent outline-none text-[13.5px] text-neutral-100 placeholder:text-neutral-500 py-1 h-7 max-h-7 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             />
             {sending ? (
               <button
