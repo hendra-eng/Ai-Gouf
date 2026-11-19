@@ -17,6 +17,11 @@ export interface GlLine {
   number: string;
   description: string;
   party: string;
+  /** Segment tambahan -- hanya tampil di export Excel/CSV. */
+  cost_center?: string;
+  branch?: string;
+  project?: string;
+  department?: string;
   debit: number;
   credit: number;
   /** Saldo berjalan bertanda (debit - kredit). */

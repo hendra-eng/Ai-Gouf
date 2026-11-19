@@ -829,6 +829,27 @@ export const transferMutation = (clientId: string, mutationId: string, toBankCoa
     { client_id: clientId, to_bank_coa_id: toBankCoaId, description: description ?? null });
 export const pairTransferMutation = (clientId: string, mutationId: string, transactionId: string) =>
   kirim<BcTransaction>('POST', `/mutations/${mutationId}/pair-transfer`, { client_id: clientId, transaction_id: transactionId });
+/** Transaksi buku (Cash & Bank yang dicatat manual) yang bisa ditautkan ke 1 mutasi -- rekonsiliasi manual. */
+export interface BcBookCandidate {
+  transaction_id: string;
+  tx_number: string;
+  tx_date: string | null;
+  amount: number;
+  status: TxStatus;
+  kind: string;
+  category: string | null;
+  counterparty: string | null;
+  description: string | null;
+  reference: string | null;
+  source: string;
+  /** Nominal sama persis dengan mutasi (syarat untuk ditautkan). */
+  exact_amount: boolean;
+  days_apart: number | null;
+}
+export const fetchBcBookCandidates = (clientId: string, mutationId: string) =>
+  ambil<BcBookCandidate[]>(`/mutations/${mutationId}/book-candidates`, { client_id: clientId });
+export const linkMutationToTransaction = (clientId: string, mutationId: string, transactionId: string) =>
+  kirim<BcTransaction>('POST', `/mutations/${mutationId}/link-transaction`, { client_id: clientId, transaction_id: transactionId });
 export const fetchBcPendingTransfers = (clientId: string) =>
   ambil<BcPendingTransfer[]>('/transfers/pending', { client_id: clientId });
 

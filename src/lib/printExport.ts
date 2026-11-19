@@ -22,6 +22,8 @@ export interface PrintColumn {
   type?: 'text' | 'money' | 'number';
   /** Lebar kolom Excel (karakter). */
   width?: number;
+  /** true = kolom hanya muncul di Excel/CSV, tidak di PDF/print (supaya PDF tetap ringkas). */
+  excelOnly?: boolean;
 }
 
 export type PrintCell = string | number | null | undefined;
@@ -595,6 +597,7 @@ export async function printReport(report: PrintReport, format: PrintFormat): Pro
   } else if (format === 'excel') {
     downloadBlob(await (report.template === 'statement' ? buildStatementExcel(report) : buildExcel(report)), `${name}.xlsx`);
   } else {
-    (report.template === 'statement' ? await buildStatementPdf(report) : buildPdf(report)).save(`${name}.pdf`);
+    const pdfReport: PrintReport = { ...report, table: { ...report.table, columns: report.table.columns.filter(c => !c.excelOnly) } };
+    (report.template === 'statement' ? await buildStatementPdf(pdfReport) : buildPdf(pdfReport)).save(`${name}.pdf`);
   }
 }

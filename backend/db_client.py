@@ -61,6 +61,32 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine)
 
 
+# ------------------------------------------------------------
+# Kunci periode (Year-End Closing). Trigger DB (migrations/33-*.py) menolak
+# perubahan transaksi POSTED di periode yang sudah ditutup dengan pesan
+# berawalan "PERIOD_LOCKED:". Banyak fungsi CRUD di file ini menelan error
+# DB (return None -> endpoint menjawab "not found"), jadi pesannya dicatat di
+# sini & middleware di main.py mengganti respon request itu jadi 409 yang
+# jelas. `WADAH_KUNCI_PERIODE` diisi dict baru per request oleh middleware.
+# (Dipulihkan 2026-11-18: sempat hilang di merge hendra; pesan_periode_terkunci
+# sendiri didefinisikan lebih bawah -- dipanggil saat runtime, bukan saat import.)
+# ------------------------------------------------------------
+import contextvars
+from sqlalchemy import event as _sa_event
+
+WADAH_KUNCI_PERIODE: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("wadah_kunci_periode", default=None)
+
+
+@_sa_event.listens_for(engine, "handle_error")
+def _catat_periode_terkunci(ctx):
+    wadah = WADAH_KUNCI_PERIODE.get()
+    if wadah is None:
+        return
+    pesan = pesan_periode_terkunci(ctx.original_exception)
+    if pesan:
+        wadah["pesan"] = pesan
+
+
 # ============================================================
 # [FIX -- POINT 4] BULK UPSERT HELPER (dialect-aware)
 # ============================================================
@@ -7687,7 +7713,8 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
 
 def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
                            sampai_tanggal: Optional[date], kolom_pihak: str = "reference",
-                           termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
+                           termasuk_belum_posted: bool = False,
+                           segmen_fn=None) -> List[Dict[str, Any]]:
     """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
     -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
     q = session.query(model).filter(model.client_id == management_client_id, _syarat_status_gl(model.status, ("posted", "reversed"), termasuk_belum_posted))
@@ -7702,7 +7729,9 @@ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_
     hasil: List[Dict[str, Any]] = []
     for j in jurnal:
         dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
-                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None), "segmen": {}}
+                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None),
+                 # segmen_fn(j) -> dimensi (cost_center/branch/project/department) dari header jurnal; kosong kalau modul tak punya.
+                 "segmen": (segmen_fn(j) if segmen_fn else {}) or {}}
         for l in baris_per_j.get(j.id, []):
             hasil.append({**dasar, "keterangan": l.description or j.description or j.journal_no,
                           "account_code": l.account_code, "account_name": l.account_name,
@@ -7725,8 +7754,19 @@ def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Opt
 
 def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date], termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Jurnal Fixed Assets posted/reversed -> baris GL (sumber "fixed_asset")."""
+    cache_aset: Dict[str, Dict[str, Any]] = {}
+
+    def _segmen_aset(j) -> Dict[str, Any]:
+        # Jurnal FA tidak punya dimensi sendiri -> ikut branch & department aset terkait.
+        if not j.asset_id:
+            return {}
+        if j.asset_id not in cache_aset:
+            aset = session.query(FixedAsset.branch, FixedAsset.department).filter(FixedAsset.id == j.asset_id).first()
+            cache_aset[j.asset_id] = {"branch": aset[0], "department": aset[1]} if aset else {}
+        return cache_aset[j.asset_id]
+
     return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal,
-                                  termasuk_belum_posted=termasuk_belum_posted)
+                                  termasuk_belum_posted=termasuk_belum_posted, segmen_fn=_segmen_aset)
 
 
 def ambil_baris_jurnal_posted_transaksi(
@@ -7734,6 +7774,7 @@ def ambil_baris_jurnal_posted_transaksi(
     sampai_tanggal: Optional[date] = None,
     management_client_id: Optional[str] = None,
     termasuk_belum_posted: bool = False,
+    termasuk_penutup: bool = False,
 ) -> List[Dict[str, Any]]:
     """Semua baris jurnal POSTED s.d. `sampai_tanggal` (inklusif, None =
     semua), difilter per `management_client_id` (klien/perusahaan -- filter
@@ -7742,12 +7783,19 @@ def ambil_baris_jurnal_posted_transaksi(
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
-    Purchase belum punya dimensi).
+    Other -> cost_center/branch/project/department; Fixed Assets -> branch &
+    department aset; Purchase, Cash & Bank, Inventory belum punya dimensi).
 
     `termasuk_belum_posted=True` (HANYA dipakai halaman General Ledger): semua
     transaksi yang sudah masuk Journal Preview (draft/pending/approved) ikut
     dibaca; yang rejected/void/cancelled/dihapus tetap dikeluarkan. Default False
-    = perilaku lama (hanya posted) untuk COA, Financial Statements, dll."""
+    = perilaku lama (hanya posted) untuk COA, Financial Statements, dll.
+
+    Jurnal penutup tahun buku (source_type SOURCE_TYPE_TUTUP_BUKU) hanya ikut
+    kalau `termasuk_penutup=True` (General Ledger) -- Financial Statements
+    menghitung laba ditahan dari akun P&L, jadi jurnal itu tidak dibaca agar
+    laba tidak terhitung dua kali & P&L tahun yang ditutup tidak jadi nol.
+    (Dipulihkan 2026-11-18: sempat hilang di merge c0b5121.)"""
     if not client_id and not management_client_id:
         raise ValueError("client_id atau management_client_id wajib diisi.")
 
@@ -7773,9 +7821,11 @@ def ambil_baris_jurnal_posted_transaksi(
         )
         if sampai_tanggal:
             q = q.filter(JournalEntryDraft.entry_date <= sampai_tanggal)
+        if not termasuk_penutup:
+            q = q.filter(JournalEntryDraft.source_type != SOURCE_TYPE_TUTUP_BUKU)
         for draft, line in q.order_by(JournalEntryDraft.entry_date, JournalEntryDraftLine.line_no).all():
             hasil.append({
-                "sumber": "journal_entry",
+                "sumber": "year_end_closing" if draft.source_type == SOURCE_TYPE_TUTUP_BUKU else "journal_entry",
                 "jurnal_id": f"je:{draft.id}",
                 "nomor": draft.je_number,
                 "tanggal": draft.entry_date,
@@ -7885,7 +7935,9 @@ def ambil_baris_jurnal_posted_transaksi(
             #        sudah disalin ke tabel ini oleh migration 48) ---
             hasil.extend(_baris_gl_jurnal_modul(session, OtherTransaction, OtherTransactionLine, "other", management_client_id,
                                                 sampai_tanggal, kolom_pihak="counterparty",
-                                                termasuk_belum_posted=termasuk_belum_posted))
+                                                termasuk_belum_posted=termasuk_belum_posted,
+                                                segmen_fn=lambda j: {"cost_center": j.cost_center, "branch": j.branch,
+                                                                     "project": j.project, "department": j.department}))
 
         return hasil
     except Exception as e:

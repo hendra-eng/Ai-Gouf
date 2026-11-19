@@ -19,7 +19,7 @@ import {
   isAdjustCandidate,
   matchMutationToAccounts,
   matchMutationToInvoices,
-  pairTransferMutation,
+  pairTransferMutation, linkMutationToTransaction,
   transferMutation,
   unmatchMutation,
   useBcPendingTransfers,
@@ -226,6 +226,12 @@ export function useBankReconciliation() {
     await denganBusy(m.id, () => pairTransferMutation(cid, m.id, transactionId));
   }, [clientId, denganBusy]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Rekonsiliasi manual: tautkan mutasi ke transaksi buku yang sudah dicatat (tanpa jurnal baru). */
+  const tautkanTransaksi = useCallback(async (m: BankFeedMutation, transactionId: string) => {
+    const cid = wajibKlien();
+    await denganBusy(m.id, () => linkMutationToTransaction(cid, m.id, transactionId));
+  }, [clientId, denganBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Batalkan pencocokan (transaksi draft/approved dihapus, mutasi kembali unmatched). */
   const batalkan = useCallback(async (m: BankFeedMutation) => {
     const cid = wajibKlien();
@@ -297,6 +303,7 @@ export function useBankReconciliation() {
     catatNonInvoice,
     transfer,
     pasangkanTransfer,
+    tautkanTransaksi,
     transferMenunggu: pt.pending,
     akunLawan,
     batalkan,

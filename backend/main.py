@@ -374,6 +374,30 @@ async def _respon_periode_terkunci(request, exc):
         return _JSONResponse(status_code=409, content={"detail": pesan, "code": "PERIOD_LOCKED"})
     raise exc
 
+
+# [DIPULIHKAN 2026-11-18] Pelengkap handler di atas: banyak fungsi CRUD db_client MENELAN
+# error DB (return None -> endpoint menjawab "not found"/500), jadi exception tidak pernah
+# sampai ke handler. Hook handle_error di db_client mencatat pesan PERIOD_LOCKED ke wadah
+# per request; di sini respon gagal request itu diganti jadi 409 yang jelas.
+@app.middleware("http")
+async def _respon_periode_terkunci_tertelan(request: Request, call_next):
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    wadah: Dict[str, Any] = {}
+    token = dbc.WADAH_KUNCI_PERIODE.set(wadah)
+    try:
+        try:
+            respon = await call_next(request)
+        except Exception:
+            if not wadah.get("pesan"):
+                raise
+            respon = None
+        if wadah.get("pesan") and (respon is None or respon.status_code >= 400):
+            return _gagal_v1(message=wadah["pesan"], errors={"code": "PERIOD_LOCKED"}, status_code=409)
+        return respon
+    finally:
+        dbc.WADAH_KUNCI_PERIODE.reset(token)
+
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]

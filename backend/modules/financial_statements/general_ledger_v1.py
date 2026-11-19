@@ -60,7 +60,8 @@ MODE_INCLUDE = ("with_activity", "non_zero", "all", "selected")
 # Klasifikasi COA yang termasuk Laba Rugi (saldo awal direset tiap awal tahun).
 _KLASIFIKASI_LABA_RUGI = {"REVENUE", "COST OF SALES", "EXPENSE", "OTHER INCOME", "OTHER EXPENSE", "INCOME TAX"}
 
-_LABEL_SUMBER = {"journal_entry": "Journal Entry", "sales": "Sales", "purchase": "Purchase"}
+_LABEL_SUMBER = {"journal_entry": "Journal Entry", "year_end_closing": "Year-End Closing", "sales": "Sales", "purchase": "Purchase", "cash_bank": "Cash & Bank",
+                "fixed_asset": "Fixed Assets", "inventory": "Inventory", "other": "Other"}
 
 
 def _r(v: float) -> float:
@@ -188,6 +189,13 @@ def susun_general_ledger(
             "number": b.get("nomor") or "",
             "description": b.get("keterangan") or "",
             "party": b.get("pihak") or "",
+            # Segment tambahan (dimensi) -- dipakai kolom ekstra di export Excel/CSV.
+            # JE -> cost_center; Sales -> branch & project; Other -> semua 4; Fixed Assets -> branch & department.
+            # Purchase, Cash & Bank, Inventory belum punya dimensi (kosong).
+            "cost_center": (b.get("segmen") or {}).get("cost_center") or "",
+            "branch": (b.get("segmen") or {}).get("branch") or "",
+            "project": (b.get("segmen") or {}).get("project") or "",
+            "department": (b.get("segmen") or {}).get("department") or "",
             "debit": _r(debit),
             "credit": _r(kredit),
         })
@@ -266,7 +274,8 @@ def general_ledger(
     if error is not None:
         return error
     try:
-        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=end_date, termasuk_belum_posted=True, **filter_)
+        baris = dbc.ambil_baris_jurnal_posted_transaksi(sampai_tanggal=end_date, termasuk_belum_posted=True,
+                                                       termasuk_penutup=True, **filter_)
     except Exception as e:  # noqa: BLE001
         logger.exception("Gagal membaca transaksi posted untuk general ledger: %s", e)
         return gagal(message="Gagal membaca data transaksi.", errors={"code": "DB_ERROR"}, status_code=500)
