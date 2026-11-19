@@ -7713,7 +7713,8 @@ def _baris_gl_kas_bank(session, management_client_id: str, sampai_tanggal: Optio
 
 def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_client_id: str,
                            sampai_tanggal: Optional[date], kolom_pihak: str = "reference",
-                           termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
+                           termasuk_belum_posted: bool = False,
+                           segmen_fn=None) -> List[Dict[str, Any]]:
     """Jurnal modul (header journal_no/journal_date/status + baris) posted/reversed
     -> baris GL. Reversed = jurnal asal + pembalik RV-<no> di reversal_date."""
     q = session.query(model).filter(model.client_id == management_client_id, _syarat_status_gl(model.status, ("posted", "reversed"), termasuk_belum_posted))
@@ -7728,7 +7729,9 @@ def _baris_gl_jurnal_modul(session, model, model_baris, sumber: str, management_
     hasil: List[Dict[str, Any]] = []
     for j in jurnal:
         dasar = {"sumber": sumber, "jurnal_id": f"{sumber}:{j.id}", "nomor": j.journal_no,
-                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None), "segmen": {}}
+                 "tanggal": j.journal_date, "pihak": getattr(j, kolom_pihak, None),
+                 # segmen_fn(j) -> dimensi (cost_center/branch/project/department) dari header jurnal; kosong kalau modul tak punya.
+                 "segmen": (segmen_fn(j) if segmen_fn else {}) or {}}
         for l in baris_per_j.get(j.id, []):
             hasil.append({**dasar, "keterangan": l.description or j.description or j.journal_no,
                           "account_code": l.account_code, "account_name": l.account_name,
@@ -7751,8 +7754,19 @@ def _baris_gl_persediaan(session, management_client_id: str, sampai_tanggal: Opt
 
 def _baris_gl_aset_tetap(session, management_client_id: str, sampai_tanggal: Optional[date], termasuk_belum_posted: bool = False) -> List[Dict[str, Any]]:
     """Jurnal Fixed Assets posted/reversed -> baris GL (sumber "fixed_asset")."""
+    cache_aset: Dict[str, Dict[str, Any]] = {}
+
+    def _segmen_aset(j) -> Dict[str, Any]:
+        # Jurnal FA tidak punya dimensi sendiri -> ikut branch & department aset terkait.
+        if not j.asset_id:
+            return {}
+        if j.asset_id not in cache_aset:
+            aset = session.query(FixedAsset.branch, FixedAsset.department).filter(FixedAsset.id == j.asset_id).first()
+            cache_aset[j.asset_id] = {"branch": aset[0], "department": aset[1]} if aset else {}
+        return cache_aset[j.asset_id]
+
     return _baris_gl_jurnal_modul(session, FixedAssetJournal, FixedAssetJournalLine, "fixed_asset", management_client_id, sampai_tanggal,
-                                  termasuk_belum_posted=termasuk_belum_posted)
+                                  termasuk_belum_posted=termasuk_belum_posted, segmen_fn=_segmen_aset)
 
 
 def ambil_baris_jurnal_posted_transaksi(
@@ -7769,7 +7783,8 @@ def ambil_baris_jurnal_posted_transaksi(
     Tiap baris: sumber, jurnal_id, nomor, tanggal (date), keterangan, pihak,
     account_code, account_name, debit, kredit, segmen (dimensi untuk filter
     segment P&L: JE -> cost_center baris; Sales -> branch (cabang) & project;
-    Purchase belum punya dimensi).
+    Other -> cost_center/branch/project/department; Fixed Assets -> branch &
+    department aset; Purchase, Cash & Bank, Inventory belum punya dimensi).
 
     `termasuk_belum_posted=True` (HANYA dipakai halaman General Ledger): semua
     transaksi yang sudah masuk Journal Preview (draft/pending/approved) ikut
@@ -7920,7 +7935,9 @@ def ambil_baris_jurnal_posted_transaksi(
             #        sudah disalin ke tabel ini oleh migration 48) ---
             hasil.extend(_baris_gl_jurnal_modul(session, OtherTransaction, OtherTransactionLine, "other", management_client_id,
                                                 sampai_tanggal, kolom_pihak="counterparty",
-                                                termasuk_belum_posted=termasuk_belum_posted))
+                                                termasuk_belum_posted=termasuk_belum_posted,
+                                                segmen_fn=lambda j: {"cost_center": j.cost_center, "branch": j.branch,
+                                                                     "project": j.project, "department": j.department}))
 
         return hasil
     except Exception as e:

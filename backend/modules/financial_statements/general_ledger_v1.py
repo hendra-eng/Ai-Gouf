@@ -189,6 +189,13 @@ def susun_general_ledger(
             "number": b.get("nomor") or "",
             "description": b.get("keterangan") or "",
             "party": b.get("pihak") or "",
+            # Segment tambahan (dimensi) -- dipakai kolom ekstra di export Excel/CSV.
+            # JE -> cost_center; Sales -> branch & project; Other -> semua 4; Fixed Assets -> branch & department.
+            # Purchase, Cash & Bank, Inventory belum punya dimensi (kosong).
+            "cost_center": (b.get("segmen") or {}).get("cost_center") or "",
+            "branch": (b.get("segmen") or {}).get("branch") or "",
+            "project": (b.get("segmen") or {}).get("project") or "",
+            "department": (b.get("segmen") or {}).get("department") or "",
             "debit": _r(debit),
             "credit": _r(kredit),
         })

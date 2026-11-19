@@ -141,6 +141,7 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
         push({
           date: l.date, source: l.source, number: l.number, description: l.description,
           debit: l.debit || null, credit: l.credit || null, balance: l.balance,
+          cost_center: l.cost_center || '', branch: l.branch || '', project: l.project || '', department: l.department || '',
         });
       } else if (r.kind === 'month') {
         push({ description: `Balance end of ${fmtMonth(r.month.month)}`, debit: r.month.debit, credit: r.month.credit, balance: r.month.closing_balance }, 'total');
@@ -168,6 +169,11 @@ function buildPrintReport(gl: GeneralLedger, companyName: string, printedBy?: st
         { key: 'debit', header: 'Debit', type: 'money', width: 18 },
         { key: 'credit', header: 'Credit', type: 'money', width: 18 },
         { key: 'balance', header: 'Balance', type: 'money', width: 20 },
+        // Segment tambahan: hanya di Excel/CSV, PDF tetap kolom default.
+        { key: 'cost_center', header: 'Cost Center', width: 18, excelOnly: true },
+        { key: 'branch', header: 'Branch', width: 16, excelOnly: true },
+        { key: 'project', header: 'Project', width: 22, excelOnly: true },
+        { key: 'department', header: 'Department', width: 18, excelOnly: true },
       ],
       rows,
       rowStyles,
