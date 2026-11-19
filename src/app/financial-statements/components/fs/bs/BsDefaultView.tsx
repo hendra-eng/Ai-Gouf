@@ -229,7 +229,7 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
       }
     >
       <div className="overflow-x-auto scrollbar-thin">
-        <table className="w-full min-w-[860px] border-separate border-spacing-0 text-xs">
+        <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-xs">
           <thead>
             <tr className={thRowCls}>
               <th className={`${thCls} text-left`} />
@@ -237,9 +237,11 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
                 [labels[0], 'Amount (IDR)'], [labels[1], 'Amount (IDR)'], ['Change', '(IDR)'], ['Change %', ''],
                 [labels[2], 'Amount (IDR)'], ['YoY Change', '(IDR)'], ['YoY %', ''],
               ].map(([a, b], i) => (
-                <th key={i} className={`${thCls} text-right align-bottom`}>
-                  <span className="block">{a}</span>
-                  {b && <span className="block text-[10px] font-medium text-neutral-700">{b}</span>}
+                <th key={i} className={`${thCls} text-right align-middle`}>
+                  <span className="inline-flex items-baseline justify-end gap-1.5 whitespace-nowrap">
+                    <span>{a}</span>
+                    {b && <span className="text-[10px] font-medium text-neutral-700">{b}</span>}
+                  </span>
                 </th>
               ))}
             </tr>
@@ -249,7 +251,7 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
               const gOpen = !closed.has(g.key);
               return (
                 <React.Fragment key={g.key}>
-                  <tr className="cursor-pointer text-xs [&>td]:bg-neutral-900 [&>td]:text-white" onClick={() => toggle(setClosed, g.key)}>
+                  <tr className="cursor-pointer text-xs [&>td]:bg-neutral-200 [&>td]:text-neutral-900 [&>td]:shadow-[inset_0_-1px_0_#b4b4b4]" onClick={() => toggle(setClosed, g.key)}>
                     <td className="px-3 py-2 font-bold">
                       <span className="inline-flex items-center gap-1.5">{gOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}{g.label}</span>
                     </td>
