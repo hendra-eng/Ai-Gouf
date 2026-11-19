@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import ChatWidget from './ChatWidget';
 import { CurrencyProvider } from '@/lib/currency';
 import { LanguageProvider } from '@/lib/language';
 import { ActiveClientProvider } from '@/lib/activeClient';
@@ -101,6 +102,8 @@ export default function AppLayout({ children, company }: AppLayoutProps) {
             </main>
           </div>
         </div>
+        {/* Bubble chat AI di pojok kanan bawah (pengganti halaman /zafeb-ai) */}
+        <ChatWidget />
       </TransactionsProvider>
       </ActivePeriodProvider>
       </AccountCodeProvider>

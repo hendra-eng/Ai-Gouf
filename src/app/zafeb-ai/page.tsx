@@ -1,9 +1,7 @@
-import React from 'react';
-import ZafebAIView from './ZafebAIView';
+import { redirect } from 'next/navigation';
 
-// Halaman "Zafeb AI" (sebelumnya bernama "Agent AI") -- route "/zafeb-ai", dibuka lewat menu "Zafeb AI" di Sidebar.tsx.
+// Halaman Zafeb AI sudah diganti bubble chat di pojok kanan bawah (components/ChatWidget.tsx).
+// Link/bookmark lama ke /zafeb-ai dialihkan ke Overview.
 export default function ZafebAIPage() {
-  return (
-    <ZafebAIView />
-  );
+  redirect('/');
 }

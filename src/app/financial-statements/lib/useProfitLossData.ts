@@ -221,11 +221,19 @@ function hitungDataProfitLoss(hasil: any, coa: any[], tahun: number) {
 // (hitungDataProfitLoss) supaya angkanya selalu konsisten dengan halaman
 // P&L, tidak duplikat logic. Tidak mengubah perilaku useProfitLossData()
 // yang sudah ada di atas.
-export async function fetchMonthlyPLForYear(clientId: string, tahun: number): Promise<MonthlyPLRow[] | null> {
+// `generateIfMissing` (default true = perilaku lama): kalau laporan bulanan tahun itu belum pernah
+// digenerate, buat on-the-fly. Set false untuk membaca saja (mis. chart Overview yang menjelajah
+// tahun-tahun lama sampai 1950 -- jangan men-generate laporan untuk tahun yang kosong).
+export async function fetchMonthlyPLForYear(
+  clientId: string,
+  tahun: number,
+  opts?: { generateIfMissing?: boolean },
+): Promise<MonthlyPLRow[] | null> {
+  const generateIfMissing = opts?.generateIfMissing !== false;
   try {
     const [coaRes, laporanRes] = await Promise.all([
       ambilCoaClient(clientId).catch(() => ({ coa: [] })),
-      ambilLaporanBulanan(clientId, tahun).catch(() => generateLaporanBulanan(clientId, tahun)),
+      ambilLaporanBulanan(clientId, tahun).catch(() => (generateIfMissing ? generateLaporanBulanan(clientId, tahun) : { hasil: null })),
     ]);
     const hasil = (laporanRes as any)?.hasil;
     const coa = (coaRes as any)?.coa || [];

@@ -28,6 +28,8 @@ import type { Transaction } from '@/app/transactions/components/transactionData'
 // sample data" kalau belum ada client aktif / client belum ada jurnal sama
 // sekali -- jadi halaman tidak pernah kosong.
 import KPIBentoGrid from './KPIBentoGrid';
+// Font & gaya disamakan dengan halaman Sales (Inter, monokrom neutral).
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
 // [BARU] Dropdown "Branch" sekarang REAL: diambil dari tabel
 // overview_overview_management_branches (schema 2_Overview) lewat
 // daftarBranches(), menggantikan opsi hardcoded "Jakarta"/"Surabaya" --
@@ -154,23 +156,23 @@ export default function OverviewContent() {
   const punyaDataAP = !txIsSample && bills.length > 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+    <div className={`${salesFont.className} px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto space-y-0`}>
+      {/* Header — gaya sama dengan header halaman Sales */}
+      <div className="flex flex-col gap-3 border-b border-neutral-300 pb-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('Financial Overview')}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{t('Comprehensive financial performance and business health')} — {companyName}</p>
-          <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs font-semibold text-primary">Jan 2026 – Aug 2026</span>
-            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-medium">YTD</span>
-            <span className="text-xs text-muted-foreground">{t('Last updated')}: {lastUpdated ? formatLastUpdated(lastUpdated) : '—'}</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{t('Financial Overview')}</h1>
+          <p className="mt-1 text-sm font-medium text-neutral-500">{t('Comprehensive financial performance and business health')} — {companyName}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-neutral-900">Jan 2026 – Aug 2026</span>
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700 ring-1 ring-neutral-300">YTD</span>
+            <span className="text-xs font-medium text-neutral-500">{t('Last updated')}: {lastUpdated ? formatLastUpdated(lastUpdated) : '—'}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={branch}
             onChange={e => setBranch(e.target.value)}
-            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
           >
             <option>{t('All Branches')}</option>
             {branchOptions.map((b) => (
@@ -180,28 +182,30 @@ export default function OverviewContent() {
           <select
             value={currency}
             onChange={e => setCurrency(e.target.value as typeof currency)}
-            className="text-sm border border-border rounded-md px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+            className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-300"
           >
             {CURRENCIES.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          {(['Actual', 'Budget', 'Previous Year'] as const).map((m) => (
-            <button
-              key={`view-${m}`}
-              onClick={() => setViewMode(m)}
-              className={`text-sm px-3 py-1.5 rounded-md font-medium transition-colors ${
-                viewMode === m ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-secondary'
-              }`}
-            >
-              {t(m)}
-            </button>
-          ))}
+          <div className="flex items-center rounded-lg border border-neutral-300 bg-white p-0.5 shadow-sm">
+            {(['Actual', 'Budget', 'Previous Year'] as const).map((m) => (
+              <button
+                key={`view-${m}`}
+                onClick={() => setViewMode(m)}
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
+                  viewMode === m ? 'bg-neutral-800 text-white' : 'text-neutral-600 hover:bg-neutral-100'
+                }`}
+              >
+                {t(m)}
+              </button>
+            ))}
+          </div>
           <button
             onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-1.5 text-sm border border-border rounded-md px-2.5 py-1.5 text-foreground hover:bg-secondary transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50"
           >
-            <Icon name="ArrowUpTrayIcon" size={14} />
+            <Icon name="ArrowUpTrayIcon" size={14} className="text-neutral-500" />
             {t('Import')}
           </button>
           <button
@@ -213,76 +217,88 @@ export default function OverviewContent() {
               exportOverviewToCsv(transactions, companyName);
               toast.success(t('Export dimulai'), { description: `${transactions.length} transaksi diunduh sebagai CSV` });
             }}
-            className="flex items-center gap-1.5 text-sm border border-border rounded-md px-2.5 py-1.5 text-foreground hover:bg-secondary transition-colors"
+            className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50"
           >
-            <Icon name="ArrowDownTrayIcon" size={14} />
+            <Icon name="ArrowDownTrayIcon" size={14} className="text-neutral-500" />
             {t('Export')}
           </button>
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
             title={t('Muat ulang data dashboard')}
-            className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="rounded-lg p-2 text-neutral-500 transition-colors hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Icon name="ArrowPathIcon" size={16} className={isRefreshing ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
+      {/* Konten — pt-5 + space-y-6 seperti area konten Sales */}
+      <div className="space-y-6 pt-5">
+
       {/* KPI Grid — sekarang REAL, ambil dari backend untuk client aktif (lihat import KPIBentoGrid di atas) */}
       {/* [BARU] branch diteruskan supaya dropdown "All Branches"/"Jakarta"/"Surabaya" di atas benar2 memfilter 8 kartu ini (lihat Coa.cabang di backend/db_client.py) */}
       {/* [BARU] key={refreshKey} -> remount paksa saat tombol reload ditekan, supaya useEffect fetch (ambilKpiBento) di dalamnya jalan ulang. */}
-      <KPIBentoGrid key={`kpi-${refreshKey}`} viewMode={viewMode} branch={branch} branchId={branchId} />
+      <div>
+        <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-700">
+          <span className="h-3.5 w-1 rounded-full bg-neutral-800" />{t('Key Performance Indicators')}
+        </p>
+        <KPIBentoGrid key={`kpi-${refreshKey}`} viewMode={viewMode} branch={branch} branchId={branchId} />
+      </div>
 
       {/* Charts */}
       {/* [BARU] key={refreshKey} -> sama seperti KPIBentoGrid di atas, supaya fetchMonthlyPLForYear di dalam OverviewCharts ikut jalan ulang saat reload.
           [FIX] branchId diteruskan supaya chart "Actual vs Budget" (mode Anggaran) ikut memfilter overview_overview_financial_budget per cabang, konsisten dengan KPIBentoGrid di atas. */}
       <OverviewCharts key={`charts-${refreshKey}`} viewMode={viewMode} branchId={branchId} />
 
-      {/* Quick links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link href="/accounts-receivable" className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-foreground">{t('Accounts Receivable')}</span>
-            <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
+      {/* Quick links — kartu monokrom seperti kartu KPI Sales */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Link href="/accounts-receivable" className="group relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{t('Accounts Receivable')}</span>
+            <Icon name="ArrowRightIcon" size={14} className="text-neutral-500 transition-colors group-hover:text-neutral-900" />
           </div>
           {punyaDataAR ? (
             <>
-              <p className="number-display text-xl font-bold text-foreground leading-none">{formatMoney(arKpis.totalAR, currency)}</p>
-              <p className="text-xs text-danger mt-0.5">{formatMoney(arKpis.overdueAR, currency)} {t('overdue')} — {t('action required')}</p>
+              <p className="text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{formatMoney(arKpis.totalAR, currency)}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-danger">{formatMoney(arKpis.overdueAR, currency)} {t('overdue')} — {t('action required')}</p>
             </>
           ) : (
             <>
-              <p className="number-display text-xl font-bold text-foreground leading-none">{fx('Rp 0')}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
+              <p className="text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{fx('Rp 0')}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-neutral-500">{t('No data yet')}</p>
             </>
           )}
         </Link>
-        <Link href="/accounts-payable" className="bg-card border border-border rounded-lg p-4 hover:shadow-card-md transition-all group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-foreground">{t('Accounts Payable')}</span>
-            <Icon name="ArrowRightIcon" size={14} className="text-muted-foreground group-hover:text-primary transition-colors" />
+        <Link href="/accounts-payable" className="group relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-600">{t('Accounts Payable')}</span>
+            <Icon name="ArrowRightIcon" size={14} className="text-neutral-500 transition-colors group-hover:text-neutral-900" />
           </div>
           {punyaDataAP ? (
             <>
-              <p className="number-display text-xl font-bold text-foreground leading-none">{formatMoney(apKpis.totalAP, currency)}</p>
-              <p className="text-xs text-warning mt-0.5">{formatMoney(apKpis.dueThisWeek, currency)} {t('due this week')}</p>
+              <p className="text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{formatMoney(apKpis.totalAP, currency)}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-warning">{formatMoney(apKpis.dueThisWeek, currency)} {t('due this week')}</p>
             </>
           ) : (
             <>
-              <p className="number-display text-xl font-bold text-foreground leading-none">{fx('Rp 0')}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('No data yet')}</p>
+              <p className="text-lg font-semibold tabular-nums tracking-tight text-neutral-900">{fx('Rp 0')}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-neutral-500">{t('No data yet')}</p>
             </>
           )}
         </Link>
-        <Link href="/ai-financial-analyst" className="bg-ai-purple-bg border border-purple-200 rounded-lg p-4 hover:shadow-card-md transition-all group">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-ai-purple">AI Financial Analyst</span>
-            <Icon name="ArrowRightIcon" size={14} className="text-ai-purple group-hover:text-purple-700 transition-colors" />
+        <Link href="/ai-financial-analyst" className="group relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700">
+          <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-600">AI Financial Analyst</span>
+            <Icon name="ArrowRightIcon" size={14} className="text-neutral-500 transition-colors group-hover:text-neutral-900" />
           </div>
-          <p className="text-sm text-ai-purple-foreground">0 analyses ready</p>
-          <p className="text-xs text-ai-purple mt-0.5">Ask a financial question →</p>
+          <p className="text-lg font-semibold tabular-nums tracking-tight text-neutral-900">0 analyses ready</p>
+          <p className="mt-0.5 text-[11px] font-medium text-neutral-500">Ask a financial question →</p>
         </Link>
+      </div>
       </div>
 
       {showImportModal && (

@@ -8,7 +8,6 @@ export interface SearchIndexItem {
 
 export const searchIndex: SearchIndexItem[] = [
   { label: 'Overview', href: '/', group: 'Overview' },
-  { label: 'Zafeb AI', href: '/zafeb-ai', group: 'Overview' },
   { label: 'Financial Statements', href: '/financial-statements', group: 'Financial' },
   { label: 'Profit & Loss', href: '/financial-statements/profit-loss', group: 'Financial' },
   { label: 'Balance Sheet', href: '/financial-statements/balance-sheet', group: 'Financial' },

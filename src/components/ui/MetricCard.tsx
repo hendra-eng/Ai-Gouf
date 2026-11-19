@@ -28,9 +28,7 @@ export default function MetricCard({
   const isNegative = change < 0;
   const isWarning = status === 'warning';
 
-  const cardBg = isWarning
-    ? 'bg-warning-subtle border-warning/30'
-    : status === 'negative' ?'bg-negative-subtle border-negative/20' :'bg-card border-border';
+  // Gaya kartu disamakan dengan kartu KPI halaman Sales (monokrom: garis aksen atas, border abu, hover hitam).
 
   const TrendIcon = isPositive ? TrendingUp : isNegative ? TrendingDown : Minus;
   const trendColor = isPositive ? 'text-positive' : isNegative ? 'text-negative' : 'text-muted-foreground';
@@ -39,8 +37,9 @@ export default function MetricCard({
   return (
     <div
       onClick={onClick}
-      className={`relative rounded-xl border p-4 ${cardBg} ${onClick ? 'cursor-pointer hover:shadow-card-md transition-all duration-200 active:scale-[0.99]' : ''} ${hero ? 'p-5' : ''}`}
+      className={`relative overflow-hidden rounded-[10px] border border-neutral-300 bg-white p-4 pt-5 shadow-sm transition-[border-color,box-shadow] duration-200 hover:border-neutral-700 hover:ring-1 hover:ring-neutral-700 ${onClick ? 'cursor-pointer' : ''}`}
     >
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-neutral-800" />
       {isWarning && (
         <div className="absolute top-3 right-3">
           <AlertTriangle size={14} className="text-warning" />
@@ -49,14 +48,14 @@ export default function MetricCard({
 
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className={`text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5 ${hero ? 'text-sm' : ''}`}>
+          <p className="mb-1 truncate text-xs font-semibold uppercase tracking-wide text-neutral-600" title={label}>
             {label}
           </p>
-          <p className={`number-display font-bold text-foreground leading-none ${hero ? 'text-3xl' : 'text-xl'}`}>
+          <p className={`truncate font-semibold tabular-nums tracking-tight text-neutral-900 ${hero ? 'text-2xl' : 'text-lg'}`}>
             {value}
           </p>
           {subtitle && (
-            <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+            <p className="mt-1 text-[11px] font-medium text-neutral-500">{subtitle}</p>
           )}
           {alert && (
             <p className="text-xs font-semibold text-warning mt-1.5">{alert}</p>
@@ -87,14 +86,14 @@ export default function MetricCard({
         )}
       </div>
 
-      <div className={`flex items-center gap-1.5 mt-3 ${hero ? 'mt-4' : ''}`}>
+      <div className="mt-3 flex items-center gap-1.5">
         <div className={`flex items-center gap-1 ${trendColor}`}>
           <TrendIcon size={12} />
-          <span className="text-xs font-semibold font-mono-nums">
+          <span className="text-xs font-semibold tabular-nums">
             {isPositive ? '+' : ''}{change.toFixed(1)}%
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">{changePeriod}</span>
+        <span className="text-[11px] font-medium text-neutral-500">{changePeriod}</span>
       </div>
     </div>
   );

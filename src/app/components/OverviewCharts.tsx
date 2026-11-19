@@ -17,11 +17,22 @@
 // sama sekali, kedua chart fallback ke data contoh (sama seperti versi
 // sebelumnya) supaya halaman tidak pernah kosong.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import InteractiveDonutChart, { DonutLivePreview as AgingLivePreview } from '@/components/shared/InteractiveDonutChart';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { Clock } from 'lucide-react';
+import InteractiveDonutChart, { type DonutLivePreview } from '@/components/shared/InteractiveDonutChart';
+// Desain chart disalin 100% dari kartu "Tren Sales Bulanan" (Sales > Overview) & donut dari
+// "Purchase Status" (Purchase > Overview). Hanya tampilan -- data & logika Overview tetap.
+import { FilterSelect, SalesCardHeader, allocatePcts, pctLabel, type FilterOption } from '@/app/transactions/bank-cash/components/salesStyleKit';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import {
+  niceStep, niceTicksRange, addGran, startOf, utc, DAY_MS, buildTicks, zoomRange, panRange,
+  intervalStart, intervalNext, INTERVALS, INTERVAL_BY_ID, TREND_FIRST_YEAR,
+  type TimeRange, type TimeBounds, type TickInfo, type IntervalId, type IntervalDef, type Granularity,
+} from '@/app/transactions/sales/components/salesTrendTime';
+// Bentuk grafik column / candle / OHLC memakai layer yang SAMA dengan chart Tren Sales.
+import SalesCandleLayer, { type SalesChartType } from '@/app/transactions/sales/components/SalesCandleLayer';
 import { useLanguage } from '@/lib/language';
 import { useCurrency, formatMoney } from '@/lib/currency';
-import { getNiceTicksFromZero } from '@/lib/chartTicks';
 import { useProfitLossData, fetchMonthlyPLForYear, type MonthlyPLRow } from '@/app/financial-statements/lib/useProfitLossData';
 import { useActiveClient } from '@/lib/activeClient';
 import { useTransactions } from '@/app/transactions/context/TransactionsContext';
@@ -63,10 +74,290 @@ const SAMPLE_AGING = [
 ];
 const SAMPLE_AGING_TOTAL = SAMPLE_AGING.reduce((s, a) => s + a.value, 0);
 
+// ── Konstanta & komponen tampilan chart (salinan dari chart Tren Sales) ──
+const SALES_AXIS_GAP = 5;            // jarak label harga ke garis sumbu Y
+const SALES_XAXIS_HEIGHT = 34;
+const SALES_PLOT_RIGHT = 10;         // margin.right chart
+const SALES_PLOT_TOP = 5;            // margin.top chart
+const SALES_CHART_HEIGHT = 220;
+const SALES_TIME_ZOOM_PX = 220;      // jarak tarik (px) untuk melebarkan/menyempitkan jendela waktu ~2,7x
+const SALES_AXIS_BORDER = '#404040'; // abu gelap garis sumbu
+const SALES_LINE_COLOR = '#2563EB';  // biru garis chart (sama dengan chart Tren Sales)
+const C_EXPENSES = '#737373';
+const C_NET = '#171717';
+const C_MUTED = '#a3a3a3';
+
+type OverviewChartType = SalesChartType;
+// Sama dengan pilihan "Bentuk grafik" di chart Tren Sales.
+const CHART_TYPE_OPTIONS: FilterOption[] = [
+  { value: 'area', label: 'Area' },
+  { value: 'line', label: 'Line' },
+  { value: 'column', label: 'Column' },
+  { value: 'candle', label: 'Candle' },
+  { value: 'ohlc', label: 'OHLC Bar' },
+];
+// Mode Tahun Lalu bukan deret waktu, jadi hanya Area / Line.
+const CHART_TYPE_OPTIONS_BASIC: FilterOption[] = CHART_TYPE_OPTIONS.slice(0, 2);
+// Interval bucket (data P&L bulanan -> hanya 1M / 6M / 1Y yang bermakna).
+const INTERVAL_OPTIONS: FilterOption[] = [
+  { value: 'auto', label: 'Auto', short: 'Auto' },
+  ...INTERVALS.filter((d) => d.kind === 'months').map((d) => ({ value: d.id, label: `${d.label} · ${d.title}`, short: d.label })),
+];
+
+const fmtMonthYearLabel = (tm: number) => `${NAMA_BULAN[new Date(tm).getUTCMonth()]} ${new Date(tm).getUTCFullYear()}`;
+function intervalLabel(tm: number, d: IntervalDef): string {
+  if (d.months === 1) return fmtMonthYearLabel(tm);
+  if (d.months === 12) return String(new Date(tm).getUTCFullYear());
+  return `${NAMA_BULAN[new Date(tm).getUTCMonth()]} – ${fmtMonthYearLabel(addGran(tm, 'month', d.months - 1))}`;
+}
+const PERIOD_OPTIONS: FilterOption[] = [
+  { value: '6M', label: '6M · 6 Months', short: '6M' },
+  { value: 'YTD', label: 'YTD · Year to Date', short: 'YTD' },
+  { value: '12M', label: '12M · 12 Months', short: '12M' },
+  { value: '3Y', label: '3Y · 3 Years', short: '3Y' },
+];
+
+// Label sumbu Y: rata kanan (menempel ke garis sumbu), dalam satu baris.
+function SalesYTick({ x, y, payload, label }: { x?: number; y?: number; payload?: { value: number }; label: (v: number) => string }) {
+  if (x == null || y == null || !payload) return null;
+  return (
+    <g>
+      <text x={x + 4} y={y} dy={4} textAnchor="end" fontSize={10} fill="#8a8a8a">{label(payload.value)}</text>
+    </g>
+  );
+}
+
+// Label sumbu X: bulan tebal; tahun muncul di baris bawah Januari (atau titik pertama).
+function SalesXTick({ x, y, payload, index, labels, info }: { x?: number; y?: number; payload?: { value: string | number }; index?: number; labels?: string[]; info?: Map<number, TickInfo> }) {
+  if (x == null || y == null || !payload) return null;
+  // Sumbu waktu nyata (ms): label & tahun (di bawah Januari) datang dari TickInfo.
+  if (info) {
+    const ti = info.get(Number(payload.value));
+    if (!ti) return null;
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={600} fill="#525252">{ti.label}</text>
+        {ti.sub && <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#404040">{ti.sub}</text>}
+      </g>
+    );
+  }
+  // Sumbu waktu numerik (indeks bulan): ambil nama bulan dari `labels`.
+  const raw = labels ? String(labels[Math.round(Number(payload.value))] ?? '') : String(payload.value ?? '');
+  if (!raw) return null;
+  const m = raw.match(/^(.+?) '(\d{2})$/);
+  const label = m ? m[1] : raw;
+  const sub = m && (m[1] === 'Jan' || index === 0) ? `20${m[2]}` : null;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fontWeight={600} fill="#525252">{label}</text>
+      {sub && (
+        <text x={0} y={0} dy={26} textAnchor="middle" fontSize={11} fontWeight={700} fill="#404040">{sub}</text>
+      )}
+    </g>
+  );
+}
+
+interface CrosshairRow { name: string; color: string; value: number }
+interface CrosshairGeometry { plotLeft: number; plotRightMargin: number; plotTop: number; plotBottom: number }
+
+// Crosshair ala TradingView (salinan SalesChartCrosshair): garis putus-putus di kursor, label harga di
+// sumbu Y, label periode di sumbu X, dan legenda kecil di pojok kiri atas berisi nilai tiap garis.
+const CHIP = 'absolute rounded px-1.5 py-0.5 text-[11px] font-medium leading-4 text-white whitespace-nowrap shadow-sm';
+const CHIP_BG = '#262626';
+const CROSS_LINE = '#a3a3a3';
+const DATE_CHIP_HALF = 80;
+
+function SalesChartCrosshair({
+  wrapRef, geometry, yMin, yMax, labels, band, rowsOf, extraOf, formatValue, view, times,
+}: {
+  wrapRef: React.RefObject<HTMLDivElement | null>;
+  geometry: CrosshairGeometry;
+  yMin: number;
+  yMax: number;
+  labels: string[];
+  /** true = sumbu X berupa batang (band), false = titik dari tepi ke tepi. */
+  band: boolean;
+  rowsOf: (index: number) => CrosshairRow[];
+  extraOf?: (index: number) => string | null;
+  formatValue: (n: number) => string;
+  /** Jendela waktu (indeks data, pecahan) saat chart digeser/di-zoom; kosong = seluruh data tepi ke tepi. */
+  view?: { from: number; to: number };
+  /** Waktu (ms) tiap titik -- dipakai bila sumbu X berupa waktu nyata (bukan indeks). */
+  times?: number[];
+}) {
+  const [pos, setPos] = useState<{ x: number; y: number; w: number } | null>(null);
+  const { plotLeft, plotRightMargin, plotTop, plotBottom } = geometry;
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') { setPos(null); return; }
+      const r = el.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const inside = x >= plotLeft && x <= r.width - plotRightMargin && y >= plotTop && y <= plotBottom;
+      setPos(inside ? { x, y, w: r.width } : null);
+    };
+    const onLeave = () => setPos(null);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerleave', onLeave);
+    return () => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerleave', onLeave);
+    };
+  }, [wrapRef, plotLeft, plotRightMargin, plotTop, plotBottom]);
+
+  if (!pos || labels.length === 0) return null;
+
+  const plotRight = pos.w - plotRightMargin;
+  const plotWidth = Math.max(1, plotRight - plotLeft);
+  const plotHeight = Math.max(1, plotBottom - plotTop);
+  const n = labels.length;
+  const frac = Math.min(1, Math.max(0, (pos.x - plotLeft) / plotWidth));
+  let idx: number;
+  if (times && view && times.length > 0) {
+    // Sumbu waktu nyata: batang = periode yang memuat kursor, garis = titik terdekat.
+    const tAt = view.from + frac * (view.to - view.from);
+    idx = 0;
+    if (band) {
+      for (let i = 0; i < times.length; i++) { if (times[i] <= tAt) idx = i; else break; }
+    } else {
+      let best = Infinity;
+      for (let i = 0; i < times.length; i++) { const dd = Math.abs(times[i] - tAt); if (dd < best) { best = dd; idx = i; } }
+    }
+    idx = Math.min(n - 1, idx);
+  } else if (band) {
+    idx = Math.min(n - 1, Math.floor(frac * n));
+  } else if (view) {
+    idx = Math.min(n - 1, Math.max(0, Math.round(view.from + frac * (view.to - view.from))));
+  } else {
+    idx = n > 1 ? Math.round(frac * (n - 1)) : 0;
+  }
+  const price = yMin + ((plotBottom - pos.y) / plotHeight) * (yMax - yMin);
+  const dateText = labels[idx] ?? '';
+  const dateCenter = Math.min(plotRight - DATE_CHIP_HALF, Math.max(plotLeft + DATE_CHIP_HALF, pos.x));
+  const rows = rowsOf(idx);
+  const extra = extraOf ? extraOf(idx) : null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+      <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
+        <line x1={pos.x} y1={plotTop} x2={pos.x} y2={plotBottom} stroke={CROSS_LINE} strokeWidth={1} strokeDasharray="4 3" />
+        <line x1={plotLeft} y1={pos.y} x2={plotRight} y2={pos.y} stroke={CROSS_LINE} strokeWidth={1} strokeDasharray="4 3" />
+      </svg>
+
+      {/* Harga di posisi kursor — menempel di sumbu Y */}
+      <div className={CHIP} style={{ background: CHIP_BG, right: pos.w - plotLeft + 4, top: pos.y - 10 }}>
+        {formatValue(price)}
+      </div>
+
+      {/* Periode di posisi kursor — menempel di sumbu X */}
+      <div className={CHIP} style={{ background: CHIP_BG, left: dateCenter, top: plotBottom + 4, transform: 'translateX(-50%)' }}>
+        {dateText}
+      </div>
+
+      {/* Nilai tiap garis pada periode di bawah kursor (pengganti kartu tooltip) */}
+      <div
+        className="absolute rounded bg-white/90 px-1.5 py-0.5 text-[11px] leading-4 text-slate-700 shadow-sm"
+        style={{ left: plotLeft + 8, top: plotTop + 2 }}
+      >
+        <span className="font-semibold">{dateText}</span>
+        {rows.map((r) => (
+          <span key={r.name} style={{ color: r.color }}>
+            {' · '}{r.name}: {formatValue(r.value)}
+          </span>
+        ))}
+        {extra && <span className="text-slate-500">{' · '}{extra}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Legenda statis di bawah chart (chart Sales hanya satu garis, Overview punya beberapa).
+function SalesChartLegend({ items }: { items: { name: string; color: string; dashed?: boolean }[] }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-medium text-neutral-600">
+      {items.map((it) => (
+        <span key={it.name} className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block h-0 w-4 border-t-2"
+            style={{ borderColor: it.color, borderTopStyle: it.dashed ? 'dashed' : 'solid' }}
+          />
+          {it.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Donut AR Aging: salinan 100% kartu donut "Purchase Status" (Purchase > Overview). ──
+function ArAgingDonutCard({ data, subtitle }: { data: { name: string; value: number; color: string }[]; subtitle: string }) {
+  const { t } = useLanguage();
+  const { currency } = useCurrency();
+  const [active, setActive] = useState<number | null>(null);
+  const [live, setLive] = useState<DonutLivePreview[] | null>(null);
+
+  const segs = data;
+  const total = useMemo(() => segs.reduce((s, d) => s + d.value, 0), [segs]);
+
+  // Jumlah segmen bisa berubah -> reset pilihan.
+  useEffect(() => { setActive(null); }, [segs.length]);
+
+  // Angka yang tampil (nilai asli, atau nilai preview saat garis pemisah ditarik), dibulatkan
+  // bersama supaya persen = 100,0%.
+  const shownValues = useMemo(() => (live ? live.map((p) => p.value) : segs.map((sg) => sg.value)), [live, segs]);
+  const shownPcts = useMemo(() => allocatePcts(shownValues), [shownValues]);
+  const toggle = (i: number) => setActive((prev) => (prev === i ? null : i));
+
+  return (
+    <div className={`${salesFont.className} card-elevated-md flex h-full flex-col rounded-xl p-5`}>
+      <SalesCardHeader neutral icon={Clock} title={t('AR Aging Analysis')} subtitle={subtitle} />
+      {segs.length === 0 || total <= 0 ? (
+        <p className="py-10 text-center text-xs text-muted-foreground">{t('Belum ada data.')}</p>
+      ) : (
+        <>
+          <div className="mx-auto w-full max-w-[220px] shrink-0">
+            <InteractiveDonutChart
+              data={segs}
+              height={190}
+              centerLabel={formatMoney(total, currency)}
+              centerSubLabel={t('Total AR')}
+              activeIndex={active}
+              onActiveChange={setActive}
+              onLiveChange={setLive}
+              rawValue
+              minVisibleDeg={5}
+              formatValue={(v, i) => formatMoney(shownValues[i] ?? v, currency)}
+              formatPct={(p, i) => pctLabel(shownPcts[i] ?? p, shownValues[i] ?? 1)}
+            />
+          </div>
+
+          <ul className="mt-4 space-y-1">
+            {segs.map((a, i) => (
+              <li
+                key={`legend-${a.name}-${i}`}
+                onClick={() => toggle(i)}
+                className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${active === i ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
+                <span className={`min-w-0 flex-1 truncate ${active === i ? 'font-bold' : 'font-medium'} text-foreground`} title={a.name}>{a.name}</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatMoney(shownValues[i] ?? a.value, currency)}</span>
+                <span className="w-10 shrink-0 rounded-full bg-neutral-100 py-0.5 text-center text-[10px] font-semibold tabular-nums text-neutral-600">
+                  {pctLabel(shownPcts[i], shownValues[i])}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function OverviewCharts({ viewMode = 'Actual', branchId }: { viewMode?: OverviewViewMode; branchId?: string }) {
   const [period, setPeriod] = useState<'6M' | 'YTD' | '12M' | '3Y'>('YTD');
-  const [activeAging, setActiveAging] = useState<number | null>(null);
-  const [livePreview, setLivePreview] = useState<AgingLivePreview[] | null>(null);
+  const [chartType, setChartType] = useState<OverviewChartType>('area');
   const { t } = useLanguage();
   const { currency, fx } = useCurrency();
 
@@ -88,78 +379,147 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
   const [priorYearsPL, setPriorYearsPL] = useState<Record<number, MonthlyPLRow[]>>({});
   const fetchingYearsRef = useRef<Set<number>>(new Set());
 
-  const yearsNeeded = useMemo(() => {
-    if (plIsSample) return [];
-    if (viewMode === 'Previous Year') return [anchorYear - 1];
-    if (period === '12M') return anchorAbs - 11 < anchorYear * 12 ? [anchorYear - 1] : [];
-    if (period === '3Y') return [anchorYear - 1, anchorYear - 2];
-    return [];
-  }, [plIsSample, viewMode, period, anchorAbs, anchorYear]);
+  // ── Sumbu waktu NYATA (ms UTC) untuk mode Actual: bisa digeser & di-zoom dari 1950 sampai akhir
+  // tahun ini, persis seperti chart Tren Sales. Pilihan periode (6M/YTD/12M/3Y) hanya menentukan jendela
+  // awal. Data P&L bulanan tiap tahun dimuat sesuai jendela yang sedang terlihat. ──
+  const isTimeline = viewMode === 'Actual';
+  const [tRange, setTRange] = useState<TimeRange | null>(null);
+  const [intervalId, setIntervalId] = useState<IntervalId | null>(null);
+  const intervalDef: IntervalDef | null = intervalId ? INTERVAL_BY_ID[intervalId] : null;
+  const anchorMonthStart = utc(anchorYear, anchorMonthIdx, 1);
 
+  const timeBounds = useMemo<TimeBounds>(() => {
+    const minT = utc(TREND_FIRST_YEAR, 0, 1);
+    const maxT = utc(anchorYear + 1, 0, 1);
+    const bar = (intervalDef ? intervalDef.months : 1) * 30.4375 * DAY_MS;
+    return {
+      minT,
+      maxT,
+      minSpan: (intervalDef ? 8 : 3) * bar,
+      maxSpan: Math.min(maxT - minT, intervalDef ? 600 * bar : Infinity),
+    };
+  }, [anchorYear, intervalDef]);
+
+  const presetWindow = useMemo<TimeRange>(() => {
+    const months = period === '6M' ? 6 : period === '12M' ? 12 : period === '3Y' ? 36 : anchorMonthIdx + 1; // YTD
+    return { from: addGran(anchorMonthStart, 'month', -(Math.max(months, 2) - 1)), to: anchorMonthStart };
+  }, [period, anchorMonthStart, anchorMonthIdx]);
+  const intervalWindow = useMemo<TimeRange | null>(() => {
+    if (!intervalDef) return null;
+    const to = intervalStart(anchorMonthStart, intervalDef);
+    return { from: intervalNext(to, intervalDef, -(intervalDef.bars - 1)), to };
+  }, [intervalDef, anchorMonthStart]);
+  const timelineView: TimeRange = tRange ?? intervalWindow ?? presetWindow;
+  // Data bulanan: bulan -> (jendela <= 12 tahun) ; tahun -> (lebih lebar). Tidak ada tingkat "hari".
+  const timelineGran: Granularity = (timelineView.to - timelineView.from) / DAY_MS <= 12 * 366 ? 'month' : 'year';
+
+  // Jendela yang sudah "settle" (tidak sedang ditarik) -> menentukan tahun mana yang perlu di-fetch.
+  const [settledView, setSettledView] = useState<TimeRange>(timelineView);
+  useEffect(() => {
+    const id = setTimeout(() => setSettledView({ from: timelineView.from, to: timelineView.to }), 300);
+    return () => clearTimeout(id);
+  }, [timelineView.from, timelineView.to]);
+
+  const MAX_YEARS_PER_VIEW = 10;
+  const { yearsNeeded, yearsTruncated } = useMemo(() => {
+    const none = { yearsNeeded: [] as number[], yearsTruncated: false };
+    if (plIsSample) return none;
+    if (viewMode === 'Previous Year') return { yearsNeeded: [anchorYear - 1], yearsTruncated: false };
+    if (!isTimeline) return none;
+    const y0 = Math.max(TREND_FIRST_YEAR, new Date(settledView.from).getUTCFullYear());
+    const y1 = Math.min(anchorYear - 1, new Date(settledView.to).getUTCFullYear());
+    const list: number[] = [];
+    for (let y = y1; y >= y0 && list.length < MAX_YEARS_PER_VIEW; y--) list.push(y); // tahun terbaru dulu
+    return { yearsNeeded: list, yearsTruncated: y1 - y0 + 1 > MAX_YEARS_PER_VIEW };
+  }, [plIsSample, viewMode, isTimeline, settledView.from, settledView.to, anchorYear]);
+
+  // Ganti client -> buang cache tahun-tahun milik client sebelumnya.
+  const latestClientRef = useRef(activeClientId);
+  latestClientRef.current = activeClientId;
+  useEffect(() => {
+    setPriorYearsPL({});
+    fetchingYearsRef.current.clear();
+  }, [activeClientId]);
+
+  const [loadingMore, setLoadingMore] = useState(false);
   useEffect(() => {
     if (!activeClientId || plIsSample) return;
     const toFetch = yearsNeeded.filter((y) => !(y in priorYearsPL) && !fetchingYearsRef.current.has(y));
     if (toFetch.length === 0) return;
+    const cid = activeClientId;
     toFetch.forEach((y) => fetchingYearsRef.current.add(y));
+    setLoadingMore(true);
     (async () => {
-      const results = await Promise.all(toFetch.map((y) => fetchMonthlyPLForYear(activeClientId, y)));
-      setPriorYearsPL((prev) => {
-        const next = { ...prev };
-        toFetch.forEach((y, i) => {
-          next[y] = results[i] || [];
-          fetchingYearsRef.current.delete(y);
+      // Maksimal 3 tahun sekaligus supaya backend tidak kebanjiran saat chart di-zoom out jauh.
+      for (let i = 0; i < toFetch.length; i += 3) {
+        const chunk = toFetch.slice(i, i + 3);
+        const results = await Promise.all(
+          // Tahun lama (> 2 tahun ke belakang) dibaca saja -- tidak men-generate laporan baru untuk tahun yang kosong.
+          chunk.map((y) => fetchMonthlyPLForYear(cid, y, { generateIfMissing: y >= anchorYear - 2 }))
+        );
+        if (latestClientRef.current !== cid) return;
+        setPriorYearsPL((prev) => {
+          const next = { ...prev };
+          chunk.forEach((y, j) => { next[y] = results[j] || []; fetchingYearsRef.current.delete(y); });
+          return next;
         });
-        return next;
-      });
+      }
+      if (latestClientRef.current === cid) setLoadingMore(false);
     })();
-  }, [activeClientId, plIsSample, yearsNeeded, priorYearsPL]);
+  }, [activeClientId, plIsSample, yearsNeeded, priorYearsPL, anchorYear]);
 
-  // ── Gabungkan semua tahun yang tersedia jadi satu deret kronologis
-  // {absIdx, month, revenue, expenses, netProfit}, lalu potong sesuai
-  // filter periode dengan ujung kanan = anchorAbs (bulan berjalan). ──
-  const revenueData = useMemo(() => {
-    if (plIsSample || MONTHLY_PL.length === 0) {
-      // Data contoh tetap ikut kepotong sesuai filter periode, supaya
-      // tombol 6M/YTD/12M/3Y kelihatan beneran ngefek walau belum ada
-      // client aktif (banner "Showing sample data").
-      const windowSize = period === '6M' ? 6 : period === '12M' ? 12 : period === '3Y' ? 36 : null;
-      if (!windowSize) return SAMPLE_REVENUE; // YTD = semua data contoh (Jan–Aug)
-      return SAMPLE_REVENUE.slice(Math.max(0, SAMPLE_REVENUE.length - windowSize));
-    }
-
-    type Row = { absIdx: number; year: number; month: string; revenue: number; expenses: number; netProfit: number };
-    const rows: Row[] = [];
-    const pushYear = (year: number, monthly: MonthlyPLRow[]) => {
-      monthly.forEach((row) => {
+  // ── Semua bulan P&L yang sudah dimuat (tahun ini + tahun lain) -> peta per awal bulan (ms UTC). ──
+  type PlMonth = { revenue: number; expenses: number; netProfit: number };
+  const plMonthMap = useMemo(() => {
+    const map = new Map<number, PlMonth>();
+    if (plIsSample) return map;
+    const addYear = (year: number, monthly: MonthlyPLRow[] | null | undefined) => {
+      (monthly || []).forEach((row) => {
         const mIdx = NAMA_BULAN.indexOf(row.month);
         if (mIdx === -1) return;
-        rows.push({
-          absIdx: year * 12 + mIdx,
-          year,
-          month: row.month,
+        map.set(utc(year, mIdx, 1), {
           revenue: row.revenue * 1e6,
           expenses: (row.cogs + row.opEx + row.da + row.interest + row.tax) * 1e6,
           netProfit: row.netProfit * 1e6,
         });
       });
     };
-    pushYear(anchorYear, MONTHLY_PL);
-    Object.entries(priorYearsPL).forEach(([y, monthly]) => pushYear(Number(y), monthly));
-    rows.sort((a, b) => a.absIdx - b.absIdx);
+    addYear(anchorYear, MONTHLY_PL);
+    Object.entries(priorYearsPL).forEach(([y, monthly]) => addYear(Number(y), monthly as MonthlyPLRow[]));
+    return map;
+  }, [plIsSample, MONTHLY_PL, priorYearsPL, anchorYear]);
 
-    const windowSize = period === '6M' ? 6 : period === '12M' ? 12 : period === '3Y' ? 36 : null; // null = YTD
-    const lowerBound = windowSize ? anchorAbs - (windowSize - 1) : anchorYear * 12; // YTD: dari Jan tahun ini
-    const filtered = rows.filter((r) => r.absIdx >= lowerBound && r.absIdx <= anchorAbs);
-    if (filtered.length === 0) return SAMPLE_REVENUE;
+  const sumMonths = useCallback((start: number, months: number): PlMonth => {
+    const acc = { revenue: 0, expenses: 0, netProfit: 0 };
+    for (let m = 0; m < months; m++) {
+      const r = plMonthMap.get(addGran(start, 'month', m));
+      if (r) { acc.revenue += r.revenue; acc.expenses += r.expenses; acc.netProfit += r.netProfit; }
+    }
+    return acc;
+  }, [plMonthMap]);
 
-    const spansMultipleYears = filtered.some((r) => r.year !== filtered[0].year);
-    return filtered.map((r) => ({
-      month: spansMultipleYears ? `${r.month} '${String(r.year).slice(-2)}` : r.month,
-      revenue: r.revenue,
-      expenses: r.expenses,
-      netProfit: r.netProfit,
-    }));
-  }, [plIsSample, MONTHLY_PL, priorYearsPL, period, anchorYear, anchorAbs]);
+  // Titik chart untuk jendela saat ini (+1 bucket di tiap sisi supaya garis menyentuh tepi).
+  const timeline = useMemo(() => {
+    const out: { t: number; label: string; revenue: number; expenses: number; netProfit: number }[] = [];
+    if (intervalDef) {
+      const end = intervalNext(intervalStart(timelineView.to, intervalDef), intervalDef, 1);
+      let guard = 0;
+      for (let tm = intervalNext(intervalStart(timelineView.from, intervalDef), intervalDef, -1); tm <= end && guard < 3000; tm = intervalNext(tm, intervalDef, 1), guard++) {
+        out.push({ t: tm, label: intervalLabel(tm, intervalDef), ...sumMonths(tm, intervalDef.months) });
+      }
+      return out;
+    }
+    const months = timelineGran === 'month' ? 1 : 12;
+    const end = addGran(startOf(timelineView.to, timelineGran), timelineGran, 1);
+    for (let tm = addGran(startOf(timelineView.from, timelineGran), timelineGran, -1); tm <= end; tm = addGran(tm, timelineGran, 1)) {
+      out.push({
+        t: tm,
+        label: timelineGran === 'month' ? fmtMonthYearLabel(tm) : String(new Date(tm).getUTCFullYear()),
+        ...sumMonths(tm, months),
+      });
+    }
+    return out;
+  }, [timelineView.from, timelineView.to, timelineGran, intervalDef, sumMonths]);
 
   // ── AR Aging (dari transaksi Sales client aktif, lewat arBridge -- sama seperti halaman AR) ──
   const agingData = useMemo(() => {
@@ -268,34 +628,81 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
 
   const fmt = (v: number) => formatMoney(v, currency);
 
+  // ── Jendela waktu sumbu X (geser & zoom ala chart Tren Sales) ──
+  // Satuan jendela = indeks bulan (pecahan). Default = seluruh data tepi ke tepi.
+  // Mode Budget berupa kategori (bukan deret waktu), jadi hanya sumbu harga yang bisa digeser.
+  const timeEnabled = viewMode !== 'Budget';
+  const seriesLen = yoyData.length; // jendela berbasis indeks hanya dipakai mode Tahun Lalu
+  const [win, setWin] = useState<{ from: number; to: number } | null>(null);
+  const defaultWin = useMemo(
+    () => (seriesLen <= 1 ? { from: -0.5, to: 0.5 } : { from: 0, to: seriesLen - 1 }),
+    [seriesLen]
+  );
+  const view = isTimeline ? timelineView : timeEnabled && win ? win : defaultWin;
+  const effType: OverviewChartType = viewMode === 'Actual' ? chartType : chartType === 'line' ? 'line' : 'area';
+  const barType = viewMode === 'Actual' && (chartType === 'column' || chartType === 'candle' || chartType === 'ohlc');
+  const [yShift, setYShift] = useState(0);
+
   // ── Zoom skala harga (drag vertikal di sumbu Y, kayak TradingView) ──
   // baseMax: batas atas alami dari data (dibulatkan ke atas + sedikit padding).
   // priceZoom: 1 = normal. >1 = zoom in (rentang harga makin sempit, makin rinci).
   //            <1 = zoom out (rentang makin lebar).
-  const baseMax = useMemo(() => {
-    if (viewMode === 'Previous Year') {
-      const maxVal = Math.max(0, ...yoyData.map((d: any) => Math.max(d.thisYear, d.lastYear)));
-      return maxVal * 1.08 || 1;
-    }
-    if (viewMode === 'Budget') {
-      const maxVal = Math.max(0, ...budgetComparisonData.map((d: any) => Math.max(d.actualRaw, d.budgetRaw)));
-      return maxVal * 1.08 || 1;
-    }
-    const maxVal = Math.max(0, ...revenueData.map((d: any) => Math.max(d.revenue, d.expenses, d.netProfit)));
-    return maxVal * 1.08 || 1;
-  }, [revenueData, yoyData, budgetComparisonData, viewMode]);
+  // Skala dasar ala chart Tren Sales: dari sedikit di bawah 0 (ruang untuk nilai negatif / label "-")
+  // sampai nilai tertinggi yang terlihat. Bisa di-zoom dengan menarik sumbu Y.
+  const yBase = useMemo(() => {
+    let hiData = 0;
+    let loData = 0;
+    const scan = (v: number) => { if (v > hiData) hiData = v; if (v < loData) loData = v; };
+    // Skala mengikuti bulan yang sedang terlihat di jendela waktu (seperti chart Tren Sales).
+    const inView = (i: number) => !timeEnabled || (i >= Math.floor(view.from) && i <= Math.ceil(view.to));
+    if (viewMode === 'Previous Year') yoyData.forEach((d: any, i: number) => { if (inView(i)) { scan(d.thisYear); scan(d.lastYear); } });
+    else if (viewMode === 'Budget') budgetComparisonData.forEach((d: any) => { scan(d.actualRaw); scan(d.budgetRaw); });
+    else timeline.forEach((d) => { if (d.t >= timelineView.from && d.t <= timelineView.to) { scan(d.revenue); scan(d.expenses); scan(d.netProfit); } });
+    // Jendela kosong (mis. digeser ke tahun tanpa data): pakai nilai bulanan tertinggi yang sudah dimuat.
+    if (isTimeline && hiData <= 0 && loData >= 0) plMonthMap.forEach((v) => { scan(v.revenue); scan(v.expenses); scan(v.netProfit); });
+    // Belum ada nilai sama sekali (semua 0): pakai skala awal Rp 100 Jt supaya sumbu harga
+    // tidak jadi "Rp 2 / -Rp 2" dan tetap bisa di-zoom/digeser dengan wajar.
+    if (hiData <= 0 && loData >= 0) hiData = 100_000_000;
+    hiData = Math.max(1, hiData);
+    const hi = hiData * 1.08;
+    return { lo: loData < 0 ? loData * 1.08 : -niceStep(hi, 4), hi };
+  }, [timeline, yoyData, budgetComparisonData, viewMode, timeEnabled, isTimeline, plMonthMap, view.from, view.to, timelineView.from, timelineView.to]);
 
   const [priceZoom, setPriceZoom] = useState(1);
   const dragRef = React.useRef<{ startY: number; startZoom: number } | null>(null);
 
-  // Tick "nice" (angka bulat) untuk label sumbu — domain chart tetap kontinu
-  // (baseMax / priceZoom) supaya drag zoom tetap smooth, cuma label/gridline
-  // yang dihitung ke angka bulat terdekat.
-  const { ticks: yTicks } = useMemo(
-    () => getNiceTicksFromZero(baseMax / priceZoom, 6),
-    [baseMax, priceZoom]
-  );
-  const yDomain = useMemo<[number, number]>(() => [0, baseMax / priceZoom], [baseMax, priceZoom]);
+  const yDomain = useMemo<[number, number]>(() => {
+    const mid = (yBase.lo + yBase.hi) / 2 + yShift;
+    const half = (yBase.hi - yBase.lo) / 2 / priceZoom;
+    return [mid - half, mid + half];
+  }, [yBase, priceZoom, yShift]);
+  const yTicks = useMemo(() => niceTicksRange(yDomain[0], yDomain[1], 5), [yDomain]);
+
+  // Lebar sumbu Y = label harga terlebar + jarak ke garis sumbu, diukur dengan canvas memakai font halaman
+  // (diukur ulang setelah font selesai dimuat) -- sama seperti chart Tren Sales.
+  const [axisWidth, setAxisWidth] = useState(72);
+  useEffect(() => {
+    const labels = yTicks.map((v) => formatMoney(v, currency));
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `10px ${salesFont.style.fontFamily}`;
+      const widest = Math.max(0, ...labels.map((l) => ctx.measureText(l).width));
+      const next = Math.ceil(widest) + SALES_AXIS_GAP;
+      setAxisWidth((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    let alive = true;
+    document.fonts?.ready.then(() => { if (alive) measure(); });
+    return () => { alive = false; };
+  }, [yTicks, currency]);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
+  const chartGeometry: CrosshairGeometry = {
+    plotLeft: axisWidth,
+    plotRightMargin: SALES_PLOT_RIGHT,
+    plotTop: SALES_PLOT_TOP,
+    plotBottom: SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT,
+  };
 
   // ── Drag titik data (Revenue/Expenses/Net Profit) di bulan yang sedang
   // di-hover, mirip fitur tarik di AR Aging Donut: tarik naik/turun untuk
@@ -435,19 +842,26 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
 
   // Data yang benar-benar dikirim ke chart: sama seperti revenueData, kecuali
   // satu titik (bulan + garis) yang sedang ditarik/spring-back diganti nilai live-nya.
-  const chartData = useMemo(() => {
-    if (!dragPoint) return revenueData;
-    return revenueData.map((d: any, i: number) =>
-      i === dragPoint.index ? { ...d, [dragPoint.key]: dragPoint.liveValue } : d
-    );
-  }, [revenueData, dragPoint]);
+  // `idx` = posisi bulan (sumbu X numerik, supaya jendela waktu bisa digeser/di-zoom).
+  const chartData = useMemo(
+    () => timeline.map((d, i: number) => ({
+      ...d,
+      idx: i,
+      ...(dragPoint && i === dragPoint.index ? { [dragPoint.key]: dragPoint.liveValue } : {}),
+    })),
+    [timeline, dragPoint]
+  );
+  // Titik kalibrasi drag dibuang saat deret titik berganti (sebelum chart dirender ulang).
+  useMemo(() => { dotsRef.current = { revenue: [], expenses: [], netProfit: [], thisYear: [], lastYear: [], actualRaw: [], budgetRaw: [] }; }, [timeline]);
 
-  const yoyChartData = useMemo(() => {
-    if (!dragPoint) return yoyData;
-    return yoyData.map((d: any, i: number) =>
-      i === dragPoint.index ? { ...d, [dragPoint.key]: dragPoint.liveValue } : d
-    );
-  }, [yoyData, dragPoint]);
+  const yoyChartData = useMemo(
+    () => yoyData.map((d: any, i: number) => ({
+      ...d,
+      idx: i,
+      ...(dragPoint && i === dragPoint.index ? { [dragPoint.key]: dragPoint.liveValue } : {}),
+    })),
+    [yoyData, dragPoint]
+  );
 
   const budgetChartData = useMemo(() => {
     if (!dragPoint) return budgetComparisonData;
@@ -511,7 +925,7 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
     const isDraggingThis = dragPoint?.key === key && dragPoint?.index === index;
     return (
       <g key={`pt-${key}-${index}`}>
-        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 4} fill={color} stroke="#fff" strokeWidth={1.5} />
+        <circle cx={cx} cy={cy} r={isDraggingThis ? 5 : 3} fill={color} stroke="#fff" strokeWidth={1.5} />
         <circle
           cx={cx}
           cy={cy}
@@ -543,298 +957,460 @@ export default function OverviewCharts({ viewMode = 'Actual', branchId }: { view
     window.addEventListener('mouseup', onUp);
   };
 
-  const resetZoom = () => setPriceZoom(1);
+  // Double-klik sumbu harga: kembalikan skala harga. Tombol Reset: kembalikan semuanya.
+  const resetZoom = () => { setPriceZoom(1); setYShift(0); };
+  const resetAll = () => { setPriceZoom(1); setYShift(0); setWin(null); setTRange(null); setIntervalId(null); };
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs">
-        <p className="font-semibold text-foreground mb-1.5">{label}</p>
-        {payload.map((p: any, i: number) => (
-          <div key={`tt-${i}`} className="flex items-center gap-2 py-0.5">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.stroke }} />
-            <span className="text-muted-foreground">{p.name}:</span>
-            <span className="font-semibold text-foreground">{formatMoney(p.value, currency)}</span>
-          </div>
-        ))}
-      </div>
-    );
+  // Ganti periode / mode / jumlah data -> kembali ke tampilan awal.
+  useEffect(() => { setWin(null); setYShift(0); setPriceZoom(1); }, [viewMode, seriesLen]);
+  useEffect(() => { setTRange(null); setYShift(0); setPriceZoom(1); }, [period, viewMode]);
+
+  // Lebar chart (untuk menentukan berapa label bulan yang muat di sumbu X).
+  const [wrapPx, setWrapPx] = useState(900);
+  useEffect(() => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const measure = () => setWrapPx((prev) => (Math.abs(prev - el.clientWidth) < 2 ? prev : el.clientWidth));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, isLoadingLastYear]);
+
+  const xLabels = useMemo(() => yoyData.map((d: any) => String(d.month)), [yoyData]);
+  const maxXTicks = Math.max(3, Math.floor((wrapPx - 90) / 70));
+  const xTicks = useMemo<TickInfo[]>(
+    () => (isTimeline
+      ? buildTicks(timelineView.from, timelineView.to, timelineGran, { monthShort: (tm) => NAMA_BULAN[new Date(tm).getUTCMonth()] }, maxXTicks)
+      : []),
+    [isTimeline, timelineView.from, timelineView.to, timelineGran, maxXTicks]
+  );
+  const xTickInfo = useMemo(() => new Map(xTicks.map((k) => [k.t, k])), [xTicks]);
+  const xTickValues = useMemo(() => {
+    if (isTimeline) return xTicks.map((k) => k.t);
+    const first = Math.max(0, Math.ceil(view.from - 1e-6));
+    const last = Math.min(seriesLen - 1, Math.floor(view.to + 1e-6));
+    const count = Math.max(0, last - first + 1);
+    const maxTicks = Math.max(3, Math.floor((wrapPx - 90) / 60));
+    const step = Math.max(1, Math.ceil(count / maxTicks));
+    const out: number[] = [];
+    for (let i = first; i <= last; i++) if (i % step === 0) out.push(i);
+    return out;
+  }, [isTimeline, xTicks, view.from, view.to, seriesLen, wrapPx]);
+
+  // ── Zoom & geser sumbu waktu (ala TradingView, sama seperti chart Tren Sales) ──
+  //  - Tarik di area label bulan: kanan = jendela melebar, kiri = menyempit (titik yang diklik tetap di tempatnya).
+  //  - Tarik di grafik: geser periode kiri/kanan sekaligus skala harga naik/turun.
+  //  - Klik dua kali di label bulan = kembali ke seluruh data.
+  const [panning, setPanning] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const yShiftRef = useRef(0);
+  yShiftRef.current = yShift;
+  const timeBoundsRef = useRef(timeBounds);
+  timeBoundsRef.current = timeBounds;
+
+  const clampWin = (from: number, span: number, n: number) => {
+    const minSpan = Math.min(2, Math.max(1, n - 1));
+    const maxSpan = Math.max(n - 1, 1) * 2.5;
+    const sp = Math.min(maxSpan, Math.max(minSpan, span));
+    const lo = -sp * 0.5;
+    const hi = (n - 1) + sp * 0.5;
+    let f = from;
+    if (f + sp > hi) f = hi - sp;
+    if (f < lo) f = lo;
+    return { from: f, to: f + sp };
   };
 
-  const BudgetTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const actual = payload.find((p: any) => p.dataKey === 'actualRaw')?.value || 0;
-    const budget = payload.find((p: any) => p.dataKey === 'budgetRaw')?.value || 0;
-    const variancePct = budget !== 0 ? ((actual - budget) / budget) * 100 : 0;
-    return (
-      <div className="bg-card border border-border rounded-lg p-3 shadow-dropdown text-xs min-w-[180px]">
-        <p className="font-semibold text-foreground mb-1.5">{label}</p>
-        {payload.map((p: any, i: number) => (
-          <div key={`btt-${i}`} className="flex items-center justify-between gap-3 py-0.5">
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color || p.fill }} />
-              {p.name}
-            </span>
-            <span className="font-semibold text-foreground">{formatMoney(p.value, currency)}</span>
-          </div>
-        ))}
-        <div className={`mt-1.5 pt-1.5 border-t border-border font-semibold ${variancePct >= 0 ? 'text-positive' : 'text-negative'}`}>
-          {variancePct >= 0 ? '+' : ''}{variancePct.toFixed(1)}% {t('vs anggaran')}
-        </div>
-      </div>
-    );
+  const beginTimeDrag = (e: React.PointerEvent, mode: 'zoom' | 'pan') => {
+    const el = chartWrapRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const plotLeft = rect.left + axisWidth;
+    const plotWidth = Math.max(60, rect.width - axisWidth - SALES_PLOT_RIGHT);
+    const start = viewRef.current;
+    const span = start.to - start.from;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startShift = yShiftRef.current;
+    const [yLo, yHi] = yDomainRef.current;
+    const plotH = Math.max(60, SALES_CHART_HEIGHT - SALES_XAXIS_HEIGHT - SALES_PLOT_TOP);
+    const n = seriesLen;
+    const canPanTime = timeEnabled;
+    const tl = isTimeline;
+    if (mode === 'pan') setPanning(true);
+    const anchor = Math.min(1, Math.max(0, (startX - plotLeft) / plotWidth));
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (mode === 'zoom') {
+        if (tl) setTRange(zoomRange(start, Math.exp(dx / SALES_TIME_ZOOM_PX), anchor, timeBoundsRef.current));
+        else {
+          const nextSpan = span * Math.exp(dx / SALES_TIME_ZOOM_PX);
+          setWin(clampWin(start.from + anchor * span - anchor * nextSpan, nextSpan, n));
+        }
+      } else {
+        if (canPanTime) {
+          if (tl) setTRange(panRange(start, (-dx / plotWidth) * span, timeBoundsRef.current));
+          else setWin(clampWin(start.from - (dx / plotWidth) * span, span, n));
+        }
+        // Tarik ke bawah = grafik turun (rentang nilai yang terlihat naik), seperti TradingView.
+        setYShift(startShift + ((ev.clientY - startY) / plotH) * (yHi - yLo));
+      }
+    };
+    const onUp = () => {
+      setPanning(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
+
+  const handleChartPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const el = chartWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x < axisWidth || y > rect.height - SALES_XAXIS_HEIGHT) return; // sumbu Y & sumbu X punya handler sendiri
+    beginTimeDrag(e, 'pan');
+  };
+
+  const agingSegs = useMemo(
+    () => agingData.map((a: any) => ({ name: t(a.name), value: a.value * 1e6, color: a.color })),
+    [agingData, t]
+  );
+  const agingSubtitle = isAgingSample
+    ? fx(t('Total AR: Rp 0 outstanding'))
+    : fx(`Total AR: ${formatMoney(totalAgingJt * 1e6, currency)} outstanding`);
+
+  // Sumbu & grid yang sama untuk ketiga mode chart (gaya chart Tren Sales).
+  const axisProps = {
+    xAxis: timeEnabled ? (
+      <XAxis
+        dataKey={isTimeline ? 't' : 'idx'}
+        type="number"
+        scale="linear"
+        domain={[view.from, view.to]}
+        allowDataOverflow
+        ticks={xTickValues}
+        interval={0}
+        tick={(p: any) => (isTimeline ? <SalesXTick {...p} info={xTickInfo} /> : <SalesXTick {...p} labels={xLabels} />)}
+        axisLine={{ stroke: SALES_AXIS_BORDER, strokeWidth: 1.5 }}
+        tickLine={false}
+        height={SALES_XAXIS_HEIGHT}
+      />
+    ) : (
+      <XAxis
+        dataKey="name"
+        tick={(p: any) => <SalesXTick {...p} />}
+        axisLine={{ stroke: SALES_AXIS_BORDER, strokeWidth: 1.5 }}
+        tickLine={false}
+        height={SALES_XAXIS_HEIGHT}
+        minTickGap={12}
+      />
+    ),
+    yAxis: (
+      <YAxis
+        tick={(p: any) => <SalesYTick {...p} label={fmt} />}
+        axisLine={{ stroke: SALES_AXIS_BORDER, strokeWidth: 1.5 }}
+        tickLine={false}
+        width={axisWidth}
+        ticks={yTicks}
+        domain={yDomain}
+        allowDataOverflow
+      />
+    ),
+  };
+
+  // Area/Line satu seri: seri pertama (utama) memakai gradien isi seperti chart Tren Sales.
+  const renderSeries = (key: LineKey, name: string, color: string, opts: { fill?: boolean; dashed?: boolean } = {}) => (
+    <Area
+      key={key}
+      type="monotone"
+      dataKey={key}
+      name={name}
+      stroke={color}
+      strokeWidth={2.5}
+      strokeDasharray={opts.dashed ? '4 2' : undefined}
+      baseValue={0}
+      fill={effType === 'area' && opts.fill ? 'url(#gradOverviewMain)' : 'none'}
+      dot={renderCalibrationDot(key) as any}
+      activeDot={renderActiveDot(key, color) as any}
+      isAnimationActive={!dragPoint && !win && !tRange}
+    />
+  );
+
+  const gradientDefs = (
+    <defs>
+      <linearGradient id="gradOverviewMain" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="5%" stopColor={SALES_LINE_COLOR} stopOpacity={0.30} />
+        <stop offset="95%" stopColor={SALES_LINE_COLOR} stopOpacity={0.02} />
+      </linearGradient>
+    </defs>
+  );
+
+  // Pembungkus chart: overlay drag sumbu Y (zoom skala harga) + crosshair, sama seperti chart Tren Sales.
+  const chartShell = (
+    chart: React.ReactElement,
+    crosshair: { labels: string[]; band: boolean; rowsOf: (i: number) => CrosshairRow[]; extraOf?: (i: number) => string | null; times?: number[] },
+    overlay?: React.ReactNode,
+  ) => (
+    <div
+      ref={chartWrapRef}
+      onPointerDown={handleChartPointerDown}
+      className={`relative select-none ${panning ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+      style={{ touchAction: 'pan-y' }}
+    >
+      <ResponsiveContainer width="100%" height={SALES_CHART_HEIGHT}>
+        {chart}
+      </ResponsiveContainer>
+      {overlay}
+      {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
+      <div
+        onMouseDown={handleAxisMouseDown}
+        onDoubleClick={resetZoom}
+        title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
+        className="absolute top-0 left-0 h-full cursor-ns-resize"
+        style={{ width: axisWidth }}
+      />
+      {/* Overlay drag di area label bulan: tarik kanan = zoom out, tarik kiri = zoom in */}
+      {timeEnabled && (
+        <div
+          onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); beginTimeDrag(e, 'zoom'); }}
+          onDoubleClick={() => setWin(null)}
+          title={t('Tarik kanan/kiri untuk zoom periode · klik dua kali untuk reset')}
+          className="absolute bottom-0 cursor-ew-resize"
+          style={{ left: axisWidth, right: SALES_PLOT_RIGHT, height: SALES_XAXIS_HEIGHT, touchAction: 'none' }}
+        />
+      )}
+      <SalesChartCrosshair
+        wrapRef={chartWrapRef}
+        geometry={chartGeometry}
+        yMin={yDomain[0]}
+        yMax={yDomain[1]}
+        labels={crosshair.labels}
+        band={crosshair.band}
+        rowsOf={crosshair.rowsOf}
+        extraOf={crosshair.extraOf}
+        formatValue={fmt}
+        view={timeEnabled ? view : undefined}
+        times={crosshair.times}
+      />
+    </div>
+  );
+
+  const chartMargin = { top: SALES_PLOT_TOP, right: SALES_PLOT_RIGHT, left: 0, bottom: 0 };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 2xl:grid-cols-3 gap-4">
+    <div className={`${salesFont.className} grid grid-cols-1 lg:grid-cols-3 gap-4`}>
       {/* Revenue Chart / Budget Comparison / YoY Comparison — tergantung viewMode */}
-      <div className="xl:col-span-2 bg-card border border-border rounded-lg p-5 shadow-card">
-        <div className="flex items-start justify-between mb-4">
+      <div className="lg:col-span-2 card-elevated-md rounded-xl p-5">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-md font-semibold text-foreground">
+            <h2 className="text-sm font-semibold text-neutral-900">
               {viewMode === 'Budget'
                 ? t('Aktual vs Anggaran')
                 : viewMode === 'Previous Year'
                 ? t('Pendapatan: Tahun Ini vs Tahun Lalu')
                 : t('Revenue vs Expenses vs Net Profit')}
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            </h2>
+            <p className="mt-0.5 text-xs text-neutral-500">
               {viewMode === 'Budget'
                 ? `${companyName} · ${t('YTD')} (${elapsedMonths} ${t('bulan')})`
                 : viewMode === 'Previous Year'
                 ? `${companyName} · ${yoyData[0]?.month || ''}${yoyData.length > 1 ? ` – ${yoyData[yoyData.length - 1].month}` : ''}`
-                : plIsSample
-                ? `${companyName} · Jan–Aug 2026`
-                : `${companyName} · ${revenueData[0]?.month || ''}${revenueData.length > 1 ? ` – ${revenueData[revenueData.length - 1].month}` : ''}`}
+                : `${companyName} · ${fmtMonthYearLabel(timelineView.from)} – ${fmtMonthYearLabel(timelineView.to)}`}
             </p>
           </div>
-          {viewMode === 'Actual' && (
-            <div className="flex gap-1">
-              {(['6M', 'YTD', '12M', '3Y'] as const).map((p) => (
-                <button
-                  key={`period-${p}`}
-                  onClick={() => setPeriod(p)}
-                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
-                    period === p ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {viewMode === 'Actual' && (
+              <FilterSelect
+                neutral
+                title="Timeframe"
+                searchable={false}
+                value={period}
+                onChange={(v) => setPeriod(v as typeof period)}
+                options={PERIOD_OPTIONS}
+              />
+            )}
+            {viewMode === 'Actual' && (
+              <FilterSelect
+                neutral
+                title="Interval"
+                searchable={false}
+                value={intervalId ?? 'auto'}
+                onChange={(v) => { setIntervalId(v === 'auto' ? null : (v as IntervalId)); setTRange(null); setPriceZoom(1); setYShift(0); }}
+                options={INTERVAL_OPTIONS}
+              />
+            )}
+            {viewMode !== 'Budget' && (
+              <FilterSelect
+                neutral
+                title="Bentuk grafik"
+                searchable={false}
+                value={effType}
+                onChange={(v) => setChartType(v as OverviewChartType)}
+                options={viewMode === 'Actual' ? CHART_TYPE_OPTIONS : CHART_TYPE_OPTIONS_BASIC}
+              />
+            )}
+            {(priceZoom !== 1 || yShift !== 0 || win !== null || tRange !== null || intervalId !== null) && (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="text-xs border border-neutral-300 rounded-lg px-2 py-1 bg-card text-neutral-900 hover:bg-neutral-100"
+              >
+                {t('Reset')}
+              </button>
+            )}
+          </div>
         </div>
 
+        {isTimeline && (loadingMore || yearsTruncated) && (
+          <p className="mb-2 text-[11px] text-neutral-500">
+            {loadingMore ? t('Memuat data tahun lain...') : t('Zoom in untuk memuat tahun yang lebih lama')}
+          </p>
+        )}
+
         {viewMode === 'Budget' && (
-        <div className="relative">
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={budgetChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis
-                tickFormatter={fmt}
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                axisLine={false}
-                tickLine={false}
-                width={72}
-                ticks={yTicks}
-                domain={yDomain}
-                allowDataOverflow
-              />
-              <Tooltip content={<BudgetTooltip />} cursor={false} />
-              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
-              <Bar
-                dataKey="actualRaw"
-                name={t('Actual')}
-                fill="var(--primary)"
-                shape={renderInteractiveBar('actualRaw', 'var(--primary)') as any}
-                isAnimationActive={!dragPoint}
-              />
-              <Bar
-                dataKey="budgetRaw"
-                name={t('Budget')}
-                fill="var(--muted-foreground)"
-                fillOpacity={0.35}
-                shape={renderInteractiveBar('budgetRaw', 'var(--muted-foreground)', 0.35) as any}
-                isAnimationActive={!dragPoint}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-          {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
-          <div
-            onMouseDown={handleAxisMouseDown}
-            onDoubleClick={resetZoom}
-            title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
-            className="absolute top-0 left-0 h-full cursor-ns-resize"
-            style={{ width: 72 }}
-          />
-        </div>
+          <>
+            {chartShell(
+              <BarChart data={budgetChartData} margin={chartMargin}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
+                {axisProps.xAxis}
+                {axisProps.yAxis}
+                <ReferenceLine y={0} stroke={SALES_AXIS_BORDER} strokeOpacity={0.35} />
+                <Tooltip content={() => null} cursor={false} />
+                <Bar
+                  dataKey="actualRaw"
+                  name={t('Actual')}
+                  fill={SALES_LINE_COLOR}
+                  shape={renderInteractiveBar('actualRaw', SALES_LINE_COLOR) as any}
+                  isAnimationActive={!dragPoint}
+                />
+                <Bar
+                  dataKey="budgetRaw"
+                  name={t('Budget')}
+                  fill={C_MUTED}
+                  shape={renderInteractiveBar('budgetRaw', C_MUTED) as any}
+                  isAnimationActive={!dragPoint}
+                />
+              </BarChart>,
+              {
+                labels: budgetChartData.map((d: any) => d.name),
+                band: true,
+                rowsOf: (i) => [
+                  { name: t('Actual'), color: SALES_LINE_COLOR, value: (budgetChartData[i] as any)?.actualRaw ?? 0 },
+                  { name: t('Budget'), color: '#737373', value: (budgetChartData[i] as any)?.budgetRaw ?? 0 },
+                ],
+                extraOf: (i) => {
+                  const d: any = budgetChartData[i];
+                  if (!d || !d.budgetRaw) return null;
+                  const v = ((d.actualRaw - d.budgetRaw) / d.budgetRaw) * 100;
+                  return `${v >= 0 ? '+' : ''}${v.toFixed(1)}% ${t('vs anggaran')}`;
+                },
+              }
+            )}
+            <SalesChartLegend items={[
+              { name: t('Actual'), color: SALES_LINE_COLOR },
+              { name: t('Budget'), color: C_MUTED },
+            ]} />
+          </>
         )}
 
         {viewMode === 'Previous Year' && isLoadingLastYear && (
-          <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-[220px] items-center justify-center text-xs text-neutral-500">
             {t('Memuat data tahun lalu...')}
           </div>
         )}
 
         {viewMode === 'Previous Year' && !isLoadingLastYear && (
-        <div className="relative">
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={yoyChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis
-                tickFormatter={fmt}
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                axisLine={false}
-                tickLine={false}
-                width={72}
-                ticks={yTicks}
-                domain={yDomain}
-                allowDataOverflow
-              />
-              <Tooltip content={<CustomTooltip />} cursor={false} />
-              <Legend wrapperStyle={{ fontSize: 11 }} formatter={(v) => t(v as string)} />
-              <Line
-                type="monotone"
-                dataKey="thisYear"
-                name={t('Tahun Ini')}
-                stroke="var(--primary)"
-                strokeWidth={2}
-                dot={renderCalibrationDot('thisYear') as any}
-                activeDot={renderActiveDot('thisYear', 'var(--primary)') as any}
-                isAnimationActive={!dragPoint}
-              />
-              <Line
-                type="monotone"
-                dataKey="lastYear"
-                name={t('Tahun Lalu')}
-                stroke="var(--muted-foreground)"
-                strokeWidth={2}
-                strokeDasharray="4 2"
-                dot={renderCalibrationDot('lastYear') as any}
-                activeDot={renderActiveDot('lastYear', 'var(--muted-foreground)') as any}
-                isAnimationActive={!dragPoint}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-          {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
-          <div
-            onMouseDown={handleAxisMouseDown}
-            onDoubleClick={resetZoom}
-            title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
-            className="absolute top-0 left-0 h-full cursor-ns-resize"
-            style={{ width: 72 }}
-          />
-        </div>
+          <>
+            {chartShell(
+              <AreaChart data={yoyChartData} margin={chartMargin}>
+                {gradientDefs}
+                <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
+                {axisProps.xAxis}
+                {axisProps.yAxis}
+                <ReferenceLine y={0} stroke={SALES_AXIS_BORDER} strokeOpacity={0.35} />
+                <Tooltip content={() => null} cursor={false} />
+                {renderSeries('thisYear', t('Tahun Ini'), SALES_LINE_COLOR, { fill: true })}
+                {renderSeries('lastYear', t('Tahun Lalu'), C_MUTED, { dashed: true })}
+              </AreaChart>,
+              {
+                labels: yoyChartData.map((d: any) => d.month),
+                band: false,
+                rowsOf: (i) => [
+                  { name: t('Tahun Ini'), color: SALES_LINE_COLOR, value: (yoyChartData[i] as any)?.thisYear ?? 0 },
+                  { name: t('Tahun Lalu'), color: '#737373', value: (yoyChartData[i] as any)?.lastYear ?? 0 },
+                ],
+              }
+            )}
+            <SalesChartLegend items={[
+              { name: t('Tahun Ini'), color: SALES_LINE_COLOR },
+              { name: t('Tahun Lalu'), color: C_MUTED, dashed: true },
+            ]} />
+          </>
         )}
 
         {viewMode === 'Actual' && (
-        <div className="relative">
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} axisLine={false} tickLine={false} />
-              <YAxis
-                tickFormatter={fmt}
-                tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                axisLine={false}
-                tickLine={false}
-                width={72}
-                ticks={yTicks}
-                domain={yDomain}
-                allowDataOverflow
-              />
-              <Tooltip content={<CustomTooltip />} cursor={false} />
-              <Line
-                type="monotone"
-                dataKey="revenue"
-                name={t('Revenue')}
-                stroke="var(--primary)"
-                strokeWidth={2}
-                dot={renderCalibrationDot('revenue') as any}
-                activeDot={renderActiveDot('revenue', 'var(--primary)') as any}
-                isAnimationActive={!dragPoint}
-              />
-              <Line
-                type="monotone"
-                dataKey="expenses"
-                name={t('Expenses')}
-                stroke="var(--danger)"
-                strokeWidth={2}
-                dot={renderCalibrationDot('expenses') as any}
-                activeDot={renderActiveDot('expenses', 'var(--danger)') as any}
-                isAnimationActive={!dragPoint}
-              />
-              <Line
-                type="monotone"
-                dataKey="netProfit"
-                name={t('Net Profit')}
-                stroke="var(--success)"
-                strokeWidth={2}
-                strokeDasharray="4 2"
-                dot={renderCalibrationDot('netProfit') as any}
-                activeDot={renderActiveDot('netProfit', 'var(--success)') as any}
-                isAnimationActive={!dragPoint}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-          {/* Overlay drag: tarik naik/turun di atas sumbu harga buat zoom in/out skala harga */}
-          <div
-            onMouseDown={handleAxisMouseDown}
-            onDoubleClick={resetZoom}
-            title={t('Tarik untuk zoom skala harga · klik dua kali untuk reset')}
-            className="absolute top-0 left-0 h-full cursor-ns-resize"
-            style={{ width: 72 }}
-          />
-        </div>
+          <>
+            {chartShell(
+              <AreaChart data={chartData} margin={chartMargin}>
+                {gradientDefs}
+                <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
+                {axisProps.xAxis}
+                {axisProps.yAxis}
+                <ReferenceLine y={0} stroke={SALES_AXIS_BORDER} strokeOpacity={0.35} />
+                <Tooltip content={() => null} cursor={false} />
+                {!barType && renderSeries('revenue', t('Revenue'), SALES_LINE_COLOR, { fill: true })}
+                {renderSeries('expenses', t('Expenses'), C_EXPENSES)}
+                {renderSeries('netProfit', t('Net Profit'), C_NET, { dashed: true })}
+              </AreaChart>,
+              {
+                labels: chartData.map((d) => d.label),
+                times: chartData.map((d) => d.t),
+                band: barType,
+                rowsOf: (i) => [
+                  { name: t('Revenue'), color: SALES_LINE_COLOR, value: chartData[i]?.revenue ?? 0 },
+                  { name: t('Expenses'), color: C_EXPENSES, value: chartData[i]?.expenses ?? 0 },
+                  { name: t('Net Profit'), color: C_NET, value: chartData[i]?.netProfit ?? 0 },
+                ],
+                extraOf: chartType === 'candle' || chartType === 'ohlc'
+                  ? (i) => (i > 0 && chartData[i] ? `Open ${fmt(chartData[i - 1].revenue)} → Close ${fmt(chartData[i].revenue)}` : null)
+                  : undefined,
+              },
+              // Column / Candle / OHLC menggambar Revenue (layer yang sama dengan chart Tren Sales);
+              // Expenses & Net Profit tetap berupa garis.
+              barType ? (
+                <SalesCandleLayer
+                  wrapRef={chartWrapRef}
+                  geometry={chartGeometry}
+                  view={view}
+                  yMin={yDomain[0]}
+                  yMax={yDomain[1]}
+                  points={chartData.map((d) => ({ t: d.t, total: d.revenue, count: 0, label: d.label }))}
+                  nextOf={(tm: number) => (intervalDef ? intervalNext(tm, intervalDef, 1) : addGran(tm, timelineGran, 1))}
+                  type={chartType as 'column' | 'candle' | 'ohlc'}
+                />
+              ) : null
+            )}
+            <SalesChartLegend items={[
+              { name: t('Revenue'), color: SALES_LINE_COLOR },
+              { name: t('Expenses'), color: C_EXPENSES },
+              { name: t('Net Profit'), color: C_NET, dashed: true },
+            ]} />
+          </>
         )}
       </div>
 
-      {/* AR Aging Donut */}
-      <div className="bg-card border border-border rounded-lg p-5 shadow-card">
-        <div className="mb-4">
-          <h3 className="text-md font-semibold text-foreground">{t('AR Aging Analysis')}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {isAgingSample
-              ? fx(t('Total AR: Rp 0 outstanding'))
-              : fx(`Total AR: ${formatMoney(totalAgingJt * 1e6, currency)} outstanding`)}
-          </p>
-        </div>
-        <InteractiveDonutChart
-          data={agingData}
-          activeIndex={activeAging}
-          onActiveChange={setActiveAging}
-          onLiveChange={setLivePreview}
-        />
-        <div className="space-y-1.5 mt-2">
-          {agingData.map((item: any, index) => {
-            const preview = livePreview?.[index];
-            const displayValueJt = preview ? preview.value : item.value;
-            const displayPct = preview
-              ? preview.pct
-              : isAgingSample
-              ? (SAMPLE_AGING_TOTAL > 0 ? (item.value / SAMPLE_AGING_TOTAL) * 100 : 0)
-              : item.percentage ?? 0;
-            return (
-              <div
-                key={`aging-legend-${item.name}`}
-                onClick={() => setActiveAging((prev) => (prev === index ? null : index))}
-                className={`flex items-center justify-between text-xs cursor-pointer rounded-md px-1 py-0.5 transition-colors ${
-                  activeAging === index ? 'bg-secondary' : 'hover:bg-secondary/50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                  <span className={activeAging === index ? 'text-foreground font-semibold' : 'text-muted-foreground'}>{t(item.name)}</span>
-                </div>
-                <span className="font-semibold text-foreground tabular-nums">{formatMoney(displayValueJt * 1e6, currency)}</span>
-                <span className="text-muted-foreground w-10 text-right">{displayPct.toFixed(0)}%</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* AR Aging Donut — desain disalin dari donut Purchase Status */}
+      <ArAgingDonutCard data={agingSegs} subtitle={agingSubtitle} />
     </div>
   );
 }
