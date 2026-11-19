@@ -41,6 +41,19 @@ bisa langsung dijalankan tanpa perlu generate file dulu. Kalau ada
 pelanggaran (nama sheet >31 karakter, urutan `_lebar_kolom_dari_isi()`
 salah, dll), perbaiki dulu sebelum menganggap task selesai.
 
+## Setelah menambah/mengubah halaman atau tombol di frontend, WAJIB regenerasi peta Zake
+
+Zake (bubble chat AI) tahu isi aplikasi dari `data/peta_aplikasi.json`, yang dibuat OTOMATIS dari
+kode frontend (halaman, komponen, tombol, tab, hak akses). Kalau peta tidak diperbarui, Zake akan
+menjawab dengan informasi lama. Jalankan:
+
+```bash
+python scripts/buat_peta_aplikasi.py        # frontend ada di ../src
+pytest tests/test_peta_aplikasi.py -v       # gagal = ada halaman baru yang belum masuk peta
+```
+
+Jangan mengedit `data/peta_aplikasi.json` / `.md` manual -- akan tertimpa saat regenerasi.
+
 ## Prinsip umum project ini (ringkas, detail ada di tiap SKILL.md)
 
 - **Bahasa Indonesia** dipakai konsisten di semua nama fungsi, variabel,

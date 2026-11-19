@@ -3,14 +3,18 @@
 // Klik tombol bulat -> panel chat muncul; klik lagi / tombol X -> tertutup.
 // Pakai backend yang sama dengan halaman lama: api.chatStream() + buatPercakapan().
 import React, { useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import {
-  ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, Clock, Copy, Maximize2, Minimize2,
-  Paperclip, RotateCcw, Sparkles, Square, TrendingUp, X,
+  ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronLeft, Clock, Copy, Maximize2, Minimize2,
+  Paperclip, RotateCcw, Send, Sparkles, Square, Trash2, TrendingUp, X,
 } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 // @ts-ignore -- api.js adalah file JS
-import { chatStream, buatPercakapan, aiBacaFileStream, aiBacaBanyakFile } from '@/app/zafeb-ai/lib/api';
+import {
+  chatStream, buatPercakapan, aiBacaFileStream, aiBacaBanyakFile,
+  daftarPercakapan, pesanPercakapan, hapusPercakapan, simpanPesanPercakapan,
+} from '@/app/zafeb-ai/lib/api';
 
 type Pesan = {
   id: string;
@@ -21,6 +25,7 @@ type Pesan = {
   waktu?: number;
 };
 type Lampiran = { id: string; file: File; url: string };
+type ItemPercakapan = { id: number | string; judul?: string; waktu?: number; cuplikan?: string };
 
 const MAKS_GAMBAR = 4;
 const MAKS_BYTE = 5 * 1024 * 1024; // batas gambar Claude API: 5MB
@@ -47,7 +52,9 @@ const CSS = `
 .zw-ring{animation:zw-ring 1.8s ease-out infinite}
 .zw-pop{animation:zw-pop .3s cubic-bezier(.22,1,.36,1) both}
 .zw-caret{animation:zw-caret 1s steps(1) infinite}
-@media (prefers-reduced-motion:reduce){.zw-in,.zw-ring,.zw-pop,.zw-caret{animation:none}}
+@keyframes zw-geser{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+.zw-geser{animation:zw-geser .24s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.zw-geser,.zw-in,.zw-ring,.zw-pop,.zw-caret{animation:none}}
 `;
 
 // ---------- util ----------
@@ -65,6 +72,22 @@ const labelHari = (t: number) => {
   if (kunciHari(t) === kunciHari(sekarang)) return 'Hari ini';
   if (kunciHari(t) === kunciHari(sekarang - 86400000)) return 'Kemarin';
   return new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const keMs = (v: any): number | undefined => {
+  if (v == null || v === '') return undefined;
+  const t = typeof v === 'number' ? v : Date.parse(String(v));
+  return Number.isFinite(t) ? t : undefined;
+};
+const waktuRelatif = (t?: number) => {
+  if (!t) return '';
+  const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return 'Baru saja';
+  if (s < 3600) return `${Math.floor(s / 60)} mnt`;
+  if (s < 86400) return `${Math.floor(s / 3600)} j`;
+  if (s < 86400 * 30) return `${Math.floor(s / 86400)} hr`;
+  if (s < 86400 * 365) return `${Math.floor(s / (86400 * 30))} bln`;
+  return `${Math.floor(s / (86400 * 365))} th`;
 };
 
 // ---------- logo ----------
@@ -224,6 +247,7 @@ function Markdown({ text, caret }: { text: string; caret?: boolean }) {
 export default function ChatWidget() {
   const { activeClientId, activeClientName } = useActiveClient();
   const { user } = useAuth();
+  const pathname = usePathname(); // halaman yang sedang dibuka -> dikirim ke Zake agar jawabannya sesuai konteks
   const [open, setOpen] = useState(false);
   const [besar, setBesar] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -235,6 +259,12 @@ export default function ChatWidget() {
   const [tombolBawah, setTombolBawah] = useState(false);
   const [disalin, setDisalin] = useState<string | null>(null);
   const [salam, setSalam] = useState('Halo');
+  const [layar, setLayar] = useState<'chat' | 'daftar'>('chat');
+  const [daftar, setDaftar] = useState<ItemPercakapan[]>([]);
+  const [memuatDaftar, setMemuatDaftar] = useState(false);
+  const [gagalDaftar, setGagalDaftar] = useState(false);
+  const [membukaId, setMembukaId] = useState<string | number | null>(null);
+  const [konfirmHapus, setKonfirmHapus] = useState<string | number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const percakapanIdRef = useRef<number | string | null>(null);
@@ -265,8 +295,8 @@ export default function ChatWidget() {
     setTombolBawah(jarak > 160);
   };
   useEffect(() => {
-    if (open && dekatDasarRef.current) keBawah(false);
-  }, [messages, open, besar]);
+    if (open && layar === 'chat' && dekatDasarRef.current) keBawah(false);
+  }, [messages, open, besar, layar]);
 
   // ---- efek buka panel ----
   useEffect(() => {
@@ -316,6 +346,8 @@ export default function ChatWidget() {
     batalkanKetik();
     percakapanIdRef.current = null;
     setMessages([SAPAAN]);
+    setLayar('chat');
+    setDaftar([]);
   }, [activeClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tinggi textarea mengikuti isi (maks 120px).
@@ -393,6 +425,7 @@ export default function ChatWidget() {
     const controller = new AbortController();
     abortRef.current = controller;
     let adaJawaban = false;
+    let jawabanGambar = ''; // jalur gambar tidak lewat chatStream -> disimpan manual setelah selesai
 
     try {
       if (gambar.length > 0) {
@@ -401,16 +434,17 @@ export default function ChatWidget() {
           for await (const potongan of aiBacaFileStream(gambar[0].file, pertanyaan)) {
             if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
             adaJawaban = true;
+            jawabanGambar += potongan;
             ketik(idAi, potongan);
           }
         } else {
           const hasil = await aiBacaBanyakFile(gambar.map((g) => g.file), pertanyaan);
           if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
           adaJawaban = !!hasil?.jawaban;
-          if (adaJawaban) ketik(idAi, hasil.jawaban);
+          if (adaJawaban) { jawabanGambar = hasil.jawaban; ketik(idAi, hasil.jawaban); }
         }
       } else {
-        for await (const evt of chatStream(text, riwayat, [], activeClientId, percakapanIdRef.current, controller.signal)) {
+        for await (const evt of chatStream(text, riwayat, [], activeClientId, percakapanIdRef.current, controller.signal, { halaman: pathname } as any)) {
           if (evt.type === 'step') {
             updateById(idAi, (p) => (p.text ? p : { ...p, status: evt.label || p.status }));
             continue;
@@ -420,6 +454,17 @@ export default function ChatWidget() {
         }
       }
       await tungguKetikSelesai();
+      // Pesan teks disimpan otomatis oleh backend (chatStream). Pesan bergambar disimpan di sini.
+      if (gambar.length > 0 && adaJawaban && percakapanIdRef.current != null) {
+        try {
+          await simpanPesanPercakapan(percakapanIdRef.current, [
+            { role: 'user', content: text ? `${text}\n[mengirim gambar]` : '[mengirim gambar]' },
+            { role: 'assistant', content: jawabanGambar },
+          ]);
+        } catch (e) {
+          console.error('Gagal menyimpan percakapan bergambar:', e);
+        }
+      }
       if (!adaJawaban) updateById(idAi, (p) => ({ ...p, status: undefined, text: p.text || '(tidak ada jawaban)' }));
       if (!openRef.current) setUnread((n) => n + 1);
     } catch (e: any) {
@@ -459,6 +504,86 @@ export default function ChatWidget() {
     }
   };
 
+  // ---- riwayat percakapan ----
+  const muatDaftar = async () => {
+    setMemuatDaftar(true);
+    setGagalDaftar(false);
+    try {
+      const res: any = await daftarPercakapan(activeClientId, 'client');
+      const list: any[] = res?.percakapan || [];
+      setDaftar(
+        list.map((c) => ({
+          id: c.id,
+          judul: c.judul,
+          waktu: keMs(c.diperbarui_pada ?? c.updated_at ?? c.terakhir_pada ?? c.dibuat_pada ?? c.created_at ?? c.waktu),
+          cuplikan: c.pesan_terakhir ?? c.cuplikan ?? c.ringkasan ?? undefined,
+        })),
+      );
+    } catch {
+      // riwayat hanya untuk level tertentu (backend bisa balas 403) -- tampilkan pesan, jangan merusak chat
+      setDaftar([]);
+      setGagalDaftar(true);
+    } finally {
+      setMemuatDaftar(false);
+    }
+  };
+
+  const keDaftar = () => {
+    setKonfirmHapus(null);
+    setLayar('daftar');
+    muatDaftar();
+  };
+
+  const bukaPercakapan = async (id: string | number) => {
+    // percakapan yang sedang aktif: cukup kembali ke chat
+    if (percakapanIdRef.current != null && String(percakapanIdRef.current) === String(id) && messages.length > 1) {
+      dekatDasarRef.current = true;
+      setLayar('chat');
+      return;
+    }
+    abortRef.current?.abort();
+    batalkanKetik();
+    setMembukaId(id);
+    try {
+      const res: any = await pesanPercakapan(id);
+      const pesan: Pesan[] = (res?.pesan || []).map((p: any) => ({
+        id: baruId(),
+        role: p.role === 'user' ? 'user' : 'assistant',
+        text: p.content ?? '',
+        waktu: keMs(p.created_at ?? p.dibuat_pada ?? p.waktu),
+      }));
+      percakapanIdRef.current = id;
+      setMessages(pesan.length ? pesan : [SAPAAN]);
+      setInput('');
+      dekatDasarRef.current = true;
+      setLayar('chat');
+    } catch (e: any) {
+      setGagalDaftar(true);
+      console.error('Gagal membuka percakapan:', e);
+    } finally {
+      setMembukaId(null);
+    }
+  };
+
+  const hapusItem = async (id: string | number) => {
+    try {
+      await hapusPercakapan(id);
+    } catch (e) {
+      console.error('Gagal menghapus percakapan:', e);
+      return;
+    } finally {
+      setKonfirmHapus(null);
+    }
+    setDaftar((prev) => prev.filter((c) => c.id !== id));
+    if (percakapanIdRef.current != null && String(percakapanIdRef.current) === String(id)) obrolanBaru();
+  };
+
+  const mulaiBaru = () => {
+    obrolanBaru();
+    dekatDasarRef.current = true;
+    setLayar('chat');
+  };
+
   const kosong = messages.length === 1;
   const tampil = messages.filter((m) => m.id !== ID_SAPAAN);
   const idxTerakhir = tampil.length - 1;
@@ -489,13 +614,37 @@ export default function ChatWidget() {
         {/* Garis aksen tipis di atas */}
         <div className="absolute inset-x-0 top-0 z-20 h-0.5 bg-gradient-to-r from-neutral-600 via-white to-neutral-600" />
 
-        {/* Header */}
-        <div className="relative z-10 flex items-center gap-3 px-4 pt-5 pb-4 bg-gradient-to-b from-neutral-800 to-neutral-900 border-b border-neutral-700 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.9)]">
+        {layar === 'daftar' ? (
+          /* Header layar Pesan (riwayat) */
+          <div className="relative z-10 flex items-center gap-3 px-4 pt-5 pb-4 bg-gradient-to-b from-neutral-800 to-neutral-900 border-b border-neutral-700 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.9)]">
+            <div className="w-8 shrink-0" />
+            <div className="flex-1 text-center text-[15px] font-bold tracking-tight text-white">Pesan</div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              title="Tutup"
+              className="h-8 w-8 rounded-md flex items-center justify-center text-neutral-400 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        ) : (
+        /* Header chat */
+        <div className="relative z-10 flex items-center gap-2 px-3 pt-5 pb-4 bg-gradient-to-b from-neutral-800 to-neutral-900 border-b border-neutral-700 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.9)]">
+          <button
+            type="button"
+            onClick={keDaftar}
+            title="Riwayat pesan"
+            aria-label="Kembali ke daftar pesan"
+            className="h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-neutral-300 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </button>
           <div className="h-11 w-11 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-[0_0_0_4px_rgba(255,255,255,0.08)]">
             <Wajah size={30} bg="#0a0a0a" fg="#ffffff" />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold tracking-tight leading-tight text-white">Zafeb AI</div>
+          <div className="flex-1 min-w-0 pl-1">
+            <div className="text-[15px] font-bold tracking-tight leading-tight text-white">Zake</div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-neutral-300 leading-tight min-w-0">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
               <span className="truncate">{activeClientName ? `Online · ${activeClientName}` : 'Online'}</span>
@@ -526,7 +675,108 @@ export default function ChatWidget() {
             <X size={17} />
           </button>
         </div>
+        )}
 
+        {layar === 'daftar' ? (
+          /* Layar Pesan: daftar percakapan */
+          <div className="zw-geser relative flex min-h-0 flex-1 flex-col bg-[radial-gradient(ellipse_at_top,rgba(255,255,255,0.045),transparent_60%)]">
+            <div className="flex-1 overflow-y-auto px-4 pt-2 scrollbar-thin">
+              {memuatDaftar && daftar.length === 0 ? (
+                <div className="space-y-3 pt-4">
+                  {[0, 1, 2].map((k) => (
+                    <div key={k} className="flex items-center gap-3 px-1 py-3">
+                      <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-neutral-800" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 w-2/3 animate-pulse rounded bg-neutral-800" />
+                        <div className="h-3 w-1/3 animate-pulse rounded bg-neutral-900" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : daftar.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center pb-16 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 text-neutral-500">
+                    <Sparkles size={20} />
+                  </div>
+                  <p className="mt-4 text-[13.5px] font-medium text-neutral-200">
+                    {gagalDaftar ? 'Riwayat belum bisa dimuat' : 'Belum ada percakapan'}
+                  </p>
+                  <p className="mt-1 max-w-[240px] text-[12px] leading-relaxed text-neutral-500">
+                    {gagalDaftar
+                      ? 'Coba lagi sebentar, atau mulai obrolan baru.'
+                      : 'Mulai bertanya, dan obrolanmu akan tersimpan di sini.'}
+                  </p>
+                  {gagalDaftar && (
+                    <button type="button" onClick={muatDaftar} className="mt-3 rounded-full border border-neutral-700 px-3 py-1 text-[12px] text-neutral-300 hover:border-neutral-500 hover:text-white">
+                      Coba lagi
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <ul className="divide-y divide-neutral-800/80">
+                  {daftar.map((c) => {
+                    const aktif = percakapanIdRef.current != null && String(percakapanIdRef.current) === String(c.id);
+                    const judul = c.judul && c.judul !== 'Percakapan Baru' ? c.judul : 'Obrolan baru';
+                    const konfirm = konfirmHapus === c.id;
+                    return (
+                      <li key={String(c.id)} className="group relative">
+                        <button
+                          type="button"
+                          onClick={() => bukaPercakapan(c.id)}
+                          disabled={membukaId != null}
+                          className="flex w-full items-center gap-3 rounded-lg px-1 py-3.5 text-left transition-colors hover:bg-white/[0.04] disabled:opacity-60"
+                        >
+                          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-200">
+                            <Wajah size={26} bg="#0a0a0a" fg="#ffffff" />
+                            {aktif && <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#0b0b0b] bg-emerald-500" />}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-baseline justify-between gap-2">
+                              <span className="truncate text-[13.5px] font-semibold text-white">{judul}</span>
+                              <span className="shrink-0 text-[11.5px] tabular-nums text-neutral-500 transition-opacity group-hover:opacity-0">
+                                {membukaId === c.id ? '...' : waktuRelatif(c.waktu)}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 block truncate text-[12.5px] text-neutral-500">
+                              {c.cuplikan || (aktif ? 'Percakapan saat ini' : 'Ketuk untuk membuka')}
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => (konfirm ? hapusItem(c.id) : setKonfirmHapus(c.id))}
+                          onBlur={() => setKonfirmHapus((x) => (x === c.id ? null : x))}
+                          title={konfirm ? 'Klik lagi untuk menghapus' : 'Hapus percakapan'}
+                          aria-label={`Hapus percakapan ${judul}`}
+                          className={[
+                            'absolute right-1 top-3 flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-all',
+                            konfirm
+                              ? 'bg-red-500/15 text-red-400 opacity-100'
+                              : 'text-neutral-500 opacity-0 hover:bg-white/10 hover:text-white focus:opacity-100 group-hover:opacity-100',
+                          ].join(' ')}
+                        >
+                          <Trash2 size={13} />
+                          {konfirm && 'Hapus?'}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="flex justify-center px-4 pb-6 pt-3">
+              <button
+                type="button"
+                onClick={mulaiBaru}
+                className="flex items-center gap-2.5 rounded-xl bg-white px-5 py-2.5 text-[13px] font-semibold text-neutral-900 shadow-[0_10px_24px_-8px_rgba(255,255,255,0.3)] transition-transform hover:scale-[1.03] active:scale-95"
+              >
+                Tanya sesuatu
+                <Send size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Area pesan */}
         <div className="relative flex-1 min-h-0">
           <div
@@ -743,9 +993,11 @@ export default function ChatWidget() {
             )}
           </div>
           <div className="mt-2 text-center text-[10.5px] tracking-wide text-neutral-500">
-            Zafeb AI bisa keliru. Periksa angka penting.
+            Zake bisa keliru. Periksa angka penting.
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* Tombol bubble */}

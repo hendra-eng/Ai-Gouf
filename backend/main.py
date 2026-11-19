@@ -99,6 +99,8 @@ from modules.kertas_kerja_router import router as kertas_kerja_router  # [BARU] 
 from modules.tax_router import router as tax_router
 from modules.tax_case_router import router as tax_case_router
 from modules import tax_scheduler
+from modules.chat_zafeb import router as chat_zafeb_router  # [BARU] /api/chat/stream -- balasan AI untuk bubble Zafeb AI
+from modules.percakapan_zafeb import router as percakapan_zafeb_router  # [BARU] /api/percakapan -- riwayat obrolan bubble Zake
 from modules.auth import v1 as auth_v1  # [BARU] Fitur Auth REST API standar: /api/v1/auth/...
 from modules.management import documents_v1 as management_documents_v1  # [BARU] /api/v1/management/documents/...
 from modules.management import reports_v1 as management_reports_v1  # [BARU] /api/v1/management/reports/...
@@ -400,6 +402,8 @@ async def _respon_periode_terkunci_tertelan(request: Request, call_next):
 
 app.include_router(tax_router, prefix="/tax", tags=["tax-research"])
 app.include_router(tax_case_router, prefix="/tax/cases", tags=["tax-case-law"])
+app.include_router(chat_zafeb_router)  # [BARU] /api/chat/stream
+app.include_router(percakapan_zafeb_router)  # [BARU] /api/percakapan -- simpan & buka kembali obrolan Zake
 app.include_router(kertas_kerja_router, prefix="/kertas-kerja", tags=["kertas-kerja"])  # [BARU]
 app.include_router(auth_v1.router)  # [BARU] /api/v1/auth/register|login|me -- prefix sudah di router-nya sendiri
 app.include_router(management_documents_v1.router)  # [BARU] /api/v1/management/documents/... -- prefix sudah di router-nya sendiri

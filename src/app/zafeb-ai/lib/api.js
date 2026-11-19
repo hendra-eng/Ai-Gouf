@@ -829,6 +829,7 @@ export async function* chatStream(pesan, riwayat = [], ringkasanData = [], clien
       gambar_kamera: (opsi && opsi.gambarKamera) || null, // [BARU] 1 foto kamera (base64 JPEG) saat pengguna minta Neo melihat
       analisa_wajah: (opsi && opsi.analisaWajah) || null, // [BARU] analisis wajah (teks) dari latar belakang saat sapaan awal
       agen: (opsi && opsi.agen) || null, // [BARU -- AGENTIC AI] "neo" | "atlas" | "zeno" (kosong = Neo, perilaku lama)
+      halaman: (opsi && opsi.halaman) || null, // [BARU] path halaman yang sedang dibuka (bubble Zake) -> Zake tahu konteks layar
     }),
   });
 
@@ -934,6 +935,21 @@ export async function pesanPercakapan(percakapanId) {
 
 export async function hapusPercakapan(percakapanId) {
   return request(`/api/percakapan/${percakapanId}`, { method: "DELETE" });
+}
+
+/**
+ * simpanPesanPercakapan -- tambahkan pesan ke percakapan yang sudah ada.
+ * Dipakai jalur yang TIDAK lewat chatStream (mis. tanya-jawab gambar), karena
+ * chatStream menyimpan pesan otomatis di backend.
+ * @param {number|string} percakapanId
+ * @param {{role: "user"|"assistant", content: string}[]} pesan
+ */
+export async function simpanPesanPercakapan(percakapanId, pesan) {
+  return request(`/api/percakapan/${percakapanId}/pesan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pesan }),
+  });
 }
 
 // ------------------------------------------------------------
