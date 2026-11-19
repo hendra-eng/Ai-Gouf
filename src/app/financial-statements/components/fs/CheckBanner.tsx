@@ -9,7 +9,8 @@ import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 // Status pengecekan laporan (seimbang / terekonsiliasi) + daftar jurnal
 // tidak seimbang & peringatan mapping akun.
 
-export function CheckBanner({ ok, okText, failText, journals }: {
+export function CheckBanner({ ok, okText, failText, journals, mono = false }: {
+  mono?: boolean;
   ok: boolean;
   okText: string;
   failText: string;
@@ -18,13 +19,17 @@ export function CheckBanner({ ok, okText, failText, journals }: {
   const [open, setOpen] = useState(false);
   if (ok) {
     return (
-      <div className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-xl px-4 py-2.5 text-sm">
-        <CheckCircle2 size={16} /> {okText}
+      <div className={mono
+        ? 'flex items-center gap-2 rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-4 py-3 text-xs font-medium text-neutral-800'
+        : 'flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-xl px-4 py-2.5 text-sm'}>
+        <CheckCircle2 size={mono ? 15 : 16} /> {okText}
       </div>
     );
   }
   return (
-    <div className="border border-rose-200 bg-rose-50 text-rose-800 rounded-xl px-4 py-2.5 text-sm">
+    <div className={mono
+      ? 'rounded-lg border border-red-200 border-l-[3px] border-l-red-700 bg-red-50 px-4 py-3 text-xs text-red-800'
+      : 'border border-rose-200 bg-rose-50 text-rose-800 rounded-xl px-4 py-2.5 text-sm'}>
       <div className="flex items-center gap-2">
         <AlertTriangle size={16} /> <span className="font-medium">{failText}</span>
         {journals && journals.length > 0 && (
@@ -56,12 +61,14 @@ export function CheckBanner({ ok, okText, failText, journals }: {
   );
 }
 
-export function WarningsPanel({ warnings }: { warnings: FsWarning[] }) {
+export function WarningsPanel({ warnings, mono = false }: { warnings: FsWarning[]; mono?: boolean }) {
   useKodeAkun(); // re-render saat peta kode akun (Source Account Code) dimuat
   const [open, setOpen] = useState(false);
   if (!warnings.length) return null;
   return (
-    <div className="border border-amber-200 bg-amber-50 text-amber-900 rounded-xl px-4 py-2.5 text-sm">
+    <div className={mono
+      ? 'rounded-lg border border-neutral-300 border-l-[3px] border-l-neutral-800 bg-neutral-50 px-4 py-3 text-xs text-neutral-800'
+      : 'border border-amber-200 bg-amber-50 text-amber-900 rounded-xl px-4 py-2.5 text-sm'}>
       <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 text-left">
         <AlertTriangle size={16} className="text-amber-500" />
         <span className="font-medium">{warnings.length} account mapping warning{warnings.length > 1 ? 's' : ''}</span>

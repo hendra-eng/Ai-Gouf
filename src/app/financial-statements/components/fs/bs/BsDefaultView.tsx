@@ -6,14 +6,13 @@ import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YA
 import { BarChart3, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Database, ExternalLink, FileText, Lightbulb, PieChart } from 'lucide-react';
 import { CheckBanner, WarningsPanel } from '../CheckBanner';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
-import { inputCls } from '../PeriodPicker';
+import { inputCls } from './BsMono';
 import { fmtAmount, fmtDate, glHref, startOfYear, todayIso } from '../fsFormat';
 import {
   ASSET_SECTIONS, BS_COLORS, LIAB_SECTIONS, fmtCompact, monthEnd, monthLabel, parts, pctChange, prevMonthEnd, shiftYear,
   topMovers, useBsSeries, type MAccount, type MLine, type MSection, type Merged,
 } from './bsData';
-import { ChartTooltip, Delta, KpiCard, KpiRow, Panel } from './BsUi';
-import { BsToolbar, type ViewProps } from './BsToolbar';
+import { BsDropdown, BsToolbar, ChartTooltip, Delta, KpiCard, KpiRow, Panel, Segmented, filterLabelCls, thCls, thRowCls, trCls, type ViewProps } from './BsMono';
 import { bsTemplateReport, fmtLongDate } from '../statementTemplate';
 import { kodeAkun, useKodeAkun } from '@/lib/accountCode';
 
@@ -66,23 +65,16 @@ export default function BsDefaultView({ clientId, companyName, printedBy }: View
       <BsToolbar
         filters={
           <>
-            <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs font-semibold">
-              {([['as_of', 'As of'], ['range', 'Date range']] as const).map(([k, lbl]) => (
-                <button key={k} type="button" onClick={() => setMode(k)}
-                  className={`rounded-md px-3 py-1.5 transition-colors ${mode === k ? 'bg-emerald-50 text-emerald-700' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
+            <Segmented value={mode} onChange={setMode} options={[['as_of', 'As of'], ['range', 'Date range']] as const} />
             {isRange ? (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <label className={filterLabelCls}>
                 From
                 <input type="date" value={from} max={to || '9999-12-31'} onChange={e => e.target.value && setFrom(e.target.value)} className={`${inputCls} w-44`} />
                 to
                 <input type="date" value={to} min={from} max="9999-12-31" onChange={e => e.target.value && setTo(e.target.value)} className={`${inputCls} w-44`} />
               </label>
             ) : (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <label className={filterLabelCls}>
                 As of
                 <input type="date" value={asOfInput} max="9999-12-31" onChange={e => e.target.value && setAsOfInput(e.target.value)} className={`${inputCls} w-44`} />
               </label>
@@ -120,13 +112,14 @@ export default function BsDefaultView({ clientId, companyName, printedBy }: View
 
           {snap && (
             <CheckBanner
+              mono
               ok={snap.check.balanced}
               okText={`Balanced — Total Assets ${fmtAmount(snap.totals.assets)} = Total Liabilities + Equity ${fmtAmount(snap.totals.liabilities_and_equity)}`}
               failText={`Not balanced — difference ${fmtAmount(snap.check.difference)}. Caused by journals whose debit ≠ credit.`}
               journals={snap.check.unbalanced_journals}
             />
           )}
-          {data && <WarningsPanel warnings={data.warnings} />}
+          {data && <WarningsPanel mono warnings={data.warnings} />}
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
             <DefaultTable m={m} labels={[fmtDate(asOf), prevLbl, lyLbl]} glRange={{ start: isRange ? from : startOfYear(asOf), end: asOf }} />
@@ -146,7 +139,7 @@ export default function BsDefaultView({ clientId, companyName, printedBy }: View
 
 function Num({ v, bold, className = '' }: { v: number | null; bold?: boolean; className?: string }) {
   return (
-    <td className={`px-3 py-1.5 text-right tabular-nums whitespace-nowrap ${bold ? 'font-semibold text-foreground' : 'text-foreground/90'} ${v !== null && v < -0.004 ? 'text-rose-600' : ''} ${className}`}>
+    <td className={`px-3 py-1.5 text-right tabular-nums whitespace-nowrap ${bold ? 'font-semibold text-neutral-900' : 'text-neutral-800'} ${v !== null && v < -0.004 ? 'text-red-700' : ''} ${className}`}>
       {fmtAmount(v)}
     </td>
   );
@@ -154,10 +147,10 @@ function Num({ v, bold, className = '' }: { v: number | null; bold?: boolean; cl
 
 function PctCell({ cur, prev, upIsGood = true }: { cur: number; prev: number; upIsGood?: boolean }) {
   const p = pctChange(cur, prev);
-  if (p === null || Math.abs(p) < 0.05) return <td className="px-3 py-1.5 text-right text-xs tabular-nums text-muted-foreground">{p === null ? '–' : '0.0%'}</td>;
+  if (p === null || Math.abs(p) < 0.05) return <td className="px-3 py-1.5 text-right text-xs tabular-nums text-neutral-500">{p === null ? '–' : '0.0%'}</td>;
   const good = (p > 0) === upIsGood;
   return (
-    <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${good ? 'text-emerald-600' : 'text-rose-600'}`}>
+    <td className={`px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap ${good ? 'text-neutral-900' : 'text-red-700'}`}>
       {p > 0 ? '▲' : '▼'} {Math.abs(p).toFixed(1)}%
     </td>
   );
@@ -194,12 +187,12 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
   ];
 
   const accountRow = (a: MAccount, i: number, upIsGood: boolean) => (
-    <tr key={`${a.code ?? 'calc'}-${i}`} className="text-[12.5px] hover:bg-slate-50">
+    <tr key={`${a.code ?? 'calc'}-${i}`} className={trCls}>
       <td className="pl-14 pr-3 py-1">
-        <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
-          {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="text-[10px] font-semibold uppercase bg-violet-50 text-violet-700 rounded px-1.5">Auto</span>}
+        <span className="inline-flex items-center gap-2 min-w-0 text-neutral-500">
+          {a.code ? <span className="font-mono text-[11px]">{kodeAkun(a.code)}</span> : <span className="rounded bg-neutral-200 px-1.5 text-[10px] font-semibold uppercase text-neutral-700">Auto</span>}
           <span className="truncate">{a.name}</span>
-          {a.code && <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" className="hover:text-blue-700"><ExternalLink size={12} /></Link>}
+          {a.code && <Link href={glHref(a.code, glRange.start, glRange.end)} target="_blank" title="Open in General Ledger" className="hover:text-neutral-900"><ExternalLink size={12} /></Link>}
         </span>
       </td>
       <ValueCells v={a.v} upIsGood={upIsGood} />
@@ -211,10 +204,10 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
     const open = openLines.has(k);
     return (
       <React.Fragment key={k}>
-        <tr className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => toggle(setOpenLines, k)}>
-          <td className="pl-9 pr-3 py-1.5 text-foreground/90">
+        <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setOpenLines, k)}>
+          <td className="pl-9 pr-3 py-1.5 text-neutral-800">
             <span className="inline-flex items-center gap-1">
-              {open ? <ChevronDown size={13} className="text-muted-foreground" /> : <ChevronRight size={13} className="text-muted-foreground" />}
+              {open ? <ChevronDown size={13} className="text-neutral-500" /> : <ChevronRight size={13} className="text-neutral-500" />}
               {l.label}
             </span>
           </td>
@@ -230,23 +223,23 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
       title="Balance Sheet"
       bodyClass="p-3 pt-2"
       right={
-        <button type="button" onClick={() => setOpenLines(allOpen ? new Set() : new Set(allLineKeys))} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-slate-50">
+        <button type="button" onClick={() => setOpenLines(allOpen ? new Set() : new Set(allLineKeys))} className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 shadow-sm transition-colors hover:border-neutral-700 hover:bg-neutral-50">
           {allOpen ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />} {allOpen ? 'Collapse accounts' : 'Expand accounts'}
         </button>
       }
     >
       <div className="overflow-x-auto scrollbar-thin">
-        <table className="w-full text-sm min-w-[860px]">
+        <table className="w-full min-w-[860px] border-separate border-spacing-0 text-xs">
           <thead>
-            <tr className="text-[11px] text-muted-foreground">
-              <th className="text-left font-semibold px-3 py-2" />
+            <tr className={thRowCls}>
+              <th className={`${thCls} text-left`} />
               {[
                 [labels[0], 'Amount (IDR)'], [labels[1], 'Amount (IDR)'], ['Change', '(IDR)'], ['Change %', ''],
                 [labels[2], 'Amount (IDR)'], ['YoY Change', '(IDR)'], ['YoY %', ''],
               ].map(([a, b], i) => (
-                <th key={i} className="text-right font-semibold px-3 py-2 whitespace-nowrap align-bottom">
-                  <span className="block text-foreground">{a}</span>
-                  {b && <span className="block font-normal">{b}</span>}
+                <th key={i} className={`${thCls} text-right align-bottom`}>
+                  <span className="block">{a}</span>
+                  {b && <span className="block text-[10px] font-medium text-neutral-700">{b}</span>}
                 </th>
               ))}
             </tr>
@@ -256,8 +249,8 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
               const gOpen = !closed.has(g.key);
               return (
                 <React.Fragment key={g.key}>
-                  <tr className="bg-blue-50 cursor-pointer" onClick={() => toggle(setClosed, g.key)}>
-                    <td className="px-3 py-2 font-bold text-blue-800 rounded-l-lg">
+                  <tr className="cursor-pointer text-xs [&>td]:bg-neutral-900 [&>td]:text-white" onClick={() => toggle(setClosed, g.key)}>
+                    <td className="px-3 py-2 font-bold">
                       <span className="inline-flex items-center gap-1.5">{gOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}{g.label}</span>
                     </td>
                     <ValueCells v={g.v} bold />
@@ -268,14 +261,14 @@ function DefaultTable({ m, labels, glRange }: { m: Merged; labels: [string, stri
                     const upIsGood = !LIAB_SECTIONS.includes(sk);
                     return (
                       <React.Fragment key={sk}>
-                        <tr className="border-t border-slate-200 cursor-pointer hover:bg-slate-50" onClick={() => toggle(setClosed, sk)}>
-                          <td className="pl-6 pr-3 py-2 font-semibold text-foreground">
+                        <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(setClosed, sk)}>
+                          <td className="pl-6 pr-3 py-2 font-semibold text-neutral-900">
                             <span className="inline-flex items-center gap-1.5">{sOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{s.label || sk}</span>
                           </td>
                           <ValueCells v={s.v} bold upIsGood={upIsGood} />
                         </tr>
                         {sOpen && s.lines.length === 0 && (
-                          <tr><td colSpan={8} className="pl-12 py-1.5 text-xs italic text-muted-foreground">No balances</td></tr>
+                          <tr><td colSpan={8} className="pl-12 py-1.5 text-xs italic text-neutral-500">No balances</td></tr>
                         )}
                         {sOpen && s.lines.map(l => lineRow(s, l, upIsGood))}
                       </React.Fragment>
@@ -306,10 +299,10 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: st
     const other = total - movers.reduce((t, x) => t + x.delta, 0);
     const steps = [...movers.map(x => ({ name: x.label, delta: x.delta })), ...(Math.abs(other) >= 0.5 ? [{ name: 'Other', delta: other }] : [])];
     let run = v[PREV];
-    const out = [{ name: prevLbl, base: 0, value: v[PREV], fill: '#94A3B8', label: fmtCompact(v[PREV], 1) }];
+    const out = [{ name: prevLbl, base: 0, value: v[PREV], fill: '#D4D4D4', label: fmtCompact(v[PREV], 1) }];
     steps.forEach(s => {
       const base = s.delta >= 0 ? run : run + s.delta;
-      out.push({ name: s.name, base, value: Math.abs(s.delta), fill: s.delta >= 0 ? BS_COLORS.assetsSoft : BS_COLORS.liabilities, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
+      out.push({ name: s.name, base, value: Math.abs(s.delta), fill: s.delta >= 0 ? BS_COLORS.assetsSoft : BS_COLORS.equity, label: `${s.delta >= 0 ? '+' : '-'}${fmtCompact(Math.abs(s.delta), 1)}` });
       run += s.delta;
     });
     out.push({ name: curLbl, base: 0, value: v[CUR], fill: BS_COLORS.assets, label: fmtCompact(v[CUR], 1) });
@@ -325,18 +318,16 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: st
     <Panel
       title="Variance Summary"
       right={
-        <select value={metric} onChange={e => setMetric(e.target.value as Metric)} className="text-xs border border-border rounded-lg px-2 py-1.5 bg-white">
-          {METRICS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
-        </select>
+        <BsDropdown value={metric} onChange={v => setMetric(v as Metric)} options={METRICS.map(x => ({ value: x.id, label: x.label }))} align="right" />
       }
     >
       <div className="grid grid-cols-2 gap-3">
         {[{ lbl: prevLbl, i: PREV }, { lbl: lyLbl, i: LY }].map(c => {
           const d = v[CUR] - v[c.i];
           return (
-            <div key={c.i} className="rounded-xl bg-slate-50 p-3 text-center">
-              <p className="text-xs text-muted-foreground">vs {c.lbl}</p>
-              <p className="text-lg font-bold text-foreground tabular-nums">{d >= 0 ? '+' : '-'}{fmtCompact(Math.abs(d))}</p>
+            <div key={c.i} className="rounded-[10px] border border-neutral-300 bg-neutral-50 p-3 text-center">
+              <p className="text-xs text-neutral-500">vs {c.lbl}</p>
+              <p className="text-lg font-bold text-neutral-900 tabular-nums">{d >= 0 ? '+' : '-'}{fmtCompact(Math.abs(d))}</p>
               <Delta pct={pctChange(v[CUR], v[c.i])} upIsGood={upIsGood} />
             </div>
           );
@@ -345,13 +336,13 @@ function VarianceSummary({ m, prevLbl, lyLbl, curLbl }: { m: Merged; prevLbl: st
       <div className="h-48 mt-3">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={bars} margin={{ top: 18, right: 4, left: 4, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748B' }} interval={0} tickLine={false} axisLine={false}
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#737373' }} interval={0} tickLine={false} axisLine={false}
               tickFormatter={(s: string) => (s.length > 14 ? `${s.slice(0, 13)}…` : s)} />
             <YAxis hide domain={domain} allowDataOverflow />
             <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} />
             <Bar dataKey="value" stackId="w" radius={[3, 3, 0, 0]} isAnimationActive={false}>
               {bars.map((b, i) => <Cell key={i} fill={b.fill} />)}
-              <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#334155' }} />
+              <LabelList dataKey="label" position="top" style={{ fontSize: 10, fontWeight: 600, fill: '#171717' }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -366,17 +357,17 @@ function AssetsTrend({ m, dates, lyLbl }: { m: Merged; dates: string[]; lyLbl: s
   return (
     <Panel title="Total Assets Trend" icon={BarChart3}>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className="text-xl font-bold text-foreground">IDR {fmtCompact(m.assets[CUR])}</span>
+        <span className="text-xl font-bold text-neutral-900">IDR {fmtCompact(m.assets[CUR])}</span>
         <Delta pct={pctChange(m.assets[CUR], m.assets[LY])} suffix={`vs ${lyLbl}`} />
       </div>
       <div className="h-32 mt-2">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#64748B' }} interval={0} tickLine={false} axisLine={false}
+            <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#737373' }} interval={0} tickLine={false} axisLine={false}
               tickFormatter={(s: string) => s.split(' ')[0]} />
-            <Tooltip cursor={{ fill: '#F1F5F9' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
+            <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => `IDR ${fmtAmount(v)}`} />} />
             <Bar dataKey="value" name="Total Assets" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-              {data.map((d, i) => <Cell key={i} fill={d.last ? BS_COLORS.assets : '#BBF7D0'} />)}
+              {data.map((d, i) => <Cell key={i} fill={d.last ? BS_COLORS.assets : '#D4D4D4'} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -392,29 +383,29 @@ function KeyInsights({ m }: { m: Merged }) {
   const movers = topMovers(m, ASSET_SECTIONS, PREV, CUR, 2).filter(x => Math.sign(x.delta) === Math.sign(dA));
   if (Math.abs(dA) >= 0.5) {
     items.push({
-      color: dA >= 0 ? 'bg-emerald-500' : 'bg-rose-500',
+      color: dA >= 0 ? 'bg-neutral-900' : 'bg-red-600',
       text: `Total assets ${dA >= 0 ? 'increased' : 'decreased'} by ${pA === null ? '' : `${Math.abs(pA).toFixed(1)}% `}(IDR ${fmtCompact(Math.abs(dA), 1)}) from last month${movers.length ? `, mainly due to ${movers.map(x => x.label.toLowerCase()).join(' and ')}` : ''}.`,
     });
   } else {
-    items.push({ color: 'bg-slate-400', text: 'Total assets are unchanged from last month.' });
+    items.push({ color: 'bg-neutral-400', text: 'Total assets are unchanged from last month.' });
   }
   const wc = m.workingCapital;
   const pW = pctChange(wc[CUR], wc[PREV]);
   items.push({
-    color: wc[CUR] >= wc[PREV] ? 'bg-emerald-500' : 'bg-amber-500',
+    color: wc[CUR] >= wc[PREV] ? 'bg-neutral-900' : 'bg-neutral-500',
     text: `Working capital ${wc[CUR] >= wc[PREV] ? 'improved' : 'declined'}${pW === null ? '' : ` by ${Math.abs(pW).toFixed(1)}%`} to IDR ${fmtCompact(wc[CUR])}${m.currentRatio[CUR] !== null ? ` (current ratio ${m.currentRatio[CUR]!.toFixed(2)})` : ''}.`,
   });
   const dY = m.assets[CUR] - m.assets[LY];
   const pY = pctChange(m.assets[CUR], m.assets[LY]);
   items.push({
-    color: 'bg-blue-600',
+    color: 'bg-neutral-700',
     text: `Year-over-year, total assets ${dY >= 0 ? 'grew' : 'fell'}${pY === null ? '' : ` ${Math.abs(pY).toFixed(1)}%`} (IDR ${fmtCompact(Math.abs(dY), 1)}); equity ${m.equity[CUR] >= m.equity[LY] ? 'rose' : 'fell'} to IDR ${fmtCompact(m.equity[CUR])}.`,
   });
   return (
-    <Panel title="Key Insights" icon={Lightbulb} tone="amber">
+    <Panel title="Key Insights" icon={Lightbulb}>
       <ul className="space-y-2.5">
         {items.map((it, i) => (
-          <li key={i} className="flex gap-2.5 text-sm text-foreground/90 leading-snug">
+          <li key={i} className="flex gap-2.5 text-sm text-neutral-800 leading-snug">
             <span className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${it.color}`} />{it.text}
           </li>
         ))}

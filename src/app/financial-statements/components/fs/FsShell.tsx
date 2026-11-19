@@ -2,12 +2,17 @@
 
 import React from 'react';
 import Link from 'next/link';
-import TabNav from '@/components/ui/TabNav';
 import { usePathname } from 'next/navigation';
 import { Scale, TrendingUp, RefreshCcw, Activity, NotebookText, SlidersHorizontal, BookOpen, Lock } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { formatDate, useLockStatus } from '@/lib/yearEndClosingStore';
-import { tabCls, tabNavCls } from '@/components/shared/moduleUi';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+
+// Gaya tab disamakan dengan halaman Sales (garis bawah hitam, ikon tipis, Inter).
+const tabBarCls = 'flex flex-col gap-2 border-b border-neutral-300 lg:flex-row lg:items-center lg:justify-between';
+const tabListCls = '-mb-px flex gap-1 overflow-x-auto';
+const tabCls = (active: boolean) =>
+  `group flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm tracking-tight transition-colors ${active ? 'border-neutral-900 font-semibold text-neutral-900' : 'border-transparent font-medium text-neutral-500 hover:border-neutral-300 hover:text-neutral-900'}`;
 
 // Kerangka halaman Financial Statements berbasis mapping: judul + navigasi
 // antar laporan + slot aksi (download, dsb).
@@ -28,29 +33,39 @@ export default function FsShell({ title, subtitle, actions, children }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const tabs = [
+    ...FS_TABS,
+    { href: '/reports/general-ledger', label: 'General Ledger', icon: BookOpen },
+  ];
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+    // Spasi disamakan dengan halaman Sales: padding luar px-6 py-5 (lg:px-8 xl:px-10),
+    // header mb-4, bar tab (py-3), lalu isi dimulai pt-5.
+    <div className="px-6 py-5 lg:px-8 xl:px-10 max-w-screen-2xl mx-auto">
+      <div className={`${salesFont.className} mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between`}>
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/financial-statements" className="text-sm text-muted-foreground hover:text-blue-700">Financial Statements</Link>
             <ClosedBadge />
           </div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight mt-1">{title}</h1>
-          {subtitle && <div className="text-sm text-muted-foreground mt-1.5">{subtitle}</div>}
+          <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{title}</h1>
+          {subtitle && <div className="mt-1 text-sm font-medium text-neutral-500">{subtitle}</div>}
         </div>
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
       </div>
 
-      <TabNav
-        activeKey={FS_TABS.find(t => t.href === pathname)?.href ?? ''}
-        items={[
-          ...FS_TABS.map(t => ({ key: t.href, label: t.label, href: t.href, icon: t.icon })),
-          { key: '/reports/general-ledger', label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen },
-        ]}
-      />
+      <div className={tabBarCls}>
+        <nav className={`${salesFont.className} ${tabListCls}`}>
+          {tabs.map(t => {
+            const active = t.href === pathname;
+            return (
+              <Link key={t.href} href={t.href} className={tabCls(active)} aria-current={active ? 'page' : undefined}>
+                <t.icon size={16} strokeWidth={active ? 2 : 1.5} /> {t.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
 
-      {children}
+      <div className="pt-5 space-y-5">{children}</div>
     </div>
   );
 }
@@ -65,7 +80,7 @@ function ClosedBadge() {
     <Link
       href="/year-end-closing"
       title={`Transactions up to ${formatDate(last.period_end)} are locked${last.closed_by_name ? ` · closed by ${last.closed_by_name}` : ''}`}
-      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 ring-1 ring-inset ring-blue-600/20 hover:bg-blue-100"
+      className="mb-1.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800 ring-1 ring-inset ring-blue-600/20 hover:bg-blue-100"
     >
       <Lock size={11} /> FY {last.fiscal_year} closed · locked through {formatDate(last.period_end)}
     </Link>

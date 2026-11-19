@@ -8,7 +8,7 @@ import { fetchBalanceSheetSeries, type BalanceSheetSeries, type BsSnapshot } fro
 // /balance-sheet/series (banyak tanggal), lalu snapshot-nya digabung jadi
 // struktur seksi -> baris -> akun dengan nilai per kolom (index = urutan tanggal).
 
-export const BS_COLORS = { assets: '#0F7D4E', assetsSoft: '#22C55E', liabilities: '#F43F5E', equity: '#8B5CF6', muted: '#CBD5E1' };
+export const BS_COLORS = { assets: '#171717', assetsSoft: '#404040', liabilities: '#737373', equity: '#A3A3A3', muted: '#D4D4D4' };
 
 export const ASSET_SECTIONS = ['current_assets', 'non_current_assets'];
 export const LIAB_SECTIONS = ['current_liabilities', 'non_current_liabilities'];

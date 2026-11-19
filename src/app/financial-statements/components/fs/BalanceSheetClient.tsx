@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, LayoutGrid } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
 import { useActiveClient } from '@/lib/activeClient';
 import { useAuth } from '@/lib/auth';
 import FsShell, { LoadingBlock, NoClient } from './FsShell';
@@ -9,6 +9,8 @@ import BsDefaultView from './bs/BsDefaultView';
 import BsTrendView from './bs/BsTrendView';
 import BsComparisonView from './bs/BsComparisonView';
 import BsAssetsLiabView from './bs/BsAssetsLiabView';
+import { salesFont } from '@/app/transactions/sales/components/salesFont';
+import { BsDropdown } from './bs/BsMono';
 
 // Statement of Financial Position dari GL + mapping COA, dengan 4 tampilan
 // (dropdown "View"): default, trend bulanan, comparison kuartalan, dan
@@ -50,27 +52,16 @@ export default function BalanceSheetClient() {
       title={cur.title}
       subtitle={<>{cur.subtitle} · built from posted General Ledger and the client COA mapping</>}
       actions={
-        <label className="relative inline-flex items-center">
-          <LayoutGrid size={16} className="absolute left-3 text-blue-700 pointer-events-none" />
-          <select
-            value={view}
-            onChange={e => choose(e.target.value as View)}
-            aria-label="View"
-            className="appearance-none pl-9 pr-9 py-2.5 rounded-lg border border-border bg-white text-sm font-medium text-foreground hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100 cursor-pointer"
-          >
-            {VIEWS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </select>
-          <ChevronDown size={15} className="absolute right-3 text-muted-foreground pointer-events-none" />
-        </label>
+        <BsDropdown icon={LayoutGrid} align="right" value={view} onChange={v => choose(v as View)} options={VIEWS.map(v => ({ value: v.id, label: v.label }))} />
       }
     >
       {!hydrated ? <LoadingBlock /> : !activeClientId ? <NoClient /> : (
-        <>
+        <div className={salesFont.className}>
           {view === 'default' && <BsDefaultView key={activeClientId} {...props} />}
           {view === 'trend' && <BsTrendView key={activeClientId} {...props} />}
           {view === 'comparison' && <BsComparisonView key={activeClientId} {...props} />}
           {view === 'assets_liabilities' && <BsAssetsLiabView key={activeClientId} {...props} />}
-        </>
+        </div>
       )}
     </FsShell>
   );

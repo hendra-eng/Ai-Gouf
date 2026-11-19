@@ -4,11 +4,10 @@ import React, { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, ChevronDown, ChevronRight, Database, FileText, Percent } from 'lucide-react';
 import { ErrorBlock, LoadingBlock } from '../FsShell';
-import { Select } from '../PeriodPicker';
+import { Select } from './BsMono';
 import { fmtAmount, todayIso } from '../fsFormat';
 import { ASSET_SECTIONS, BS_COLORS, LIAB_SECTIONS, capToday, fmtCompact, monthEnd, pctChange, shiftYear, useBsSeries, yearEnd, type Merged } from './bsData';
-import { ChartTooltip, Delta, EmptyData, KpiCard, KpiRow, Legend, Panel } from './BsUi';
-import { BsToolbar, type ViewProps } from './BsToolbar';
+import { BsToolbar, ChartTooltip, Delta, EmptyData, KpiCard, KpiRow, Legend, Panel, filterLabelCls, thCls, thRowCls, trCls, type ViewProps } from './BsMono';
 import { bsTemplateReport } from '../statementTemplate';
 
 // (c) Balance Sheet Comparison -- posisi akhir kuartal 1 tahun buku, grafik
@@ -61,11 +60,11 @@ export default function BsComparisonView({ clientId, companyName, printedBy }: V
       <BsToolbar
         filters={
           <>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className={filterLabelCls}>
               Fiscal Year
               <div className="w-28"><Select value={year} onChange={v => setYear(Number(v))}>{years.map(y => <option key={y} value={y}>{y}</option>)}</Select></div>
             </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className={filterLabelCls}>
               Comparison Basis
               <div className="w-56"><Select value={basis} onChange={v => setBasis(v as Basis)}>{BASES.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}</Select></div>
             </label>
@@ -110,13 +109,13 @@ function ComparisonBody({ m, qn, labels, basisLabel }: { m: Merged; qn: number; 
         <div className="h-60">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chart} margin={{ top: 22, right: 8, left: 0, bottom: 0 }} barGap={6} barCategoryGap="22%">
-              <CartesianGrid stroke="#EEF2F7" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#475569' }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748B' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => fmtCompact(v, 0)} />
-              <Tooltip cursor={{ fill: '#F8FAFC' }} content={<ChartTooltip fmt={v => fmtAmount(v)} />} />
+              <CartesianGrid stroke="#E5E5E5" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#404040' }} tickLine={false} axisLine={{ stroke: '#D4D4D4' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#737373' }} tickLine={false} axisLine={false} width={52} tickFormatter={(v: number) => fmtCompact(v, 0)} />
+              <Tooltip cursor={{ fill: '#F5F5F5' }} content={<ChartTooltip fmt={v => fmtAmount(v)} />} />
               {(['Assets', 'Liabilities', 'Equity'] as const).map(k => (
-                <Bar key={k} dataKey={k} fill={BS_COLORS[k.toLowerCase() as 'assets' | 'liabilities' | 'equity']} radius={[4, 4, 0, 0]} maxBarSize={56} isAnimationActive={false}>
-                  <LabelList dataKey={k} position="top" formatter={(v: number) => fmtCompact(v, 1)} style={{ fontSize: 11, fontWeight: 600, fill: '#334155' }} />
+                <Bar key={k} dataKey={k} fill={BS_COLORS[k.toLowerCase() as 'assets' | 'liabilities' | 'equity']} radius={[4, 4, 0, 0]} maxBarSize={48} isAnimationActive={false}>
+                  <LabelList dataKey={k} position="top" formatter={(v: number) => fmtCompact(v, 1)} style={{ fontSize: 11, fontWeight: 600, fill: '#171717' }} />
                 </Bar>
               ))}
             </BarChart>
@@ -138,12 +137,12 @@ function ComparisonTable({ m, qn, labels, basisLabel }: { m: Merged; qn: number;
     const p = pctChange(v[qn - 1], v[qn]);
     const good = p !== null && (p >= 0) === upIsGood;
     return (
-      <td className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${bold ? 'font-bold' : 'font-medium'} ${p === null || Math.abs(p) < 0.05 ? 'text-muted-foreground' : good ? 'text-emerald-600' : 'text-rose-600'}`}>
+      <td className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${bold ? 'font-bold' : 'font-medium'} ${p === null || Math.abs(p) < 0.05 ? 'text-neutral-500' : good ? 'text-neutral-900' : 'text-red-700'}`}>
         {p === null ? '–' : `${p > 0 ? '+' : ''}${p.toFixed(1)}%`}
       </td>
     );
   };
-  const nums = (v: number[], cls: string) => idx.map(i => <td key={i} className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${cls} ${v[i] < -0.004 ? 'text-rose-600' : ''}`}>{fmtAmount(v[i])}</td>);
+  const nums = (v: number[], cls: string) => idx.map(i => <td key={i} className={`px-4 py-2 text-right tabular-nums whitespace-nowrap ${cls} ${v[i] < -0.004 ? 'text-red-700' : ''}`}>{fmtAmount(v[i])}</td>);
 
   const sectionRows = (key: string) => {
     const s = m.sec(key);
@@ -151,17 +150,17 @@ function ComparisonTable({ m, qn, labels, basisLabel }: { m: Merged; qn: number;
     const upIsGood = !LIAB_SECTIONS.includes(key);
     return (
       <React.Fragment key={key}>
-        <tr className="border-t border-slate-100 cursor-pointer hover:bg-slate-50" onClick={() => toggle(key)}>
-          <td className="px-4 py-2 font-semibold text-foreground">
+        <tr className={`${trCls} cursor-pointer`} onClick={() => toggle(key)}>
+          <td className="px-4 py-2 font-semibold text-neutral-900">
             <span className="inline-flex items-center gap-1.5">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{s.label || key}</span>
           </td>
-          {nums(s.v, 'font-semibold text-foreground')}
+          {nums(s.v, 'font-semibold text-neutral-900')}
           {varCell(s.v, false, upIsGood)}
         </tr>
         {isOpen && s.lines.map(l => (
-          <tr key={l.key} className="border-t border-slate-50">
-            <td className="pl-11 pr-4 py-1.5 text-muted-foreground">{l.label}</td>
-            {nums(l.v, 'text-foreground/80 py-1.5')}
+          <tr key={l.key} className={trCls}>
+            <td className="pl-11 pr-4 py-1.5 text-neutral-500">{l.label}</td>
+            {nums(l.v, 'text-neutral-900/80 py-1.5')}
             {varCell(l.v, false, upIsGood)}
           </tr>
         ))}
@@ -169,29 +168,29 @@ function ComparisonTable({ m, qn, labels, basisLabel }: { m: Merged; qn: number;
     );
   };
   const totalRow = (label: string, v: number[], upIsGood = true) => (
-    <tr className="bg-blue-50 border-t border-blue-100">
-      <td className="px-4 py-2.5 font-bold text-blue-800">{label}</td>
-      {nums(v, 'font-bold text-blue-800')}
+    <tr className="text-xs [&>td]:bg-neutral-200 [&>td]:shadow-[inset_0_-1px_0_#171717,inset_0_1px_0_#171717]">
+      <td className="px-4 py-2.5 font-bold text-neutral-900">{label}</td>
+      {nums(v, 'font-bold text-neutral-900')}
       {varCell(v, true, upIsGood)}
     </tr>
   );
 
   return (
     <Panel bodyClass="p-0">
-      <div className="overflow-x-auto scrollbar-thin rounded-2xl">
-        <table className="w-full text-sm min-w-[760px]">
+      <div className="overflow-x-auto scrollbar-thin rounded-xl">
+        <table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
           <thead>
-            <tr className="border-b border-border">
-              <th className="text-left font-bold text-foreground px-4 py-3">Account Group</th>
+            <tr className={thRowCls}>
+              <th className={`${thCls} px-4 py-3 text-left`}>Account Group</th>
               {labels.map(l => (
-                <th key={l} className="text-right px-4 py-3 whitespace-nowrap">
-                  <span className="block font-bold text-foreground">{l}</span>
-                  <span className="block text-[11px] font-normal text-muted-foreground">(IDR)</span>
+                <th key={l} className={`${thCls} px-4 py-3 text-right`}>
+                  <span className="block">{l}</span>
+                  <span className="block text-[10px] font-medium text-neutral-700">(IDR)</span>
                 </th>
               ))}
-              <th className="text-right px-4 py-3 whitespace-nowrap">
-                <span className="block font-bold text-foreground">Variance</span>
-                <span className="block text-[11px] font-normal text-muted-foreground">vs {basisLabel}</span>
+              <th className={`${thCls} px-4 py-3 text-right`}>
+                <span className="block">Variance</span>
+                <span className="block text-[10px] font-medium text-neutral-700">vs {basisLabel}</span>
               </th>
             </tr>
           </thead>
