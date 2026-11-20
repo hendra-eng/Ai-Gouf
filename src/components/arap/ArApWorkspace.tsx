@@ -21,7 +21,7 @@ import {
   type ArApDoc, type ArApOverview, type ArApSide, type CollectionsReport, type Settlement,
 } from '@/lib/receivablesPayablesStore';
 import { downloadAgingXlsx, downloadDocsCsv, downloadDocsXlsx } from './arapExport';
-import { btnOutline, btnPrimary, Menu, MenuItem, tabBadgeCls, tabBarCls, tabCls, tabListCls } from './arapSalesUi';
+import { btnOutline, btnPrimary, Menu, MenuItem, tabBadgeCls, tabCls, tabListCls } from './arapSalesUi';
 import PageHeading from '@/components/shared/PageHeading';
 import OverviewTab from './OverviewTab';
 import InvoicesTab from './InvoicesTab';
@@ -98,22 +98,19 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
           description={cfg.subtitle}
           actions={(
             <>
-            <Link href={cfg.createDocHref} className={btnPrimary}><Plus size={16} /> {cfg.createDocLabel}</Link>
-            <Link href={settlePath} className={btnOutline}><CreditCard size={16} /> Record {cfg.settle}</Link>
-            <Menu width="w-64" button={open => (
-              <button type="button" className={btnOutline} disabled={!kid}>
-                <Download size={16} /> Export <ChevronDown size={14} className={open ? 'rotate-180 transition' : 'transition'} />
-              </button>
-            )}>
-              {close => (
-                <>
-                  <MenuItem href={`${cfg.basePath}/export?as_of=${asOf}`} onClick={close}><FileText size={14} /> Aging Report (PDF / Print)</MenuItem>
-                  <MenuItem onClick={() => { close(); ekspor('aging-xlsx'); }}><FileSpreadsheet size={14} /> Aging Report (Excel)</MenuItem>
-                  <MenuItem onClick={() => { close(); ekspor('docs-xlsx'); }}><FileSpreadsheet size={14} /> {cfg.docs} (Excel)</MenuItem>
-                  <MenuItem onClick={() => { close(); ekspor('docs-csv'); }}><Download size={14} /> {cfg.docs} (CSV)</MenuItem>
-                </>
-              )}
-            </Menu>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-500">
+              <CalendarDays size={14} /> As of
+              <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
+                className="bg-transparent text-xs font-medium text-neutral-900 focus:outline-none" />
+            </label>
+            {asOf !== todayIso() && (
+              <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-blue-700 hover:underline">Today</button>
+            )}
+            <button type="button" onClick={refreshAll} title="Refresh" className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">
+              <RefreshCcw size={15} className={overview.loading || docs.loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
             </>
           )}
         />
@@ -126,11 +123,7 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
           </div>
         )}
 
-        {tabCollections
-          ? <CollectionKpiRow ov={overview.data} col={collections.data} loading={collections.loading && !collections.data} />
-          : <KpiRow side={side} ov={overview.data} loading={overview.loading && !overview.data} variant={tab === 'invoices' ? 'invoices' : 'default'} />}
-
-        <div className={tabBarCls}>
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <nav className={tabListCls}>
             {tabs.map(t => {
               const aktif = tab === t.id;
@@ -144,20 +137,31 @@ export default function ArApWorkspace({ side }: { side: ArApSide }) {
               );
             })}
           </nav>
-          <div className="flex items-center gap-2 pb-2 lg:pb-0">
-            <label className="flex items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-500">
-              <CalendarDays size={14} /> As of
-              <input type="date" value={asOf} max="2999-12-31" onChange={e => e.target.value && setAsOf(e.target.value)}
-                className="bg-transparent text-xs font-medium text-neutral-900 focus:outline-none" />
-            </label>
-            {asOf !== todayIso() && (
-              <button type="button" onClick={() => setAsOf(todayIso())} className="text-xs font-medium text-blue-700 hover:underline">Today</button>
-            )}
-            <button type="button" onClick={refreshAll} title="Refresh" className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900">
-              <RefreshCcw size={15} className={overview.loading || docs.loading ? 'animate-spin' : ''} />
-            </button>
+          <div className="flex flex-wrap items-center gap-2 pb-2 lg:pb-0">
+            <>
+  <Link href={cfg.createDocHref} className={btnPrimary}><Plus size={16} /> {cfg.createDocLabel}</Link>
+  <Link href={settlePath} className={btnOutline}><CreditCard size={16} /> Record {cfg.settle}</Link>
+  <Menu width="w-64" button={open => (
+    <button type="button" className={btnOutline} disabled={!kid}>
+      <Download size={16} /> Export <ChevronDown size={14} className={open ? 'rotate-180 transition' : 'transition'} />
+    </button>
+  )}>
+    {close => (
+      <>
+        <MenuItem href={`${cfg.basePath}/export?as_of=${asOf}`} onClick={close}><FileText size={14} /> Aging Report (PDF / Print)</MenuItem>
+        <MenuItem onClick={() => { close(); ekspor('aging-xlsx'); }}><FileSpreadsheet size={14} /> Aging Report (Excel)</MenuItem>
+        <MenuItem onClick={() => { close(); ekspor('docs-xlsx'); }}><FileSpreadsheet size={14} /> {cfg.docs} (Excel)</MenuItem>
+        <MenuItem onClick={() => { close(); ekspor('docs-csv'); }}><Download size={14} /> {cfg.docs} (CSV)</MenuItem>
+      </>
+    )}
+  </Menu>
+  </>
           </div>
         </div>
+
+        {tabCollections
+          ? <CollectionKpiRow ov={overview.data} col={collections.data} loading={collections.loading && !collections.data} />
+          : <KpiRow side={side} ov={overview.data} loading={overview.loading && !overview.data} variant={tab === 'invoices' ? 'invoices' : 'default'} />}
 
         {kid && tab === 'overview' && (
           <OverviewTab cfg={cfg} clientId={kid} asOf={asOf} ov={overview.data} docs={docs.data} loading={docs.loading && !docs.data.length}
